@@ -1,0 +1,21 @@
+{
+  "scope": "Remaining original FCM4 + SDK marker1 classes, exact upstream18.10.0 behavior; no SDK service/account execution",
+  "license": "Apache-2.0 (native Intercom)",
+  "sources": [
+    {
+      "source": "source/android/intercom-sdk-push/java/io/intercom/android/sdk/fcm/IntercomFcmMessengerService.java",
+      "source_sha256": "58a554f44ff5b939ab61d66fa5d0cf1a487565af785c1fe6a3d0e8bceaced6cb",
+      "derivation": "Recovered original native Java behavior from intercom-sdk-fcm 18.10.0; no original bytecode used in source compilation"
+    },
+    {
+      "source": "source/android/intercom-sdk-push/java/io/intercom/android/sdk/fcm/package-info.java",
+      "source_sha256": "35454715cd338114c488e9fb6e947a2516bb630381cc88579797bb75f4bfe90f",
+      "derivation": "Recovered original native Java behavior from intercom-sdk-fcm 18.10.0; no original bytecode used in source compilation"
+    },
+    {
+      "source": "source/android/intercom-sdk-push/java/io/intercom/android/BuildConfig.java",
+      "source_sha256": "67e2689a9903b293b75c0ecb4257907ef139dcc4a060f23eeca9bc1ea0524ab4",
+      "derivation": "Recovered original native Java behavior from intercom-sdk 18.10.0; no original bytecode used in source compilation"
+    }
+  ]
+}

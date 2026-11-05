@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/tickets/TicketProgressBannerKt$TicketProgressBanner$1",
+  "root_only": true,
+  "source_before_sha256": "a4bf32ff326b9f6056b8a30c0f2cdfd89d3421f94e23d5b1fc5872080dc7ecc0",
+  "source_after_sha256": "1f09445b4e15a888f005d3125f312962f2456cda9bc37ae7b4160a0201290367",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

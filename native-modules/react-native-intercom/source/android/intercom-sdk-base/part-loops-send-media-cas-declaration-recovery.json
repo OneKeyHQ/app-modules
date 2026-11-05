@@ -1,0 +1,18 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Part.java",
+      "before_sha256": "25938057dad99306496ad03b99e0df4a6444e3dbfc0b9299386a4cae8bb23308",
+      "after_sha256": "dde93dc7b2d7b2d88ab6939c0e4e7a8e83f711c7a509a732464971273fb99164"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "before_sha256": "247722a4b06e46b0f57d61f524f8b4281f6506847cff889a7d3e25f366173cb9",
+      "after_sha256": "59576571e74cfe00717914805bcc2e9b4816dd9fd5d05cbab78e99e5282bce17"
+    }
+  ],
+  "scope": "Part raw Iterator.next\u2192CHECKCAST Builder151/Attachments259 precedes build/nullfilter; SendMedia raw MutableStateFlow.getValue351/ASTORE356 old identity reused compareAndSet471 per iteration, only Object declaration added",
+  "evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/cas-part-locals-121",
+  "code_backfill": false
+}

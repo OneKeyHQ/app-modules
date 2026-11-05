@@ -1,0 +1,9 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "source_before_sha256": "50a89f05bb1c758363f35d86f8013d5e25f3ed700f8c28ac3b63cd8c9c25ed2b",
+  "source_after_sha256": "a2ae248bc7ae9efad48112d361680fec31d675fe51ed00a105c1cab67f7cfbc6",
+  "scope": "Original groups931021432/931122893 Object remember lifetimes distinct from int markers; original Fn0 commoncast632 and existing Fn1 cast802 before end; final args2/3 already checked Fn0 redundant casts stay argument position",
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/conversation-destination-116",
+  "capture_ledger": "conversation-destination-final-captures.json",
+  "method_code_backfill": false
+}

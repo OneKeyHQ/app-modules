@@ -1,0 +1,283 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+  "root_only": true,
+  "source_before_sha256": "e1811afa64416bcc5b4b5947fb721bebcce42d563f5e25392141262016bdf7e2",
+  "source_after_sha256": "8d69056d4eb5b1a3e5baa75d5b1ddf73768e5f2011a81a1364c9687f16bcc2e2",
+  "source_capture_sites": 3,
+  "source_capture_bindings": 15,
+  "declaration_check_exit": 0,
+  "type_edits": 5,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ConversationScreenKt$ConversationScreenContent$41$2/ast-input/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.java",
+      "8286",
+      "8363",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_386_0, recoveredExpressionArgument_386_1) -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$41$2.invoke$lambda$1$lambda$0(recoveredExpressionCapture_386_0, recoveredExpressionCapture_386_1, recoveredExpressionCapture_386_2, recoveredExpressionCapture_386_3, recoveredExpressionCapture_386_4, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_386_0), (java.util.List) ((java.util.List)recoveredExpressionArgument_386_1)))",
+      "8268",
+      "final androidx.compose.ui.focus.FocusManager recoveredExpressionCapture_386_0 = var10;\\n               final androidx.compose.ui.platform.SoftwareKeyboardController recoveredExpressionCapture_386_1 = var11;\\n               final kotlin.jvm.functions.Function2 recoveredExpressionCapture_386_2 = var12;\\n               final kotlinx.coroutines.CoroutineScope recoveredExpressionCapture_386_3 = var13;\\n               final androidx.compose.foundation.lazy.LazyListState recoveredExpressionCapture_386_4 = var14;\\n               ",
+      "386",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Landroidx/compose/ui/focus/FocusManager;=var10,Landroidx/compose/ui/platform/SoftwareKeyboardController;=var11,Lkotlin/jvm/functions/Function2;=var12,Lkotlinx/coroutines/CoroutineScope;=var13,Landroidx/compose/foundation/lazy/LazyListState;=var14",
+      "recoveredExpressionCapture_386_0=var10@7607:LOCAL|10|10|0|var10|Landroidx/compose/ui/focus/FocusManager;;recoveredExpressionCapture_386_1=var11@7660:LOCAL|11|11|0|var11|Landroidx/compose/ui/platform/SoftwareKeyboardController;;recoveredExpressionCapture_386_2=var12@7733:LOCAL|12|12|0|var12|Lkotlin/jvm/functions/Function2;;recoveredExpressionCapture_386_3=var13@7784:LOCAL|13|13|0|var13|Lkotlinx/coroutines/CoroutineScope;;recoveredExpressionCapture_386_4=var14@7841:LOCAL|14|14|0|var14|Landroidx/compose/foundation/lazy/LazyListState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ConversationScreenKt$ConversationScreenContent$41$2/ast-input/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.java",
+      "9791",
+      "9868",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$41$2.invoke$lambda$3$lambda$2(recoveredExpressionCapture_387_0, recoveredExpressionCapture_387_1, recoveredExpressionCapture_387_2))",
+      "9773",
+      "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_387_0 = var37;\\n               final kotlinx.coroutines.CoroutineScope recoveredExpressionCapture_387_1 = var39;\\n               final androidx.compose.runtime.MutableState recoveredExpressionCapture_387_2 = var41;\\n               ",
+      "387",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Lkotlin/jvm/functions/Function0;=var10,Lkotlinx/coroutines/CoroutineScope;=var11,Landroidx/compose/runtime/MutableState;=var12",
+      "recoveredExpressionCapture_387_0=var37@9083:LOCAL|10|37|0|var37|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_387_1=var39@9139:LOCAL|11|39|0|var39|Lkotlinx/coroutines/CoroutineScope;;recoveredExpressionCapture_387_2=var41@9196:LOCAL|12|41|0|var41|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ConversationScreenKt$ConversationScreenContent$41$2/ast-input/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.java",
+      "11974",
+      "12051",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$41$2.invoke$lambda$5$lambda$4(recoveredExpressionCapture_388_0, recoveredExpressionCapture_388_1, recoveredExpressionCapture_388_2, recoveredExpressionCapture_388_3, recoveredExpressionCapture_388_4, recoveredExpressionCapture_388_5, recoveredExpressionCapture_388_6))",
+      "11956",
+      "final io.intercom.android.sdk.m5.conversation.states.ConversationUiState recoveredExpressionCapture_388_0 = var38;\\n               final kotlin.jvm.functions.Function0 recoveredExpressionCapture_388_1 = var40;\\n               final kotlin.jvm.functions.Function0 recoveredExpressionCapture_388_2 = var42;\\n               final androidx.compose.ui.platform.SoftwareKeyboardController recoveredExpressionCapture_388_3 = var44;\\n               final kotlinx.coroutines.CoroutineScope recoveredExpressionCapture_388_4 = var46;\\n               final androidx.compose.runtime.MutableState recoveredExpressionCapture_388_5 = var48;\\n               final androidx.compose.runtime.State recoveredExpressionCapture_388_6 = var50;\\n               ",
+      "388",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;=var10,Lkotlin/jvm/functions/Function0;=var11,Lkotlin/jvm/functions/Function0;=var12,Landroidx/compose/ui/platform/SoftwareKeyboardController;=var13,Lkotlinx/coroutines/CoroutineScope;=var14,Landroidx/compose/runtime/MutableState;=var15,Landroidx/compose/runtime/State;=var16",
+      "recoveredExpressionCapture_388_0=var38@10928:LOCAL|10|38|0|var38|Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;;recoveredExpressionCapture_388_1=var40@10983:LOCAL|11|40|0|var40|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_388_2=var42@11045:LOCAL|12|42|0|var42|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_388_3=var44@11103:LOCAL|13|44|0|var44|Landroidx/compose/ui/platform/SoftwareKeyboardController;;recoveredExpressionCapture_388_4=var46@11176:LOCAL|14|46|0|var46|Lkotlinx/coroutines/CoroutineScope;;recoveredExpressionCapture_388_5=var48@11233:LOCAL|15|48|0|var48|Landroidx/compose/runtime/MutableState;;recoveredExpressionCapture_388_6=var50@11289:LOCAL|16|50|0|var50|Landroidx/compose/runtime/State;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 386,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "163",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke$lambda$1$lambda$0",
+        "(Landroidx/compose/ui/focus/FocusManager;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlin/jvm/functions/Function2;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/focus/FocusManager;=var10,Landroidx/compose/ui/platform/SoftwareKeyboardController;=var11,Lkotlin/jvm/functions/Function2;=var12,Lkotlinx/coroutines/CoroutineScope;=var13,Landroidx/compose/foundation/lazy/LazyListState;=var14",
+        "262"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke$lambda$1$lambda$0",
+          "(Landroidx/compose/ui/focus/FocusManager;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlin/jvm/functions/Function2;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;",
+          "{252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266}",
+          "LOCAL|10|10|0|var10|Landroidx/compose/ui/focus/FocusManager;",
+          "LOCAL|11|11|0|var11|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+          "LOCAL|12|12|0|var12|Lkotlin/jvm/functions/Function2;",
+          "LOCAL|13|13|0|var13|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|14|14|0|var14|Landroidx/compose/foundation/lazy/LazyListState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke$lambda$1$lambda$0",
+          "(Landroidx/compose/ui/focus/FocusManager;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlin/jvm/functions/Function2;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;",
+          "{252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266}",
+          "LOCAL|10|10|0|var10|Landroidx/compose/ui/focus/FocusManager;",
+          "LOCAL|11|11|0|var11|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+          "LOCAL|12|12|0|var12|Lkotlin/jvm/functions/Function2;",
+          "LOCAL|13|13|0|var13|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|14|14|0|var14|Landroidx/compose/foundation/lazy/LazyListState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "262",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.invoke$lambda$1$lambda$0(Landroidx/compose/ui/focus/FocusManager;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlin/jvm/functions/Function2;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit; (6), (Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 387,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "271",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke$lambda$3$lambda$2",
+        "(Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function0;=var10,Lkotlinx/coroutines/CoroutineScope;=var11,Landroidx/compose/runtime/MutableState;=var12",
+        "430"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke$lambda$3$lambda$2",
+          "(Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434}",
+          "LOCAL|10|37|0|var37|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|11|39|0|var39|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|12|41|0|var41|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke$lambda$3$lambda$2",
+          "(Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434}",
+          "LOCAL|10|37|0|var37|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|11|39|0|var39|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|12|41|0|var41|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "430",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.invoke$lambda$3$lambda$2(Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 388,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "419",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke$lambda$5$lambda$4",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;=var10,Lkotlin/jvm/functions/Function0;=var11,Lkotlin/jvm/functions/Function0;=var12,Landroidx/compose/ui/platform/SoftwareKeyboardController;=var13,Lkotlinx/coroutines/CoroutineScope;=var14,Landroidx/compose/runtime/MutableState;=var15,Landroidx/compose/runtime/State;=var16",
+        "682"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke$lambda$5$lambda$4",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;)Lkotlin/Unit;",
+          "{668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686}",
+          "LOCAL|10|38|0|var38|Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;",
+          "LOCAL|11|40|0|var40|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|12|42|0|var42|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|13|44|0|var44|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+          "LOCAL|14|46|0|var46|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|15|48|0|var48|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|16|50|0|var50|Landroidx/compose/runtime/State;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+          "invoke$lambda$5$lambda$4",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;)Lkotlin/Unit;",
+          "{668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686}",
+          "LOCAL|10|38|0|var38|Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;",
+          "LOCAL|11|40|0|var40|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|12|42|0|var42|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|13|44|0|var44|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+          "LOCAL|14|46|0|var46|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|15|48|0|var48|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|16|50|0|var50|Landroidx/compose/runtime/State;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "682",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.invoke$lambda$5$lambda$4(Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.java",
+      "start": 11315,
+      "end": 11323,
+      "replacement": "(kotlin.jvm.functions.Function0) var10004",
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+      "method": "invoke",
+      "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "composer_group_key": -554677311,
+      "function_type": "kotlin/jvm/functions/Function0",
+      "original_checkcast_bci": 467,
+      "original_store_slot": 7,
+      "source_line": 248,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2.java",
+      "start": 9442,
+      "end": 9450,
+      "replacement": "(kotlin.jvm.functions.Function2) var10002",
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$2",
+      "method": "invoke",
+      "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "composer_group_key": -554720945,
+      "function_type": "kotlin/jvm/functions/Function2",
+      "original_checkcast_bci": 295,
+      "original_store_slot": 7,
+      "source_line": 212,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

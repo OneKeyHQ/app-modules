@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/home/reducers/HomeHeaderStateReducerKt",
+  "root_only": true,
+  "source_before_sha256": "840d74d927ceda9de4de160e91f8773502d3c3cb9262847b89b9511f63657033",
+  "source_after_sha256": "5637602a1a8efe15ffad585c6823a326f7d4fa5c482d0a722276b56055ef10a8",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 46,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

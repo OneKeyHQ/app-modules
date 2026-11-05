@@ -1,0 +1,108 @@
+{
+  "compiler": {
+    "version": "2.1.20",
+    "language_version": "2.0",
+    "api_version": "2.0",
+    "jvm_target": "1.8",
+    "lambdas": "indy",
+    "module_name": "intercom-sdk-base_release",
+    "proven_original_compiler": false,
+    "dependencies": [
+      {
+        "group": "org.jetbrains.kotlin",
+        "artifact": "kotlin-compiler-embeddable",
+        "version": "2.1.20",
+        "extension": ".jar",
+        "sha256": "c54a00718c8c0e3ee858bf42771c7f401c5e3c1738861e18e9536371042fa1b3",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.1.20/kotlin-compiler-embeddable-2.1.20.jar"
+      },
+      {
+        "group": "org.jetbrains.kotlin",
+        "artifact": "kotlin-stdlib",
+        "version": "2.1.20",
+        "extension": ".jar",
+        "sha256": "1bcc74e8ce84e2c25eaafde10f1248349cce3062b6e36978cbeec610db1e930a",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.jar"
+      },
+      {
+        "group": "org.jetbrains.kotlin",
+        "artifact": "kotlin-script-runtime",
+        "version": "2.1.20",
+        "extension": ".jar",
+        "sha256": "ae4397fbb3aa2a1ada09290e753bba99a4114548977c3115526b9958f4cb1a04",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-script-runtime/2.1.20/kotlin-script-runtime-2.1.20.jar"
+      },
+      {
+        "group": "org.jetbrains.kotlin",
+        "artifact": "kotlin-reflect",
+        "version": "1.6.10",
+        "extension": ".jar",
+        "sha256": "3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-reflect/1.6.10/kotlin-reflect-1.6.10.jar"
+      },
+      {
+        "group": "org.jetbrains.kotlin",
+        "artifact": "kotlin-daemon-embeddable",
+        "version": "2.1.20",
+        "extension": ".jar",
+        "sha256": "d9e83df1d847a201ba3c016a786ced091be9503997d09f6a9cf1796ee489f374",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-daemon-embeddable/2.1.20/kotlin-daemon-embeddable-2.1.20.jar"
+      },
+      {
+        "group": "org.jetbrains.intellij.deps",
+        "artifact": "trove4j",
+        "version": "1.0.20200330",
+        "extension": ".jar",
+        "sha256": "c5fd725bffab51846bf3c77db1383c60aaaebfe1b7fe2f00d23fe1b7df0a439d",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar"
+      },
+      {
+        "group": "org.jetbrains.kotlinx",
+        "artifact": "kotlinx-coroutines-core-jvm",
+        "version": "1.9.0",
+        "extension": ".jar",
+        "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar"
+      },
+      {
+        "group": "org.jetbrains",
+        "artifact": "annotations",
+        "version": "23.0.0",
+        "extension": ".jar",
+        "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+        "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar"
+      }
+    ]
+  },
+  "libraries": [
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-stdlib",
+      "version": "2.1.20",
+      "extension": ".jar",
+      "sha256": "1bcc74e8ce84e2c25eaafde10f1248349cce3062b6e36978cbeec610db1e930a",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.jar"
+    },
+    {
+      "group": "org.jetbrains",
+      "artifact": "annotations",
+      "version": "23.0.0",
+      "extension": ".jar",
+      "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar"
+    },
+    {
+      "group": "com.google.code.gson",
+      "artifact": "gson",
+      "version": "2.14.0",
+      "extension": ".jar",
+      "sha256": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f",
+      "url": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar"
+    }
+  ],
+  "scope": "Two original icon enums, 9 classes. Resource declarations supplied by caller own AGP compile-R output; never packaged.",
+  "sources": [
+    "kotlin/io/intercom/android/sdk/m5/home/data/IconType.kt",
+    "kotlin/io/intercom/android/sdk/models/OpenMessengerResponse.kt"
+  ]
+}

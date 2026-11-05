@@ -1,0 +1,199 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+  "root_only": true,
+  "source_before_sha256": "5e6bf414422bdf2af24d6ff865aa07f10f567f7ca111bcd7f40ccfe7cb7e41bd",
+  "source_after_sha256": "03b3e90f7a045a7bbc49e14f612f72c7c45f71921ee782c1c0d85a632a88899e",
+  "source_capture_sites": 2,
+  "source_capture_bindings": 7,
+  "declaration_check_exit": 0,
+  "type_edits": 13,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HelpCenterCollectionsScreenKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt.java",
+      "9188",
+      "9264",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_820_0) -> io.intercom.android.sdk.m5.helpcenter.ui.HelpCenterCollectionsScreenKt.HelpCenterCollectionsScreen$lambda$3$lambda$2(recoveredExpressionCapture_820_0, recoveredExpressionCapture_820_1, (androidx.compose.foundation.lazy.LazyListScope) ((androidx.compose.foundation.lazy.LazyListScope)recoveredExpressionArgument_820_0)))",
+      "9170",
+      "final androidx.compose.runtime.State recoveredExpressionCapture_820_0 = var30;\\n            final kotlin.jvm.functions.Function1 recoveredExpressionCapture_820_1 = var2;\\n            ",
+      "820",
+      "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+      "Landroidx/compose/runtime/State;=var7,Lkotlin/jvm/functions/Function1;=var2",
+      "recoveredExpressionCapture_820_0=var30@7752:LOCAL|7|30|0|var30|Landroidx/compose/runtime/State;;recoveredExpressionCapture_820_1=var2@4304:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HelpCenterCollectionsScreenKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt.java",
+      "10335",
+      "10402",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_821_0, recoveredExpressionArgument_821_1) -> io.intercom.android.sdk.m5.helpcenter.ui.HelpCenterCollectionsScreenKt.HelpCenterCollectionsScreen$lambda$4(recoveredExpressionCapture_821_0, recoveredExpressionCapture_821_1, recoveredExpressionCapture_821_2, recoveredExpressionCapture_821_3, recoveredExpressionCapture_821_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_821_0), ((java.lang.Integer)recoveredExpressionArgument_821_1).intValue()))",
+      "10317",
+      "final io.intercom.android.sdk.m5.helpcenter.HelpCenterViewModel recoveredExpressionCapture_821_0 = var0;\\n         final java.util.List recoveredExpressionCapture_821_1 = var1;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_821_2 = var2;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_821_3 = var3;\\n         final int recoveredExpressionCapture_821_4 = var5;\\n         ",
+      "821",
+      "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;=var0,Ljava/util/List;=var1,Lkotlin/jvm/functions/Function1;=var2,Lkotlin/jvm/functions/Function1;=var3,I=var5",
+      "recoveredExpressionCapture_821_0=var0@4249:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;;recoveredExpressionCapture_821_1=var1@4284:LOCAL|1|1|0|var1|Ljava/util/List;;recoveredExpressionCapture_821_2=var2@4304:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_821_3=var3@4329:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_821_4=var5@4379:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 820,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+        "HelpCenterCollectionsScreen",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+        "420",
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+        "HelpCenterCollectionsScreen$lambda$3$lambda$2",
+        "(Landroidx/compose/runtime/State;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/foundation/lazy/LazyListScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/State;=var7,Lkotlin/jvm/functions/Function1;=var2",
+        "639"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen$lambda$3$lambda$2",
+          "(Landroidx/compose/runtime/State;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListScope;)Lkotlin/Unit;",
+          "{636, 637, 638, 639, 640, 641, 642, 643}",
+          "LOCAL|7|30|0|var30|Landroidx/compose/runtime/State;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen$lambda$3$lambda$2",
+          "(Landroidx/compose/runtime/State;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListScope;)Lkotlin/Unit;",
+          "{636, 637, 638, 639, 640, 641, 642, 643}",
+          "LOCAL|7|30|0|var30|Landroidx/compose/runtime/State;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+        "HelpCenterCollectionsScreen",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+        "639",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt.HelpCenterCollectionsScreen$lambda$3$lambda$2(Landroidx/compose/runtime/State;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListScope;)Lkotlin/Unit; (6), (Landroidx/compose/foundation/lazy/LazyListScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 821,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+        "HelpCenterCollectionsScreen",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+        "491",
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+        "HelpCenterCollectionsScreen$lambda$4",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;=var0,Ljava/util/List;=var1,Lkotlin/jvm/functions/Function1;=var2,Lkotlin/jvm/functions/Function1;=var3,I=var5",
+        "746"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen$lambda$4",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+          "LOCAL|1|1|0|var1|Ljava/util/List;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+          "HelpCenterCollectionsScreen$lambda$4",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+          "LOCAL|1|1|0|var1|Ljava/util/List;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+        "HelpCenterCollectionsScreen",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+        "746",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt.HelpCenterCollectionsScreen$lambda$4(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt.java",
+      "start": 6584,
+      "end": 6589,
+      "replacement": "(kotlin.jvm.functions.Function2) var49",
+      "owner": "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+      "method": "HelpCenterCollectionsScreen",
+      "descriptor": "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+      "composer_group_key": 2138885056,
+      "function_type": "kotlin/jvm/functions/Function2",
+      "original_checkcast_bci": 326,
+      "original_store_slot": 7,
+      "source_line": 130,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt.java",
+      "start": 7483,
+      "end": 7488,
+      "replacement": "(kotlin.jvm.functions.Function2) var49",
+      "owner": "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterCollectionsScreenKt",
+      "method": "HelpCenterCollectionsScreen",
+      "descriptor": "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+      "composer_group_key": 2138889543,
+      "function_type": "kotlin/jvm/functions/Function2",
+      "original_checkcast_bci": 470,
+      "original_store_slot": 7,
+      "source_line": 153,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

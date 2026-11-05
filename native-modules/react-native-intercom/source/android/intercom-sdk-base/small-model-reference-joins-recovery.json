@@ -1,0 +1,23 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "scope": "Original AvatarShape common CHECKCAST71 before fallback; Ticket.Status common CHECKCAST162 before null branch; SocialAccount Iterator.next\u2192CHECKCAST160 before null filter",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/avatar/AvatarShape$Companion.java",
+      "before_sha256": "f776e925cd7f78e6626bb3358ffed5fee39e7215d0d8a136cf1b4ff03f31cc30",
+      "after_sha256": "2e60de990608ac9b95ba48e6d7120b804719a971b34f580925e4229476bc0154"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/extensions/ConversationExtensionsKt.java",
+      "before_sha256": "47559c94ccdebedcedf5e85d2364c77f5c60ef75877f9d2d8607966ceeb0a349",
+      "after_sha256": "e08a9a7d3cb0188cee9fd29345b3244f9ad0a7e1e6db5384a0421556f6f7bd12"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/LastParticipatingAdmin.java",
+      "before_sha256": "32afca5589bfece45f162e1e63b4a86b0f0a4a1fa1655a09265952d3e1191150",
+      "after_sha256": "f303b891921e0f3bd4c2b1ad93c22a902761dccf7afb483cfbd8fe7673e21070"
+    }
+  ],
+  "original_evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/small-models-158",
+  "method_code_backfill": false
+}

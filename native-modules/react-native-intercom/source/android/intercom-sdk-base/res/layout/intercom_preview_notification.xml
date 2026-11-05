@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/notification_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom|center"
+    android:layout_marginHorizontal="16dp"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="horizontal"
+    android:visibility="visible"
+    tools:layout_marginBottom="56dp"
+    tools:visibility="visible">
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/chat_snippet_compose_view"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        tools:visibility="visible" />
+
+    <FrameLayout
+        android:id="@+id/parent_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/intercom_card_background"
+        android:visibility="gone"
+        android:elevation="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:layout_margin="16dp"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/preview_avatar"
+                android:layout_width="@dimen/intercom_container_card_avatar_size"
+                android:layout_height="@dimen/intercom_container_card_avatar_size"
+                android:layout_gravity="top"
+                android:contentDescription="Teammate avatar"
+                tools:src="@tools:sample/avatars" />
+
+            <androidx.compose.ui.platform.ComposeView
+                android:id="@+id/preview_avatar_compose_view"
+                android:layout_width="@dimen/intercom_container_card_avatar_size"
+                android:layout_height="@dimen/intercom_container_card_avatar_size"
+                android:layout_gravity="top"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp">
+
+                <androidx.compose.ui.platform.ComposeView
+                    android:id="@+id/ticket_header_compose_view"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:visibility="gone"
+                    tools:layout_height="24dp"
+                    tools:layout_width="60dp"
+                    tools:visibility="visible" />
+
+                <TextView
+                    android:id="@+id/in_app_notification_message_summary"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:textSize="16sp"
+                    android:textColor="@color/intercom_black"
+                    tools:text="Hey Angela, we will need some more information from you. Can you send over" />
+
+                <TextView
+                    android:id="@+id/reply_from_textview"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textSize="16sp"
+                    android:textColor="@color/intercom_grey_600"
+                    tools:text="Reply from Hannah" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

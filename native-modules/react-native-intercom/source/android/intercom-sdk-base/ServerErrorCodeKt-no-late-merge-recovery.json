@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/api/ServerErrorCodeKt",
+  "root_only": true,
+  "source_before_sha256": "9307f0fedd6a97cd81dfa334a1c5e2cd29e25ead45c56c2ad172665f1e4ba59c",
+  "source_after_sha256": "ea2c64bedea5e3cb320423f3e53860007f6edb10409d4e98014b36de82eda948",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

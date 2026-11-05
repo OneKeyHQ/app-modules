@@ -1,0 +1,17 @@
+{
+  "status": "PARTIAL_SOURCE_CLASS_COMPILED_NOT_ABI_RESTORED",
+  "source_before_sha256": "48708151246f525abbab06ab1790281f340cb36edfee700cad08a2aca7a15919",
+  "source_after_sha256": "8efd670679e1c95c22f1c5182b4e14bffb3b36f19ec4f48b013dcbee121f41d6",
+  "scope": "Only private createAuthCallback$lambda$1 adds E extends Exception throws-only source type parameter and catch rethrows same object as E; original new Exception failure/message/log/catch order unchanged. No wrapping, swallow, new helper, auth bypass or additional allocation. Original Signature/Exceptions are absent and restored by existing output metadata pass.",
+  "erasure": "E erases Exception, not RuntimeException; isolated JDK17 real code/handler/frame/max + no CHECKCAST/identity/stack probe passes before/after metadata restoration",
+  "probe": ".recovery/ably-generic-throws-probe/receipt.json",
+  "actual_auth_runtime": "NOT_RUN; no account/network used",
+  "code_backfill": false,
+  "actual_class_review": {
+    "class": "AblyManager.class",
+    "sha256": "40374fdd57ef5b289d26c2871a2cd84ae8350369e84e7814b2bda00d49f9c609",
+    "review": "Independent current-source javap: helper flags/descriptor same, original Exception identity is thrown, no generic CHECKCAST/wrapping. Business throwing-expression catch coverage retained though compiler splits ranges and offsets differ.",
+    "metadata_pending": "Source Signature/Exceptions and major68 remain; whole-base ABI/feature gate not passed",
+    "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/ably-exception-source-seam/current-source-javac-AblyManager.class"
+  }
+}

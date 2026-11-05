@@ -1,0 +1,773 @@
+{
+  "baseline": "Intercom iOS19.9.1",
+  "status": "ALL_CURRENT_SOURCE_COMPILED_SDK_UNLINKED_AND_INCOMPLETE",
+  "vendor_implementation_inputs": false,
+  "runtime_verified": false,
+  "sources": [
+    {
+      "path": "ios/Session/AttachmentActionButton.swift",
+      "sha256": "a5c383720ee8a8d01c9422654eab38060d41fdbf2c3dd8340b6529cbac3a844f"
+    },
+    {
+      "path": "ios/Session/AudioRecorder.swift",
+      "sha256": "8ea95e3cd5b6e74bf0d04f44bf7f04606ae31ade3a6d78b104c4cf649e60677f"
+    },
+    {
+      "path": "ios/Session/AudioRecorderViewModel.swift",
+      "sha256": "835f1f55fc6521e9f611541249cae4f332ed1c754defcdb7e2cac481d419a9f1"
+    },
+    {
+      "path": "ios/Session/AudioRecording.swift",
+      "sha256": "39cb71084037d840cb023c69233ed669a34b91b3c227aa815f05f2bcfaccadb0"
+    },
+    {
+      "path": "ios/Session/BlockSegmenter.swift",
+      "sha256": "98365a0348f36c8b1f2428d338aa68335df3bc08fe6d62488f95faebbf437309"
+    },
+    {
+      "path": "ios/Session/CameraPicker.swift",
+      "sha256": "ce5afe0969cd2c321e611384a541b3b49362d86437f1f36bd923a36dd17f7f85"
+    },
+    {
+      "path": "ios/Session/CitationViewController.swift",
+      "sha256": "3855adbba862c28d985a98bdf640e98db0b9fbdad7801ee6b8ad7bca5d7005b4"
+    },
+    {
+      "path": "ios/Session/ClosedConversationView.swift",
+      "sha256": "0980c008da6368b1f7f88299b330e740f8dd971f738d8cee89f9974fcb6dc699"
+    },
+    {
+      "path": "ios/Session/ComposerFileThumbnail.swift",
+      "sha256": "9f3d745ee269c93890f1c11b61f8c3c3b87994c84e9091757a1f564717d8f261"
+    },
+    {
+      "path": "ios/Session/ComposerImageThumbnail.swift",
+      "sha256": "54e7af06ed599cacaffbffd665cdc57511cdfce87dfffa5bdf6c8d575ea59ce4"
+    },
+    {
+      "path": "ios/Session/ComposerMedia.swift",
+      "sha256": "bad7c488d2b4cecb8e8fc92fe095a4518cd76962f6fcd0ca2020f8b515b061fd"
+    },
+    {
+      "path": "ios/Session/ComposerMediaThumbnailView.swift",
+      "sha256": "ba2e21a76b21de16860524c1cf81cca16455632058db783e3a25db3ce267623b"
+    },
+    {
+      "path": "ios/Session/ComposerTextController.swift",
+      "sha256": "4bb3594140b5cd9449ef1479cbf1fd5f6956b13729212b796dd5b85e431b7fea"
+    },
+    {
+      "path": "ios/Session/ComposerTextView.swift",
+      "sha256": "8d769982c2c6f137474204449cdb5f07e6f5bf9e7d735691aad4c42badd88e7b"
+    },
+    {
+      "path": "ios/Session/ComposerThumbnailContainer.swift",
+      "sha256": "ebe6593a49bd4e755650f45c7510051135c7751cd487ae90324578027bc937f5"
+    },
+    {
+      "path": "ios/Session/ComposerTranscribingView.swift",
+      "sha256": "44a0bf37d2eb443e4350a7fe486a0fcfe41519c5d9428326510f4ba9ea0920eb"
+    },
+    {
+      "path": "ios/Session/ComposerVideoThumbnail.swift",
+      "sha256": "0a5ef965f5e14489d4f3c46a5354585e3e1bdcefadda166a506b313b0fd96876"
+    },
+    {
+      "path": "ios/Session/ComposerView.swift",
+      "sha256": "87355273b3cba71df8d0979747200fed836135e39b5d1429f289928d29b6679e"
+    },
+    {
+      "path": "ios/Session/ComposerViewModel.swift",
+      "sha256": "80423eac6bc43c3ecb5d862dd73fd0470d123c0590d7bb6479a23815fd177bcf"
+    },
+    {
+      "path": "ios/Session/ComposerViewWrapper.swift",
+      "sha256": "ce3beca7ffecad6e47e92bbf2e8f3bd33bb9aa95e78ee9c4e66d716d1328f1cc"
+    },
+    {
+      "path": "ios/Session/ConversationError.swift",
+      "sha256": "b551498b85735b0ec83f358d325aafe097855bfbd9696e7e463732a79ef51341"
+    },
+    {
+      "path": "ios/Session/ConversationFetchReason.swift",
+      "sha256": "8132789312b6771a8b43aa2094dbb62eaed55b62a956c7bd29978885216ee9e3"
+    },
+    {
+      "path": "ios/Session/ConversationInteractor.swift",
+      "sha256": "3f2501e01bbd27c7b0ba0cf059c5124879d2f333ba5916b0df94a35bcac715fc"
+    },
+    {
+      "path": "ios/Session/ConversationViewController.swift",
+      "sha256": "966ea1d12cadf471c51309980990f9c04c631655a5ce64db73cccea15ad232d3"
+    },
+    {
+      "path": "ios/Session/ConversationViewModel.swift",
+      "sha256": "a2d86be18b9a7bd78d0cc814cfb85b5e7d49d131e7f3c119ccd00f750555f815"
+    },
+    {
+      "path": "ios/Session/DeferredActionMenuButton.swift",
+      "sha256": "f1a4fc5d2ec5a0b60701394dfdc456834301555c25612a24072c9c563aee3c95"
+    },
+    {
+      "path": "ios/Session/FilePicker.swift",
+      "sha256": "0614e32da83ee626e7d309b069887b31ab58ac556de16d6c996e05ad116cd4b9"
+    },
+    {
+      "path": "ios/Session/FloatingActionButton.swift",
+      "sha256": "90925088e5d8aa1ec279236145b467fa449dfb6a14a0768af13f41ad15b31c60"
+    },
+    {
+      "path": "ios/Session/GIFCell.swift",
+      "sha256": "922bfd1f222ee9da961156762b33b23e5de362929f2265495b4a4e2e48dc71be"
+    },
+    {
+      "path": "ios/Session/GIFPickerViewController.swift",
+      "sha256": "d0b893612cfce1b0d779f2c680daf8b295288f4ee7d291e08d129c30f8c8d563"
+    },
+    {
+      "path": "ios/Session/ICMAWSConfiguration.h",
+      "sha256": "5d822366b6c4269363a82824ab3d557ab9489ac403c2e1865094111ee9a6a827"
+    },
+    {
+      "path": "ios/Session/ICMAWSConfiguration.m",
+      "sha256": "a0cbbec9653e835327ba5f5b4e30dc2ca6945bdcfccf3d2d7a87cacf12095b78"
+    },
+    {
+      "path": "ios/Session/ICMConversationPart+SenderLabel.swift",
+      "sha256": "7bb066c302b95676b00508092d356c21fdb7b3216c75807c3ec166cf29f256d1"
+    },
+    {
+      "path": "ios/Session/ICMFileUploadConfig.h",
+      "sha256": "73238099dab477473036356b97d969cf21541a3d903d88d9e9c96db7a5326f2c"
+    },
+    {
+      "path": "ios/Session/ICMGIFAction.h",
+      "sha256": "93adf2d9377aa35f1b3eb8c8ba28b59106e673dedc2000abd37d3ceceea9b2c6"
+    },
+    {
+      "path": "ios/Session/ICMGIFAction.m",
+      "sha256": "8a32c7f6d09a8e8629c3d44ee7f6d88818f382cc1d7b42747a0554864fb39d48"
+    },
+    {
+      "path": "ios/Session/ICMGIFResponse.h",
+      "sha256": "c415b66f86cde03e58a67f3872231f968583220efdf67100ee95f1156ec8c54d"
+    },
+    {
+      "path": "ios/Session/ICMGIFResponse.m",
+      "sha256": "2bfe96d4523f9553226ce2540a596e4650b3cdf389911e4549db74b7c4704ab9"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationForms.h",
+      "sha256": "cda45dcf79025f2e1084b91dca1bc9e213506a9c3414aa179c37083349dbf33f"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationForms.m",
+      "sha256": "3f554cca591f3e6b4f5fbb6d6155d4c2df14cbe13d508dd68e679b5c118b815e"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationRequests.h",
+      "sha256": "c7b0715dc99c701f2d85789cc611066536625e2e069b5499804ecc1cd7aa42cf"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationRequests.m",
+      "sha256": "664bf050c5b15a775f626085f1239c7d64f12c28a717acea7c29565850d8d8cf"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationSending.h",
+      "sha256": "babd6d2cddd98b72d7fde46ade5ae7c03caeee40af93d551b2b5fd2f95553f29"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationSending.m",
+      "sha256": "e3e4a7ef29771f9f456531b880915b234fc53ed8363c144b411e10234a7c8cf5"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationUploads.h",
+      "sha256": "faabccbb02beb2a37f9588041be29a6777e6dee279c86cd99720f358736f17d5"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ConversationUploads.m",
+      "sha256": "7634d36ccf0849351f64d3a3e922cf817c368f1922f372923500b83ea35d7d8c"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+GIFs.h",
+      "sha256": "110bef4f35e636855668f5b9bf1229221d63b2a9e37e8a3034a2674767685a51"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+GIFs.m",
+      "sha256": "10999e0ebb5fc40f5bdbbd604aff7b278b0c7ae4df4c3440b983b33c50aa7a31"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ReadAndReactions.h",
+      "sha256": "abfb7364c1c5807484997295fe0efb5240e6fc68cd1c5b9e254ad0b972011c33"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+ReadAndReactions.m",
+      "sha256": "f0111dca97c938e39b10d5416986bbd6082fe971b6ab0370d6a5637d6ae85e4e"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+TicketRead.h",
+      "sha256": "055a0ca27955f8e4f5d67a847e4e96830b71ed49e7ea7fb5fb9995fe63ce7195"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+TicketRead.m",
+      "sha256": "b9cbec0c64fb3cf6696a85158f82a9dc0f868ada66a0f1d97bc91568efdfe0cd"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+Transcription.h",
+      "sha256": "ad2d0855c7c9ceb53cff405bb94600f184185e7b5a34e1d586b023999298e1aa"
+    },
+    {
+      "path": "ios/Session/ICMHTTPClient+Transcription.m",
+      "sha256": "b8c8956e31ba728c79fac86a80fcd077772c1484890abac6522693200d3631d1"
+    },
+    {
+      "path": "ios/Session/ICMMediaAction.h",
+      "sha256": "49906fc65b41999d017a42b2eba55fd51e986c1be97854534ef64b6cbaeffc2c"
+    },
+    {
+      "path": "ios/Session/ICMMediaAction.m",
+      "sha256": "05c22321f095fa4d6ca2cf2074e12637d32b3f655d5861895028110ea83b1e15"
+    },
+    {
+      "path": "ios/Session/ICMSoundPlayer.h",
+      "sha256": "da419ffc1fafbc9cefaa8b6f5ad7476bdf54e9d308d2ed766b2a2e101d3eb90d"
+    },
+    {
+      "path": "ios/Session/ICMSoundPlayer.m",
+      "sha256": "aa0451e18e45778659f49aea87276ac19ee54dd64a83aa9bec7cbb124f1f67a0"
+    },
+    {
+      "path": "ios/Session/ICMTextAction.h",
+      "sha256": "4865536f67fbbe7bfab834c35fcda0bd3e42ee3aa39cb18771ee81964791eb77"
+    },
+    {
+      "path": "ios/Session/ICMTextAction.m",
+      "sha256": "8616f230f1ff07e6af3491e6f9f93dfcb4da21a7801332af1643dc2f1d69eba4"
+    },
+    {
+      "path": "ios/Session/IntercomLinkView.swift",
+      "sha256": "293be862fd494706b54ea242fffa019e65dc5b2bc4a9bebed27b550e0bfd019d"
+    },
+    {
+      "path": "ios/Session/MediaPicker.swift",
+      "sha256": "8cfaa0ca15d826748b828bd8b0cac8b48cd086242eddc5d614cf58bb28b8142c"
+    },
+    {
+      "path": "ios/Session/MessageInputField.swift",
+      "sha256": "9222d9652726dd463b02b9e0928cacf10165e7b284d3052dc4266a3b935673f8"
+    },
+    {
+      "path": "ios/Session/MessengerAppViewCache.swift",
+      "sha256": "b5710d13b644ae99b207fd8f19f08fb049ef1e1442fc77ebc868e5d614881b13"
+    },
+    {
+      "path": "ios/Session/NexusEventFactory.swift",
+      "sha256": "b501595fe20964ca555462b0c20cea126a29511ab02cc7f5d457949f61d3ba04"
+    },
+    {
+      "path": "ios/Session/ObservableStackView.swift",
+      "sha256": "7a56cb74cb21b0bd108c096fd0db7c995b064177b135240027e35e20f0df39b7"
+    },
+    {
+      "path": "ios/Session/PickerError.swift",
+      "sha256": "211f1a14a4c2e4f3862d7d730030df5a90f757f3308e4e79fbe3f6d4f1d62c04"
+    },
+    {
+      "path": "ios/Session/PrivacyPolicyView.swift",
+      "sha256": "cc0b459188b7db4ae1e302af9b1cbe1d9bb4eb6e0437d0c7c8c19af1e1198779"
+    },
+    {
+      "path": "ios/Session/SendButton.swift",
+      "sha256": "380f2cecbca6126f6c55983dbf244acd2cbe6e22977a5a1ca065b3eb8e3b5a4e"
+    },
+    {
+      "path": "ios/Session/SourceView.swift",
+      "sha256": "bd02db8d3f0c50571fe33dfa6fa58ed721bb755af0efe10550c5df1bfaed8b21"
+    },
+    {
+      "path": "ios/Session/TypingBaseline.swift",
+      "sha256": "eba0e57e7244535e422b6f0d66ff5250fcea070709acdd7410324c5e632b9beb"
+    },
+    {
+      "path": "ios/Session/UserDefaultsManager.swift",
+      "sha256": "9e7c3f9f1253cd0a55b6a4ee270aebb7a26a63ebbbd54918bd8c20c1c1f8fe96"
+    },
+    {
+      "path": "ios/Session/VideoBlockViewCache.swift",
+      "sha256": "3f33aa71880a6b6d90de4e156848fb519275e0d79b8e9ecb23ca469b6dbb3403"
+    },
+    {
+      "path": "ios/Session/VoiceTranscriptionUIViewRepresentable.swift",
+      "sha256": "ccac27c2fbb988919d81cafe19aca770cf32616b523d07a798ca903361cb37ee"
+    },
+    {
+      "path": "ios/Session/WaveformView.swift",
+      "sha256": "df896d1cb7696445e8dc3eea8ac513c9196538b91cab7bf9327a8285b815eaad"
+    }
+  ],
+  "contracts": [
+    {
+      "path": "ios-conversation-interactor/ARTICLE_CONTEXT_CONTRACT.md",
+      "sha256": "3f1d86d76122d7603919378528812f9f9b4595d31f9b175ca550d439de691d90"
+    },
+    {
+      "path": "ios-conversation-interactor/AWS_CONFIGURATION_CONTRACT.md",
+      "sha256": "fbbd4342284b83181e522f2b16a4c6899aa669baa0bf27207c901d3601650d28"
+    },
+    {
+      "path": "ios-conversation-interactor/CREATE_RETRY_CONTRACT.md",
+      "sha256": "56b4529be0d73b6f665e9f77f8d0887df41960160a9be7b4e05730f95fecafa4"
+    },
+    {
+      "path": "ios-conversation-interactor/ERROR_CONTRACT.md",
+      "sha256": "fba5f0b6a0becaa4cb31f6995fd35cf28d9fb7096fecd69a9c6db5900f5e0e61"
+    },
+    {
+      "path": "ios-conversation-interactor/FORM_RATING_PREUPLOAD_CONTRACT.md",
+      "sha256": "89d01cefbf8106d4b8d56bcc941ae08e5a332444ea403fea103cc4957dd18a57"
+    },
+    {
+      "path": "ios-conversation-interactor/HTTP_CREATE_REPLY_QUICK_CONTRACT.md",
+      "sha256": "8a2b21feec6a53443db1c99ef9cc8fb0c258dc5d32e93817489c28f4ddd8d8d3"
+    },
+    {
+      "path": "ios-conversation-interactor/HTTP_DETAIL_INTERACTIONS_CONTRACT.md",
+      "sha256": "35217b57b2c310d676e5784483af94245e67c0cb3a25ebbef9c9ca71a39cce03"
+    },
+    {
+      "path": "ios-conversation-interactor/HTTP_FORM_RATING_REMARK_CONTRACT.md",
+      "sha256": "9b36ebf0155b691d98de27a4caa23324e595f0855745574fe8de6bf36a4f7328"
+    },
+    {
+      "path": "ios-conversation-interactor/HTTP_UPLOAD_CONTRACT.md",
+      "sha256": "5247107cfcaa605fde0d89ae5e3d752ba8f859742637576fb9c72749f268907b"
+    },
+    {
+      "path": "ios-conversation-interactor/INIT_FETCH_RESPONSE_CONTRACT.md",
+      "sha256": "93e5705a04834486f583cca39987c46bb071c306977564fb8559733051bfc940"
+    },
+    {
+      "path": "ios-conversation-interactor/LOCAL_PART_DELETE_CONTRACT.md",
+      "sha256": "ce06e50d1f52cfc286c57b05d66c537ea7f2241eab4a7953ebf6c67bd5673969"
+    },
+    {
+      "path": "ios-conversation-interactor/MERGE_RATING_DEDUP_CONTRACT.md",
+      "sha256": "eb72b43ca813fc62ead28232b2b9705f24ed8b77705d99d8e47dd14e75f5e8a9"
+    },
+    {
+      "path": "ios-conversation-interactor/NEXUS_EVENTS_CONTRACT.md",
+      "sha256": "93f2a762e38c37e91ec83b1b10ff5068acd969360b8b7086a40bd89f1e75258e"
+    },
+    {
+      "path": "ios-conversation-interactor/QUICK_REPLY_INBOUND_CONTRACT.md",
+      "sha256": "7bf7d13e3bb2b9f80b7a1e77de79370618ea9e8db646fc2099fd7811f18c95d3"
+    },
+    {
+      "path": "ios-conversation-interactor/REMOVE_DUPLICATES_ARTICLE_CONTRACT.md",
+      "sha256": "70163296a47db38ab2c38e32fa5ef7be3efd519868cbdd9fc8e59bbf9da14166"
+    },
+    {
+      "path": "ios-conversation-interactor/REPLY_FAILURE_QUEUE_CONTRACT.md",
+      "sha256": "0a8bb431ffdbef7cfb547f7763febb2da4e4a04d3b029a76779645da000289e9"
+    },
+    {
+      "path": "ios-conversation-interactor/TRANSCRIPTION_CALLBACK_CONTRACT.md",
+      "sha256": "1e0ba749b163ce1f76029d51b75aed0e00e6d00dd94153adfc7619dd26cfa92c"
+    },
+    {
+      "path": "ios-conversation-native-controller/ALERT_RETRY_DELETE_CONTRACT.md",
+      "sha256": "5724c15e3e23bffc558fe582ed001dc6d84d5e06c07ba324da3206163ed7d6e4"
+    },
+    {
+      "path": "ios-conversation-native-controller/APP_SHEET_ROUTE_CONTRACT.md",
+      "sha256": "0c229e2ec9888b32315079aab82bd9f9aced4acdcab952150beae6aa7a4814c9"
+    },
+    {
+      "path": "ios-conversation-native-controller/BASE_CONTROLLER_CONTRACT.md",
+      "sha256": "2a96b5ec4bdd9a06c019c0ae6b6ea93bbc9dd067cbbe72858f4decc32874d7ac"
+    },
+    {
+      "path": "ios-conversation-native-controller/CELL_AND_IDENTITY_CONTRACT.md",
+      "sha256": "1c83ae94a1ab52d6ae3faafb360f5a7704d9e3a9c331664a8368bec2be871450"
+    },
+    {
+      "path": "ios-conversation-native-controller/COLLECTION_SCROLL_HELPERS_CONTRACT.md",
+      "sha256": "1e9dccb4c697911a68fe6f151714ae13a7548e5484990f87a46ed36a92be8cc9"
+    },
+    {
+      "path": "ios-conversation-native-controller/COLLECTION_SETUP_CONTRACT.md",
+      "sha256": "b625aa02d2fd9bec79adc9e282b38b46afaba2ce5445339ec660abb7d912f28f"
+    },
+    {
+      "path": "ios-conversation-native-controller/COMPOSER_LAZIES_PREVIEW_CONTRACT.md",
+      "sha256": "7e9ac6b0c8c9bfef33c6bfed92486898e06b4b0012d53004dd4b4270f39b5cb8"
+    },
+    {
+      "path": "ios-conversation-native-controller/COMPOSER_VOICE_CLOSED_TRANSITIONS_CONTRACT.md",
+      "sha256": "b81288fda2b2c8b37e9c82c005da91f8c8c8b3a138d46741574557a55f048e51"
+    },
+    {
+      "path": "ios-conversation-native-controller/DEFAULT_INITIALIZATION_CONTRACT.md",
+      "sha256": "44ab1e62578a3c6196efdf7296c35ebc083dad415547ed60a4a55fa70f92de80"
+    },
+    {
+      "path": "ios-conversation-native-controller/FOOTER_LAYOUT_CONTRACT.md",
+      "sha256": "369fc40923782926519a6dd08d2ac1bbdfaed105d7e7620c06f6252b58c891e4"
+    },
+    {
+      "path": "ios-conversation-native-controller/FOOTER_MODEL_CONTRACT.md",
+      "sha256": "698cee02bc4c8018dab2310ee7f94209d2f223d2b40400ba8d5619a429eb0a8c"
+    },
+    {
+      "path": "ios-conversation-native-controller/FOOTER_VISIBILITY_CONTRACT.md",
+      "sha256": "053b9188eb257978a0b4fc628f96bf0e0bbed5230bf00835d8be17cf88040a1d"
+    },
+    {
+      "path": "ios-conversation-native-controller/HEADER_SHEET_CONSTRUCTION_CONTRACT.md",
+      "sha256": "69b5905828afdf2b3e2d436c07f0833c45600422625cca5d7a3775220a3e5c2d"
+    },
+    {
+      "path": "ios-conversation-native-controller/INITIALIZATION_CONTRACT.md",
+      "sha256": "d12ee7f5687b07b985f6397d78255b1bc504db0e68d5aebc1d284dbec23e7c4d"
+    },
+    {
+      "path": "ios-conversation-native-controller/KEYBOARD_EVENTS_CONTRACT.md",
+      "sha256": "d6e270fa30cdd2a5b5d7fff7b96f1cb95ca213f75148c5dcbac7d6a5847b4f32"
+    },
+    {
+      "path": "ios-conversation-native-controller/LIFECYCLE_CONTRACT.md",
+      "sha256": "78ad89509ea362d8a8812004719c8e4b29b43fde9a06e99c18b2bd0eabcdb40a"
+    },
+    {
+      "path": "ios-conversation-native-controller/LOADING_ERROR_CONTROLLER_CONTRACT.md",
+      "sha256": "5573dd78b76ecf481a2c71c48810c09082dd9a12921163fc7c1e2df0c69c733e"
+    },
+    {
+      "path": "ios-conversation-native-controller/NAVIGATION_LAZY_CONTRACT.md",
+      "sha256": "7a78ebf321e1d7d82c0c84c0e764d1f7b816de7222f588c6ccce03b13eda2058"
+    },
+    {
+      "path": "ios-conversation-native-controller/RENDER_FACTORY_CONTRACT.md",
+      "sha256": "dc4fd797d3b910815ad61b257bb3fcc87c8d7e1d2a958e53a74d25edb2be48db"
+    },
+    {
+      "path": "ios-conversation-native-controller/SCROLL_GETTERS_CONTRACT.md",
+      "sha256": "b3300111f4d5af5dac3b2400b3a87097d261d5f5384ca1b69b6f3a3951a74640"
+    },
+    {
+      "path": "ios-conversation-native-controller/SCROLL_INTERACTION_CONTRACT.md",
+      "sha256": "405e7c5c65f5890eb1b3317093d741f2d20679a055448e198c56058a0d5602d0"
+    },
+    {
+      "path": "ios-conversation-native-controller/SETUP_VIEW_CONTRACT.md",
+      "sha256": "06b2fe590919d4f5f389e6612ddf497d9441ca608c001ef9088599d6d04d5b75"
+    },
+    {
+      "path": "ios-conversation-native-controller/SNAPSHOT_PROVIDER_CONTRACT.md",
+      "sha256": "c99b64a5e27880737d67041f90a2ff703d15b73e8cf2a616e8781c2db81f4f8c"
+    },
+    {
+      "path": "ios-conversation-native-controller/TICKET_BANNER_TRANSITION_CONTRACT.md",
+      "sha256": "2bf0cd8cbd3253d85d157f31db8192d0bd1672f9e6211bc9c72ad72b68ef6369"
+    },
+    {
+      "path": "ios-conversation-native-controller/article-metadata/CONTRACT.md",
+      "sha256": "4abe31b218b8f0c7d4d543fe442410d1ba5a87fb3a34e176ace6405903c865e0"
+    },
+    {
+      "path": "ios-conversation-native-controller/attribute-input-dependencies/BOOLEAN_CONTRACT.md",
+      "sha256": "b70184ab59ac95da42ef332ae29e69120030bf1feb5aad06e230beb0dc886621"
+    },
+    {
+      "path": "ios-conversation-native-controller/attribute-input-dependencies/DATE_CONTRACT.md",
+      "sha256": "33326d264339289fdcf4ea93213c50d2830dfeaaf14c5536a1ee2182119a2f02"
+    },
+    {
+      "path": "ios-conversation-native-controller/attribute-input-dependencies/WEBSITE_CONTRACT.md",
+      "sha256": "2448ee34547c0699aaeb03ec4da4ef70103d8b130a8b09752b39a8c8b8ad36a1"
+    },
+    {
+      "path": "ios-conversation-native-controller/attribute-input-view/CONTRACT.md",
+      "sha256": "0478e576f9f5a24f7d21b6e517f8a86d6b10984bd9eef47b5361203e6ec816c7"
+    },
+    {
+      "path": "ios-conversation-native-controller/attribute-part-view/CONTRACT.md",
+      "sha256": "a7f98bd838fe886bc5927fde7cb10e7a3c9a2b9555984e7503a1f88047aa1ade"
+    },
+    {
+      "path": "ios-conversation-native-controller/block-part-view/BUTTON_CLOSURE_CONTRACT.md",
+      "sha256": "ed015a7c4199d93b6c26f8ad7a2e4db63ca7c73eb8e85ba38934770bf46dda89"
+    },
+    {
+      "path": "ios-conversation-native-controller/block-part-view/CONTRACT.md",
+      "sha256": "efb1f2a7a9e4c26c81bbfb9f6f54d7c8617505ab0119fb24e1133ae6b1043ac8"
+    },
+    {
+      "path": "ios-conversation-native-controller/block-part-view/IMAGE_GRID_CONTRACT.md",
+      "sha256": "ed84b72bb9b8552436b6425d53e40241292b8de1e4f0504f74c7b8e6b429ecee"
+    },
+    {
+      "path": "ios-conversation-native-controller/block-part-view/RATING_SUBCLASS_CONTRACT.md",
+      "sha256": "76abc779a8b9b240c83da6098f57f663e48ec78afef654d5c351b014a83d0b83"
+    },
+    {
+      "path": "ios-conversation-native-controller/block-part-view/STATUS_CONTRACT.md",
+      "sha256": "b9ff14b9293e1483788f5a4fcda3ad6254c270a93b65efb7bbd4e001c13c259a"
+    },
+    {
+      "path": "ios-conversation-native-controller/citations/CONTROLLER_CONTRACT.md",
+      "sha256": "b3aaaa1469180485bd09c3d2a6c527589ee2981b61d9e1babf68ac48f7ab79e4"
+    },
+    {
+      "path": "ios-conversation-native-controller/citations/SOURCE_VIEW_CONTRACT.md",
+      "sha256": "49568da3bb67296c8feeac0cfe427ecc22ffb2ea175e254d71f513bc7b73d458"
+    },
+    {
+      "path": "ios-conversation-native-controller/closed-conversation-view/CONTRACT.md",
+      "sha256": "7dbc31e80749895d1ffe7a3066256d0bc5dedc506467ba36c96e7a89806d712f"
+    },
+    {
+      "path": "ios-conversation-native-controller/default-part-view/CONTRACT.md",
+      "sha256": "389970c4089dca0771f83617381cf6d5a4b8d070be24ed6fa94f4ccce1619973"
+    },
+    {
+      "path": "ios-conversation-native-controller/event-part-view/CONTRACT.md",
+      "sha256": "388c87edb6e7e5383cd5992c058f0e2d42ab0433a7c9e5e683b0042541db3425"
+    },
+    {
+      "path": "ios-conversation-native-controller/floating-action-button/CONTRACT.md",
+      "sha256": "336da377fd3137a2b5cf0749019d14835139af053e805705bf5d557d66c987f4"
+    },
+    {
+      "path": "ios-conversation-native-controller/intercom-link-view/CONTRACT.md",
+      "sha256": "c77c5d9cfbedbdca6e8357ad82a7515809fae3a56ab89d423b3a3f89daa1700d"
+    },
+    {
+      "path": "ios-conversation-native-controller/link-list-part-view/CONTRACT.md",
+      "sha256": "b0fa09c7a265bff92450622de9e95c32d94a24e3c0db9acefd31ae12772773ce"
+    },
+    {
+      "path": "ios-conversation-native-controller/link-part-view/CONTRACT.md",
+      "sha256": "de2f5ca7f1000350c32d2c9242a9a1304122ed577c5feb4bec5b0bc995c930fb"
+    },
+    {
+      "path": "ios-conversation-native-controller/merged-event-view/CONTRACT.md",
+      "sha256": "e30c6e8e8a1afbcbd8b83c89e771c6d72a634c0aabc7c1ba2300682efbd682d5"
+    },
+    {
+      "path": "ios-conversation-native-controller/native-headers/CONTRACT.md",
+      "sha256": "322abfe039a53d3ebbcdd50b712cd9ab6c7d3a970aeb00bb842f736176cbb0d6"
+    },
+    {
+      "path": "ios-conversation-native-controller/note-post-view/CONTRACT.md",
+      "sha256": "0f8221e5a5acf1f7d72f4eee6e00e7ac3fd039e81edfee33901236b110f61927"
+    },
+    {
+      "path": "ios-conversation-native-controller/note-post-view/PARTICIPANT_TITLE_CONTRACT.md",
+      "sha256": "82609f349c163837ca7b71e770222ee8cb6b40e5f80e07031ed2fcdf34654dfc"
+    },
+    {
+      "path": "ios-conversation-native-controller/privacy-policy-view/CONTRACT.md",
+      "sha256": "d01d24f5bc26e599ff0fbb0eb6e97737a7b0d0cd5aa6c7f04d28a7fcdc292b5c"
+    },
+    {
+      "path": "ios-conversation-native-controller/quick-reply-view/CONTRACT.md",
+      "sha256": "defb629d0b854fcf1806c3efb63cb0ea406f483f55f203a9e3ce3f4ff7820ff0"
+    },
+    {
+      "path": "ios-conversation-native-controller/small-renderers/DIVIDERS_CONTRACT.md",
+      "sha256": "73f9cc189f37b1c2d55fd91649afb0f6313ca0458cf8f6458bb2adab6fbbd13a"
+    },
+    {
+      "path": "ios-conversation-native-controller/small-renderers/FOOTER_NOTICE_VIEW_CONTRACT.md",
+      "sha256": "e81c3e074caae50ba241e2c6a50615f16b92eed24c85ddb7fe8dae706d615ea1"
+    },
+    {
+      "path": "ios-conversation-native-controller/small-renderers/GREETING_TEMPORARY_CONTRACT.md",
+      "sha256": "61233a2b1b86c6671b95371e2fa169c7243796cbe4847364f45e1685a2903ae7"
+    },
+    {
+      "path": "ios-conversation-native-controller/table-block-view/ROWS_CONTENT_CONTRACT.md",
+      "sha256": "9137244074502e32d8142622301d4a94db5b80617d99ab6ae118183c130bef48"
+    },
+    {
+      "path": "ios-conversation-native-controller/table-block-view/STRUCTURE_LAYOUT_CONTRACT.md",
+      "sha256": "11c463d2f387e621b42b08c76c54660ef3c7001edcd47cb9914206232b77b3f1"
+    },
+    {
+      "path": "ios-conversation-native-controller/table-card-view/CONTRACT.md",
+      "sha256": "afd0a586961656f3441d29f9267b78f6877cbdc4882185928348daf276c85b59"
+    },
+    {
+      "path": "ios-conversation-native-controller/table-expanded-controller/CONTRACT.md",
+      "sha256": "0dec29ac6e4033f655bbe18c16180f66c1f4645467fc8e10589d45f0ca3d0af2"
+    },
+    {
+      "path": "ios-conversation-native-controller/ticket-banner-view/CONTRACT.md",
+      "sha256": "d1ae6f16961899d30622736e1b59eba6999110aff07157d3d40244783a77eed6"
+    },
+    {
+      "path": "ios-conversation-native-controller/ticket-card-view/CONTRACT.md",
+      "sha256": "114dbae5ba7fcbb1f8492cc373da79be31a665397442dd65c294bd848728ee8b"
+    },
+    {
+      "path": "ios-conversation-native-controller/ticket-status-timeline-view/CONTRACT.md",
+      "sha256": "a303365faff58419edb45f352f1eb2d32d8952e76010701bebba03cf3f8b2a38"
+    },
+    {
+      "path": "ios-conversation-native-controller/ticket-status-update-view/CONTRACT.md",
+      "sha256": "018816b1f3d4e71f3fed966921ae882e2b551a8dffc9638868cc1e149f81d3ee"
+    },
+    {
+      "path": "ios-conversation-native-view-model/BLOCK_DELEGATE_FORWARDERS_CONTRACT.md",
+      "sha256": "ed956f62120318a63f1d11bfc72621705db4f69d5df35c39a08585df981850cb"
+    },
+    {
+      "path": "ios-conversation-native-view-model/CACHE_WRITES_CONTRACT.md",
+      "sha256": "c751681efe32af26851cc77ba02d70f19fcba10741ca3dedb69ad0a10d093a12"
+    },
+    {
+      "path": "ios-conversation-native-view-model/CELL_BUILD_CONTRACT.md",
+      "sha256": "8c9efbee258a8fad0c7d3a30a9628075a57bacb97e1ec605eaced374fb5f5e3b"
+    },
+    {
+      "path": "ios-conversation-native-view-model/COMPOSER_GIF_ACTIONS_CONTRACT.md",
+      "sha256": "cf5a3912a7df45771524991132619d0d31e5b62d9f7604fbda5918a47341921a"
+    },
+    {
+      "path": "ios-conversation-native-view-model/DEINITIALIZATION_CONTRACT.md",
+      "sha256": "3bee12b01350b0de549715ec89e48be8651b1a1a60fa74eb2d793c92c1f79422"
+    },
+    {
+      "path": "ios-conversation-native-view-model/ERROR_RELOAD_ACTION_CONTRACT.md",
+      "sha256": "2169f93309f5d57b119a0c4916f879310ecf04d87b7078c4ad22a4c17b36a66a"
+    },
+    {
+      "path": "ios-conversation-native-view-model/FETCH_REASON_CONTRACT.md",
+      "sha256": "f54ab1d98de91acb4bf52d1c215cc1fb3dda6e9889d4a66793ecd927ca3423aa"
+    },
+    {
+      "path": "ios-conversation-native-view-model/HTTP_TRANSCRIPTION_CONTRACT.md",
+      "sha256": "681899b6127ce7626ad3b5e2b0dd688e2e1af84e845361686af691dee8f454c7"
+    },
+    {
+      "path": "ios-conversation-native-view-model/LIFECYCLE_REQUEST_CONTRACT.md",
+      "sha256": "0bd8c38f745e0cd8fd603c757b1e5c04fb2c9970c98632587e2f437b7be5801e"
+    },
+    {
+      "path": "ios-conversation-native-view-model/METRICS_RELOAD_COMPOSER_CONTRACT.md",
+      "sha256": "268cb354fe803ddd2df37dbee58908cf51faeaad73f73145df3e7f1ad41b5030"
+    },
+    {
+      "path": "ios-conversation-native-view-model/NAVIGATION_PREVIEW_CONTRACT.md",
+      "sha256": "4c30a6439bde7eeebb7bc691948b7f9ef9b594658e0121c4a21689a39ba93286"
+    },
+    {
+      "path": "ios-conversation-native-view-model/PART_SENDER_LABEL_CONTRACT.md",
+      "sha256": "b38a0f275dcca970997b72423d3c11c934b344e1b30cd3a1a7710b22ad7dd48c"
+    },
+    {
+      "path": "ios-conversation-native-view-model/RATING_REMARK_CONTRACT.md",
+      "sha256": "c13638ac2df188a1c915ecfe67952fa1c08f2d374a2c129cffe8b10d8b6b0c3f"
+    },
+    {
+      "path": "ios-conversation-native-view-model/SCROLL_BADGE_FOOTER_CACHE_CONTRACT.md",
+      "sha256": "7cdfe827849823832002b9045331c9a45b3e9ee7449847f9d772e20e18f6b561"
+    },
+    {
+      "path": "ios-conversation-native-view-model/SEND_QUICK_REPLY_FORM_CONTRACT.md",
+      "sha256": "0b76a46b75b94e080f54e847fb9ab9cd460c65c31eeafa615b3b566c1e4b7a6b"
+    },
+    {
+      "path": "ios-conversation-native-view-model/STREAMING_TYPING_SYNC_CONTRACT.md",
+      "sha256": "3f9b23856ad49a9ce61655e8331d01f596af9893002b8e23240e18f68637a70d"
+    },
+    {
+      "path": "ios-conversation-native-view-model/UPDATE_CONTRACT.md",
+      "sha256": "7e1283a52faaa6cb9ba00ce2ef8504d068e0ded54326d2e6e9dab95ec8a44fec"
+    },
+    {
+      "path": "ios-conversation-native-view-model/VOICE_TRANSCRIPTION_CONTRACT.md",
+      "sha256": "102afd9b0dec0b5deeed5c8b6af43ae1c21bcab5099f0cd7dd266619df7e148d"
+    },
+    {
+      "path": "ios-conversation-pickers/CAMERA_PICKER_CONTRACT.md",
+      "sha256": "cb201f67217e7ad6f25931b04408fa23af42abe7484c03b1760b1ffb32010127"
+    },
+    {
+      "path": "ios-conversation-pickers/CONTROLLER_CANCELLATION_CONTRACT.md",
+      "sha256": "7ce54f054c8a7780330a37e2bf31bf5e10921824c637cd4c35588802cef493c3"
+    },
+    {
+      "path": "ios-conversation-pickers/FILE_PICKER_CONTRACT.md",
+      "sha256": "86eb7d577ad887dd8b21a98e873c44d593c82b58270c554bcd8b84d85abbd16b"
+    },
+    {
+      "path": "ios-conversation-pickers/MEDIA_PICKER_CONTRACT.md",
+      "sha256": "9cb82076d8fe8eb4b9a986a197ddaef2e0a41d374aa2d4bd65f427a41f7ad5ec"
+    },
+    {
+      "path": "ios-default-storage-support/CONTRACT.md",
+      "sha256": "30326e5b5db2a9f21cb205abe5db63e070dbae4a9ddcfe45db86f8e11286c9e4"
+    },
+    {
+      "path": "ios-sound-player/CONTRACT.md",
+      "sha256": "33bba676d1c3bef6fcccecf8208538e5890ebc3000396fe88c1806096113fb60"
+    }
+  ],
+  "known_gaps": [
+    "Strict link has 12 class references: 11 genuine missing Carousel/HelpCenter/Article/Home/Ticket classes plus a diagnosed Conversation canonical declaration conflict.",
+    "Original HTTP/Push/Utils method-selector gaps remain in full aggregate receipt. Normal Pod/RN consumer, resources and SDK runtime are not accepted.",
+    "Private existential/concrete injection and explicit source-helper ABI differences remain unclaimed as original private ABI."
+  ],
+  "receipts": [
+    ".build/ios-conversation-source/sound-player/receipt.json",
+    ".build/ios-conversation-source/sound-player/selector-type-receipt.json",
+    ".build/ios-conversation-source/whole-swift-typecheck-first/receipt.json",
+    ".build/ios-conversation-source/http-transcription/receipt.json"
+  ],
+  "shared_source_contributions": [
+    {
+      "path": "ios/Session/SwiftAPIBridge.swift",
+      "scope": "Actual conversation HTTP wrappers and original error converter; minimum internal converter visibility for the real Home extension.",
+      "sha256": "f57925a3c5c8f2d3646aa9341b2639736cde12df384b27dd15daa4fc41c317ff"
+    }
+  ],
+  "checks": {
+    "whole_source_typecheck": ".build/ios-conversation-source/whole-swift-typecheck-navigation/receipt.json",
+    "whole_result": "FAIL_18_ACTUAL_DIAGNOSTICS_259_SWIFT_HISTORICAL_SNAPSHOT",
+    "native_http": ".build/ios-conversation-source/http-detail/engine-order-fixed/receipt.json",
+    "composer_model": ".build/ios-conversation-source/composer-model-source/canonical-fixed/receipt.json",
+    "composer_input_selected": ".build/ios-conversation-source/composer-input-source/real-dependency-closure/receipt.json",
+    "selected_scope": "256 real Swift source files, explicit 7 pending exclusions; not whole SDK or link/runtime",
+    "latest_whole_source_typecheck": ".build/ios-conversation-source/whole-swift-typecheck-read-import-fixed/receipt.json",
+    "latest_whole_result": "PASS_315_SWIFT_296_HEADERS_0_ERRORS_1_WARNING_INPUTS_UNCHANGED",
+    "composer_parent": ".build/ios-conversation-source/composer-parent-view/source-closure-first/receipt.json",
+    "whole_native_aggregate": ".build/ios-conversation-source/whole-native-aggregate/receipt.json"
+  },
+  "latest_whole_receipt": {
+    "path": ".build/ios-conversation-source/whole-swift-typecheck-read-import-fixed/receipt.json",
+    "status": "PASS_WHOLE_SWIFT_TYPECHECK",
+    "swift_source_count": 315,
+    "header_count": 296,
+    "diagnostic_error_count": 0,
+    "inputs_unchanged": true
+  },
+  "source_helpers_note": "Controller source helpers express bounded original inlined/shared bodies; compiler/private Swift method and existential layout equality are not claimed.",
+  "native_aggregate": {
+    "path": ".build/ios-conversation-source/whole-native-aggregate/receipt.json",
+    "status": "SOURCE_AGGREGATE_UNLINKED",
+    "objc_sources": 251,
+    "swift_sources": 315,
+    "targets": [
+      "arm64-apple-ios15.0",
+      "arm64-apple-ios15.0-simulator",
+      "x86_64-apple-ios15.0-simulator"
+    ],
+    "all_sources_compiled": true,
+    "all_links_passed": false,
+    "undefined_classes_per_target": 12,
+    "input_hash_drift": [],
+    "source_files_added": []
+  }
+}

@@ -1,0 +1,226 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+  "root_only": true,
+  "source_before_sha256": "58259743b548a3c5c72b582cb7057da2231053a2653c5d27f0c634c2ac1aad98",
+  "source_after_sha256": "13899602977a5ad7fa1ad52a380e62f9fd1b0d03ff2a4ab3625c3490880058e1",
+  "source_capture_sites": 3,
+  "source_capture_bindings": 2,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BlockExtensionsKt/ast-input/io/intercom/android/sdk/survey/block/BlockExtensionsKt.java",
+      "5754",
+      "5805",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1224_0) -> io.intercom.android.sdk.survey.block.BlockExtensionsKt.preserveCodeIndentation$lambda$1((java.lang.String) ((java.lang.String)recoveredExpressionArgument_1224_0)))",
+      "5649",
+      "",
+      "1224",
+      "(Ljava/lang/String;)Ljava/lang/String;",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BlockExtensionsKt/ast-input/io/intercom/android/sdk/survey/block/BlockExtensionsKt.java",
+      "6025",
+      "6081",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1225_0) -> io.intercom.android.sdk.survey.block.BlockExtensionsKt.rewriteInlineCodeToMonospace$lambda$2((kotlin.text.MatchResult) ((kotlin.text.MatchResult)recoveredExpressionArgument_1225_0)))",
+      "5988",
+      "",
+      "1225",
+      "(Ljava/lang/String;)Ljava/lang/String;",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BlockExtensionsKt/ast-input/io/intercom/android/sdk/survey/block/BlockExtensionsKt.java",
+      "15921",
+      "15980",
+      "((androidx.compose.ui.text.LinkInteractionListener) (recoveredExpressionArgument_1223_0) -> io.intercom.android.sdk.survey.block.BlockExtensionsKt.appendStringWithLink$lambda$13$lambda$11(recoveredExpressionCapture_1223_0, recoveredExpressionCapture_1223_1, (androidx.compose.ui.text.LinkAnnotation) (recoveredExpressionArgument_1223_0)))",
+      "15889",
+      "final android.text.style.URLSpan recoveredExpressionCapture_1223_0 = var11;\\n         final android.content.Context recoveredExpressionCapture_1223_1 = var2;\\n         ",
+      "1223",
+      "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/SpanStyle;Landroid/content/Context;Landroid/text/Spanned;)V",
+      "Landroid/text/style/URLSpan;=var11,Landroid/content/Context;=var2",
+      "recoveredExpressionCapture_1223_0=var11@15824:LOCAL|11|11|0|var11|Landroid/text/style/URLSpan;;recoveredExpressionCapture_1223_1=var2@15418:LOCAL|2|2|0|var2|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1223,
+      "original": [
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "appendStringWithLink",
+        "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/SpanStyle;Landroid/content/Context;Landroid/text/Spanned;)V",
+        "67",
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "appendStringWithLink$lambda$13$lambda$11",
+        "(Landroid/text/style/URLSpan;Landroid/content/Context;Landroidx/compose/ui/text/LinkAnnotation;)V",
+        "6",
+        "(Landroidx/compose/ui/text/LinkAnnotation;)V",
+        "(Landroidx/compose/ui/text/LinkAnnotation;)V",
+        "androidx/compose/ui/text/LinkInteractionListener",
+        "Landroid/text/style/URLSpan;=var11,Landroid/content/Context;=var2",
+        "79"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "appendStringWithLink",
+          "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/SpanStyle;Landroid/content/Context;Landroid/text/Spanned;)V",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "appendStringWithLink$lambda$13$lambda$11",
+          "(Landroid/text/style/URLSpan;Landroid/content/Context;Landroidx/compose/ui/text/LinkAnnotation;)V",
+          "{76, 77, 78, 79, 80, 81, 82, 83}",
+          "LOCAL|11|11|0|var11|Landroid/text/style/URLSpan;",
+          "LOCAL|2|2|0|var2|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "appendStringWithLink",
+          "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/SpanStyle;Landroid/content/Context;Landroid/text/Spanned;)V",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "appendStringWithLink$lambda$13$lambda$11",
+          "(Landroid/text/style/URLSpan;Landroid/content/Context;Landroidx/compose/ui/text/LinkAnnotation;)V",
+          "{76, 77, 78, 79, 80, 81, 82, 83}",
+          "LOCAL|11|11|0|var11|Landroid/text/style/URLSpan;",
+          "LOCAL|2|2|0|var2|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "appendStringWithLink",
+        "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/SpanStyle;Landroid/content/Context;Landroid/text/Spanned;)V",
+        "79",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Landroidx/compose/ui/text/LinkAnnotation;)V, io/intercom/android/sdk/survey/block/BlockExtensionsKt.appendStringWithLink$lambda$13$lambda$11(Landroid/text/style/URLSpan;Landroid/content/Context;Landroidx/compose/ui/text/LinkAnnotation;)V (6), (Landroidx/compose/ui/text/LinkAnnotation;)V]"
+      ]
+    },
+    {
+      "site": 1224,
+      "original": [
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "preserveCodeIndentation",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        "26",
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "preserveCodeIndentation$lambda$1",
+        "(Ljava/lang/String;)Ljava/lang/CharSequence;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Ljava/lang/CharSequence;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "35"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "preserveCodeIndentation",
+          "(Ljava/lang/String;)Ljava/lang/String;",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "preserveCodeIndentation$lambda$1",
+          "(Ljava/lang/String;)Ljava/lang/CharSequence;",
+          "{35, 36, 37, 38, 39}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "preserveCodeIndentation",
+          "(Ljava/lang/String;)Ljava/lang/String;",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "preserveCodeIndentation$lambda$1",
+          "(Ljava/lang/String;)Ljava/lang/CharSequence;",
+          "{35, 36, 37, 38, 39}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "preserveCodeIndentation",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        "35",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/BlockExtensionsKt.preserveCodeIndentation$lambda$1(Ljava/lang/String;)Ljava/lang/CharSequence; (6), (Ljava/lang/String;)Ljava/lang/CharSequence;]"
+      ]
+    },
+    {
+      "site": 1225,
+      "original": [
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "rewriteInlineCodeToMonospace",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        "9",
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "rewriteInlineCodeToMonospace$lambda$2",
+        "(Lkotlin/text/MatchResult;)Ljava/lang/CharSequence;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Lkotlin/text/MatchResult;)Ljava/lang/CharSequence;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "13"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "rewriteInlineCodeToMonospace",
+          "(Ljava/lang/String;)Ljava/lang/String;",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "rewriteInlineCodeToMonospace$lambda$2",
+          "(Lkotlin/text/MatchResult;)Ljava/lang/CharSequence;",
+          "{13, 14, 15, 16, 17}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "rewriteInlineCodeToMonospace",
+          "(Ljava/lang/String;)Ljava/lang/String;",
+          "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+          "rewriteInlineCodeToMonospace$lambda$2",
+          "(Lkotlin/text/MatchResult;)Ljava/lang/CharSequence;",
+          "{13, 14, 15, 16, 17}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/BlockExtensionsKt",
+        "rewriteInlineCodeToMonospace",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        "13",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/BlockExtensionsKt.rewriteInlineCodeToMonospace$lambda$2(Lkotlin/text/MatchResult;)Ljava/lang/CharSequence; (6), (Lkotlin/text/MatchResult;)Ljava/lang/CharSequence;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

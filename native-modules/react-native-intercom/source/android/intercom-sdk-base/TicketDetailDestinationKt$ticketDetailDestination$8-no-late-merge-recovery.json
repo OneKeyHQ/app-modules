@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$8",
+  "root_only": true,
+  "source_before_sha256": "8fbbb3f4b5e84dbfbc89f05c8c706915446bf41b9236fce8cffea51189686b3e",
+  "source_after_sha256": "3ae0b1b8e21d1975bb905f26a3dee952c06b8b4001acd61307cbe0561506e621",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 4,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

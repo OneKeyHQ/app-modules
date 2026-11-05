@@ -1,0 +1,5 @@
+# Help Center source recovery
+
+Status: DATA_SOURCE_WRITTEN / SDK_UNLINKED. The five internal collection/search/author models, three original SwiftAPI adapters and real HelpCenterDataService default implementation are restored from the READY DATA_MODELS_CONTRACT and DATA_SERVICE_CONTRACT in the audit ios-help-center packet. Existing native HTTP endpoints, original public models, Avatar and InternalHelpCenterArticle are reused. Array rejection/compact-map ordering, public error mapping, always-main callbacks and completion-before-failure-metric behavior are retained.
+
+The private SwiftAPIBridge existential is represented by the existing real concrete default value; complete erased custom injection/private layout is not claimed. Actual object/own metadata and strict-link evidence are pending for this new snapshot; the previous 257 Objective-C/339 Swift receipt remains historical. No fake protocol/controller or vendor binary input is used. UI, remote content, backend and normal Pod consumer acceptance remain unverified.

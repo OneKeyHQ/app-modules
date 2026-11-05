@@ -1,0 +1,22 @@
+{
+  "status": "SOURCE_COMPILED_IN_WHOLE_377_DEVICE_OBJECT",
+  "sources": {
+    "ios/Session/InternalHelpCenterModels.swift": "a5843062a633b7a2a50108cdcc1103792cbccc5cc2db4646ae1b8c9d8f1c5607",
+    "ios/Session/InternalHelpCenterArticleAuthor.swift": "cc7c63ef54f0d71260534a6869db267ab1dccd840dea491fe798e63130e7fc6e",
+    "ios/Session/SwiftAPIBridge+HelpCenter.swift": "a9c253db7c2a7fbacdb57765ce8e8c05ff1777e5c3d18cc277992f3f1c45981d",
+    "ios/Session/HelpCenterDataService.swift": "17401c1b6083d91542cada9fe0ce18460a2b8666099e310ef332c4b8afe38a74"
+  },
+  "scope": "Actual original default functional source; no original binary compiler/link input or runtime acceptance",
+  "private_abi_limitations": [
+    "Erased private Swift injection protocols use real observed concrete default types; complete alternate injection/private existential layout is unverified."
+  ],
+  "receipts": [
+    ".build/ios-tickets-source/whole-source-objects-details-2/receipt.json",
+    ".build/ios-tickets-source/device-own-metadata-whole-2.json"
+  ],
+  "historical_snapshot_note": null,
+  "contracts": {
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-help-center/DATA_MODELS_CONTRACT.md": "da67daeea1f814a027d9bf3e23508c6717b3d670ba47300ba779b23e2b7164dc",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-help-center/DATA_SERVICE_CONTRACT.md": "3dce1f1bba0ae0dd675058b9c13db6aad58587483f081d26a593c38bbb5ed542"
+  }
+}

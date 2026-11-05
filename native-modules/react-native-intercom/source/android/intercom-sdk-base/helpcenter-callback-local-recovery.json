@@ -1,0 +1,18 @@
+{
+  "status": "SOURCE_CORRECTED_NOT_COMPILED",
+  "before_sha256": "eaf94a267dacf777ea9581cc921d70125a889421008765d291f293ea1d37e304",
+  "after_sha256": "efbb80501b4c60917427870baa84a92de461c4e73782f83d6129243b2f137c5c",
+  "scope": "Only two inline Runnable local names; captured same Map reference remains outer var4",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/helpcenter-webview/original.javap.txt",
+  "raw_factory_bcis": [
+    135,
+    154
+  ],
+  "target_helpers": [
+    "lambda$handleAction$0(Ljava/util/Map;)V",
+    "lambda$handleAction$1(Ljava/util/Map;)V"
+  ],
+  "map_reads": "Inside callback only; three original casts before null checks/metadata; metadata fetched twice as original",
+  "webview_bridge_navigation_storage_semantics": "Unchanged; no source restrictions or security redesign",
+  "runtime": "NOT_RUN"
+}

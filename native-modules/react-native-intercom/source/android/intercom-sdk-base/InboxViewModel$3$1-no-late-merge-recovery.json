@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/inbox/InboxViewModel$3$1",
+  "root_only": true,
+  "source_before_sha256": "3e70a6e0d588cabc66a262c98b3f98b8d60f396c500d53c166ff698cc44b40e8",
+  "source_after_sha256": "95c7dfa59933cde1a3c89fa937da5103f6b5a274d819bb32a285bd36e860d0ed",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 2,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

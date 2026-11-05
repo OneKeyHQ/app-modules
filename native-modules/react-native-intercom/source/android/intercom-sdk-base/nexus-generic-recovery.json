@@ -1,0 +1,56 @@
+[
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusClient.java",
+    "before": "private final List sockets",
+    "after": "private final List<NexusSocket> sockets",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusClient.java",
+    "before": "private final List topics",
+    "after": "private final List<String> topics",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusClient.java",
+    "before": "removeTopics(@NonNull List var1)",
+    "after": "removeTopics(@NonNull List<String> var1)",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusConfig.java",
+    "before": "private final List endpoints",
+    "after": "private final List<String> endpoints",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusConfig.java",
+    "before": "public List getEndpoints()",
+    "after": "public List<String> getEndpoints()",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusEventPropagator.java",
+    "before": "private final List listeners",
+    "after": "private final List<NexusListener> listeners",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusEvent.java",
+    "before": "private final List topics",
+    "after": "private final List<String> topics",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/NexusEvent$Builder.java",
+    "before": "   List topics;",
+    "after": "   List<String> topics;",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  },
+  {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/nexus/EventData.java",
+    "before": "extends HashMap {",
+    "after": "extends HashMap<String,Object> {",
+    "evidence": "original-abi.tsv exact class/field/method generic Signature"
+  }
+]

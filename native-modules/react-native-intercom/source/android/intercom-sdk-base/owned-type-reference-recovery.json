@@ -1,0 +1,855 @@
+{
+  "status": "SOURCE_OWNER_NORMALIZED_NOT_COMPILED",
+  "scope": "Three explicitly re-decompiled NoLate roots only; original owned binary declarations and referenced owner/member checks, lexical shadow exclusion; strings and code behavior untouched",
+  "files": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt.java",
+      "before_sha256": "55ad4d269a64c76e373aa23f67555e80f9f6b305884fbfc65dc6f2fe823614a9",
+      "after_sha256": "3ae699f9017ee45e5a9024b8fb22b7cc156c850575b528ab7bff4e1b4d676d03",
+      "edits": [
+        {
+          "start": 136434,
+          "end": 136443,
+          "before": "Connected",
+          "after": "io.intercom.android.sdk.m5.conversation.states.NetworkState$Connected",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/NetworkState$Connected"
+        },
+        {
+          "start": 136551,
+          "end": 136563,
+          "before": "Disconnected",
+          "after": "io.intercom.android.sdk.m5.conversation.states.NetworkState$Disconnected",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/NetworkState$Disconnected"
+        },
+        {
+          "start": 137113,
+          "end": 137124,
+          "before": "Reconnected",
+          "after": "io.intercom.android.sdk.m5.conversation.states.NetworkState$Reconnected",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/NetworkState$Reconnected"
+        },
+        {
+          "start": 180638,
+          "end": 180642,
+          "before": "Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 187917,
+          "end": 187993,
+          "before": "io.intercom.android.sdk.m5.conversation.streaming.StreamingMessageState.Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.streaming.StreamingMessageState$Idle",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/streaming/StreamingMessageState$Idle"
+        },
+        {
+          "start": 212342,
+          "end": 212351,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 214427,
+          "end": 214432,
+          "before": "Style",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Style",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Style"
+        },
+        {
+          "start": 214440,
+          "end": 214445,
+          "before": "Style",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Style",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Style"
+        },
+        {
+          "start": 214505,
+          "end": 214509,
+          "before": "Body",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Body",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Body"
+        },
+        {
+          "start": 217065,
+          "end": 217070,
+          "before": "Style",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Style",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Style"
+        },
+        {
+          "start": 217078,
+          "end": 217083,
+          "before": "Style",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Style",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Style"
+        },
+        {
+          "start": 217143,
+          "end": 217147,
+          "before": "Body",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Body",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Body"
+        },
+        {
+          "start": 221336,
+          "end": 221339,
+          "before": "Gif",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Gif",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Gif"
+        },
+        {
+          "start": 221504,
+          "end": 221507,
+          "before": "Gif",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Gif",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Gif"
+        },
+        {
+          "start": 221608,
+          "end": 221611,
+          "before": "Gif",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Gif",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Gif"
+        },
+        {
+          "start": 222092,
+          "end": 222095,
+          "before": "Gif",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Gif",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Gif"
+        },
+        {
+          "start": 225760,
+          "end": 225763,
+          "before": "Gif",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Gif",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Gif"
+        },
+        {
+          "start": 225796,
+          "end": 225805,
+          "before": "Companion",
+          "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/IntercomPreviewFile$Companion"
+        },
+        {
+          "start": 225817,
+          "end": 225846,
+          "before": "IntercomPreviewFile.Companion",
+          "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/IntercomPreviewFile$Companion"
+        },
+        {
+          "start": 227066,
+          "end": 227071,
+          "before": "Media",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Media",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Media"
+        },
+        {
+          "start": 227528,
+          "end": 227538,
+          "before": "MediaInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState$MediaInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomSheetState$MediaInput"
+        },
+        {
+          "start": 227883,
+          "end": 227899,
+          "before": "TeammatePresence",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState$TeammatePresence",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomSheetState$TeammatePresence"
+        },
+        {
+          "start": 228678,
+          "end": 228699,
+          "before": "FailedMediaUploadData",
+          "after": "io.intercom.android.sdk.m5.conversation.states.PendingMessage$FailedMediaUploadData",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/PendingMessage$FailedMediaUploadData"
+        },
+        {
+          "start": 230853,
+          "end": 230866,
+          "before": "InlineSources",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState$InlineSources",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomSheetState$InlineSources"
+        },
+        {
+          "start": 234292,
+          "end": 234313,
+          "before": "FailedMediaUploadData",
+          "after": "io.intercom.android.sdk.m5.conversation.states.PendingMessage$FailedMediaUploadData",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/PendingMessage$FailedMediaUploadData"
+        },
+        {
+          "start": 3416,
+          "end": 3494,
+          "before": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository.UploadError",
+          "after": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository$UploadError",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$UploadError"
+        },
+        {
+          "start": 4226,
+          "end": 4303,
+          "before": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState.InlineSources",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState$InlineSources",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomSheetState$InlineSources"
+        },
+        {
+          "start": 4312,
+          "end": 4386,
+          "before": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState.MediaInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState$MediaInput",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomSheetState$MediaInput"
+        },
+        {
+          "start": 4395,
+          "end": 4475,
+          "before": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState.TeammatePresence",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomSheetState$TeammatePresence",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomSheetState$TeammatePresence"
+        },
+        {
+          "start": 4484,
+          "end": 4554,
+          "before": "io.intercom.android.sdk.m5.conversation.states.ComposerState.TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 4563,
+          "end": 4637,
+          "before": "io.intercom.android.sdk.m5.conversation.states.ConversationUiState.Content",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ConversationUiState$Content",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content"
+        },
+        {
+          "start": 4646,
+          "end": 4715,
+          "before": "io.intercom.android.sdk.m5.conversation.states.NetworkState.Connected",
+          "after": "io.intercom.android.sdk.m5.conversation.states.NetworkState$Connected",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/NetworkState$Connected"
+        },
+        {
+          "start": 4724,
+          "end": 4796,
+          "before": "io.intercom.android.sdk.m5.conversation.states.NetworkState.Disconnected",
+          "after": "io.intercom.android.sdk.m5.conversation.states.NetworkState$Disconnected",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/NetworkState$Disconnected"
+        },
+        {
+          "start": 4805,
+          "end": 4876,
+          "before": "io.intercom.android.sdk.m5.conversation.states.NetworkState.Reconnected",
+          "after": "io.intercom.android.sdk.m5.conversation.states.NetworkState$Reconnected",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/NetworkState$Reconnected"
+        },
+        {
+          "start": 4885,
+          "end": 4968,
+          "before": "io.intercom.android.sdk.m5.conversation.states.PendingMessage.FailedMediaUploadData",
+          "after": "io.intercom.android.sdk.m5.conversation.states.PendingMessage$FailedMediaUploadData",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/PendingMessage$FailedMediaUploadData"
+        },
+        {
+          "start": 48883,
+          "end": 48894,
+          "before": "UploadError",
+          "after": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository$UploadError",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$UploadError"
+        },
+        {
+          "start": 49132,
+          "end": 49143,
+          "before": "UploadError",
+          "after": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository$UploadError",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$UploadError"
+        },
+        {
+          "start": 4977,
+          "end": 5052,
+          "before": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState.Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 49830,
+          "end": 49841,
+          "before": "UploadError",
+          "after": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository$UploadError",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$UploadError"
+        },
+        {
+          "start": 51363,
+          "end": 51374,
+          "before": "UploadError",
+          "after": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository$UploadError",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$UploadError"
+        },
+        {
+          "start": 52856,
+          "end": 52867,
+          "before": "UploadError",
+          "after": "io.intercom.android.sdk.m5.conversation.data.MediaUploadRepository$UploadError",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$UploadError"
+        },
+        {
+          "start": 57171,
+          "end": 57178,
+          "before": "Content",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ConversationUiState$Content",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content"
+        },
+        {
+          "start": 57219,
+          "end": 57226,
+          "before": "Content",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ConversationUiState$Content",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content"
+        },
+        {
+          "start": 58646,
+          "end": 58653,
+          "before": "Content",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ConversationUiState$Content",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content"
+        },
+        {
+          "start": 58658,
+          "end": 58665,
+          "before": "Content",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ConversationUiState$Content",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content"
+        },
+        {
+          "start": 58705,
+          "end": 58709,
+          "before": "Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 5923,
+          "end": 5992,
+          "before": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile.Companion",
+          "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/IntercomPreviewFile$Companion"
+        },
+        {
+          "start": 6068,
+          "end": 6120,
+          "before": "io.intercom.android.sdk.m5.upload.data.MediaData.Gif",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Gif",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Gif"
+        },
+        {
+          "start": 6129,
+          "end": 6183,
+          "before": "io.intercom.android.sdk.m5.upload.data.MediaData.Media",
+          "after": "io.intercom.android.sdk.m5.upload.data.MediaData$Media",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/upload/data/MediaData$Media"
+        },
+        {
+          "start": 6383,
+          "end": 6434,
+          "before": "io.intercom.android.sdk.models.Header.Expanded.Body",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Body",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Body"
+        },
+        {
+          "start": 6443,
+          "end": 6495,
+          "before": "io.intercom.android.sdk.models.Header.Expanded.Style",
+          "after": "io.intercom.android.sdk.models.Header$Expanded$Style",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/models/Header$Expanded$Style"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt.java",
+      "before_sha256": "4f08752dc2bdbfdc4ef683205939f7f157458fb2dd43cad22be20afd725464ad",
+      "after_sha256": "4982c81fc0d3f3236b98205a771ea65b0514a473fce84511c5b5ff12c7a4e502",
+      "edits": [
+        {
+          "start": 101840,
+          "end": 101941,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 105313,
+          "end": 105322,
+          "before": "Recording",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Recording",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Recording"
+        },
+        {
+          "start": 105762,
+          "end": 105772,
+          "before": "Processing",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Processing",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Processing"
+        },
+        {
+          "start": 111131,
+          "end": 111136,
+          "before": "Error",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Error",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Error"
+        },
+        {
+          "start": 115458,
+          "end": 115463,
+          "before": "Error",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Error",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Error"
+        },
+        {
+          "start": 116983,
+          "end": 116992,
+          "before": "Recording",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Recording",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Recording"
+        },
+        {
+          "start": 117095,
+          "end": 117104,
+          "before": "Recording",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Recording",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Recording"
+        },
+        {
+          "start": 119312,
+          "end": 119413,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 120928,
+          "end": 121029,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 122612,
+          "end": 122713,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 124251,
+          "end": 124352,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 125886,
+          "end": 125987,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 127501,
+          "end": 127602,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        },
+        {
+          "start": 131575,
+          "end": 131584,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 132637,
+          "end": 132641,
+          "before": "Text",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposerInputType$Text",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType$Text"
+        },
+        {
+          "start": 132946,
+          "end": 132955,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 133410,
+          "end": 133419,
+          "before": "LocalFile",
+          "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$LocalFile",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/IntercomPreviewFile$LocalFile"
+        },
+        {
+          "start": 133431,
+          "end": 133460,
+          "before": "IntercomPreviewFile.Companion",
+          "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/IntercomPreviewFile$Companion"
+        },
+        {
+          "start": 133707,
+          "end": 133713,
+          "before": "Delete",
+          "after": "io.intercom.android.sdk.m5.preview.data.DeleteType$Delete",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/DeleteType$Delete"
+        },
+        {
+          "start": 134852,
+          "end": 134861,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 135273,
+          "end": 135293,
+          "before": "ComposerInputClicked",
+          "after": "io.intercom.android.sdk.m5.conversation.metrics.MetricData$ComposerInputClicked",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/metrics/MetricData$ComposerInputClicked"
+        },
+        {
+          "start": 135781,
+          "end": 135790,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 136166,
+          "end": 136175,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 18827,
+          "end": 18836,
+          "before": "TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 28894,
+          "end": 28898,
+          "before": "Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 37826,
+          "end": 37836,
+          "before": "VoiceNotes",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposerInputType$VoiceNotes",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType$VoiceNotes"
+        },
+        {
+          "start": 37858,
+          "end": 37862,
+          "before": "Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 38313,
+          "end": 38328,
+          "before": "BottomBarButton",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton"
+        },
+        {
+          "start": 38338,
+          "end": 38353,
+          "before": "BottomBarButton",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton"
+        },
+        {
+          "start": 38438,
+          "end": 38454,
+          "before": "VoiceNotesInsert",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton$VoiceNotesInsert",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton$VoiceNotesInsert"
+        },
+        {
+          "start": 38496,
+          "end": 38505,
+          "before": "GifInsert",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton$GifInsert",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton$GifInsert"
+        },
+        {
+          "start": 3959,
+          "end": 4038,
+          "before": "io.intercom.android.sdk.m5.conversation.metrics.MetricData.ComposerInputClicked",
+          "after": "io.intercom.android.sdk.m5.conversation.metrics.MetricData$ComposerInputClicked",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/metrics/MetricData$ComposerInputClicked"
+        },
+        {
+          "start": 4197,
+          "end": 4276,
+          "before": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState.BottomBarButton",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton"
+        },
+        {
+          "start": 4285,
+          "end": 4374,
+          "before": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState.BottomBarButton.GifInsert",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton$GifInsert",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton$GifInsert"
+        },
+        {
+          "start": 4383,
+          "end": 4479,
+          "before": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState.BottomBarButton.VoiceNotesInsert",
+          "after": "io.intercom.android.sdk.m5.conversation.states.BottomBarUiState$BottomBarButton$VoiceNotesInsert",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/BottomBarUiState$BottomBarButton$VoiceNotesInsert"
+        },
+        {
+          "start": 4488,
+          "end": 4558,
+          "before": "io.intercom.android.sdk.m5.conversation.states.ComposerState.TextInput",
+          "after": "io.intercom.android.sdk.m5.conversation.states.ComposerState$TextInput",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput"
+        },
+        {
+          "start": 4567,
+          "end": 4643,
+          "before": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState.Error",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Error",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Error"
+        },
+        {
+          "start": 4652,
+          "end": 4727,
+          "before": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState.Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 4736,
+          "end": 4817,
+          "before": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState.Processing",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Processing",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Processing"
+        },
+        {
+          "start": 4826,
+          "end": 4906,
+          "before": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState.Recording",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Recording",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Recording"
+        },
+        {
+          "start": 4915,
+          "end": 5000,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposerInputType.Text",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposerInputType$Text",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType$Text"
+        },
+        {
+          "start": 5009,
+          "end": 5100,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposerInputType.VoiceNotes",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposerInputType$VoiceNotes",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType$VoiceNotes"
+        },
+        {
+          "start": 54569,
+          "end": 54573,
+          "before": "Idle",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Idle",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Idle"
+        },
+        {
+          "start": 54584,
+          "end": 54593,
+          "before": "Recording",
+          "after": "io.intercom.android.sdk.m5.conversation.states.VoiceTranscriptionState$Recording",
+          "proof": "EXACT_IMPORTED_OWNER_AND_ORIGINAL_REFERENCE",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState$Recording"
+        },
+        {
+          "start": 5589,
+          "end": 5646,
+          "before": "io.intercom.android.sdk.m5.preview.data.DeleteType.Delete",
+          "after": "io.intercom.android.sdk.m5.preview.data.DeleteType$Delete",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/DeleteType$Delete"
+        },
+        {
+          "start": 5655,
+          "end": 5724,
+          "before": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile.LocalFile",
+          "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$LocalFile",
+          "proof": "EXACT_ORIGINAL_DECLARATION_IMPORT",
+          "original_owner": "io/intercom/android/sdk/m5/preview/data/IntercomPreviewFile$LocalFile"
+        },
+        {
+          "start": 73267,
+          "end": 73368,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.MessageComposerKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$MessageComposerKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$MessageComposerKt"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/composer/SoundWaveVisualizationKt.java",
+      "before_sha256": "fcd8e646d29521a52873cd8f7a9654561a97063c5f50a2df6c32a5664fe5f758",
+      "after_sha256": "774d90cf811fb93e0e14c0056b30aab121a76933d732532b352a9cf324426ac5",
+      "edits": [
+        {
+          "start": 33519,
+          "end": 33627,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.SoundWaveVisualizationKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$SoundWaveVisualizationKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$SoundWaveVisualizationKt"
+        },
+        {
+          "start": 35244,
+          "end": 35352,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.SoundWaveVisualizationKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$SoundWaveVisualizationKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$SoundWaveVisualizationKt"
+        },
+        {
+          "start": 36952,
+          "end": 37060,
+          "before": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons.SoundWaveVisualizationKt",
+          "after": "io.intercom.android.sdk.m5.conversation.ui.components.composer.ComposableSingletons$SoundWaveVisualizationKt",
+          "proof": "EXACT_ORIGINAL_REFERENCED_BINARY_OWNER",
+          "original_owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/ComposableSingletons$SoundWaveVisualizationKt"
+        }
+      ]
+    }
+  ],
+  "total_edits": 101,
+  "followup_corrections": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt.java",
+      "before": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion var10003 = io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion;",
+      "after": "io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion var10003 = IntercomPreviewFile.Companion;",
+      "sha256": "985b819da43cfeba732fddde1de214b4b9c3c0df4a62eea971fe45b49ec8d758",
+      "reason": "Preserve original GETSTATIC companion instance; binary class normalization applies to type/static-owner positions, never to original static field expressions"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt.java",
+      "before": "LocalFile var10000 = io.intercom.android.sdk.m5.preview.data.IntercomPreviewFile$Companion.local(var14.getMediaData().getUri());",
+      "after": "LocalFile var10000 = IntercomPreviewFile.Companion.local(var14.getMediaData().getUri());",
+      "sha256": "003ddbe91e7d56b523878b1635f61aec1adae63d86b8fe2f7d26a635eb357e65",
+      "reason": "Preserve original GETSTATIC companion instance; binary class normalization applies to type/static-owner positions, never to original static field expressions"
+    }
+  ],
+  "effective_original_edits": 99,
+  "revalidation_receipt": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/owned-type-reference-revalidation/receipt.json",
+  "revalidation_status": "PASS_REVALIDATED_EXACT_REMAINING_99"
+}

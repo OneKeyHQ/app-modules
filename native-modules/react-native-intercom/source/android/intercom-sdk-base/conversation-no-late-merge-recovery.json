@@ -1,0 +1,2053 @@
+{
+  "status": "CAPTURES_VERIFIED_SOURCE_NOT_COMPILED",
+  "scope": "Only ConversationScreenKt source selected from class-scoped no-late-merge diagnostic; child source outputs untouched",
+  "source_before_sha256": "cde75b5edfbe5f2d7e05a25c0228a7044a1e5e8506bda74717c9273d310e5ef2",
+  "raw_decompile_sha256": "7bcdf3ba51e330f579d9b55ffa88a58000f3a9ea918cf58af9ca744082df31a0",
+  "source_after_sha256": "5de40e22c3974ab7bac197362eebb86f57d4142b4d272fa1349c43fdb45fbc66",
+  "source_applied": true,
+  "sites": [
+    {
+      "site": 292,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$26$lambda$25",
+        "()Landroidx/compose/runtime/MutableState;"
+      ],
+      "bci": 1816,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 293,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$31$lambda$30",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/runtime/MutableState;Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 1965,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_293_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_293_1",
+          "original_slot": "19",
+          "ssa_index": "153",
+          "ssa_version": "0",
+          "final_name": "var153",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 294,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$35$lambda$34",
+        "(Landroidx/compose/runtime/DisposableEffectScope;)Landroidx/compose/runtime/DisposableEffectResult;"
+      ],
+      "bci": 2247,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 295,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$37$lambda$36",
+        "(Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 2452,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_295_0",
+          "original_slot": "16",
+          "ssa_index": "115",
+          "ssa_version": "0",
+          "final_name": "var115",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 296,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$44$lambda$39$lambda$38",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;)Lkotlin/Unit;"
+      ],
+      "bci": 2672,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_296_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_296_1",
+          "original_slot": "25",
+          "ssa_index": "202",
+          "ssa_version": "0",
+          "final_name": "var202",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 297,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$44$lambda$41$lambda$40",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;)Lkotlin/Unit;"
+      ],
+      "bci": 2798,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_297_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_297_1",
+          "original_slot": "25",
+          "ssa_index": "202",
+          "ssa_version": "0",
+          "final_name": "var202",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 298,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$44$lambda$43$lambda$42",
+        "(Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 2908,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_298_0",
+          "original_slot": "17",
+          "ssa_index": "125",
+          "ssa_version": "0",
+          "final_name": "var125",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 299,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$49$lambda$46$lambda$45",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/models/Part;)Lkotlin/Unit;"
+      ],
+      "bci": 3124,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_299_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_299_1",
+          "original_slot": "25",
+          "ssa_index": "203",
+          "ssa_version": "0",
+          "final_name": "var203",
+          "descriptor": "Lio/intercom/android/sdk/models/Part;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 300,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$49$lambda$48$lambda$47",
+        "(Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 3222,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_300_0",
+          "original_slot": "18",
+          "ssa_index": "135",
+          "ssa_version": "0",
+          "final_name": "var135",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 301,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$59$lambda$58",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/states/ReplySuggestion;)Lkotlin/Unit;"
+      ],
+      "bci": 4440,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_301_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 302,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$61$lambda$60",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/models/ReplyOption;)Lkotlin/Unit;"
+      ],
+      "bci": 4565,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_302_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 303,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$63$lambda$62",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroid/content/Context;Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 4706,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_303_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_303_1",
+          "original_slot": "13",
+          "ssa_index": "88",
+          "ssa_version": "0",
+          "final_name": "var88",
+          "descriptor": "Landroid/content/Context;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 304,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$65$lambda$64",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType;)Lkotlin/Unit;"
+      ],
+      "bci": 4839,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_304_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 305,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$67$lambda$66",
+        "(Landroidx/activity/compose/ManagedActivityResultLauncher;Landroidx/compose/runtime/MutableState;Lio/intercom/android/sdk/blocks/lib/models/Block;)Lkotlin/Unit;"
+      ],
+      "bci": 4990,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_305_0",
+          "original_slot": "20",
+          "ssa_index": "158",
+          "ssa_version": "0",
+          "final_name": "var158",
+          "descriptor": "Landroidx/activity/compose/ManagedActivityResultLauncher;"
+        },
+        {
+          "identifier": "recoveredCapture_305_1",
+          "original_slot": "19",
+          "ssa_index": "153",
+          "ssa_version": "0",
+          "final_name": "var153",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 306,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$69$lambda$68",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 5131,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_306_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 307,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$71$lambda$70",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 5276,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_307_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 308,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$1$lambda$0",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 599,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 309,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$74$lambda$73",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;ILandroid/content/Context;Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 5449,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_309_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_309_1",
+          "original_slot": "15",
+          "ssa_index": "106",
+          "ssa_version": "0",
+          "final_name": "var106",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_309_2",
+          "original_slot": "13",
+          "ssa_index": "88",
+          "ssa_version": "0",
+          "final_name": "var88",
+          "descriptor": "Landroid/content/Context;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 310,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$76$lambda$75",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 5602,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_310_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 311,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$78$lambda$77",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 5759,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_311_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 312,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$80$lambda$79",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 5920,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_312_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 313,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$82$lambda$81",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 6088,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_313_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 314,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$84$lambda$83",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/models/Part;)Lkotlin/Unit;"
+      ],
+      "bci": 6264,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_314_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 315,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$86$lambda$85",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/models/Part;)Lkotlin/Unit;"
+      ],
+      "bci": 6445,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_315_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 316,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$3$lambda$2",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 701,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 317,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$88$lambda$87",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/states/PendingMessage$FailedMediaUploadData;)Lkotlin/Unit;"
+      ],
+      "bci": 6630,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_317_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 318,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$90$lambda$89",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 6819,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_318_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 319,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$92$lambda$91",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/states/AttributeData;)Lkotlin/Unit;"
+      ],
+      "bci": 7012,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_319_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 320,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$94$lambda$93",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 7225,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_320_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 321,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$96$lambda$95",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/metrics/MetricData;)Lkotlin/Unit;"
+      ],
+      "bci": 7442,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_321_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 322,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$98$lambda$97",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Lio/intercom/android/sdk/m5/conversation/usecase/ConversationScrolledState;)Lkotlin/Unit;"
+      ],
+      "bci": 7663,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_322_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 323,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$5$lambda$4",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 803,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 324,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$100$lambda$99",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;I)Lkotlin/Unit;"
+      ],
+      "bci": 7888,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_324_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 325,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$102$lambda$101",
+        "(Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 8127,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_325_0",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 326,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$104$lambda$103",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 8364,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_326_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 327,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$106$lambda$105",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Ljava/util/List;Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 8605,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_327_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 328,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$108$lambda$107",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;"
+      ],
+      "bci": 8850,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_328_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 329,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$7$lambda$6",
+        "(Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 906,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 330,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$110$lambda$109",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;ZZ)Lkotlin/Unit;"
+      ],
+      "bci": 9103,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_330_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 331,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$111",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 9390,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_331_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_331_1",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Landroidx/compose/ui/Modifier;"
+        },
+        {
+          "identifier": "recoveredCapture_331_2",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_331_3",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_331_4",
+          "original_slot": "4",
+          "ssa_index": "4",
+          "ssa_version": "0",
+          "final_name": "var4",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_331_5",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_331_6",
+          "original_slot": "6",
+          "ssa_index": "6",
+          "ssa_version": "0",
+          "final_name": "var6",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_331_7",
+          "original_slot": "7",
+          "ssa_index": "7",
+          "ssa_version": "0",
+          "final_name": "var7",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_331_8",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_331_9",
+          "original_slot": "10",
+          "ssa_index": "10",
+          "ssa_version": "0",
+          "final_name": "var10",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_331_10",
+          "original_slot": "11",
+          "ssa_index": "11",
+          "ssa_version": "0",
+          "final_name": "var11",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 332,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$9$lambda$8",
+        "(Lio/intercom/android/sdk/blocks/lib/models/TicketType;)Lkotlin/Unit;"
+      ],
+      "bci": 1009,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 333,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$11$lambda$10",
+        "(Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;"
+      ],
+      "bci": 1113,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 334,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$13$lambda$12",
+        "(Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 1217,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 335,
+      "enclosing": "ConversationScreen",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreen$lambda$16$lambda$15",
+        "()Landroidx/compose/runtime/MutableState;"
+      ],
+      "bci": 1502,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 336,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$115$lambda$114",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ReplySuggestion;)Lkotlin/Unit;"
+      ],
+      "bci": 2777,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 337,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$117$lambda$116",
+        "(Lio/intercom/android/sdk/models/ReplyOption;)Lkotlin/Unit;"
+      ],
+      "bci": 2879,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 338,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$119$lambda$118",
+        "(Ljava/lang/String;Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 2982,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 339,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$121$lambda$120",
+        "(Lio/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType;)Lkotlin/Unit;"
+      ],
+      "bci": 3085,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 340,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$123$lambda$122",
+        "(Lio/intercom/android/sdk/blocks/lib/models/Block;)Lkotlin/Unit;"
+      ],
+      "bci": 3189,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 341,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$125$lambda$124",
+        "(Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 3293,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 342,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$127$lambda$126",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 3397,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 343,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$129$lambda$128",
+        "(Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 3501,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 344,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$131$lambda$130",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 3605,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 345,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$133$lambda$132",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 3709,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 346,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$135$lambda$134",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 3813,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 347,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$137$lambda$136",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 3917,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 348,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$139$lambda$138",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 4021,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 349,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$141$lambda$140",
+        "(Lio/intercom/android/sdk/models/Part;)Lkotlin/Unit;"
+      ],
+      "bci": 4125,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 350,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$143$lambda$142",
+        "(Lio/intercom/android/sdk/models/Part;)Lkotlin/Unit;"
+      ],
+      "bci": 4229,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 351,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$145$lambda$144",
+        "(Lio/intercom/android/sdk/m5/conversation/states/PendingMessage$FailedMediaUploadData;)Lkotlin/Unit;"
+      ],
+      "bci": 4333,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 352,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$147$lambda$146",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 4437,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 353,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$149$lambda$148",
+        "(Lio/intercom/android/sdk/m5/conversation/states/AttributeData;)Lkotlin/Unit;"
+      ],
+      "bci": 4541,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 354,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$151$lambda$150",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 4645,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 355,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$153$lambda$152",
+        "(Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 4749,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 356,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$155$lambda$154",
+        "(Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;"
+      ],
+      "bci": 4853,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 357,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$157$lambda$156",
+        "(Lio/intercom/android/sdk/blocks/lib/models/TicketType;)Lkotlin/Unit;"
+      ],
+      "bci": 4957,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 358,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$159$lambda$158",
+        "(Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 5061,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 359,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$161$lambda$160",
+        "(Lio/intercom/android/sdk/m5/conversation/metrics/MetricData;)Lkotlin/Unit;"
+      ],
+      "bci": 5165,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 360,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$163$lambda$162",
+        "(Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 5269,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 361,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$165$lambda$164",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 5396,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 362,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$167$lambda$166",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 5509,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 363,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$169$lambda$168",
+        "(ZZ)Lkotlin/Unit;"
+      ],
+      "bci": 5623,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 364,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$171$lambda$170",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 5772,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 365,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$173$lambda$172",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 5876,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 366,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$175$lambda$174",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 5980,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 367,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$177$lambda$176",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 6084,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 368,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$179$lambda$178",
+        "(Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;)Lkotlin/Unit;"
+      ],
+      "bci": 6188,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 369,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$181$lambda$180",
+        "(Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;)Lkotlin/Unit;"
+      ],
+      "bci": 6292,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 370,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$183$lambda$182",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 6396,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 371,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$186$lambda$185",
+        "()Landroidx/compose/runtime/MutableState;"
+      ],
+      "bci": 6935,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 372,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$188$lambda$187",
+        "(Lkotlin/jvm/functions/Function2;Z)Lkotlin/Unit;"
+      ],
+      "bci": 7082,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_372_0",
+          "original_slot": "36",
+          "ssa_index": "36",
+          "ssa_version": "0",
+          "final_name": "var36",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 373,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$192$lambda$191",
+        "(Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 7684,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_373_0",
+          "original_slot": "62",
+          "ssa_index": "185",
+          "ssa_version": "0",
+          "final_name": "var185",
+          "descriptor": "Lkotlinx/coroutines/CoroutineScope;"
+        },
+        {
+          "identifier": "recoveredCapture_373_1",
+          "original_slot": "66",
+          "ssa_index": "339",
+          "ssa_version": "0",
+          "final_name": "var339",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 374,
+      "enclosing": "ConversationScreenContent",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/runtime/Composer;IIIIIII)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContent$lambda$194",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyListState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/StateFlow;Lkotlinx/coroutines/flow/StateFlow;IIIIIIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 8625,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_374_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Landroidx/compose/ui/Modifier;"
+        },
+        {
+          "identifier": "recoveredCapture_374_1",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;"
+        },
+        {
+          "identifier": "recoveredCapture_374_2",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Landroidx/compose/material3/SnackbarHostState;"
+        },
+        {
+          "identifier": "recoveredCapture_374_3",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_4",
+          "original_slot": "4",
+          "ssa_index": "4",
+          "ssa_version": "0",
+          "final_name": "var4",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_5",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        },
+        {
+          "identifier": "recoveredCapture_374_6",
+          "original_slot": "6",
+          "ssa_index": "6",
+          "ssa_version": "0",
+          "final_name": "var6",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_7",
+          "original_slot": "7",
+          "ssa_index": "7",
+          "ssa_version": "0",
+          "final_name": "var7",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_8",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_9",
+          "original_slot": "9",
+          "ssa_index": "9",
+          "ssa_version": "0",
+          "final_name": "var9",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_10",
+          "original_slot": "10",
+          "ssa_index": "10",
+          "ssa_version": "0",
+          "final_name": "var10",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_11",
+          "original_slot": "11",
+          "ssa_index": "11",
+          "ssa_version": "0",
+          "final_name": "var11",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_12",
+          "original_slot": "12",
+          "ssa_index": "12",
+          "ssa_version": "0",
+          "final_name": "var12",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_13",
+          "original_slot": "13",
+          "ssa_index": "13",
+          "ssa_version": "0",
+          "final_name": "var13",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_14",
+          "original_slot": "14",
+          "ssa_index": "14",
+          "ssa_version": "0",
+          "final_name": "var14",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_15",
+          "original_slot": "15",
+          "ssa_index": "15",
+          "ssa_version": "0",
+          "final_name": "var15",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_16",
+          "original_slot": "16",
+          "ssa_index": "16",
+          "ssa_version": "0",
+          "final_name": "var16",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_17",
+          "original_slot": "17",
+          "ssa_index": "17",
+          "ssa_version": "0",
+          "final_name": "var17",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_18",
+          "original_slot": "18",
+          "ssa_index": "18",
+          "ssa_version": "0",
+          "final_name": "var18",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_19",
+          "original_slot": "19",
+          "ssa_index": "19",
+          "ssa_version": "0",
+          "final_name": "var19",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_20",
+          "original_slot": "20",
+          "ssa_index": "20",
+          "ssa_version": "0",
+          "final_name": "var20",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_21",
+          "original_slot": "21",
+          "ssa_index": "21",
+          "ssa_version": "0",
+          "final_name": "var21",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_22",
+          "original_slot": "22",
+          "ssa_index": "22",
+          "ssa_version": "0",
+          "final_name": "var22",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_23",
+          "original_slot": "23",
+          "ssa_index": "23",
+          "ssa_version": "0",
+          "final_name": "var23",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_24",
+          "original_slot": "24",
+          "ssa_index": "24",
+          "ssa_version": "0",
+          "final_name": "var24",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_25",
+          "original_slot": "25",
+          "ssa_index": "25",
+          "ssa_version": "0",
+          "final_name": "var25",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_26",
+          "original_slot": "26",
+          "ssa_index": "26",
+          "ssa_version": "0",
+          "final_name": "var26",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_27",
+          "original_slot": "27",
+          "ssa_index": "27",
+          "ssa_version": "0",
+          "final_name": "var27",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_28",
+          "original_slot": "28",
+          "ssa_index": "28",
+          "ssa_version": "0",
+          "final_name": "var28",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_29",
+          "original_slot": "29",
+          "ssa_index": "29",
+          "ssa_version": "0",
+          "final_name": "var29",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_30",
+          "original_slot": "30",
+          "ssa_index": "30",
+          "ssa_version": "0",
+          "final_name": "var30",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_31",
+          "original_slot": "31",
+          "ssa_index": "31",
+          "ssa_version": "0",
+          "final_name": "var31",
+          "descriptor": "Landroidx/compose/foundation/lazy/LazyListState;"
+        },
+        {
+          "identifier": "recoveredCapture_374_32",
+          "original_slot": "32",
+          "ssa_index": "32",
+          "ssa_version": "0",
+          "final_name": "var32",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_33",
+          "original_slot": "33",
+          "ssa_index": "33",
+          "ssa_version": "0",
+          "final_name": "var33",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        },
+        {
+          "identifier": "recoveredCapture_374_34",
+          "original_slot": "34",
+          "ssa_index": "34",
+          "ssa_version": "0",
+          "final_name": "var34",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_35",
+          "original_slot": "35",
+          "ssa_index": "35",
+          "ssa_version": "0",
+          "final_name": "var35",
+          "descriptor": "Lkotlinx/coroutines/flow/SharedFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_374_36",
+          "original_slot": "36",
+          "ssa_index": "36",
+          "ssa_version": "0",
+          "final_name": "var36",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        },
+        {
+          "identifier": "recoveredCapture_374_37",
+          "original_slot": "37",
+          "ssa_index": "37",
+          "ssa_version": "0",
+          "final_name": "var37",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;"
+        },
+        {
+          "identifier": "recoveredCapture_374_38",
+          "original_slot": "38",
+          "ssa_index": "38",
+          "ssa_version": "0",
+          "final_name": "var38",
+          "descriptor": "Lkotlinx/coroutines/flow/StateFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_374_39",
+          "original_slot": "39",
+          "ssa_index": "39",
+          "ssa_version": "0",
+          "final_name": "var39",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_40",
+          "original_slot": "40",
+          "ssa_index": "40",
+          "ssa_version": "0",
+          "final_name": "var40",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_41",
+          "original_slot": "41",
+          "ssa_index": "41",
+          "ssa_version": "0",
+          "final_name": "var41",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_42",
+          "original_slot": "42",
+          "ssa_index": "42",
+          "ssa_version": "0",
+          "final_name": "var42",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_43",
+          "original_slot": "43",
+          "ssa_index": "43",
+          "ssa_version": "0",
+          "final_name": "var43",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_44",
+          "original_slot": "44",
+          "ssa_index": "44",
+          "ssa_version": "0",
+          "final_name": "var44",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_374_45",
+          "original_slot": "45",
+          "ssa_index": "45",
+          "ssa_version": "0",
+          "final_name": "var45",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_374_46",
+          "original_slot": "46",
+          "ssa_index": "46",
+          "ssa_version": "0",
+          "final_name": "var46",
+          "descriptor": "Lkotlinx/coroutines/flow/StateFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_374_47",
+          "original_slot": "47",
+          "ssa_index": "47",
+          "ssa_version": "0",
+          "final_name": "var47",
+          "descriptor": "Lkotlinx/coroutines/flow/StateFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_374_48",
+          "original_slot": "49",
+          "ssa_index": "49",
+          "ssa_version": "0",
+          "final_name": "var49",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_374_49",
+          "original_slot": "50",
+          "ssa_index": "50",
+          "ssa_version": "0",
+          "final_name": "var50",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_374_50",
+          "original_slot": "51",
+          "ssa_index": "51",
+          "ssa_version": "0",
+          "final_name": "var51",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_374_51",
+          "original_slot": "52",
+          "ssa_index": "52",
+          "ssa_version": "0",
+          "final_name": "var52",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_374_52",
+          "original_slot": "53",
+          "ssa_index": "53",
+          "ssa_version": "0",
+          "final_name": "var53",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_374_53",
+          "original_slot": "54",
+          "ssa_index": "54",
+          "ssa_version": "0",
+          "final_name": "var54",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_374_54",
+          "original_slot": "55",
+          "ssa_index": "55",
+          "ssa_version": "0",
+          "final_name": "var55",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 375,
+      "enclosing": "ConversationScreenContentPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "ConversationScreenContentPreview$lambda$196",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 245,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_375_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 376,
+      "enclosing": "NewConversationScreenContentPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt",
+        "NewConversationScreenContentPreview$lambda$197",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 178,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_376_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ],
+  "capture_bindings": 112,
+  "normal_source_build_uses_decompiler": false,
+  "command": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-conversation-no-late-merge/scoped-command.json"
+}

@@ -1,0 +1,12 @@
+{
+  "status": "WHOLE_JAVAC_FAMILY_IMPROVED_SDK_NOT_COMPLETE",
+  "original_rows_restored": 6365,
+  "scope": "Only original third-party ACC_BRIDGE methods; owner+name+full descriptor including return remapped through current aliases; restore only original BRIDGE/SYNTHETIC flags. No SDK input, business instruction or runtime dependency changes.",
+  "full_ledger": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/external-bridge-visibility/restored-flags.tsv",
+  "full_ledger_sha256": "10dc2513ce434d32f9ff41475686233f989544317894140fb2be4a6ffb5773c4",
+  "representative": "dependency-035 KeyframesSpec$KeyframesSpecConfig.at(Object,int)KeyframeBaseEntity: public source view\u2192original public|bridge|synthetic, typed KeyframeEntity overload remains visible",
+  "compiler_effect": "462\u2192455, all six new Keyframes errors plus one further bridge ambiguity removed",
+  "reproducible_entry": "scripts/android-recover-base.py --compile-only --java24-diagnostic includes idempotent pass",
+  "shared_ui_builder_normalizer_changed": false,
+  "tool_sha256": "bf0d3145fb6c4c8afe2267bc747a09bc1dc8db7efa9ff41adb42b0abd11388e3"
+}

@@ -1,0 +1,90 @@
+{
+  "status": "KOTLIN_SOURCE_AND_ABI_COMPILED_NOT_FULL_SDK",
+  "kotlin_source": "source/android/intercom-sdk-base/kotlin/io/intercom/android/sdk/m5/navigation/transitions/TransitionStyle.kt",
+  "replaced_java_files": [
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$NONE",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$NONE.java",
+      "java_sha256": "b74395e4b9d1f89581dfe3d44e0adc285a633cbcc29c23831a4335daf6a51120",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$NONE.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$NULL",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$NULL.java",
+      "java_sha256": "21fbe0b647f5c561f6533b027c5cc312c2aef2b10d3aba020465481454d218e2",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$NULL.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$PEEK_BEHIND",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$PEEK_BEHIND.java",
+      "java_sha256": "820f34e51f24b4fbf7d3edaa90312e315c7d39548860740dab4144aaec27098a",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$PEEK_BEHIND.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_IN_LEFT",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_IN_LEFT.java",
+      "java_sha256": "1bf86a34327dec8b7937c928cda28e9003f0313397269f333579c1d6166c3677",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_IN_LEFT.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_IN_RIGHT",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_IN_RIGHT.java",
+      "java_sha256": "6d32dc22e514f9f13c40402a055d038f0ed083997c43600b8931b0c6604f6898",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_IN_RIGHT.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_UP",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_UP.java",
+      "java_sha256": "68b5ce0ca949db6c6e69d1f8cccf414894030e22a909cce61b6dcb299293373f",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle$SLIDE_UP.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle.java",
+      "java_sha256": "c2a70baa20293404371241034e0cde03591c380d344ab8b9a8457a80d68b7c53",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/EnterTransitionStyle.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$NONE",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$NONE.java",
+      "java_sha256": "9cf50ade10404aab314faf99ff3bd30e07c754a34d6029b7a00e73c1ff4385a9",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$NONE.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$NULL",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$NULL.java",
+      "java_sha256": "8f19fddeba335bf3462dc5da6f8b4aa57c6bcdab05bc297bed2175fa90305c03",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$NULL.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_DOWN",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_DOWN.java",
+      "java_sha256": "2ac80e58e5ae05d10d26326497089651ab3c574a9cc1edae6f7fedb52eace535",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_DOWN.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_OUT_LEFT",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_OUT_LEFT.java",
+      "java_sha256": "cbc0cc8d54842f772fc72a51a113477f62701d906a0584d856f3ed512e4e5613",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_OUT_LEFT.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_OUT_RIGHT",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_OUT_RIGHT.java",
+      "java_sha256": "9b56f5d02d286a9f0cd8ef2640511a917605aaec8f6ae060dbbcdd84e43d77fd",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle$SLIDE_OUT_RIGHT.java"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle",
+      "removed_java": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle.java",
+      "java_sha256": "16dd28815698e2a1b39e2a53a8703ff8c796cd09985b5fcefee2cecc87a2a6ea",
+      "diagnostic_backup": ".recovery/kotlin-transition-enums/replaced-java/io/intercom/android/sdk/m5/navigation/transitions/ExitTransitionStyle.java"
+    }
+  ],
+  "classes": 13,
+  "normal_source_build": "python3 scripts/android-build-transition-source.py --offline",
+  "source_jar_sha256": "252f48a44f41b8d14a93577d686c4c653a691392d7cf96fb1e3dbb97bdc62b23",
+  "original_code_imported": false,
+  "independent_review": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/transition-enums/compiled-review/receipt.json",
+  "runtime_verified": false
+}

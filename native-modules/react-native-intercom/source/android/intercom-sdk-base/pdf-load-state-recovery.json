@@ -1,0 +1,16 @@
+{
+  "method": "PreviewUriKt$loadPdfState$1$1.invokeSuspend",
+  "status": "STATIC_CONTROL_FLOW_COMPARED_NOT_RUNTIME",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/PdfLoadStateContinuation.javap.txt",
+  "original_exception_ranges": [
+    "106..136 Exception -> 222, Throwable -> 268",
+    "161..187 Exception -> 222, Throwable -> 268",
+    "222..233 Throwable -> 268"
+  ],
+  "notes": [
+    "openPdfFile and its resume failure are outside cleanup region",
+    "Rendering suspension retains file descriptor and temp file",
+    "close failure propagates without temp deletion or suppressed exception rewrite"
+  ],
+  "compile_note": "No diagnostics in these restored method bodies in the latest full javac failure; complete base produced 0 classes"
+}

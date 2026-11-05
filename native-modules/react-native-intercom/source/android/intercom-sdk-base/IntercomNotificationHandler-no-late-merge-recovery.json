@@ -1,0 +1,328 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+  "root_only": true,
+  "source_before_sha256": "16a6fc5734ba4b2313a1f250443c1810f5647a05ef31fe5c9a9bed2edd7f1355",
+  "source_after_sha256": "ce38264b9b5ef4170c7d6b23a2aec95db953e660d4506b771ce5df443132475e",
+  "source_capture_sites": 4,
+  "source_capture_bindings": 17,
+  "declaration_check_exit": 0,
+  "declaration_canonicalization": "Original concrete nested binary types imported explicitly in comparison-only copy to resolve old flattened import key; product type unchanged",
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomNotificationHandler/ast-input/io/intercom/android/sdk/m5/push/IntercomNotificationHandler.java",
+      "10440",
+      "10509",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.push.IntercomNotificationHandler.processDeepLinkPushNotification$lambda$0(recoveredExpressionCapture_1186_0, recoveredExpressionCapture_1186_1, recoveredExpressionCapture_1186_2))",
+      "10273",
+      "final android.content.Context recoveredExpressionCapture_1186_0 = var1;\\n      final io.intercom.android.sdk.m5.push.IntercomPushData$DeepLinkPushData recoveredExpressionCapture_1186_1 = var2;\\n      final android.app.TaskStackBuilder recoveredExpressionCapture_1186_2 = var3;\\n      ",
+      "1186",
+      "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+      "Landroid/content/Context;=var1,Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;=var2,Landroid/app/TaskStackBuilder;=var3",
+      "recoveredExpressionCapture_1186_0=var1@9913:LOCAL|1|1|0|var1|Landroid/content/Context;;recoveredExpressionCapture_1186_1=var2@9927:LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;;recoveredExpressionCapture_1186_2=var3@9950:LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomNotificationHandler/ast-input/io/intercom/android/sdk/m5/push/IntercomNotificationHandler.java",
+      "10520",
+      "10589",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1187_0, recoveredExpressionArgument_1187_1) -> io.intercom.android.sdk.m5.push.IntercomNotificationHandler.processDeepLinkPushNotification$lambda$1(recoveredExpressionCapture_1187_0, recoveredExpressionCapture_1187_1, recoveredExpressionCapture_1187_2, (android.graphics.Bitmap) ((android.graphics.Bitmap)recoveredExpressionArgument_1187_0), (android.graphics.Bitmap) ((android.graphics.Bitmap)recoveredExpressionArgument_1187_1)))",
+      "10273",
+      "final android.content.Context recoveredExpressionCapture_1187_0 = var1;\\n      final io.intercom.android.sdk.m5.push.IntercomPushData$DeepLinkPushData recoveredExpressionCapture_1187_1 = var2;\\n      final android.app.TaskStackBuilder recoveredExpressionCapture_1187_2 = var3;\\n      ",
+      "1187",
+      "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+      "Landroid/content/Context;=var1,Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;=var2,Landroid/app/TaskStackBuilder;=var3",
+      "recoveredExpressionCapture_1187_0=var1@9913:LOCAL|1|1|0|var1|Landroid/content/Context;;recoveredExpressionCapture_1187_1=var2@9927:LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;;recoveredExpressionCapture_1187_2=var3@9950:LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomNotificationHandler/ast-input/io/intercom/android/sdk/m5/push/IntercomNotificationHandler.java",
+      "12304",
+      "12377",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.push.IntercomNotificationHandler.processConversationPushNotification$lambda$2(recoveredExpressionCapture_1184_0, recoveredExpressionCapture_1184_1, recoveredExpressionCapture_1184_2, recoveredExpressionCapture_1184_3, recoveredExpressionCapture_1184_4, recoveredExpressionCapture_1184_5))",
+      "12105",
+      "final android.content.Context recoveredExpressionCapture_1184_0 = var1;\\n         final io.intercom.android.sdk.m5.push.IntercomPushData$ConversationPushData recoveredExpressionCapture_1184_1 = var2;\\n         final long recoveredExpressionCapture_1184_2 = var8;\\n         final android.app.TaskStackBuilder recoveredExpressionCapture_1184_3 = var3;\\n         final boolean recoveredExpressionCapture_1184_4 = var4;\\n         final io.intercom.android.sdk.m5.push.NotificationChannel recoveredExpressionCapture_1184_5 = var6;\\n         ",
+      "1184",
+      "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+      "Landroid/content/Context;=var1,Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;=var2,J=var8,Landroid/app/TaskStackBuilder;=var3,Z=var4,Lio/intercom/android/sdk/m5/push/NotificationChannel;=var6",
+      "recoveredExpressionCapture_1184_0=var1@10723:LOCAL|1|1|0|var1|Landroid/content/Context;;recoveredExpressionCapture_1184_1=var2@10746:LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;;recoveredExpressionCapture_1184_2=var8@11934:LOCAL|8|8|0|var8|J;recoveredExpressionCapture_1184_3=var3@10782:LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;;recoveredExpressionCapture_1184_4=var4@10815:LOCAL|4|4|0|var4|Z;recoveredExpressionCapture_1184_5=var6@11165:LOCAL|6|6|0|var6|Lio/intercom/android/sdk/m5/push/NotificationChannel;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomNotificationHandler/ast-input/io/intercom/android/sdk/m5/push/IntercomNotificationHandler.java",
+      "12391",
+      "12464",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1185_0, recoveredExpressionArgument_1185_1) -> io.intercom.android.sdk.m5.push.IntercomNotificationHandler.processConversationPushNotification$lambda$4(recoveredExpressionCapture_1185_0, recoveredExpressionCapture_1185_1, recoveredExpressionCapture_1185_2, recoveredExpressionCapture_1185_3, recoveredExpressionCapture_1185_4, (android.graphics.Bitmap) ((android.graphics.Bitmap)recoveredExpressionArgument_1185_0), (android.graphics.Bitmap) ((android.graphics.Bitmap)recoveredExpressionArgument_1185_1)))",
+      "12105",
+      "final io.intercom.android.sdk.m5.push.IntercomPushData$ConversationPushData recoveredExpressionCapture_1185_0 = var2;\\n         final long recoveredExpressionCapture_1185_1 = var8;\\n         final android.content.Context recoveredExpressionCapture_1185_2 = var1;\\n         final android.app.TaskStackBuilder recoveredExpressionCapture_1185_3 = var3;\\n         final io.intercom.android.sdk.m5.push.NotificationChannel recoveredExpressionCapture_1185_4 = var6;\\n         ",
+      "1185",
+      "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+      "Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;=var2,J=var8,Landroid/content/Context;=var1,Landroid/app/TaskStackBuilder;=var3,Lio/intercom/android/sdk/m5/push/NotificationChannel;=var6",
+      "recoveredExpressionCapture_1185_0=var2@10746:LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;;recoveredExpressionCapture_1185_1=var8@11934:LOCAL|8|8|0|var8|J;recoveredExpressionCapture_1185_2=var1@10723:LOCAL|1|1|0|var1|Landroid/content/Context;;recoveredExpressionCapture_1185_3=var3@10782:LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;;recoveredExpressionCapture_1185_4=var6@11165:LOCAL|6|6|0|var6|Lio/intercom/android/sdk/m5/push/NotificationChannel;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1184,
+      "original": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processConversationPushNotification$intercom_sdk_base_release",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+        "122",
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processConversationPushNotification$lambda$2",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/m5/push/NotificationChannel;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroid/content/Context;=var1,Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;=var2,J=var8,Landroid/app/TaskStackBuilder;=var3,Z=var4,Lio/intercom/android/sdk/m5/push/NotificationChannel;=var6",
+        "179"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$intercom_sdk_base_release",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$lambda$2",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/m5/push/NotificationChannel;)Lkotlin/Unit;",
+          "{170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183}",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;",
+          "LOCAL|8|8|0|var8|J",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;",
+          "LOCAL|4|4|0|var4|Z",
+          "LOCAL|6|6|0|var6|Lio/intercom/android/sdk/m5/push/NotificationChannel;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$intercom_sdk_base_release",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$lambda$2",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/m5/push/NotificationChannel;)Lkotlin/Unit;",
+          "{170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183}",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;",
+          "LOCAL|8|8|0|var8|J",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;",
+          "LOCAL|4|4|0|var4|Z",
+          "LOCAL|6|6|0|var6|Lio/intercom/android/sdk/m5/push/NotificationChannel;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processConversationPushNotification$intercom_sdk_base_release",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+        "179",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/push/IntercomNotificationHandler.processConversationPushNotification$lambda$2(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/m5/push/NotificationChannel;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1185,
+      "original": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processConversationPushNotification$intercom_sdk_base_release",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+        "128",
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processConversationPushNotification$lambda$4",
+        "(Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/content/Context;Landroid/app/TaskStackBuilder;Lio/intercom/android/sdk/m5/push/NotificationChannel;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;=var2,J=var8,Landroid/content/Context;=var1,Landroid/app/TaskStackBuilder;=var3,Lio/intercom/android/sdk/m5/push/NotificationChannel;=var6",
+        "191"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$intercom_sdk_base_release",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$lambda$4",
+          "(Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/content/Context;Landroid/app/TaskStackBuilder;Lio/intercom/android/sdk/m5/push/NotificationChannel;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+          "{184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195}",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;",
+          "LOCAL|8|8|0|var8|J",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;",
+          "LOCAL|6|6|0|var6|Lio/intercom/android/sdk/m5/push/NotificationChannel;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$intercom_sdk_base_release",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processConversationPushNotification$lambda$4",
+          "(Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/content/Context;Landroid/app/TaskStackBuilder;Lio/intercom/android/sdk/m5/push/NotificationChannel;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+          "{184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195}",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;",
+          "LOCAL|8|8|0|var8|J",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;",
+          "LOCAL|6|6|0|var6|Lio/intercom/android/sdk/m5/push/NotificationChannel;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processConversationPushNotification$intercom_sdk_base_release",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;Landroid/app/TaskStackBuilder;ZLio/intercom/android/sdk/utilities/commons/TimeProvider;)V",
+        "191",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/push/IntercomNotificationHandler.processConversationPushNotification$lambda$4(Lio/intercom/android/sdk/m5/push/IntercomPushData$ConversationPushData;JLandroid/content/Context;Landroid/app/TaskStackBuilder;Lio/intercom/android/sdk/m5/push/NotificationChannel;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit; (6), (Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1186,
+      "original": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processDeepLinkPushNotification",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+        "56",
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processDeepLinkPushNotification$lambda$0",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroid/content/Context;=var1,Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;=var2,Landroid/app/TaskStackBuilder;=var3",
+        "81"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification$lambda$0",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)Lkotlin/Unit;",
+          "{78, 79, 80, 81, 82, 83, 84, 85}",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification$lambda$0",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)Lkotlin/Unit;",
+          "{78, 79, 80, 81, 82, 83, 84, 85}",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processDeepLinkPushNotification",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+        "81",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/push/IntercomNotificationHandler.processDeepLinkPushNotification$lambda$0(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1187,
+      "original": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processDeepLinkPushNotification",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+        "60",
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processDeepLinkPushNotification$lambda$1",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroid/content/Context;=var1,Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;=var2,Landroid/app/TaskStackBuilder;=var3",
+        "89"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification$lambda$1",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+          "{86, 87, 88, 89, 90, 91, 92, 93}",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+          "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+          "processDeepLinkPushNotification$lambda$1",
+          "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;",
+          "{86, 87, 88, 89, 90, 91, 92, 93}",
+          "LOCAL|1|1|0|var1|Landroid/content/Context;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;",
+          "LOCAL|3|3|0|var3|Landroid/app/TaskStackBuilder;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/push/IntercomNotificationHandler",
+        "processDeepLinkPushNotification",
+        "(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;)V",
+        "89",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/push/IntercomNotificationHandler.processDeepLinkPushNotification$lambda$1(Landroid/content/Context;Lio/intercom/android/sdk/m5/push/IntercomPushData$DeepLinkPushData;Landroid/app/TaskStackBuilder;Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit; (6), (Landroid/graphics/Bitmap;Landroid/graphics/Bitmap;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "normal_build_uses_decompiler": false,
+  "type_edits": 35,
+  "common_replay": {
+    "basis": "Prior common-repairs.json and before source original static initializer boundary",
+    "correction": "Restore $stable=8 inside static block, prevent Java ConstantValue/constant folding",
+    "before_sha256": "fac29fc64f29e0248b221161f487f73624ad40b339fef6884b082fa1eebb37a7"
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+  "root_only": true,
+  "source_before_sha256": "7bf242c8b0f37d1a02339429cb6b80d3dd6bddb34a9a5f8dad015069558fd09f",
+  "source_after_sha256": "b5fd8ae0f41af0da9888ed4668f4b08a6cf95f10687dfa5b6b09b70d1993d8e1",
+  "source_capture_sites": 2,
+  "source_capture_bindings": 3,
+  "declaration_check_exit": 0,
+  "type_edits": 2,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HelpCenterScreenKt$HelpCenterNavGraph$1$1$4/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.java",
+      "4736",
+      "4805",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_844_0) -> io.intercom.android.sdk.m5.helpcenter.ui.HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.invoke$lambda$3$lambda$2(recoveredExpressionCapture_844_0, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_844_0)))",
+      "4718",
+      "final androidx.navigation.NavHostController recoveredExpressionCapture_844_0 = var23;\\n         ",
+      "844",
+      "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "Landroidx/navigation/NavHostController;=var9",
+      "recoveredExpressionCapture_844_0=var23@4256:LOCAL|9|23|0|var23|Landroidx/navigation/NavHostController;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HelpCenterScreenKt$HelpCenterNavGraph$1$1$4/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.java",
+      "3691",
+      "3760",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_845_0) -> io.intercom.android.sdk.m5.helpcenter.ui.HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.invoke$lambda$1$lambda$0(recoveredExpressionCapture_845_0, recoveredExpressionCapture_845_1, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_845_0)))",
+      "3673",
+      "final io.intercom.android.sdk.m5.helpcenter.HelpCenterViewModel recoveredExpressionCapture_845_0 = var9;\\n         final android.content.Context recoveredExpressionCapture_845_1 = var10;\\n         ",
+      "845",
+      "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;=var9,Landroid/content/Context;=var10",
+      "recoveredExpressionCapture_845_0=var9@3272:LOCAL|9|9|0|var9|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;;recoveredExpressionCapture_845_1=var10@3322:LOCAL|10|10|0|var10|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 844,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "184",
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+        "invoke$lambda$3$lambda$2",
+        "(Landroidx/navigation/NavHostController;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/navigation/NavHostController;=var9",
+        "279"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke$lambda$3$lambda$2",
+          "(Landroidx/navigation/NavHostController;Ljava/lang/String;)Lkotlin/Unit;",
+          "{277, 278, 279, 280, 281, 282, 283}",
+          "LOCAL|9|23|0|var23|Landroidx/navigation/NavHostController;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke$lambda$3$lambda$2",
+          "(Landroidx/navigation/NavHostController;Ljava/lang/String;)Lkotlin/Unit;",
+          "{277, 278, 279, 280, 281, 282, 283}",
+          "LOCAL|9|23|0|var23|Landroidx/navigation/NavHostController;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "279",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.invoke$lambda$3$lambda$2(Landroidx/navigation/NavHostController;Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 845,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "99",
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+        "invoke$lambda$1$lambda$0",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Landroid/content/Context;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;=var9,Landroid/content/Context;=var10",
+        "156"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke$lambda$1$lambda$0",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Landroid/content/Context;Ljava/lang/String;)Lkotlin/Unit;",
+          "{152, 153, 154, 155, 156, 157, 158, 159, 160}",
+          "LOCAL|9|9|0|var9|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+          "LOCAL|10|10|0|var10|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+          "invoke$lambda$1$lambda$0",
+          "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Landroid/content/Context;Ljava/lang/String;)Lkotlin/Unit;",
+          "{152, 153, 154, 155, 156, 157, 158, 159, 160}",
+          "LOCAL|9|9|0|var9|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+          "LOCAL|10|10|0|var10|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "156",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.invoke$lambda$1$lambda$0(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Landroid/content/Context;Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4.java",
+      "start": 4298,
+      "end": 4306,
+      "replacement": "(kotlin.jvm.functions.Function1) var10002",
+      "owner": "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterNavGraph$1$1$4",
+      "method": "invoke",
+      "descriptor": "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "composer_group_key": -2112929578,
+      "function_type": "kotlin/jvm/functions/Function1",
+      "original_checkcast_bci": 189,
+      "original_store_slot": 6,
+      "source_line": 96,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

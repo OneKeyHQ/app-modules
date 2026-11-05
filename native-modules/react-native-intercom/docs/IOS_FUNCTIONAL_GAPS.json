@@ -1,0 +1,2762 @@
+{
+  "status": "FULL_SDK_NOT_RESTORED",
+  "classPresenceSnapshot": {
+    "scope": "Original ObjC class metadata versus actual primary ObjC implementation or explicit Swift runtime class name. This is presence inventory, NOT full method/body/strictlink proof. Pure Swift nominal/struct/protocol and category method completeness not inferred.",
+    "originalObjCClasses": 595,
+    "matchedSourceClasses": 564,
+    "sourceMatches": {
+      "Article": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "Carousel": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "Conversation": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "HelpCenterCollections": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "ICMAVCapturePermissionManager": [
+        "ios/Session/ICMAVCapturePermissionManager.m"
+      ],
+      "ICMAWSConfiguration": [
+        "ios/Session/ICMAWSConfiguration.m"
+      ],
+      "ICMActionButton": [
+        "ios/Session/ICMActionButton.m"
+      ],
+      "ICMActiveAdminsAvatarView": [
+        "ios/Session/ICMActiveAdminsAvatarView.m"
+      ],
+      "ICMAdminBlockAppearance": [
+        "ios/Session/ICMAdminBlockAppearance.m"
+      ],
+      "ICMAnimatedImage": [
+        "ios/Session/AnimatedImage.swift"
+      ],
+      "ICMAppEnvironmentChecker": [
+        "ios/Identity/ICMAppEnvironmentChecker.m"
+      ],
+      "ICMAppIdentity": [
+        "ios/Session/ICMAppIdentity.m"
+      ],
+      "ICMAppInstallationFingerprint": [
+        "ios/Session/ICMAppInstallationFingerprint.m"
+      ],
+      "ICMAppearanceReset": [
+        "ios/Session/ICMAppearanceReset.m"
+      ],
+      "ICMArticle": [
+        "ios/Session/ICMArticle.m"
+      ],
+      "ICMAssets": [
+        "ios/Session/ICMAssets.m"
+      ],
+      "ICMAutoLayout": [
+        "ios/Session/ICMAutoLayout.m"
+      ],
+      "ICMAvatarView": [
+        "ios/Session/ICMAvatarView.m"
+      ],
+      "ICMAvatarViewModel": [
+        "ios/Session/ICMAvatarViewModel.m"
+      ],
+      "ICMBaseResponse": [
+        "ios/Session/ICMBaseResponse.m"
+      ],
+      "ICMBaseURLConfiguration": [
+        "ios/Identity/ICMBaseURLConfiguration.m"
+      ],
+      "ICMBlockAppearance": [
+        "ios/Session/ICMBlockAppearance.m"
+      ],
+      "ICMBlockLoader": [
+        "ios/Session/ICMBlockLoader.m"
+      ],
+      "ICMBooleanInputView": [
+        "ios/Session/ICMBooleanInputView.m"
+      ],
+      "ICMBridge": [
+        "ios/Session/ICMBridge.m"
+      ],
+      "ICMButton": [
+        "ios/Session/ICMButton.m"
+      ],
+      "ICMCarousel": [
+        "ios/Session/ICMCarousel.m"
+      ],
+      "ICMCarouselBlockAppearance": [
+        "ios/Session/ICMCarouselBlockAppearance.m"
+      ],
+      "ICMCarouselMetricService": [
+        "ios/Session/ICMCarouselMetricService.m"
+      ],
+      "ICMCarouselReportingService": [
+        "ios/Session/ICMCarouselReportingService.m"
+      ],
+      "ICMCarouselService": [
+        "ios/Session/ICMCarouselService.m"
+      ],
+      "ICMCarouselViewController": [
+        "ios/Session/ICMCarouselViewController.m"
+      ],
+      "ICMCarouselViewState": [
+        "ios/Session/ICMCarouselViewState.m"
+      ],
+      "ICMChatNotificationViewController": [
+        "ios/Session/ICMChatNotificationViewController.m"
+      ],
+      "ICMColor": [
+        "ios/Session/ICMColor.m"
+      ],
+      "ICMCompany": [
+        "ios/Models/ICMCompany.m"
+      ],
+      "ICMComposerState": [
+        "ios/Session/ICMComposerState.m"
+      ],
+      "ICMComposerSuggestions": [
+        "ios/Session/ICMComposerSuggestions.m"
+      ],
+      "ICMConfig": [
+        "ios/Session/ICMConfig.m"
+      ],
+      "ICMContainerCardBlockAppearance": [
+        "ios/Session/ICMPartBlockAppearances.m"
+      ],
+      "ICMContentContainerViewController": [
+        "ios/Session/ICMContentContainerViewController.m"
+      ],
+      "ICMContentModalViewController": [
+        "ios/Session/ICMContentModalViewController.m"
+      ],
+      "ICMContentStackView": [
+        "ios/Session/ICMContentStackView.m"
+      ],
+      "ICMConversation": [
+        "ios/Session/ICMConversation.m"
+      ],
+      "ICMConversationPageResponse": [
+        "ios/Session/ICMConversationPageResponse.m"
+      ],
+      "ICMConversationPart": [
+        "ios/Session/ICMConversationPart.m"
+      ],
+      "ICMConversationRatedIntent": [
+        "ios/Session/ICMConversationRatingBlock.m"
+      ],
+      "ICMConversationRatingBlock": [
+        "ios/Session/ICMConversationRatingBlock.m"
+      ],
+      "ICMConversationRatingOption": [
+        "ios/Session/ICMConversationRatingBlock.m"
+      ],
+      "ICMConversationRatingRemarkIntent": [
+        "ios/Session/ICMConversationRatingBlock.m"
+      ],
+      "ICMConversationsResponse": [
+        "ios/Session/ICMConversationsResponse.m"
+      ],
+      "ICMCountLimitInputValidator": [
+        "ios/Session/ICMCountLimitInputValidator.m"
+      ],
+      "ICMCountryCode": [
+        "ios/Session/ICMCountryCode.m"
+      ],
+      "ICMCustomDataValidation": [
+        "ios/Models/ICMCustomDataValidation.m"
+      ],
+      "ICMDataManager": [
+        "ios/Session/ICMDataManager.m"
+      ],
+      "ICMDateTextField": [
+        "ios/Session/ICMDateTextField.m"
+      ],
+      "ICMDayTimestampDividerView": [
+        "ios/Session/DayTimestampDividerView.swift"
+      ],
+      "ICMDeviceData": [
+        "ios/Identity/ICMDeviceData.m"
+      ],
+      "ICMDeviceTokenData": [
+        "ios/Identity/ICMDeviceTokenData.m"
+      ],
+      "ICMEmailTextField": [
+        "ios/Session/ICMEmailTextField.m"
+      ],
+      "ICMEmailValidator": [
+        "ios/Session/ICMEmailValidator.m"
+      ],
+      "ICMEmptyInputValidator": [
+        "ios/Session/ICMEmptyInputValidator.m"
+      ],
+      "ICMEngine": [
+        "ios/Session/ICMEngine.m"
+      ],
+      "ICMEngineSessionDelegate": [
+        "ios/Session/ICMEngine.m"
+      ],
+      "ICMErrorStatus": [
+        "ios/Identity/ICMErrorStatus.m"
+      ],
+      "ICMErrorView": [
+        "ios/Session/ICMErrorView.m"
+      ],
+      "ICMFakeComposerView": [
+        "ios/Session/FakeComposerView.swift"
+      ],
+      "ICMFeatureChecker": [
+        "ios/Session/ICMFeatureChecker.m"
+      ],
+      "ICMFeedbackGenerator": [
+        "ios/Session/ICMFeedbackGenerator.m"
+      ],
+      "ICMFloatTextField": [
+        "ios/Session/ICMFloatTextField.m"
+      ],
+      "ICMFloatValidator": [
+        "ios/Session/ICMFloatValidator.m"
+      ],
+      "ICMFooterNotice": [
+        "ios/Session/FooterNotice.swift"
+      ],
+      "ICMFullScreenInAppViewController": [
+        "ios/Session/ICMFullScreenInAppViewController.m"
+      ],
+      "ICMGIFAction": [
+        "ios/Session/ICMGIFAction.m"
+      ],
+      "ICMGIFResponse": [
+        "ios/Session/ICMGIFResponse.m"
+      ],
+      "ICMGradientView": [
+        "ios/Session/ICMGradientView.m"
+      ],
+      "ICMHTTPBridge": [
+        "ios/Session/ICMHTTPBridge.m"
+      ],
+      "ICMHTTPClient": [
+        "ios/Session/ICMHTTPClient.m"
+      ],
+      "ICMHelpCenterArticle": [
+        "ios/Models/ICMHelpCenterModels.m"
+      ],
+      "ICMHelpCenterArticleAuthor": [
+        "ios/Models/ICMHelpCenterModels.m"
+      ],
+      "ICMHelpCenterArticleSearchResult": [
+        "ios/Models/ICMHelpCenterModels.m"
+      ],
+      "ICMHelpCenterCollection": [
+        "ios/Models/ICMHelpCenterModels.m"
+      ],
+      "ICMHelpCenterCollectionContent": [
+        "ios/Models/ICMHelpCenterModels.m"
+      ],
+      "ICMHostAppState": [
+        "ios/Session/ICMHostAppState.m"
+      ],
+      "ICMIdentityStore": [
+        "ios/Session/ICMIdentityStore.m"
+      ],
+      "ICMImageLoaderCore": [
+        "ios/Session/ImageLoaderCore.swift"
+      ],
+      "ICMImageTextBlock": [
+        "ios/Session/ICMImageTextBlock.m"
+      ],
+      "ICMInAppBlockAppearance": [
+        "ios/Session/ICMPartBlockAppearances.m"
+      ],
+      "ICMInAppHeaderViewController": [
+        "ios/Session/ICMInAppHeaderViewController.m"
+      ],
+      "ICMInAppPreloader": [
+        "ios/Session/ICMInAppPreloader.m"
+      ],
+      "ICMInAppsViewController": [
+        "ios/Session/ICMInAppsViewController.m"
+      ],
+      "ICMInboxInfoView": [
+        "ios/Session/ICMInboxInfoView.m"
+      ],
+      "ICMIntegerTextField": [
+        "ios/Session/ICMIntegerTextField.m"
+      ],
+      "ICMIntegerValidator": [
+        "ios/Session/ICMIntegerValidator.m"
+      ],
+      "ICMLauncherAnimationUtils": [
+        "ios/Session/ICMLauncherAnimationUtils.m"
+      ],
+      "ICMLauncherView": [
+        "ios/Session/LauncherView.swift"
+      ],
+      "ICMLauncherViewController": [
+        "ios/Session/LauncherViewController.swift"
+      ],
+      "ICMLinkCardBlockAppearance": [
+        "ios/Session/ICMLinkBlockAppearance.m"
+      ],
+      "ICMLinkCardContentBlockAppearance": [
+        "ios/Session/ICMLinkCardContentBlockAppearance.m"
+      ],
+      "ICMLinkListBlockAppearance": [
+        "ios/Session/ICMLinkBlockAppearance.m"
+      ],
+      "ICMLinkOpener": [
+        "ios/Session/LinkOpener.swift"
+      ],
+      "ICMLoadingTableViewCell": [
+        "ios/Session/ICMLoadingTableViewCell.m"
+      ],
+      "ICMLocalComposerPersistManager": [
+        "ios/Session/ICMLocalComposerPersistManager.m"
+      ],
+      "ICMLocationPermissionManager": [
+        "ios/Session/ICMLocationPermissionManager.m"
+      ],
+      "ICMLogger": [
+        "ios/Identity/ICMLogger.m"
+      ],
+      "ICMMaxSizeQueue": [
+        "ios/Session/ICMMaxSizeQueue.m"
+      ],
+      "ICMMediaAction": [
+        "ios/Session/ICMMediaAction.m"
+      ],
+      "ICMMessengerCardBlockAppearance": [
+        "ios/Session/ICMPartBlockAppearances.m"
+      ],
+      "ICMMessengerNavigationController": [
+        "ios/Session/ICMMessengerNavigationController.m"
+      ],
+      "ICMMessengerSheetViewController": [
+        "ios/Session/ICMMessengerSheetViewController.m"
+      ],
+      "ICMMetric": [
+        "ios/Session/ICMMetric.m"
+      ],
+      "ICMMetricEvent": [
+        "ios/Session/ICMMetricEvent.m"
+      ],
+      "ICMMultipartTaskBuilder": [
+        "ios/Session/MultipartTaskBuilder.swift"
+      ],
+      "ICMMultipleAvatarView": [
+        "ios/Session/ICMMultipleAvatarView.m"
+      ],
+      "ICMMultipleAvatarsView": [
+        "ios/Session/ICMMultipleAvatarsView.m"
+      ],
+      "ICMNavigationController": [
+        "ios/Session/ICMNavigationController.m"
+      ],
+      "ICMNexusBackdoor": [
+        "ios/Session/ICMNexusBackdoor.m"
+      ],
+      "ICMNoteViewController": [
+        "ios/Session/ICMNoteViewController.m"
+      ],
+      "ICMOpsMetricEvent": [
+        "ios/Session/ICMOpsMetricEvent.m"
+      ],
+      "ICMOreoEngine": [
+        "ios/Session/ICMOreoEngine.m"
+      ],
+      "ICMOreoErrorResponse": [
+        "ios/Session/ICMOreoErrorResponse.m"
+      ],
+      "ICMOreoShutdownState": [
+        "ios/Session/ICMOreoShutdownState.m"
+      ],
+      "ICMOreoUserJwtReplay": [
+        "ios/Session/ICMOreoUserJwtReplay.m"
+      ],
+      "ICMPendingPush": [
+        "ios/Session/ICMPendingPush.m"
+      ],
+      "ICMPermissionHelper": [
+        "ios/Session/ICMPermissionHelper.m"
+      ],
+      "ICMPermissionScreenAction": [
+        "ios/Session/ICMPermissionScreenAction.m"
+      ],
+      "ICMPermissionScreenActionView": [
+        "ios/Session/ICMPermissionScreenActionView.m"
+      ],
+      "ICMPersistenceProxy": [
+        "ios/Identity/ICMPersistenceProxy.m"
+      ],
+      "ICMPersistentStore": [
+        "ios/Session/ICMPersistentStore.m"
+      ],
+      "ICMPhoneTextField": [
+        "ios/Session/ICMPhoneTextField.m"
+      ],
+      "ICMPhoneValidator": [
+        "ios/Session/ICMPhoneValidator.m"
+      ],
+      "ICMPhotoLibraryPermissionManager": [
+        "ios/Session/ICMPhotoLibraryPermissionManager.m"
+      ],
+      "ICMPickerTextField": [
+        "ios/Session/ICMPickerTextField.m"
+      ],
+      "ICMPointerInteraction": [
+        "ios/Session/ICMPointerInteraction.m"
+      ],
+      "ICMPostBlockAppearance": [
+        "ios/Session/ICMPartBlockAppearances.m"
+      ],
+      "ICMPostViewController": [
+        "ios/Session/ICMPostViewController.m"
+      ],
+      "ICMPresentationManager": [
+        "ios/Session/ICMPresentationManager.m"
+      ],
+      "ICMPushNotificationManager": [
+        "ios/Session/ICMPushNotificationManager.m"
+      ],
+      "ICMPushPayload": [
+        "ios/Session/ICMPushPayload.m"
+      ],
+      "ICMPushPermissionManager": [
+        "ios/Session/ICMPushPermissionManager.m"
+      ],
+      "ICMRateLimiter": [
+        "ios/Session/ICMRateLimiter.m"
+      ],
+      "ICMReactionsOption": [
+        "ios/Session/ICMReactions.m"
+      ],
+      "ICMReactionsSet": [
+        "ios/Session/ICMReactions.m"
+      ],
+      "ICMReactionsViewController": [
+        "ios/Session/ICMReactionsViewController.m"
+      ],
+      "ICMRecentConversationsViewController": [
+        "ios/Session/ICMRecentConversationsViewController.m"
+      ],
+      "ICMRegexValidator": [
+        "ios/Session/ICMRegexValidator.m"
+      ],
+      "ICMRichPushMediaDownloadConfig": [
+        "ios/Session/ICMHTTPClient+RichPush.m"
+      ],
+      "ICMRootViewController": [
+        "ios/Session/ICMRootViewController.m"
+      ],
+      "ICMSafeNetworkModel": [
+        "ios/Identity/ICMSafeNetworkModel.m"
+      ],
+      "ICMScreen": [
+        "ios/Session/ICMScreen.m"
+      ],
+      "ICMScreenAction": [
+        "ios/Session/ICMScreenAction.m"
+      ],
+      "ICMScreenActionButton": [
+        "ios/Session/ICMScreenActionButton.m"
+      ],
+      "ICMScreenActionView": [
+        "ios/Session/ICMScreenActionView.m"
+      ],
+      "ICMScreenActionViewController": [
+        "ios/Session/ICMScreenActionViewController.m"
+      ],
+      "ICMScreenViewController": [
+        "ios/Session/ICMScreenViewController.m"
+      ],
+      "ICMSeparatorView": [
+        "ios/Session/ICMSeparatorView.m"
+      ],
+      "ICMSessionManager": [
+        "ios/Session/ICMSessionManager.m"
+      ],
+      "ICMSessionStartAttempt": [
+        "ios/Session/ICMSessionStartAttempt.m"
+      ],
+      "ICMSheet": [
+        "ios/Identity/ICMSheet.m"
+      ],
+      "ICMSoundPlayer": [
+        "ios/Session/ICMSoundPlayer.m"
+      ],
+      "ICMStackedChatNotificationsPillView": [
+        "ios/Session/ICMStackedChatNotificationsPillView.m"
+      ],
+      "ICMStackedChatNotificationsView": [
+        "ios/Session/ICMStackedChatNotificationsView.m"
+      ],
+      "ICMStackedChatNotificationsViewController": [
+        "ios/Session/ICMStackedChatNotificationsViewController.m"
+      ],
+      "ICMStackedChatNotificationsViewItem": [
+        "ios/Session/ICMStackedChatNotificationsViewItem.m"
+      ],
+      "ICMSubmitActionButton": [
+        "ios/Session/ICMSubmitActionButton.m"
+      ],
+      "ICMSubmitButton": [
+        "ios/Session/ICMSubmitButton.m"
+      ],
+      "ICMSurveyQuestionBlockAppearance": [
+        "ios/Session/ICMSurveyQuestionBlockAppearance.m"
+      ],
+      "ICMSurveyStepBlockAppearance": [
+        "ios/Session/ICMSurveyStepBlockAppearance.m"
+      ],
+      "ICMTeamPresence": [
+        "ios/Session/ICMTeamPresence.m"
+      ],
+      "ICMTeammatePresenceView": [
+        "ios/Session/ICMTeammatePresenceView.m"
+      ],
+      "ICMTextAction": [
+        "ios/Session/ICMTextAction.m"
+      ],
+      "ICMTextField": [
+        "ios/Session/ICMTextField.m"
+      ],
+      "ICMTimestampCalculator": [
+        "ios/Session/TimestampCalculator.swift"
+      ],
+      "ICMTranslationManager": [
+        "ios/Identity/TranslationManager.swift"
+      ],
+      "ICMURLSessionTaskOperation": [
+        "ios/Session/ICMURLSessionTaskOperation.m"
+      ],
+      "ICMUnreadConversationsResponse": [
+        "ios/Session/ICMUnreadConversationsResponse.m"
+      ],
+      "ICMUnreadManager": [
+        "ios/Session/UnreadManager.swift"
+      ],
+      "ICMUnreadTicketsResponse": [
+        "ios/Session/ICMUnreadTicketsResponse.m"
+      ],
+      "ICMUserAttributes": [
+        "ios/Models/ICMUserAttributes.m"
+      ],
+      "ICMUserBlockAppearance": [
+        "ios/Session/ICMUserBlockAppearance.m"
+      ],
+      "ICMUserIdentity": [
+        "ios/Identity/ICMUserIdentity.m"
+      ],
+      "ICMUserUpdateDeduper": [
+        "ios/Session/ICMUserUpdateDeduper.m"
+      ],
+      "ICMUserUpdateRequest": [
+        "ios/Session/ICMUserUpdateRequest.m"
+      ],
+      "ICMUtils": [
+        "ios/Identity/ICMUtils.m"
+      ],
+      "ICMValidator": [
+        "ios/Session/ICMValidator.m"
+      ],
+      "ICMVersionManager": [
+        "ios/Session/ICMVersionManager.m"
+      ],
+      "ICMWebHelpCenterAction": [
+        "ios/Session/ICMWebHelpCenterAction.m"
+      ],
+      "ICMWebHelpCenterJSBuilder": [
+        "ios/Session/ICMWebHelpCenterJSBuilder.m"
+      ],
+      "ICMWebsiteTextField": [
+        "ios/Session/ICMWebsiteTextField.m"
+      ],
+      "ICMWebsiteValidator": [
+        "ios/Session/ICMWebsiteValidator.m"
+      ],
+      "ICMWindow": [
+        "ios/Session/ICMWindow.m"
+      ],
+      "ICPCardFallbackJSBuilder": [
+        "ios/Session/ICPCardFallbackJSBuilder.m"
+      ],
+      "ICPCardFallbackModel": [
+        "ios/Session/ICPCardFallbackModel.m"
+      ],
+      "ICPLoadingView": [
+        "ios/Session/ICPLoadingView.m"
+      ],
+      "ICPMessengerCardFallbackView": [
+        "ios/Session/ICPMessengerCardFallbackView.m"
+      ],
+      "ICPTextInputPayload": [
+        "ios/Session/ICPTextInputPayload.m"
+      ],
+      "ITBAnimatedImageView": [
+        "ios/Session/ITBAnimatedImageView.m"
+      ],
+      "ITBAnimatedImageViewDisplayLinkProxy": [
+        "ios/Session/ITBAnimatedImageView.m"
+      ],
+      "ITBAttachmentBlock": [
+        "ios/Session/ITBAttachmentBlock.m"
+      ],
+      "ITBAttachmentBlockView": [
+        "ios/Session/ITBAttachmentBlockView.m"
+      ],
+      "ITBAttachmentIconView": [
+        "ios/Session/ITBAttachmentBlockView.m"
+      ],
+      "ITBAttachmentListBlock": [
+        "ios/Session/ITBAttachmentBlock.m"
+      ],
+      "ITBAttachmentListBlockView": [
+        "ios/Session/ITBAttachmentBlockView.m"
+      ],
+      "ITBBlock": [
+        "ios/Session/ITBBlock.m"
+      ],
+      "ITBBlockCollectionViewCell": [
+        "ios/Session/ITBBlockCollectionViewCell.m"
+      ],
+      "ITBBlockListViewController": [
+        "ios/Session/ITBBlockListViewController.m"
+      ],
+      "ITBBlockUtils": [
+        "ios/Session/ITBBlockUtils.m"
+      ],
+      "ITBBlockView": [
+        "ios/Session/ITBBlockView.m"
+      ],
+      "ITBBlockViewsReuseManager": [
+        "ios/Session/ITBBlockViewsReuseManager.m"
+      ],
+      "ITBButtonBlock": [
+        "ios/Session/ITBButtonBlock.m"
+      ],
+      "ITBButtonBlockView": [
+        "ios/Session/ITBButtonBlockView.m"
+      ],
+      "ITBCodeBlock": [
+        "ios/Session/ITBCodeBlock.m"
+      ],
+      "ITBFacebookBlock": [
+        "ios/Session/ITBSocialButtonBlocks.m"
+      ],
+      "ITBFooterContainerView": [
+        "ios/Session/ITBFooterContainerView.m"
+      ],
+      "ITBHTMLParser": [
+        "ios/Session/ITBHTMLParser.m"
+      ],
+      "ITBHeadingBlock": [
+        "ios/Session/ITBHeadingBlock.m"
+      ],
+      "ITBHyperlinkTextView": [
+        "ios/Session/ITBHyperlinkTextView.m"
+      ],
+      "ITBImageBlock": [
+        "ios/Session/ITBImageBlock.m"
+      ],
+      "ITBImageBlockView": [
+        "ios/Session/ITBImageBlockView.m"
+      ],
+      "ITBImageFileLoader": [
+        "ios/Session/ITBImageFileLoader.m"
+      ],
+      "ITBImageLoader": [
+        "ios/Session/ITBImageLoader.m"
+      ],
+      "ITBImagePreviewMetadata": [
+        "ios/Session/ITBImagePreviewMetadata.m"
+      ],
+      "ITBImageUtils": [
+        "ios/Session/ITBImageUtils.m"
+      ],
+      "ITBInlineCitation": [
+        "ios/Session/ITBInlineCitation.m"
+      ],
+      "ITBInlineCitationParser": [
+        "ios/Session/ITBInlineCitationParser.m"
+      ],
+      "ITBLink": [
+        "ios/Session/ITBLinkListBlock.m"
+      ],
+      "ITBLinkBlock": [
+        "ios/Session/ITBLinkBlock.m"
+      ],
+      "ITBLinkBlockAuthor": [
+        "ios/Session/ITBLinkBlockModels.m"
+      ],
+      "ITBLinkBlockAuthorView": [
+        "ios/Session/ITBLinkBlockAuthorView.m"
+      ],
+      "ITBLinkBlockImage": [
+        "ios/Session/ITBLinkBlockModels.m"
+      ],
+      "ITBLinkBlockView": [
+        "ios/Session/ITBLinkBlockView.m"
+      ],
+      "ITBLinkListBlock": [
+        "ios/Session/ITBLinkListBlock.m"
+      ],
+      "ITBLinkListBlockView": [
+        "ios/Session/ITBLinkListBlockView.m"
+      ],
+      "ITBLinkListFooterView": [
+        "ios/Session/ITBLinkListChildViews.m"
+      ],
+      "ITBLinkListItemView": [
+        "ios/Session/ITBLinkListChildViews.m"
+      ],
+      "ITBListBlock": [
+        "ios/Session/ITBListBlock.m"
+      ],
+      "ITBLoadingView": [
+        "ios/Session/ITBLoadingView.m"
+      ],
+      "ITBMessengerCardFallbackBlock": [
+        "ios/Session/ITBMessengerCardFallbackBlock.m"
+      ],
+      "ITBMessengerCardFallbackView": [
+        "ios/Session/ITBMessengerCardFallbackView.m"
+      ],
+      "ITBNotificationCardBlock": [
+        "ios/Session/ITBNotificationCardBlock.m"
+      ],
+      "ITBNotificationCardBlockView": [
+        "ios/Session/ITBNotificationCardBlockView.m"
+      ],
+      "ITBNotificationChannel": [
+        "ios/Session/ITBNotificationCardBlock.m"
+      ],
+      "ITBOrderedListBlock": [
+        "ios/Session/ITBListBlock.m"
+      ],
+      "ITBParagraphBlock": [
+        "ios/Session/ITBTextBlock.m"
+      ],
+      "ITBSubHeadingBlock": [
+        "ios/Session/ITBHeadingBlock.m"
+      ],
+      "ITBTextBlock": [
+        "ios/Session/ITBTextBlock.m"
+      ],
+      "ITBTextBlockView": [
+        "ios/Session/ITBTextBlockView.m"
+      ],
+      "ITBTextBlockViewIntent": [
+        "ios/Session/ITBTextBlockView.m"
+      ],
+      "ITBTwitterBlock": [
+        "ios/Session/ITBSocialButtonBlocks.m"
+      ],
+      "ITBTypingBlock": [
+        "ios/Session/ITBTypingBlock.m"
+      ],
+      "ITBTypingBlockView": [
+        "ios/Session/ITBTypingBlock.m"
+      ],
+      "ITBTypingDotView": [
+        "ios/Session/ITBTypingBlock.m"
+      ],
+      "ITBTypingView": [
+        "ios/Session/ITBTypingBlock.m"
+      ],
+      "ITBUnorderedListBlock": [
+        "ios/Session/ITBListBlock.m"
+      ],
+      "ITBUpload": [
+        "ios/Session/ITBUpload.m"
+      ],
+      "ITBUploadProgressButton": [
+        "ios/Session/ITBUploadProgressButton.m"
+      ],
+      "ITBVideoBlock": [
+        "ios/Session/ITBVideoBlocks.m"
+      ],
+      "ITBVideoBlockView": [
+        "ios/Session/ITBVideoBlockView.m"
+      ],
+      "ITBVideoFileBlock": [
+        "ios/Session/ITBVideoBlocks.m"
+      ],
+      "ITBVideoFileBlockView": [
+        "ios/Session/ITBVideoFileBlockView.m"
+      ],
+      "ITBVideoFilePlayButton": [
+        "ios/Session/ITBVideoFileBlockView.m"
+      ],
+      "Intercom": [
+        "ios/Session/Intercom.m"
+      ],
+      "IntercomContent": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "IntercomNexusClient": [
+        "ios/Session/IntercomNexusClient.m"
+      ],
+      "IntercomNexusConfiguration": [
+        "ios/Identity/IntercomNexusConfiguration.m"
+      ],
+      "IntercomNexusConnection": [
+        "ios/Session/IntercomNexusConnection.m"
+      ],
+      "IntercomNexusEvent": [
+        "ios/Session/IntercomNexusEvent.m"
+      ],
+      "IntercomNexusSocket": [
+        "ios/Session/IntercomNexusSocket.m"
+      ],
+      "Survey": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "TicketContent": [
+        "ios/Models/IntercomContent.m"
+      ],
+      "_TtC18IntercomSDKPrivate10FilePicker": [
+        "ios/Session/FilePicker.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10HomeConfig": [
+        "ios/Session/ConfigModules.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10HomeHeader": [
+        "ios/Session/ConfigModules.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10OpenConfig": [
+        "ios/Session/ConfigModules.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10SourceView": [
+        "ios/Session/SourceView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10SpaceBadge": [
+        "ios/Session/ConfigModules.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10SurveyStep": [
+        "ios/Session/SurveyStep.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10TableBlock": [
+        "ios/Session/TableBlock.swift"
+      ],
+      "_TtC18IntercomSDKPrivate10TicketType": [
+        "ios/Session/TicketType.swift"
+      ],
+      "_TtC18IntercomSDKPrivate11ColorHelper": [
+        "ios/Session/ColorHelper.swift"
+      ],
+      "_TtC18IntercomSDKPrivate11ICMKeychain": [
+        "ios/Identity/ICMKeychain.swift"
+      ],
+      "_TtC18IntercomSDKPrivate11MediaPicker": [
+        "ios/Session/MediaPicker.swift"
+      ],
+      "_TtC18IntercomSDKPrivate11Participant": [
+        "ios/Session/Participant.swift"
+      ],
+      "_TtC18IntercomSDKPrivate11ReplyOption": [
+        "ios/Session/ReplyOption.swift"
+      ],
+      "_TtC18IntercomSDKPrivate11TicketBlock": [
+        "ios/Session/TicketBlock.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12ActionColors": [
+        "ios/Session/CustomizationColors.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12AssetManager": [
+        "ios/Session/AssetManager.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12CameraPicker": [
+        "ios/Session/CameraPicker.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12GreetingView": [
+        "ios/Session/GreetingView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12LinkPartView": [
+        "ios/Session/LinkPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12NotePartView": [
+        "ios/Session/NotePartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12OpenResponse": [
+        "ios/Session/OpenResponse.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12PartMetadata": [
+        "ios/Session/PartMetadata.swift"
+      ],
+      "_TtC18IntercomSDKPrivate12PostPartView": [
+        "ios/Session/PostPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13BlockPartView": [
+        "ios/Session/BlockPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13CodeBlockView": [
+        "ios/Session/CodeBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13ConfigModules": [
+        "ios/Session/ConfigModules.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13EventPartView": [
+        "ios/Session/EventPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13FormAttribute": [
+        "ios/Session/FormAttribute.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13LinkBlockView": [
+        "ios/Session/LinkBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13ListBlockView": [
+        "ios/Session/ListBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13PreviewHelper": [
+        "ios/Session/PreviewHelper.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13StreamingPart": [
+        "ios/Session/StreamingPart.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13SurveyService": [
+        "ios/Session/SurveyService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13TableCardView": [
+        "ios/Session/TableCardView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13TextBlockView": [
+        "ios/Session/TextBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate13TextInputView": [
+        "ios/Session/TextInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14AttachmentView": [
+        "ios/Session/AttachmentView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14EmojiInputView": [
+        "ios/Session/EmojiInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14ErrorProcessor": [
+        "ios/Identity/ErrorProcessor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14InboxViewModel": [
+        "ios/Session/InboxViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14KeyboardHelper": [
+        "ios/Session/KeyboardHelper.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14PartStatusView": [
+        "ios/Session/PartStatusView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14QuickReplyView": [
+        "ios/Session/QuickReplyView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14ShimmeringView": [
+        "ios/Session/ShimmeringView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14StarsInputView": [
+        "ios/Session/StarsInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14TableBlockView": [
+        "ios/Session/TableBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14TicketCardView": [
+        "ios/Session/TicketCardView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14TicketIconView": [
+        "ios/Session/TicketIconView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14TicketInfoView": [
+        "ios/Session/TicketInfoView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate14VideoBlockView": [
+        "ios/Session/VideoBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15ArticleMetaData": [
+        "ios/Session/ArticleMetaData.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15ButtonBlockView": [
+        "ios/Session/ButtonBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15DefaultPartView": [
+        "ios/Session/DefaultPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15InputProperties": [
+        "ios/Session/InputProperties.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15OpenCallService": [
+        "ios/Session/OpenCallService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15SurveyViewModel": [
+        "ios/Session/SurveyViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15TicketBlockView": [
+        "ios/Session/TicketBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate15VideoPlayButton": [
+        "ios/Session/VideoPlayButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16ComposerTextView": [
+        "ios/Session/ComposerTextView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16DefaultBlockView": [
+        "ios/Session/DefaultBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16DotIndicatorView": [
+        "ios/Session/DotIndicatorView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16EmojiImageButton": [
+        "ios/Session/EmojiInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16EventParticipant": [
+        "ios/Session/EventData.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16FooterNoticeView": [
+        "ios/Session/FooterNoticeView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16HeaderIconButton": [
+        "ios/Session/HeaderIconButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16IntercomLinkView": [
+        "ios/Session/IntercomLinkView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16LinkListItemView": [
+        "ios/Session/LinkListBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16LinkListPartView": [
+        "ios/Session/LinkListPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16QuickReplyButton": [
+        "ios/Session/QuickReplyButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16SearchBrowseView": [
+        "ios/Session/SearchBrowseView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16SurveySenderView": [
+        "ios/Session/SurveySenderView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16TicketAttachment": [
+        "ios/Session/TicketAttachment.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16TicketBannerView": [
+        "ios/Session/TicketBannerView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16TimelineLineView": [
+        "ios/Session/TimelineLineView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate16UserJwtRefresher": [
+        "ios/Session/UserJwtRefresher.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17AttributePartView": [
+        "ios/Session/AttributePartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17AvatarDetailsView": [
+        "ios/Session/AvatarDetailsView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17ComposerViewModel": [
+        "ios/Session/ComposerViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17HomeHeaderContent": [
+        "ios/Session/HomeHeaderContent.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17HomeMetricService": [
+        "ios/Session/HomeMetricService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17HyperLinkTextView": [
+        "ios/Session/HyperLinkTextView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17InboxCellViewItem": [
+        "ios/Session/InboxCellViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17LinkListBlockView": [
+        "ios/Session/LinkListBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17MultiSelectButton": [
+        "ios/Session/MultiSelectButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17NexusEventFactory": [
+        "ios/Session/NexusEventFactory.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17PrivacyPolicyView": [
+        "ios/Session/PrivacyPolicyView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate17TicketFormRequest": [
+        "ios/Session/TicketFormRequest.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18AttachmentSettings": [
+        "ios/Session/AttachmentSettings.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18AttributeInputView": [
+        "ios/Session/AttributeInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18ConversationHeader": [
+        "ios/Session/ConversationHeader.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18HomescreenCardView": [
+        "ios/Session/HomescreenCardView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18ImageTextBlockView": [
+        "ios/Session/ImageTextBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18LoadingSpinnerView": [
+        "ios/Session/LoadingSpinnerView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18MessagesEmptyState": [
+        "ios/Session/MessagesEmptyState.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18ParticipatingAdmin": [
+        "ios/Session/ParticipatingAdmin.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18QuickReplyPartView": [
+        "ios/Session/QuickReplyPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18SurveyQuestionView": [
+        "ios/Session/SurveyQuestionView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18TicketFormResponse": [
+        "ios/Session/TicketFormResponse.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18VideoFileBlockView": [
+        "ios/Session/VideoFileBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate18WebHeadersInjector": [
+        "ios/Session/WebHeadersInjector.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19AttachmentBlockView": [
+        "ios/Session/AttachmentBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19ComposerViewWrapper": [
+        "ios/Session/ComposerViewWrapper.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19CustomizationConfig": [
+        "ios/Session/CustomizationConfig.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19ErrorViewController": [
+        "ios/Session/ErrorViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19HeaderCustomization": [
+        "ios/Session/CustomizationColors.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19InboxViewController": [
+        "ios/Session/InboxViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19NewConversationCard": [
+        "ios/Session/NewConversationCard.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19ObservableStackView": [
+        "ios/Session/ObservableStackView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19PartBlockAppearance": [
+        "ios/Session/PartBlockAppearance.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19PrivacyPolicyNotice": [
+        "ios/Session/PrivacyPolicyNotice.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19SurveyMetricService": [
+        "ios/Session/SurveyMetricService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19SurveyStepViewModel": [
+        "ios/Session/SurveyStepViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19TeammateAvatarsView": [
+        "ios/Session/TeammateAvatarsView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19TicketAttributeView": [
+        "ios/Session/TicketAttributeView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19TicketSubmittedView": [
+        "ios/Session/TicketSubmittedView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19TicketsListViewCell": [
+        "ios/Session/TicketsListViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19TicketsPageResponse": [
+        "ios/Session/TicketsPageResponse.swift"
+      ],
+      "_TtC18IntercomSDKPrivate19VideoBlockViewCache": [
+        "ios/Session/VideoBlockViewCache.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20ActionContrastColors": [
+        "ios/Session/CustomizationColors.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20BlockViewFactoryObjC": [
+        "ios/Session/BlockViewFactoryObjC.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20BotWithTeammatesView": [
+        "ios/Session/BotWithTeammatesView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20ChatNotificationView": [
+        "ios/Session/ChatNotificationView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20DefaultThemeProvider": [
+        "ios/Session/DefaultThemeProvider.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20DiagnosticSubscriber": [
+        "ios/Session/DiagnosticSubscriber.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20FloatingActionButton": [
+        "ios/Session/FloatingActionButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20HomeHeaderBackground": [
+        "ios/Session/HomeHeaderBackground.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20HomescreenInteractor": [
+        "ios/Session/HomescreenInteractor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20ImageGridViewWrapper": [
+        "ios/Session/ImageGridViewWrapper.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20MultiSelectInputView": [
+        "ios/Session/MultiSelectInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20NavigationBarManager": [
+        "ios/Session/NavigationBarManager.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20SurveyViewController": [
+        "ios/Session/SurveyViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20TicketsListViewModel": [
+        "ios/Session/TicketsListViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate20UnreadMessageDivider": [
+        "ios/Session/UnreadMessageDivider.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21ConversationViewModel": [
+        "ios/Session/ConversationViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21FooterNoticeViewModel": [
+        "ios/Session/FooterNoticeViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21HelpCenterArticleView": [
+        "ios/Session/HelpCenterArticleView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21HelpCenterDataService": [
+        "ios/Session/HelpCenterDataService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21LoadingViewController": [
+        "ios/Session/LoadingViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21MessagesMetricService": [
+        "ios/Session/MessagesMetricService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21MessengerAppBlockView": [
+        "ios/Session/MessengerAppBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21MessengerAppViewCache": [
+        "ios/Session/MessengerAppViewCache.swift"
+      ],
+      "_TtC18IntercomSDKPrivate21TicketsListInteractor": [
+        "ios/Session/TicketsListInteractor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22ArticleReactionService": [
+        "ios/Session/ArticleReactionService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22AudioRecorderViewModel": [
+        "ios/Session/AudioRecorderViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22AvailableTeammatesView": [
+        "ios/Session/AvailableTeammatesView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22CitationViewController": [
+        "ios/Session/CitationViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22ClosedConversationView": [
+        "ios/Session/ClosedConversationView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22ComposerTextController": [
+        "ios/Session/ComposerTextController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22ConversationInteractor": [
+        "ios/Session/ConversationInteractor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22FinAnswerSourceWrapper": [
+        "ios/Session/FinAnswerSource.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22HomeHeaderLabelDetails": [
+        "ios/Session/HomeHeaderContent.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22MessagesEmptyStateView": [
+        "ios/Session/MessagesEmptyStateView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22OutboundImageBlockView": [
+        "ios/Session/OutboundImageBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22PushNotificationStatus": [
+        "ios/Session/PushNotificationStatus.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22RecentTicketsTableView": [
+        "ios/Session/RecentTicketsTableView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22TicketDetailsViewModel": [
+        "ios/Session/TicketDetailsViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate22TicketStatusUpdateView": [
+        "ios/Session/TicketStatusUpdateView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23ConversationEndedButton": [
+        "ios/Session/ConversationEndedButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23FileAttachmentBlockView": [
+        "ios/Session/FileAttachmentBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23GIFPickerViewController": [
+        "ios/Session/GIFPickerViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23HelpCenterMetricService": [
+        "ios/Session/HelpCenterMetricService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23NewConversationResponse": [
+        "ios/Session/NewConversationResponse.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23TicketDetailsHeaderView": [
+        "ios/Session/TicketDetailsHeaderView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate23TicketDetailsInteractor": [
+        "ios/Session/TicketDetailsInteractor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate24ArticleHostingController": [
+        "ios/Session/ArticleHostingController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate24HomescreenViewController": [
+        "ios/Session/HomescreenViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate24MessagesEmptyStateAction": [
+        "ios/Session/MessagesEmptyStateAction.swift"
+      ],
+      "_TtC18IntercomSDKPrivate24SessionIdentifierManager": [
+        "ios/Session/SessionIdentifierManager.swift"
+      ],
+      "_TtC18IntercomSDKPrivate24SurveyStepViewController": [
+        "ios/Session/SurveyStepViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate24TicketStatusTimelineView": [
+        "ios/Session/TicketStatusTimelineView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate25HelpCenterTableHeaderView": [
+        "ios/Session/HelpCenterTableHeaders.swift"
+      ],
+      "_TtC18IntercomSDKPrivate25HomescreenHeaderViewModel": [
+        "ios/Session/HomescreenHeaderViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate25InternalHelpCenterArticle": [
+        "ios/Session/InternalHelpCenterArticle.swift"
+      ],
+      "_TtC18IntercomSDKPrivate25TemporaryExpectationsView": [
+        "ios/Session/TemporaryExpectationsView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate25TicketCreateFormViewModel": [
+        "ios/Session/TicketCreateFormViewModel.swift"
+      ],
+      "_TtC18IntercomSDKPrivate25TicketsListViewController": [
+        "ios/Session/TicketsListViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26ConversationImageBlockView": [
+        "ios/Session/ConversationImageBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26ConversationRatingPartView": [
+        "ios/Session/ConversationRatingPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26ConversationViewController": [
+        "ios/Session/ConversationViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26ExpandedConversationHeader": [
+        "ios/Session/ExpandedConversationHeader.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26HomescreenHeaderInteractor": [
+        "ios/Session/HomescreenHeaderInteractor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26MessengerAppHomescreenView": [
+        "ios/Session/MessengerAppHomescreenView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26MultiSelectOtherOptionView": [
+        "ios/Session/MultiSelectOtherOptionView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26NewConversationCTAResponse": [
+        "ios/Session/NewConversationCTAResponse.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26SpaceHomecreenCardViewItem": [
+        "ios/Session/SpaceHomecreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26SurveyCustomizationOptions": [
+        "ios/Session/SurveyCustomizationOptions.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26SurveyQuestionResponseView": [
+        "ios/Session/SurveyQuestionResponseView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate26TicketCreateFormInteractor": [
+        "ios/Session/TicketCreateFormInteractor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27AIAnswerPartBlockAppearance": [
+        "ios/Session/PartBlockAppearance.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27ChatNotificationContentView": [
+        "ios/Session/ChatNotificationContentView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27CollapsedConversationHeader": [
+        "ios/Session/CollapsedConversationHeader.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27ConversationRatingBlockView": [
+        "ios/Session/ConversationRatingBlockView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27InlineCodeChipLayoutManager": [
+        "ios/Session/InlineCodeChipLayoutManager.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27IntercomTableViewController": [
+        "ios/Session/IntercomTableViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27NumericRatingScaleInputView": [
+        "ios/Session/NumericRatingScaleInputView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27PersonalPartBlockAppearance": [
+        "ios/Session/PartBlockAppearance.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27StandardOutlineCellItemView": [
+        "ios/Session/StandardOutlineCellItemView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27TableExpandedViewController": [
+        "ios/Session/TableExpandedViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate27TicketDetailsViewController": [
+        "ios/Session/TicketDetailsViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28HomeHeaderCloseButtonDetails": [
+        "ios/Session/HomeHeaderContent.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28ImagePreviewerViewController": [
+        "ios/Session/ImagePreviewerViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28MediaPreviewerViewController": [
+        "ios/Session/MediaPreviewerViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28MessengerAppConversationView": [
+        "ios/Session/MessengerAppConversationView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28MessengerAppTextInputPayload": [
+        "ios/Session/MessengerAppTextInputPayload.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28OutboundContentBlockDelegate": [
+        "ios/Session/OutboundContentBlockDelegate.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28SurveyQuestionViewController": [
+        "ios/Session/SurveyQuestionViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28TicketFormResponseListOption": [
+        "ios/Session/TicketFormResponseListOption.swift"
+      ],
+      "_TtC18IntercomSDKPrivate28TicketStatusTimelineItemView": [
+        "ios/Session/TicketStatusTimelineItemView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate29ConversationStateSyncSettings": [
+        "ios/Session/ConversationStateSyncSettings.swift"
+      ],
+      "_TtC18IntercomSDKPrivate29HelpCenterBrowseTableViewCell": [
+        "ios/Session/HelpCenterBrowseTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate29ICMProactiveContentVisibility": [
+        "ios/Session/ProactiveContentVisibility.swift"
+      ],
+      "_TtC18IntercomSDKPrivate29TicketCreateFormTableViewCell": [
+        "ios/Session/TicketCreateFormActionCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate29TicketsListViewEmptyStateView": [
+        "ios/Session/TicketsListViewEmptyStateView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30ConversationCollectionViewCell": [
+        "ios/Session/ConversationCollectionViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30ExpandedConversationHeaderView": [
+        "ios/Session/ExpandedConversationHeaderView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30HelpCenterArticleTableViewCell": [
+        "ios/Session/HelpCenterArticleTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30HelpCenterSearchViewController": [
+        "ios/Session/HelpCenterSearchViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30HomescreenHeaderBackgroundView": [
+        "ios/Session/HomescreenHeaderBackgroundView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30HomescreenHeaderViewController": [
+        "ios/Session/HomescreenHeaderViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30SourceViewTapGestureRecognizer": [
+        "ios/Session/SourceView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30TicketCreateFormActionCellItem": [
+        "ios/Session/TicketCreateFormActionCellItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30TicketCreateFormViewController": [
+        "ios/Session/TicketCreateFormViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30TicketFileUploadAttributeValue": [
+        "ios/Session/TicketFileUploadAttributeValue.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30TicketStringAttributeValueView": [
+        "ios/Session/TicketStringAttributeValueView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate30TouchTransparentCollectionView": [
+        "ios/Session/TouchTransparentCollectionView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31CodeBlockExpandedViewController": [
+        "ios/Session/CodeBlockExpandedViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31CollapsedConversationHeaderView": [
+        "ios/Session/CollapsedConversationHeaderView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31ConversationEndedButtonMetadata": [
+        "ios/Session/ConversationEndedButton.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31ConversationSpaceViewController": [
+        "ios/Session/ConversationSpaceViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31HelpCenterStartConversationView": [
+        "ios/Session/HelpCenterStartConversationView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31InternalHelpCenterArticleAuthor": [
+        "ios/Session/InternalHelpCenterArticleAuthor.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31MergedConversationEventPartView": [
+        "ios/Session/MergedConversationEventPartView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate31NewConversationHomeCardResponse": [
+        "ios/Session/NewConversationHomeCardResponse.swift"
+      ],
+      "_TtC18IntercomSDKPrivate32HelpCenterHomescreenCardViewItem": [
+        "ios/Session/HelpCenterHomescreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate32IntercomCollectionViewController": [
+        "ios/Session/IntercomCollectionViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate32RatingScaleOptionsViewController": [
+        "ios/Session/RatingScaleOptionsViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate33HelpCenterCollectionTableViewCell": [
+        "ios/Session/HelpCenterCollectionTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate33HelpCenterContainerViewController": [
+        "ios/Session/HelpCenterContainerViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate33NavigationBarManagerMetricService": [
+        "ios/Session/NavigationBarManagerMetricService.swift"
+      ],
+      "_TtC18IntercomSDKPrivate33ScrollDetectingNavigationDelegate": [
+        "ios/Session/ScrollDetectingNavigationDelegate.swift"
+      ],
+      "_TtC18IntercomSDKPrivate33TicketCreateFormTextTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34CreateTicketHomescreenCardViewitem": [
+        "ios/Session/CreateTicketHomescreenCardViewitem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34HelpCenterArticleAuthorAvatarsView": [
+        "ios/Session/HelpCenterTableHeaders.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34MessengerAppHomescreenCardViewItem": [
+        "ios/Session/MessengerAppHomescreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34TicketAttachmentAttributeValueView": [
+        "ios/Session/TicketAttachmentAttributeValueView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34TicketCreateFormEmailTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34TicketCreateFormFileUploadCellItem": [
+        "ios/Session/TicketCreateFormFileUploadCellItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34TicketCreateFormFloatTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate34TicketCreateFormInputTableViewCell": [
+        "ios/Session/TicketCreateFormInputTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35ExternalLinksHomescreenCardViewItem": [
+        "ios/Session/ExternalLinksHomescreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35HelpCenterArticleListViewController": [
+        "ios/Session/HelpCenterArticleListViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35HelpCenterSearchResultTableViewCell": [
+        "ios/Session/HelpCenterSearchResultTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35RecentTicketsHomescreenCardViewItem": [
+        "ios/Session/RecentTicketsHomescreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35TicketCreateFormActionTableViewCell": [
+        "ios/Session/TicketCreateFormActionCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35TicketCreateFormCancelTableViewCell": [
+        "ios/Session/TicketCreateFormActionCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35TicketCreateFormPickerTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate35TicketCreateFormSubmitTableViewCell": [
+        "ios/Session/TicketCreateFormActionCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate36HelpCenterArticleListTableHeaderView": [
+        "ios/Session/HelpCenterArticleListTableHeaderView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate36TicketCreateFormBooleanTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate36TicketCreateFormIntegerTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate37NewConversationHomescreenCardViewItem": [
+        "ios/Session/NewConversationHomescreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate37SheetConversationHeaderViewController": [
+        "ios/Session/SheetConversationHeaderViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate37SuggestedArticlesTapGestureRecognizer": [
+        "ios/Session/SearchBrowseView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate37TicketCreateFormDateTimeTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate37TicketCreateFormLongTextTableViewCell": [
+        "ios/Session/TicketCreateFormTypedCells.swift"
+      ],
+      "_TtC18IntercomSDKPrivate37TicketCreateFormStandardInputCellItem": [
+        "ios/Session/TicketCreateFormStandardInputCellItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate38HelpCenterArticleListSectionHeaderView": [
+        "ios/Session/HelpCenterTableHeaders.swift"
+      ],
+      "_TtC18IntercomSDKPrivate38HelpCenterCollectionListViewController": [
+        "ios/Session/HelpCenterCollectionListViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate39HelpCenterCollectionListTableHeaderView": [
+        "ios/Session/HelpCenterCollectionListTableHeaderView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate39RecentConversationHomecreenCardViewItem": [
+        "ios/Session/RecentConversationHomecreenCardViewItem.swift"
+      ],
+      "_TtC18IntercomSDKPrivate39TicketCreateFormFileUploadTableViewCell": [
+        "ios/Session/TicketCreateFormFileUploadTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate40HelpCenterArticleContainerViewController": [
+        "ios/Session/HelpCenterArticleContainerViewController.swift"
+      ],
+      "_TtC18IntercomSDKPrivate42TicketCreateFormStandardInputTableViewCell": [
+        "ios/Session/TicketCreateFormStandardInputTableViewCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate4Form": [
+        "ios/Session/Form.swift"
+      ],
+      "_TtC18IntercomSDKPrivate5Space": [
+        "ios/Session/ConfigModules.swift"
+      ],
+      "_TtC18IntercomSDKPrivate5Theme": [
+        "ios/Session/Theme.swift"
+      ],
+      "_TtC18IntercomSDKPrivate6Avatar": [
+        "ios/Session/Avatar.swift"
+      ],
+      "_TtC18IntercomSDKPrivate6Survey": [
+        "ios/Session/Survey.swift"
+      ],
+      "_TtC18IntercomSDKPrivate6Ticket": [
+        "ios/Session/Ticket.swift"
+      ],
+      "_TtC18IntercomSDKPrivate7GIFCell": [
+        "ios/Session/GIFCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate7UIFlags": [
+        "ios/Session/UIFlags.swift"
+      ],
+      "_TtC18IntercomSDKPrivate8SurveyId": [
+        "ios/Session/SurveyId.swift"
+      ],
+      "_TtC18IntercomSDKPrivate8TableRow": [
+        "ios/Session/TableBlock.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9ActiveBot": [
+        "ios/Session/ActiveBot.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9BadgeView": [
+        "ios/Session/BadgeView.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9CodeBlock": [
+        "ios/Session/CodeBlock.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9EventData": [
+        "ios/Session/EventData.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9InboxCell": [
+        "ios/Session/InboxCell.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9JWTExpiry": [
+        "ios/Identity/JWTExpiry.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9PoweredBy": [
+        "ios/Session/PoweredBy.swift"
+      ],
+      "_TtC18IntercomSDKPrivate9TableCell": [
+        "ios/Session/TableBlock.swift"
+      ],
+      "_TtCV18IntercomSDKPrivate7WebView11Coordinator": [
+        "ios/Session/WebView.swift"
+      ],
+      "_TtCV18IntercomSDKPrivateP33_7C1AF274F41411F84321DFC557DAE93B9ErrorView11Coordinator": [
+        "ios/Session/ArticleNativeViewAdapters.swift"
+      ]
+    },
+    "missingRuntimeClasses": [
+      "PodsDummy_Pods_IntercomSDK_Public",
+      "_TtC18IntercomSDKPrivate11EmojiButton",
+      "_TtC18IntercomSDKPrivate13AudioRecorder",
+      "_TtC18IntercomSDKPrivate13ClosureSleeve",
+      "_TtC18IntercomSDKPrivate14DiskImageCache",
+      "_TtC18IntercomSDKPrivate15DiagnosticStore",
+      "_TtC18IntercomSDKPrivate15ImageDownloader",
+      "_TtC18IntercomSDKPrivate16DefaultScheduler",
+      "_TtC18IntercomSDKPrivate16MemoryImageCache",
+      "_TtC18IntercomSDKPrivate17DictionaryDecoder",
+      "_TtC18IntercomSDKPrivate17DictionaryEncoder",
+      "_TtC18IntercomSDKPrivate18SurveyTextQuestion",
+      "_TtC18IntercomSDKPrivate18VideoFileProcessor",
+      "_TtC18IntercomSDKPrivate19SurveyInputQuestion",
+      "_TtC18IntercomSDKPrivate20ChatLayoutAttributes",
+      "_TtC18IntercomSDKPrivate21AttachmentFileManager",
+      "_TtC18IntercomSDKPrivate22SurveyDropdownQuestion",
+      "_TtC18IntercomSDKPrivate24CollectionViewChatLayout",
+      "_TtC18IntercomSDKPrivate25SurveyMultiSelectQuestion",
+      "_TtC18IntercomSDKPrivate25SurveyRatingScaleQuestion",
+      "_TtC18IntercomSDKPrivate26TicketAttributeViewFactory",
+      "_TtC18IntercomSDKPrivate29ChatLayoutInvalidationContext",
+      "_TtC18IntercomSDKPrivateP33_54135CACCBC0BDAAC37404BB23A0601E15EndFadeDelegate",
+      "_TtC18IntercomSDKPrivateP33_54135CACCBC0BDAAC37404BB23A0601E16ShimmerMaskLayer",
+      "_TtC18IntercomSDKPrivateP33_6BA7E8B59B10295E7CDB9F55CCB5079324DeferredActionMenuButton",
+      "_TtC18IntercomSDKPrivateP33_D9C3FF5CD4B18F18F98809C455309D0F19NumericRatingButton",
+      "_TtC18IntercomSDKPrivateP33_E834D7A15A60EE08082189964CCECA3936TicketBannerViewTapGestureRecognizer",
+      "_TtC8IntercomP33_6DD8664164A15D9553F36F93B771C43519ResourceBundleClass",
+      "_TtCC18IntercomSDKPrivate13CodeBlockViewP33_EBF7782925B8A3F2749C9F27C3854CA117UnwrappedTextView",
+      "_TtCC18IntercomSDKPrivate16UserJwtRefresherP33_B39106919195B3858B7DAE55DE59A6CB14PendingRefresh",
+      "_TtCV18IntercomSDKPrivate17MessageInputField11Coordinator"
+    ],
+    "functionalSwiftBodiesWithUnpinnedRuntimeIdentity": [
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate13ClosureSleeve",
+        "source": [
+          "ios/Session/UIButton+ClosureAction.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate14DiskImageCache",
+        "source": [
+          "ios/Session/ImageCaches.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate15DiagnosticStore",
+        "source": [
+          "ios/Session/DiagnosticStore.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate15ImageDownloader",
+        "source": [
+          "ios/Session/ImageDownloader.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate16DefaultScheduler",
+        "source": [
+          "ios/Session/DefaultScheduler.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate16MemoryImageCache",
+        "source": [
+          "ios/Session/ImageCaches.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate17DictionaryDecoder",
+        "source": [
+          "ios/Session/DictionaryDecoder.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate18SurveyTextQuestion",
+        "source": [
+          "ios/Session/SurveyTextQuestion.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate18VideoFileProcessor",
+        "source": [
+          "ios/Session/VideoFileProcessor.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate19SurveyInputQuestion",
+        "source": [
+          "ios/Session/SurveyInputQuestion.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate20ChatLayoutAttributes",
+        "source": [
+          "ios/Session/ChatLayout/ChatLayoutAttributes.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate21AttachmentFileManager",
+        "source": [
+          "ios/Session/AttachmentFileManager.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate22SurveyDropdownQuestion",
+        "source": [
+          "ios/Session/SurveyDropdownQuestion.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate24CollectionViewChatLayout",
+        "source": [
+          "ios/Session/ChatLayout/CollectionViewChatLayout.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate25SurveyMultiSelectQuestion",
+        "source": [
+          "ios/Session/SurveyMultiSelectQuestion.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate25SurveyRatingScaleQuestion",
+        "source": [
+          "ios/Session/SurveyRatingScaleQuestion.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      },
+      {
+        "originalRuntime": "_TtC18IntercomSDKPrivate29ChatLayoutInvalidationContext",
+        "source": [
+          "ios/Session/ChatLayout/ChatLayoutInvalidationContext.swift"
+        ],
+        "boundary": "Functional Swift class body exists, original private runtime name not explicitly pinned; not absent functionality or ABI PASS"
+      }
+    ],
+    "noMatchingClassBody": [
+      "PodsDummy_Pods_IntercomSDK_Public",
+      "_TtC18IntercomSDKPrivate11EmojiButton",
+      "_TtC18IntercomSDKPrivate13AudioRecorder",
+      "_TtC18IntercomSDKPrivate17DictionaryEncoder",
+      "_TtC18IntercomSDKPrivate26TicketAttributeViewFactory",
+      "_TtC18IntercomSDKPrivateP33_54135CACCBC0BDAAC37404BB23A0601E15EndFadeDelegate",
+      "_TtC18IntercomSDKPrivateP33_54135CACCBC0BDAAC37404BB23A0601E16ShimmerMaskLayer",
+      "_TtC18IntercomSDKPrivateP33_6BA7E8B59B10295E7CDB9F55CCB5079324DeferredActionMenuButton",
+      "_TtC18IntercomSDKPrivateP33_D9C3FF5CD4B18F18F98809C455309D0F19NumericRatingButton",
+      "_TtC18IntercomSDKPrivateP33_E834D7A15A60EE08082189964CCECA3936TicketBannerViewTapGestureRecognizer",
+      "_TtC8IntercomP33_6DD8664164A15D9553F36F93B771C43519ResourceBundleClass",
+      "_TtCC18IntercomSDKPrivate13CodeBlockViewP33_EBF7782925B8A3F2749C9F27C3854CA117UnwrappedTextView",
+      "_TtCC18IntercomSDKPrivate16UserJwtRefresherP33_B39106919195B3858B7DAE55DE59A6CB14PendingRefresh",
+      "_TtCV18IntercomSDKPrivate17MessageInputField11Coordinator"
+    ],
+    "unmatchedRuntimeIdentityCount": 31,
+    "noMatchingClassBodyCount": 14,
+    "sourceInputsSHA256": {
+      "ios/IntercomAttributesBuilder.m": "e8a3780ec1492da08d6b245710897ee5848deba52d3d79d12b8951aafbd11f19",
+      "ios/IntercomEventEmitter.m": "fb70a586034671bb8aa9f1ad77fc29f2e64d7ee53d87993153a8657f3f6136d6",
+      "ios/IntercomHelpCenterHelpers.m": "84de533dc8ab5377b439be72660accd7c2a4dbfa54e5aa7cb2b0c9353cc41e28",
+      "ios/Identity/ErrorProcessor.swift": "de9f6a8b5086c5d5cd28fb33af1eae4329ca761f2acef53724310db38ee5728a",
+      "ios/Identity/ICMSheet.m": "ad2f3c7d0da1bbb2893f9b450df2d4f9a7a60ffc72f8af7a0e9f5994ce0c9911",
+      "ios/Identity/ICMKeychain.swift": "d8f8cf5eddda887a15334c1cc77c9d83f3fd20cb33037f4ac6a73388dfbca3e7",
+      "ios/Identity/ICMLogger.m": "bfd0d49647f64215ca052af5985f2108b1fd3138b8655b32256c40e801512218",
+      "ios/Identity/ICMSafeNetworkModel.m": "a96150bebf9e3ab196089d620f0a6ab030c02918a0b192af2bd34f052d973046",
+      "ios/Identity/IntercomNexusConfiguration.m": "914bc55c6ce77f1a4a0858e8f8c5c5eaef76678b4b1cb59f5c81464363fd421f",
+      "ios/Identity/ICMErrorStatus.m": "f9c397fc3ebd43732d4a20710ca23c565cf55d0309be56b448f940750bc169fa",
+      "ios/Identity/ICMPersistenceProxy.m": "06118e713deeb66d93f492cb5123924b0dc4c65b61662515c26e112fe15decc5",
+      "ios/Identity/ICMUserIdentity.m": "995a0915922fc521d589f89a29440ce8ac66d9fe2f2128c6ecc96ef48056de57",
+      "ios/Identity/TranslationManager.swift": "0f6d9b63725d5751fed0c5fd1e2d1a4e991b88b5c0a9b59930f03c9bba45f07d",
+      "ios/Identity/ICMDeviceData.m": "be60c1737e9cf2648959b9854d7ed7ff97cb5f9009b36fba1b1fd65764f8203e",
+      "ios/Identity/ICMDeviceTokenData.m": "54b683e68e7814a4124d4af4bbbd541ccada65c91d26e8068c3f6e2d0c2f9ddf",
+      "ios/Identity/ICMAppEnvironmentChecker.m": "74213f8144e5631b9c9e22fecb3e255542461f7b86398d6a7be3bb789c2d8554",
+      "ios/Identity/ICMBaseURLConfiguration.m": "822588c59b7c792dedbfb675a777e10d18fd67b1ba3daf897013d46168693e2b",
+      "ios/Identity/ICMUtils.m": "9b9a94c74478a4e7ab0cfe63fe77889b67c6f13e92cb44372263c9aecde18121",
+      "ios/Identity/JWTExpiry.swift": "3aade20f04107f39f40eac93d63bb18cbe9f1b84a3144203ba98b82a38b22659",
+      "ios/Models/IntercomContent.m": "803e76d39dd1bb5dc507c1c19df40b8787834c290b660794e2b752dd518ef649",
+      "ios/Models/ICMHelpCenterModels.m": "efe1e52598b08da4e311fedbc16eae3dddbd31e040cf0bdcbf4c7fffb7937ab9",
+      "ios/Models/ICMCustomDataValidation.m": "66a060973f0e89e04b6698fba0f5e77dd4d4a622d8849a58a6b35ea746912ecf",
+      "ios/Models/ICMUserAttributes.m": "44091b64f7a0e95b21ee97e4e325155599208a5487fae9baa6a5d8553c21bc1c",
+      "ios/Models/ICMCompany.m": "e337357c6b671713684885be44ca5b011a333581e195af950837d1600b48fdcb",
+      "ios/Session/HomescreenHeaderViewModel.swift": "7fa4b847f028132b533f240b8e5dcb06f0deb7e4f39626f0271435889598e80f",
+      "ios/Session/ICMActiveAdminsAvatarView.m": "3798019780fba82b111f203d06e9e6d771999bff54e951b0aa4d034fbe54c9a8",
+      "ios/Session/TextBlockView.swift": "0c5368e1409e442653d9cc191add2caf50a28b26c862b7cc89d27733467b158a",
+      "ios/Session/ICMPushNotificationManager+RichPush.m": "216742826b3a452dbd09ba4daf9e5ba3d32ef509951f2fccf38286b0b20e8c01",
+      "ios/Session/ITBMessengerCardFallbackView.m": "8faca40214f4a70de005d66ce69923560d37725cc6c511bc1e16735582044fb1",
+      "ios/Session/HelpCenterCollectionListTableHeaderView.swift": "2c1b02612a5354b63a56ae984980eecb36fa91f28ec75560015216684ffdbad9",
+      "ios/Session/TableCardView.swift": "d0cf63b90ce400292bccef31f2489de0e52bae2744242a55a42307529aee020f",
+      "ios/Session/DiagnosticFilter.swift": "7c4b9a85b1d45fd845cc3e3cfc68a3e3c923b47b9ba07576089b9fc064164c81",
+      "ios/Session/AttachmentSettings.swift": "29ca40f7a496d02ae3022bc85111cfe5a740dc98dccec6930a0db8616af164bc",
+      "ios/Session/ICMEmailTextField.m": "62a33d643cd15be63158f4e6ac55649cab9be747339b89cd203f031a5c5e198f",
+      "ios/Session/DictionaryDecoder.swift": "d4fdfa948026f6209babba8f3d6627237c8bc836fa1e817500f56a67101cc529",
+      "ios/Session/ITBListBlock.m": "77e16e7261aea419f6e2a88d588e893fcde0effa455bed8b65861cd4981317f6",
+      "ios/Session/ICMLauncherAnimationUtils.m": "27e0f564655dd805ca450ae4097fb319e181985c3e469bff95d0173ef83d5ca3",
+      "ios/Session/WaveformView.swift": "df896d1cb7696445e8dc3eea8ac513c9196538b91cab7bf9327a8285b815eaad",
+      "ios/Session/ICMComposerSuggestions.m": "48401d31af822000fe6119682b4ead6ad8a93cabf9cf01d009b1789974318fbb",
+      "ios/Session/ICMActionButton.m": "3b78a4796fe2b4eea637da0f8293f793d612cf704be45a1c9df8208319855ee8",
+      "ios/Session/UIButton+ClosureAction.swift": "ac05b01c167cd47cd8f6fbd615f1aa983d0e345b0a964df4ecf3642159ba3235",
+      "ios/Session/ITBImageBlockView.m": "e8396e59928247e459a8befada76564c7528ab6948897beb3fa13cbefd2849ce",
+      "ios/Session/ICMHTTPBridge+Inbox.m": "65c1ab59a10fbce11822c2b30411c2457c7762611b69f3a5a5090bca0f87b710",
+      "ios/Session/UICollectionView+ConversationScrolling.swift": "2b4343f604f4d11b2f7dca72ba079fac62defbadfb06330866927e4beba9384b",
+      "ios/Session/SourceView.swift": "bd02db8d3f0c50571fe33dfa6fa58ed721bb755af0efe10550c5df1bfaed8b21",
+      "ios/Session/ICMLocationPermissionManager.m": "d9c12743aab7579639338202ff12b89e84f6b7ea6bacc9bdc2a75da020734d41",
+      "ios/Session/TicketsListViewEmptyStateView.swift": "15eccb5e1a3d790e3f1053797eb31cab00bbf41da39eeb23dda2af0024f9b39f",
+      "ios/Session/ICMButton.m": "94387f105aa69d6233b8117fa5b25eb7454198f5cd0250dfceb5e53cee143e29",
+      "ios/Session/InternalHelpCenterArticle.swift": "0a4d8c52e02fe791f2b0b60c1d76b7b667fd6194f96c2ff96aa94decc80208fc",
+      "ios/Session/NotificationCenterInterface.swift": "f5b446305aa63c5fb21b4e3e4b2860ab2dd6a5c7fe2afb1d8cb5fbb2d4fdcb75",
+      "ios/Session/ListBlockView.swift": "b4b9d1f7a6774730a882280f08090c3d11a5f137a610ed982c046d8acdafad8b",
+      "ios/Session/TicketDetailsViewController.swift": "e7f6e3cd7900b2cda3dc5fe50f48e7ce3fe5fa8330db078159696b8d4124f95d",
+      "ios/Session/ComposerVideoThumbnail.swift": "0a5ef965f5e14489d4f3c46a5354585e3e1bdcefadda166a506b313b0fd96876",
+      "ios/Session/MediaPreviewerViewController.swift": "0584a31830c7198fe88176eeb420782efeb923192438005d79bb8d030899dd95",
+      "ios/Session/TicketIconView.swift": "ec1bb7f7bd776a3b275c90e492047b107353fc9323a733b549f40095350d7d5a",
+      "ios/Session/ShimmeringView.swift": "c2524aa8c973253e9f2f7f0dde872bd50163ca0b96da686a965564e1e3e24c7d",
+      "ios/Session/OpenResponse.swift": "17c631892b53cff1b1f6d29239f3a5a43f64d2ded1684cf1eecb3f64396f353c",
+      "ios/Session/ConversationFetchReason.swift": "8132789312b6771a8b43aa2094dbb62eaed55b62a956c7bd29978885216ee9e3",
+      "ios/Session/TicketType.swift": "1f79cfee79250daa44176022ac732d3bf210a309e6fbe5761a5c34fdf2fab42b",
+      "ios/Session/ICMDateTextField.m": "8f3c4b000b0376bbd4ee8284085624c21fb0b6e769a809e6f67fa3ecc3aa610f",
+      "ios/Session/SearchBrowseView.swift": "9a85731a9dbb5dad48019e6af0315491658f82cd98ba27fe2a0199ad208e0d73",
+      "ios/Session/AttributeInputView.swift": "18acd96f71e84a4cfe61fc891aae76d25d993e4cf8d95d1c9d3f234f94fccd1a",
+      "ios/Session/ITBBlockView.m": "34a9326403dcf36a2ccde63f1beeae0855d44575be40be8e83544bd0a0760e05",
+      "ios/Session/RecentTicketsTableView.swift": "f301dccfaea6f83b615e35bef5983f3424da7c0e1f2701dc917de6fe91819c85",
+      "ios/Session/MultipartTaskBuilder.swift": "b97fbee9083f4b0bc9681a1b610a9fafcff1c688114fd04b4502484a49fea8a1",
+      "ios/Session/ICMReactions.m": "498ff00bbad422b95f22cf8860cb9111973d9c2b8619608eee5f9fde75b87e25",
+      "ios/Session/ICPTextInputPayload.m": "b043e67b5a0cacb904265ee725d74030290b4cf516579e2450caff1fdb29ae29",
+      "ios/Session/ICMSessionStartAttempt.m": "2734d83d6397370c5a334252a95b8d26ef5fad40d5d5365db84ba6869030f977",
+      "ios/Session/ICMHTTPClient+Surveys.m": "d8482de79f2098df14d904a273d7fa6197840928c608e69d98f89a896bfcf94b",
+      "ios/Session/ICMAppInstallationFingerprint.m": "f4acfdadaaf7aaf09e06e43d06642def8e5c354e1a409de2c15a6e00c7ee8b68",
+      "ios/Session/TableBlockView.swift": "fd005aa5cc7c8b40085fb2a44f826f9802be1a016c58da71da698a3e5f70ede8",
+      "ios/Session/ArticleRequestBuilder.swift": "23e6b592432c921f56cfc28fbb205d36cc2fee6002183b2cb151be43e3ac8864",
+      "ios/Session/ICMIntegerValidator.m": "d33d90176591834e08c717117df7803b320b702776186ab1c56265fbaecf2ad2",
+      "ios/Session/ICMCarouselMetricService.m": "0828c069843121d0220be173ba0eae513b3463b04f81386fbbf9057c75923a38",
+      "ios/Session/ImageTextBlockView.swift": "c822602bf5177e4d6c1eedbd4d34d68c012a8eb18c18869fd87ecf2a0c49c0e7",
+      "ios/Session/ICMGIFResponse.m": "2bfe96d4523f9553226ce2540a596e4650b3cdf389911e4549db74b7c4704ab9",
+      "ios/Session/ICMTextField.m": "890755e553a88a8f03bfd48c34e37cfbad04264aa8169ca1d99388da1e9c076a",
+      "ios/Session/ICMConfig+ImagesAndUI.m": "378600027d3b291f3e93fcb5848163ad9581091bee965d6507c8f1f257ea708a",
+      "ios/Session/EmojiInputView.swift": "ffa729917bcb13a5f721358d67d83c46eecd691592d0e8afb95d6478a1b02c2f",
+      "ios/Session/ICMPhoneValidator.m": "66084ba5c6bb8ac5951324777436b9a40940934ff1c0f9d13a44be478b513d6a",
+      "ios/Session/SurveyQuestionView.swift": "2d44dbbd8b0735d879221f8dee3e0f2d0b55334dea831022b9da2d35679bfe28",
+      "ios/Session/TicketStatusTimelineItemView.swift": "31eda12de9f5c1645480e74216d3b450a81343bd763bae116a4cc11506444699",
+      "ios/Session/ITBLoadingView.m": "c7720f8fb79ddfb413c54c0d5662a4e36f2b0d6fd23c449e1b835307f3cdb18a",
+      "ios/Session/ICMStackedChatNotificationsViewItem.m": "2a6b08d1aface5fa9c962cd43388180d035357b1abba3c7f5b6f2d28b4ac6cdd",
+      "ios/Session/ICMConversationPart+Parsing.m": "8933a2d2ac6eddae2a5bcf7d417040465c8b949a3f1f06f4b3a2a678248f6b78",
+      "ios/Session/HelpCenterCollectionTableViewCell.swift": "80fe94498bc5dcdecde193aa5dae9b2a0b3f3ca346421a8ca026125ce31d3832",
+      "ios/Session/ReplyOption.swift": "4e69b2dfdf7de9c87354a4fb9ae2be6f7690dcd2bd24105712130db0a505eccf",
+      "ios/Session/ICMFeedbackGenerator.m": "1e58e977dfb314549474fd79856b9a07d80849acc45f178b570b350d6d5860e6",
+      "ios/Session/TicketStatus.swift": "1f2677e5ffb2ee4b4c3e9a88f8f5b94012e6293793513ff43487e7dd6bd693d5",
+      "ios/Session/ITBTextBlock.m": "8fb9d840e6042dc1e25af955f412a179a27c52cffbc7eb8d94fddef3fa8eeff3",
+      "ios/Session/ICMHTTPClient+Sheets.m": "961a911cc6baf9a9813b63c2973781e3ad9d90472602e13d11e19760c5d35bb7",
+      "ios/Session/ChatNotificationView.swift": "0beebb4183aa399d875f8fe06a47bbaaeb137916aaa7fee65823ebc96684a9ca",
+      "ios/Session/DotIndicatorView.swift": "08f2290e938c5fda32b3ee71ac26e1b5ffefa834fc15d5ddae437635a0a9853b",
+      "ios/Session/ConversationInteractor.swift": "3f2501e01bbd27c7b0ba0cf059c5124879d2f333ba5916b0df94a35bcac715fc",
+      "ios/Session/Dispatcher.swift": "855baa99eda3a73e2ff25af12b48aab9bab58862f2d0fd1a9a5c1dcab07047cc",
+      "ios/Session/ICMAssets+Images.m": "06e5bb0ca1901eec8af5b982017701811d4570a00ad37c5547c4b28769f61983",
+      "ios/Session/ImagePreviewerViewController.swift": "3301ee76dd5e5a679bb956a4fb235651219893fbe63f23ec97e57f18abfb4b2c",
+      "ios/Session/LauncherView.swift": "85d52a6dbbc23a0e990c99bcf029ab4c42a953d0d347b09ed8422d511b3ce9ad",
+      "ios/Session/ICMMaxSizeQueue.m": "e85c2d74f07ebac1edd824ed162e00fb410c2e946d8c6395ef6d6e90fa31f24f",
+      "ios/Session/TableExpandedViewController.swift": "e252f6e315f1030b8ce6a4a0535f31844b2e49be87b091198c070cf18ea197a8",
+      "ios/Session/MessagesMetricService.swift": "5dda59b1e1fac340a58c9fb5f876f806d43b163bc8c73e77d9add5926b1f8bfd",
+      "ios/Session/TicketCreateFormProtocols.swift": "eadd4c88da6c9393181d8ee26714061b7f279591e6916280ee8cadbeae019d02",
+      "ios/Session/ICMLinkBlockAppearance.m": "e5f46ac8321990c71f5ee9f28232e2e9e153aa3809bd9e1cbeb9efa6c27cbcf4",
+      "ios/Session/ConversationError.swift": "b551498b85735b0ec83f358d325aafe097855bfbd9696e7e463732a79ef51341",
+      "ios/Session/MessagesEmptyState.swift": "bdfc4b6d667f2bfa715ae7cd7ed32ea73738733f8d965f15287815d753a4527e",
+      "ios/Session/ICMInAppHeaderViewController.m": "976f1da6d2a63cf2bf018a27c6fc130a8aa803c9da20e80151aeba5853b5bce1",
+      "ios/Session/Survey.swift": "a8f3ad948a1acb118c3027eda01d5758a4b7c1663026be0352f36dceb62a20d4",
+      "ios/Session/PreviewHelper.swift": "d455a487d550fc99a4ad14d6513259154338ce638d733de4bab1a8223c7e545d",
+      "ios/Session/ICMPushNotificationManager+Communication.swift": "ed3eed67af92391a4dc80b417c6c0d21f88f55fc936a6dc3160e6617e0af7332",
+      "ios/Session/ICMDataManager+Tickets.inc": "eb550610a5b0317b55b1f52921f51bb2e4f778c99832e884115273e54ad04baf",
+      "ios/Session/ICMOpsMetricEvent.m": "62d443e12810b145ae5f0461d1e892e89a018928286b25f94a96625dfc4a634b",
+      "ios/Session/InboxViewController.swift": "e357c2c2cb1d2d0a2dc130a5ba7802ca128da7bf692a8bf67409fb075948cf90",
+      "ios/Session/ICMMessengerNavigationController.m": "0bedf2f99279b5ef9e96a213c5604757aeed26f5c55ed3cfd5049d9f5f2bf6a2",
+      "ios/Session/ICMSoundPlayer.m": "aa0451e18e45778659f49aea87276ac19ee54dd64a83aa9bec7cbb124f1f67a0",
+      "ios/Session/ConversationRatingBlockView.swift": "b0a558461742502184cbd9a4538d9ce3120e924879763a4b83416d7b8ac641ea",
+      "ios/Session/TextInputView.swift": "c7117b3cc08ea84d392aec1e2428f5f46cc4fc107224a9babddff5e7adbe022e",
+      "ios/Session/TicketFileUploadAttributeValue.swift": "c882f549d76711928953f88d48157b78391ef394638bb239d2425a04f8b7772f",
+      "ios/Session/QuickReplyButton.swift": "f3b4bbb6c6ea1cc075e1f938e7dc83034e4e6bb965c21f83c9c9143f05b07640",
+      "ios/Session/ICMSubmitButton.m": "ebedf9d1226c482571890223495c5333536da0e95c614d9d9a3a990b55ae45cd",
+      "ios/Session/BlockViewFactory.swift": "197f11889058bd47d4f5bebcefca249e28a5001f674ef81316a8e1c921000095",
+      "ios/Session/ICMNoteViewController.m": "7a9eefb161cc6f5d27b7f429bec8d9f6ed5ff9dd4aa25ad69cf7b5e72be81a28",
+      "ios/Session/URLMessengerTheme.swift": "4076d93e134bc8eb1c5238a917cf214fcc14f2228d94ce9bb07ca8794fbd8f30",
+      "ios/Session/APIError.swift": "06942fd2c67ae8832b2a4a30ed38fffd02137a0a8e0ce2ae3a9fe50bdbee6300",
+      "ios/Session/ITBMessengerCardFallbackBlock.m": "78931428fc594fd772be003e72dc1d62af44120590c050bdf7155c4f6a4b9233",
+      "ios/Session/TeammateAvatarsView.swift": "40c5cbcd4cb5e491c36a0186bf28615b832acd5980854c42c9691056982fad33",
+      "ios/Session/NumericRatingScaleInputView.swift": "5e2793d99e8cc769a2bd7151fa5b077810c877b90f5fd9b0edf832fb7183c209",
+      "ios/Session/GIFPickerViewController.swift": "d0b893612cfce1b0d779f2c680daf8b295288f4ee7d291e08d129c30f8c8d563",
+      "ios/Session/EventData.swift": "ec5f907b3c41897d07229d9e68f2188f80724779b198e9db77b5ba7eac3c0f30",
+      "ios/Session/SpaceHomecreenCardViewItem.swift": "38cdda98c422b4621752356143125d7fd1bd80d4716145d99f1ee72c2c60d158",
+      "ios/Session/ICMScreenAction.m": "efbef270770915e60ec231854c16ffec9ec9a733682d3c262d214096116fdcf3",
+      "ios/Session/SwiftAPIBridge.swift": "f57925a3c5c8f2d3646aa9341b2639736cde12df384b27dd15daa4fc41c317ff",
+      "ios/Session/ICMPhotoLibraryPermissionManager.m": "1c93468295686139667cb9e125fa5a12c9ef2aeb8353aaab5b9dcc00c4ef2ca0",
+      "ios/Session/ICMHTTPClient+RichPush.m": "ec16a9d004960965bbadbb57e9ae417865e0b54626f6e5439ab87773ef4cce60",
+      "ios/Session/ICMHTTPClient+TicketCreation.m": "55a346e4d8c42e3edb3b60ac70815cd1b63e8a5250c93ce536e8afa92e383a60",
+      "ios/Session/HomeHeaderBackground.swift": "ab85e2549d61545015a5861baa88f2a9458564d44c07fcc1afe057d5fbc83945",
+      "ios/Session/SendButton.swift": "380f2cecbca6126f6c55983dbf244acd2cbe6e22977a5a1ca065b3eb8e3b5a4e",
+      "ios/Session/ICMURLSessionTaskOperation.m": "0f5b0bc4ac888e19dd17011088a4a9bab3b49fc72efbb3a3fa4f399d6586885d",
+      "ios/Session/ICMMessengerSheetViewController.m": "5b347b0dcd7181ef063245f7e19a537b17eec5cd2dfac7b219a92664e338c831",
+      "ios/Session/ITBBlockCollectionViewCell.m": "a07c4b8e50ddc87b54a261a640c8f8e417af34a4db2fff53e79375982fd66978",
+      "ios/Session/TicketCreateFormStandardInputTableViewCell.swift": "19cdbce82f3ec6b96bc139cc2bc2e92b7787580341b7b266c837715d3019b49b",
+      "ios/Session/ArticleNativeViewAdapters.swift": "ee87993f28f9c7632a30da397fd1d592a72e6c8eb37a8ced50ca6aa575fe3982",
+      "ios/Session/HelpCenterStartConversationView.swift": "835354a2bd2699d888468683aa9e0012d2c0ee40fd62934bd4a779d577faf886",
+      "ios/Session/ITBTypingBlock.m": "494d1555bb7860a5249f9051208de7298851110a4c4383bfc8d536071cd7c63a",
+      "ios/Session/PartMetadata.swift": "d440970e144f625df2528e7f9e4e1ff4f931819fcf6a470f157e6d10e39202b7",
+      "ios/Session/ITBFooterContainerView.m": "476dfa689cd41bac9906405e4668f2d4ec09914a7f9e3bbaeea959fd87e62867",
+      "ios/Session/ICMBridge+IdentityLifecycle.m": "52d980efabfcc22adff2999b484747e2c5511743f2b5531be980cabe97dc761b",
+      "ios/Session/ITBImageLoader.m": "41c301de2e742a8c4fbec37e668c269c71704116625beaa731ceeb5dbf257eb7",
+      "ios/Session/CodeBlock.swift": "264f71f56112f8dfaa619e300fb49efed5d6f531cc1d38846cbd8690db8c180e",
+      "ios/Session/UserJwtRefresher.swift": "e5c88de9348a3133846fc46f65efcbd8410c88d6747b2c1e632dd0830f9b2a19",
+      "ios/Session/TicketCardView.swift": "76173c3cdbf997969a95c029011a878db275c0b8e4bc0b3b8155584cdf025f30",
+      "ios/Session/ITBNotificationCardBlockView.m": "77074138fa3da3c79db3f215dc469cebe5e785ece907100e4466ab9a8477662d",
+      "ios/Session/ICMHTTPClient+Carousels.m": "71612ad8e35d9c24f38cbaaff5531b52b2555a8ae78019dcd4add0784f4ac16c",
+      "ios/Session/ICMBooleanInputView.m": "79e13ffcd47b3864e757376989827fc21d51741646c373e1b065306f9e4be69e",
+      "ios/Session/PreviewAction.swift": "8d1761dd5af5573bebed397f289dd1f9c09dc0ad13783460db4649d6dbc7aeb4",
+      "ios/Session/HelpCenterHomescreenCardViewItem.swift": "2db0f870e1f960c171ccc87d9b79ace4dfde769d8934323e051b5385932ffe17",
+      "ios/Session/ICMIdentityStore.m": "ac6eeeaa8da4b633ceaf9af1382854d51eb2472dc7eb40b97effc1e609875f3b",
+      "ios/Session/MessagesEmptyStateView.swift": "cafda10a7afa40cfabbafb06143a9811ed662cdfbfbd98958f9cbf59558efed5",
+      "ios/Session/ComposerViewModel.swift": "80423eac6bc43c3ecb5d862dd73fd0470d123c0590d7bb6479a23815fd177bcf",
+      "ios/Session/CustomizationConfig.swift": "c3b1eae7b4f5392d229940618880a15e2b109b628dc008c203167af6d0191bb2",
+      "ios/Session/ICMSurveyQuestionBlockAppearance.m": "02ea20dbe18e2ce0a3c39dd2087b5bd07158e5140c2650dc4e773404e3b0cb5f",
+      "ios/Session/MediaPicker.swift": "8cfaa0ca15d826748b828bd8b0cac8b48cd086242eddc5d614cf58bb28b8142c",
+      "ios/Session/ConversationCollectionViewCell.swift": "1d16af4d5247fd65f43cca7b1a23532819eec6f771b9870de991a8158647ce95",
+      "ios/Session/AudioRecorderViewModel.swift": "835f1f55fc6521e9f611541249cae4f332ed1c754defcdb7e2cac481d419a9f1",
+      "ios/Session/HomeCards.swift": "3340c714495a5c54b4576201990be5fc080e7cc6bca2d2ada3c7dd62f5d27bb2",
+      "ios/Session/ICMWebHelpCenterAction.m": "18a86f33cb9e166176d77a0ced82f38c409a69ed43a90ccc506fe36feef4a4f3",
+      "ios/Session/ICMFullScreenInAppViewController.m": "dfd1a7e9b49e0211fe7bf704b95a624de0ed5f155075640c4c9ad8f28aaddd0e",
+      "ios/Session/ComposerTextView.swift": "8d769982c2c6f137474204449cdb5f07e6f5bf9e7d735691aad4c42badd88e7b",
+      "ios/Session/FooterNotice.swift": "b2c4ace6bcaf30124c974b95605e8ab55465b64191e29a038bf248a55492f4aa",
+      "ios/Session/ITBLinkListChildViews.m": "a893ea36e5ba2fded548aed15c93134fca45f10c19c30531e9d57d404334207d",
+      "ios/Session/ICMConversationPart+SenderLabel.swift": "7bb066c302b95676b00508092d356c21fdb7b3216c75807c3ec166cf29f256d1",
+      "ios/Session/HeaderIconButton.swift": "47816a220d4a115d1a8f6e96bf76a0bb3723ca63e26a196c5d3e018672d8b7c0",
+      "ios/Session/PartStatusView.swift": "697de5d831b3a370ea03d26a58cdce58471bc90221799bf3f64117c5bf260d65",
+      "ios/Session/TicketsListInteractor.swift": "42aeecdf997bbb9a930bd20e3b36f7cf5a8a52c2101cab49048a9c8b0db62ba0",
+      "ios/Session/TicketCreateFormFileUploadCellItem.swift": "6e4b29fb10b8eb3e37603a062867379ec20e1c720415b3751129640c65fe3175",
+      "ios/Session/ArticleView.swift": "b899de57b56076c1ad4d029860e22bbbb3e4918a9edd763681ecd5a1f2eb5369",
+      "ios/Session/ICMConversationPart.m": "12d1902602e6287e822fd34891811b92b1b8d0404b40d07c131912af144dd7ff",
+      "ios/Session/ICMHTTPClient+ConversationUploads.m": "7634d36ccf0849351f64d3a3e922cf817c368f1922f372923500b83ea35d7d8c",
+      "ios/Session/FileTypeIconView.swift": "d6ba0f974db8e8003cdb995c8725e38b3060ee32af20ba7c3dcf542ef4e7aa0d",
+      "ios/Session/IntercomNexusClient.m": "9624ebee0bf3769eb65b3f68b218b19871f35fca64eedb567a27deb3461c5286",
+      "ios/Session/TicketsPageResponse.swift": "18b2095541f12ae4458c36cf5d250618dac7ec715458233e65dd809963fa42b7",
+      "ios/Session/UIViewController+ConversationRouting.swift": "6db39175612355a3b7d02533bca809a3a038f45c0895159270d01d0aa0406fd3",
+      "ios/Session/ICMHTTPBridge+UserUpdate.m": "b353a78d4d39e7aacaf05208cd14707df0dd82a81cb9d2396ea2105c858cf92e",
+      "ios/Session/ExtractedDiagnostic.swift": "bb503fb2217929572a31336b4b51748f1bbb7167197aae117ec91f6ec9cfe167",
+      "ios/Session/ArticleHostingController.swift": "358d0ef95d4fbd1f062b01dcc525be5d662620eb20bef34940e8d5e927e3168b",
+      "ios/Session/BadgeView.swift": "6581627bd65f258e3ca08015383c3d0f2f51afc2a660b4a46c85f7704090fcff",
+      "ios/Session/TicketStringAttributeValueView.swift": "5f82e442cb7c7a62d674fd6c117cc31df3888fff49674eba54657ce2bbd080e7",
+      "ios/Session/ProactiveContentVisibility.swift": "1151966c310b1c337b3552b1bfb9908e168f2f9d524f0ed3437198e35a18d260",
+      "ios/Session/PartViewFactory.swift": "226254ca132f7bd1e9620ab6933e0d5fa0ac0569863b066d11ac27c85841770b",
+      "ios/Session/IntercomNexusConnection.m": "d04da95e950303dc1e6da5359affc67c591e35604c31a53364c691ad64f45ed6",
+      "ios/Session/AttachmentBlockView.swift": "9e50ee870f3103b40d4b8a30692763e30477ce329a4d0d18a98cff8d2b69c490",
+      "ios/Session/TicketStatusUpdateView.swift": "7e2207f130455fc22b616cb9afb73da25a8b4f2b8f5f4bcb8949626486b2d94f",
+      "ios/Session/TicketDetailsViewModel.swift": "8a53a446bd0c0c0f087610cf5f69f29edd6cbed7a8da4f52473bcfe00b7dff23",
+      "ios/Session/ICMStackedChatNotificationsViewController.m": "aa699fa959b808c16f2a4b9ca405d27ff4a032f6cbf5948725fade21ed13c056",
+      "ios/Session/UIColor+Hex.swift": "1f9b08afeb02569e0cebbc90eace4119775d5a97cf96a65934b0205a06c0a0bb",
+      "ios/Session/HelpCenterArticleListTableHeaderView.swift": "de79f8318aeba600f34f3acddbba5b61d9f91da8a58ba5e20ea3d982170c597a",
+      "ios/Session/TicketBlockView.swift": "43289e1066809bbe1b114c8ef33fcee1863c20172f370b9fbe4934a4c9496022",
+      "ios/Session/NavigationBarManagerMetricService.swift": "8013f6d9cdabefa0ac0917c76d2640a47b1be66c708fc7e6c9075d55f7d88520",
+      "ios/Session/ITBUploadProgressButton.m": "fbb8e20c5c7ad35b7864226a47fa1f9602519116e97675f3ddba6ebf4f793d6c",
+      "ios/Session/ICMPermissionScreenActionView.m": "c0b7b0f6f5cabcfe181ffcb472f063258eb9b0761be0a62e799b032b9ad99ec4",
+      "ios/Session/ICMDataManager+Open.inc": "796e7049a5507449f07ab129c3927e02087bef430210e80f984404ee8c4d9bd9",
+      "ios/Session/SurveySenderView.swift": "c29dc0dc6c2e9cb80330559bb725f0d834462c7b29d650becc5e895afd4f9b33",
+      "ios/Session/HelpCenterMetricService.swift": "090c94f627297ad576312beaa37b79192fcccbf8f3e17c211f2832d7d9ad651c",
+      "ios/Session/ICMDataManager+Conversations.inc": "d0097e1c2265b3527077511c219a06094e0669a8c7138a840632a40198de70b6",
+      "ios/Session/MessengerAppConstants.swift": "5f0b111535651395bd71483f7a263c03eb1c93543b53490ffaeb6e04888248e9",
+      "ios/Session/ICMLocalComposerPersistManager.m": "bb20d27ae492ac9a26fa48f96938d4e2479749bbabf7fcb1dd215f0e8d451ad1",
+      "ios/Session/ICMPushNotificationManager.m": "fb4e5f1086ca4023f8572b929f48b814b0a61ab1ccabb052ae4a1e76f065ac7f",
+      "ios/Session/StandardOutlineCellItemView.swift": "0bda9a3e289be6f3184fb491969c69354a4716f04bd6ffe2e14a0ba8b88afcae",
+      "ios/Session/IntercomCollectionViewController.swift": "cad1296c24548fe03945fa3ebdf294fed38aee996d0d4b8a3821de9e92a1a1e6",
+      "ios/Session/TicketAttributeView.swift": "0cf787d191725e409dea0a22070245cde5ff1f7ed9404f2cc34babc9ed9c22d6",
+      "ios/Session/AttachmentView.swift": "dff5363713493f8056cab05b2962241d25d1a737332398a7d26e8819b7bd4b97",
+      "ios/Session/NSLayoutConstraint+Intercom.m": "f2ab7ff263196628044182c5f66a25aa110e16e6dc6fffae30efc56bb405f216",
+      "ios/Session/HyperLinkTextView.swift": "86769f583ca40d0361fa7357f7617fc70758b5765eabb8c76f4b4a2e39de2a15",
+      "ios/Session/DefaultThemeProvider.swift": "41778e999db7a59d3ee296712f005a68bf8a913a85436725aca561fcafef6aa7",
+      "ios/Session/MessengerAppCardJSBuilder.swift": "feb35931f2e7d38933c3b73c8c4f29cb191cba3230fcd1ba21e4de5c3c8fe815",
+      "ios/Session/HomescreenHeaderInteractor.swift": "2ae6567f7b58e46d26ecd61c3720374719fb75b1362d5b17b22c1d27dc13534e",
+      "ios/Session/ActiveBot.swift": "0913bc0c34aecd0b2e7382c2bd28ecffa18198554f17b555b04635c9c9486c1e",
+      "ios/Session/ICMWebsiteTextField.m": "ae34746f6b7fae90e1a10506a3b991e534be9e801ef7d221b1ada218c139b1d4",
+      "ios/Session/VideoBlockViewCache.swift": "3f33aa71880a6b6d90de4e156848fb519275e0d79b8e9ecb23ca469b6dbb3403",
+      "ios/Session/ICMMetricEvent.m": "312922fda82e722cc95c0a4db1ccf0b6f7f8a70d101de54729691588ca0f8da2",
+      "ios/Session/ConversationHeaderContent.swift": "f2ac3380b5cea918fccf9e51be4984887d973a71f22a7e751dea471502b87c7a",
+      "ios/Session/ITBAttachmentBlockView.m": "db9738d8cd2f9aacfb5f9233eec8f8fef52c37571ca274f20650489bab6c5c0b",
+      "ios/Session/ICMUserBlockAppearance.m": "501d445fe4bc2959661e8ac864bcc2c6be1cc9153579dbeda1bd6463c579fa2d",
+      "ios/Session/PickerError.swift": "211f1a14a4c2e4f3862d7d730030df5a90f757f3308e4e79fbe3f6d4f1d62c04",
+      "ios/Session/ICMOreoEngine.m": "d36ee049ef23328a27f22ead122d8acc267e81fc2e63fc5cc5089b618336c8fb",
+      "ios/Session/KeyboardNotification.swift": "2ed808da5ff652ce613ad66f0a928c3afdffccfbd35e45115b2514a23c7cc9ee",
+      "ios/Session/ConversationCellBlockDelegate.swift": "0a89da44df293b9f907a05ee248eef3a7699d774e6b37d1ce4a8183697fa1a07",
+      "ios/Session/TicketCreateFormInputTableViewCell.swift": "95f9ff4d144770fb1ef6ae51f4c4d675e12fd7c09039306f893995e40f97f019",
+      "ios/Session/HomescreenHeaderViewState.swift": "8f8855fdd1fbdae9c88c65aac2bf539ab010ff8119f93c9e4f80a9c80afaf300",
+      "ios/Session/ICMPointerInteraction.m": "4605e3a1a3891e840f584b4a9bb0e7d3911f6b995dc4e953ad9b0221f4a68a44",
+      "ios/Session/UIPageViewController+Intercom.m": "a39944f944df0e41137f630623f44d41cd98f862c4cf81357a5af4d6106be936",
+      "ios/Session/CodeBlockCopier.swift": "ab4689f2ef3a7b8bd136a3f407476091072f1e4a3221e493f09c086b41d674d3",
+      "ios/Session/HelpCenterSearchResultTableViewCell.swift": "488a995a93c4dbe21b921ff6285dafc4aad2f460859c99724a0d805fb8c8df16",
+      "ios/Session/UIFont+ICMWeight.m": "1a3314595d016804cd205084256c794e95e2df2321365a115cdfea4c548cdb10",
+      "ios/Session/TicketInfoView.swift": "4660780305fc3b5f77b0007474658f1d192c4685dd90069d747b9ab61c37fa0b",
+      "ios/Session/SurveyDropdownQuestion.swift": "c95171fb18a3c1d87fa3a78b680dbf2ecc0ee4a5e8b6b1812a25b2e81593bd0a",
+      "ios/Session/ICMHTTPClient+ConversationSending.m": "e3e4a7ef29771f9f456531b880915b234fc53ed8363c144b411e10234a7c8cf5",
+      "ios/Session/RecentTicketsHomescreenCardViewItem.swift": "2e4138ddb86edd04f1c4b2f80ee4cfa1945415ad83d43ad69761a3d59d802284",
+      "ios/Session/TicketDetailsHeaderView.swift": "4463ee1fba486ee24c36d2f092198829e0be9e582380545f7f281f95270f9b3d",
+      "ios/Session/ICMHTTPBridge+Completion.m": "8e46b0a1a94e50e216c5fe2ac65ed3ba6eef2dbdb4bd22e3ba11f0caa871f9f1",
+      "ios/Session/UIView+ElevationOneShadow.swift": "3b4f6919a3019b6b8d0e70990a2ac5c8fd14c624146dce565927fb9c06e13b52",
+      "ios/Session/HelpCenterCollectionListViewController.swift": "b09a68550b369bfa920fd7d24c3ca6799e9b613cdaa591cb8cd45d11b217f055",
+      "ios/Session/ArticleReactionService.swift": "f430fec24e6cf78e1b47fd195d53a79d1c4fbfe228578c0e7fe020b7ee304e81",
+      "ios/Session/TicketCreateFormTypedCells.swift": "fa0deca67ac07d6183ce756fbc65d9d0fe4436b32d5f85c42709ad450c707b72",
+      "ios/Session/ITBInlineCitationParser.m": "de97cc0ebfb4ce00f9891182edd09dd73871035fb30528b02957c73977a51c4d",
+      "ios/Session/ICMCountryCode.m": "491f74bfa35b3e98795cf9454b0bace9a36ed8f736ad7386287451abced57cad",
+      "ios/Session/TypingBaseline.swift": "eba0e57e7244535e422b6f0d66ff5250fcea070709acdd7410324c5e632b9beb",
+      "ios/Session/ColorHelper.swift": "7811cc47abfb1c88fbd3811745fff57b7fba041100df5df16427996a5692e28e",
+      "ios/Session/ICMAWSConfiguration.m": "a0cbbec9653e835327ba5f5b4e30dc2ca6945bdcfccf3d2d7a87cacf12095b78",
+      "ios/Session/BinaryIdentifier.swift": "40d378215130fe30d95d30bd5c13e4861963ada355b1469547f5b7e5b90b251c",
+      "ios/Session/Intercom+Swift.swift": "b09fa5638846a3cdc24e71901021b638d1d54c77dc3b169cda0a7295543138e3",
+      "ios/Session/ICMGIFAction.m": "8a32c7f6d09a8e8629c3d44ee7f6d88818f382cc1d7b42747a0554864fb39d48",
+      "ios/Session/ICMCarouselViewController.m": "fa4555d8ab0702d9871bc06312e0aeec177a3d2b2ff84549427f3b41c9d51d23",
+      "ios/Session/ICMMultipleAvatarView.m": "6f48dfafc220cf4dda84a7dab205f43bb88f1a23f6b3a93856bc290d2731f635",
+      "ios/Session/ICMAppIdentity.m": "e2c89deea38f91dd4af8bbdc147fdf6e33e3380f0d864e08945304cdda764dd5",
+      "ios/Session/NexusEventFactory.swift": "b501595fe20964ca555462b0c20cea126a29511ab02cc7f5d457949f61d3ba04",
+      "ios/Session/ICMRecentConversationsViewController.m": "2ba234aa649ee5ae75fd7bc0a8b3393f8e04178b1b843f5e691694db277fab0f",
+      "ios/Session/ImageLoaderCore.swift": "cc0a1bf60b8a090e1db6aa01ffa2e70a572a64d4913553d9ef63a1591135c556",
+      "ios/Session/DeferredActionMenuButton.swift": "f1a4fc5d2ec5a0b60701394dfdc456834301555c25612a24072c9c563aee3c95",
+      "ios/Session/CollapsedConversationHeader.swift": "ed7bb823d06ccdb28710746cce085f10d03cc9ff9f3259ad57db69e6c4419e88",
+      "ios/Session/ICMCarousel.m": "b13bfd10f3c6c824720618cc69bbcea8af072c83bb8ba8d9bfca9c289bf39aaf",
+      "ios/Session/ICMUtils+Integration.m": "e8ce4d66d1efe4340b1eb5f68213ca456776ea0aed0964de355aa6966bbed847",
+      "ios/Session/Home.swift": "63e7dbdf098f1218c4597f1403c72f0fa6d78eaf7c0103cbf426bd757c30ae55",
+      "ios/Session/ITBCodeBlock.m": "5cf727889c7d5bbf3438fbfec0321899d9a4bf747e983e995156ac3cf13ece73",
+      "ios/Session/ExpandedConversationHeaderView.swift": "ebcca155a70a1dd7a4bdf2e9d9de408133b07de22c10d89acedd8a93bf8b8d47",
+      "ios/Session/NewConversationCTAResponse.swift": "43df2d1719db3d583f074e60078c8a7d684eaa7087619afb12f7d5e184370598",
+      "ios/Session/UIImage+ICMImageUtils.m": "134818898453d7f189df084b8ff1fad4e4ced06e0d0b9f115df4a7bdfd88f84e",
+      "ios/Session/ITBUpload.m": "8ce2650c07a85300f436b19466c389a5d461828d320620f933a88496418a03ec",
+      "ios/Session/InternalHelpCenterArticleAuthor.swift": "cc7c63ef54f0d71260534a6869db267ab1dccd840dea491fe798e63130e7fc6e",
+      "ios/Session/QuickReplyPartView.swift": "46000ae1033a7e99d09e89796c5ecf2485234df08603df90b1958c7f04c76d03",
+      "ios/Session/NavigationBarManager.swift": "2c9d3b57b4b7462d01fc352453e672fb6e21cc7e9e686dfd180033c17a131e6c",
+      "ios/Session/TicketCreateFormViewController.swift": "33be75c879f6c38eea8fb4dcb654014740621c836545c36f9078a9f06c4fb0dd",
+      "ios/Session/InboxCellViewItem.swift": "7af22b65a692b7ed9de18d98865fbc37c72f387c4104b27b3643388f8e9ef9a2",
+      "ios/Session/ConversationRatingPartView.swift": "b95516a70e867f4fe9d69c042b17f05a3d8a4ed07f76219ae364a5347faba9eb",
+      "ios/Session/ICMPendingPush.m": "f54afb51b9750d8d8c35a05c9bef21a3e0099b70266575d5cd62ef68b9af0dae",
+      "ios/Session/ITBLinkBlockModels.m": "a08280c2043ed738659756615156cad750844a859f77b9bbaa5a3afff86d8835",
+      "ios/Session/ScrollDetectingNavigationDelegate.swift": "8afc1a51429818ac1f96e44614798d87193d967819477790302ba455780df228",
+      "ios/Session/DiagnosticPayloadBuilder.swift": "759503b9874c4fdb4512c86d1ae1f47bdfa60e355350dbafcf13e7d40e7bc9c6",
+      "ios/Session/UserDefaultsManager.swift": "9e7c3f9f1253cd0a55b6a4ee270aebb7a26a63ebbbd54918bd8c20c1c1f8fe96",
+      "ios/Session/ITBBlockPlainText.swift": "9f12497a44ba67772f7a665b82a115c774415efcf5b4bd92a07e66bf7573a2f0",
+      "ios/Session/TicketCreateFormFileUploadTableViewCell.swift": "8958d2ed0088d0618f917885486f95e3dc2534df90bfc2e52f283bbf88b254c5",
+      "ios/Session/ICMScreen.m": "9030a397b7045495a50d6d6db1bd78eae9cc81b5bd76e553ac14ac976de798c7",
+      "ios/Session/TicketBlock.swift": "7774c7f769a41d85a96cbebd62077c8bc2a2aa3b6fa8b17fbc99e4f527ff1eae",
+      "ios/Session/ICMHTTPClient+GIFs.m": "10999e0ebb5fc40f5bdbbd604aff7b278b0c7ae4df4c3440b983b33c50aa7a31",
+      "ios/Session/ITBHTMLParser.m": "67bc5d913f0a58ef3af731623973baa1e770306bf38a6be90c4639c8aaccbbfa",
+      "ios/Session/ExpandedConversationHeader.swift": "803f744535967e2ff7a9481ef8f6b643801a1efa9e1b038b2c33731a6d4619fd",
+      "ios/Session/ICMHTTPBridge+Reply.m": "ec1af03c2aace8440805e5a71665fc528e528cac0b248561ca2ad80c61a2f792",
+      "ios/Session/ParticipatingAdmin.swift": "f185a78536cf58d38dc2fb48a4050a1355c693f062127c1ef91851a4c9b4f3e7",
+      "ios/Session/ICMBlockAppearance.m": "4a859dbbc8a1c2ffc8e6be0ada31e15bab904ab0cb40d65dca721b360f659664",
+      "ios/Session/NewConversationHomescreenCardViewItem.swift": "07ff9fe6386f9e27a57548e66cd948062d637df681c74d7ec7ff19aa2a941ba5",
+      "ios/Session/ICMAvatarViewModel.m": "bf8f72d1089b9daafa81e4b00ef28b9b9a145f9d5a56da599d97b18589a5af1a",
+      "ios/Session/ITBButtonBlock.m": "ef3e2fa4779c30ddbd945a9405df9b8bb4f2bccc1cebce1f5dcfa5f0e5219904",
+      "ios/Session/UIViewTextAttachmentImage.swift": "6b2cd909e6cd62b27320c09077c5fcea7fa9a8a7efb5dea78cc4726393e1c688",
+      "ios/Session/ChatNotificationContentView.swift": "ae4dc5644c37e9b7936ee3cc1fc0278b52dfda94561648f2b04443a38c0e5197",
+      "ios/Session/ComposerFileThumbnail.swift": "9f3d745ee269c93890f1c11b61f8c3c3b87994c84e9091757a1f564717d8f261",
+      "ios/Session/SwiftAPIBridge+HelpCenter.swift": "a9c253db7c2a7fbacdb57765ce8e8c05ff1777e5c3d18cc277992f3f1c45981d",
+      "ios/Session/MessengerAppConversationView.swift": "e771d03a41b1a3d0f81cb8fd103a23d02ece04199e6ba12c7ea1e024f2e20011",
+      "ios/Session/ICMFloatTextField.m": "796424c1f5b9ebba5d996b029f0cadca6d09405a1e4e58d8f21470b28e0c2305",
+      "ios/Session/SwiftAPIBridge+TicketCreation.swift": "146cc3cbfdd332e53b65dc0fdc38dc786cbf36c7270391ec8cfd622eb6419248",
+      "ios/Session/ConversationCellViewFactory.swift": "e20017084d3c1d60dabac77438e26a0ab7ea459df086e25df43de145875beda1",
+      "ios/Session/ICMScreenActionView.m": "a56e82004a62113f16da89579e5b530ee0ef080d9e5c49e11bda8db829902cc6",
+      "ios/Session/LauncherViewController.swift": "307af93be25160d9450116793224e0786d4e7f3591a639f0369306e1d57ea0a3",
+      "ios/Session/PrivacyPolicyNotice.swift": "def9d8691049d753c918187e979690f9488a027cb73d2d2c5f5207c6c3592fb5",
+      "ios/Session/TicketCreateFormInteractor.swift": "7d1f6b99b568928f787c222338ebdb3a54661ea675494cc3b0ae1b14690f22f0",
+      "ios/Session/ComposerTextController.swift": "4bb3594140b5cd9449ef1479cbf1fd5f6956b13729212b796dd5b85e431b7fea",
+      "ios/Session/ICMOreoErrorResponse.m": "74d2186c37e460e11c74011d04e16e9126a0fc7ba8603dbc63abae5bd9986bc5",
+      "ios/Session/ICMConversationPageResponse.m": "ed5f09653bf43cdcc14e633cded7553434ccab82d5b8a8bd39a1a38a88ed7bb1",
+      "ios/Session/VideoFileProcessor.swift": "725a9441cc2d9fc73a7d978c2f020a7b9c859d276df469bc061e2b1c149e55a5",
+      "ios/Session/ITBTextBlockView.m": "c400196eacc2addb4fc040fc1d39e895dcd97e601cf2f7d4d2ccf1473d163bef",
+      "ios/Session/IntercomNexusEvent.m": "662265cba2bf218c1b974479889a511467cd2e3c87a85388b8ee3e30c1399926",
+      "ios/Session/ICMAdminBlockAppearance.m": "72e1a6c97bb3e2346a32f20e20366d74dcb9ee99654c84a903b8087db0fb6031",
+      "ios/Session/ICMContentStackView.m": "b54020fc821cad0710b211d1b3da951d6567153ff220b2d11f86fed05f3b85b9",
+      "ios/Session/ITBInlineCitation.m": "6b6039018e5d2168732b175bdf26446b0a26ed1cfd90df13ceff332254d5d4f7",
+      "ios/Session/ComposerViewWrapper.swift": "ce3beca7ffecad6e47e92bbf2e8f3bd33bb9aa95e78ee9c4e66d716d1328f1cc",
+      "ios/Session/CodeBlockView.swift": "7acf70be3665c3705c8fd402ab065bb05095b8d54cf738e56996c40aa31bccba",
+      "ios/Session/ICMConversationPart+Constructors.m": "2b6a941835f8d90a2ff4e99173924e8e1c723f74a38ca6039c601f01f0cc045e",
+      "ios/Session/UIViewBubbleCorners.swift": "9f7f7b3f4ba640d4a04fc55a0dcd89c92415251f2dd1e9e7a12fc13f0fa37cb0",
+      "ios/Session/ICMRootViewController+Presentation.m": "4e2037543a2b1c5bb5fb4c099d54a946dbd19d8123c7dba416da6b493f13d4da",
+      "ios/Session/ITBImageUtils.m": "b8d38896f30c01de6822ea5d0b34681a6baa6b03a711d62ac48d47843b010a01",
+      "ios/Session/BlockPartView.swift": "e62589e38ce0f6e76cda80bdfc106b2200e75c639dc90baacc184a13a3850dc8",
+      "ios/Session/AttachmentActionButton.swift": "a5c383720ee8a8d01c9422654eab38060d41fdbf2c3dd8340b6529cbac3a844f",
+      "ios/Session/HelpCenterBrowseTableViewCell.swift": "a590eff2ae2536a187c90cd2d4f0163a7d749130d270803ad9c25b16fbd58ee2",
+      "ios/Session/TableColumnWidthCalculator.swift": "3de08937395179db6844fca3a7bc84e9a05bab108baa00e0527e3a137e344807",
+      "ios/Session/ImageDownloader.swift": "93e6c6455aa5b4e5ee46678449431bef63ba031fd5f7bfcc91d2b0ca09cb5ff2",
+      "ios/Session/ITBBlockViewsReuseManager.m": "d4af5870ee55a8c4565027c15e5a9b4a8863027a6275f495779a06fb801a9e6c",
+      "ios/Session/AnimatedImage.swift": "e1de9462917e59a69b6cdf407a5ad02c685801f1eec1a4feaca0725dbfcaa24f",
+      "ios/Session/SurveyId.swift": "a124a24743495f4a39deeb0c53880fbd9486c2e8b5b2c1f1bb78f3d922f80d67",
+      "ios/Session/TimestampCalculator.swift": "aca31df929e465de9564e3d3c79f1f7af5704269b399e3e7f8b88fc1b9838670",
+      "ios/Session/ErrorViewController.swift": "ae9b6ed95315d2900cf2bbfdb201c1ee21f62f8febf0a0540b1e3c20665eb59f",
+      "ios/Session/ICMConversationPart+Classification.m": "9b2caf7636542a68dbea16b39516595dd97d03c299c55e57485149551f1b9e88",
+      "ios/Session/ICMBridge.m": "3b387c02214dc74fd656234c4d297e53ed6fad5f7519845f4143a6da98626987",
+      "ios/Session/ReactionView.swift": "db8e4e56b61d646ec91a42ba320b76368baf8ac6afd0ccca4ebf63b17c3b4dd3",
+      "ios/Session/ICMBlockLoader.m": "17258be7524c4cbd4ed0a6c5fdbbf6b00b1862899a0252c80172a300e8a186a2",
+      "ios/Session/ICMErrorView.m": "d6b7cb946773d37d6156d951bd1150cf64f6992b3fdf3f48dda81480d87bd680",
+      "ios/Session/CustomizationColors.swift": "40ce6ac7780ffb80bb92e4a2955a52af53fe16e01c2ed4500ed0c616a509eaf3",
+      "ios/Session/ICMCarouselReportingService.m": "378ad6aead297c67b2be56325631d5eac0454917fca1d8d22ea8a3d424039519",
+      "ios/Session/ICMArticle.m": "aa175d71b24f3bd965bfca08224e1348c3a09798d2f33f24d5c538edcc7a38a6",
+      "ios/Session/ConfigModules.swift": "025d0a7d73cf6e1fc086cfc54f664bf4f1e2edd4ad5b513785b78f705a86d670",
+      "ios/Session/HomeHeaderContent.swift": "57663afe7c4927753a27ebce9193197c3ab9281c06846af3d518290d63feb0a6",
+      "ios/Session/ICMOreoEngine+Transport.m": "9a358d50e86021edf130c4afa606ed516e9165cbab951eb5aff6e597365abbc4",
+      "ios/Session/VideoPlayButton.swift": "6f88c0c3499010e7a097154d36fe15cebd901070f5b698816afcf07108837ccb",
+      "ios/Session/MessengerAppTextInputPayload.swift": "ec6197a7fa48dec84ae742af44e299acfbc91c56fa297b6c95428d8d69ffddb7",
+      "ios/Session/CameraPicker.swift": "ce5afe0969cd2c321e611384a541b3b49362d86437f1f36bd923a36dd17f7f85",
+      "ios/Session/ICMConversationPart+Appearance.m": "8956fe569f10246610dca56d70e5e570bdbcbf3bfc27c9505b9f076a24a2cb6a",
+      "ios/Session/TicketCreateFormActionCells.swift": "2cc2444a8f362b7831756934fabcdb6fc8b23928e872ee7a6f06966bb00df836",
+      "ios/Session/InternalHelpCenterModels.swift": "a5843062a633b7a2a50108cdcc1103792cbccc5cc2db4646ae1b8c9d8f1c5607",
+      "ios/Session/ComposerMediaThumbnailView.swift": "ba2e21a76b21de16860524c1cf81cca16455632058db783e3a25db3ce267623b",
+      "ios/Session/ICMLoadingTableViewCell.m": "aa1f5f697f4a7a6d316df24308dd350ab03d06b6da4924d5f9bcfbd6163daf03",
+      "ios/Session/ICMRegexValidator.m": "5381ab52cdbe46f6836aa4dbd25d871fb2f59299290017909f5d65205cbbbc94",
+      "ios/Session/ICMUnreadTicketsResponse.m": "2d78988e08df04af50617e829014d6c39a1976820c8364a1d221eb8bf5b8fd1c",
+      "ios/Session/TicketFormResponseListOption.swift": "0e24d4d0eaa15d465f1f2bea34c8bb4298b5a1c8301040dd3efa2a4a7663873c",
+      "ios/Session/ICMOreoEngine+Requests.m": "e4a695a50e8c2b4a3dce973d87517ac1546dcd3ee978db8e70ccc39eeda4cb57",
+      "ios/Session/MultiSelectOtherOptionView.swift": "fb78742731af271b03a50cbefc242df2fe98801dc23a9a15dd51f3563236ae0d",
+      "ios/Session/InlineCodeChipLayoutManager.swift": "dd6ea603922b3a20d496a4af68e68fe14df1668fca2e6f991fbd02f68d3112ed",
+      "ios/Session/TableBlock.swift": "24a8be10b96c3a81e96af08d9d26f30d9a3584a400431423fb575cc5dfe08fd0",
+      "ios/Session/OutboundImageBlockView.swift": "8425b469e4032c566db213ac16f009989f275becec2ba63792f32d8750b3340e",
+      "ios/Session/ITBBlock.m": "a41c39f709d2be4eb59a05dded9b4e30907faa2fd0092d5518f140a3a79efe96",
+      "ios/Session/MultiSelectInputView.swift": "039ba5cfbe6ec3aa106e1674cff5deda5f329c48fb2c79de10e05c5ca5f4f7bb",
+      "ios/Session/ICMOreoEngine+Initialization.m": "0eb4593c6805157fc8f0aa02cc49058da97e6a5296f8515545fe88a63be9422a",
+      "ios/Session/ICMPickerTextField.m": "c6cc4e9e1e1a60d478cc532a1e51604d66af4ac1d8483fc8cd3a481a5767e81e",
+      "ios/Session/UIFlags.swift": "5c8623cf5c730c5526708474a4d9f33734529b73ed2e3a8724eb26d5d2ddf094",
+      "ios/Session/DefaultPartView.swift": "56f851ea891fa3aa84cd3c1b79b9e44bb9021d0a8125d0903cd86b33de3a2795",
+      "ios/Session/SurveyInputQuestion.swift": "204a9d0f0065da379b176f743a7042cb8eb7f96122954b07abcacf09ff4ba3a9",
+      "ios/Session/TicketCreateFormStandardInputCellItem.swift": "75b6ec99175affc1d682fd76c881237f5ca7f1d5c80ef595f6c01392f0575fc6",
+      "ios/Session/ComposerMedia.swift": "bad7c488d2b4cecb8e8fc92fe095a4518cd76962f6fcd0ca2020f8b515b061fd",
+      "ios/Session/BlockSegmenter.swift": "98365a0348f36c8b1f2428d338aa68335df3bc08fe6d62488f95faebbf437309",
+      "ios/Session/VideoBlockView.swift": "932ffa03247b33ba1cdb0f9e740507199cc418b6a08e39f80d756c9700f57692",
+      "ios/Session/IntercomIcon.swift": "e0d7411ae9935456a3863ab395174d62f6eae748f5e1905c92d8c077654aaabd",
+      "ios/Session/HomeMetricService.swift": "8eda601423408993ddf37698f68bf0b8a2bf7aefe358a94379185ccdde05c6ba",
+      "ios/Session/UIViewDisplayScale.swift": "9a6a4b66ef92825cb1874e8ca962348f0cfacfa5e572ee0b83f469565e48e98f",
+      "ios/Session/ICMCarouselViewState.m": "06f7490e3b0746fed569d06e9e7d39783addc1c3e8b730ef28bb7b88ff3284b3",
+      "ios/Session/LinkListPartView.swift": "ef769627ee7a93ebb878a500479e81728b3f313ae1fd23ba95321f7a6f63c091",
+      "ios/Session/ICMHTTPClient+Tracking.m": "02f6bb5d159eb300089e9bfd2df868000a1050d32a719a4e27b983a4c28d6de7",
+      "ios/Session/ICMInAppsViewController.m": "7053eb3426d0141e009bab2c4491a82b4e6081606bbe48495832730bf3464a43",
+      "ios/Session/AvatarDetailsView.swift": "ded97f70e83371098ad789e2112268d44b3567ede79ce9d053c026c9896c3561",
+      "ios/Session/ICMPartBlockAppearances.m": "a8efc0a442a98611b60f3d327826a6d004ac0cca480e8f2526959bb5e0a6c4d6",
+      "ios/Session/TimelineLineView.swift": "5bc4d49c1938e713c324d60cc09ba461912c012e64888bf23357a732adc9e215",
+      "ios/Session/ITBButtonBlockView.m": "5e12f6caba6ff337809581de3ace4128991cbf6cdda94c9f3870a24494e5ead1",
+      "ios/Session/HelpCenterContainerViewController.swift": "89eb0d9be7ba30408a6923c202d38fb7721944880623c3f587739df85d804006",
+      "ios/Session/TicketAttachment.swift": "24d94f6cbf29f6de01ea8d93a151c8b44e109cfa7167d06cc0ffd3bdd40ddafb",
+      "ios/Session/InboxCell.swift": "57c3eda576b987177e5f1d7bc2e24275f1508fa872e1559523cab8ebf4999876",
+      "ios/Session/ICMHTTPClient+Metrics.m": "ad80092915e851dc9f217d2f8a551358b7c7bf363dde19dbaa78eab414fd362b",
+      "ios/Session/ICMUtils+ApplicationWindows.m": "71336bfc17d8b62cb05256c2f4d558321584c9f7a8b00017cdffbef9928de161",
+      "ios/Session/TicketsListViewModel.swift": "7360d7be53f049928cf5c51c00f1e30f99f2ba75241a67278e911a288d92dfe5",
+      "ios/Session/ITBAttachmentBlock.m": "90becb3e927bb4b61f952051185ff6f3ce28554cc3e2693eaa04b477dc942dac",
+      "ios/Session/ICMUtils+RichPush.m": "f19732c55418841064e1205a955df898430c5179aa59f4db4ec9b113d97d7480",
+      "ios/Session/GreetingView.swift": "67813a82ae5e4ad9ab0807d64742aa1a98974d7de484a7ff968a423d0f545eff",
+      "ios/Session/QuickReplyView.swift": "4b18b85a1ba5ffebf509f9fcb9014dcf221c733d8c3324eab3a0ceddb8c575f4",
+      "ios/Session/LinkBlockView.swift": "4f879c1ed48654b12a70997b600b4569f72011b60264da77092f88318c82960d",
+      "ios/Session/ICMMultipleAvatarsView.m": "857dce7084173f94089449ab5be6ecb2aefd31bc37fc31b7e12729b9b8b30815",
+      "ios/Session/DayTimestampDividerView.swift": "7b11854c7b38d53261336f00ad33055d0b9dd619b585fcf2b0137876d5a87a9c",
+      "ios/Session/ICMHTTPClient+UserUpdate.m": "d8baf17a891e9806168e3492257c846b814733d58a5b1d275f9c9d7cc474d9a2",
+      "ios/Session/FinAnswerSource.swift": "857882f94917b0702027d08e8048912494a25af62c459a524be34be61b016e37",
+      "ios/Session/ICMUnreadConversationsResponse.m": "17ceea9cf61dfa001917eb293f3c8dd459184e394b256897d149a0c8f1475619",
+      "ios/Session/ICMConfig.m": "decd793258555fa06bec89778f3872296738f7b25e1744bc2ac26d93c8e044d8",
+      "ios/Session/ICMHTTPBridge.m": "fa3eee6f83deb347517e52a0f27b856d4d49eb41c11810b7394eccfeb1dbbd51",
+      "ios/Session/NSAttributedStringScalable.swift": "dc39f497c33445929494a18dc7f13a60635134488bda3c5d8430bc56cc278566",
+      "ios/Session/ICMHTTPClient+Events.m": "ec3ece3db456d4e3456baa664bfc0c92cd598334c3ddf978a55a357b3f1dabe3",
+      "ios/Session/ICMBridge+Push.m": "9cd1c598ff3fe5b1538a1f3e77c4766dd6cb457c297efab183c007aac744a993",
+      "ios/Session/ITBBlockListViewController.m": "061c7d9f028c8f0221c57b2822491c6e78398de4d522a1689447c642a7e095ac",
+      "ios/Session/HelpCenterSearchViewController.swift": "a307e9818a4620d1c2af8892b012c58d6519069ec4954f4f6b20dc42e8d75127",
+      "ios/Session/OutboundContentBlockDelegate.swift": "ec6ea83b9f16c37896b40baecafa91c4be338b0e6fc155aa209a0cf64f195a48",
+      "ios/Session/ICMColor.m": "876a2cc34a4dc12e379a71b83ef61ce662b94fb0a7c6aaea06830044256dc35c",
+      "ios/Session/ConversationSpaceViewController.swift": "b60d551d0b3d4b7ba760d78128e9b28d9e6eb5bd0b580c059d28b8f66be8b172",
+      "ios/Session/SurveyService.swift": "cf79fa6620f25f1b4f5bc359df84d3920ee2126e292f3d09861035f92a612d0c",
+      "ios/Session/ICMTextAction.m": "8616f230f1ff07e6af3491e6f9f93dfcb4da21a7801332af1643dc2f1d69eba4",
+      "ios/Session/ICMAvatarView.m": "6af76166942ee82d20650c47a38825f2ec55875ec12946140065a7da3401045f",
+      "ios/Session/ConversationStateSyncSettings.swift": "96cc4069e7f593a955b96a1afa99d029877f7fbae20ea584aa333972111440df",
+      "ios/Session/ICMHTTPClient+IdentityRequests.m": "24b51e9804fd8ac2a9f420fb96733f0a24eed6d15658e46b91051b5cf62b2626",
+      "ios/Session/ICMHTTPClient+Articles.m": "ae496850a548b7f593382a768604bc2bf7de05e3b06bfa1f0dc578cd7b1a00b0",
+      "ios/Session/MessengerAppBlockView.swift": "370787ece30f75782dce4064165fc009239ccfdf2389a18bde7c429ac4ee4715",
+      "ios/Session/ICMMetric.m": "632f7fe3d19955a1e24d30ab8bafcfb245d11522ef09235749ff946d9fc5b994",
+      "ios/Session/ImageCaches.swift": "2cf35e2e11b258adbf094503f0eaf3157ee4417284c0917ccefc1b6f840b3901",
+      "ios/Session/WebView.swift": "c8194cafdfdfe2b2ed140817cdf5c0ed45e23423414d5227fbbc6638debbe14b",
+      "ios/Session/SurveyTextQuestion.swift": "5de7d6a66500de45b97aa06781d85b91d656a98c0bd10579d8b8f69bf1f3a69b",
+      "ios/Session/ICMChatNotificationViewController.m": "5a67be5f49bf8a1f05ded77202df49e7eb8718a5617c5620e8de567fc2be61a3",
+      "ios/Session/ICMVersionManager.m": "c487e58ec9b405d1feda34b61223757d613d8d0233d71eacd7a197274667ea33",
+      "ios/Session/ICMFloatValidator.m": "2a58687b3f2024421b8d38b360301563dc3b8d2449ec6cbd4c4db1f530949674",
+      "ios/Session/ICMConversation+Parsing.m": "2cdee241d752ba89279dfe4086a62ecf0143526e62630acb4649b102a1df3368",
+      "ios/Session/SurveyCustomizationOptions.swift": "439c5fbd92d2dae3026bf953c632963083253791faf4f950aa0382d885c55f1d",
+      "ios/Session/UnreadMessageDivider.swift": "72bab963f25a9974eb2a0cb112ffa46bd2aae28d893c0d1d03066b00aa89165a",
+      "ios/Session/ICMPermissionScreenAction.m": "21850556146d146779d0aad14a17974e11c7bb7fb5b8297755569aeabdc3c66c",
+      "ios/Session/ICMHTTPClient+TicketDetails.m": "12969e0bcb4ae0fa8eb42371274652bddf98179f5dc25cc152e353c559089fb9",
+      "ios/Session/AvailableTeammatesView.swift": "cc1510a199287303b313c85a0541265683264f31744b5d9d9522b0496a61de47",
+      "ios/Session/VoiceTranscriptionUIViewRepresentable.swift": "ccac27c2fbb988919d81cafe19aca770cf32616b523d07a798ca903361cb37ee",
+      "ios/Session/ICMCarouselBlockAppearance.m": "7a115f18561f30f1eac12994befe234e560877f7938f11caedb74b1c69aa74d2",
+      "ios/Session/Avatar.swift": "147cb0ebbc52e55b0f50e85da80caf7561257bd7a16b2229855f4c5ee411cfaf",
+      "ios/Session/MessengerAppViewCache.swift": "b5710d13b644ae99b207fd8f19f08fb049ef1e1442fc77ebc868e5d614881b13",
+      "ios/Session/ICMRateLimiter.m": "b5fe8421bc95ccad812d1d28fcb846269c32a8f12ffcfeca65edf946bce27aa5",
+      "ios/Session/ImageGridView.swift": "85bf21d3011cd3fa16d75e51989f9850cde0efb6fbc6e73f735db6b7dfc4bf48",
+      "ios/Session/ICMHTTPClient+Transcription.m": "b8c8956e31ba728c79fac86a80fcd077772c1484890abac6522693200d3631d1",
+      "ios/Session/NotePartView.swift": "5c370d67ffe9e2d30e830461eec00e4ebf5a47dd1de514127dfa87f148d6512d",
+      "ios/Session/ConversationHeader.swift": "3067c9ea2daf0f874ec47f052f9ec72bebfa73036985c39b6040f92aa94ee8d0",
+      "ios/Session/ITBImageFileLoader.m": "41c10d06673610db71ce03b32cb13b315c8011f1fccc6131a2b3646c7753d709",
+      "ios/Session/ArticleMetaData.swift": "1b0fbd06ce3561ddcad1e53d1cc232a32a09ad93d70e4953616f8dbecd9f5b67",
+      "ios/Session/ICMHTTPClient+TicketList.m": "18fceaf4bd959ccdb488265f356b63c86b8e0690180287834c4c8b414285b2b8",
+      "ios/Session/ICMTeamPresence.m": "eedff48d03af323332f8d75bf97551dab0696b6386951646d6529654e4638a70",
+      "ios/Session/ICMPushPayload.m": "80ea1b4726ed74100885c3d1735b3936072f586bf7394264d4396b29c29be4c9",
+      "ios/Session/ICMHTTPClient.m": "64f25ab148af69182f784db6a86cd42d38078a3adc7ae937c4db4949bc18a29a",
+      "ios/Session/ICMScreenActionButton.m": "e2c873b4406991b6c949d209535d55cc1395195d8e9559566f57f3012960388a",
+      "ios/Session/ContentType.swift": "133d24bbc5a43bb3ac4691d818e96a477bf9a2d251014ea533b299a22cce8398",
+      "ios/Session/TicketFormResponse.swift": "94f7d248a3bed1fa6637ef29ae452f50bfa90ff0339f451f177a1ef7b2f08eb9",
+      "ios/Session/NewConversationResponse.swift": "faa671705c56c61618e12b83da0ddf05218c4e6fa3c7e02be3ac635037888b88",
+      "ios/Session/LoadingSpinnerView.swift": "c7ead08c97bbf239909b09512416fd6cb3aad88a7ad95074990dd0fe2592455e",
+      "ios/Session/ComposerThumbnailContainer.swift": "ebe6593a49bd4e755650f45c7510051135c7751cd487ae90324578027bc937f5",
+      "ios/Session/SurveyQuestionViewController.swift": "cd0e434809abafdab1631b84e6c154fd356f2fb7f1f7e3f9fb04d81ae409c1ce",
+      "ios/Session/ICPCardFallbackModel.m": "a17a74054bd14c29756693ab4be33c8e368f93fdf81499c1dabc3bd379fa69eb",
+      "ios/Session/ICMHTTPClient+HelpCenter.m": "6adf5f294ed75946fec2e2e0ce2134d3987f6f84f9a4b6ed2bc5732135866897",
+      "ios/Session/ICMAVCapturePermissionManager.m": "452decb0dbbb40decfac42d251dad16dca764813b2a24488b9aa4db56e959fef",
+      "ios/Session/RatingScaleOptionsViewController.swift": "e5a90ee2ecd8a1f490addabc7fcdf7a51c7b0115cf25cc1e5a39c33331e43820",
+      "ios/Session/ICMScreenActionViewController.m": "7520adcf0a70d362b29587cbcfa31a4bdeec10a3786325b2ec6311d5fdb43371",
+      "ios/Session/TicketBannerView.swift": "d75a70253fefe5a2fc2a65604d852d625ff88b89529053feeb159c99b2415d7d",
+      "ios/Session/CodeSyntaxHighlighter.swift": "8b8f4ca888c139d052375ae11b6ae2c46b9ab198859a7424f20b1efd3392ef40",
+      "ios/Session/ConversationCellType.swift": "88f86421f17641933046583186dc4269445fa4073f559ad21b4dc1b3d016ebee",
+      "ios/Session/Form.swift": "fe0a4b4380f38bdfed327a0bb0cb1eeb2310b4cf020c0123e99a7caa6493570c",
+      "ios/Session/FileAttachmentBlockView.swift": "f746881a7e50a0d5b8943f4ba39c6d7eea825a0ca96dbd18ee08139c3ed462f8",
+      "ios/Session/SurveyQuestion.swift": "804b9820716a7fbd10f2acf1fd95f09c637f7133dc7cff187091ac06893e7d11",
+      "ios/Session/ITBLinkBlockAuthorView.m": "d5350b321d859d32baf882195847c94ba0630b432fbb3ebcb7633e194038a353",
+      "ios/Session/IntercomLinkView.swift": "293be862fd494706b54ea242fffa019e65dc5b2bc4a9bebed27b550e0bfd019d",
+      "ios/Session/Ticket.swift": "c5f2490e23ddc11fd2c110c4d9b70f80dc0b041c9ad828f3a8c2d733abd05fcd",
+      "ios/Session/ICMConversationsResponse.m": "7f0eb022a02aef0a1438d07fae57ebac86e06bebbf5e6664d83459f824b696dc",
+      "ios/Session/ICMHTTPBridge+Events.m": "c8f0e65c50b9a1e6311b8d0dfbfdf9eb789229c01010a9db60f31946203a11e9",
+      "ios/Session/EventPartView.swift": "790311d20b50152680f9087bfd645c218c69019b9e012e3e243b089a3729e107",
+      "ios/Session/FooterNoticeView.swift": "2412f85cef052a0d0247a5d36858ac65342dd13b2449f5b15d161c59d6091139",
+      "ios/Session/ICMBridge+Application.m": "850ec66568998eaa6e14109a62f8f70058bf366a4ae19c9e14e56c0e1b44ec0e",
+      "ios/Session/ITBLinkListBlockView.m": "6c275d1a7f29693a60a50257c3085b06a22eecc3c517ab3e45c821362a7f0879",
+      "ios/Session/ICMNavigationController.m": "56ba4ae7bb86613f65228f57134dc21ad1bc0995cb59b3c90ae5aaf249df66ef",
+      "ios/Session/ICMUserUpdateDeduper.m": "cb57d5defaf83cae05328bed75278e5a39de869d984d67cead29c1e17e28bff3",
+      "ios/Session/HomescreenHeaderViewController.swift": "3271913cb49460747d4b35bade6356a3e01f527369f50b43df4e7d0b91c1adea",
+      "ios/Session/ICMTeammatePresenceView.m": "c13b51091f7bc0e05a6df6fb3f0c9c70887743e3689e166e0ff97b062a66b284",
+      "ios/Session/ICMHTTPBridge+Metrics.m": "c3aed0d6502c0478aa2ab075dc8e86c911d74c9f8232672cf1ec316b1c75760f",
+      "ios/Session/ICMPushNotificationManager+Installation.m": "62bbc42e7880d70fdbe757476fa8fe9bbb24beea733a5419c35649f739c7f97c",
+      "ios/Session/ComposerImageThumbnail.swift": "54e7af06ed599cacaffbffd665cdc57511cdfce87dfffa5bdf6c8d575ea59ce4",
+      "ios/Session/ICMPushPermissionManager.m": "318db4332feb71280b2eab6ec5b8675381285314f231cc9079621eeeafb2c7be",
+      "ios/Session/ICPLoadingView.m": "1150af69828f11fcdaee38191aa8620308348df0be10c001bc35a7a8601987b5",
+      "ios/Session/ICMConversation.m": "fed5e96568b67d66cbf1efaa482151582e770d0aeda18d713b0af16d9eec4b51",
+      "ios/Session/ICMEmptyInputValidator.m": "014cefdb532ada8d25d13e96d72b7a81224ff6f590640c69d7d2a1681f97ce94",
+      "ios/Session/ICMHTTPClient+Inbox.m": "6c0f0f95a26cd8cf12dff1d73a5a29dfa03ada72ce42dd7ed2a0450d13367be3",
+      "ios/Session/TicketStatusTimelineView.swift": "962fdfab08d6f5f7d58dae1be884425477ee5d779760b7c174684e59245a8d8c",
+      "ios/Session/ITBSocialButtonBlocks.m": "d082214c38db39e8e1da5c90091993d4ed68ef365acfd3eab7f78b1d0e129456",
+      "ios/Session/MergedConversationEventPartView.swift": "5c6f636b48e919f3726ab83cc9e61f210310e705c4601e5716b9632b73387ab1",
+      "ios/Session/ICMNexusBackdoor.m": "6272ecd523693611d26cfa249478c4b738860527092255200323e1b4415d4eb8",
+      "ios/Session/SheetConversationHeaderViewController.swift": "50dfdd65f55037c63f02ee968783852359aafd3a80d97c2c5cfd4ffec1f654a6",
+      "ios/Session/ICMBridge+Registration.m": "16d9b6f920439354731ad8b5e2f5f1934fa6b900509c69811e2b0d77b1fe1add",
+      "ios/Session/ICMPushNotificationManager+Dispatch.m": "a4e6ed2c1f492676ea6d1c823250a6e49b62ffdbd9dc34ea23780eb9c4083950",
+      "ios/Session/ICMContentModalViewController.m": "5306cd0855343eb34acd5be58fcff3424645078233effd1dc1172b782db1a998",
+      "ios/Session/ComposerView.swift": "87355273b3cba71df8d0979747200fed836135e39b5d1429f289928d29b6679e",
+      "ios/Session/ICMPersistentStore.m": "9c0828eb97fee3ca2bb4e1af4547e47d730cc8601a68c901becc8818b0959127",
+      "ios/Session/ICMOreoUserJwtReplay.m": "33f1c85bcbbe2b80ada14bc2c5c2d95f529a350b058f0f880a327c3bc70b97ab",
+      "ios/Session/SurveyStepViewController.swift": "ddcdfd9bb66d641c2e4801e0b46ac148218cace7ff0c6a11b2437ab1cc3ba7f5",
+      "ios/Session/ICMStackedChatNotificationsPillView.m": "e1abfa3922a219a690ea7acde54ebe979792153b33219bf29e4e8c969b544662",
+      "ios/Session/ICMEngine.m": "d49c353fb3c643ccd2b9dc6f27fcdfae48855c0dd68b2af9e6784c2a1abefea5",
+      "ios/Session/ICMReactionsViewController.m": "abddbf221b721a124b985b61189978c609ca910e9a8ad756ac82236a0e9dc735",
+      "ios/Session/ICMComposerState.m": "044971444111e03fd519216225db3ba1c0419f134f4aebe009304f3053aab01d",
+      "ios/Session/TicketDetailsInteractor.swift": "26136d82d1a04acb58dc2e62fa9392e4a1a25c4ff5e10ba48eb75914de9bb53f",
+      "ios/Session/TouchTransparentCollectionView.swift": "2fa81b986b077508e76d15bec9c16f125e037ddaa0ca184f78c30b005dd357d5",
+      "ios/Session/ClosedConversationView.swift": "0980c008da6368b1f7f88299b330e740f8dd971f738d8cee89f9974fcb6dc699",
+      "ios/Session/RecentConversationHomecreenCardViewItem.swift": "d1efff8adb647372b4334501c8361be7fb8a1dc8d5f35d98231c78fe633856b5",
+      "ios/Session/ICMWebsiteValidator.m": "882ae2347bc2a2a44847ee1db92aef2bc76874d8505f0d15bb27940ab0788fd9",
+      "ios/Session/ConversationEndedButton.swift": "9e286442e980ddd576bf33cb6d25d23a4dd5c75c2d02f12acd4dfc19582e610f",
+      "ios/Session/SurveyViewController.swift": "56a418ded2557906f553bb0e9a07be81d709f36a30ffd585c791c43932199684",
+      "ios/Session/ICMSurveyStepBlockAppearance.m": "52be2789765aa200fa6850132e9cffa09dd6d61efc8e42c8d48aa8ba983a459e",
+      "ios/Session/ICMRootViewController+Content.m": "7ee10abe1a367d96ea5d9d2e516311679b94d29a0011bb3db2b1fdb7b0f4dccd",
+      "ios/Session/ITBVideoBlocks.m": "dd869f9c0ca2df60ef65a14d705108ef520e44ffeeb55680dfa025c41f7d9900",
+      "ios/Session/ICMUtils+Fonts.m": "44ffc75c49d07f350908ba1bb32f72d3a06b66eced21c64cd548f9b10372bc5e",
+      "ios/Session/MessengerAppHomescreenCardViewItem.swift": "82c738eb345918c2efe60426c4153e5637609c625f1529b82658035d0c23b372",
+      "ios/Session/ICMLinkCardContentBlockAppearance.m": "d9e6e0326cdde4d805109284c0f5f5f81ed760caaac2c75d4d77c246016449b1",
+      "ios/Session/ICMBaseResponse.m": "5c78649f0663e795714ebe203e9b3f41dc61361da5102834619168a56be78294",
+      "ios/Session/UIResponder+FirstResponder.swift": "56b78d7738aa2e5f25c9a0e86cf1baba85db48ed1f4beab4daaef238b6f48d34",
+      "ios/Session/SwiftAPIBridge+Home.swift": "d5aaa37d8d6dfbdbffa59141cdc6d03f8e836e9abae6da4973c786675059e20b",
+      "ios/Session/ICMAutoLayout.m": "005cb310e2cda088c37b178fb111b14e074ff16eb1d5a5cc22582e7eed7c6270",
+      "ios/Session/ICMSubmitActionButton.m": "ac58cce3e24def0c7c092b581dea57c0ef40fbd6372de12ca3177b090d915add",
+      "ios/Session/NewConversationHomeCardResponse.swift": "e16cca28563ece43dfb90afecb4edfcad10f27cb23ed48c76f5d75d0e56a9e93",
+      "ios/Session/ICMWebHelpCenterJSBuilder.m": "cdb9880d7c8ccd88045dfc692c67b49af24543ac771b226c6340ea829581003c",
+      "ios/Session/ICMAppearanceReset.m": "d8fab4eda8e0c8a474580aabccec157fb48d8ef866435224c393a3e9fa797c4a",
+      "ios/Session/MultiSelectButton.swift": "b0b9b7489a160df665472e12a98c17603e2faccf0dbd73c0a50384c2b914e951",
+      "ios/Session/ICMRootViewController+Destinations.m": "2ea26c9532b0d71b1ff110f8e0bc7509d6f0ecda43296a9cfe5554651efa8c01",
+      "ios/Session/ICMHTTPClient+DeviceTokens.m": "d3b17fb2e90ef7e6a1ab7e8e29e7c642070bcf175d2cc51ec56b53bda35fab8a",
+      "ios/Session/ICMWindow.m": "b5a7fc36e724f626c1cadee25dcb4d953dc74e927f932fb9909c5ef697b1e362",
+      "ios/Session/ICMConversationPart+Equality.m": "362c3bf157fd413c2d9a1c970835b9019cf47e8fc44e2551d64d4c1a6a14f0c0",
+      "ios/Session/HomescreenHeaderBackgroundView.swift": "29c7f04f840fbd78ff88bdb94b9dca51cda99a244a21640a7bcf1713ddda24e9",
+      "ios/Session/HomescreenViewModel.swift": "20a391e721794954a6a1e2ac32af0c2b74ffc9426f1ec92626f0ffc4018121db",
+      "ios/Session/ICMImageTextBlock.m": "8ee07f1056b623b4093beda0518cd914210a408f256495e59574015a9b2dd4b7",
+      "ios/Session/ICMOreoShutdownState.m": "8b8e08a333e6b682b79379254c21e697cdde2c49c6782c42807e8722799afa91",
+      "ios/Session/StarsInputView.swift": "71a4b1635b7c69c94b4c26b464215ccf7279fa8459795bcf35d7ba385c60540d",
+      "ios/Session/Participant.swift": "b20e6f712d5621e7fdf65072d959b86bdebef1dbaf72568e2d2587f0ce5bf7e4",
+      "ios/Session/CollapsedConversationHeaderView.swift": "bf9d60f024f957a9ab9dbb310891bfa9afc87dcab0aad13eaae8f655ade598a3",
+      "ios/Session/LinkPartView.swift": "ce265a008d67342a5f7153758157724d39756feb8d7d98df987d72c1875b8388",
+      "ios/Session/ICMStackedChatNotificationsView.m": "5258ca67662a0485d4f4eba3d6a9e674b757cc493889d03fa07290582257c0e9",
+      "ios/Session/UIFont+TextStyle.swift": "7ec3b3b3f68c9e20b8180e5d73a49909ff6151f7092d815e4173a365c2cd4267",
+      "ios/Session/SurveyMultiSelectQuestion.swift": "0c0260204199b42034c3c733fae3abb3d17d5f724a21fe8ac2b33103b0e5a7b9",
+      "ios/Session/InputProperties.swift": "16694e87f931d6435ae57fd8af30855516b2dc2071325dded790d8ecbd0ebe74",
+      "ios/Session/DefaultImageLoader.swift": "df60b954f25fb97d0c73e34897f972aa623e3f1f79cb040c363cbc3eae8e7a11",
+      "ios/Session/ITBBlockUtils.m": "2dd305d3527e6f77bc19ecd7ab99227f4c6ac969c172197b94407231512fc06d",
+      "ios/Session/ICMPresentationManager.m": "c460e8ccebc3215c414c30e211997d57b3112a0f6bc2ec5e5768f375d3b09d9b",
+      "ios/Session/ICMHTTPClient+ConversationRequests.m": "664bf050c5b15a775f626085f1239c7d64f12c28a717acea7c29565850d8d8cf",
+      "ios/Session/SurveyMetricService.swift": "9c758c339b634af6fb2565637afe81d4fc8be57a2657a67384d4bd5a97a8fba3",
+      "ios/Session/UIStackViewArrangedSubviews.swift": "2310ee14674e480c03b81ab5ea6ac979c56cbf98510cfcd7a2ccc458defa7048",
+      "ios/Session/SurveyQuestionResponseView.swift": "081d099133ad41ff91d0cd0faa12864727baa1e3e71b4f302cde6550202ee39a",
+      "ios/Session/ITBImageBlock.m": "ca4fabb9c1d3e60dce68efad9d81b498385e26ec9fa2cc4194d33b619fd08660",
+      "ios/Session/ITBImagePreviewMetadata.m": "13e082f2e907862e7a8368b9cf6423a0f113a9b404ac06f8aeb79bf75ffcb317",
+      "ios/Session/ICMHTTPClient+TicketRead.m": "b9cbec0c64fb3cf6696a85158f82a9dc0f868ada66a0f1d97bc91568efdfe0cd",
+      "ios/Session/CitationViewController.swift": "3855adbba862c28d985a98bdf640e98db0b9fbdad7801ee6b8ad7bca5d7005b4",
+      "ios/Session/HomescreenInteractor.swift": "1f37a363c18d00c0ee4e1a3ce866779202dd66273feaa4419a0e8dbc7cfb78e3",
+      "ios/Session/AssetManager.swift": "3157300ca4b1b486226da4205952a285f7785fde6e9e18122324fde3f5fb11e7",
+      "ios/Session/ICMRootViewController+ModalLifecycle.m": "c7e48fd4e34e9c0e7cda90c32371198c48278d0d20427998b604473b2e42e742",
+      "ios/Session/CitationTapDelegate.swift": "10fa6099a922ab8880273043c1bc954789c04666ef74a72f7ec1380e0b4cb6ca",
+      "ios/Session/IntercomNexusSocket.m": "2cbaef32de01bf0008f37604ebf945a93238343d24275fd91d3e7f344c5cf294",
+      "ios/Session/TicketsListViewCell.swift": "08ef71cda0bdb5cd6fb484c849abdba61da290daacae2ec3366660a56e6e693b",
+      "ios/Session/ICMDataManager.m": "dea4cb5dc25463ba52add427a65c731f3357a65aa57e056704b4e8d53e4642c9",
+      "ios/Session/AvatarDetails.swift": "c1f703149a7d25699df396f535c8f407a8d150e2ecc168fbc1ae85d7c308f1af",
+      "ios/Session/ITBLinkBlockView.m": "b9661dde3f1f81d2dd1bfef53ab47b568edeb5376bc04a78e591d4c74c211cb5",
+      "ios/Session/ICMCountLimitInputValidator.m": "b28edcf0cc2a5a08b66d0bc0f8e6ca219b2b7a553d8e31b8dbd6dfb05885b887",
+      "ios/Session/HelpCenterService.swift": "330e72b3273abeb79d091aaf773a9c611a401b209fd05804f9fc24aa38332e47",
+      "ios/Session/SwiftAPIBridge+Articles.swift": "ba95c9fa708b92eb5417b4e20ea0a35f3a0cc458d28a1c9e457c88e57762c46e",
+      "ios/Session/ICMRootViewController+Callbacks.m": "065d35486ee35165ac1c56ee16b84a2295c44b81f1677f8880c8c2f49c5d25d3",
+      "ios/Session/Theme.swift": "114cf1270430381788d91d55307ca23db0567c62d2ac893db5604a5bd2d2f1c7",
+      "ios/Session/ICMConversation+ValueSemantics.m": "2aa21b2ff7d092ffdd33fb685851fa0991584ce0fecaf1a9daf11f77ea0230a6",
+      "ios/Session/ICMSessionManager.m": "81e50a3f58c6630c6e2a5c3c52ec02530d9a918b634294d3747f20b82cd95a03",
+      "ios/Session/ICMCarouselService.m": "5536cd676201140a64d09eecbf968fc0dbc431f5b3fdaccdaafd564ba84747f0",
+      "ios/Session/ObservableStackView.swift": "7a56cb74cb21b0bd108c096fd0db7c995b064177b135240027e35e20f0df39b7",
+      "ios/Session/PartBlockAppearance.swift": "86b899ce82a8278deedd8c5205cfb30d03ec448af8d9dacd147433a59f446dc3",
+      "ios/Session/CreateTicketHomescreenCardViewitem.swift": "27aa4daf8f5297e937fb2a321997ecd397b8174423f2facdde312e011148dd26",
+      "ios/Session/InboxViewModel.swift": "c1062cb863c1ecd3ce130c6fad840cfbfbaa9fd66e6897173071ea283c88606f",
+      "ios/Session/TicketCreateFormViewModel.swift": "2493acf74bb3422c388d34eea9f92e47835912cae8a7ac4478047704931dc49e",
+      "ios/Session/HomescreenCardView.swift": "5e4db7ef492cb47fdf817d378e728043d4d4e26657407440f2c1921a341c979e",
+      "ios/Session/ICMAssets.m": "52ee3df434eb3b483c33b1f516ede359f186676bae0d374509ecaeada931c181",
+      "ios/Session/AttachmentViewProtocols.swift": "893b10383f36c811a40249ef955353dee4c5a043faff2fbad9d0e1d1b9dfeabf",
+      "ios/Session/NewConversationCard.swift": "517289eba1dbf261efd1aee3ab99ba1101afddc1c8710c33e332189ee23406af",
+      "ios/Session/ICMMediaAction.m": "05c22321f095fa4d6ca2cf2074e12637d32b3f655d5861895028110ea83b1e15",
+      "ios/Session/ICMHTTPClient+ConversationForms.m": "3f554cca591f3e6b4f5fbb6d6155d4c2df14cbe13d508dd68e679b5c118b815e",
+      "ios/Session/ICMUserUpdateRequest.m": "9f861b29d7dacbb4e3afe22f3a4061dfed9ca8fe9f52b012a2cd68c8b572aaa6",
+      "ios/Session/MessengerAppHomescreenView.swift": "aba9853d955d8e98a29d11ad7a4b66549e6913446016d67457fa13d9f9f8c338",
+      "ios/Session/PushNotificationStatus.swift": "0b5faa010e59cd8525a7f8632af9d0ba5695c6dddbb31207852aa17934507eca",
+      "ios/Session/HelpCenterArticleTableViewCell.swift": "41b540e515b76546c18e16a9c7740f37ec07e839258cc874ff375150049a310c",
+      "ios/Session/SurveyViewModel.swift": "0a52c8033b1b3579740b7a0a09a1188586f51f41fa9ebe9e03a396e398452113",
+      "ios/Session/HelpCenterArticleContainerViewController.swift": "e8e762a714a110b9d48fadfc59ece980f6680a943f406dfd83a4215b4094e346",
+      "ios/Session/SurveyStepViewModel.swift": "28fd60f7086dfa20d9fedae96a99cf5c96b7524ed1823715fe3c08091ea5991b",
+      "ios/Session/ITBLinkListBlock.m": "26947a55fbd4cda5370658588a7bca5a3f6b8d1257677dd09ce773481f061950",
+      "ios/Session/ButtonBlockView.swift": "c2890d44606efb18c458e1fadb958a6be897e1ed168fcd28d029e357b54244fa",
+      "ios/Session/UIColor+HSL.m": "d6667ed584cec429780d6f1a3ee4fb6b1d053f388044c34664174de179d5e637",
+      "ios/Session/ConversationViewModel.swift": "4792087b0e8953ed34ba3ca1dd328514da28e84966d3f676ea56baa1602b1e86",
+      "ios/Session/MessageInputField.swift": "9222d9652726dd463b02b9e0928cacf10165e7b284d3052dc4266a3b935673f8",
+      "ios/Session/ConversationViewController.swift": "966ea1d12cadf471c51309980990f9c04c631655a5ce64db73cccea15ad232d3",
+      "ios/Session/AudioRecorder.swift": "8ea95e3cd5b6e74bf0d04f44bf7f04606ae31ade3a6d78b104c4cf649e60677f",
+      "ios/Session/HelpCenterTableHeaders.swift": "7c9481524ff39b447f8f63a5c59c2f2a473cec6375be3d3618b1a10341dcdc43",
+      "ios/Session/ICMContentContainerViewController.m": "5b92f12e32ec44b549f31be6ce1b854dec1582e9a6ce37660e232341abf265e3",
+      "ios/Session/TicketCreateFormActionCellItem.swift": "e7a7c26a2c160a902e6dfd35c25a5adc88122b765b633fca0b26cbb0586cc61c",
+      "ios/Session/ConversationButtonInfo.swift": "528db8d718d4bbbee9500d1d015979fba1d06f51da2cecd24456a141deaa0381",
+      "ios/Session/ICMConversationRatingBlock.m": "b1d1fef2d58250b374426c74447cdba92831c53f2131b6b7d29b6c99123523f8",
+      "ios/Session/VideoHTMLTemplateFactory.swift": "6f7cbe42d29fadb7b6e190b15c9f6d04fc54b6f1aac93439962c4a584048f249",
+      "ios/Session/ConversationImageBlockView.swift": "0fa06b1ee4613ea5265804c553fbf7b8cd0a3fdd6a887c95458803f021cd0288",
+      "ios/Session/ICMPermissionHelper.m": "96802824a0f2554d8bdfb2ebfd8da7efd664df3159708288f6b3687ffc399d49",
+      "ios/Session/SurveyStep.swift": "c8452cf9aad9402cf2ef4b0a05f22569804b4e8a476aca78434b9e7a6619e416",
+      "ios/Session/OpenCallService.swift": "32c6309d7dfbf45b45ee9a26d52e3664f595033c62506239f30b3efc8a06728e",
+      "ios/Session/DiagnosticStore.swift": "5765bc3adeb6d9378eb195467e478bd99154a6025cc2e90a195a2fc9d6b5a332",
+      "ios/Session/BotWithTeammatesView.swift": "a7a25a909553d185c6b498f35d484b252d7ae695be88bbf6a41cc7b0f4e19c06",
+      "ios/Session/ImageGridViewWrapper.swift": "c61b2de2fe13ecdae59f3d20e2401e3c0c324dc96ab098c6a5638d5d1ec91ca4",
+      "ios/Session/ICMHTTPClient+ReadAndReactions.m": "f0111dca97c938e39b10d5416986bbd6082fe971b6ab0370d6a5637d6ae85e4e",
+      "ios/Session/ICMFeatureChecker.m": "1e2abae508ca8af481bc3a4be4c82d78949cf3b51035bdc00911c916086801b2",
+      "ios/Session/FooterNoticeViewModel.swift": "bc9dc010fec3687faa9f740027ec6cf729215f47e086c144f18980ab712e48d4",
+      "ios/Session/ICMHostAppState.m": "b654ebd3eb15078533a9849cb130c2620ac6ee72c0db9dd4630ac251ba3e39a4",
+      "ios/Session/FilePicker.swift": "0614e32da83ee626e7d309b069887b31ab58ac556de16d6c996e05ad116cd4b9",
+      "ios/Session/ITBVideoFileBlockView.m": "8b2ecd9c1c0e6ff8e9ed8eaa381eeed23ae6afc7cb49e15055d21554af6a53d3",
+      "ios/Session/StreamingPart.swift": "eb0d87b5905a2908fdcb76d10690b6813c9ba740692b92fdd03a118d5c12f479",
+      "ios/Session/ICMGradientView.m": "14f43ea9b7dafedaf99bbe1c4ae4cb759adad10e2e79291ff4bbf6a853863cbd",
+      "ios/Session/TicketFormRequest.swift": "cd630d8d7736bea2a71343b6af891191cdcda31427d06762b51387a0927bcf19",
+      "ios/Session/ICMOreoEngine+Operations.m": "89d435778ed8032a53ed376f59bbc671746f8ce2cbcf80f15c4ffc33bc1b775e",
+      "ios/Session/HomescreenCardProtocols.swift": "a76fa2d49be31ab73d16c9eb28f8bb2565b0d8396999374648a177db771f3595",
+      "ios/Session/ICMRootViewController.m": "220e83438f724b1e6ee0fb0f9f06b9b8be7f0d831ccfd372faedacd28373947f",
+      "ios/Session/DiagnosticConfiguration.swift": "cc3006701657bae9778bf76431b460769c8872a2d4626e22ad4b6c8c8f9deb00",
+      "ios/Session/DefaultScheduler.swift": "1a21a1f56dbd83f300635548fa082c415c6e8499974953a631d983d1a48049b5",
+      "ios/Session/ICMIntegerTextField.m": "e842c63e1d2e3d7acc3c18a013ee07fc650305bbcbad4d8bb28238913f2dbe40",
+      "ios/Session/ICMValidator.m": "70f28dbc885bea0b42f06d7a7aa9cd40a95e851be1d1914098d009af569c4277",
+      "ios/Session/DiagnosticSubscriber.swift": "94bda643cf9221610d50a27d872fa07925b1d3c3ed1b5d0a44c348e0e1141909",
+      "ios/Session/KeyboardHelper.swift": "c965156e9e1e2ecf1d59f9830a642b5cea5478897a4311409d6a2e5533083146",
+      "ios/Session/ICMHTTPBridge+UploadBlocks.m": "8a0648c8b8271e58d10f9596d1975c705fd3bfcc836041d3e6397a5e731684df",
+      "ios/Session/TemporaryExpectationsView.swift": "c7f330051b1a3a5fa64931c81b88700fcbf6393ac6f3c03365a6efb955cb5ae6",
+      "ios/Session/ICMPhoneTextField.m": "ab77314625918657f2aa116ee64df5b3ec71440cadf40441989683540015aeeb",
+      "ios/Session/VideoFileBlockView.swift": "78e4e48b615c3e23c8e2cab1af18437fabfd35790dc9304fbb38f46036e676a4",
+      "ios/Session/HelpCenterArticleListViewController.swift": "5f9706af2ec6f3e4157d6c7f82f42489435934b561871d8d43daa17736d97a49",
+      "ios/Session/ConversationCellContentView.swift": "b75d90d18d5c4fd48d58047d946e01fb1f8a086c2b21ab0b0c533b07fd1e1c28",
+      "ios/Session/ICMAssets+Avatars.m": "18e751f7b30bc98fedd82181cbebf5a388d080e4b6195206dc382047609eed4c",
+      "ios/Session/ITBLinkBlock.m": "b834655a8bec62a9a16d3c42a5e34f65cf00676ebb76322d5cc4d6f5fc34b172",
+      "ios/Session/HelpCenterDataService.swift": "17401c1b6083d91542cada9fe0ce18460a2b8666099e310ef332c4b8afe38a74",
+      "ios/Session/ICMHTTPClient+Home.m": "6cd63b96ef04b489099a86adf09d95324b66e045e4ab49e4a7778630664a02fe",
+      "ios/Session/TicketsListViewController.swift": "ba19b9f5070cdbf6562bc4e81a9170f1fad80e9426741cc1e74741dc13e8de0d",
+      "ios/Session/AttributePartView.swift": "0dd2c672828b7d8af0a5e857f96ed39646fb90b7ea4853e5bbba6fd992ac45b7",
+      "ios/Session/ICMBridge+Content.m": "e6d170c5795cc17182cc24cf1e2f1c5405ce2aca055662d78c7cc6f0108f877a",
+      "ios/Session/GIFCell.swift": "922bfd1f222ee9da961156762b33b23e5de362929f2265495b4a4e2e48dc71be",
+      "ios/Session/ITBNotificationCardBlock.m": "2c16bbd89d22758b1b9c151ca1a6baf0bae12459a963f40139fefef44727ff4b",
+      "ios/Session/Intercom.m": "311d454db15e2c65515b48725f1d1d42d5f61eb4e7200be58b51624e906f65ed",
+      "ios/Session/FormAttribute.swift": "c598c0e80e3da16dd0e9f920914bf9608e084e0293ea8524b261a2206cb374b9",
+      "ios/Session/CodeBlockExpandedViewController.swift": "c167713cd07ff3befb32c56463b6bc58d6f729e98e0a740fee178029bb7d39f7",
+      "ios/Session/ITBHeadingBlock.m": "ca30a3f34b6e73491b5ea19fe8d1a4545337f72e2ed40f3cd8fd22ca52aaf289",
+      "ios/Session/ICMScreenViewController.m": "e8132126e94cff47c36b918a7a3ded8c1c8e357768c766d55aa9e091cd8e8e98",
+      "ios/Session/ICMSeparatorView.m": "1c6f4c5acb4f1e33bdd517d996a3762f28ed6bba841c20031aeeedb706a16e1f",
+      "ios/Session/UnreadManager.swift": "c4b90348b1cfeb10f5d580f3ce0a844cc968549172fd049659c322711026aedf",
+      "ios/Session/MessagesEmptyStateAction.swift": "ed661653c5e5a840ce730bb0d4b196bd634990445863d73e8a824db42a622231",
+      "ios/Session/BlockViewFactoryObjC.swift": "454f9f85fa4e0cabcd37ef691402d14d5a8aff09bb80cd5bdaba65edb35d8e68",
+      "ios/Session/PrivacyPolicyView.swift": "cc0b459188b7db4ae1e302af9b1cbe1d9bb4eb6e0437d0c7c8c19af1e1198779",
+      "ios/Session/LinkOpener.swift": "529f0634d1b9e047cdd98fea76f0d73982cce2e89ca65bb706cb1d2aebd9e913",
+      "ios/Session/ICMInAppPreloader.m": "586fa8b3ff0abe6c2f30ac740cf02d3a77d5492fd7b9e26c57a47291e78de8b8",
+      "ios/Session/LinkListBlockView.swift": "adf625f69ff9821860ff410fed5c16287f69c7b406308e2ad25a325e68ee6c80",
+      "ios/Session/ExternalLinksHomescreenCardViewItem.swift": "69b2e0868aecb4b55d1bbfea35a75e4b638871206b83411b9b31bba07fd1dcb1",
+      "ios/Session/ICMHTTPBridge+DeviceTokens.m": "f07367039605c003209d1150b782c6d1206c87ed3f9d3a7d2e97ec13da96d3d7",
+      "ios/Session/IntercomTableViewController.swift": "0eb8bb061a1e83545095b992dd9873dea6a76104a31f6c36f7c88a6e21b15022",
+      "ios/Session/HomescreenViewController.swift": "c75dc6bcf7a63827e69d893d0f289f1634f3136be9f9ee32b48b2d807a26e9ed",
+      "ios/Session/ICMEmailValidator.m": "5e03201e4bc206d6761a03d47b39a5a41ca4316867928945af37bdaa2ce4e1fc",
+      "ios/Session/ICMPostViewController.m": "b50f7c6e43d8a6f5f33706f7442035ca4a9465ebc379ba4ed40eeba24a7442f0",
+      "ios/Session/ICPMessengerCardFallbackView.m": "70834a6e6093d2925fb22dd086efad3cd5b2762bab50ce89193f758bd0d91882",
+      "ios/Session/FloatingActionButton.swift": "90925088e5d8aa1ec279236145b467fa449dfb6a14a0768af13f41ad15b31c60",
+      "ios/Session/SurveyRatingScaleQuestion.swift": "cc04e7d5e19f8c9214f7f772d3539abd397e3e324330f1d3b6251a3e1f4f74fb",
+      "ios/Session/ICMBridge+SecureOptions.m": "9a9507135a7e718981a3668e2625d90eaf2f81f14d9f51d54c375f50a4812e81",
+      "ios/Session/WKWebView+ICMAsyncJavaScript.m": "331cb7a1f068c540687e1861bf76e4befcdf905f8915a19d4e2bb6df9a0a123b",
+      "ios/Session/ITBAnimatedImageView.m": "fc1c0a56172da62e4d5f2bb067c5ea91b5b8ea14e0c5ca1a754ca1c0336d9932",
+      "ios/Session/WebHeadersInjector.swift": "3f6a779178c25c1c34bc38e0e4626df48eb5f61155681c0abe1af25afa2fb53c",
+      "ios/Session/LoadingViewController.swift": "bf4da7cbc67fd911b93d614146f8b3109862f0492fa166483b978d4e4d954396",
+      "ios/Session/ITBVideoBlockView.m": "11b262769e4e1dcb6eb28a9549f6c9addd2b2db03d03f8dd93cf569ef4e1104d",
+      "ios/Session/AudioRecording.swift": "39cb71084037d840cb023c69233ed669a34b91b3c227aa815f05f2bcfaccadb0",
+      "ios/Session/PostPartView.swift": "ab325d0f606888e2b70abea3657e5568788d0a563d3add5f139547501e57321b",
+      "ios/Session/ICMInboxInfoView.m": "7146a39c289958bde96bd0fd8d4a72793b396a8ba66a49a363e9a34a7e428b8e",
+      "ios/Session/AttachmentFileManager.swift": "5de0ec2d1a0cd0fbe631a5b72fe3956e0e0d03fe31631c89a40bdfd23f5ad135",
+      "ios/Session/ITBHyperlinkTextView.m": "922d99c5c77d22ae8345227f1ba5a004643695eb79fa6fe9b9116a2bd7febd6e",
+      "ios/Session/FakeComposerView.swift": "4ed4ef5ef94d27e00e29f6eccce98c16cc2b5b424afdb6c61de8cc1558b22777",
+      "ios/Session/TicketAttachmentAttributeValueView.swift": "f05df87457f413913294d73143d17ccb39831fd825b946d5e23ffcb5aec3dfbd",
+      "ios/Session/PoweredBy.swift": "7f31a10ee5ee9c6c306562b0145d4c0a4f7526db0bf3f3869e2c51c0762b614b",
+      "ios/Session/ICPCardFallbackJSBuilder.m": "d5b8d1acdbf289fc530550783655154c3ffc2209d8cc1279ce11d060d50637e1",
+      "ios/Session/ComposerTranscribingView.swift": "44a0bf37d2eb443e4350a7fe486a0fcfe41519c5d9428326510f4ba9ea0920eb",
+      "ios/Session/SessionIdentifierManager.swift": "e29d8a86a2e2cdb9a8524e79015d9a06824651a0c2f60171570fb1beabd72077",
+      "ios/Session/HelpCenterArticleView.swift": "4d6df148d99eb2a259e8322345e2e21f62c1210be174f767fe82cd3ea405038a",
+      "ios/Session/DefaultBlockView.swift": "ecf27eba5aec8fa4bf895fe9700e1c777f5464d785bb53794ff3a061c1d70721",
+      "ios/Session/TicketSubmittedView.swift": "b00a2ae5c5a288c736c2467bfac47adce9f527eb9f98e8519028976a7aeb4fde",
+      "ios/Session/ChatLayout/ChatLayoutDelegate.swift": "0bbfb7750e3d63981ee674c363b18df3abb029b56f4e8dd76a69a452251d1fa9",
+      "ios/Session/ChatLayout/SectionModel.swift": "58c8789684282144383e2eea8abe4ac58ccbc59ad82cad29e6a531af2e9edd81",
+      "ios/Session/ChatLayout/ChatLayoutInvalidationContext.swift": "c335c7893e00a03f95efbd2e21b75ea47bf5dec93ea40b4037ec1d2364df5da4",
+      "ios/Session/ChatLayout/RandomAccessCollection+Extension.swift": "2045971d64506275b61d4d5f694f797eefd4993533492d9014c994c174d05f0f",
+      "ios/Session/ChatLayout/ChatLayoutPositionSnapshot.swift": "56ff412a697bc75d99385ae9369e813d535c2d5c96aaf99e42beb334cf2d91fe",
+      "ios/Session/ChatLayout/ChatItemAlignment.swift": "9abb27e7d43fb0c241221fd9412492f74c42f8b37e6f44354b7d962893ac96c5",
+      "ios/Session/ChatLayout/ItemModel.swift": "d8df99b585dd2d8561a9a3bba5cafe109b4a88ccc666135c5917fcd8ed6963ca",
+      "ios/Session/ChatLayout/ChangeItem.swift": "9966662e937c154f10154d8757e38b9174391429f0721c5035014bcc3521626c",
+      "ios/Session/ChatLayout/IndexPath+Extension.swift": "fbd1d0a515ceed02602264d00819f84364cddb913cf43cba0d52c890fe09eabf",
+      "ios/Session/ChatLayout/ItemKind.swift": "4bcafad5d5f549fbb7946e88bb1c5500ccccabe39937dc790d5739b46281bad9",
+      "ios/Session/ChatLayout/ItemSize.swift": "bea7099ac89d71479e55a8a4a91aeb385bf0f9555051f258ae25673ac4310e5a",
+      "ios/Session/ChatLayout/ItemPath.swift": "50877d18731e5a2e687946474cfaba7fe451648ba8379cbe64703c238da4e8e5",
+      "ios/Session/ChatLayout/StateController.swift": "7d90b11994b854b2026fdbeb71104e1085a63bfb82aa204148fa6706cfbe6167",
+      "ios/Session/ChatLayout/ChatLayoutAttributes.swift": "080ce9707810564bee86ae60c679b66caa092b57f0c28a66f9a3088a0a180d49",
+      "ios/Session/ChatLayout/CollectionViewChatLayout.swift": "497483fb3eed80de2c7de73ca78722d885f5fc1df3ec989e20bbbca003460db5",
+      "ios/Session/ChatLayout/LayoutModel.swift": "af342347820dca6d06ca47bb52b1e56ba342970229438e372127253d380c7d2a",
+      "ios/Session/ChatLayout/ModelState.swift": "d9e7b3048df9dea1b3531dc70032332bdfc0853c0d48fbc661b2544e7029c66f",
+      "ios/Session/ChatLayout/CGRect+Extension.swift": "38b5d86f97ee5729b980e53cacad22fe3de4345e0dcb80da144c29f57e2c3c6e",
+      "ios/Session/ChatLayout/ChatLayoutSettings.swift": "d02f2962bab2dead11440738933609fa3ac0e7904edc573092b8e5a4c6037836"
+    }
+  },
+  "classMethodBodies": {
+    "ICMHTTPBridge": {
+      "originalClassMethods": 50,
+      "sourceClassMethods": [
+        "+addConversationRatingRemarkForConversation:remark:error:",
+        "+article:success:error:",
+        "+attachmentListBlockForUpload:withPublicURL:",
+        "+conversationDetail:reason:nexusMetadata:lastAdminPartCreatedAt:lastAdminPartId:success:error:",
+        "+createUploadWithUpload:success:failure:",
+        "+deleteDeviceToken:forUserIdentity:completion:",
+        "+deviceTokenDecisionForConfig:userIdentity:",
+        "+downloadRichPushMediaAttachmentFrom:success:failure:",
+        "+failSurvey:progressId:success:failure:",
+        "+fetchMessengerSheetData:success:failure:",
+        "+getCarouselWithId:success:error:",
+        "+getCarouselWithInstanceId:success:error:",
+        "+getConversationsBefore:pageSize:success:error:",
+        "+getTicketDetailsForTicketId:success:error:",
+        "+getTicketsAtPage:pageSize:success:error:",
+        "+getUnreadConversationsWithSuccess:",
+        "+handleBaseResponse:",
+        "+handleRealtimeConfig:",
+        "+loadGIFs:success:error:",
+        "+logBackgroundDisabledError",
+        "+logEventWithName:metadata:sentFromBackground:",
+        "+makeSendableBlocks:withPublicURL:upload:",
+        "+markConversationAsDismissed:",
+        "+markConversationAsRead:",
+        "+markTicketAsReadWithID:",
+        "+messageOpenedMetric:closedConversationId:",
+        "+messageSentMetric:upload:closedConversationId:",
+        "+openMessenger:error:",
+        "+presentCarousel:",
+        "+presentSurvey:",
+        "+quickReplyToConversation:clientAssignedUUID:withPartId:withOptionUUID:success:error:",
+        "+rateConversation:withRatingIndex:error:",
+        "+reactToArticle:articleContentId:reactionIndex:allowAutoResponses:articleSource:",
+        "+reactToConversation:reactionIndex:fromInApp:",
+        "+recordInteractions:interactions:",
+        "+recordStatistic:withInstanceId:statsMetadata:",
+        "+registerDeviceToken:failure:",
+        "+registerDeviceToken:success:failure:",
+        "+replyToConversation:clientAssignedUUID:withBlocks:upload:lastAdminPartCreatedAt:success:error:",
+        "+setAuthTokens:success:failure:",
+        "+storeUnreadConversations:",
+        "+storeUnreadTickets:",
+        "+storeUserIdentity:",
+        "+submitDiagnostics",
+        "+submitFormParams:forConversation:success:error:",
+        "+submitMessengerSheet:uri:success:failure:",
+        "+submitMetrics",
+        "+triggerInboundBotWithOptionUUID:clientAssignedUUID:success:error:",
+        "+updateUser:success:failure:",
+        "+videoFileBlockForUpload:"
+      ],
+      "missingClassMethodBodies": [],
+      "scope": "Actual .m bodies plus explicit original Swift ICMUtils.disableDynamicFont extension; headers excluded; not full class equivalence."
+    },
+    "ICMHTTPClient": {
+      "originalClassMethods": 60,
+      "sourceClassMethods": [
+        "+actionButtonClicked:stepId:success:error:",
+        "+addConversationRatingRemarkForConversation:remark:error:",
+        "+article:success:error:",
+        "+bailIfMissingIdentityWhenTryingTo:withFailureBlock:",
+        "+buildMultipartParametersForCurrentIdentity",
+        "+conversationDetail:reason:nexusMetadata:lastAdminPartCreatedAt:lastAdminPartId:success:error:",
+        "+conversationsBefore:pageSize:success:error:",
+        "+createConversationWithBlocks:clientAssignedUUID:articleMetaData:composerSuggestions:success:error:",
+        "+createTicketTypeId:conversationId:attributes:success:error:",
+        "+createUploadWithUpload:success:progress:error:",
+        "+deleteDeviceToken:forUserIdentity:completion:",
+        "+dismissSurvey:success:error:",
+        "+downloadRichPushMediaAttachmentFrom:success:failure:",
+        "+failSurvey:progressId:success:error:",
+        "+failWithErrorMessage:recoverySuggestion:errorCode:underlyingError:failureBlock:",
+        "+failWithNetworkError:whenTryingTo:failureBlock:",
+        "+fetchHomeWithSuccess:failure:",
+        "+fetchLatestiOSSDKReleaseVersion:",
+        "+fetchMessengerSheetData:success:failure:",
+        "+getCarouselWithId:success:error:",
+        "+getCarouselWithInstanceId:success:error:",
+        "+getHelpCenterCollection:success:error:",
+        "+getHelpCenterCollections:error:",
+        "+getHelpCenterSearchResults:source:success:error:",
+        "+getSurvey:success:error:",
+        "+getSurveyWithInstanceId:success:error:",
+        "+getTicketDetailsForTicketId:success:error:",
+        "+getTicketFormWithRequest:success:error:",
+        "+getTicketsAtPage:pageSize:success:error:",
+        "+handleRichPushMediaDownloadFrom:location:response:success:failure:",
+        "+httpErrorWithCode:fromNetworkError:",
+        "+loadGIFs:success:error:",
+        "+logEventWithName:metadata:sentFromBackground:carouselVisible:success:error:",
+        "+markConversationAsDismissed:success:error:",
+        "+markConversationAsRead:success:error:",
+        "+markTicketAsRead:success:error:",
+        "+openMessenger:error:",
+        "+quickReplyToConversation:clientAssignedUUID:withPartId:withOptionUUID:success:error:",
+        "+rateConversation:withRatingIndex:error:",
+        "+reactToArticle:articleContentId:withReactionIndex:allowAutoResponses:articleSource:",
+        "+reactToConversation:withReactionIndex:",
+        "+recordInteractions:interactions:",
+        "+recordStatistic:withInstanceId:statsMetadata:success:error:",
+        "+replyToConversation:clientAssignedUUID:withBlocks:nexusMetadata:lastAdminPartCreatedAt:success:error:",
+        "+setAuthTokens:success:failure:",
+        "+setDeviceTokenSubmitted:",
+        "+submitDeviceTokenWithFailure:",
+        "+submitDeviceTokenWithSuccess:failure:",
+        "+submitDiagnostics:success:error:",
+        "+submitFormParams:forConversation:success:error:",
+        "+submitMessengerSheet:uri:success:failure:",
+        "+submitMetrics:opsMetrics:success:error:",
+        "+submitSurvey:success:error:",
+        "+trackURL:",
+        "+transcribeAudio:conversationId:success:error:",
+        "+transcribeAudioWithMultipart:conversationId:success:error:",
+        "+triggerInboundBotWithOptionUUID:clientAssignedUUID:success:error:",
+        "+unreadConversations:success:error:",
+        "+updateUserWithUserAttributes:newSession:sessionId:sentFromBackground:carouselVisible:success:error:",
+        "+uploadFile:response:success:progress:failure:"
+      ],
+      "missingClassMethodBodies": [],
+      "scope": "Actual .m bodies plus explicit original Swift ICMUtils.disableDynamicFont extension; headers excluded; not full class equivalence."
+    },
+    "ICMPresentationManager": {
+      "originalClassMethods": 2,
+      "sourceClassMethods": [
+        "+observeSceneWillEnterForeground",
+        "+sharedInstance"
+      ],
+      "missingClassMethodBodies": [],
+      "scope": "Actual .m bodies plus explicit original Swift ICMUtils.disableDynamicFont extension; headers excluded; not full class equivalence."
+    },
+    "ICMRootViewController": {
+      "originalClassMethods": 0,
+      "sourceClassMethods": [],
+      "missingClassMethodBodies": [],
+      "scope": "Actual .m bodies plus explicit original Swift ICMUtils.disableDynamicFont extension; headers excluded; not full class equivalence."
+    },
+    "ICMUtils": {
+      "originalClassMethods": 41,
+      "sourceClassMethods": [
+        "+appVersion",
+        "+applicationName",
+        "+bundleIdentifier",
+        "+checkIntegration",
+        "+contentSizeCategoryIsAccessibilityCategory",
+        "+convertToFontName:",
+        "+convertToUIFontWeight:",
+        "+debugLoggingEnabled",
+        "+disableDynamicFontFor:",
+        "+enableRTLSupportForContainerClass:",
+        "+extractArticleIdFromSheetParams:",
+        "+fetchApplicationWindows",
+        "+fetchSDKType",
+        "+fontOfSize:weight:",
+        "+forceLTRLayoutForContainerClass:",
+        "+foregroundOrderedWindowScenes",
+        "+getFileExtensionFrom:httpResponse:",
+        "+intercomAgent",
+        "+intercomBundle",
+        "+intercomCachesDirectory",
+        "+intercomCachesPath",
+        "+intercomDocumentsDirectory",
+        "+intercomDocumentsPath",
+        "+intercomLegacyDocumentsPath",
+        "+intercomVersion",
+        "+isRunningNotificationServiceExtension",
+        "+jsonArrayFromLocalFile:error:",
+        "+loadBundle:",
+        "+loadIntercomBundle",
+        "+loadTranslationsBundle",
+        "+messengerEnvironmentIdentifier",
+        "+migrateDocumentsIfNeeded",
+        "+minimumOSVersion",
+        "+photoUsageDescriptionPresent",
+        "+scaleToAccessibilitySizing:",
+        "+sceneManifestPresent",
+        "+setDebugLoggingEnabled:",
+        "+shouldHandlePushNotificationsAutomatically",
+        "+shouldShowPhotoUsagePListError",
+        "+swizzlingDisabled",
+        "+translationsBundle"
+      ],
+      "missingClassMethodBodies": [],
+      "scope": "Actual .m bodies plus explicit original Swift ICMUtils.disableDynamicFont extension; headers excluded; not full class equivalence."
+    }
+  },
+  "limitations": [
+    "Original Objective-C runtime classes only; not an inventory of every pure Swift value/protocol/function.",
+    "Some runtime-identity mismatches have genuine Swift class bodies and are recorded separately.",
+    "Method presence does not prove body equivalence or integrated runtime.",
+    "Full normal Pod/static/dynamic/RN consumer and no-exclusion strict link remain pending."
+  ]
+}

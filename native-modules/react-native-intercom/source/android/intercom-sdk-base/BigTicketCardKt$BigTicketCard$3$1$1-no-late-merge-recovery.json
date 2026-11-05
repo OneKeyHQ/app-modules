@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt$BigTicketCard$3$1$1",
+  "root_only": true,
+  "source_before_sha256": "712098cc2d5fca8fdb604ddd9a0589cfa4eafb95232da0c5d6cac18d86263385",
+  "source_after_sha256": "0c8583fc49bd0b40412fc1bc2a315193d54c3c8ec0bb9428fae83010535425cc",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 4,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

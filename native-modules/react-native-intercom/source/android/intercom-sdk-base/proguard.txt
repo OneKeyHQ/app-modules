@@ -1,0 +1,131 @@
+# Add project specific ProGuard rules here.
+# By default, the flags in this file are appended to flags specified
+# in /Applications/Android Studio.app/sdk/tools/proguard/proguard-android.txt
+# You can edit the include path and order by changing the proguardFiles
+# directive in build.gradle.
+#
+# For more details, see
+#   http://developer.android.com/guide/developing/tools/proguard.html
+
+# Add any project specific keep options here:
+
+# If your project uses WebView with JS, uncomment the following
+# and specify the fully qualified class name to the JavaScript interface
+# class:
+#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
+#   public *;
+# start Intercom SDK Proguard rules
+# Only the packages/classes below have runtime contracts on their names. Everything else
+# in the SDK may be shrunk, optimized, and renamed by the host app's R8.
+#
+# Gson-(de)serialized models: JSON keys match field names, enum values serialize by
+# constant name, and blobs persisted on user devices were written with these names.
+# -keepnames pins names of whatever survives shrinking; -keepclassmembers pins every
+# member (fields written by code but read only by the serializer must not be stripped).
+# GsonReflectionSurfaceTest walks the full Gson type closure and fails if any reachable
+# model is not covered by this list — update both together.
+-keepnames class io.intercom.android.sdk.models.**
+-keepnames class io.intercom.android.sdk.blocks.lib.**
+-keepnames class io.intercom.android.sdk.survey.model.**
+-keepnames class io.intercom.android.sdk.tickets.create.data.**
+-keepnames class io.intercom.android.sdk.tickets.list.data.**
+-keepnames class io.intercom.android.sdk.m5.home.data.**
+-keepnames class io.intercom.android.sdk.metrics.**
+-keepnames class io.intercom.android.sdk.errorreporting.**
+-keepnames class io.intercom.android.sdk.sheets.**
+-keepnames class io.intercom.android.sdk.blocks.messengercard.**
+-keepnames class io.intercom.android.sdk.helpcenter.webview.**
+-keepnames class io.intercom.android.sdk.m5.conversation.data.AblyMessage
+-keepnames class io.intercom.android.sdk.m5.conversation.data.AblyEventData
+-keepnames class io.intercom.android.sdk.m5.navigation.transitions.TransitionArgs
+-keepnames class io.intercom.android.sdk.m5.navigation.transitions.EnterTransitionStyle
+-keepnames class io.intercom.android.sdk.m5.navigation.transitions.ExitTransitionStyle
+# Config's real_time_config deserializes into this nexus-client class by field name.
+-keepnames class io.intercom.android.nexus.NexusConfig$Builder
+# Wire enum referenced from Gson models (AvatarDetails) but living in a UI package.
+-keepnames class io.intercom.android.sdk.m5.components.avatar.AvatarShape
+-keepclassmembers class io.intercom.android.sdk.models.** { *; }
+-keepclassmembers class io.intercom.android.sdk.blocks.lib.** { *; }
+-keepclassmembers class io.intercom.android.sdk.survey.model.** { *; }
+-keepclassmembers class io.intercom.android.sdk.tickets.create.data.** { *; }
+-keepclassmembers class io.intercom.android.sdk.tickets.list.data.** { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.home.data.** { *; }
+-keepclassmembers class io.intercom.android.sdk.metrics.** { *; }
+-keepclassmembers class io.intercom.android.sdk.errorreporting.** { *; }
+-keepclassmembers class io.intercom.android.sdk.sheets.** { *; }
+-keepclassmembers class io.intercom.android.sdk.blocks.messengercard.** { *; }
+-keepclassmembers class io.intercom.android.sdk.helpcenter.webview.** { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.conversation.data.AblyMessage { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.conversation.data.AblyEventData { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.navigation.transitions.TransitionArgs { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.navigation.transitions.EnterTransitionStyle { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.navigation.transitions.ExitTransitionStyle { *; }
+-keepclassmembers class io.intercom.android.nexus.NexusConfig$Builder { *; }
+-keepclassmembers class io.intercom.android.sdk.m5.components.avatar.AvatarShape { *; }
+
+# Retrofit/Gson resolve generic payload types from the Signature attribute, and WebView
+# only exposes bridge methods whose @JavascriptInterface annotation survives to runtime.
+# Gson/Retrofit/AGP defaults usually retain both — pinned here so consumer builds do not
+# depend on another library's rules.
+-keepattributes Signature,RuntimeVisibleAnnotations
+
+# R8 full mode strips generic signatures from classes that are not kept, and Retrofit's
+# call adapters resolve NetworkResponse<T>'s type argument reflectively at runtime
+# ("Unable to create call adapter" crash otherwise). Mirrors retrofit2.Response's own
+# rule; the class may still shrink and rename — only the signature attribute matters.
+-keep,allowobfuscation,allowshrinking class io.intercom.android.sdk.helpcenter.utils.networking.NetworkResponse
+
+# WebView JS bridges: pages invoke these methods by name via addJavascriptInterface.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Wrapper SDKs (React Native, Unity, Cordova, Flutter) compile into host apps and are
+# reached by name (our Class.forName platform probe); they ship no keep rules of their
+# own. Scoped per wrapper package — a bare com.intercom.** would also pin the transitive
+# com.intercom.twig logging library, which has no reflection contract.
+-keepnames class com.intercom.reactnative.**
+-keepclassmembers class com.intercom.reactnative.** { *; }
+
+# The Flutter plugin lives outside com.intercom.*; our platform probe looks it up by
+# name (PlatformIdentifierUtil), and the class survives via Flutter's own registrant.
+-keepnames class io.maido.intercom.IntercomFlutterPlugin
+
+# The Unity bridge is reachable ONLY by name (C# AndroidJavaClass + our Class.forName probe)
+# and ships no keep rules of its own, so -keepnames alone would let R8 strip it.
+-keep class com.intercom.unity.** { *; }
+
+# The Unity bridge reports its wrapper version by Class.forName + getMethod on this
+# package-private class; nothing in the SDK calls setUnityVersion, so R8 strips it. The
+# React Native and Cordova shims call their setters statically and need no keep.
+-keep class io.intercom.android.sdk.api.HeaderInterceptor {
+    public static void setUnityVersion(android.content.Context, java.lang.String);
+}
+
+# The Cordova plugin compiles IntercomBridge into this package inside the host app and
+# Cordova instantiates it purely by the class name registered in res/xml/config.xml.
+-keep class io.intercom.android.sdk.IntercomBridge { *; }
+
+# Fix warning about API 24 method used in HtmlCompat when using older build tools/compileSdkVersion
+# https://github.com/intercom/intercom-android/issues/291#issuecomment-262886043
+# TODO: Reproduce the issue and limit this rule to the HtmlCompat class
+-dontwarn io.intercom.android.sdk.utilities.**
+
+# We saw errors referencing com.shimmer.facebook.**.R in our app, we don't need to keep those references
+-dontwarn com.facebook.shimmer.**
+
+-dontwarn javax.annotation.meta.**
+-dontwarn javax.annotation.**
+
+-dontwarn com.google.auto.**
+
+# Ably library uses Lombok annotations which are compile-time only
+# https://github.com/intercom/intercom/issues/437417
+-dontwarn lombok.**
+
+# Ably library ProGuard rules to prevent ClassNotFoundException
+# https://faqs.ably.com/classnotfoundexception-when-using-proguard-with-ably-java
+-keep class io.ably.lib.** { *; }
+-keep class org.msgpack.core.** { *; }
+# end Intercom SDK Proguard rules
+#}

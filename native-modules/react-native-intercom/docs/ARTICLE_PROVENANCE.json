@@ -1,0 +1,114 @@
+{
+  "status": "ALL_CURRENT_SOURCE_COMPILED_SDK_UNLINKED",
+  "sources": {
+    "ios/Session/ICMArticle.h": "249108fe17d8568669a1b7a810a68b2846d04334a6de2ecc9016de7cea7ae763",
+    "ios/Session/ICMArticle.m": "aa175d71b24f3bd965bfca08224e1348c3a09798d2f33f24d5c538edcc7a38a6",
+    "ios/Session/ICMLinkCardContentBlockAppearance.h": "990206a3e6fe11f9baec9a4ab2558f09b79446eaa7ebb9d3647141c3c218b5d0",
+    "ios/Session/ICMLinkCardContentBlockAppearance.m": "d9e6e0326cdde4d805109284c0f5f5f81ed760caaac2c75d4d77c246016449b1",
+    "ios/Session/ICMWebHelpCenterAction.h": "b3a233c66d58a2abdfbd6e678f30f6eb44f73b92623cbb9de8b2a133b716a9a4",
+    "ios/Session/ICMWebHelpCenterAction.m": "18a86f33cb9e166176d77a0ced82f38c409a69ed43a90ccc506fe36feef4a4f3",
+    "ios/Session/ICMWebHelpCenterJSBuilder.h": "31e128b5e2ab79f0eb56bc64d79a3d9024e0e3e62a1db410ec59f08d8edec804",
+    "ios/Session/ICMWebHelpCenterJSBuilder.m": "cdb9880d7c8ccd88045dfc692c67b49af24543ac771b226c6340ea829581003c",
+    "ios/Session/ICMHTTPClient+Articles.h": "ca49c88846763f402e61da91df3ac9517e66852bb948f668716f4257ef48ac1b",
+    "ios/Session/ICMHTTPClient+Articles.m": "ae496850a548b7f593382a768604bc2bf7de05e3b06bfa1f0dc578cd7b1a00b0",
+    "ios/Session/SwiftAPIBridge+Articles.swift": "ba95c9fa708b92eb5417b4e20ea0a35f3a0cc458d28a1c9e457c88e57762c46e",
+    "ios/Session/ArticleRequestBuilder.swift": "23e6b592432c921f56cfc28fbb205d36cc2fee6002183b2cb151be43e3ac8864",
+    "ios/Session/WebHeadersInjector.swift": "3f6a779178c25c1c34bc38e0e4626df48eb5f61155681c0abe1af25afa2fb53c",
+    "ios/Session/WebView.swift": "c8194cafdfdfe2b2ed140817cdf5c0ed45e23423414d5227fbbc6638debbe14b",
+    "ios/Session/ScrollDetectingNavigationDelegate.swift": "8afc1a51429818ac1f96e44614798d87193d967819477790302ba455780df228",
+    "ios/Session/ArticleNativeViewAdapters.swift": "ee87993f28f9c7632a30da397fd1d592a72e6c8eb37a8ced50ca6aa575fe3982",
+    "ios/Session/ArticleReactionService.swift": "f430fec24e6cf78e1b47fd195d53a79d1c4fbfe228578c0e7fe020b7ee304e81",
+    "ios/Session/ReactionView.swift": "db8e4e56b61d646ec91a42ba320b76368baf8ac6afd0ccca4ebf63b17c3b4dd3",
+    "ios/Session/ArticleView.swift": "b899de57b56076c1ad4d029860e22bbbb3e4918a9edd763681ecd5a1f2eb5369",
+    "ios/Session/ArticleHostingController.swift": "358d0ef95d4fbd1f062b01dcc525be5d662620eb20bef34940e8d5e927e3168b"
+  },
+  "contracts": {
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/ARTICLE_HOSTING_CONTRACT.md": "de9be40f4ad448d6f705d6cdf1f616b2b91fd8f5d5b9b31d219a913c313c4fdb",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/ARTICLE_LOADING_ERROR_ADAPTERS_CONTRACT.md": "cfa53b10c5fbf8da7944ac0f0787986ebe8029dea12670b3efa0f0c9d53040c0",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/ARTICLE_MODEL_CONTRACT.md": "6df7f9ab21667005da6144f75143a1d805ff10b1ed2e9160b8226a7b7f52cb8b",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/ARTICLE_REACTION_SERVICE_CONTRACT.md": "a9d4bec41727e389cf9345e09d110401eccf96773e5f5ec87051ed33654e2643",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/ARTICLE_REQUEST_CONTRACT.md": "e7c338f476d82124cfebe6d7bfad33f4fb66172216b55f0e737870759b5e1a08",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/ARTICLE_VIEW_CONTRACT.md": "40f380e815f20403c013497542877eef3ea413d0f77484ae79f47292e4d365da",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/HTTP_AND_WEB_ACTION_CONTRACT.md": "5018289719bde00feb9e9bedef1998472c85394b82678e6bb680021a6b43be49",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/LINK_CARD_APPEARANCE_CONTRACT.md": "b2e7316ede99d9d03ec93cdba4bac7c7ed493d2b7efaf78d023bb79ea86962d8",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/REACTION_VIEW_CONTRACT.md": "4fdd496cea70d168ed8c26bf290b3082a9fc27f93fb28bd2d1d4e05a397720dc",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/SCROLL_NAVIGATION_DELEGATE_CONTRACT.md": "c0dad11cdd710e61dbaad7d32cf01926f4613559da94ec73c81006a8303658a2",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-article/WEB_VIEW_CONTRACT.md": "745a4673576e579d80d619f708d23aac8ebe3d95dbe819798fbbb86f3a96871a"
+  },
+  "original_sdk_compile_or_link_input": false,
+  "runtime_verified": false,
+  "private_abi_limitations": [
+    "Three erased ArticleReactionService protocol requirements use the observed concrete default service; original custom injection ABI is not restored.",
+    "WebHeadersInjector default source helper expresses original inlined body; private source helper spelling unproved.",
+    "Private SwiftUI opaque types/adapter source names and metadata layouts are not claimed original.",
+    "Link appearance own-method comparison does not prove complete recovered superclass layout."
+  ],
+  "whole_native_aggregate": {
+    "receipt": ".build/ios-article-source/whole-native-aggregate/receipt.json",
+    "sha256": "a3bf93463e3338577558f92b817ee304b1d6bbc8c23589a8102f277023999f81",
+    "objc_source_units": 257,
+    "swift_source_units": 339,
+    "targets": [
+      {
+        "target": "arm64-apple-ios15.0",
+        "sourceCompiled": true,
+        "linked": false,
+        "undefinedObjCClasses": [
+          "ICMCarousel",
+          "ICMCarouselService",
+          "ICMCarouselViewController",
+          "_TtC18IntercomSDKPrivate21HelpCenterDataService",
+          "_TtC18IntercomSDKPrivate22TicketDetailsViewModel",
+          "_TtC18IntercomSDKPrivate24HomescreenViewController",
+          "_TtC18IntercomSDKPrivate25TicketsListViewController",
+          "_TtC18IntercomSDKPrivate27TicketDetailsViewController",
+          "_TtC18IntercomSDKPrivate30TicketCreateFormViewController",
+          "_TtC18IntercomSDKPrivate33HelpCenterContainerViewController"
+        ]
+      },
+      {
+        "target": "arm64-apple-ios15.0-simulator",
+        "sourceCompiled": true,
+        "linked": false,
+        "undefinedObjCClasses": [
+          "ICMCarousel",
+          "ICMCarouselService",
+          "ICMCarouselViewController",
+          "_TtC18IntercomSDKPrivate21HelpCenterDataService",
+          "_TtC18IntercomSDKPrivate22TicketDetailsViewModel",
+          "_TtC18IntercomSDKPrivate24HomescreenViewController",
+          "_TtC18IntercomSDKPrivate25TicketsListViewController",
+          "_TtC18IntercomSDKPrivate27TicketDetailsViewController",
+          "_TtC18IntercomSDKPrivate30TicketCreateFormViewController",
+          "_TtC18IntercomSDKPrivate33HelpCenterContainerViewController"
+        ]
+      },
+      {
+        "target": "x86_64-apple-ios15.0-simulator",
+        "sourceCompiled": true,
+        "linked": false,
+        "undefinedObjCClasses": [
+          "ICMCarousel",
+          "ICMCarouselService",
+          "ICMCarouselViewController",
+          "_TtC18IntercomSDKPrivate21HelpCenterDataService",
+          "_TtC18IntercomSDKPrivate22TicketDetailsViewModel",
+          "_TtC18IntercomSDKPrivate24HomescreenViewController",
+          "_TtC18IntercomSDKPrivate25TicketsListViewController",
+          "_TtC18IntercomSDKPrivate27TicketDetailsViewController",
+          "_TtC18IntercomSDKPrivate30TicketCreateFormViewController",
+          "_TtC18IntercomSDKPrivate33HelpCenterContainerViewController"
+        ]
+      }
+    ],
+    "inputHashDrift": [],
+    "sourceFilesAddedDuringBuild": []
+  },
+  "finite_own_metadata": {
+    "receipt": ".build/ios-article-source/own-metadata-receipt.json",
+    "sha256": "0400b5dea7d53c9ddc56b0a228ad7a45633225c42ec2108dbbeb3873aaf4a323",
+    "classes": 9,
+    "entries_per_target": 60,
+    "status": "PASS_FINITE_OWN_METADATA"
+  }
+}

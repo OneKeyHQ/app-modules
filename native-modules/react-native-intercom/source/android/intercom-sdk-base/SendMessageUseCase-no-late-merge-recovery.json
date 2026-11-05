@@ -1,0 +1,225 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase",
+  "root_only": true,
+  "source_before_sha256": "04c7d83cce49557daf09cef8c69766864ff5becce9042c7392790298af721312",
+  "source_after_sha256": "b3e85d0051a9fd20db14e7921d1919498f322399915e1a0dfab53999396f816c",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "type_edits": 22,
+  "declaration_check_exit": 0,
+  "source_replays": {
+    "status": "DIAGNOSTIC_SOURCE_ONLY_NOT_PRODUCT",
+    "replays": [
+      {
+        "tool": "ContinuationLocalTypes",
+        "rows": []
+      },
+      {
+        "tool": "CoroutineReceiverLocals",
+        "rows": [
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "10862",
+            "10862",
+            "\\n      SendMessageUseCase recoveredThis = this;",
+            "DECLARE",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "11229",
+            "11233",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "11750",
+            "11754",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "11894",
+            "11898",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "12139",
+            "12143",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "12967",
+            "12971",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "14372",
+            "14376",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "14905",
+            "14909",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "15272",
+            "15276",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "15596",
+            "15600",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "15911",
+            "15915",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "16543",
+            "16547",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "16608",
+            "16612",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "17495",
+            "17499",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "17557",
+            "17561",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "17798",
+            "17802",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "17934",
+            "17938",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "20009",
+            "20013",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "20062",
+            "20066",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "20712",
+            "20716",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "20839",
+            "20843",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "21228",
+            "21232",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ],
+          [
+            "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+            "21496",
+            "21500",
+            "recoveredThis",
+            "RECEIVER",
+            "invoke"
+          ]
+        ]
+      }
+    ],
+    "sha256": "a775d6a3e1e95d74e795a123120f3a631d3a54d8de6d98a54cdaabfb1aa82321",
+    "default_constructor": "Original pre-this sequential defaults retained for isolated JDK24; no App toolchain change",
+    "concrete_continuation_replay": [
+      [
+        "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SendMessageUseCase/ast-input/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+        "10916",
+        "10928",
+        "SendMessageUseCase$invoke$2",
+        "2",
+        "var19 = (SendMessageUseCase$invoke$2)var4 | var19 = new SendMessageUseCase$invoke$2(recoveredThis, var4)"
+      ]
+    ],
+    "concrete_continuation_source_sha256": "97f4411a9b834d1b9126eb1e89a3fa09d83ae69e2dc770db8672d035be5271b5",
+    "stability_replay": "Original static block $stable=8 retained; no Java ConstantValue"
+  },
+  "normal_build_uses_decompiler": false,
+  "default_constructor": "Original pre-this sequential defaults retained by independent JDK24 diagnostic, no App/compiler integration change"
+}

@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/home/ui/HomeScreenKt$HomeScreen$3$1",
+  "root_only": true,
+  "source_before_sha256": "48f980d4878def6dceec7aa29ba499582eba3139973feed86f9aa3b4e2e05837",
+  "source_after_sha256": "944edcac78ee6f7bd84f8c9a7c31c1aac3383c5a2b429927fc72c4db14cea9f5",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 7,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

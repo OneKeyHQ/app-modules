@@ -1,0 +1,164 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+  "root_only": true,
+  "source_before_sha256": "83d8890ee34eb3d459c05f4ec98ab5f73953abce49accb4dd4062a238999e1af",
+  "source_after_sha256": "d8cb9f6906d4fe017a035c711c243cf5cf4a75248d6b4080102401d68ac5811b",
+  "source_capture_sites": 2,
+  "source_capture_bindings": 5,
+  "declaration_check_exit": 0,
+  "type_edits": 6,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SearchBrowseCardKt$SearchBrowseCard$1/ast-input/io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1.java",
+      "30314",
+      "30405",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.components.SearchBrowseCardKt$SearchBrowseCard$1.invoke$lambda$10$lambda$9$lambda$8$lambda$6$lambda$5(recoveredExpressionCapture_240_0, recoveredExpressionCapture_240_1, recoveredExpressionCapture_240_2))",
+      "30295",
+      "final io.intercom.android.sdk.metrics.MetricTracker recoveredExpressionCapture_240_0 = var8;\\n                  final io.intercom.android.sdk.m5.home.data.SuggestedArticle recoveredExpressionCapture_240_1 = var200;\\n                  final android.content.Context recoveredExpressionCapture_240_2 = var9;\\n                  ",
+      "240",
+      "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/metrics/MetricTracker;=var8,Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;=var80,Landroid/content/Context;=var9",
+      "recoveredExpressionCapture_240_0=var8@7193:LOCAL|8|8|0|var8|Lio/intercom/android/sdk/metrics/MetricTracker;;recoveredExpressionCapture_240_1=var200@28533:LOCAL|80|200|0|var200|Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;;recoveredExpressionCapture_240_2=var9@7244:LOCAL|9|9|0|var9|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-SearchBrowseCardKt$SearchBrowseCard$1/ast-input/io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1.java",
+      "13175",
+      "13248",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.components.SearchBrowseCardKt$SearchBrowseCard$1.invoke$lambda$10$lambda$1$lambda$0(recoveredExpressionCapture_241_0, recoveredExpressionCapture_241_1))",
+      "13157",
+      "final io.intercom.android.sdk.metrics.MetricTracker recoveredExpressionCapture_241_0 = var8;\\n            final android.content.Context recoveredExpressionCapture_241_1 = var9;\\n            ",
+      "241",
+      "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/metrics/MetricTracker;=var8,Landroid/content/Context;=var9",
+      "recoveredExpressionCapture_241_0=var8@7193:LOCAL|8|8|0|var8|Lio/intercom/android/sdk/metrics/MetricTracker;;recoveredExpressionCapture_241_1=var9@7244:LOCAL|9|9|0|var9|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 240,
+      "original": [
+        "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "1886",
+        "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+        "invoke$lambda$10$lambda$9$lambda$8$lambda$6$lambda$5",
+        "(Lio/intercom/android/sdk/metrics/MetricTracker;Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;Landroid/content/Context;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/metrics/MetricTracker;=var8,Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;=var80,Landroid/content/Context;=var9",
+        "2723"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke$lambda$10$lambda$9$lambda$8$lambda$6$lambda$5",
+          "(Lio/intercom/android/sdk/metrics/MetricTracker;Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;Landroid/content/Context;)Lkotlin/Unit;",
+          "{2717, 2718, 2719, 2720, 2721, 2722, 2723, 2724, 2725, 2726, 2727}",
+          "LOCAL|8|8|0|var8|Lio/intercom/android/sdk/metrics/MetricTracker;",
+          "LOCAL|80|200|0|var200|Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;",
+          "LOCAL|9|9|0|var9|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke$lambda$10$lambda$9$lambda$8$lambda$6$lambda$5",
+          "(Lio/intercom/android/sdk/metrics/MetricTracker;Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;Landroid/content/Context;)Lkotlin/Unit;",
+          "{2717, 2718, 2719, 2720, 2721, 2722, 2723, 2724, 2725, 2726, 2727}",
+          "LOCAL|8|8|0|var8|Lio/intercom/android/sdk/metrics/MetricTracker;",
+          "LOCAL|80|200|0|var200|Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;",
+          "LOCAL|9|9|0|var9|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "2723",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1.invoke$lambda$10$lambda$9$lambda$8$lambda$6$lambda$5(Lio/intercom/android/sdk/metrics/MetricTracker;Lio/intercom/android/sdk/m5/home/data/SuggestedArticle;Landroid/content/Context;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 241,
+      "original": [
+        "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "568",
+        "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+        "invoke$lambda$10$lambda$1$lambda$0",
+        "(Lio/intercom/android/sdk/metrics/MetricTracker;Landroid/content/Context;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/metrics/MetricTracker;=var8,Landroid/content/Context;=var9",
+        "815"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke$lambda$10$lambda$1$lambda$0",
+          "(Lio/intercom/android/sdk/metrics/MetricTracker;Landroid/content/Context;)Lkotlin/Unit;",
+          "{811, 812, 813, 814, 815, 816, 817, 818, 819}",
+          "LOCAL|8|8|0|var8|Lio/intercom/android/sdk/metrics/MetricTracker;",
+          "LOCAL|9|9|0|var9|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+          "invoke$lambda$10$lambda$1$lambda$0",
+          "(Lio/intercom/android/sdk/metrics/MetricTracker;Landroid/content/Context;)Lkotlin/Unit;",
+          "{811, 812, 813, 814, 815, 816, 817, 818, 819}",
+          "LOCAL|8|8|0|var8|Lio/intercom/android/sdk/metrics/MetricTracker;",
+          "LOCAL|9|9|0|var9|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "815",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/components/SearchBrowseCardKt$SearchBrowseCard$1.invoke$lambda$10$lambda$1$lambda$0(Lio/intercom/android/sdk/metrics/MetricTracker;Landroid/content/Context;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

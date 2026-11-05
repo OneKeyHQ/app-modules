@@ -1,0 +1,1351 @@
+C	io/intercom/android/sdk/ui/IntercomPreviews	52	9729	java/lang/Object		java/lang/annotation/Annotation
+I	io/intercom/android/sdk/ui/IntercomPreviews	androidx/compose/ui/tooling/preview/Preview$Container	androidx/compose/ui/tooling/preview/Preview	Container	9737
+C	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	android/graphics/Bitmap$Config	android/graphics/Bitmap	Config	16409
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	android/os/Build$VERSION	android/os/Build	VERSION	9
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	coil/ComponentRegistry$Builder	coil/ComponentRegistry	Builder	25
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	coil/ImageLoader$Builder	coil/ImageLoader	Builder	25
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	coil/decode/Decoder$Factory	coil/decode/Decoder	Factory	1545
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	coil/decode/GifDecoder$Factory	coil/decode/GifDecoder	Factory	25
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	coil/decode/ImageDecoderDecoder$Factory	coil/decode/ImageDecoderDecoder	Factory	25
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	coil/decode/VideoFrameDecoder$Factory	coil/decode/VideoFrameDecoder	Factory	25
+I	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	io/intercom/android/sdk/ui/coil/PdfDecoder	Factory	25
+F	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	imageLoader	Lcoil/ImageLoader;	74	
+F	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	imageLoaderLock	Ljava/lang/Object;	26	
+M	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	getImageLoader	(Landroid/content/Context;)Lcoil/ImageLoader;	25		
+M	io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	52	49	java/lang/Object		coil/decode/Decoder$Factory
+I	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	coil/decode/Decoder$Factory	coil/decode/Decoder	Factory	1545
+I	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	io/intercom/android/sdk/ui/coil/PdfDecoder	Factory	25
+F	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	$stable	I	25	
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	<init>	()V	1		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	create	(Lcoil/fetch/SourceResult;Lcoil/request/Options;Lcoil/ImageLoader;)Lcoil/decode/Decoder;	1		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	isApplicable	(Ljava/lang/String;)Z	18		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	52	48	kotlin/coroutines/jvm/internal/ContinuationImpl		
+E	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	io/intercom/android/sdk/ui/coil/PdfDecoder	decode	(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+I	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1			24
+F	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	L$0	Ljava/lang/Object;	0	
+F	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	result	Ljava/lang/Object;	4096	
+F	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	this$0	Lio/intercom/android/sdk/ui/coil/PdfDecoder;	4112	
+F	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	label	I	0	
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	<init>	(Lio/intercom/android/sdk/ui/coil/PdfDecoder;Lkotlin/coroutines/Continuation;)V	0	(Lio/intercom/android/sdk/ui/coil/PdfDecoder;Lkotlin/coroutines/Continuation<-Lio/intercom/android/sdk/ui/coil/PdfDecoder$decode$1;>;)V	
+M	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1	invokeSuspend	(Ljava/lang/Object;)Ljava/lang/Object;	17		
+C	io/intercom/android/sdk/ui/coil/PdfDecoder	52	49	java/lang/Object		coil/decode/Decoder
+I	io/intercom/android/sdk/ui/coil/PdfDecoder	android/graphics/Bitmap$Config	android/graphics/Bitmap	Config	16409
+I	io/intercom/android/sdk/ui/coil/PdfDecoder	android/graphics/pdf/PdfRenderer$Page	android/graphics/pdf/PdfRenderer	Page	17
+I	io/intercom/android/sdk/ui/coil/PdfDecoder	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/coil/PdfDecoder	io/intercom/android/sdk/ui/coil/PdfDecoder$Factory	io/intercom/android/sdk/ui/coil/PdfDecoder	Factory	25
+I	io/intercom/android/sdk/ui/coil/PdfDecoder	io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1			24
+I	io/intercom/android/sdk/ui/coil/PdfDecoder	kotlin/jvm/internal/Ref$BooleanRef	kotlin/jvm/internal/Ref	BooleanRef	25
+F	io/intercom/android/sdk/ui/coil/PdfDecoder	source	Lcoil/decode/ImageSource;	18	
+F	io/intercom/android/sdk/ui/coil/PdfDecoder	options	Lcoil/request/Options;	18	
+F	io/intercom/android/sdk/ui/coil/PdfDecoder	$stable	I	25	
+M	io/intercom/android/sdk/ui/coil/PdfDecoder	<init>	(Lcoil/decode/ImageSource;Lcoil/request/Options;)V	1		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder	decode	(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;	1	(Lkotlin/coroutines/Continuation<-Lcoil/decode/DecodeResult;>;)Ljava/lang/Object;	
+M	io/intercom/android/sdk/ui/coil/PdfDecoder	decode$lambda$5	(Lio/intercom/android/sdk/ui/coil/PdfDecoder;Lkotlin/jvm/internal/Ref$BooleanRef;)Landroid/graphics/drawable/BitmapDrawable;	26		
+M	io/intercom/android/sdk/ui/coil/PdfDecoder	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings	52	4145	java/lang/Object		
+I	io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings	io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings	io/intercom/android/sdk/ui/coil/PdfDecoderKt	WhenMappings	4097
+F	io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings	$EnumSwitchMapping$0	[I	4121	
+M	io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/coil/PdfDecoderKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/coil/PdfDecoderKt	io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings	io/intercom/android/sdk/ui/coil/PdfDecoderKt	WhenMappings	4097
+M	io/intercom/android/sdk/ui/coil/PdfDecoderKt	widthPx	(Lcoil/size/Size;Lcoil/size/Scale;Lkotlin/jvm/functions/Function0;)I	26	(Lcoil/size/Size;Lcoil/size/Scale;Lkotlin/jvm/functions/Function0<Ljava/lang/Integer;>;)I	
+M	io/intercom/android/sdk/ui/coil/PdfDecoderKt	heightPx	(Lcoil/size/Size;Lcoil/size/Scale;Lkotlin/jvm/functions/Function0;)I	26	(Lcoil/size/Size;Lcoil/size/Scale;Lkotlin/jvm/functions/Function0<Ljava/lang/Integer;>;)I	
+M	io/intercom/android/sdk/ui/coil/PdfDecoderKt	toPx	(Lcoil/size/Dimension;Lcoil/size/Scale;)I	26		
+M	io/intercom/android/sdk/ui/coil/PdfDecoderKt	access$toPx	(Lcoil/size/Dimension;Lcoil/size/Scale;)I	4121		
+P	io/intercom/android/sdk/ui/coil/PdfDecoderKt	access$toPx	(Lcoil/size/Dimension;Lcoil/size/Scale;)I	6e9c477d2e9a43016d89645fa51225defe967f5456439228a877295b5cc49181
+C	io/intercom/android/sdk/ui/common/ActualStringOrResKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/common/ActualStringOrResKt	kotlin/jvm/internal/Ref$ObjectRef	kotlin/jvm/internal/Ref	ObjectRef	25
+M	io/intercom/android/sdk/ui/common/ActualStringOrResKt	parseString	(Landroid/content/Context;ILjava/util/List;)Ljava/lang/String;	25	(Landroid/content/Context;ILjava/util/List<Lkotlin/Pair<Ljava/lang/String;Ljava/lang/String;>;>;)Ljava/lang/String;	
+M	io/intercom/android/sdk/ui/common/ActualStringOrResKt	parseString$default	(Landroid/content/Context;ILjava/util/List;ILjava/lang/Object;)Ljava/lang/String;	4105		
+P	io/intercom/android/sdk/ui/common/ActualStringOrResKt	parseString$default	(Landroid/content/Context;ILjava/util/List;ILjava/lang/Object;)Ljava/lang/String;	dee0b4dc833f65b8a067f18372c325d3027fc75fb15539997bf86c6264c59ef9
+C	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	52	49	java/lang/Object		androidx/compose/foundation/layout/Arrangement$Vertical
+E	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	io/intercom/android/sdk/ui/common/IntercomArrangement	itemAtBottom	(I)Landroidx/compose/foundation/layout/Arrangement$Vertical;
+I	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	androidx/compose/foundation/layout/Arrangement$Vertical	androidx/compose/foundation/layout/Arrangement	Vertical	1545
+I	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1			25
+I	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	kotlin/jvm/internal/Ref$IntRef	kotlin/jvm/internal/Ref	IntRef	25
+F	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	$itemIndex	I	4112	
+M	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	<init>	(I)V	0		
+M	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	arrange	(Landroidx/compose/ui/unit/Density;I[I[I)V	1		
+M	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1	toString	()Ljava/lang/String;	1		
+C	io/intercom/android/sdk/ui/common/IntercomArrangement	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/common/IntercomArrangement	androidx/compose/foundation/layout/Arrangement$Vertical	androidx/compose/foundation/layout/Arrangement	Vertical	1545
+I	io/intercom/android/sdk/ui/common/IntercomArrangement	io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1			25
+F	io/intercom/android/sdk/ui/common/IntercomArrangement	INSTANCE	Lio/intercom/android/sdk/ui/common/IntercomArrangement;	25	
+F	io/intercom/android/sdk/ui/common/IntercomArrangement	$stable	I	25	
+M	io/intercom/android/sdk/ui/common/IntercomArrangement	<init>	()V	2		
+M	io/intercom/android/sdk/ui/common/IntercomArrangement	itemAtBottom	(I)Landroidx/compose/foundation/layout/Arrangement$Vertical;	17		
+M	io/intercom/android/sdk/ui/common/IntercomArrangement	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/common/IntercomTopBarState	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	navIcon	Ljava/lang/Integer;	18	
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	title	Ljava/lang/String;	18	
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	subTitle	Ljava/lang/String;	18	
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	backgroundColor	Landroidx/compose/ui/graphics/Color;	18	
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	contentColor	Landroidx/compose/ui/graphics/Color;	18	
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	subTitleColor	Landroidx/compose/ui/graphics/Color;	18	
+F	io/intercom/android/sdk/ui/common/IntercomTopBarState	$stable	I	25	
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	<init>	(Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;)V	2		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	<init>	(Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	getNavIcon	()Ljava/lang/Integer;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	getTitle	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	getSubTitle	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	getBackgroundColor-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	getContentColor-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	getSubTitleColor-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	component1	()Ljava/lang/Integer;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	component2	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	component3	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	component4-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	component5-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	component6-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	copy-K74yeK8	(Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;)Lio/intercom/android/sdk/ui/common/IntercomTopBarState;	17		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	copy-K74yeK8$default	(Lio/intercom/android/sdk/ui/common/IntercomTopBarState;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/common/IntercomTopBarState;	4105		
+P	io/intercom/android/sdk/ui/common/IntercomTopBarState	copy-K74yeK8$default	(Lio/intercom/android/sdk/ui/common/IntercomTopBarState;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/common/IntercomTopBarState;	a7d0f094d16111f17dc8214dcf9ca2e59add9478fa9c13fdd8ab4567fcc45790
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	<init>	(Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Lkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/common/IntercomTopBarState	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/common/StringProvider$ActualString	52	49	io/intercom/android/sdk/ui/common/StringProvider		
+I	io/intercom/android/sdk/ui/common/StringProvider$ActualString	io/intercom/android/sdk/ui/common/StringProvider$ActualString	io/intercom/android/sdk/ui/common/StringProvider	ActualString	25
+F	io/intercom/android/sdk/ui/common/StringProvider$ActualString	string	Ljava/lang/String;	18	
+F	io/intercom/android/sdk/ui/common/StringProvider$ActualString	$stable	I	25	
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	<init>	(Ljava/lang/String;)V	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	getString	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	component1	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	copy	(Ljava/lang/String;)Lio/intercom/android/sdk/ui/common/StringProvider$ActualString;	17		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	copy$default	(Lio/intercom/android/sdk/ui/common/StringProvider$ActualString;Ljava/lang/String;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/common/StringProvider$ActualString;	4105		
+P	io/intercom/android/sdk/ui/common/StringProvider$ActualString	copy$default	(Lio/intercom/android/sdk/ui/common/StringProvider$ActualString;Ljava/lang/String;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/common/StringProvider$ActualString;	e892ec4d4eb88cc4cf00424a7260c42e7dc8ad818be8422ce4dabb38cc0cd6b7
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$ActualString	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/common/StringProvider$StringRes	52	49	io/intercom/android/sdk/ui/common/StringProvider		
+I	io/intercom/android/sdk/ui/common/StringProvider$StringRes	io/intercom/android/sdk/ui/common/StringProvider$StringRes	io/intercom/android/sdk/ui/common/StringProvider	StringRes	25
+F	io/intercom/android/sdk/ui/common/StringProvider$StringRes	stringRes	I	18	
+F	io/intercom/android/sdk/ui/common/StringProvider$StringRes	params	Ljava/util/List;	18	Ljava/util/List<Lkotlin/Pair<Ljava/lang/String;Ljava/lang/String;>;>;
+F	io/intercom/android/sdk/ui/common/StringProvider$StringRes	$stable	I	25	
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	<init>	(ILjava/util/List;)V	1	(ILjava/util/List<Lkotlin/Pair<Ljava/lang/String;Ljava/lang/String;>;>;)V	
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	<init>	(ILjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	getStringRes	()I	17		
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	getParams	()Ljava/util/List;	17	()Ljava/util/List<Lkotlin/Pair<Ljava/lang/String;Ljava/lang/String;>;>;	
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	component1	()I	17		
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	component2	()Ljava/util/List;	17	()Ljava/util/List<Lkotlin/Pair<Ljava/lang/String;Ljava/lang/String;>;>;	
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	copy	(ILjava/util/List;)Lio/intercom/android/sdk/ui/common/StringProvider$StringRes;	17	(ILjava/util/List<Lkotlin/Pair<Ljava/lang/String;Ljava/lang/String;>;>;)Lio/intercom/android/sdk/ui/common/StringProvider$StringRes;	
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	copy$default	(Lio/intercom/android/sdk/ui/common/StringProvider$StringRes;ILjava/util/List;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/common/StringProvider$StringRes;	4105		
+P	io/intercom/android/sdk/ui/common/StringProvider$StringRes	copy$default	(Lio/intercom/android/sdk/ui/common/StringProvider$StringRes;ILjava/util/List;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/common/StringProvider$StringRes;	e13acbb84a2fc14cad531004e76ddc5c6fa870f850cedfc20809f0032261ff38
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/common/StringProvider$StringRes	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/common/StringProvider	52	1057	java/lang/Object		
+I	io/intercom/android/sdk/ui/common/StringProvider	io/intercom/android/sdk/ui/common/StringProvider$ActualString	io/intercom/android/sdk/ui/common/StringProvider	ActualString	25
+I	io/intercom/android/sdk/ui/common/StringProvider	io/intercom/android/sdk/ui/common/StringProvider$StringRes	io/intercom/android/sdk/ui/common/StringProvider	StringRes	25
+F	io/intercom/android/sdk/ui/common/StringProvider	$stable	I	25	
+M	io/intercom/android/sdk/ui/common/StringProvider	<init>	()V	2		
+M	io/intercom/android/sdk/ui/common/StringProvider	getText	(Landroidx/compose/runtime/Composer;I)Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/common/StringProvider	<init>	(Lkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/common/StringProvider	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/common/TransitionsKt	52	49	java/lang/Object		
+M	io/intercom/android/sdk/ui/common/TransitionsKt	floatingButtonEnterTransition	(I)Landroidx/compose/animation/EnterTransition;	25		
+M	io/intercom/android/sdk/ui/common/TransitionsKt	floatingButtonEnterTransition$lambda$0	(II)I	26		
+C	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	androidx/compose/foundation/layout/Arrangement$Horizontal	androidx/compose/foundation/layout/Arrangement	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	androidx/compose/foundation/layout/Arrangement$HorizontalOrVertical	androidx/compose/foundation/layout/Arrangement	HorizontalOrVertical	1545
+I	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	androidx/compose/ui/Alignment$Companion	androidx/compose/ui/Alignment	Companion	25
+I	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	androidx/compose/ui/Alignment$Vertical	androidx/compose/ui/Alignment	Vertical	1545
+I	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	androidx/compose/ui/text/style/TextOverflow$Companion	androidx/compose/ui/text/style/TextOverflow	Companion	25
+M	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	BoxedTextLayout-Y0xEhic	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/RowScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Lkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/RowScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/BoxedTextLayoutKt	BoxedTextLayout_Y0xEhic$lambda$1	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	invoke$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	1f61f82df6f338be22e39ec4f425971cc001a62504d7e92adb3a3b912e402558
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	invoke$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	a2be72f777110d17d42db11638545caf5faa6d21c11bb08fe29646c9b94e5824
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	androidx/compose/ui/graphics/Color$Companion	androidx/compose/ui/graphics/Color	Companion	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	invoke$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	1ec1387f02e399b04e5e363ddc26d0975137eee1c1188fe87eda268021f53adb
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-1$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-2$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$lambda-3$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt;	25	
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	lambda-1	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	lambda-2	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	lambda-3	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	<init>	()V	1		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	getLambda-1$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	getLambda-2$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	getLambda-3$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	androidx/compose/ui/Alignment$Companion	androidx/compose/ui/Alignment	Companion	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	androidx/compose/ui/Alignment$Horizontal	androidx/compose/ui/Alignment	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	invoke$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	758eae864e26cf52b12c28059822f076b39c4293384a3172482e81b5ec845de0
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	androidx/compose/ui/Alignment$Horizontal	androidx/compose/ui/Alignment	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	c69eea10f7353df35bc07623e202a994cc0a9b887c1f9c143f59bd7d5b0bd45d
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	5f4337262a4d1a073f16af3cacfa56c2ce8a52aa013f692473b29621951e0e7a
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	invoke	(Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	invoke$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	cbc819e9527a77bdc42c4a9050c941252cbc37b6e8fdbd42bc9c7ab9769db5f5
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	androidx/compose/ui/Alignment$Horizontal	androidx/compose/ui/Alignment	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	f1e841fe5acd0567fc39bdae71cec826fea12d19f61c566ec64d7aa34a53dff2
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-1$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-2$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-3$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-4$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$lambda-5$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt;	25	
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	lambda-1	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	lambda-2	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	lambda-3	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	lambda-4	Lkotlin/jvm/functions/Function3;	9	Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	lambda-5	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	<init>	()V	1		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	getLambda-1$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	getLambda-2$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	getLambda-3$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	getLambda-4$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function3;	17	()Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	getLambda-5$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	invoke$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	72bb03d3a149e5aead47bba2bae2264758f857b05d068993fab6dca7a34a37c5
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$lambda-1$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt;	25	
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	lambda-1	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	<init>	()V	1		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	getLambda-1$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	d5da3910d6f2df5e84033329795b7f69ee45f32ea3e29ddb59455bb0ba1472d4
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$lambda-1$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt;	25	
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	lambda-1	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	<init>	()V	1		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	getLambda-1$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	androidx/compose/ui/graphics/Color$Companion	androidx/compose/ui/graphics/Color	Companion	25
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	invoke	(Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	999f9d7040b41264d5c8f4b8dea6d65e6af6f5630e6da4322ad69d42eedbd6f3
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1;	25	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	<init>	()V	0		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	ef6db179cb2013dab910a13dc8cb01b5e6ace9504d9b0b34d2bdf63cdbee5dfa
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-1$1			24
+I	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$lambda-2$1			24
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	INSTANCE	Lio/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt;	25	
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	lambda-1	Lkotlin/jvm/functions/Function3;	9	Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	lambda-2	Lkotlin/jvm/functions/Function2;	9	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	<init>	()V	1		
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	getLambda-1$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function3;	17	()Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	getLambda-2$intercom_sdk_ui_release	()Lkotlin/jvm/functions/Function2;	17	()Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	androidx/compose/foundation/layout/Arrangement$Horizontal	androidx/compose/foundation/layout/Arrangement	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	androidx/compose/ui/Alignment$Companion	androidx/compose/ui/Alignment	Companion	25
+I	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	androidx/compose/ui/Alignment$Vertical	androidx/compose/ui/Alignment	Vertical	1545
+I	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	androidx/compose/ui/text/style/TextOverflow$Companion	androidx/compose/ui/text/style/TextOverflow	Companion	25
+I	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+M	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	ErrorMessageLayout	(Landroidx/compose/ui/Modifier;Ljava/util/List;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;Ljava/util/List<+Lio/intercom/android/sdk/ui/common/StringProvider;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt	ErrorMessageLayout$lambda$2	(Landroidx/compose/ui/Modifier;Ljava/util/List;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/IntercomButton$Style	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+F	io/intercom/android/sdk/ui/component/IntercomButton$Style	backgroundColor	J	18	
+F	io/intercom/android/sdk/ui/component/IntercomButton$Style	contentColor	J	18	
+F	io/intercom/android/sdk/ui/component/IntercomButton$Style	border	Landroidx/compose/foundation/BorderStroke;	18	
+F	io/intercom/android/sdk/ui/component/IntercomButton$Style	$stable	I	25	
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	<init>	(JJLandroidx/compose/foundation/BorderStroke;)V	2		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	getBackgroundColor-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	getContentColor-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	getBorder	()Landroidx/compose/foundation/BorderStroke;	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	component3	()Landroidx/compose/foundation/BorderStroke;	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	copy-jxsXWHM	(JJLandroidx/compose/foundation/BorderStroke;)Lio/intercom/android/sdk/ui/component/IntercomButton$Style;	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	copy-jxsXWHM$default	(Lio/intercom/android/sdk/ui/component/IntercomButton$Style;JJLandroidx/compose/foundation/BorderStroke;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/component/IntercomButton$Style;	4105		
+P	io/intercom/android/sdk/ui/component/IntercomButton$Style	copy-jxsXWHM$default	(Lio/intercom/android/sdk/ui/component/IntercomButton$Style;JJLandroidx/compose/foundation/BorderStroke;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/component/IntercomButton$Style;	96d7c249b62bd9f6aa3a4bd7d0cddc9fc99526578bcf31269ffa5faba1647a38
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	<init>	(JJLandroidx/compose/foundation/BorderStroke;Lkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/component/IntercomButton$Style	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/IntercomButton	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomButton	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+F	io/intercom/android/sdk/ui/component/IntercomButton	INSTANCE	Lio/intercom/android/sdk/ui/component/IntercomButton;	25	
+F	io/intercom/android/sdk/ui/component/IntercomButton	$stable	I	25	
+M	io/intercom/android/sdk/ui/component/IntercomButton	<init>	()V	2		
+M	io/intercom/android/sdk/ui/component/IntercomButton	primaryStyle-Klgx-Pg	(JJLandroidx/compose/foundation/BorderStroke;Landroidx/compose/runtime/Composer;II)Lio/intercom/android/sdk/ui/component/IntercomButton$Style;	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton	outlinedStyle-Klgx-Pg	(JJLandroidx/compose/foundation/BorderStroke;Landroidx/compose/runtime/Composer;II)Lio/intercom/android/sdk/ui/component/IntercomButton$Style;	17		
+M	io/intercom/android/sdk/ui/component/IntercomButton	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	io/intercom/android/sdk/ui/component/IntercomButtonKt	IntercomButton	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomButton$Style;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+I	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1			24
+F	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	$style	Lio/intercom/android/sdk/ui/component/IntercomButton$Style;	4112	
+F	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	$text	Ljava/lang/String;	4112	
+F	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	$trailingIconId	Ljava/lang/Integer;	4112	
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	<init>	(Lio/intercom/android/sdk/ui/component/IntercomButton$Style;Ljava/lang/String;Ljava/lang/Integer;)V	0		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	invoke	(Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	27d3c6f2606b1d19c167b884fed9d87bdb53ae90cef0fffa0d04be3104e01b2a
+C	io/intercom/android/sdk/ui/component/IntercomButtonKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomButtonKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomButtonKt	io/intercom/android/sdk/ui/component/IntercomButton$Style	io/intercom/android/sdk/ui/component/IntercomButton	Style	25
+I	io/intercom/android/sdk/ui/component/IntercomButtonKt	io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1			24
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	IntercomButton	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomButton$Style;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomButton$Style;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	PrimaryButtonPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	PrimaryButtonWithTrailingIconPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	OutlinedButtonPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	IntercomButton$lambda$0	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomButton$Style;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	PrimaryButtonPreview$lambda$1	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	PrimaryButtonWithTrailingIconPreview$lambda$2	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomButtonKt	OutlinedButtonPreview$lambda$3	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/IntercomCardKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomCardKt	android/os/Build$VERSION	android/os/Build	VERSION	9
+I	io/intercom/android/sdk/ui/component/IntercomCardKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomCardKt	androidx/compose/ui/graphics/Color$Companion	androidx/compose/ui/graphics/Color	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomCardKt	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	io/intercom/android/sdk/ui/component/IntercomCardStyle	Style	25
+M	io/intercom/android/sdk/ui/component/IntercomCardKt	IntercomCard	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Lkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/ColumnScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/IntercomCardKt	IntercomCard	(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;ZLio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Landroidx/compose/foundation/interaction/MutableInteractionSource;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V	25	(Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Landroidx/compose/ui/Modifier;ZLio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Landroidx/compose/foundation/interaction/MutableInteractionSource;Lkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/ColumnScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/IntercomCardKt	IntercomCard$lambda$0	(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Lkotlin/jvm/functions/Function3;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomCardKt	IntercomCard$lambda$2	(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;ZLio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Landroidx/compose/foundation/interaction/MutableInteractionSource;Lkotlin/jvm/functions/Function3;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	io/intercom/android/sdk/ui/component/IntercomCardStyle	Style	25
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	shape	Landroidx/compose/ui/graphics/Shape;	18	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	backgroundColor	J	18	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	contentColor	J	18	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	elevation	F	18	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	border	Landroidx/compose/foundation/BorderStroke;	18	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	shadowColor	Landroidx/compose/ui/graphics/Color;	18	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	$stable	I	25	
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	<init>	(Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;Landroidx/compose/ui/graphics/Color;)V	2		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	getShape	()Landroidx/compose/ui/graphics/Shape;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	getBackgroundColor-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	getContentColor-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	getElevation-D9Ej5fM	()F	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	getBorder	()Landroidx/compose/foundation/BorderStroke;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	getShadowColor-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	component1	()Landroidx/compose/ui/graphics/Shape;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	component4-D9Ej5fM	()F	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	component5	()Landroidx/compose/foundation/BorderStroke;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	component6-QN2ZGVo	()Landroidx/compose/ui/graphics/Color;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	copy-UBuVVS8	(Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;Landroidx/compose/ui/graphics/Color;)Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	copy-UBuVVS8$default	(Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;Landroidx/compose/ui/graphics/Color;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;	4105		
+P	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	copy-UBuVVS8$default	(Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;Landroidx/compose/ui/graphics/Color;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;	ec842267c926f6af343fb16416efe5c84357e8eeadd5e16f8c306256b8d0f392
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	<init>	(Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;Landroidx/compose/ui/graphics/Color;Lkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/IntercomCardStyle	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomCardStyle	io/intercom/android/sdk/ui/component/IntercomCardStyle$Style	io/intercom/android/sdk/ui/component/IntercomCardStyle	Style	25
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle	INSTANCE	Lio/intercom/android/sdk/ui/component/IntercomCardStyle;	25	
+F	io/intercom/android/sdk/ui/component/IntercomCardStyle	$stable	I	25	
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle	<init>	()V	2		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle	defaultStyle-qUnfpCA	(Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;JLandroidx/compose/runtime/Composer;II)Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle	conversationCardStyle-PEIptTM	(Landroidx/compose/ui/graphics/Shape;JJFLandroidx/compose/foundation/BorderStroke;Landroidx/compose/runtime/Composer;II)Lio/intercom/android/sdk/ui/component/IntercomCardStyle$Style;	17		
+M	io/intercom/android/sdk/ui/component/IntercomCardStyle	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/IntercomDividerKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomDividerKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+M	io/intercom/android/sdk/ui/component/IntercomDividerKt	IntercomDivider	(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V	25		
+M	io/intercom/android/sdk/ui/component/IntercomDividerKt	IntercomDivider$lambda$0	(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	iconRes	I	18	
+F	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	contentDescription	Ljava/lang/String;	18	
+F	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	onClick	Lkotlin/jvm/functions/Function0;	18	Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	$stable	I	25	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	<init>	(ILjava/lang/String;Lkotlin/jvm/functions/Function0;)V	1	(ILjava/lang/String;Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;)V	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	getIconRes	()I	17		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	getContentDescription	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	getOnClick	()Lkotlin/jvm/functions/Function0;	17	()Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	component1	()I	17		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	component2	()Ljava/lang/String;	17		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	component3	()Lkotlin/jvm/functions/Function0;	17	()Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	copy	(ILjava/lang/String;Lkotlin/jvm/functions/Function0;)Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;	17	(ILjava/lang/String;Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;)Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	copy$default	(Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;ILjava/lang/String;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;	4105		
+P	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	copy$default	(Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;ILjava/lang/String;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;	4a0bed211e7551af4896386910275f9413a8ff7c3afd668696c880fa70b21626
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarIcon	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBar-bogVsAg	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;Landroidx/compose/ui/Alignment$Horizontal;JJLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	androidx/compose/ui/Alignment$Horizontal	androidx/compose/ui/Alignment	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2			24
+F	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	$navIcon	Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;	4112	
+F	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	$contentColor	J	4112	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	<init>	(Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;J)V	0		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	67af4468ca5ef35a53d6af6273a2e29ec6172900f5800451e31519a14d4fe1a7
+C	io/intercom/android/sdk/ui/component/IntercomTopBarKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/foundation/layout/Arrangement$Horizontal	androidx/compose/foundation/layout/Arrangement	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/foundation/layout/Arrangement$HorizontalOrVertical	androidx/compose/foundation/layout/Arrangement	HorizontalOrVertical	1545
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/foundation/layout/Arrangement$Vertical	androidx/compose/foundation/layout/Arrangement	Vertical	1545
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/ui/Alignment$Companion	androidx/compose/ui/Alignment	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/ui/Alignment$Horizontal	androidx/compose/ui/Alignment	Horizontal	1545
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/ui/Alignment$Vertical	androidx/compose/ui/Alignment	Vertical	1545
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	androidx/compose/ui/text/style/TextOverflow$Companion	androidx/compose/ui/text/style/TextOverflow	Companion	25
+I	io/intercom/android/sdk/ui/component/IntercomTopBarKt	io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2			24
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBar-bogVsAg	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;Landroidx/compose/ui/Alignment$Horizontal;JJLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;Landroidx/compose/ui/Alignment$Horizontal;JJLkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Lkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/RowScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBarPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBarPreviewWithoutNavIcon	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBarPreviewWithMenuItems	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBar_bogVsAg$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBar_bogVsAg$lambda$7$lambda$3$lambda$2	(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBar_bogVsAg$lambda$8	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Lio/intercom/android/sdk/ui/component/IntercomTopBarIcon;Landroidx/compose/ui/Alignment$Horizontal;JJLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBarPreview$lambda$9	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBarPreviewWithoutNavIcon$lambda$10	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/IntercomTopBarKt	IntercomTopBarPreviewWithMenuItems$lambda$11	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpToBottom-kNRdK3w	(Landroidx/compose/ui/Modifier;JJLjava/lang/String;JJLkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1			24
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	$badgeText	Ljava/lang/String;	4112	
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	$badgeColor	J	4112	
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	$badgeContentColor	J	4112	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	<init>	(Ljava/lang/String;JJ)V	0		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	invoke	(Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	88e31edc9341edbdff937cf35d166925f6feffd2eeb720e1bd8b0c7a584f9474
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	invoke	(Landroidx/compose/animation/AnimatedVisibilityScope;Landroidx/compose/runtime/Composer;I)V
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	io/intercom/android/sdk/ui/R$drawable	io/intercom/android/sdk/ui/R	drawable	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1			24
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	$contentColor	J	4112	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	<init>	(J)V	0		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	3746932390b18f0a194bede51074841df45da516e14b497357746f2ded73c174
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/animation/AnimatedVisibilityScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	invoke	(Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;I)V
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1			24
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	$onClick	Lkotlin/jvm/functions/Function0;	4112	Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	$backgroundColor	J	4112	
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	$contentColor	J	4112	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	<init>	(Lkotlin/jvm/functions/Function0;JJ)V	0	(Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;JJ)V	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	invoke	(Landroidx/compose/animation/AnimatedVisibilityScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	1960819efac214ce42a730cb8efc8cde1faa1e36902e9acf396d86c057e07966
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpToBottom-kNRdK3w	(Landroidx/compose/ui/Modifier;JJLjava/lang/String;JJLkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1			24
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	$onClick	Lkotlin/jvm/functions/Function0;	4112	Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	$backgroundColor	J	4112	
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	$contentColor	J	4112	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	<init>	(Lkotlin/jvm/functions/Function0;JJ)V	0	(Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;JJ)V	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	invoke	(Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	03ebd3774611742a0af7542a3e43159c006bef3f8d13b14f45ec34096e17ee2f
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	io/intercom/android/sdk/ui/component/JumpToBottomKt	UnreadBadge-eaDK9VM	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLandroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	androidx/compose/ui/text/font/FontWeight$Companion	androidx/compose/ui/text/font/FontWeight	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	androidx/compose/ui/text/style/TextAlign$Companion	androidx/compose/ui/text/style/TextAlign	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1			24
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	$contentColor	J	4112	
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	$badgeText	Ljava/lang/String;	4112	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	<init>	(JLjava/lang/String;)V	0		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	invoke	(Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	31ccccca90eb6d753c867f98c39ac03a65928b0e87c548d7a5a856c9e4ed45f1
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings	52	4145	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings	io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings	io/intercom/android/sdk/ui/component/JumpToBottomKt	WhenMappings	4097
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings	$EnumSwitchMapping$0	[I	4121	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/JumpToBottomKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt	androidx/compose/ui/graphics/Color$Companion	androidx/compose/ui/graphics/Color	Companion	25
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt	io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt	io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1			24
+I	io/intercom/android/sdk/ui/component/JumpToBottomKt	io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings	io/intercom/android/sdk/ui/component/JumpToBottomKt	WhenMappings	4097
+F	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpBottomPadding	F	26	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	getJumpBottomPadding	()F	25		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpToBottom-kNRdK3w	(Landroidx/compose/ui/Modifier;JJLjava/lang/String;JJLkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;JJLjava/lang/String;JJLkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	getChevronColor	(Landroidx/compose/runtime/Composer;I)J	26		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpToBottomPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	UnreadBadge-eaDK9VM	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLandroidx/compose/runtime/Composer;II)V	26		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpToBottom_kNRdK3w$lambda$0	(Landroidx/compose/ui/Modifier;JJLjava/lang/String;JJLkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	JumpToBottomPreview$lambda$1	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	UnreadBadge_eaDK9VM$lambda$2	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	access$UnreadBadge-eaDK9VM	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLandroidx/compose/runtime/Composer;II)V	4121		
+P	io/intercom/android/sdk/ui/component/JumpToBottomKt	access$UnreadBadge-eaDK9VM	(Landroidx/compose/ui/Modifier;Ljava/lang/String;JJLandroidx/compose/runtime/Composer;II)V	4dee647aa46b7409cb6ee5d6d7590e4729aa7403886631f02e570e9de279c8c4
+M	io/intercom/android/sdk/ui/component/JumpToBottomKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	invoke	(Landroidx/compose/runtime/Composer;I)V
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1			24
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	$confirmText	Ljava/lang/String;	4112	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	<init>	(Ljava/lang/String;)V	0		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	invoke	(Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	d03a0972cd9eec560e1fae730417574e58fbe6943123b4cce366efb7fca07498
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1			24
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	$onConfirm	Lkotlin/jvm/functions/Function0;	4112	Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	$confirmText	Ljava/lang/String;	4112	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	<init>	(Lkotlin/jvm/functions/Function0;Ljava/lang/String;)V	0	(Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Ljava/lang/String;)V	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	46530a52918ba3f0c718eedb635e7b5070c0725153aedcf141c7a76a313aaa09
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	invoke	(Landroidx/compose/runtime/Composer;I)V
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1			24
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	$dismissText	Ljava/lang/String;	4112	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	<init>	(Ljava/lang/String;)V	0		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	invoke	(Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	f57273410fa7fcfef7cf55cf371c8a1c92337bf23f514c7c6f482a1ff8a3d515
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1			24
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	$onDismiss	Lkotlin/jvm/functions/Function0;	4112	Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	$dismissText	Ljava/lang/String;	4112	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	<init>	(Lkotlin/jvm/functions/Function0;Ljava/lang/String;)V	0	(Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Ljava/lang/String;)V	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	c80e38ee75fe0bd0759422efb4003fabedad06fddc23b575b9d71ddbc5d21ad9
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5			24
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	$iconId	Ljava/lang/Integer;	4112	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	<init>	(Ljava/lang/Integer;)V	0		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	9f7498ae51eba06963c1172aed73a5b7c6457b1cf4cf629203a5dfcfd5918a43
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6			24
+F	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	$message	Ljava/lang/String;	4112	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	<init>	(Ljava/lang/String;)V	0		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	2051bbb16c7ecfffba4f28ca7cf947ae906c03bd93bc845ad342ed4884b81e12
+C	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5			24
+I	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6			24
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialogPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog$lambda$1$lambda$0	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog$lambda$3$lambda$2	()Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialog$lambda$4	(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt	PermissionDeniedDialogPreview$lambda$5	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	52	48	kotlin/coroutines/jvm/internal/SuspendLambda	Lkotlin/coroutines/jvm/internal/SuspendLambda;Lkotlin/jvm/functions/Function2<Lkotlinx/coroutines/CoroutineScope;Lkotlin/coroutines/Continuation<-Lkotlin/Unit;>;Ljava/lang/Object;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	io/intercom/android/sdk/ui/component/PulsatingBoxKt	PulsatingBox-FU0evQE	(Landroidx/compose/ui/Modifier;FJLandroidx/compose/ui/graphics/Shape;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1			24
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	label	I	0	
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	$animatedScale	Landroidx/compose/animation/core/Animatable;	4112	Landroidx/compose/animation/core/Animatable<Ljava/lang/Float;Landroidx/compose/animation/core/AnimationVector1D;>;
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	$pulseSize	F	4112	
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	<init>	(Landroidx/compose/animation/core/Animatable;FLkotlin/coroutines/Continuation;)V	0	(Landroidx/compose/animation/core/Animatable<Ljava/lang/Float;Landroidx/compose/animation/core/AnimationVector1D;>;FLkotlin/coroutines/Continuation<-Lio/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1;>;)V	
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	invokeSuspend	(Ljava/lang/Object;)Ljava/lang/Object;	17		
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	create	(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Lkotlin/coroutines/Continuation;	17	(Ljava/lang/Object;Lkotlin/coroutines/Continuation<*>;)Lkotlin/coroutines/Continuation<Lkotlin/Unit;>;	
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	invoke	(Lkotlinx/coroutines/CoroutineScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;	17	(Lkotlinx/coroutines/CoroutineScope;Lkotlin/coroutines/Continuation<-Lkotlin/Unit;>;)Ljava/lang/Object;	
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	736c6ce97277c14cd7aa8415d4f89e12842cc7ae0533324fa51cb5c98e04cff6
+C	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxWithConstraintsScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function3
+E	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	io/intercom/android/sdk/ui/component/PulsatingBoxKt	PulsatingBox-FU0evQE	(Landroidx/compose/ui/Modifier;FJLandroidx/compose/ui/graphics/Shape;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	androidx/compose/ui/Alignment$Companion	androidx/compose/ui/Alignment	Companion	25
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2			24
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	$enabled	Z	4112	
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	$animatedScale	Landroidx/compose/animation/core/Animatable;	4112	Landroidx/compose/animation/core/Animatable<Ljava/lang/Float;Landroidx/compose/animation/core/AnimationVector1D;>;
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	$pulseShape	Landroidx/compose/ui/graphics/Shape;	4112	
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	$pulseColor	J	4112	
+F	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	$content	Lkotlin/jvm/functions/Function3;	4112	Lkotlin/jvm/functions/Function3<Landroidx/compose/foundation/layout/BoxScope;Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	<init>	(ZLandroidx/compose/animation/core/Animatable;Landroidx/compose/ui/graphics/Shape;JLkotlin/jvm/functions/Function3;)V	0	(ZLandroidx/compose/animation/core/Animatable<Ljava/lang/Float;Landroidx/compose/animation/core/AnimationVector1D;>;Landroidx/compose/ui/graphics/Shape;JLkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/BoxScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;)V	
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	invoke	(Landroidx/compose/foundation/layout/BoxWithConstraintsScope;Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2	invoke	(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	3b6c536935ae99dc2ad9fc430fd75cd8f6ce7952d09d8827aca83b569c3f0a2d
+C	io/intercom/android/sdk/ui/component/PulsatingBoxKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt	androidx/compose/ui/Alignment$Companion	androidx/compose/ui/Alignment	Companion	25
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2			24
+I	io/intercom/android/sdk/ui/component/PulsatingBoxKt	io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1			24
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt	PulsatingBox-FU0evQE	(Landroidx/compose/ui/Modifier;FJLandroidx/compose/ui/graphics/Shape;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V	25	(Landroidx/compose/ui/Modifier;FJLandroidx/compose/ui/graphics/Shape;ZLkotlin/jvm/functions/Function3<-Landroidx/compose/foundation/layout/BoxScope;-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt	PulsatingBoxPreview	(Landroidx/compose/runtime/Composer;I)V	26		
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt	PulsatingBox_FU0evQE$lambda$2	(Landroidx/compose/ui/Modifier;FJLandroidx/compose/ui/graphics/Shape;ZLkotlin/jvm/functions/Function3;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/component/PulsatingBoxKt	PulsatingBoxPreview$lambda$3	(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+C	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	52	49	java/lang/Object		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isVideo	(Ljava/lang/String;)Z	25		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isImage	(Ljava/lang/String;)Z	25		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isAudio	(Ljava/lang/String;)Z	25		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isTxt	(Ljava/lang/String;)Z	25		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isPdf	(Ljava/lang/String;)Z	25		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isZip	(Ljava/lang/String;)Z	25		
+M	io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt	isCsv	(Ljava/lang/String;)Z	25		
+C	io/intercom/android/sdk/ui/extension/ModifierExtensionsKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/extension/ModifierExtensionsKt	androidx/compose/ui/Modifier$Companion	androidx/compose/ui/Modifier	Companion	25
+M	io/intercom/android/sdk/ui/extension/ModifierExtensionsKt	ifTrue	(Landroidx/compose/ui/Modifier;ZLkotlin/jvm/functions/Function1;)Landroidx/compose/ui/Modifier;	25	(Landroidx/compose/ui/Modifier;ZLkotlin/jvm/functions/Function1<-Landroidx/compose/ui/Modifier;+Landroidx/compose/ui/Modifier;>;)Landroidx/compose/ui/Modifier;	
+C	io/intercom/android/sdk/ui/extension/NavBackStackEntryExtensionKt	52	49	java/lang/Object		
+M	io/intercom/android/sdk/ui/extension/NavBackStackEntryExtensionKt	getParcelableObject	(Landroidx/navigation/NavBackStackEntry;Ljava/lang/String;Ljava/lang/Class;Landroid/os/Parcelable;)Landroid/os/Parcelable;	25	<T::Landroid/os/Parcelable;>(Landroidx/navigation/NavBackStackEntry;Ljava/lang/String;Ljava/lang/Class<TT;>;TT;)TT;	
+C	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	io/intercom/android/sdk/ui/theme/BaseColors	NewColorScheme	25
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	INSTANCE	Lio/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme;	25	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray950	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray900	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray850	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray800	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray700	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray600	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray500	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray400	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray300	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray200	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray100	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray50	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Gray25	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	White	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red25	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red50	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red75	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red100	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red200	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red400	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red500	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red600	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red800	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red850	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Red900	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green25	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green50	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green75	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green100	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green400	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green500	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green600	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green700	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green800	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green850	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Green900	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow25	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow50	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow100	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow500	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow600	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow700	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow800	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow850	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Yellow900	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Orange50	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Orange200	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Orange600	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue25	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue50	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue100	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue200	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue300	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue500	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue600	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue700	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue800	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue850	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue900	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Blue950	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Purple100	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	Purple500	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	<init>	()V	2		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray950-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray900-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray850-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray800-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray700-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray600-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray500-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray400-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray300-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray200-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGray25-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getWhite-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed25-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed75-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed200-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed400-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed500-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed600-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed800-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed850-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getRed900-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen25-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen75-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen400-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen500-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen600-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen700-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen800-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen850-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getGreen900-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow25-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow500-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow600-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow700-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow800-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow850-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getYellow900-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getOrange50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getOrange200-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getOrange600-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue25-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue200-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue300-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue500-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue600-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue700-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue800-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue850-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue900-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getBlue950-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getPurple100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	getPurple500-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/BaseColors	52	48	java/lang/Object		
+I	io/intercom/android/sdk/ui/theme/BaseColors	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	io/intercom/android/sdk/ui/theme/BaseColors	NewColorScheme	25
+F	io/intercom/android/sdk/ui/theme/BaseColors	INSTANCE	Lio/intercom/android/sdk/ui/theme/BaseColors;	25	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Fallback	J	26	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Black	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Black10	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Black70	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Black90	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Black95	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Red	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	Blue	J	131098	
+F	io/intercom/android/sdk/ui/theme/BaseColors	GreenLighter20	J	131098	
+M	io/intercom/android/sdk/ui/theme/BaseColors	<init>	()V	2		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getFallback-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getBlack-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack10-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack10-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getBlack10-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack70-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack70-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getBlack70-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack90-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack90-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getBlack90-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack95-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlack95-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getBlack95-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getRed-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getRed-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getRed-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlue-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getBlue-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getBlue-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	getGreenLighter20-0d7_KjU	()J	131089		
+M	io/intercom/android/sdk/ui/theme/BaseColors	getGreenLighter20-0d7_KjU$annotations	()V	135177		
+P	io/intercom/android/sdk/ui/theme/BaseColors	getGreenLighter20-0d7_KjU$annotations	()V	ca9632e101a7003b3e4a7045635f8413b07169599cd69a11ceb4e409af61bc35
+M	io/intercom/android/sdk/ui/theme/BaseColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black10	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black20	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black30	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black40	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black50	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black60	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black70	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black80	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black90	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	black100	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white10	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white20	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white30	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white40	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white50	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white60	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white70	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white80	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white90	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	white100	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	<init>	(JJJJJJJJJJJJJJJJJJJJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack10-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack20-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack30-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack40-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack60-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack70-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack80-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack90-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getBlack100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite10-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite20-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite30-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite40-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite50-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite60-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite70-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite80-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite90-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	getWhite100-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component4-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component5-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component6-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component7-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component8-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component9-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component10-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component11-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component12-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component13-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component14-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component15-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component16-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component17-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component18-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component19-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	component20-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	copy-Cmkg8xs	(JJJJJJJJJJJJJJJJJJJJ)Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	copy-Cmkg8xs$default	(Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	copy-Cmkg8xs$default	(Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;	105fb16f4032982b6c621ee964745ea48e50dad1f7f6ec6b8f41c20b255b37b7
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	<init>	(JJJJJJJJJJJJJJJJJJJJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomAlphaColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomBaseColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomBaseColors	base	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomBaseColors	input	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomBaseColors	inputAlt	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomBaseColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	<init>	(JJJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	getBase-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	getInput-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	getInputAlt-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	copy-ysEtTa8	(JJJ)Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	copy-ysEtTa8$default	(Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;JJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomBaseColors	copy-ysEtTa8$default	(Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;JJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;	de9fa1e159c253e5b535755b09d900ef2ac107424e486c49ff9aef95f3a82f56
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	<init>	(JJJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomBaseColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomBorderColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomBorderColors	neutral	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomBorderColors	emphasis	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomBorderColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	<init>	(JJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	getNeutral-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	getEmphasis-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	copy--OWjLjI	(JJ)Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	copy--OWjLjI$default	(Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;JJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomBorderColors	copy--OWjLjI$default	(Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;JJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;	5ac88a3afafc961fa7081141b6f0e72ce04a9d109fe007a4f5531ba94f552736
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	<init>	(JJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomBorderColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomColors	action	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	onAction	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	actionContrastWhite	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	onActionContrastWhite	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	header	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	onHeader	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	base	Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	text	Lio/intercom/android/sdk/ui/theme/IntercomTextColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	icon	Lio/intercom/android/sdk/ui/theme/IntercomIconColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	container	Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	border	Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	syntax	Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	alpha	Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	bubbleBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	adminBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	timestampBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	sourceBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	inputAlt	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	poweredByBackgroundColor	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	disabled	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	composerMediaBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	composerMediaUploadingBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	composerMediaUploadingForeground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	composerMediaPlayBackground	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	isTyping	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	adminBorder	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	collectorBorder	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	specialNoticeBorder	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	divider	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	collectorSelected	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	badge	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	submitted	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	active	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	error	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	shadow	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	isLight	Z	18	
+F	io/intercom/android/sdk/ui/theme/IntercomColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomColors	<init>	(JJJJJJLio/intercom/android/sdk/ui/theme/IntercomBaseColors;Lio/intercom/android/sdk/ui/theme/IntercomTextColors;Lio/intercom/android/sdk/ui/theme/IntercomIconColors;Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJJJZ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getAction-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getOnAction-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getActionContrastWhite-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getOnActionContrastWhite-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getHeader-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getOnHeader-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getBase	()Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getText	()Lio/intercom/android/sdk/ui/theme/IntercomTextColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getIcon	()Lio/intercom/android/sdk/ui/theme/IntercomIconColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getContainer	()Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getBorder	()Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getSyntax	()Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getAlpha	()Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getBubbleBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getAdminBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getTimestampBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getSourceBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getInputAlt-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getPoweredByBackgroundColor-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getDisabled-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getComposerMediaBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getComposerMediaUploadingBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getComposerMediaUploadingForeground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getComposerMediaPlayBackground-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	isTyping-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getAdminBorder-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getCollectorBorder-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getSpecialNoticeBorder-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getDivider-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getCollectorSelected-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getBadge-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getSubmitted-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getActive-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getError-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	getShadow-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	isLight	()Z	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component4-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component5-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component6-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component7	()Lio/intercom/android/sdk/ui/theme/IntercomBaseColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component8	()Lio/intercom/android/sdk/ui/theme/IntercomTextColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component9	()Lio/intercom/android/sdk/ui/theme/IntercomIconColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component10	()Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component11	()Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component12	()Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component13	()Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component14-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component15-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component16-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component17-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component18-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component19-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component20-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component21-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component22-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component23-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component24-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component25-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component26-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component27-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component28-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component29-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component30-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component31-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component32-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component33-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component34-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component35-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	component36	()Z	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	copy-kz-0nr0	(JJJJJJLio/intercom/android/sdk/ui/theme/IntercomBaseColors;Lio/intercom/android/sdk/ui/theme/IntercomTextColors;Lio/intercom/android/sdk/ui/theme/IntercomIconColors;Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJJJZ)Lio/intercom/android/sdk/ui/theme/IntercomColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	copy-kz-0nr0$default	(Lio/intercom/android/sdk/ui/theme/IntercomColors;JJJJJJLio/intercom/android/sdk/ui/theme/IntercomBaseColors;Lio/intercom/android/sdk/ui/theme/IntercomTextColors;Lio/intercom/android/sdk/ui/theme/IntercomIconColors;Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJJJZIILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomColors	copy-kz-0nr0$default	(Lio/intercom/android/sdk/ui/theme/IntercomColors;JJJJJJLio/intercom/android/sdk/ui/theme/IntercomBaseColors;Lio/intercom/android/sdk/ui/theme/IntercomTextColors;Lio/intercom/android/sdk/ui/theme/IntercomIconColors;Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJJJZIILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomColors;	f7b337b106d9af47b4c957babf6ab6fde9bc7b3194bed8bd4de840d31341f552
+M	io/intercom/android/sdk/ui/theme/IntercomColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	<init>	(JJJJJJLio/intercom/android/sdk/ui/theme/IntercomBaseColors;Lio/intercom/android/sdk/ui/theme/IntercomTextColors;Lio/intercom/android/sdk/ui/theme/IntercomIconColors;Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;Lio/intercom/android/sdk/ui/theme/IntercomBorderColors;Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;Lio/intercom/android/sdk/ui/theme/IntercomAlphaColors;JJJJJJJJJJJJJJJJJJJJJJZLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomColorsKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/theme/IntercomColorsKt	io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme	io/intercom/android/sdk/ui/theme/BaseColors	NewColorScheme	25
+F	io/intercom/android/sdk/ui/theme/IntercomColorsKt	LocalIntercomColors	Landroidx/compose/runtime/ProvidableCompositionLocal;	26	Landroidx/compose/runtime/ProvidableCompositionLocal<Lio/intercom/android/sdk/ui/theme/IntercomColors;>;
+F	io/intercom/android/sdk/ui/theme/IntercomColorsKt	currentThemeMode	Landroidx/compose/runtime/MutableState;	10	Landroidx/compose/runtime/MutableState<Lio/intercom/android/sdk/ui/theme/ThemeMode;>;
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	getIntercomColors-nl4AeYM	(JJJJJJZ)Lio/intercom/android/sdk/ui/theme/IntercomColors;	25		
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	intercomLightColors	()Lio/intercom/android/sdk/ui/theme/IntercomColors;	25		
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	intercomDarkColors	()Lio/intercom/android/sdk/ui/theme/IntercomColors;	25		
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	toMaterialColors	(Lio/intercom/android/sdk/ui/theme/IntercomColors;)Landroidx/compose/material3/ColorScheme;	25		
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	getLocalIntercomColors	()Landroidx/compose/runtime/ProvidableCompositionLocal;	25	()Landroidx/compose/runtime/ProvidableCompositionLocal<Lio/intercom/android/sdk/ui/theme/IntercomColors;>;	
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	getCurrentThemeMode	()Landroidx/compose/runtime/MutableState;	25	()Landroidx/compose/runtime/MutableState<Lio/intercom/android/sdk/ui/theme/ThemeMode;>;	
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	setCurrentThemeMode	(Landroidx/compose/runtime/MutableState;)V	25	(Landroidx/compose/runtime/MutableState<Lio/intercom/android/sdk/ui/theme/ThemeMode;>;)V	
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	LocalIntercomColors$lambda$0	()Lio/intercom/android/sdk/ui/theme/IntercomColors;	26		
+M	io/intercom/android/sdk/ui/theme/IntercomColorsKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomContainerColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	neutral	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	emphasis	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	alt	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	red	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	blue	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	green	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	black	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	codeBlock	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomContainerColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	<init>	(JJJJJJJJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getNeutral-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getEmphasis-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getAlt-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getRed-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getBlue-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getGreen-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getBlack-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	getCodeBlock-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component4-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component5-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component6-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component7-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	component8-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	copy-FD3wquc	(JJJJJJJJ)Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	copy-FD3wquc$default	(Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;JJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomContainerColors	copy-FD3wquc$default	(Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;JJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomContainerColors;	da06e63e43be13b52c27e923b4316c31ce2ca128eba7ace9219f0306b87aa2bc
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	<init>	(JJJJJJJJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomContainerColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomIconColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	default	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	muted	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	mutedExtra	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	disabled	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	onInversed	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	error	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	success	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	notice	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomIconColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	<init>	(JJJJJJJJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getDefault-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getMuted-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getMutedExtra-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getDisabled-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getOnInversed-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getError-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getSuccess-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	getNotice-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component4-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component5-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component6-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component7-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	component8-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	copy-FD3wquc	(JJJJJJJJ)Lio/intercom/android/sdk/ui/theme/IntercomIconColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	copy-FD3wquc$default	(Lio/intercom/android/sdk/ui/theme/IntercomIconColors;JJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomIconColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomIconColors	copy-FD3wquc$default	(Lio/intercom/android/sdk/ui/theme/IntercomIconColors;JJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomIconColors;	885d2c1727ff7a2cf345bda853236434772fbe8f01178b3402bfae528b265842
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	<init>	(JJJJJJJJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomIconColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	keyword	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	string	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	number	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	comment	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	function	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	tag	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	operator	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	<init>	(JJJJJJJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getKeyword-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getString-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getNumber-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getComment-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getFunction-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getTag-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	getOperator-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component4-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component5-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component6-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	component7-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	copy-4JmcsL4	(JJJJJJJ)Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	copy-4JmcsL4$default	(Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;JJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	copy-4JmcsL4$default	(Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;JJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomSyntaxColors;	fb5fe1e8637d9ff9bd7f6b8696bd71825d62538f47e0429623e99529abe80a60
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	<init>	(JJJJJJJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomSyntaxColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomTextColors	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	default	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	muted	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	mutedExtra	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	disabled	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	onInversed	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	error	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	success	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	notice	J	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTextColors	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	<init>	(JJJJJJJJ)V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getDefault-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getMuted-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getMutedExtra-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getDisabled-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getOnInversed-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getError-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getSuccess-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	getNotice-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component1-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component2-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component3-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component4-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component5-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component6-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component7-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	component8-0d7_KjU	()J	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	copy-FD3wquc	(JJJJJJJJ)Lio/intercom/android/sdk/ui/theme/IntercomTextColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	copy-FD3wquc$default	(Lio/intercom/android/sdk/ui/theme/IntercomTextColors;JJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomTextColors;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomTextColors	copy-FD3wquc$default	(Lio/intercom/android/sdk/ui/theme/IntercomTextColors;JJJJJJJJILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomTextColors;	e3a20580128a9865504f7d6e101684430bf75ac2d6968735d761244749b46d43
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	<init>	(JJJJJJJJLkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/ui/theme/IntercomTextColors	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomTheme	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomTheme	INSTANCE	Lio/intercom/android/sdk/ui/theme/IntercomTheme;	25	
+F	io/intercom/android/sdk/ui/theme/IntercomTheme	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomTheme	<init>	()V	2		
+M	io/intercom/android/sdk/ui/theme/IntercomTheme	getColors	(Landroidx/compose/runtime/Composer;I)Lio/intercom/android/sdk/ui/theme/IntercomColors;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTheme	getTypography	(Landroidx/compose/runtime/Composer;I)Lio/intercom/android/sdk/ui/theme/IntercomTypography;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTheme	getShapes	(Landroidx/compose/runtime/Composer;I)Landroidx/compose/material3/Shapes;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTheme	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	52	48	java/lang/Object	Ljava/lang/Object;Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;	kotlin/jvm/functions/Function2
+E	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	io/intercom/android/sdk/ui/theme/IntercomThemeKt	IntercomTheme	(Lio/intercom/android/sdk/ui/theme/IntercomColors;Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/material3/Shapes;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+I	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1			24
+F	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	$intercomColors	Lio/intercom/android/sdk/ui/theme/IntercomColors;	4112	
+F	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	$typography	Lio/intercom/android/sdk/ui/theme/IntercomTypography;	4112	
+F	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	$shapes	Landroidx/compose/material3/Shapes;	4112	
+F	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	$content	Lkotlin/jvm/functions/Function2;	4112	Lkotlin/jvm/functions/Function2<Landroidx/compose/runtime/Composer;Ljava/lang/Integer;Lkotlin/Unit;>;
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	<init>	(Lio/intercom/android/sdk/ui/theme/IntercomColors;Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/material3/Shapes;Lkotlin/jvm/functions/Function2;)V	0	(Lio/intercom/android/sdk/ui/theme/IntercomColors;Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/material3/Shapes;Lkotlin/jvm/functions/Function2<-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;)V	
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	invoke	(Landroidx/compose/runtime/Composer;I)V	17		
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	4161		
+P	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1	invoke	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	c78e675acdabcb48d7af21f389e2b205d09540be4d461edf0645d0b205238663
+C	io/intercom/android/sdk/ui/theme/IntercomThemeKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/theme/IntercomThemeKt	io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1			24
+F	io/intercom/android/sdk/ui/theme/IntercomThemeKt	LocalShapes	Landroidx/compose/runtime/ProvidableCompositionLocal;	26	Landroidx/compose/runtime/ProvidableCompositionLocal<Landroidx/compose/material3/Shapes;>;
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt	IntercomTheme	(Lio/intercom/android/sdk/ui/theme/IntercomColors;Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/material3/Shapes;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V	25	(Lio/intercom/android/sdk/ui/theme/IntercomColors;Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/material3/Shapes;Lkotlin/jvm/functions/Function2<-Landroidx/compose/runtime/Composer;-Ljava/lang/Integer;Lkotlin/Unit;>;Landroidx/compose/runtime/Composer;II)V	
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt	isDarkThemeInEditMode	(Landroidx/compose/runtime/Composer;I)Z	26		
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt	getLocalShapes	()Landroidx/compose/runtime/ProvidableCompositionLocal;	25	()Landroidx/compose/runtime/ProvidableCompositionLocal<Landroidx/compose/material3/Shapes;>;	
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt	IntercomTheme$lambda$0	(Lio/intercom/android/sdk/ui/theme/IntercomColors;Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/material3/Shapes;Lkotlin/jvm/functions/Function2;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;	26		
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt	LocalShapes$lambda$1	()Landroidx/compose/material3/Shapes;	26		
+M	io/intercom/android/sdk/ui/theme/IntercomThemeKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomTypography	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type01	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type02	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type03	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type04	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type04SemiBold	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type04Point5	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	type05	Landroidx/compose/ui/text/TextStyle;	18	
+F	io/intercom/android/sdk/ui/theme/IntercomTypography	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	<init>	(Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;)V	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType01	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType02	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType03	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType04	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType04SemiBold	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType04Point5	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	getType05	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component1	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component2	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component3	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component4	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component5	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component6	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	component7	()Landroidx/compose/ui/text/TextStyle;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	copy	(Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;)Lio/intercom/android/sdk/ui/theme/IntercomTypography;	17		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	copy$default	(Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomTypography;	4105		
+P	io/intercom/android/sdk/ui/theme/IntercomTypography	copy$default	(Lio/intercom/android/sdk/ui/theme/IntercomTypography;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;ILjava/lang/Object;)Lio/intercom/android/sdk/ui/theme/IntercomTypography;	1372b3f93018ade63a13d149d571fc8290ebe7b7f6aa05a898b3d9bd5aa08657
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	toString	()Ljava/lang/String;	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	hashCode	()I	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/sdk/ui/theme/IntercomTypography	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	52	49	java/lang/Object		
+I	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	androidx/compose/ui/text/font/FontWeight$Companion	androidx/compose/ui/text/font/FontWeight	Companion	25
+F	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	LocalIntercomTypography	Landroidx/compose/runtime/ProvidableCompositionLocal;	26	Landroidx/compose/runtime/ProvidableCompositionLocal<Lio/intercom/android/sdk/ui/theme/IntercomTypography;>;
+M	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	defaultIntercomTypography	()Lio/intercom/android/sdk/ui/theme/IntercomTypography;	25		
+M	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	toMaterialTypography	(Lio/intercom/android/sdk/ui/theme/IntercomTypography;)Landroidx/compose/material3/Typography;	25		
+M	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	getLocalIntercomTypography	()Landroidx/compose/runtime/ProvidableCompositionLocal;	25	()Landroidx/compose/runtime/ProvidableCompositionLocal<Lio/intercom/android/sdk/ui/theme/IntercomTypography;>;	
+M	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	LocalIntercomTypography$lambda$0	()Lio/intercom/android/sdk/ui/theme/IntercomTypography;	26		
+M	io/intercom/android/sdk/ui/theme/IntercomTypographyKt	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/ThemeManager	52	49	java/lang/Object		
+F	io/intercom/android/sdk/ui/theme/ThemeManager	INSTANCE	Lio/intercom/android/sdk/ui/theme/ThemeManager;	25	
+F	io/intercom/android/sdk/ui/theme/ThemeManager	sessionOverride	Lio/intercom/android/sdk/ui/theme/ThemeMode;	10	
+F	io/intercom/android/sdk/ui/theme/ThemeManager	serverTheme	Lio/intercom/android/sdk/ui/theme/ThemeMode;	10	
+F	io/intercom/android/sdk/ui/theme/ThemeManager	$stable	I	25	
+M	io/intercom/android/sdk/ui/theme/ThemeManager	<init>	()V	2		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	initialize	()V	17		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	setSessionOverride	(Lio/intercom/android/sdk/ui/theme/ThemeMode;)V	17		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	clearSessionOverride	()V	17		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	updateServerTheme	(Lio/intercom/android/sdk/ui/theme/ThemeMode;)V	17		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	getCurrentThemeMode	()Lio/intercom/android/sdk/ui/theme/ThemeMode;	17		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	getThemeModeState	()Landroidx/compose/runtime/MutableState;	17	()Landroidx/compose/runtime/MutableState<Lio/intercom/android/sdk/ui/theme/ThemeMode;>;	
+M	io/intercom/android/sdk/ui/theme/ThemeManager	setThemeModeForTesting	(Lio/intercom/android/sdk/ui/theme/ThemeMode;)V	17		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	updateCurrentTheme	()V	18		
+M	io/intercom/android/sdk/ui/theme/ThemeManager	<clinit>	()V	8		
+C	io/intercom/android/sdk/ui/theme/ThemeMode	52	16433	java/lang/Enum	Ljava/lang/Enum<Lio/intercom/android/sdk/ui/theme/ThemeMode;>;	
+F	io/intercom/android/sdk/ui/theme/ThemeMode	SYSTEM	Lio/intercom/android/sdk/ui/theme/ThemeMode;	16409	
+F	io/intercom/android/sdk/ui/theme/ThemeMode	LIGHT	Lio/intercom/android/sdk/ui/theme/ThemeMode;	16409	
+F	io/intercom/android/sdk/ui/theme/ThemeMode	DARK	Lio/intercom/android/sdk/ui/theme/ThemeMode;	16409	
+F	io/intercom/android/sdk/ui/theme/ThemeMode	$VALUES	[Lio/intercom/android/sdk/ui/theme/ThemeMode;	4122	
+F	io/intercom/android/sdk/ui/theme/ThemeMode	$ENTRIES	Lkotlin/enums/EnumEntries;	4122	
+M	io/intercom/android/sdk/ui/theme/ThemeMode	<init>	(Ljava/lang/String;I)V	2	()V	
+M	io/intercom/android/sdk/ui/theme/ThemeMode	values	()[Lio/intercom/android/sdk/ui/theme/ThemeMode;	9		
+M	io/intercom/android/sdk/ui/theme/ThemeMode	valueOf	(Ljava/lang/String;)Lio/intercom/android/sdk/ui/theme/ThemeMode;	9		
+M	io/intercom/android/sdk/ui/theme/ThemeMode	getEntries	()Lkotlin/enums/EnumEntries;	9	()Lkotlin/enums/EnumEntries<Lio/intercom/android/sdk/ui/theme/ThemeMode;>;	
+M	io/intercom/android/sdk/ui/theme/ThemeMode	$values	()[Lio/intercom/android/sdk/ui/theme/ThemeMode;	4122		
+P	io/intercom/android/sdk/ui/theme/ThemeMode	$values	()[Lio/intercom/android/sdk/ui/theme/ThemeMode;	d7a76ffe8b76dba498d89a1118a162b0e6ecf9922008aed22a28bf9d3b9463a9
+M	io/intercom/android/sdk/ui/theme/ThemeMode	<clinit>	()V	8		

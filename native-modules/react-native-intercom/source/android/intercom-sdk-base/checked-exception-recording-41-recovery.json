@@ -1,0 +1,11 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "voice_source_before_sha256": "0b58b3d9ea22aaae307b4cde9f9717426114cbca6ef306fb938294c4348094d9",
+  "voice_source_after_sha256": "ab2496ce3f7407aad41c58e264f7e9860e47f426e449788b731dbd0630e6567a",
+  "scope": [
+    "Restore only exact original runBlocking$default InterruptedException declaration in compile view; preserve source InterruptedException\u2192reinterrupt/cache fallback before Exception catch. Four existing callers all have compatible original catches. Runtime jar untouched, synthetic default remains visible.",
+    "Voice inline Result original raw stopRecording result98/store101\u2192exceptionOrNull105\u2192throwOnFailure160\u2192RecordedAudioFile CHECKCAST165; distinct later MutableStateFlow lifetimes. No early business/flow cast. Existing failures/cleanup/state jobs/suspend fields/labels/handler boundaries unchanged."
+  ],
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/checked-exception-and-recording-41",
+  "code_backfill": false
+}

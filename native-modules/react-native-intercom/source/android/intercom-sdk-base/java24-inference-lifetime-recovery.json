@@ -1,0 +1,54 @@
+{
+  "status": "SOURCE_LIVE_RANGES_SPLIT_NOT_COMPILED",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/arraylist-inference",
+  "changes": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationPartsReducerKt.java",
+      "before": "List var78 = var111;",
+      "after": "Collection var78 = var111;"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationPartsReducerKt.java",
+      "before": "destination$iv$ivxx = var64;",
+      "after": "Iterable recoveredParts = var64;"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationPartsReducerKt.java",
+      "before": "Iterable var94 = destination$iv$ivxx;",
+      "after": "Iterable var94 = recoveredParts;"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationPartsReducerKt.java",
+      "before": "Collection destination$iv$ivxxx = new ArrayList(CollectionsKt.collectionSizeOrDefault(destination$iv$ivxx, 10));",
+      "after": "Collection destination$iv$ivxxx = new ArrayList(CollectionsKt.collectionSizeOrDefault(recoveredParts, 10));"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/QuestionState.java",
+      "before": "Reuse ArrayList slot8 for later Iterable iteration",
+      "after": "Separate recoveredStatuses Iterable live range; preserve initial ArrayList/map"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1.java",
+      "before": "destination$iv$ivxx = (List)destination$iv$ivxxx;",
+      "after": "List recoveredDividers = (List)destination$iv$ivxxx;",
+      "unrestored": "Existing lambda factory reference is still unrestored; its 10th captured List must use recoveredDividers, never the earlier row-height ArrayList"
+    }
+  ],
+  "table_lambda_capture_override": {
+    "site": 1297,
+    "owner": "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+    "method": "recovered$3f4264a38d526aac",
+    "descriptor": "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+    "bci": 985,
+    "target": [
+      "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+      "measure_3p2s80s$lambda$7",
+      "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;"
+    ],
+    "capture_index": 9,
+    "original_slot": 18,
+    "source_name": "recoveredDividers",
+    "status": "REQUIRED_WHEN_UNRESTORED_FACTORY_IS_RECONSTRUCTED"
+  },
+  "rule": "Split only original-javap-proved reused slot lifetimes; no ArrayList casts, erased field/type changes or default-branch removal"
+}

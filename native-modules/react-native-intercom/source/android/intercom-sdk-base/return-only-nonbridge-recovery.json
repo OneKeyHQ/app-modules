@@ -1,0 +1,42 @@
+{
+  "scope": "Two nonbridge return-only getter conflicts; both implementations retained",
+  "entries": [
+    {
+      "owner": "io/intercom/android/sdk/m5/push/SimplePushData",
+      "name": "getMessageData",
+      "descriptor": "()Ljava/lang/String;",
+      "source_alias": "recoveredReturn$0f5ca4a8a6d2ec73",
+      "original_descriptor_references": [],
+      "status": "SOURCE_ALIASED_NOT_COMPILED"
+    },
+    {
+      "owner": "io/intercom/android/sdk/survey/ui/models/Answer$MultipleAnswer",
+      "name": "getAnswers",
+      "descriptor": "()Ljava/util/Set;",
+      "source_alias": "recoveredReturn$bf3409efca2cfb1e",
+      "original_descriptor_references": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/survey/ui/questiontype/choice/MultipleChoiceQuestionKt",
+          "MultipleChoiceQuestion",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$MultipleChoiceQuestionModel;Lio/intercom/android/sdk/survey/ui/models/Answer;Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/survey/SurveyUiColors;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/ui/models/Answer$MultipleAnswer",
+          "getAnswers",
+          "()Ljava/util/Set;",
+          "182"
+        ],
+        [
+          "CALL",
+          "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModelKt",
+          "formatAnswerForServer",
+          "(Lio/intercom/android/sdk/survey/QuestionState;)Ljava/lang/Object;",
+          "io/intercom/android/sdk/survey/ui/models/Answer$MultipleAnswer",
+          "getAnswers",
+          "()Ljava/util/Set;",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIASED_NOT_COMPILED"
+    }
+  ]
+}

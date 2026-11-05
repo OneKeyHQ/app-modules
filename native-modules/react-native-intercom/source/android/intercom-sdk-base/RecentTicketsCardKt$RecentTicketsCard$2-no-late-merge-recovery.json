@@ -1,0 +1,90 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+  "root_only": true,
+  "source_before_sha256": "65d6fdc2c738a6e2265a6942652e5f64484f3a5d47e3e08cb09b96e1d536da45",
+  "source_after_sha256": "ecc67e63ff5db3c613b828521c79948a9a6b193f6d395afcd171342df75c35f7",
+  "source_capture_sites": 1,
+  "source_capture_bindings": 2,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-RecentTicketsCardKt$RecentTicketsCard$2/ast-input/io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2.java",
+      "3778",
+      "3852",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.tickets.RecentTicketsCardKt$RecentTicketsCard$2.invoke$lambda$2$lambda$1$lambda$0(recoveredExpressionCapture_1529_0, recoveredExpressionCapture_1529_1))",
+      "3760",
+      "final kotlin.jvm.functions.Function1 recoveredExpressionCapture_1529_0 = var4;\\n               final io.intercom.android.sdk.models.Ticket recoveredExpressionCapture_1529_1 = var8;\\n               ",
+      "1529",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Lkotlin/jvm/functions/Function1;=var4,Lio/intercom/android/sdk/models/Ticket;=var8",
+      "recoveredExpressionCapture_1529_0=var4@2618:LOCAL|4|4|0|var4|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_1529_1=var8@2722:LOCAL|8|8|0|var8|Lio/intercom/android/sdk/models/Ticket;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1529,
+      "original": [
+        "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "120",
+        "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+        "invoke$lambda$2$lambda$1$lambda$0",
+        "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/models/Ticket;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function1;=var4,Lio/intercom/android/sdk/models/Ticket;=var8",
+        "191"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+          "invoke$lambda$2$lambda$1$lambda$0",
+          "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/models/Ticket;)Lkotlin/Unit;",
+          "{187, 188, 189, 190, 191, 192, 193, 194, 195}",
+          "LOCAL|4|4|0|var4|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|8|8|0|var8|Lio/intercom/android/sdk/models/Ticket;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+          "invoke$lambda$2$lambda$1$lambda$0",
+          "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/models/Ticket;)Lkotlin/Unit;",
+          "{187, 188, 189, 190, 191, 192, 193, 194, 195}",
+          "LOCAL|4|4|0|var4|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|8|8|0|var8|Lio/intercom/android/sdk/models/Ticket;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "191",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/tickets/RecentTicketsCardKt$RecentTicketsCard$2.invoke$lambda$2$lambda$1$lambda$0(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/models/Ticket;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

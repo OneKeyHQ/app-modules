@@ -1,0 +1,86 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+  "root_only": true,
+  "source_before_sha256": "ae64d460a7640a60b5d2387c098fe7694ee630703626e2ad07960bf047d70832",
+  "source_after_sha256": "aaa4ba4e792d98ce7ec39050435508d882d0a0f35bf0983cc2a43e4d38f0c960",
+  "source_capture_sites": 1,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 11,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1/ast-input/io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+      "4314",
+      "4414",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.home.ui.header.ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1.invoke$lambda$2$lambda$1())",
+      "4296",
+      "",
+      "937",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 937,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "196",
+        "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+        "invoke$lambda$2$lambda$1",
+        "()Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "",
+        "277"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke$lambda$2$lambda$1",
+          "()Lkotlin/Unit;",
+          "{277, 278, 279, 280, 281}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke$lambda$2$lambda$1",
+          "()Lkotlin/Unit;",
+          "{277, 278, 279, 280, 281}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "277",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/ComposableSingletons$HomeHeaderBackdropKt$RecoveredInner117a8bc0ad94bbf2$1.invoke$lambda$2$lambda$1()Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

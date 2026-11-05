@@ -1,0 +1,456 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+  "root_only": true,
+  "source_before_sha256": "8e114710df0118d77152c21c81a11a0f9fabb79738e1542e523024b64f1731eb",
+  "source_after_sha256": "f8437ffe7174c956f4cf1a47e40e15549783025ebd7e41342750e1c315d424c0",
+  "source_capture_sites": 6,
+  "source_capture_bindings": 7,
+  "declaration_check_exit": 0,
+  "type_edits": 25,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomArticleActivity$onCreate$1$1$3/ast-input/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "18535",
+      "18601",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$13$lambda$12(recoveredExpressionCapture_87_0))",
+      "18517",
+      "final io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity recoveredExpressionCapture_87_0 = var70;\\n                  ",
+      "87",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var13",
+      "recoveredExpressionCapture_87_0=var70@18002:LOCAL|13|70|0|var70|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomArticleActivity$onCreate$1$1$3/ast-input/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "10307",
+      "10381",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_88_0) -> io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$2$lambda$1(recoveredExpressionCapture_88_0, recoveredExpressionCapture_88_1, recoveredExpressionCapture_88_2, (android.content.Context) ((android.content.Context)recoveredExpressionArgument_88_0)))",
+      "10292",
+      "final io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity recoveredExpressionCapture_88_0 = var10;\\n               final java.lang.String recoveredExpressionCapture_88_1 = var35;\\n               final java.util.Map recoveredExpressionCapture_88_2 = var37;\\n               ",
+      "88",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10,Ljava/lang/String;=var35,Ljava/util/Map;=var37",
+      "recoveredExpressionCapture_88_0=var10@6362:LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;;recoveredExpressionCapture_88_1=var35@9358:LOCAL|35|35|0|var35|Ljava/lang/String;;recoveredExpressionCapture_88_2=var37@9692:LOCAL|37|37|0|var37|Ljava/util/Map;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomArticleActivity$onCreate$1$1$3/ast-input/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "11250",
+      "11324",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_89_0) -> io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$4$lambda$3((android.webkit.WebView) ((android.webkit.WebView)recoveredExpressionArgument_89_0)))",
+      "11232",
+      "",
+      "89",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomArticleActivity$onCreate$1$1$3/ast-input/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "12998",
+      "13072",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$6$lambda$5(recoveredExpressionCapture_90_0))",
+      "12979",
+      "final io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity recoveredExpressionCapture_90_0 = var10;\\n                  ",
+      "90",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10",
+      "recoveredExpressionCapture_90_0=var10@6362:LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomArticleActivity$onCreate$1$1$3/ast-input/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "14230",
+      "14304",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$8$lambda$7(recoveredExpressionCapture_91_0))",
+      "14212",
+      "final io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity recoveredExpressionCapture_91_0 = var10;\\n                  ",
+      "91",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10",
+      "recoveredExpressionCapture_91_0=var10@6362:LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-IntercomArticleActivity$onCreate$1$1$3/ast-input/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "15553",
+      "15628",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$10$lambda$9(recoveredExpressionCapture_92_0))",
+      "15535",
+      "final io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity recoveredExpressionCapture_92_0 = var10;\\n                  ",
+      "92",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10",
+      "recoveredExpressionCapture_92_0=var10@6362:LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 87,
+      "original": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1070",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke$lambda$13$lambda$12",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var13",
+        "1600"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$13$lambda$12",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1598, 1599, 1600, 1601, 1602, 1603, 1604}",
+          "LOCAL|13|70|0|var70|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$13$lambda$12",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1598, 1599, 1600, 1601, 1602, 1603, 1604}",
+          "LOCAL|13|70|0|var70|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1600",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$13$lambda$12(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 88,
+      "original": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "484",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke$lambda$11$lambda$2$lambda$1",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;Ljava/util/Map;Landroid/content/Context;)Landroid/webkit/WebView;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroid/content/Context;)Landroid/webkit/WebView;",
+        "kotlin/jvm/functions/Function1",
+        "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10,Ljava/lang/String;=var35,Ljava/util/Map;=var37",
+        "746"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$2$lambda$1",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;Ljava/util/Map;Landroid/content/Context;)Landroid/webkit/WebView;",
+          "{740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+          "LOCAL|35|35|0|var35|Ljava/lang/String;",
+          "LOCAL|37|37|0|var37|Ljava/util/Map;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$2$lambda$1",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;Ljava/util/Map;Landroid/content/Context;)Landroid/webkit/WebView;",
+          "{740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+          "LOCAL|35|35|0|var35|Ljava/lang/String;",
+          "LOCAL|37|37|0|var37|Ljava/util/Map;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "746",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$2$lambda$1(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;Ljava/util/Map;Landroid/content/Context;)Landroid/webkit/WebView; (6), (Landroid/content/Context;)Landroid/webkit/WebView;]"
+      ]
+    },
+    {
+      "site": 89,
+      "original": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "554",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke$lambda$11$lambda$4$lambda$3",
+        "(Landroid/webkit/WebView;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroid/webkit/WebView;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "845"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$4$lambda$3",
+          "(Landroid/webkit/WebView;)Lkotlin/Unit;",
+          "{845, 846, 847, 848, 849}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$4$lambda$3",
+          "(Landroid/webkit/WebView;)Lkotlin/Unit;",
+          "{845, 846, 847, 848, 849}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "845",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$4$lambda$3(Landroid/webkit/WebView;)Lkotlin/Unit; (6), (Landroid/webkit/WebView;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 90,
+      "original": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "683",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke$lambda$11$lambda$6$lambda$5",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10",
+        "1037"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$6$lambda$5",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1035, 1036, 1037, 1038, 1039, 1040, 1041}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$6$lambda$5",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1035, 1036, 1037, 1038, 1039, 1040, 1041}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1037",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$6$lambda$5(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 91,
+      "original": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "765",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke$lambda$11$lambda$8$lambda$7",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10",
+        "1160"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$8$lambda$7",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1158, 1159, 1160, 1161, 1162, 1163, 1164}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$8$lambda$7",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1158, 1159, 1160, 1161, 1162, 1163, 1164}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1160",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$8$lambda$7(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 92,
+      "original": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "849",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke$lambda$11$lambda$10$lambda$9",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=var10",
+        "1287"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$10$lambda$9",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1285, 1286, 1287, 1288, 1289, 1290, 1291}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+          "invoke$lambda$11$lambda$10$lambda$9",
+          "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit;",
+          "{1285, 1286, 1287, 1288, 1289, 1290, 1291}",
+          "LOCAL|10|10|0|var10|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1287",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.invoke$lambda$11$lambda$10$lambda$9(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3.java",
+      "start": 15107,
+      "end": 15115,
+      "replacement": "(kotlin.jvm.functions.Function0) var10003",
+      "owner": "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3",
+      "method": "invoke",
+      "descriptor": "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "composer_group_key": -286358965,
+      "function_type": "kotlin/jvm/functions/Function0",
+      "original_checkcast_bci": 1195,
+      "original_store_slot": 39,
+      "source_line": 276,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

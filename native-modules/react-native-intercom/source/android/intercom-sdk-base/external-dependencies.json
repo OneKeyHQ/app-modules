@@ -1,0 +1,1182 @@
+[
+  {
+    "group": "androidx.databinding",
+    "artifact": "viewbinding",
+    "version": "8.10.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/databinding/viewbinding/8.10.1/viewbinding-8.10.1.aar",
+    "sha256": "8752266dccb7d24416113c400ad7f81d023533fed8eb800fb830e101623744e2",
+    "classpath_name": "dependency-000.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-parcelize-runtime",
+    "version": "2.0.20",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-parcelize-runtime/2.0.20/kotlin-parcelize-runtime-2.0.20.jar",
+    "sha256": "3f2ec02a496efeb9e56166dfb86c741ac6bbd8f238ed0aea6e1ed04b7bcd5cd7",
+    "classpath_name": "dependency-001.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.appcompat",
+    "artifact": "appcompat-resources",
+    "version": "1.8.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/appcompat/appcompat-resources/1.8.0/appcompat-resources-1.8.0.aar",
+    "sha256": "3fe48cc3df409bed03063a4f5f5f9f8c51f1d63ea9e88d41e6489bf58495a5af",
+    "classpath_name": "dependency-002.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.appcompat",
+    "artifact": "appcompat",
+    "version": "1.8.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/appcompat/appcompat/1.8.0/appcompat-1.8.0.aar",
+    "sha256": "773f79306eb0ca2447af8752e923ce6269e201e7fe6b275cc76e2998ee87e838",
+    "classpath_name": "dependency-003.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.fragment",
+    "artifact": "fragment-ktx",
+    "version": "1.9.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/fragment/fragment-ktx/1.9.0/fragment-ktx-1.9.0.aar",
+    "sha256": "824dc0f8c399a859bb8a3e181d5ee4ba6c4dee6f3154f2a1d8560a9cf191217d",
+    "classpath_name": "dependency-004.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.fragment",
+    "artifact": "fragment",
+    "version": "1.9.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/fragment/fragment/1.9.0/fragment-1.9.0.aar",
+    "sha256": "8e9070295de026efd015ef9cc6156caacd2509300fdf0bc9c7ccbc78c476ab4b",
+    "classpath_name": "dependency-005.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.navigation",
+    "artifact": "navigation-common-android",
+    "version": "2.9.8",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-common-android/2.9.8/navigation-common-release.aar",
+    "sha256": "d43832772012afa0d5c71d03153aef764f1c5f683fe7605f0db77cada8515102",
+    "classpath_name": "dependency-006.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.navigation",
+    "artifact": "navigation-compose-android",
+    "version": "2.9.8",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-compose-android/2.9.8/navigation-compose-release.aar",
+    "sha256": "53dccc442276cde3898751f53fcc869f335340fd677fb1ca5c6c0abc0575d180",
+    "classpath_name": "dependency-007.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.navigation",
+    "artifact": "navigation-runtime-android",
+    "version": "2.9.8",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-runtime-android/2.9.8/navigation-runtime-release.aar",
+    "sha256": "7d741a3b0a299a8c8990712009c63bfca8d52d060afe8f5ad9c200619f113237",
+    "classpath_name": "dependency-008.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity-ktx",
+    "version": "1.13.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity-ktx/1.13.0/activity-ktx-1.13.0.aar",
+    "sha256": "b5541dc5f74e35389f1e9fdca8b5770c49d2c1360de16f398ce5c1e07a003244",
+    "classpath_name": "dependency-009.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity",
+    "version": "1.13.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.13.0/activity-1.13.0.aar",
+    "sha256": "bd4f19a5f00effed0eecad0a310b1f2169b9fc66236a3ba743a222eb77747ee1",
+    "classpath_name": "dependency-010.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity-compose",
+    "version": "1.13.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar",
+    "sha256": "2b5da3033d4924e833868e140c3edfc0c03208710b6b9fb2c9d9a47560ba55fa",
+    "classpath_name": "dependency-011.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.loader",
+    "artifact": "loader",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+    "sha256": "11f735cb3b55c458d470bed9e25254375b518b4b1bad6926783a7026db0f5025",
+    "classpath_name": "dependency-012.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.paging",
+    "artifact": "paging-common-android",
+    "version": "3.5.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/paging/paging-common-android/3.5.1/paging-common.aar",
+    "sha256": "4ec4403d47c50628fe85a9c35bc3dc13a30a7ae85f101eee3a55252bc7490c30",
+    "classpath_name": "dependency-013.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.paging",
+    "artifact": "paging-common-ktx",
+    "version": "3.5.1",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/paging/paging-common-ktx/3.5.1/paging-common-ktx-3.5.1.jar",
+    "sha256": "6517ee98aed511c5fd960f7828d7b7cd926cdadcf5898028615befb8a408579b",
+    "classpath_name": "dependency-014.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.paging",
+    "artifact": "paging-compose-android",
+    "version": "3.5.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/paging/paging-compose-android/3.5.1/paging-compose.aar",
+    "sha256": "74f7948c2ae2322b607eca97ecac098cbba90727b761d9dd968d251e2971ddaa",
+    "classpath_name": "dependency-015.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.paging",
+    "artifact": "paging-runtime-ktx",
+    "version": "3.5.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/paging/paging-runtime-ktx/3.5.1/paging-runtime-ktx-3.5.1.aar",
+    "sha256": "be3d87d5d4a02bf2b8dc2a28c51d6749a3c4fd72ef2f5f4ae0849854524bea28",
+    "classpath_name": "dependency-016.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.paging",
+    "artifact": "paging-runtime",
+    "version": "3.5.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/paging/paging-runtime/3.5.1/paging-runtime-3.5.1.aar",
+    "sha256": "eb09da9e8444f4055f2026ab3d8c8027eb3083a80ee8561eb3087ae63e7e5c3b",
+    "classpath_name": "dependency-017.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-gif",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-gif/2.7.0/coil-gif-2.7.0.aar",
+    "sha256": "e1d2729f1971eee2957664273b84b6efc8d002ebe32a5cb6094084d9c8a98b40",
+    "classpath_name": "dependency-018.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-compose",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-compose/2.7.0/coil-compose-2.7.0.aar",
+    "sha256": "8d2ead07c9c9a08696be52a03e689a4afe57d57610e7bf9f05fd88893ee76935",
+    "classpath_name": "dependency-019.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-compose-base",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-compose-base/2.7.0/coil-compose-base-2.7.0.aar",
+    "sha256": "2885960db57beb8a7d521810386f48b98b2c21c0350bfd9d9e80d812d25b2eb1",
+    "classpath_name": "dependency-020.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil/2.7.0/coil-2.7.0.aar",
+    "sha256": "6e8e46eb813c7290c5ae9954d43f3ffa022c0500096ed4585801a38262b3f851",
+    "classpath_name": "dependency-021.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-base",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-base/2.7.0/coil-base-2.7.0.aar",
+    "sha256": "f45c1e118038266734321f54c3b84ce2d52b491bb00481134724ac33d3d5e2b2",
+    "classpath_name": "dependency-022.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.drawerlayout",
+    "artifact": "drawerlayout",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/drawerlayout/drawerlayout/1.0.0/drawerlayout-1.0.0.aar",
+    "sha256": "9402442cdc5a43cf62fb14f8cf98c63342d4d9d9b805c8033c6cf7e802749ac1",
+    "classpath_name": "dependency-023.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.vectordrawable",
+    "artifact": "vectordrawable-animated",
+    "version": "1.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/vectordrawable/vectordrawable-animated/1.1.0/vectordrawable-animated-1.1.0.aar",
+    "sha256": "76da2c502371d9c38054df5e2b248d00da87809ed058f3363eae87ce5e2403f8",
+    "classpath_name": "dependency-024.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.vectordrawable",
+    "artifact": "vectordrawable",
+    "version": "1.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/vectordrawable/vectordrawable/1.1.0/vectordrawable-1.1.0.aar",
+    "sha256": "46fd633ac01b49b7fcabc263bf098c5a8b9e9a69774d234edcca04fb02df8e26",
+    "classpath_name": "dependency-025.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.viewpager",
+    "artifact": "viewpager",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+    "sha256": "147af4e14a1984010d8f155e5e19d781f03c1d70dfed02a8e0d18428b8fc8682",
+    "classpath_name": "dependency-026.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.recyclerview",
+    "artifact": "recyclerview",
+    "version": "1.2.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/recyclerview/recyclerview/1.2.1/recyclerview-1.2.1.aar",
+    "sha256": "a1ea0329ee6d938305dfd0f8ce5c48dea2aac14e5606d23e7fb60afcfb655d6e",
+    "classpath_name": "dependency-027.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.customview",
+    "artifact": "customview",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+    "sha256": "20e5b8f6526a34595a604f56718da81167c0b40a7a94a57daa355663f2594df2",
+    "classpath_name": "dependency-028.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core",
+    "version": "1.18.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core/1.18.0/core-1.18.0.aar",
+    "sha256": "311d83ac67d394076ec21d12ed2d10a44b59cb2929b7dce00e5a90a93842e37d",
+    "classpath_name": "dependency-029.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core",
+    "version": "1.18.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core/1.18.0/core-1.18.0.aar",
+    "sha256": "311d83ac67d394076ec21d12ed2d10a44b59cb2929b7dce00e5a90a93842e37d",
+    "classpath_name": "dependency-030.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.material3",
+    "artifact": "material3-android",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/material3/material3-android/1.4.0/material3.aar",
+    "sha256": "3a37e8b36df3822fe1e6059f0f9fafda8800388860477624ac1b9422c418a36e",
+    "classpath_name": "dependency-031.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.foundation",
+    "artifact": "foundation-layout-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-layout-android/1.11.4/foundation-layout.aar",
+    "sha256": "23ff32f548deccf48d1e2094a868b08ed738a01de1d65940d68633bcdd04bf33",
+    "classpath_name": "dependency-032.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.material",
+    "artifact": "material-ripple-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/material/material-ripple-android/1.11.4/material-ripple.aar",
+    "sha256": "38bd10db57ffd6f82fc6f32443e379fb640ae93e138bdd31daea0d584441b10e",
+    "classpath_name": "dependency-033.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.foundation",
+    "artifact": "foundation-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.11.4/foundation.aar",
+    "sha256": "a6aac6be46b7756982436b11118d3e630f9a1845e167bf821ae6986ef2c45895",
+    "classpath_name": "dependency-034.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.animation",
+    "artifact": "animation-core-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.11.4/animation-core.aar",
+    "sha256": "66d489454bfcb1230b60ae33c3c1c6c756358ce0ba3ca96c98cda9430c67e21f",
+    "classpath_name": "dependency-035.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.animation",
+    "artifact": "animation-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-android/1.11.4/animation.aar",
+    "sha256": "4a9534afa595551d97b991319055c73b76014a89cf43b811aa99102e2d6ffd73",
+    "classpath_name": "dependency-036.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-util-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.11.4/ui-util.aar",
+    "sha256": "d6ca2aaed3f71455988b2d7bcc708d7811640309e12f0482598f9d318d1efa45",
+    "classpath_name": "dependency-037.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-unit-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.11.4/ui-unit.aar",
+    "sha256": "8b778afa16102b89da672c3324566e66bbf90e29a2fc7acdc1db1595d976933f",
+    "classpath_name": "dependency-038.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-graphics-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-graphics-android/1.11.4/ui-graphics.aar",
+    "sha256": "4ccaf8e169c158f74c15a1377a28d62197f8ca209db1a997a81a54624f5db306",
+    "classpath_name": "dependency-039.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-geometry-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-geometry-android/1.11.4/ui-geometry.aar",
+    "sha256": "393066ecd102f8cd60e585367dd7bc1c5d2d3ecc3ed82a43aab0668e5ce85285",
+    "classpath_name": "dependency-040.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-text-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.11.4/ui-text.aar",
+    "sha256": "01284212abb9ab6bba5de336adbe392888bba53711d8293c6713f5c2b56313fd",
+    "classpath_name": "dependency-041.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-tooling-preview-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-preview-android/1.11.4/ui-tooling-preview.aar",
+    "sha256": "86124401724b7e188b09af7f6b5cde5b215a3a273f3d7d6f8a15f898b5803793",
+    "classpath_name": "dependency-042.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-android/1.11.4/ui.aar",
+    "sha256": "893c3b0a4f90631bbd8cc053a0271e51c525b427b900cc10c6f1a4b3c89e3041",
+    "classpath_name": "dependency-043.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime-compose-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-android/2.10.0/lifecycle-runtime-compose.aar",
+    "sha256": "46e996d526829596f6db4626169a967f056fde7103507ff596bcd177b73c3675",
+    "classpath_name": "dependency-044.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata-core-ktx",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core-ktx/2.10.0/lifecycle-livedata-core-ktx-2.10.0.aar",
+    "sha256": "5f18429749a183e19178d8665ae42bf7b6310b50358ae9e0e0cc452afd6e0bc3",
+    "classpath_name": "dependency-045.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata/2.10.0/lifecycle-livedata-2.10.0.aar",
+    "sha256": "3e8c009fc88da1c52e4ed05a81269d5ac9bd405046f300307f5e3a17e201a6df",
+    "classpath_name": "dependency-046.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata/2.10.0/lifecycle-livedata-2.10.0.aar",
+    "sha256": "3e8c009fc88da1c52e4ed05a81269d5ac9bd405046f300307f5e3a17e201a6df",
+    "classpath_name": "dependency-047.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-common-jvm",
+    "version": "2.10.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-jvm/2.10.0/lifecycle-common-jvm-2.10.0.jar",
+    "sha256": "15943082d87bcd78830398fa377f2c8b12643de290d0906ed8e49a2d335ddb54",
+    "classpath_name": "dependency-048.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-android/2.10.0/lifecycle-runtime.aar",
+    "sha256": "2193a1573d623f37b20c7d27d1a8f903a72f651cc6f32e5794f85dda744fee75",
+    "classpath_name": "dependency-049.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata-ktx",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-ktx/2.10.0/lifecycle-livedata-ktx-2.10.0.aar",
+    "sha256": "3b42f425ab72b1d142ada7e075d78d9ab1500703729c1a342148eff4c0c23dcf",
+    "classpath_name": "dependency-050.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel/2.10.0/lifecycle-viewmodel-2.10.0.aar",
+    "sha256": "4b809cf9eb7323d200504e95921feb777ff080215cadb8237742d5ed0ba5b792",
+    "classpath_name": "dependency-051.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-android/2.10.0/lifecycle-viewmodel.aar",
+    "sha256": "9303287030027ca0b8cf98a748ddeb121ec1bfa1312c0069428e4765bbabce78",
+    "classpath_name": "dependency-052.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata-core",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core/2.10.0/lifecycle-livedata-core-2.10.0.aar",
+    "sha256": "12dd61a9843ccebb4547d3ebe2f6d030ca8f6988d22f8fad19c0af93b4a97e95",
+    "classpath_name": "dependency-053.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-compose-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-compose-android/2.10.0/lifecycle-viewmodel-compose.aar",
+    "sha256": "225904e54ad5154768630471e108b98e143c261df0c08380ff43ea7e832dad7e",
+    "classpath_name": "dependency-054.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime-ktx-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-ktx-android/2.10.0/lifecycle-runtime-ktx.aar",
+    "sha256": "871883703339f87284d232cb436e317c6f4af5612d92b43f27c6b13b92109fa7",
+    "classpath_name": "dependency-055.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-ktx",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-ktx/2.10.0/lifecycle-viewmodel-ktx-2.10.0.aar",
+    "sha256": "54295ac86b67886dc0613e38f621c531995d0662005fc763e340e19a90994f84",
+    "classpath_name": "dependency-056.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-savedstate-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-android/2.10.0/lifecycle-viewmodel-savedstate.aar",
+    "sha256": "19404239fa584322c2f81e9659e162bc011b746d29dc950a11d260624d83225e",
+    "classpath_name": "dependency-057.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core-ktx",
+    "version": "1.18.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.18.0/core-ktx-1.18.0.aar",
+    "sha256": "c7c511e3df838fcbcb61ace36944de6bb7c10eb597be546974f001119939c85d",
+    "classpath_name": "dependency-058.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.accompanist",
+    "artifact": "accompanist-placeholder",
+    "version": "0.36.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/accompanist/accompanist-placeholder/0.36.0/accompanist-placeholder-0.36.0.aar",
+    "sha256": "ab05b8f61a9ed8a384ae4ffd06ad40197bd7e3e6a4bf68d5ddffee919846316f",
+    "classpath_name": "dependency-059.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-android-extensions-runtime",
+    "version": "2.0.20",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-android-extensions-runtime/2.0.20/kotlin-android-extensions-runtime-2.0.20.jar",
+    "sha256": "a72e14b4aee164e1e81d56169554a1514ec5c623574ae0ed589235e59fe9b68b",
+    "classpath_name": "dependency-060.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.facebook.shimmer",
+    "artifact": "shimmer",
+    "version": "0.5.0",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/com/facebook/shimmer/shimmer/0.5.0/shimmer-0.5.0.aar",
+    "sha256": "d3cb19d35b5b5090b23ea007d3281c4ba54164e702175406f9d3973690104bea",
+    "classpath_name": "dependency-061.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.cursoradapter",
+    "artifact": "cursoradapter",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/cursoradapter/cursoradapter/1.0.0/cursoradapter-1.0.0.aar",
+    "sha256": "a81c8fe78815fa47df5b749deb52727ad11f9397da58b16017f4eb2c11e28564",
+    "classpath_name": "dependency-062.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.datastore",
+    "artifact": "datastore-core-okio-jvm",
+    "version": "1.2.1",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/datastore/datastore-core-okio-jvm/1.2.1/datastore-core-okio-jvm-1.2.1.jar",
+    "sha256": "7ade6239a67674834f5724428e772c4176229ed30be253ac7e52082a2907ee05",
+    "classpath_name": "dependency-063.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.datastore",
+    "artifact": "datastore-preferences-core-android",
+    "version": "1.2.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/datastore/datastore-preferences-core-android/1.2.1/datastore-preferences-core.aar",
+    "sha256": "48c2235e576fb015f861726e79ee9474948e37da31d2c887c16ebeb46817059f",
+    "classpath_name": "dependency-064.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.datastore",
+    "artifact": "datastore-android",
+    "version": "1.2.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/datastore/datastore-android/1.2.1/datastore.aar",
+    "sha256": "c4cc022986cce743a70ef6d0b6f8904c8fcab48ed3a5ff784202788400e0f679",
+    "classpath_name": "dependency-065.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.datastore",
+    "artifact": "datastore-preferences-android",
+    "version": "1.2.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/datastore/datastore-preferences-android/1.2.1/datastore-preferences.aar",
+    "sha256": "de190899336602569b33a31b7fab616a457747a80fc01efc1b0c9f7228d80260",
+    "classpath_name": "dependency-066.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.datastore",
+    "artifact": "datastore-core-android",
+    "version": "1.2.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/datastore/datastore-core-android/1.2.1/datastore-core.aar",
+    "sha256": "435edad7bcb1fbb1a2a46de7be4d6daf299479b3328ebf757ebdfe02810cbdd8",
+    "classpath_name": "dependency-067.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.versionedparcelable",
+    "artifact": "versionedparcelable",
+    "version": "1.1.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+    "sha256": "57e8d93260d18d5b9007c9eed3c64ad159de90c8609ebfc74a347cbd514535a4",
+    "classpath_name": "dependency-068.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.navigationevent",
+    "artifact": "navigationevent-android",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-android/1.0.0/navigationevent.aar",
+    "sha256": "cda4bb83d1c892a208732e99c2d59e4f247ab5c23a1d2524fc004db2e4e9a780",
+    "classpath_name": "dependency-069.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.navigationevent",
+    "artifact": "navigationevent-compose-android",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-compose-android/1.0.0/navigationevent-compose.aar",
+    "sha256": "5cee018dbe130b538d2c43cc6f383a109a98f19ba9c8d7a6dda8ca90a2034671",
+    "classpath_name": "dependency-070.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-retain-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-retain-android/1.11.4/runtime-retain.aar",
+    "sha256": "48d960544c81e82b674e86e04ead25eeb5d05a54948b6b2ca8690cc94067e600",
+    "classpath_name": "dependency-071.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-annotation-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-annotation-android/1.11.4/runtime-annotation.aar",
+    "sha256": "ea7cc60386f10fe5b33f57f366c294859c1f860cbfa77b437a11f1f0ac7bc4fd",
+    "classpath_name": "dependency-072.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate-ktx",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-ktx/1.4.0/savedstate-ktx-1.4.0.aar",
+    "sha256": "23593939446bc5a154a1e35fddd87b82f19e2adf072207f115bf29a8b431c1d3",
+    "classpath_name": "dependency-073.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate-android",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-android/1.4.0/savedstate.aar",
+    "sha256": "1656ce62cd233d488bdbbd42e533b80b22435b7a690acae6dbe7302392512c14",
+    "classpath_name": "dependency-074.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate-compose-android",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-android/1.4.0/savedstate-compose.aar",
+    "sha256": "0f0ae3032d6c6eea834ee22179c8976160d09d841d30e47f53f56b1b3438774b",
+    "classpath_name": "dependency-075.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-android/1.11.4/runtime.aar",
+    "sha256": "18fd863f42c06100a046dbc2e04f420db0c1b5196d2b63a9006ee8464c69738d",
+    "classpath_name": "dependency-076.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-saveable-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-android/1.11.4/runtime-saveable.aar",
+    "sha256": "75acd64c040fc768dd38b6f40c2e46de0dee13cd1f828e4c3480dd7745c737c1",
+    "classpath_name": "dependency-077.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.interpolator",
+    "artifact": "interpolator",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+    "sha256": "33193135a64fe21fa2c35eec6688f1a76e512606c0fc83dc1b689e37add7732a",
+    "classpath_name": "dependency-078.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.arch.core",
+    "artifact": "core-runtime",
+    "version": "2.2.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+    "sha256": "a1be5e0caa2b07623862af6ae21b3ab0718123245184d0e30dea81b53f990a47",
+    "classpath_name": "dependency-079.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.arch.core",
+    "artifact": "core-common",
+    "version": "2.2.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+    "sha256": "65308a06b1c00ee186cb9e19321383f043b993813f1522c47f4a3e3303bdba41",
+    "classpath_name": "dependency-080.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.collection",
+    "artifact": "collection-jvm",
+    "version": "1.5.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/collection/collection-jvm/1.5.0/collection-jvm-1.5.0.jar",
+    "sha256": "70b35924e4babcdffa37d0e575ee039c56a2d97123342624c48b603233704341",
+    "classpath_name": "dependency-081.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.annotation",
+    "artifact": "annotation-jvm",
+    "version": "1.10.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-jvm/1.10.0/annotation-jvm-1.10.0.jar",
+    "sha256": "ddd072ddbb553178e205517ce777b2f05aa9e412982d9ecb4eedc74f1212f697",
+    "classpath_name": "dependency-082.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.jakewharton.retrofit",
+    "artifact": "retrofit2-kotlinx-serialization-converter",
+    "version": "1.0.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/jakewharton/retrofit/retrofit2-kotlinx-serialization-converter/1.0.0/retrofit2-kotlinx-serialization-converter-1.0.0.jar",
+    "sha256": "d354b514772e2c70d13d3711b3fabfca74b65c3f397c36afcf5ca8ef5e93cd81",
+    "classpath_name": "dependency-083.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.squareup.retrofit2",
+    "artifact": "converter-gson",
+    "version": "2.11.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/squareup/retrofit2/converter-gson/2.11.0/converter-gson-2.11.0.jar",
+    "sha256": "3d2b4b668909468465c5776430b57232275d0165513f20fc96b0cfe4aa531326",
+    "classpath_name": "dependency-084.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.squareup.retrofit2",
+    "artifact": "retrofit",
+    "version": "2.11.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/squareup/retrofit2/retrofit/2.11.0/retrofit-2.11.0.jar",
+    "sha256": "9f4fbbce70728584fbeed38d4061f36d4477e89bca74b4e2ac8aeb6819b0fe43",
+    "classpath_name": "dependency-085.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.squareup.okhttp3",
+    "artifact": "okhttp",
+    "version": "4.12.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar",
+    "sha256": "b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0",
+    "classpath_name": "dependency-086.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib-jdk8",
+    "version": "1.8.21",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar",
+    "sha256": "3db752a30074f06ee6c57984aa6f27da44f4d2bbc7f5442651f6988f1cb2b7d7",
+    "classpath_name": "dependency-087.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-coroutines-core-jvm",
+    "version": "1.9.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar",
+    "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a",
+    "classpath_name": "dependency-088.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-coroutines-android",
+    "version": "1.9.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-android/1.9.0/kotlinx-coroutines-android-1.9.0.jar",
+    "sha256": "bd783acd2f9738845d58380f46f45b5cde95d0cb03027d56725338b26bfc4d72",
+    "classpath_name": "dependency-089.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-exoplayer",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-exoplayer/1.6.0/media3-exoplayer-1.6.0.aar",
+    "sha256": "35780e377e51a058717a2fcb5cedbc9dfa48c82278c6750fb0e55ea6a3eaea97",
+    "classpath_name": "dependency-090.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-ui",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-ui/1.6.0/media3-ui-1.6.0.aar",
+    "sha256": "f8fb9f6b470fc0583a08b8e5b7e7be461bfc4dfef7dac5689a5148153f121885",
+    "classpath_name": "dependency-091.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-extractor",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-extractor/1.6.0/media3-extractor-1.6.0.aar",
+    "sha256": "30fb6eac9e88e7988da46b2f758f4d3782958bd9a87b177c5a2245244dfb9c2d",
+    "classpath_name": "dependency-092.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-container",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-container/1.6.0/media3-container-1.6.0.aar",
+    "sha256": "d49793f33066f75f900278c439d8393b335ac5e70d03b48f114ad19c6f9baff4",
+    "classpath_name": "dependency-093.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-datasource",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-datasource/1.6.0/media3-datasource-1.6.0.aar",
+    "sha256": "440195cd5ebca949f5e9a6a67341471a9b376ea8cccb95d990f126d462390603",
+    "classpath_name": "dependency-094.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-decoder",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-decoder/1.6.0/media3-decoder-1.6.0.aar",
+    "sha256": "c4bbb24cd4b73ec2f03b748f57d843fae619fb28be8b689a407532a7477c26bf",
+    "classpath_name": "dependency-095.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-database",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-database/1.6.0/media3-database-1.6.0.aar",
+    "sha256": "13bf4ccce6bc9e8ef8e04a62e90fa6c1589b89bee8633f0db9f61ae2c23f6ef6",
+    "classpath_name": "dependency-096.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.media3",
+    "artifact": "media3-common",
+    "version": "1.6.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-common/1.6.0/media3-common-1.6.0.aar",
+    "sha256": "9b43a849309032353a29d85a8cde31cdff930c1c7539408c1a01f27c06e5d370",
+    "classpath_name": "dependency-097.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.annotation",
+    "artifact": "annotation-experimental",
+    "version": "1.4.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-experimental/1.4.1/annotation-experimental-1.4.1.aar",
+    "sha256": "6bd4c7c7476f8260cd3bdbb81183583e93fc9f790c27dea7dc314181cbf87aa0",
+    "classpath_name": "dependency-098.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core-viewtree",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core-viewtree/1.0.0/core-viewtree-1.0.0.aar",
+    "sha256": "dc1b678d58ebcf2bfa1587be68ff826694ce3d221251b9ef30d4d4b36297e6de",
+    "classpath_name": "dependency-099.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib-jdk7",
+    "version": "1.8.21",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar",
+    "sha256": "33d148db0e11debd0d90677d28242bced907f9c77730000fd597867089039d86",
+    "classpath_name": "dependency-100.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-serialization-json-jvm",
+    "version": "1.7.3",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/1.7.3/kotlinx-serialization-json-jvm-1.7.3.jar",
+    "sha256": "b1e9138499ed8d20375edda3f2b1c95f3103a258eff6af9edc5ea07100f2b29c",
+    "classpath_name": "dependency-101.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-serialization-core-jvm",
+    "version": "1.7.3",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.7.3/kotlinx-serialization-core-jvm-1.7.3.jar",
+    "sha256": "f0adde45864144475385cf4aa7e0b7feb27f61fcf9472665ed98cc971b06b1eb",
+    "classpath_name": "dependency-102.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.squareup.okio",
+    "artifact": "okio-jvm",
+    "version": "3.9.1",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.9.1/okio-jvm-3.9.1.jar",
+    "sha256": "fe6fe91378f9bfa7b08c3864828ce418005cf28acca12e8847eb65c565c37500",
+    "classpath_name": "dependency-103.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib",
+    "version": "2.1.20",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.jar",
+    "sha256": "1bcc74e8ce84e2c25eaafde10f1248349cce3062b6e36978cbeec610db1e930a",
+    "classpath_name": "dependency-104.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.exifinterface",
+    "artifact": "exifinterface",
+    "version": "1.4.2",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/exifinterface/exifinterface/1.4.2/exifinterface-1.4.2.aar",
+    "sha256": "6bb2b68682a2023c55f35f941444ffea0157947b061e4fd7606ba935e2e77425",
+    "classpath_name": "dependency-105.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "androidx.constraintlayout",
+    "artifact": "constraintlayout",
+    "version": "2.2.2",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/constraintlayout/constraintlayout/2.2.2/constraintlayout-2.2.2.aar",
+    "sha256": "0393b0bf7b11057e13b5330e862afb453cd31eba25c8309b6d2a7d345ca7be69",
+    "classpath_name": "dependency-106.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "io.ably",
+    "artifact": "ably-android",
+    "version": "1.7.2",
+    "extension": ".aar",
+    "url": "https://repo.maven.apache.org/maven2/io/ably/ably-android/1.7.2/ably-android-1.7.2.aar",
+    "sha256": "ae2dc9bf771b66b3947deaa94d99487de7e4478d01e20adde32a1cf67fd84ec5",
+    "classpath_name": "dependency-107.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.code.gson",
+    "artifact": "gson",
+    "version": "2.14.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar",
+    "sha256": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f",
+    "classpath_name": "dependency-108.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jetbrains",
+    "artifact": "annotations",
+    "version": "23.0.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+    "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+    "classpath_name": "dependency-109.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "org.jspecify",
+    "artifact": "jspecify",
+    "version": "1.0.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+    "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+    "classpath_name": "dependency-110.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.errorprone",
+    "artifact": "error_prone_annotations",
+    "version": "2.48.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0.jar",
+    "sha256": "b49c5c958316ed67a09c699dda9aa749caf434d51d863dea599ef36a49b9c855",
+    "classpath_name": "dependency-111.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.guava",
+    "artifact": "guava",
+    "version": "33.3.1-android",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.3.1-android/guava-33.3.1-android.jar",
+    "sha256": "2c3e41d1b380f2044d257947a3aa82dabf3ae4b978622745254aa18b6cf89ab0",
+    "classpath_name": "dependency-112.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.guava",
+    "artifact": "listenablefuture",
+    "version": "9999.0-empty-to-avoid-conflict-with-guava",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+    "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+    "classpath_name": "dependency-113.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.guava",
+    "artifact": "failureaccess",
+    "version": "1.0.2",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar",
+    "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
+    "classpath_name": "dependency-114.jar",
+    "scope": "external-runtime"
+  },
+  {
+    "group": "com.google.code.findbugs",
+    "artifact": "jsr305",
+    "version": "3.0.2",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+    "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
+    "classpath_name": "compile-only-jsr305-3.0.2.jar",
+    "scope": "compile-only"
+  },
+  {
+    "group": "com.android.support",
+    "artifact": "support-annotations",
+    "version": "28.0.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/android/support/support-annotations/28.0.0/support-annotations-28.0.0.jar",
+    "sha256": "5d5b9414f02d3fa0ee7526b8d5ddae0da67c8ecc8c4d63ffa6cf91488a93b927",
+    "classpath_name": "compile-only-support-annotations-28.0.0.jar",
+    "scope": "compile-only"
+  },
+  {
+    "group": "com.google.auto.value",
+    "artifact": "auto-value-annotations",
+    "version": "1.10.4",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/auto/value/auto-value-annotations/1.10.4/auto-value-annotations-1.10.4.jar",
+    "sha256": "e1c45e6beadaef9797cb0d9afd5a45621ad061cd8632012f85582853a3887825",
+    "classpath_name": "compile-only-auto-value-annotations-1.10.4.jar",
+    "scope": "compile-only"
+  }
+]

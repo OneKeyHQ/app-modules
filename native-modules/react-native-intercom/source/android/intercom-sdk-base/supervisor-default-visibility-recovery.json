@@ -1,0 +1,24 @@
+{
+  "status": "FOUR_AMBIGUITIES_REMOVED_BY_EXACT_DECLARATION_FLAGS",
+  "raw_dependency": {
+    "path": ".recovery/android-base/classpath/dependency-088.jar",
+    "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a"
+  },
+  "restored_method": "kotlinx/coroutines/SupervisorKt.SupervisorJob$default(Lkotlinx/coroutines/Job;ILjava/lang/Object;)Lkotlinx/coroutines/Job;",
+  "scope": "Restore original SYNTHETIC of this deprecated nonbridge overload only; CompletableJob-return default remains source-visible. Other nonbridge synthetic defaults unchanged. No source/Code/runtime changes.",
+  "original_flags": 4105,
+  "tool_sha256": "04de13b22786ecd3d2dbfdf69b16b27de64449daa0eb407c0d94f1e54a391d2f",
+  "ledger": [],
+  "callers": [
+    "AblyManager.<init>",
+    "AppIdentityInjector.<init>",
+    "WrapperPrefsStore$Companion.get",
+    "PushBitmapUtils"
+  ],
+  "compiler_effect": "244\u2192228 includes four exact overload errors and twelve scoped-root errors; full SDK still fails",
+  "post_transform_observed_flags": {
+    "legacy_Job_return": "ACC_PUBLIC|ACC_STATIC|ACC_SYNTHETIC (0x1009)",
+    "current_CompletableJob_return": "ACC_PUBLIC|ACC_STATIC (0x0009)"
+  },
+  "ledger_note": "First nonempty TSV was replaced by the idempotent zero-change rerun before TSV archival existed; both raw and transformed flags independently javap-verified. Future diagnostic runs archive restored-*.tsv with logs/receipts."
+}

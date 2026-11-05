@@ -1,0 +1,1054 @@
+{
+  "class": "ICMConversationPart",
+  "originalInstanceSize": 280,
+  "originalIvars": [
+    {
+      "got": "0x4a9c84",
+      "offset": 8,
+      "name": "_sendFailureAllowsRetry",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9c78",
+      "offset": 9,
+      "name": "_displayTimestamp",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9cb0",
+      "offset": 10,
+      "name": "_participantIsAdmin",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9cb4",
+      "offset": 11,
+      "name": "_isInitialMessage",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9cf0",
+      "offset": 12,
+      "name": "_isOnlyPart",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9cf4",
+      "offset": 13,
+      "name": "_isProfilePart",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9cf8",
+      "offset": 14,
+      "name": "_isStreamingPart",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9d04",
+      "offset": 15,
+      "name": "_hasSegmentBelow",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9d0c",
+      "offset": 16,
+      "name": "_isSenderLinePinned",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9d10",
+      "offset": 17,
+      "name": "_displayPartStatus",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9d14",
+      "offset": 18,
+      "name": "_displayTimestampTemporarily",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9d20",
+      "offset": 19,
+      "name": "_hasArticleCard",
+      "type": "B"
+    },
+    {
+      "got": "0x4a9c9c",
+      "offset": 24,
+      "name": "_createdAt",
+      "type": "@\"NSDate\""
+    },
+    {
+      "got": "0x4a9ca0",
+      "offset": 32,
+      "name": "_upload",
+      "type": "@\"ITBUpload\""
+    },
+    {
+      "got": "0x4a9c98",
+      "offset": 40,
+      "name": "_blocks",
+      "type": "@\"NSArray\""
+    },
+    {
+      "got": "0x4a9ca4",
+      "offset": 48,
+      "name": "_blockDictionaries",
+      "type": "@\"NSArray\""
+    },
+    {
+      "got": "0x4a9c80",
+      "offset": 56,
+      "name": "_state",
+      "type": "q"
+    },
+    {
+      "got": "0x4a9ca8",
+      "offset": 64,
+      "name": "_maxLayoutWidth",
+      "type": "d"
+    },
+    {
+      "got": "0x4a9cb8",
+      "offset": 72,
+      "name": "_deliveryOption",
+      "type": "q"
+    },
+    {
+      "got": "0x4a9c88",
+      "offset": 80,
+      "name": "_seenState",
+      "type": "q"
+    },
+    {
+      "got": "0x4a9cbc",
+      "offset": 88,
+      "name": "_participantId",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9cc0",
+      "offset": 96,
+      "name": "_reactionSet",
+      "type": "@\"ICMReactionsSet\""
+    },
+    {
+      "got": "0x4a9cc4",
+      "offset": 104,
+      "name": "_summary",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9cc8",
+      "offset": 112,
+      "name": "_partId",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9ccc",
+      "offset": 120,
+      "name": "_attribution",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9cd0",
+      "offset": 128,
+      "name": "_replyOptionsPrompt",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9cd4",
+      "offset": 136,
+      "name": "_expectationsText",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9cd8",
+      "offset": 144,
+      "name": "_participant",
+      "type": "@\"_TtC18IntercomSDKPrivate11Participant\""
+    },
+    {
+      "got": "0x4a9cdc",
+      "offset": 152,
+      "name": "_eventData",
+      "type": "@\"_TtC18IntercomSDKPrivate9EventData\""
+    },
+    {
+      "got": "0x4a9c90",
+      "offset": 160,
+      "name": "_replyOptionsArray",
+      "type": "@\"NSArray\""
+    },
+    {
+      "got": "0x4a9ce0",
+      "offset": 168,
+      "name": "_selectedReplyOption",
+      "type": "@\"_TtC18IntercomSDKPrivate11ReplyOption\""
+    },
+    {
+      "got": "0x4a9ce4",
+      "offset": 176,
+      "name": "_form",
+      "type": "@\"_TtC18IntercomSDKPrivate4Form\""
+    },
+    {
+      "got": "0x4a9ce8",
+      "offset": 184,
+      "name": "_quickReplyPartId",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9cec",
+      "offset": 192,
+      "name": "_ticket",
+      "type": "@\"_TtC18IntercomSDKPrivate6Ticket\""
+    },
+    {
+      "got": "0x4a9cfc",
+      "offset": 200,
+      "name": "_answerSources",
+      "type": "@\"NSArray\""
+    },
+    {
+      "got": "0x4a9d00",
+      "offset": 208,
+      "name": "_clientAssignedUUID",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9c94",
+      "offset": 216,
+      "name": "_groupingPosition",
+      "type": "Q"
+    },
+    {
+      "got": "0x4a9d08",
+      "offset": 224,
+      "name": "_senderLabel",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9d18",
+      "offset": 232,
+      "name": "_articleId",
+      "type": "@\"NSString\""
+    },
+    {
+      "got": "0x4a9c8c",
+      "offset": 240,
+      "name": "_displayStyle",
+      "type": "q"
+    },
+    {
+      "got": "0x4a9c7c",
+      "offset": 248,
+      "name": "_partStyle",
+      "type": "q"
+    },
+    {
+      "got": "0x4a9d1c",
+      "offset": 256,
+      "name": "_partMetadata",
+      "type": "@\"_TtC18IntercomSDKPrivate12PartMetadata\""
+    },
+    {
+      "got": "0x4a9cac",
+      "offset": 264,
+      "name": "_estimatedSize",
+      "type": "{CGSize=\"width\"d\"height\"d}"
+    }
+  ],
+  "properties": [
+    {
+      "name": "hasArticleCard",
+      "attributes": "TB,N,V_hasArticleCard",
+      "ivar": {
+        "got": "0x4a9d20",
+        "offset": 19,
+        "name": "_hasArticleCard",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "cd415e6395fcb0c655cbcbbbf0901675634023e4f95c387db20c46afff3f3b3b",
+      "setterSHA256": "07d1e9c59779d8a25dea234685d5d4acef97ac61fdc9a107b2aec44e2fc13863"
+    },
+    {
+      "name": "seenState",
+      "attributes": "Tq,N,V_seenState",
+      "ivar": {
+        "got": "0x4a9c88",
+        "offset": 80,
+        "name": "_seenState",
+        "type": "q"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "c3ed81fa1b2ae8a6ae8615d73b794434b81cf351b6e20015be11c54620c6ca13",
+      "setterSHA256": "9fdafb4ab741470180eb02daa49af27c7db98bae3f741ccf64a862136ba6b196"
+    },
+    {
+      "name": "reactionSet",
+      "attributes": "T@\"ICMReactionsSet\",&,N,V_reactionSet",
+      "ivar": {
+        "got": "0x4a9cc0",
+        "offset": 96,
+        "name": "_reactionSet",
+        "type": "@\"ICMReactionsSet\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "1c0aad09bb8a892d46e393bb333bac795a7e6a0645c584af16afd91be4ca5d25",
+      "setterSHA256": "b352d3ad50045cbbd223965f2065bb40a36c8fd50b567494acb64673494ebbd4"
+    },
+    {
+      "name": "createdAt",
+      "attributes": "T@\"NSDate\",&,N,V_createdAt",
+      "ivar": {
+        "got": "0x4a9c9c",
+        "offset": 24,
+        "name": "_createdAt",
+        "type": "@\"NSDate\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "1c5eb806130fbb40436cecf9831e547ab73e0119d57e0750581953ec4709da05",
+      "setterSHA256": "b3e302b50d44bb81e6617f7a2d0ef466e7b1b5d7f6014a49c2a816cd1683991a"
+    },
+    {
+      "name": "upload",
+      "attributes": "T@\"ITBUpload\",&,N,V_upload",
+      "ivar": {
+        "got": "0x4a9ca0",
+        "offset": 32,
+        "name": "_upload",
+        "type": "@\"ITBUpload\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "f951daf497396e186df43fc32eb85146ada801459d4533149bdc235973747965",
+      "setterSHA256": "7bca477baa7211361db700afc5eb7193d57f469cd21e5c4ae6f873aacb90b136"
+    },
+    {
+      "name": "blocks",
+      "attributes": "T@\"NSArray\",&,N,V_blocks",
+      "ivar": {
+        "got": "0x4a9c98",
+        "offset": 40,
+        "name": "_blocks",
+        "type": "@\"NSArray\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "a094ec509d79d61a491a0580ff7a395967562861483c9b4fb397403d9321be80",
+      "setterSHA256": "64841af1aad0bf8869564657adf7a047da98f44153c97838f85a7397e9276256"
+    },
+    {
+      "name": "blockDictionaries",
+      "attributes": "T@\"NSArray\",&,N,V_blockDictionaries",
+      "ivar": {
+        "got": "0x4a9ca4",
+        "offset": 48,
+        "name": "_blockDictionaries",
+        "type": "@\"NSArray\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "74c291786919cafc740310f508d6268a1729763c596d32f3bac1fc954187e0e7",
+      "setterSHA256": "8a863675eb82572674993940de9c0cea4a6d9f411313fdebf39e03af47826d0c"
+    },
+    {
+      "name": "state",
+      "attributes": "Tq,N,V_state",
+      "ivar": {
+        "got": "0x4a9c80",
+        "offset": 56,
+        "name": "_state",
+        "type": "q"
+      },
+      "getterSimple": true,
+      "setterSimple": false,
+      "ownership": "scalar",
+      "getterSHA256": "efeee0b8d713d8cb738bae7026b76aaacb066e59e422dd26c28abb917e6aa540",
+      "setterSHA256": "682a7173568b4e98f57c32961bbd7ca4fb135f2981ff4e4975f80c02639f8bf7"
+    },
+    {
+      "name": "sendFailureAllowsRetry",
+      "attributes": "TB,N,V_sendFailureAllowsRetry",
+      "ivar": {
+        "got": "0x4a9c84",
+        "offset": 8,
+        "name": "_sendFailureAllowsRetry",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "636312a69d7215ae9a755b5f8b8c7ab78aeaab1b691eb2b87762fe062db186c1",
+      "setterSHA256": "f2a80962c44e2b45e0d2fa1ee14fa627556f2e8131a3cb1aea8d1da0965967bb"
+    },
+    {
+      "name": "maxLayoutWidth",
+      "attributes": "Td,N,V_maxLayoutWidth",
+      "ivar": {
+        "got": "0x4a9ca8",
+        "offset": 64,
+        "name": "_maxLayoutWidth",
+        "type": "d"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "76196a4efd8307fec35e36f648a2494625665e387d1c0a6f510ff0049a460f7c",
+      "setterSHA256": "4031eee56f0cfa44f47d79b034e467148f545a83138f8130a5ff1201448bd00c"
+    },
+    {
+      "name": "estimatedSize",
+      "attributes": "T{CGSize=dd},N,V_estimatedSize",
+      "ivar": {
+        "got": "0x4a9cac",
+        "offset": 264,
+        "name": "_estimatedSize",
+        "type": "{CGSize=\"width\"d\"height\"d}"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "757b79662f5373fabfe98cab1c7d5220d2776caa5a47fed05145c977b0fbbcc9",
+      "setterSHA256": "7a8250b3064336ed6cf1d9bc4afb69498b1aca98d5a2f274a6c42bd72545d8f6"
+    },
+    {
+      "name": "displayTimestamp",
+      "attributes": "TB,N,V_displayTimestamp",
+      "ivar": {
+        "got": "0x4a9c78",
+        "offset": 9,
+        "name": "_displayTimestamp",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "a25f3732de4506a8734ff95c9c5d101cad58fd77c80493429ba227a834843a10",
+      "setterSHA256": "79927885b7e770ae0fb23c19fd3820d7fb4d9c90fbe497f5cfd3fe4beb549c67"
+    },
+    {
+      "name": "participantIsAdmin",
+      "attributes": "TB,N,V_participantIsAdmin",
+      "ivar": {
+        "got": "0x4a9cb0",
+        "offset": 10,
+        "name": "_participantIsAdmin",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "a4ed6bdbe4c9dc99c6614f39591a8d43c27971264264cb610ca8624b5d73e295",
+      "setterSHA256": "d4413cb161a1e9fc9b27e34ac87e0b76721ebb92d9016b4dcdd528b1dba641c5"
+    },
+    {
+      "name": "isInitialMessage",
+      "attributes": "TB,N,V_isInitialMessage",
+      "ivar": {
+        "got": "0x4a9cb4",
+        "offset": 11,
+        "name": "_isInitialMessage",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "82bf52d61a0ff082d614dded92fcab3f5e9a4efa23ca9ca040818da481d67c5e",
+      "setterSHA256": "721efa820714fa21fb76b0e312edeb74fe5a6d4efb1869a91fd9911e1b8dbc7d"
+    },
+    {
+      "name": "deliveryOption",
+      "attributes": "Tq,N,V_deliveryOption",
+      "ivar": {
+        "got": "0x4a9cb8",
+        "offset": 72,
+        "name": "_deliveryOption",
+        "type": "q"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "c18a20644882a4e169b623a2a9566fbe4628fa099d37934c04079cd84e29c9a5",
+      "setterSHA256": "6e4316e73dbf5dc016535e9057f42d3f52c3e5aa9c4f65322fbaf2b17cf38a32"
+    },
+    {
+      "name": "participantId",
+      "attributes": "T@\"NSString\",C,N,V_participantId",
+      "ivar": {
+        "got": "0x4a9cbc",
+        "offset": 88,
+        "name": "_participantId",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "523eda00561185f1a5ceb9dd967579a3598d51f43c7494a1df75a06619acbfc4",
+      "setterSHA256": "cf1830364110f6f6cc26208dbd32bd7bf2556e22b5d723bcfe607a1339bcff88"
+    },
+    {
+      "name": "summary",
+      "attributes": "T@\"NSString\",C,N,V_summary",
+      "ivar": {
+        "got": "0x4a9cc4",
+        "offset": 104,
+        "name": "_summary",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "4cdeb5d366fbcc02c29c755e0b7bb2adce520d064953c817094062f4cb4e51b5",
+      "setterSHA256": "c153df8e4b965b290c14be0c86a48e965f0d77a1b03e887fff84aabffc433b35"
+    },
+    {
+      "name": "partId",
+      "attributes": "T@\"NSString\",C,N,V_partId",
+      "ivar": {
+        "got": "0x4a9cc8",
+        "offset": 112,
+        "name": "_partId",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "b1d11a0932b4a787bd2151eae13b11f83cef56b8b86c80f6bdcda9b18420375b",
+      "setterSHA256": "4c6598f269a8574a798cb8fbcda3d9a0ad602caa36dadf18f05ed0aa8dd738cd"
+    },
+    {
+      "name": "attribution",
+      "attributes": "T@\"NSString\",C,N,V_attribution",
+      "ivar": {
+        "got": "0x4a9ccc",
+        "offset": 120,
+        "name": "_attribution",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "fb9261aadafdb0f3fcb8adece06e32ae5d0cfb041604e6b3c9e96a10d5288183",
+      "setterSHA256": "162a93b4c8e6477fd1e26c438989bd0bc3e827a333fed7dd64804f3b49c52947"
+    },
+    {
+      "name": "replyOptionsPrompt",
+      "attributes": "T@\"NSString\",C,N,V_replyOptionsPrompt",
+      "ivar": {
+        "got": "0x4a9cd0",
+        "offset": 128,
+        "name": "_replyOptionsPrompt",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "2eff1af54d8cd81de1d76d808228213479ea214bc9b6380f1d90058d99818429",
+      "setterSHA256": "0e0426afb88eb7855830bef1e6b47ff212fe7fa5573624ca0c40a4493cbc9a34"
+    },
+    {
+      "name": "expectationsText",
+      "attributes": "T@\"NSString\",C,N,V_expectationsText",
+      "ivar": {
+        "got": "0x4a9cd4",
+        "offset": 136,
+        "name": "_expectationsText",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "a30425a423e2958c9e7a2c956fbaeea3054d418aa48dc3b593040ca94552e88d",
+      "setterSHA256": "272a4a99d676224fee517a427e434024d87a851bbe22baf6fd1e408db12d4efb"
+    },
+    {
+      "name": "participant",
+      "attributes": "T@\"_TtC18IntercomSDKPrivate11Participant\",&,N,V_participant",
+      "ivar": {
+        "got": "0x4a9cd8",
+        "offset": 144,
+        "name": "_participant",
+        "type": "@\"_TtC18IntercomSDKPrivate11Participant\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "7f6e7b70c60a0671a9053ec67320e77009d844561d54a21d940e44c5c40e4973",
+      "setterSHA256": "ea0ffdc95994ae42a22ae1aa2a52800b4b6c96b22e88589ac67324fd0d58ee56"
+    },
+    {
+      "name": "eventData",
+      "attributes": "T@\"_TtC18IntercomSDKPrivate9EventData\",&,N,V_eventData",
+      "ivar": {
+        "got": "0x4a9cdc",
+        "offset": 152,
+        "name": "_eventData",
+        "type": "@\"_TtC18IntercomSDKPrivate9EventData\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "c62a857b04017a45bc205e34e45e3d79b5ad64b63353b6ee8e85994b5bf4907a",
+      "setterSHA256": "edc38c1deefc3ade9859e2d889381da3503dde81b0bd8828ff7754977456f742"
+    },
+    {
+      "name": "replyOptionsArray",
+      "attributes": "T@\"NSArray\",&,N,V_replyOptionsArray",
+      "ivar": {
+        "got": "0x4a9c90",
+        "offset": 160,
+        "name": "_replyOptionsArray",
+        "type": "@\"NSArray\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "304ba01d03518be5805cb47958e12beffa81ff6ad3e4e7981d9cd3110cfa2c78",
+      "setterSHA256": "c5ae53321aad5118cc52adc647420ae27c25506e2720cd8da811a720d775d540"
+    },
+    {
+      "name": "selectedReplyOption",
+      "attributes": "T@\"_TtC18IntercomSDKPrivate11ReplyOption\",&,N,V_selectedReplyOption",
+      "ivar": {
+        "got": "0x4a9ce0",
+        "offset": 168,
+        "name": "_selectedReplyOption",
+        "type": "@\"_TtC18IntercomSDKPrivate11ReplyOption\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "f28d9129b169a675b60ea35ee2cfd728c1207121c4d3d75f7e159cb1455ed0e3",
+      "setterSHA256": "3b22cc9a1a6d5d810f537a6056671ea7ddc309e9d587b71058b714112dab20fb"
+    },
+    {
+      "name": "form",
+      "attributes": "T@\"_TtC18IntercomSDKPrivate4Form\",&,N,V_form",
+      "ivar": {
+        "got": "0x4a9ce4",
+        "offset": 176,
+        "name": "_form",
+        "type": "@\"_TtC18IntercomSDKPrivate4Form\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "6c05e008aa7929844e04c5bd82745c5313d6e5e632843439d7e071bbc1683d73",
+      "setterSHA256": "89883b1d6f1b3efda51645035533efacfef8ff29b776c60270484ff85f6aed6c"
+    },
+    {
+      "name": "quickReplyPartId",
+      "attributes": "T@\"NSString\",C,N,V_quickReplyPartId",
+      "ivar": {
+        "got": "0x4a9ce8",
+        "offset": 184,
+        "name": "_quickReplyPartId",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "6bf4e9ad64b8c387d16b2f640c838a19f4ce01ffb6969c8598b9ff6f3d812a8d",
+      "setterSHA256": "4a33a02ac0e44b778314d36b5d57413093fa1c7f32bc478454c2d1868bbb077f"
+    },
+    {
+      "name": "ticket",
+      "attributes": "T@\"_TtC18IntercomSDKPrivate6Ticket\",&,N,V_ticket",
+      "ivar": {
+        "got": "0x4a9cec",
+        "offset": 192,
+        "name": "_ticket",
+        "type": "@\"_TtC18IntercomSDKPrivate6Ticket\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "2050aa08ba3b3c5d77829716d1e50cf98fc8c4740b567920e4af44e518c319f1",
+      "setterSHA256": "9fb8e0e990ec2c80861e0eb4e256f4d9cc62ae676d46f7eaa40028daef7d2e71"
+    },
+    {
+      "name": "isOnlyPart",
+      "attributes": "TB,N,V_isOnlyPart",
+      "ivar": {
+        "got": "0x4a9cf0",
+        "offset": 12,
+        "name": "_isOnlyPart",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "14dbffa8dd0e91ba3a2f12946b22dfbe6bacbea38018f7634c80e9f522e33c45",
+      "setterSHA256": "abb4c8dac80b00acc4ca1509ce19016e6ec136008476a1dfa9c6725cfd7c0c74"
+    },
+    {
+      "name": "isProfilePart",
+      "attributes": "TB,N,V_isProfilePart",
+      "ivar": {
+        "got": "0x4a9cf4",
+        "offset": 13,
+        "name": "_isProfilePart",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "9aedaf3ea2a3df7b2972b4ece8fc90f832aa855ced7ca16dca875bc48cd90ab9",
+      "setterSHA256": "151b7ee6be2908af204c4832378aa3b981cef807d8c06d3eed333c04de9b5182"
+    },
+    {
+      "name": "isStreamingPart",
+      "attributes": "TB,N,V_isStreamingPart",
+      "ivar": {
+        "got": "0x4a9cf8",
+        "offset": 14,
+        "name": "_isStreamingPart",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "ce99d6df0f4b0415c38f0c81901818667bd73d80ab68a1cdc8c24c1ddf794826",
+      "setterSHA256": "7638141dcc6b0faf3e56cc59795c6c03644ba934852b7ddcae7109b8a7cf7088"
+    },
+    {
+      "name": "answerSources",
+      "attributes": "T@\"NSArray\",&,N,V_answerSources",
+      "ivar": {
+        "got": "0x4a9cfc",
+        "offset": 200,
+        "name": "_answerSources",
+        "type": "@\"NSArray\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "32ed8b320a32abeb5a2e8ceafe4407a9dc792d4b820e61b9d52d5492e6bfe61a",
+      "setterSHA256": "cb2df0fb3caea0cb4652b41fc5fddc487c13517d3a3305275d2e814a30d0acee"
+    },
+    {
+      "name": "clientAssignedUUID",
+      "attributes": "T@\"NSString\",C,N,V_clientAssignedUUID",
+      "ivar": {
+        "got": "0x4a9d00",
+        "offset": 208,
+        "name": "_clientAssignedUUID",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "815395ef1994f075e2bf831c50621129ac524b1787a31f42a756efa2e95202f5",
+      "setterSHA256": "835cb55eee51882aa386469a77a7e860c9f11d6f5ac69fa408a8317523b8f237"
+    },
+    {
+      "name": "groupingPosition",
+      "attributes": "TQ,N,V_groupingPosition",
+      "ivar": {
+        "got": "0x4a9c94",
+        "offset": 216,
+        "name": "_groupingPosition",
+        "type": "Q"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "627a47d35e7f171439fb2305022c0fa97185aef39d5bb876ea7ac2b67abb10f2",
+      "setterSHA256": "c5435a0a4cb68ce06f82d0d5ceaf63aa8009d55451c18992c4e9b43143baed87"
+    },
+    {
+      "name": "hasSegmentBelow",
+      "attributes": "TB,N,V_hasSegmentBelow",
+      "ivar": {
+        "got": "0x4a9d04",
+        "offset": 15,
+        "name": "_hasSegmentBelow",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "76cfbbd07fc09f418ef6d908acc97b5de27d7b6344c9be93240a5367293d1a8f",
+      "setterSHA256": "0fcc2f3071ee7505871be2ecff091a5ff4aa0e6463f6f013a94e9a6bba0e6004"
+    },
+    {
+      "name": "senderLabel",
+      "attributes": "T@\"NSString\",C,N,V_senderLabel",
+      "ivar": {
+        "got": "0x4a9d08",
+        "offset": 224,
+        "name": "_senderLabel",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "copy",
+      "getterSHA256": "383b3ed76c527594692ec2bdb69d6070c518e3d58feab03c64a87e565ddc5f8c",
+      "setterSHA256": "d4689bf12173d9878da4989a48ced3ab3b7387f96be21727c4744285f53ec04f"
+    },
+    {
+      "name": "isSenderLinePinned",
+      "attributes": "TB,N,V_isSenderLinePinned",
+      "ivar": {
+        "got": "0x4a9d0c",
+        "offset": 16,
+        "name": "_isSenderLinePinned",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "8a8c11fd34d106fefa2208ee9cdf814502238f88c0767b97c95ec68e5afcfabb",
+      "setterSHA256": "45878b786481866f2dc3872bf8dcf2611c81c6f22499d24782fbb47589f92ce9"
+    },
+    {
+      "name": "displayPartStatus",
+      "attributes": "TB,N,V_displayPartStatus",
+      "ivar": {
+        "got": "0x4a9d10",
+        "offset": 17,
+        "name": "_displayPartStatus",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "c7cdb94e1a5333c296d5c5adc73c10971059e8851d31822c129c17b6e2f61e04",
+      "setterSHA256": "880b3eafd0d3fca6583b647dc656f0728bc1923d21bd46af24744c3a74a2f8c1"
+    },
+    {
+      "name": "displayTimestampTemporarily",
+      "attributes": "TB,N,V_displayTimestampTemporarily",
+      "ivar": {
+        "got": "0x4a9d14",
+        "offset": 18,
+        "name": "_displayTimestampTemporarily",
+        "type": "B"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "2ee99f667536b58fb7c6a615cfff0cacf4eb107f6a06c727964f8233774b32f7",
+      "setterSHA256": "a3a1d8c78b7366e1ef7527bd27ac5ac3f6c791a64743b61f2a9d6ba1bd9431cb"
+    },
+    {
+      "name": "articleId",
+      "attributes": "T@\"NSString\",&,N,V_articleId",
+      "ivar": {
+        "got": "0x4a9d18",
+        "offset": 232,
+        "name": "_articleId",
+        "type": "@\"NSString\""
+      },
+      "getterSimple": false,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "51884d6023259b9abfb3fe51ef2f905eb4f7dedd9922da8dbd7973b72fe0aed0",
+      "setterSHA256": "99f347f48f83ff5799a34308e59e248f218c14371ec0f3a5170833b46ca3f6d5"
+    },
+    {
+      "name": "displayStyle",
+      "attributes": "Tq,N,V_displayStyle",
+      "ivar": {
+        "got": "0x4a9c8c",
+        "offset": 240,
+        "name": "_displayStyle",
+        "type": "q"
+      },
+      "getterSimple": true,
+      "setterSimple": false,
+      "ownership": "scalar",
+      "getterSHA256": "8929643d89ed09ee1b15a6f1501f8712edf869402c02814ea86ff1efc52bcbc3",
+      "setterSHA256": "659401dbbec3ea71e7cf3680e8e0017884e95d1e74141759339341830de49d07"
+    },
+    {
+      "name": "partStyle",
+      "attributes": "Tq,N,V_partStyle",
+      "ivar": {
+        "got": "0x4a9c7c",
+        "offset": 248,
+        "name": "_partStyle",
+        "type": "q"
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "scalar",
+      "getterSHA256": "5c1b38d69fc58b757fe3179553ecb9bc66c85613ba5464f6eeacf11ea7af362b",
+      "setterSHA256": "164608cbee580b4c8d4b91068ba159c6023ae400132b42003c2b82eca66f9718"
+    },
+    {
+      "name": "partMetadata",
+      "attributes": "T@\"_TtC18IntercomSDKPrivate12PartMetadata\",&,N,V_partMetadata",
+      "ivar": {
+        "got": "0x4a9d1c",
+        "offset": 256,
+        "name": "_partMetadata",
+        "type": "@\"_TtC18IntercomSDKPrivate12PartMetadata\""
+      },
+      "getterSimple": true,
+      "setterSimple": true,
+      "ownership": "strong",
+      "getterSHA256": "bafa2fa4c9abd23b69aa17b56f5bf2f75bb32bca74197c5c1fd5c8c37f7f2e74",
+      "setterSHA256": "0daf0cd6360e9921ca70218a966b6761161b8ed9c4dde3facb9a8d3493ae6a32"
+    }
+  ],
+  "allOriginalOwnSelectors": [
+    "-init",
+    "+instanceFromDictionary:displayStyle:",
+    "+setParticipantDetails:onPart:",
+    "+sendingPartWithBlocks:upload:",
+    "+botPartWithBlocks:participant:",
+    "+streamingPartWithBlocks:",
+    "+temporaryArticlePartWith:helpCenterURLString:",
+    "-isTypingPart",
+    "-hasAttachments",
+    "-hasMessengerCard",
+    "-isLinkContextCard",
+    "-isLinkCard",
+    "-isConversationRatingCard",
+    "-isLinkListCard",
+    "-isArticleContextCard",
+    "-isSingleMessengerCard",
+    "-isQuickReply",
+    "-isComposerSuggestions",
+    "-hasReplyOptions",
+    "-isSingleImagePart",
+    "-isSingleAttachmentPart",
+    "-isSingleMediaPart",
+    "-isCreateTicketPart",
+    "-isPersonalPart",
+    "-isInitialMessageQuickReply",
+    "-isAttributeCollector",
+    "-isEvent",
+    "-isTemporaryExpectation",
+    "-isVideoFile",
+    "-isServerPart",
+    "-containsBlocks",
+    "-blocksContainAParagraphBlock",
+    "-shouldShowPartStatus",
+    "-setState:",
+    "-setDisplayStyle:",
+    "+blockAppearanceForPart:",
+    "+isLinkBlock:",
+    "+isLinkListBlock:",
+    "+isMessengerCardBlock:",
+    "+isArticleCardBlock:",
+    "-articleId",
+    "+determineAppearanceForBlock:",
+    "-removeFallbackURLForFullChats:",
+    "+setReplyOptions:forPart:",
+    "+setFormAttributes:forPart:",
+    "-addAttachmentBlocksFromArray:toBlocks:withAppearance:",
+    "-setAttributesFromDictionary:",
+    "-setValue:forUndefinedKey:",
+    "-copyWithZone:",
+    "-isEqual:",
+    "-hash",
+    "-createdAt",
+    "-setCreatedAt:",
+    "-upload",
+    "-setUpload:",
+    "-blocks",
+    "-setBlocks:",
+    "-blockDictionaries",
+    "-setBlockDictionaries:",
+    "-state",
+    "-sendFailureAllowsRetry",
+    "-setSendFailureAllowsRetry:",
+    "-maxLayoutWidth",
+    "-setMaxLayoutWidth:",
+    "-estimatedSize",
+    "-setEstimatedSize:",
+    "-displayTimestamp",
+    "-setDisplayTimestamp:",
+    "-participantIsAdmin",
+    "-setParticipantIsAdmin:",
+    "-isInitialMessage",
+    "-setIsInitialMessage:",
+    "-deliveryOption",
+    "-setDeliveryOption:",
+    "-seenState",
+    "-setSeenState:",
+    "-participantId",
+    "-setParticipantId:",
+    "-reactionSet",
+    "-setReactionSet:",
+    "-summary",
+    "-setSummary:",
+    "-partId",
+    "-setPartId:",
+    "-attribution",
+    "-setAttribution:",
+    "-replyOptionsPrompt",
+    "-setReplyOptionsPrompt:",
+    "-expectationsText",
+    "-setExpectationsText:",
+    "-participant",
+    "-setParticipant:",
+    "-eventData",
+    "-setEventData:",
+    "-replyOptionsArray",
+    "-setReplyOptionsArray:",
+    "-selectedReplyOption",
+    "-setSelectedReplyOption:",
+    "-form",
+    "-setForm:",
+    "-quickReplyPartId",
+    "-setQuickReplyPartId:",
+    "-ticket",
+    "-setTicket:",
+    "-isOnlyPart",
+    "-setIsOnlyPart:",
+    "-isProfilePart",
+    "-setIsProfilePart:",
+    "-isStreamingPart",
+    "-setIsStreamingPart:",
+    "-answerSources",
+    "-setAnswerSources:",
+    "-clientAssignedUUID",
+    "-setClientAssignedUUID:",
+    "-groupingPosition",
+    "-setGroupingPosition:",
+    "-hasSegmentBelow",
+    "-setHasSegmentBelow:",
+    "-senderLabel",
+    "-setSenderLabel:",
+    "-isSenderLinePinned",
+    "-setIsSenderLinePinned:",
+    "-displayPartStatus",
+    "-setDisplayPartStatus:",
+    "-displayTimestampTemporarily",
+    "-setDisplayTimestampTemporarily:",
+    "-setArticleId:",
+    "-displayStyle",
+    "-partStyle",
+    "-setPartStyle:",
+    "-partMetadata",
+    "-setPartMetadata:",
+    "-hasArticleCard",
+    "-setHasArticleCard:",
+    "-.cxx_destruct"
+  ],
+  "sourceMetadataSHA256": "c4a581fb815a2f7696f0f00ee73b0ca961493b7220df0ecdcfa846c6f128d80b",
+  "sourceAssemblySHA256": "4e068b9d7d894d35d45a6480866a66900126f60c497c55f8bc1b506587ec796f",
+  "noProductImplementationGeneratedYet": false,
+  "productSource": "ios/Session/ICMConversationPart.m",
+  "onlySimplePairsSynthesized": 40,
+  "logicMethodsStillRequireOriginalSourceRecovery": true
+}

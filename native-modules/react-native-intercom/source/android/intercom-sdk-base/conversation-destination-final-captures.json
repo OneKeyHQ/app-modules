@@ -1,0 +1,273 @@
+{
+  "status": "SOURCE_EXPRESSIONS_RESTORED_NOT_COMPILED",
+  "scope": "Plain metafactory, static targets, direct locals and explicitly proved GETFIELD/local receivers; typed ordered snapshots at bounded statements with no writes to captured bindings; GETFIELD factories additionally reject earlier effectful/throwing expressions; original helper source retained",
+  "normal_source_build_uses_originals_or_decompiler": false,
+  "source_applied": true,
+  "selected_sites": 2,
+  "direct_local_requests": 2,
+  "restored_sites": 2,
+  "skipped": [],
+  "rejected": [],
+  "unmatched_source_context": [],
+  "files": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.java",
+      "before_sha256": "f7755cf19a716b3736dcf16f62da8342f211d2c539e4b544ece04675e9a6cafc",
+      "after_sha256": "50a89f05bb1c758363f35d86f8013d5e25f3ed700f8c28ac3b63cd8c9c25ed2b",
+      "sites": [
+        1009,
+        1010
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.java",
+          "11772",
+          "11841",
+          "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1009_0) -> io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11.invoke$lambda$9(recoveredExpressionCapture_1009_0, recoveredExpressionCapture_1009_1, (io.intercom.android.sdk.m5.conversation.states.HeaderMenuItem) ((io.intercom.android.sdk.m5.conversation.states.HeaderMenuItem)recoveredExpressionArgument_1009_0)))",
+          "11598",
+          "final androidx.navigation.NavHostController recoveredExpressionCapture_1009_0 = ((io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11) this).$navController;\\n      final kotlin.jvm.internal.Ref.BooleanRef recoveredExpressionCapture_1009_1 = var9;\\n      ",
+          "1009",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+          "recoveredExpressionCapture_1009_0=this:FIELD|0|0|0|this|Landroidx/navigation/NavHostController;|io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11|$navController|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;;recoveredExpressionCapture_1009_1=var9@3881:LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;",
+          "BLOCK",
+          "-1",
+          "",
+          "",
+          ""
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.java",
+          "11852",
+          "11922",
+          "io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11.recoveredExpressionFactory_1010(((io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11) this).$navController, var9)",
+          "11598",
+          "",
+          "1010",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+          "recoveredExpressionCapture_1010_0=this:FIELD|0|0|0|this|Landroidx/navigation/NavHostController;|io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11|$navController|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;;recoveredExpressionCapture_1010_1=var9@3881:LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;",
+          "EXPRESSION_FACTORY",
+          "16775",
+          "\\n   private static kotlin.jvm.functions.Function1 recoveredExpressionFactory_1010(androidx.navigation.NavHostController recoveredExpressionCapture_1010_0, kotlin.jvm.internal.Ref.BooleanRef recoveredExpressionCapture_1010_1) {\\n      return ((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1010_0) -> io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11.invoke$lambda$12(recoveredExpressionCapture_1010_0, recoveredExpressionCapture_1010_1, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_1010_0)));\\n   }\\n",
+          "recoveredExpressionFactory_1010",
+          "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;)Lkotlin/jvm/functions/Function1;"
+        ]
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "site": 1009,
+      "original_site": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "595",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$9",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+        "822"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$9",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;",
+        "{816, 817, 818, 819, 820, 821, 822, 823, 824, 825, 826}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/navigation/NavHostController;",
+        "LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "822",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.invoke$lambda$9(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit; (6), (Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke",
+            "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke$lambda$9",
+            "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Lio/intercom/android/sdk/m5/conversation/states/HeaderMenuItem;)Lkotlin/Unit;",
+            "{816, 817, 818, 819, 820, 821, 822, 823, 824, 825, 826}",
+            "0",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1010,
+      "original_site": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "599",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$12",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+        "833"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$12",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit;",
+        "{827, 828, 829, 830, 831, 832, 833, 834, 835, 836, 837}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/navigation/NavHostController;",
+        "LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "833",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.invoke$lambda$12(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke",
+            "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke$lambda$12",
+            "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit;",
+            "{827, 828, 829, 830, 831, 832, 833, 834, 835, 836, 837}",
+            "0",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;"
+          ]
+        }
+      ]
+    }
+  ],
+  "commands": [
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/javac",
+      "-cp",
+      "/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "-d",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/tools",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/tools/ExportLambdaSites.java",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/tools/SourceCaptureBindings.java",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/tools/RecoverStaticCaptureExpressions.java"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/intercom-sdk-base-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/intercom-sdk-base-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/intercom-sdk-lightcompressor-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/intercom-sdk-lightcompressor-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/nexus-client-android-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/nexus-client-android-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/twig-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/twig-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "RecoverStaticCaptureExpressions",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/requests.tsv",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/conversation-destination-final-captures/source-edits.tsv",
+      "--expression-factories"
+    ]
+  ],
+  "explicit_private_static_source_factories": [
+    "M\tio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11\trecoveredExpressionFactory_1010\t(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;)Lkotlin/jvm/functions/Function1;"
+  ],
+  "reference_offset_coordinate": "Actual byte offsets in these normalized reference jars, not universally raw-vendor offsets; ASM constant-pool serialization can change operand widths",
+  "diagnostic_reference_jar_sha256": {
+    "intercom-sdk-base-reference.jar": "495baebff1f55f833180ebd7c82cc1d3cb7cff3c3e0bb59322e6faee23b29391",
+    "intercom-sdk-lightcompressor-reference.jar": "81e61790f192ce5f4e3fecabc2a185ea1943aab8ed17815a9cecb46311b37d78",
+    "twig-reference.jar": "d6edd68f52302295447ae0cbb112b50c9ab9a756ba011b79881c01868627efc2",
+    "nexus-client-android-reference.jar": "dc6bdb7657776d4fed976eb37caa8baf8c8e9aabcfa240443341a7106451c104"
+  },
+  "source_helper_allowlist_before_sha256": "700b1e3127fbc891a4e7e854d224a253bddb0416cf2533a19b7744783e23b4cd",
+  "source_helper_allowlist_after_sha256": "eb5777ec456ee5c55347b4e3104c0275e64f254b3bbc204618d24df647f76045",
+  "tool_hashes": {
+    "tools/ExportLambdaSites.java": "d35d1a1d46144701ed684e54a4bae53256d7e61678a7a05d6874b41b5a0dff2e",
+    "tools/RecoverStaticCaptureExpressions.java": "5f66fe556a74ee66da9d879b338a654d7e55bc9a0017c791b59c63bab60d1db5",
+    "tools/SourceCaptureBindings.java": "77954ee774f8d6f70747a3a4c0505d4257fd9ef7799d80f6c30f2d08171b8a84",
+    "scripts/android-recover-static-expressions.py": "c8277f5aef3eb0193f054a095e10cfff1607a00094cfde59ca8991423f3efc5f"
+  }
+}

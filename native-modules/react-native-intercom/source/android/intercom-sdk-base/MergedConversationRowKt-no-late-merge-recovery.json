@@ -1,0 +1,308 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+  "root_only": true,
+  "source_before_sha256": "5af0ec9317ea3ede34378340728008b502489a538e15d0057de3033ccda1a9a8",
+  "source_after_sha256": "1168a8e3dd0776cbf701ab18d0ad0be8be4372bba61a5cd5fabaf25429a0cf92",
+  "source_capture_sites": 4,
+  "source_capture_bindings": 9,
+  "declaration_check_exit": 0,
+  "type_edits": 1,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-MergedConversationRowKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.java",
+      "6147",
+      "6211",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_757_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.MergedConversationRowKt.MergedConversationRow$lambda$1$lambda$0((java.lang.String) ((java.lang.String)recoveredExpressionArgument_757_0)))",
+      "6132",
+      "",
+      "757",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-MergedConversationRowKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.java",
+      "11764",
+      "11837",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.row.MergedConversationRowKt.MergedConversationRow$lambda$4$lambda$3$lambda$2(recoveredExpressionCapture_758_0, recoveredExpressionCapture_758_1))",
+      "11746",
+      "final kotlin.jvm.functions.Function1 recoveredExpressionCapture_758_0 = var3;\\n            final java.lang.String recoveredExpressionCapture_758_1 = var2;\\n            ",
+      "758",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Lkotlin/jvm/functions/Function1;=var3,Ljava/lang/String;=var2",
+      "recoveredExpressionCapture_758_0=var3@4455:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_758_1=var2@4433:LOCAL|2|2|0|var2|Ljava/lang/String;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-MergedConversationRowKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.java",
+      "14327",
+      "14382",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_759_0, recoveredExpressionArgument_759_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.MergedConversationRowKt.MergedConversationRow$lambda$5(recoveredExpressionCapture_759_0, recoveredExpressionCapture_759_1, recoveredExpressionCapture_759_2, recoveredExpressionCapture_759_3, recoveredExpressionCapture_759_4, recoveredExpressionCapture_759_5, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_759_0), ((java.lang.Integer)recoveredExpressionArgument_759_1).intValue()))",
+      "14309",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_759_0 = var0;\\n         final java.lang.String recoveredExpressionCapture_759_1 = var1;\\n         final java.lang.String recoveredExpressionCapture_759_2 = var2;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_759_3 = var3;\\n         final int recoveredExpressionCapture_759_4 = var5;\\n         final int recoveredExpressionCapture_759_5 = var6;\\n         ",
+      "759",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,Ljava/lang/String;=var1,Ljava/lang/String;=var2,Lkotlin/jvm/functions/Function1;=var3,I=var5,I=var6",
+      "recoveredExpressionCapture_759_0=var0@4386:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_759_1=var1@4411:LOCAL|1|1|0|var1|Ljava/lang/String;;recoveredExpressionCapture_759_2=var2@4433:LOCAL|2|2|0|var2|Ljava/lang/String;;recoveredExpressionCapture_759_3=var3@4455:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_759_4=var5@4506:LOCAL|5|5|0|var5|I;recoveredExpressionCapture_759_5=var6@4516:LOCAL|6|6|0|var6|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-MergedConversationRowKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.java",
+      "15662",
+      "15724",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_760_0, recoveredExpressionArgument_760_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.MergedConversationRowKt.MergedConversationRowPreview$lambda$6(recoveredExpressionCapture_760_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_760_0), ((java.lang.Integer)recoveredExpressionArgument_760_1).intValue()))",
+      "15641",
+      "final int recoveredExpressionCapture_760_0 = var1;\\n         ",
+      "760",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_760_0=var1@14575:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 757,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "202",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow$lambda$1$lambda$0",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "329"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow$lambda$1$lambda$0",
+          "(Ljava/lang/String;)Lkotlin/Unit;",
+          "{329, 330, 331, 332, 333}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow$lambda$1$lambda$0",
+          "(Ljava/lang/String;)Lkotlin/Unit;",
+          "{329, 330, 331, 332, 333}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "329",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.MergedConversationRow$lambda$1$lambda$0(Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 758,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "665",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow$lambda$4$lambda$3$lambda$2",
+        "(Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function1;=var3,Ljava/lang/String;=var2",
+        "991"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow$lambda$4$lambda$3$lambda$2",
+          "(Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;",
+          "{989, 990, 991, 992, 993, 994, 995}",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|2|2|0|var2|Ljava/lang/String;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow$lambda$4$lambda$3$lambda$2",
+          "(Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;",
+          "{989, 990, 991, 992, 993, 994, 995}",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|2|2|0|var2|Ljava/lang/String;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "991",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.MergedConversationRow$lambda$4$lambda$3$lambda$2(Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 759,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "863",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow$lambda$5",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,Ljava/lang/String;=var1,Ljava/lang/String;=var2,Lkotlin/jvm/functions/Function1;=var3,I=var5,I=var6",
+        "1249"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow$lambda$5",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1241, 1242, 1243, 1244, 1245, 1246, 1247, 1248, 1249, 1250, 1251, 1252, 1253}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Ljava/lang/String;",
+          "LOCAL|2|2|0|var2|Ljava/lang/String;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRow$lambda$5",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1241, 1242, 1243, 1244, 1245, 1246, 1247, 1248, 1249, 1250, 1251, 1252, 1253}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Ljava/lang/String;",
+          "LOCAL|2|2|0|var2|Ljava/lang/String;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRow",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1249",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.MergedConversationRow$lambda$5(Landroidx/compose/ui/Modifier;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 760,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRowPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRowPreview$lambda$6",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRowPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRowPreview$lambda$6",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRowPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+          "MergedConversationRowPreview$lambda$6",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt",
+        "MergedConversationRowPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/MergedConversationRowKt.MergedConversationRowPreview$lambda$6(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

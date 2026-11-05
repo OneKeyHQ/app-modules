@@ -1,0 +1,112 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInner7b5951eb09481206$1.java",
+      "before_sha256": "6a670dea9fe20f229aa79a5ce98c550a8b7d75d1f7444e6f493f78d87dc5e63a",
+      "after_sha256": "89474cf8fef236f2bb01f73dc48f245d46f4ab680d170714d18e217cfe7f5f9e",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInner7b5951eb09481206$1.java",
+          "4764",
+          "4772",
+          "(kotlin.jvm.functions.Function0) var10002",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInner7b5951eb09481206$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/FileUploadErrorComponentKt",
+          "FileUploadErrorComponent",
+          "(Ljava/lang/String;Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$FileUploadError;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V",
+          "INVOKESTATIC",
+          "2",
+          "269",
+          "4692",
+          "4791",
+          "var10002",
+          "52",
+          "kotlin/jvm/functions/Function0",
+          "EXISTING_CAST@3563:GROUP=113246203:REFERENCE_BCI=152:STORE=3;EXISTING_CAST@3563:GROUP=113246203:REFERENCE_BCI=152:STORE=3"
+        ]
+      ]
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "before_sha256": "8262fe246fd9edce8313019ea7752818257d9b84db5742f5c53b9c785f3c95bc",
+      "after_sha256": "ebef36946da1460130741d78e7a34cd3078037ceb553ea61c49bc2cbb3aee4e5",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "4759",
+          "4767",
+          "(kotlin.jvm.functions.Function0) var10002",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInnerb8048fd051efd9e2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/FileUploadErrorComponentKt",
+          "FileUploadErrorComponent",
+          "(Ljava/lang/String;Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$FileUploadError;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V",
+          "INVOKESTATIC",
+          "2",
+          "269",
+          "4687",
+          "4786",
+          "var10002",
+          "52",
+          "kotlin/jvm/functions/Function0",
+          "EXISTING_CAST@3556:GROUP=-1166604675:REFERENCE_BCI=152:STORE=3;EXISTING_CAST@3556:GROUP=-1166604675:REFERENCE_BCI=152:STORE=3"
+        ]
+      ]
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/choice/ComposableSingletons$OtherOptionKt$RecoveredInner7b5951eb09481206$1.java",
+      "before_sha256": "0c56ffb09b718529406fa43e515acd3012d46fda669d006ddb4e94e94948ee23",
+      "after_sha256": "88d56298998293c45edbf574bdc2bf7cc3a11921db4312cc702dc8568b456d10",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/choice/ComposableSingletons$OtherOptionKt$RecoveredInner7b5951eb09481206$1.java",
+          "4583",
+          "4591",
+          "(kotlin.jvm.functions.Function0) var10003",
+          "io/intercom/android/sdk/survey/ui/questiontype/choice/ComposableSingletons$OtherOptionKt$RecoveredInner7b5951eb09481206$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/choice/OtherOptionKt",
+          "recovered$ceeec0b30e6e12f1",
+          "(ZLio/intercom/android/sdk/survey/SurveyUiColors;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;JFJLandroidx/compose/ui/text/font/FontWeight;JLandroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "3",
+          "274",
+          "4512",
+          "4641",
+          "var10003",
+          "51",
+          "kotlin/jvm/functions/Function0",
+          "EXISTING_CAST@3282:GROUP=-1133347294:REFERENCE_BCI=145:STORE=3;EXISTING_CAST@3282:GROUP=-1133347294:REFERENCE_BCI=145:STORE=3"
+        ]
+      ]
+    }
+  ],
+  "proof_inputs": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/choice/ComposableSingletons$OtherOptionKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "0c56ffb09b718529406fa43e515acd3012d46fda669d006ddb4e94e94948ee23",
+      "prior132": null,
+      "transparent_sites": []
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "6a670dea9fe20f229aa79a5ce98c550a8b7d75d1f7444e6f493f78d87dc5e63a",
+      "prior132": null,
+      "transparent_sites": []
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/questiontype/files/ComposableSingletons$FileUploadErrorComponentKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "sha256": "8262fe246fd9edce8313019ea7752818257d9b84db5742f5c53b9c785f3c95bc",
+      "prior132": null,
+      "transparent_sites": []
+    }
+  ],
+  "scope": "Three unique owned static original call sites; all-path already-checked bare-local Fn0 values, earlier casts/end groups unchanged; existing132 casts transparently retraced",
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/function-arguments-37",
+  "code_backfill": false
+}

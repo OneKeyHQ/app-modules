@@ -1,0 +1,308 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+  "root_only": true,
+  "source_before_sha256": "83d8676e2635f551c58a87168c388ef557528390c4247fe900cf4000289bde29",
+  "source_after_sha256": "adff730002b300133009ab1abddc813bc97b2a937c783d668fc3bd3359a75efa",
+  "source_capture_sites": 4,
+  "source_capture_bindings": 9,
+  "declaration_check_exit": 0,
+  "type_edits": 2,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-CollectionRowComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.java",
+      "22199",
+      "22256",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_866_0, recoveredExpressionArgument_866_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.CollectionRowComponentKt.CollectionRowComponent$lambda$5(recoveredExpressionCapture_866_0, recoveredExpressionCapture_866_1, recoveredExpressionCapture_866_2, recoveredExpressionCapture_866_3, recoveredExpressionCapture_866_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_866_0), ((java.lang.Integer)recoveredExpressionArgument_866_1).intValue()))",
+      "22180",
+      "final io.intercom.android.sdk.m5.helpcenter.states.CollectionRowData recoveredExpressionCapture_866_0 = var0;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_866_1 = var1;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_866_2 = var2;\\n         final int recoveredExpressionCapture_866_3 = var4;\\n         final int recoveredExpressionCapture_866_4 = var5;\\n         ",
+      "866",
+      "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;=var0,Lkotlin/jvm/functions/Function1;=var1,Landroidx/compose/ui/Modifier;=var2,I=var4,I=var5",
+      "recoveredExpressionCapture_866_0=var0@5319:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;;recoveredExpressionCapture_866_1=var1@5352:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_866_2=var2@5377:LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_866_3=var4@5427:LOCAL|4|4|0|var4|I;recoveredExpressionCapture_866_4=var5@5437:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-CollectionRowComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.java",
+      "7584",
+      "7650",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.helpcenter.ui.components.CollectionRowComponentKt.CollectionRowComponent$lambda$1$lambda$0(recoveredExpressionCapture_867_0, recoveredExpressionCapture_867_1))",
+      "7566",
+      "final kotlin.jvm.functions.Function1 recoveredExpressionCapture_867_0 = var1;\\n            final io.intercom.android.sdk.m5.helpcenter.states.CollectionRowData recoveredExpressionCapture_867_1 = var0;\\n            ",
+      "867",
+      "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lkotlin/jvm/functions/Function1;=var1,Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;=var0",
+      "recoveredExpressionCapture_867_0=var1@5352:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_867_1=var0@5319:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-CollectionRowComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.java",
+      "23453",
+      "23498",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_868_0, recoveredExpressionArgument_868_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.CollectionRowComponentKt.RowPreview$lambda$6(recoveredExpressionCapture_868_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_868_0), ((java.lang.Integer)recoveredExpressionArgument_868_1).intValue()))",
+      "23432",
+      "final int recoveredExpressionCapture_868_0 = var1;\\n         ",
+      "868",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_868_0=var1@22440:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-CollectionRowComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.java",
+      "24775",
+      "24837",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_869_0, recoveredExpressionArgument_869_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.CollectionRowComponentKt.RowWithNoDescriptionPreview$lambda$7(recoveredExpressionCapture_869_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_869_0), ((java.lang.Integer)recoveredExpressionArgument_869_1).intValue()))",
+      "24754",
+      "final int recoveredExpressionCapture_869_0 = var1;\\n         ",
+      "869",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_869_0=var1@23699:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 866,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "CollectionRowComponent",
+        "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "1471",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "CollectionRowComponent$lambda$5",
+        "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;=var0,Lkotlin/jvm/functions/Function1;=var1,Landroidx/compose/ui/Modifier;=var2,I=var4,I=var5",
+        "2064"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent",
+          "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent$lambda$5",
+          "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{2057, 2058, 2059, 2060, 2061, 2062, 2063, 2064, 2065, 2066, 2067, 2068}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent",
+          "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent$lambda$5",
+          "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{2057, 2058, 2059, 2060, 2061, 2062, 2063, 2064, 2065, 2066, 2067, 2068}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "CollectionRowComponent",
+        "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "2064",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.CollectionRowComponent$lambda$5(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 867,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "CollectionRowComponent",
+        "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "225",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "CollectionRowComponent$lambda$1$lambda$0",
+        "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function1;=var1,Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;=var0",
+        "331"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent",
+          "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent$lambda$1$lambda$0",
+          "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;)Lkotlin/Unit;",
+          "{329, 330, 331, 332, 333, 334, 335}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent",
+          "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "CollectionRowComponent$lambda$1$lambda$0",
+          "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;)Lkotlin/Unit;",
+          "{329, 330, 331, 332, 333, 334, 335}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "CollectionRowComponent",
+        "(Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;Lkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "331",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.CollectionRowComponent$lambda$1$lambda$0(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/m5/helpcenter/states/CollectionRowData;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 868,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "RowPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "RowPreview$lambda$6",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowPreview$lambda$6",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowPreview$lambda$6",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "RowPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.RowPreview$lambda$6(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 869,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "RowWithNoDescriptionPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "RowWithNoDescriptionPreview$lambda$7",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowWithNoDescriptionPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowWithNoDescriptionPreview$lambda$7",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowWithNoDescriptionPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+          "RowWithNoDescriptionPreview$lambda$7",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt",
+        "RowWithNoDescriptionPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/CollectionRowComponentKt.RowWithNoDescriptionPreview$lambda$7(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

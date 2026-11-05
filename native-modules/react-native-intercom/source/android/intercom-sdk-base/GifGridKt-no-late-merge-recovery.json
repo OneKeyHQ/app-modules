@@ -1,0 +1,600 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+  "root_only": true,
+  "source_before_sha256": "dce7f421b4b149b4f11c186f4154afa30d57ce36e330a8ca5cb2c4f0b9fa43b6",
+  "source_after_sha256": "7959b246d8dd8e03d5eff3b2168050539097b8adfe1fea2b03581de7b360254f",
+  "source_capture_sites": 8,
+  "source_capture_bindings": 19,
+  "declaration_check_exit": 0,
+  "type_edits": 1,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "20604",
+      "20659",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_575_0) -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGrid$lambda$12$lambda$8$lambda$3$lambda$2(recoveredExpressionCapture_575_0, (androidx.compose.foundation.text.KeyboardActionScope) ((androidx.compose.foundation.text.KeyboardActionScope)recoveredExpressionArgument_575_0)))",
+      "20586",
+      "final androidx.compose.ui.platform.SoftwareKeyboardController recoveredExpressionCapture_575_0 = var107;\\n            ",
+      "575",
+      "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/platform/SoftwareKeyboardController;=var10",
+      "recoveredExpressionCapture_575_0=var107@11026:LOCAL|10|107|0|var107|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "22093",
+      "22148",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_576_0) -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGrid$lambda$12$lambda$8$lambda$5$lambda$4(recoveredExpressionCapture_576_0, recoveredExpressionCapture_576_1, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_576_0)))",
+      "22074",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_576_0 = var8;\\n            final kotlin.jvm.functions.Function1 recoveredExpressionCapture_576_1 = var3;\\n            ",
+      "576",
+      "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/MutableState;=var8,Lkotlin/jvm/functions/Function1;=var3",
+      "recoveredExpressionCapture_576_0=var8@9791:LOCAL|8|8|0|var8|Landroidx/compose/runtime/MutableState;;recoveredExpressionCapture_576_1=var3@7585:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "24049",
+      "24104",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGrid$lambda$12$lambda$8$lambda$7$lambda$6(recoveredExpressionCapture_577_0, recoveredExpressionCapture_577_1))",
+      "24031",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_577_0 = var8;\\n               final kotlin.jvm.functions.Function1 recoveredExpressionCapture_577_1 = var3;\\n               ",
+      "577",
+      "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/MutableState;=var8,Lkotlin/jvm/functions/Function1;=var3",
+      "recoveredExpressionCapture_577_0=var8@9791:LOCAL|8|8|0|var8|Landroidx/compose/runtime/MutableState;;recoveredExpressionCapture_577_1=var3@7585:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "27353",
+      "27401",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_578_0) -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGrid$lambda$12$lambda$11$lambda$10(recoveredExpressionCapture_578_0, recoveredExpressionCapture_578_1, (androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope) ((androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope)recoveredExpressionArgument_578_0)))",
+      "27335",
+      "final java.util.List recoveredExpressionCapture_578_0 = var1;\\n            final kotlin.jvm.functions.Function1 recoveredExpressionCapture_578_1 = var2;\\n            ",
+      "578",
+      "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Ljava/util/List;=var1,Lkotlin/jvm/functions/Function1;=var2",
+      "recoveredExpressionCapture_578_0=var1@7540:LOCAL|1|1|0|var1|Ljava/util/List;;recoveredExpressionCapture_578_1=var2@7560:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "28857",
+      "28885",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_579_0, recoveredExpressionArgument_579_1) -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGrid$lambda$13(recoveredExpressionCapture_579_0, recoveredExpressionCapture_579_1, recoveredExpressionCapture_579_2, recoveredExpressionCapture_579_3, recoveredExpressionCapture_579_4, recoveredExpressionCapture_579_5, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_579_0), ((java.lang.Integer)recoveredExpressionArgument_579_1).intValue()))",
+      "28838",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_579_0 = var0;\\n         final java.util.List recoveredExpressionCapture_579_1 = var1;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_579_2 = var2;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_579_3 = var3;\\n         final int recoveredExpressionCapture_579_4 = var5;\\n         final int recoveredExpressionCapture_579_5 = var6;\\n         ",
+      "579",
+      "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,Ljava/util/List;=var1,Lkotlin/jvm/functions/Function1;=var2,Lkotlin/jvm/functions/Function1;=var3,I=var5,I=var6",
+      "recoveredExpressionCapture_579_0=var0@7515:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_579_1=var1@7540:LOCAL|1|1|0|var1|Ljava/util/List;;recoveredExpressionCapture_579_2=var2@7560:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_579_3=var3@7585:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_579_4=var5@7635:LOCAL|5|5|0|var5|I;recoveredExpressionCapture_579_5=var6@7645:LOCAL|6|6|0|var6|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "31044",
+      "31086",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGridIcon$lambda$15$lambda$14(recoveredExpressionCapture_580_0))",
+      "31026",
+      "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_580_0 = var1;\\n            ",
+      "580",
+      "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "Lkotlin/jvm/functions/Function0;=var1",
+      "recoveredExpressionCapture_580_0=var1@29048:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "32160",
+      "32192",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_581_0, recoveredExpressionArgument_581_1) -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.GifGridIcon$lambda$16(recoveredExpressionCapture_581_0, recoveredExpressionCapture_581_1, recoveredExpressionCapture_581_2, recoveredExpressionCapture_581_3, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_581_0), ((java.lang.Integer)recoveredExpressionArgument_581_1).intValue()))",
+      "32142",
+      "final int recoveredExpressionCapture_581_0 = var0;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_581_1 = var1;\\n         final int recoveredExpressionCapture_581_2 = var3;\\n         final int recoveredExpressionCapture_581_3 = var4;\\n         ",
+      "581",
+      "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "I=var0,Lkotlin/jvm/functions/Function0;=var1,I=var3,I=var4",
+      "recoveredExpressionCapture_581_0=var0@29025:LOCAL|0|0|0|var0|I;recoveredExpressionCapture_581_1=var1@29048:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_581_2=var3@29079:LOCAL|3|3|0|var3|I;recoveredExpressionCapture_581_3=var4@29089:LOCAL|4|4|0|var4|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-GifGridKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.java",
+      "33372",
+      "33407",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_582_0, recoveredExpressionArgument_582_1) -> io.intercom.android.sdk.m5.conversation.ui.components.composer.GifGridKt.PreviewGifGrid$lambda$17(recoveredExpressionCapture_582_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_582_0), ((java.lang.Integer)recoveredExpressionArgument_582_1).intValue()))",
+      "33351",
+      "final int recoveredExpressionCapture_582_0 = var1;\\n         ",
+      "582",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_582_0=var1@32371:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 575,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1090",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid$lambda$12$lambda$8$lambda$3$lambda$2",
+        "(Landroidx/compose/ui/platform/SoftwareKeyboardController;Landroidx/compose/foundation/text/KeyboardActionScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/foundation/text/KeyboardActionScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/ui/platform/SoftwareKeyboardController;=var10",
+        "1638"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$8$lambda$3$lambda$2",
+          "(Landroidx/compose/ui/platform/SoftwareKeyboardController;Landroidx/compose/foundation/text/KeyboardActionScope;)Lkotlin/Unit;",
+          "{1636, 1637, 1638, 1639, 1640, 1641, 1642}",
+          "LOCAL|10|107|0|var107|Landroidx/compose/ui/platform/SoftwareKeyboardController;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$8$lambda$3$lambda$2",
+          "(Landroidx/compose/ui/platform/SoftwareKeyboardController;Landroidx/compose/foundation/text/KeyboardActionScope;)Lkotlin/Unit;",
+          "{1636, 1637, 1638, 1639, 1640, 1641, 1642}",
+          "LOCAL|10|107|0|var107|Landroidx/compose/ui/platform/SoftwareKeyboardController;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1638",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGrid$lambda$12$lambda$8$lambda$3$lambda$2(Landroidx/compose/ui/platform/SoftwareKeyboardController;Landroidx/compose/foundation/text/KeyboardActionScope;)Lkotlin/Unit; (6), (Landroidx/compose/foundation/text/KeyboardActionScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 576,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1210",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid$lambda$12$lambda$8$lambda$5$lambda$4",
+        "(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/MutableState;=var8,Lkotlin/jvm/functions/Function1;=var3",
+        "1816"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$8$lambda$5$lambda$4",
+          "(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;",
+          "{1813, 1814, 1815, 1816, 1817, 1818, 1819, 1820}",
+          "LOCAL|8|8|0|var8|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$8$lambda$5$lambda$4",
+          "(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit;",
+          "{1813, 1814, 1815, 1816, 1817, 1818, 1819, 1820}",
+          "LOCAL|8|8|0|var8|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1816",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGrid$lambda$12$lambda$8$lambda$5$lambda$4(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 577,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1383",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid$lambda$12$lambda$8$lambda$7$lambda$6",
+        "(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/runtime/MutableState;=var8,Lkotlin/jvm/functions/Function1;=var3",
+        "2069"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$8$lambda$7$lambda$6",
+          "(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit;",
+          "{2066, 2067, 2068, 2069, 2070, 2071, 2072, 2073}",
+          "LOCAL|8|8|0|var8|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$8$lambda$7$lambda$6",
+          "(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit;",
+          "{2066, 2067, 2068, 2069, 2070, 2071, 2072, 2073}",
+          "LOCAL|8|8|0|var8|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "2069",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGrid$lambda$12$lambda$8$lambda$7$lambda$6(Landroidx/compose/runtime/MutableState;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 578,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1664",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid$lambda$12$lambda$11$lambda$10",
+        "(Ljava/util/List;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/staggeredgrid/LazyStaggeredGridScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/foundation/lazy/staggeredgrid/LazyStaggeredGridScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Ljava/util/List;=var1,Lkotlin/jvm/functions/Function1;=var2",
+        "2431"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$11$lambda$10",
+          "(Ljava/util/List;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/staggeredgrid/LazyStaggeredGridScope;)Lkotlin/Unit;",
+          "{2429, 2430, 2431, 2432, 2433, 2434, 2435}",
+          "LOCAL|1|1|0|var1|Ljava/util/List;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$12$lambda$11$lambda$10",
+          "(Ljava/util/List;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/staggeredgrid/LazyStaggeredGridScope;)Lkotlin/Unit;",
+          "{2429, 2430, 2431, 2432, 2433, 2434, 2435}",
+          "LOCAL|1|1|0|var1|Ljava/util/List;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "2431",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGrid$lambda$12$lambda$11$lambda$10(Ljava/util/List;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/staggeredgrid/LazyStaggeredGridScope;)Lkotlin/Unit; (6), (Landroidx/compose/foundation/lazy/staggeredgrid/LazyStaggeredGridScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 579,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "1779",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid$lambda$13",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,Ljava/util/List;=var1,Lkotlin/jvm/functions/Function1;=var2,Lkotlin/jvm/functions/Function1;=var3,I=var5,I=var6",
+        "2580"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$13",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{2572, 2573, 2574, 2575, 2576, 2577, 2578, 2579, 2580, 2581, 2582, 2583, 2584}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Ljava/util/List;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGrid$lambda$13",
+          "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{2572, 2573, 2574, 2575, 2576, 2577, 2578, 2579, 2580, 2581, 2582, 2583, 2584}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Ljava/util/List;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGrid",
+        "(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "2580",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGrid$lambda$13(Landroidx/compose/ui/Modifier;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 580,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGridIcon",
+        "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "199",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGridIcon$lambda$15$lambda$14",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function0;=var1",
+        "278"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon",
+          "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon$lambda$15$lambda$14",
+          "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+          "{277, 278, 279, 280, 281, 282}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon",
+          "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon$lambda$15$lambda$14",
+          "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+          "{277, 278, 279, 280, 281, 282}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGridIcon",
+        "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "278",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGridIcon$lambda$15$lambda$14(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 581,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGridIcon",
+        "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "301",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGridIcon$lambda$16",
+        "(ILkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var0,Lkotlin/jvm/functions/Function0;=var1,I=var3,I=var4",
+        "416"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon",
+          "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon$lambda$16",
+          "(ILkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{411, 412, 413, 414, 415, 416, 417, 418, 419, 420}",
+          "LOCAL|0|0|0|var0|I",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|3|3|0|var3|I",
+          "LOCAL|4|4|0|var4|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon",
+          "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "GifGridIcon$lambda$16",
+          "(ILkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{411, 412, 413, 414, 415, 416, 417, 418, 419, 420}",
+          "LOCAL|0|0|0|var0|I",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|3|3|0|var3|I",
+          "LOCAL|4|4|0|var4|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "GifGridIcon",
+        "(ILkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "416",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.GifGridIcon$lambda$16(ILkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 582,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "PreviewGifGrid",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "PreviewGifGrid$lambda$17",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "PreviewGifGrid",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "PreviewGifGrid$lambda$17",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "PreviewGifGrid",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+          "PreviewGifGrid$lambda$17",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt",
+        "PreviewGifGrid",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/composer/GifGridKt.PreviewGifGrid$lambda$17(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

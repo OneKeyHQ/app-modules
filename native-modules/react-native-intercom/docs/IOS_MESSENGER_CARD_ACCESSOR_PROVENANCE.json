@@ -1,0 +1,854 @@
+{
+  "baseline": "Intercom19.9.1 device MachO/metadata",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "validatedAccessors": [
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "fallbackURL",
+      "ivar": "_fallbackURL",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa534",
+      "kind": "strong",
+      "attributes": "T@\"NSURL\",&,N,V_fallbackURL",
+      "instructionsSHA256": "9bdc6c29dea2cb0fa363530619b82197c8a478394a2f7418abbbdf1017ab282d"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setFallbackURL:",
+      "ivar": "_fallbackURL",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa534",
+      "kind": "strong",
+      "attributes": "T@\"NSURL\",&,N,V_fallbackURL",
+      "instructionsSHA256": "76deda87d462fe3864cc03804bec214f6572b89da77707f216c21ba66da21fc6"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "loadingSpinnerColor",
+      "ivar": "_loadingSpinnerColor",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa538",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_loadingSpinnerColor",
+      "instructionsSHA256": "2a22d662cbcfe0780603c9069653f33ebd4ecbcbb235204639bfda6d966d5c83"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setLoadingSpinnerColor:",
+      "ivar": "_loadingSpinnerColor",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa538",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_loadingSpinnerColor",
+      "instructionsSHA256": "61e15b02c5880f9e615ae67abfe00ff2ebf2c2a8a2540ef254289678bb885005"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "loadingSpinnerImage",
+      "ivar": "_loadingSpinnerImage",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa53c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_loadingSpinnerImage",
+      "instructionsSHA256": "c913ee6b6fca1061d93b5865756674e01e04cb99b3d1c3b3946231d477d864db"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setLoadingSpinnerImage:",
+      "ivar": "_loadingSpinnerImage",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa53c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_loadingSpinnerImage",
+      "instructionsSHA256": "1565ada86d03f4dad04d6be1ab5e0235353bcb2de8b251b1dbda9fdf6c6915dd"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "cardInsets",
+      "ivar": "_cardInsets",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa54c",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_cardInsets",
+      "instructionsSHA256": "f651b713f9f9308e7c0f161fcacf899b944a64252885e66034091193d48713a6"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setCardInsets:",
+      "ivar": "_cardInsets",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa54c",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_cardInsets",
+      "instructionsSHA256": "4462dc3eb021b3925b998a2fd56c43870bfd710d631f0c596b21165a9053722b"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "cardSize",
+      "ivar": "_cardSize",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa548",
+      "kind": "value",
+      "attributes": "T{CGSize=dd},N,V_cardSize",
+      "instructionsSHA256": "c3250e4845dfbeb5501d365096287ad010816f9e4b80d5a02b294284d92a2571"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setCardSize:",
+      "ivar": "_cardSize",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa548",
+      "kind": "value",
+      "attributes": "T{CGSize=dd},N,V_cardSize",
+      "instructionsSHA256": "ec38075d6b135be827d047af6db720d8b41c5cdc0cbbaef7a601901fa1509c5f"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "webviewLoaded",
+      "ivar": "_webviewLoaded",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa52c",
+      "kind": "value",
+      "attributes": "TB,N,V_webviewLoaded",
+      "instructionsSHA256": "076f9143f75c1f676524c583de6187a8ea795f8490542f7acb3c926f99cc19fa"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setWebviewLoaded:",
+      "ivar": "_webviewLoaded",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa52c",
+      "kind": "value",
+      "attributes": "TB,N,V_webviewLoaded",
+      "instructionsSHA256": "61f174a80fee27e99ce96b0da473fa8a1514d1d1aa3edb6f2167e97a4717dcab"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "showCardBorder",
+      "ivar": "_showCardBorder",
+      "originalOffset": 9,
+      "offsetVariable": "0x4aa530",
+      "kind": "value",
+      "attributes": "TB,N,V_showCardBorder",
+      "instructionsSHA256": "d0334cd0e8aaa69243b07754afb17376df0433412c3ede9b2cc135a0108c47c6"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setShowCardBorder:",
+      "ivar": "_showCardBorder",
+      "originalOffset": 9,
+      "offsetVariable": "0x4aa530",
+      "kind": "value",
+      "attributes": "TB,N,V_showCardBorder",
+      "instructionsSHA256": "2df2f84120e9d96fc1792e501d772b296012429f1c4dbc0fcc56aa4c63584d92"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "appPrimaryColor",
+      "ivar": "_appPrimaryColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa540",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_appPrimaryColor",
+      "instructionsSHA256": "a3f8a5218b201f1486a17d247e8b5b983e5818872c0c4f0dde7de55ce389a13b"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setAppPrimaryColor:",
+      "ivar": "_appPrimaryColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa540",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_appPrimaryColor",
+      "instructionsSHA256": "622b2fbef039615ebf0f32e87446f133685028df7cd9cf308cf736b371cb6417"
+    },
+    {
+      "class": "ICPCardFallbackModel",
+      "selector": "setCardId:",
+      "ivar": "_cardId",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa544",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_cardId",
+      "instructionsSHA256": "3aff917b181788cd69665282b03bf4227e00ef178ca5147a8e0fdda0e1c55455"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "height",
+      "ivar": "_height",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa38c",
+      "kind": "value",
+      "attributes": "Tq,N,V_height",
+      "instructionsSHA256": "46b74cb86ba668614d9ed3a240a4d4bc3e36e6b5194856bb446b8f650d6734ea"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setHeight:",
+      "ivar": "_height",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa38c",
+      "kind": "value",
+      "attributes": "Tq,N,V_height",
+      "instructionsSHA256": "1914687aba8d6ad83b8ab7a01c2100a4c0a4c048b90ba09997954742c18d2157"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "width",
+      "ivar": "_width",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa390",
+      "kind": "value",
+      "attributes": "Tq,N,V_width",
+      "instructionsSHA256": "b6ddbff348bc0ac7f6d1be947094e861ad03149f16d25c8fd2cedf9b154fa715"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setWidth:",
+      "ivar": "_width",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa390",
+      "kind": "value",
+      "attributes": "Tq,N,V_width",
+      "instructionsSHA256": "fca87970ead979651ab92c3d08942a7d2c2b8025813edf167b79880c3215df74"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "fallbackURL",
+      "ivar": "_fallbackURL",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa374",
+      "kind": "strong",
+      "attributes": "T@\"NSURL\",&,N,V_fallbackURL",
+      "instructionsSHA256": "1199d3410762ca9ce22449f6bedddaba44cb839db0a13adb8184b35451596590"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setFallbackURL:",
+      "ivar": "_fallbackURL",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa374",
+      "kind": "strong",
+      "attributes": "T@\"NSURL\",&,N,V_fallbackURL",
+      "instructionsSHA256": "b64b5a18c18541b471531efbaec43b93633f61ada7fac6d95eaff67984a37687"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "loadingSpinnerColor",
+      "ivar": "_loadingSpinnerColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa378",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_loadingSpinnerColor",
+      "instructionsSHA256": "efed3353b97dde4c2ab7be17b97827fc2dd86310be35315c3b4910bcacc2c106"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setLoadingSpinnerColor:",
+      "ivar": "_loadingSpinnerColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa378",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_loadingSpinnerColor",
+      "instructionsSHA256": "871ef102c908a16da56ff866f25ab0c868f1fd62692e7b70835a9d6164a7eac0"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "loadingSpinnerImage",
+      "ivar": "_loadingSpinnerImage",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa37c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_loadingSpinnerImage",
+      "instructionsSHA256": "47c539b58230b91e406b386e27e6633c2a9718abb7dda8bf6dcc0ae407ce9ae4"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setLoadingSpinnerImage:",
+      "ivar": "_loadingSpinnerImage",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa37c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_loadingSpinnerImage",
+      "instructionsSHA256": "fe2facb2f3e74144cd269028bd17f2c0188843ee34991d57a38ec8d7053e7ae7"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "cardInsets",
+      "ivar": "_cardInsets",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa380",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_cardInsets",
+      "instructionsSHA256": "4c1be243a3e9d53a7c1870fc30499f2c2b096d0da03b391c66109c62dfe8ff06"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setCardInsets:",
+      "ivar": "_cardInsets",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa380",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_cardInsets",
+      "instructionsSHA256": "b1ddf84c834895534ec6c58f21f32989072a0b89912887ea504aee6e918a4b08"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "showCardBorder",
+      "ivar": "_showCardBorder",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa384",
+      "kind": "value",
+      "attributes": "TB,N,V_showCardBorder",
+      "instructionsSHA256": "0b3a73bcbe4896e6a451beeadf970dcbf7a4222e98584e8a3cd685099027a1f8"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setShowCardBorder:",
+      "ivar": "_showCardBorder",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa384",
+      "kind": "value",
+      "attributes": "TB,N,V_showCardBorder",
+      "instructionsSHA256": "25312a9ecb11ba73e7eafc26539f5be9e2a43cb17ec88dd3a4ff6e4bdc4ec08f"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "appPrimaryColor",
+      "ivar": "_appPrimaryColor",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa388",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_appPrimaryColor",
+      "instructionsSHA256": "c30def9b98416b5b85884f1fb3a5d41bbac132f0061c086bb0b18c2c0c924513"
+    },
+    {
+      "class": "ITBMessengerCardFallbackBlock",
+      "selector": "setAppPrimaryColor:",
+      "ivar": "_appPrimaryColor",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa388",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_appPrimaryColor",
+      "instructionsSHA256": "b556d68138fae32b12fb10f0bf13f999767b3d9b0f3ee73cf6dd5882914558b3"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "sheetParamaters",
+      "ivar": "_sheetParamaters",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa394",
+      "kind": "strong",
+      "attributes": "T@\"NSDictionary\",&,N,V_sheetParamaters",
+      "instructionsSHA256": "1cf3ec2fec2471410d2661193959fdb98b27651b4c73bfebb126c2e8f2d8832c"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setSheetParamaters:",
+      "ivar": "_sheetParamaters",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa394",
+      "kind": "strong",
+      "attributes": "T@\"NSDictionary\",&,N,V_sheetParamaters",
+      "instructionsSHA256": "fa38a14b547f2e0ca8563fe08165917bb725fd6aa13ed804c3706415cc5e8bdd"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "urlToOpen",
+      "ivar": "_urlToOpen",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa398",
+      "kind": "strong",
+      "attributes": "T@\"NSURL\",&,N,V_urlToOpen",
+      "instructionsSHA256": "32cdb56e45c5ed8e27aebcafdc668a3e3be8b1fa68889c7ee07836f6e65baf4c"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setUrlToOpen:",
+      "ivar": "_urlToOpen",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa398",
+      "kind": "strong",
+      "attributes": "T@\"NSURL\",&,N,V_urlToOpen",
+      "instructionsSHA256": "8c3339e11272dd5ec145f3cc51ab8e0444cfd413656a1163d4183db7151f0b76"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "textInputTitle",
+      "ivar": "_textInputTitle",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa39c",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputTitle",
+      "instructionsSHA256": "707b1006162a975973e3f15dc014646a4be79b8bceaa2e10c832ebc61cf01cf4"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setTextInputTitle:",
+      "ivar": "_textInputTitle",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa39c",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputTitle",
+      "instructionsSHA256": "52546fc7475129f8d405f0f7edea1e90d004131984cb61a9d401b6fbce1c61a8"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "textInputPlaceholder",
+      "ivar": "_textInputPlaceholder",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa3a0",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputPlaceholder",
+      "instructionsSHA256": "8750dd5245b2fe07d08c0c6acef92a757b66c714794c7a7c83e93da78dac2701"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setTextInputPlaceholder:",
+      "ivar": "_textInputPlaceholder",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa3a0",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputPlaceholder",
+      "instructionsSHA256": "d9a6c975ce4cd2075de3648889f709262ba87bc3031b8aa74312556a7012faf6"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "textInputCurrentText",
+      "ivar": "_textInputCurrentText",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa3a4",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputCurrentText",
+      "instructionsSHA256": "2ca876c8e80aad355b71f03313c8f9cb2d40ef322f037297d113c2f3df352fff"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setTextInputCurrentText:",
+      "ivar": "_textInputCurrentText",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa3a4",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputCurrentText",
+      "instructionsSHA256": "7f376b0816f4407a217a88d579650be7d2708c56c9fea37d8cf61936f6dad49b"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "textInputId",
+      "ivar": "_textInputId",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa3a8",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputId",
+      "instructionsSHA256": "7eda00a1c9e39546e5aa789fb0387ab00d4e578dc9fe480568ae9eccb40e174e"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setTextInputId:",
+      "ivar": "_textInputId",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa3a8",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputId",
+      "instructionsSHA256": "2ef0e1bed6792e5b60c619a88d2f0b911d471ad078f4cc059a9061834f676ae7"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "textInputMessengerAppId",
+      "ivar": "_textInputMessengerAppId",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa3ac",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputMessengerAppId",
+      "instructionsSHA256": "121d50dfd5e4e23736f843aecaa7b35f0b9a2e047254e73918e940531ec49e50"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setTextInputMessengerAppId:",
+      "ivar": "_textInputMessengerAppId",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa3ac",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_textInputMessengerAppId",
+      "instructionsSHA256": "e3b549b1ee2bc82d3e660413a84ddfdc2194775064be451da39f4a495d63aaed"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "currentIntentType",
+      "ivar": "_currentIntentType",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa3b0",
+      "kind": "value",
+      "attributes": "Tq,N,V_currentIntentType",
+      "instructionsSHA256": "b07e4b39f877cae9110ff79ce30c9acabd66e83976fb065db62ea062afaf9655"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setCurrentIntentType:",
+      "ivar": "_currentIntentType",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa3b0",
+      "kind": "value",
+      "attributes": "Tq,N,V_currentIntentType",
+      "instructionsSHA256": "be57ba5927bec47b49c46a8173977ecf2e9981dcb3e8fe99a90bae6970a794d8"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "metricPayloadDictionary",
+      "ivar": "_metricPayloadDictionary",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa3b4",
+      "kind": "strong",
+      "attributes": "T@\"NSDictionary\",&,N,V_metricPayloadDictionary",
+      "instructionsSHA256": "0bf7d929fe60535e76b76f622ed295c0f02cc6656095139dd5395fb3a2d7487a"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setMetricPayloadDictionary:",
+      "ivar": "_metricPayloadDictionary",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa3b4",
+      "kind": "strong",
+      "attributes": "T@\"NSDictionary\",&,N,V_metricPayloadDictionary",
+      "instructionsSHA256": "863cf187ca286e8d7a0914a26045b809d46870ca7744fdb8305b007ee98944fd"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "cardfallBackComponent",
+      "ivar": "_cardfallBackComponent",
+      "originalOffset": 80,
+      "offsetVariable": "0x4aa3b8",
+      "kind": "strong",
+      "attributes": "T@\"ICPMessengerCardFallbackView\",&,N,V_cardfallBackComponent",
+      "instructionsSHA256": "04876ed68095adf2392209adec6fb3be5aa06654b200df26077969582a1391ac"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setCardfallBackComponent:",
+      "ivar": "_cardfallBackComponent",
+      "originalOffset": 80,
+      "offsetVariable": "0x4aa3b8",
+      "kind": "strong",
+      "attributes": "T@\"ICPMessengerCardFallbackView\",&,N,V_cardfallBackComponent",
+      "instructionsSHA256": "8d0e638702d7a29e92633e777afaa081c218de3cdb04b3c5ddbce010cb49b275"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "textInputCompletionBlock",
+      "ivar": "_textInputCompletionBlock",
+      "originalOffset": 88,
+      "offsetVariable": "0x4aa3bc",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_textInputCompletionBlock",
+      "instructionsSHA256": "dd51f889cfbfa3f243cad78dfbf0ec4f13f360dcf029d32063358dba0ffebc65"
+    },
+    {
+      "class": "ITBMessengerCardFallbackView",
+      "selector": "setTextInputCompletionBlock:",
+      "ivar": "_textInputCompletionBlock",
+      "originalOffset": 88,
+      "offsetVariable": "0x4aa3bc",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_textInputCompletionBlock",
+      "instructionsSHA256": "f03cf64b93ad03874a6fc029cc0f61fd6e841d2f61927c9868c86907f78958d7"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "title",
+      "ivar": "_title",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa570",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_title",
+      "instructionsSHA256": "84e4cf448ed3a995ced9548f53e8460c40693a4252f5bf732bccd0e022fbbbb9"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "setTitle:",
+      "ivar": "_title",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa570",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_title",
+      "instructionsSHA256": "676267c49d6e5f6624f9d1a487adf6354801797c6b16528eb3a2d6fd5b1bbf77"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "placeholder",
+      "ivar": "_placeholder",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa574",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_placeholder",
+      "instructionsSHA256": "b113b96a509ba53f39b60277a29fc0e0ac1b944b91b88c651cb8c1df07527556"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "setPlaceholder:",
+      "ivar": "_placeholder",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa574",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_placeholder",
+      "instructionsSHA256": "01ccb673f47e5b94666eac03fe048cc8c895878dec8d730bcfa65f3baf29a984"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "currentText",
+      "ivar": "_currentText",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa578",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_currentText",
+      "instructionsSHA256": "ca53e140708b2239271f293b57d8c72d380fb97a72a186a9f10c4867701aed57"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "setCurrentText:",
+      "ivar": "_currentText",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa578",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_currentText",
+      "instructionsSHA256": "7985650e49ee5b9ffd2b59917fc482ee8f04d4b0dbec609e7a96a8c4c1b10f24"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "inputId",
+      "ivar": "_inputId",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa57c",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_inputId",
+      "instructionsSHA256": "3b2203da175b0a4ce895be66b062232c2606e9f9fc536eaedc9d0e2f107c0c65"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "setInputId:",
+      "ivar": "_inputId",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa57c",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_inputId",
+      "instructionsSHA256": "377dec0f1133a2a9d826601608290f489f12bc79e27c7e5a469f27bde79a5ae3"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "messengerAppId",
+      "ivar": "_messengerAppId",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa580",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_messengerAppId",
+      "instructionsSHA256": "a640eaeb9977a048f5abf9673faf20045bd0949ab45c650f54c91c43eff74063"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "setMessengerAppId:",
+      "ivar": "_messengerAppId",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa580",
+      "kind": "strong",
+      "attributes": "T@\"NSString\",&,N,V_messengerAppId",
+      "instructionsSHA256": "92f8b27f79f73b6b44fb53c954230fb024f3fa8d3b03b701a6de75b2e7c14b95"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "completionBlock",
+      "ivar": "_completionBlock",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa584",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_completionBlock",
+      "instructionsSHA256": "6e70de6b6b64ea763f0097990e43b40d12bb6e482b635898e736544ad0118723"
+    },
+    {
+      "class": "ICPTextInputPayload",
+      "selector": "setCompletionBlock:",
+      "ivar": "_completionBlock",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa584",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_completionBlock",
+      "instructionsSHA256": "cf31f224f429a51415be1d7aff6c402f51f59bdfea95f541dc51aedd97ffe034"
+    },
+    {
+      "class": "ICPLoadingView",
+      "selector": "spinnerImageView",
+      "ivar": "_spinnerImageView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa550",
+      "kind": "strong",
+      "attributes": "T@\"UIImageView\",&,N,V_spinnerImageView",
+      "instructionsSHA256": "dd5cb115544696a1bf7ece9990eefb7872d9239b6b473113c8b669d5fc968a61"
+    },
+    {
+      "class": "ICPLoadingView",
+      "selector": "setSpinnerImageView:",
+      "ivar": "_spinnerImageView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa550",
+      "kind": "strong",
+      "attributes": "T@\"UIImageView\",&,N,V_spinnerImageView",
+      "instructionsSHA256": "c1b56b2ba6c1060783d12f1213e099f694c9debff34ac1200328633bb0b89575"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "activityIndicator",
+      "ivar": "_activityIndicator",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa560",
+      "kind": "strong",
+      "attributes": "T@\"ICPLoadingView\",&,N,V_activityIndicator",
+      "instructionsSHA256": "0078a267ef539e2de77efc5c70a250a6c56e3722411dbec5683ea72956daac15"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setActivityIndicator:",
+      "ivar": "_activityIndicator",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa560",
+      "kind": "strong",
+      "attributes": "T@\"ICPLoadingView\",&,N,V_activityIndicator",
+      "instructionsSHA256": "f95e4329b27c7feb543ffca03116116d8069f70f6015fa1762eba918b9aef61b"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "cardFallback",
+      "ivar": "_cardFallback",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa554",
+      "kind": "strong",
+      "attributes": "T@\"ICPCardFallbackModel\",&,N,V_cardFallback",
+      "instructionsSHA256": "e9702ac81acdfd1e31d100cfeaa5577958e1373c467cd79eecca0d1a1097d44b"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setCardFallback:",
+      "ivar": "_cardFallback",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa554",
+      "kind": "strong",
+      "attributes": "T@\"ICPCardFallbackModel\",&,N,V_cardFallback",
+      "instructionsSHA256": "a1d5f5c9924076af6d80110c35f36515dd3d761b7a504dd7ec0db34bcdb5c895"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "delegate",
+      "ivar": "_delegate",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa558",
+      "kind": "weak",
+      "attributes": "T@\"<ICPAppComponentDelegate>\",W,N,V_delegate",
+      "instructionsSHA256": "7d4ec8143d6d6d6a17ba0b60fcf16f35c5c976c8c71c37fa6a1dab86eafcabc9"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setDelegate:",
+      "ivar": "_delegate",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa558",
+      "kind": "weak",
+      "attributes": "T@\"<ICPAppComponentDelegate>\",W,N,V_delegate",
+      "instructionsSHA256": "d8402fc512f99bb477ee31b76806c7b5e7df25b68f33ca8e1fbba9baba68b58f"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "textInputPayload",
+      "ivar": "_textInputPayload",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa564",
+      "kind": "strong",
+      "attributes": "T@\"ICPTextInputPayload\",&,N,V_textInputPayload",
+      "instructionsSHA256": "91805390cabd72a5ef2a621ebafe57bade17cdd3d94aa5ac1f0f00467bf3e25c"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setTextInputPayload:",
+      "ivar": "_textInputPayload",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa564",
+      "kind": "strong",
+      "attributes": "T@\"ICPTextInputPayload\",&,N,V_textInputPayload",
+      "instructionsSHA256": "0c532804edb396b66500aba4f39ba71a29687e49bd7755aaf8ddb9de37828e54"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "shadowView",
+      "ivar": "_shadowView",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa568",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_shadowView",
+      "instructionsSHA256": "68cac76ee676560d5b5c3d09992474408e98503d0af55ea4a3edbe55febe2635"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setShadowView:",
+      "ivar": "_shadowView",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa568",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_shadowView",
+      "instructionsSHA256": "65bc82008c8ec3e56edef66e75d55ee6d054dbc61a342a6fb00e054fe3601261"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "backgroundView",
+      "ivar": "_backgroundView",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa56c",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_backgroundView",
+      "instructionsSHA256": "aeb8c1df8639d266c2e78e5820b6a5a9029ced490104a7f321a967a5e47acedd"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setBackgroundView:",
+      "ivar": "_backgroundView",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa56c",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_backgroundView",
+      "instructionsSHA256": "3908659ede10e41fe98da2f3a9a2f470b8ba59e81b2d94100fa182ef74fab4fe"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "webView",
+      "ivar": "_webView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa55c",
+      "kind": "strong",
+      "attributes": "T@\"WKWebView\",&,N,V_webView",
+      "instructionsSHA256": "17b09d46cb2e7c219ccdaa9a5f1cef14c26b8b8aab4ec739fe1118a078178946"
+    },
+    {
+      "class": "ICPMessengerCardFallbackView",
+      "selector": "setWebView:",
+      "ivar": "_webView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa55c",
+      "kind": "strong",
+      "attributes": "T@\"WKWebView\",&,N,V_webView",
+      "instructionsSHA256": "af9d1ca4db382f2c8fa4fc32cd6ad04b08663442cad7f3bf6ada9d65b264f940"
+    }
+  ],
+  "literalDataSHA256": "f4c537667540cde05f69a97c7700be089b5c63a7cf2ef219cf52306772cc03d6",
+  "literalStringsSHA256": {
+    "0x44d2d0": "9e3ec35ad8efb2d054ae9edc2a71bbb7dc65da068e1ec1b625e3b843c64700a3",
+    "0x44d2f0": "be8afe31fb60ef0dbcffb859589d01e326845c68fabe9ccd60545cb0e2c8759e",
+    "0x44d310": "0ebdca6390614bed1ca2870dcd9694c80501f29802c13e931ceee1f75a33a1a6",
+    "0x44d330": "5e3cbf93f3fe151aff9c175aba479774b5ad5567b86ba4f596e0ebfb7974f220"
+  },
+  "dataLiterals": {
+    "shadowAlpha": 0.4,
+    "shadowOpacity": 0.4000000059604645,
+    "spinDuration": 0.4000000059604645,
+    "spinFromRaw": "c3000000000020800000000000000000",
+    "spinToRaw": "c100000000002080182d4454fb210940",
+    "spinFromPayload": 0,
+    "spinToPayload": 3.141592653589793
+  },
+  "runtimeVerified": false,
+  "scope": "Metadata-backed trivial accessors and literal data only; custom behavior, full private ABI and WK/UIKit runtime not established. cardId getter is custom and intentionally excluded. Input completion UIAlertController parameter inferred from original textFields invocation."
+}

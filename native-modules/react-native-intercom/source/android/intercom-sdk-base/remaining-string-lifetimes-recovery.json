@@ -1,0 +1,27 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/ConversationItemKt$ConversationItem$2.java",
+      "before_sha256": "88fd58de6af8ca3d16665cef4f0a1144a084e3262c9538f9527c23f1e54b481f",
+      "after_sha256": "ace074993155a4bb59347956cb050e6f824edf9ef11b0f48b27956dedf2933ee"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/BlockViewKt.java",
+      "before_sha256": "291c732e42328a84845c1273279588d519ebbc270557ff92058cb1d5fbb0f33f",
+      "after_sha256": "a9b114094b522866287a4b24aacbfc5d7e2509f74ddb717ed074f1902702dad6"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.java",
+      "before_sha256": "690972a8d0b475238c9cf154e19bd3cf4404eb9243fc1409bf1f44271a50bc9a",
+      "after_sha256": "93ccab11dbed6a53fa6ec47e23658e643da98e15944b969e81d0b51b59a459fc"
+    }
+  ],
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/charsequence-170",
+  "scope": [
+    "ConversationItem original nullable name join CHECKCAST String1997 before concatenation",
+    "BlockView original checkNotNull then String CHECKCAST2724 before thumbnail getter2729",
+    "ArticleSearch original String articleId distinct from raw suspend result; common title String cast228; summary text getter233 precedes separate getter238.length; late row NEW274 unchanged; teammateHelpRow sentinel/result/resume untouched"
+  ],
+  "method_code_backfill": false
+}

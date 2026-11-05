@@ -1,0 +1,14 @@
+{
+  "status": "SOURCE_CORRECTED_NOT_COMPILED",
+  "scope": "DeDuperStore$fields$2.invokeSuspend(Object)Object",
+  "before_sha256": "f1ce196fa41a67a47cab94d080d3294f573a49c24fc99ed512261997090d6bbc",
+  "after_sha256": "0825c6fe11b029605f3132ec01355b525d9cc82ec454f67657aced0f6c595bbe",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/deduper-fields/original.javap.txt",
+  "corrections": [
+    "Declare cached String var27 within original protected block",
+    "Separate DeDuperFields result from Preferences slot lifetime across normal/fallback paths",
+    "Only result assignments and return use recoveredFields; Preferences reads unchanged"
+  ],
+  "preserved": "Flow first raw result/sentinel/resume throw, cancellation-first catch, logging/defaultFields fallback, illegal-label outside catch; invoke bridges untouched",
+  "runtime": "NOT_RUN"
+}

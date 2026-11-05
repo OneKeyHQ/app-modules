@@ -1,0 +1,312 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+  "root_only": true,
+  "source_before_sha256": "8c718e0b7c31a150656bb189200efc97d5e9abcccc2f18c01fa15c77cb85ac2c",
+  "source_after_sha256": "14127842953baddb3a8e558a3abb880bee691039dce844b717ddbf733ca3860f",
+  "source_capture_sites": 4,
+  "source_capture_bindings": 11,
+  "declaration_check_exit": 0,
+  "type_edits": 13,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AudioPermissionHandlerKt/ast-input/io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.java",
+      "7705",
+      "7779",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_809_0) -> io.intercom.android.sdk.m5.conversation.utils.audio.AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$4$lambda$3(recoveredExpressionCapture_809_0, recoveredExpressionCapture_809_1, ((java.lang.Boolean)recoveredExpressionArgument_809_0).booleanValue()))",
+      "7684",
+      "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_809_0 = var0;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_809_1 = var1;\\n         ",
+      "809",
+      "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+      "Lkotlin/jvm/functions/Function0;=var0,Lkotlin/jvm/functions/Function0;=var1",
+      "recoveredExpressionCapture_809_0=var0@4658:LOCAL|0|0|0|var0|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_809_1=var1@4683:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AudioPermissionHandlerKt/ast-input/io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.java",
+      "8573",
+      "8647",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.utils.audio.AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$6$lambda$5(recoveredExpressionCapture_810_0, recoveredExpressionCapture_810_1, recoveredExpressionCapture_810_2, recoveredExpressionCapture_810_3, recoveredExpressionCapture_810_4))",
+      "8558",
+      "final android.content.Context recoveredExpressionCapture_810_0 = var4;\\n         final android.app.Activity recoveredExpressionCapture_810_1 = var26;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_810_2 = var0;\\n         final androidx.activity.compose.ManagedActivityResultLauncher recoveredExpressionCapture_810_3 = var31;\\n         final androidx.compose.runtime.MutableState recoveredExpressionCapture_810_4 = var28;\\n         ",
+      "810",
+      "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+      "Landroid/content/Context;=var4,Landroid/app/Activity;=var5,Lkotlin/jvm/functions/Function0;=var0,Landroidx/activity/compose/ManagedActivityResultLauncher;=var7,Landroidx/compose/runtime/MutableState;=var6",
+      "recoveredExpressionCapture_810_0=var4@5775:LOCAL|4|4|0|var4|Landroid/content/Context;;recoveredExpressionCapture_810_1=var26@6190:LOCAL|5|26|0|var26|Landroid/app/Activity;;recoveredExpressionCapture_810_2=var0@4658:LOCAL|0|0|0|var0|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_810_3=var31@7995:LOCAL|7|31|0|var31|Landroidx/activity/compose/ManagedActivityResultLauncher;;recoveredExpressionCapture_810_4=var28@6932:LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AudioPermissionHandlerKt/ast-input/io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.java",
+      "10284",
+      "10358",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.utils.audio.AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$8$lambda$7(recoveredExpressionCapture_811_0, recoveredExpressionCapture_811_1))",
+      "10266",
+      "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_811_0 = var1;\\n            final androidx.compose.runtime.MutableState recoveredExpressionCapture_811_1 = var28;\\n            ",
+      "811",
+      "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+      "Lkotlin/jvm/functions/Function0;=var1,Landroidx/compose/runtime/MutableState;=var6",
+      "recoveredExpressionCapture_811_0=var1@4683:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_811_1=var28@6932:LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AudioPermissionHandlerKt/ast-input/io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.java",
+      "11547",
+      "11622",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.utils.audio.AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$10$lambda$9(recoveredExpressionCapture_812_0, recoveredExpressionCapture_812_1))",
+      "11529",
+      "final android.content.Context recoveredExpressionCapture_812_0 = var4;\\n            final androidx.compose.runtime.MutableState recoveredExpressionCapture_812_1 = var28;\\n            ",
+      "812",
+      "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+      "Landroid/content/Context;=var4,Landroidx/compose/runtime/MutableState;=var6",
+      "recoveredExpressionCapture_812_0=var4@5775:LOCAL|4|4|0|var4|Landroid/content/Context;;recoveredExpressionCapture_812_1=var28@6932:LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 809,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "268",
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler$lambda$4$lambda$3",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Z)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Boolean;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lkotlin/jvm/functions/Function0;=var0,Lkotlin/jvm/functions/Function0;=var1",
+        "377"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$4$lambda$3",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Z)Lkotlin/Unit;",
+          "{375, 376, 377, 378, 379, 380, 381}",
+          "LOCAL|0|0|0|var0|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$4$lambda$3",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Z)Lkotlin/Unit;",
+          "{375, 376, 377, 378, 379, 380, 381}",
+          "LOCAL|0|0|0|var0|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "377",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$4$lambda$3(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Z)Lkotlin/Unit; (6), (Ljava/lang/Boolean;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 810,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "351",
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler$lambda$6$lambda$5",
+        "(Landroid/content/Context;Landroid/app/Activity;Lkotlin/jvm/functions/Function0;Landroidx/activity/compose/ManagedActivityResultLauncher;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroid/content/Context;=var4,Landroid/app/Activity;=var5,Lkotlin/jvm/functions/Function0;=var0,Landroidx/activity/compose/ManagedActivityResultLauncher;=var7,Landroidx/compose/runtime/MutableState;=var6",
+        "484"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$6$lambda$5",
+          "(Landroid/content/Context;Landroid/app/Activity;Lkotlin/jvm/functions/Function0;Landroidx/activity/compose/ManagedActivityResultLauncher;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485, 486, 487, 488}",
+          "LOCAL|4|4|0|var4|Landroid/content/Context;",
+          "LOCAL|5|26|0|var26|Landroid/app/Activity;",
+          "LOCAL|0|0|0|var0|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|7|31|0|var31|Landroidx/activity/compose/ManagedActivityResultLauncher;",
+          "LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$6$lambda$5",
+          "(Landroid/content/Context;Landroid/app/Activity;Lkotlin/jvm/functions/Function0;Landroidx/activity/compose/ManagedActivityResultLauncher;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485, 486, 487, 488}",
+          "LOCAL|4|4|0|var4|Landroid/content/Context;",
+          "LOCAL|5|26|0|var26|Landroid/app/Activity;",
+          "LOCAL|0|0|0|var0|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|7|31|0|var31|Landroidx/activity/compose/ManagedActivityResultLauncher;",
+          "LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "484",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$6$lambda$5(Landroid/content/Context;Landroid/app/Activity;Lkotlin/jvm/functions/Function0;Landroidx/activity/compose/ManagedActivityResultLauncher;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 811,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "514",
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler$lambda$8$lambda$7",
+        "(Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function0;=var1,Landroidx/compose/runtime/MutableState;=var6",
+        "707"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$8$lambda$7",
+          "(Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{704, 705, 706, 707, 708, 709, 710, 711}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$8$lambda$7",
+          "(Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{704, 705, 706, 707, 708, 709, 710, 711}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "707",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$8$lambda$7(Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 812,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "603",
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler$lambda$10$lambda$9",
+        "(Landroid/content/Context;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroid/content/Context;=var4,Landroidx/compose/runtime/MutableState;=var6",
+        "838"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$10$lambda$9",
+          "(Landroid/content/Context;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{834, 835, 836, 837, 838, 839, 840, 841, 842}",
+          "LOCAL|4|4|0|var4|Landroid/content/Context;",
+          "LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+          "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+          "rememberAudioPermissionHandler$lambda$10$lambda$9",
+          "(Landroid/content/Context;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;",
+          "{834, 835, 836, 837, 838, 839, 840, 841, 842}",
+          "LOCAL|4|4|0|var4|Landroid/content/Context;",
+          "LOCAL|6|28|0|var28|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt",
+        "rememberAudioPermissionHandler",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;",
+        "838",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/utils/audio/AudioPermissionHandlerKt.rememberAudioPermissionHandler$lambda$10$lambda$9(Landroid/content/Context;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

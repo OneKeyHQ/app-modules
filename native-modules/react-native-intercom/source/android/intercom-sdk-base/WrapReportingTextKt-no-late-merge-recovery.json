@@ -1,0 +1,380 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+  "root_only": true,
+  "source_before_sha256": "56019b1690f4620ba659ee552244767c6f50f7661342cc9bb7e9f8dda8ec1012",
+  "source_after_sha256": "eddb723379c3b7859b275161d1444cd9092cc36ef70acf85190cb72c8893872e",
+  "source_capture_sites": 5,
+  "source_capture_bindings": 11,
+  "declaration_check_exit": 0,
+  "type_edits": 1,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-WrapReportingTextKt/ast-input/io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.java",
+      "5520",
+      "5584",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_932_0) -> io.intercom.android.sdk.m5.home.ui.components.WrapReportingTextKt.WrapReportingText_T042LqI$lambda$1$lambda$0(((java.lang.Boolean)recoveredExpressionArgument_932_0).booleanValue()))",
+      "5505",
+      "",
+      "932",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-WrapReportingTextKt/ast-input/io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.java",
+      "7382",
+      "7446",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_933_0) -> io.intercom.android.sdk.m5.home.ui.components.WrapReportingTextKt.WrapReportingText_T042LqI$lambda$4$lambda$3(recoveredExpressionCapture_933_0, (androidx.compose.ui.graphics.drawscope.ContentDrawScope) ((androidx.compose.ui.graphics.drawscope.ContentDrawScope)recoveredExpressionArgument_933_0)))",
+      "7361",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_933_0 = var42;\\n            ",
+      "933",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/MutableState;=var10",
+      "recoveredExpressionCapture_933_0=var42@6796:LOCAL|10|42|0|var42|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-WrapReportingTextKt/ast-input/io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.java",
+      "9371",
+      "9435",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_934_0) -> io.intercom.android.sdk.m5.home.ui.components.WrapReportingTextKt.WrapReportingText_T042LqI$lambda$6$lambda$5(recoveredExpressionCapture_934_0, recoveredExpressionCapture_934_1, (androidx.compose.ui.text.TextLayoutResult) ((androidx.compose.ui.text.TextLayoutResult)recoveredExpressionArgument_934_0)))",
+      "9353",
+      "final kotlin.jvm.functions.Function1 recoveredExpressionCapture_934_0 = var5;\\n            final androidx.compose.runtime.MutableState recoveredExpressionCapture_934_1 = var42;\\n            ",
+      "934",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Lkotlin/jvm/functions/Function1;=var5,Landroidx/compose/runtime/MutableState;=var10",
+      "recoveredExpressionCapture_934_0=var5@3625:LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_934_1=var42@6796:LOCAL|10|42|0|var42|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-WrapReportingTextKt/ast-input/io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.java",
+      "10962",
+      "11017",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_935_0, recoveredExpressionArgument_935_1) -> io.intercom.android.sdk.m5.home.ui.components.WrapReportingTextKt.WrapReportingText_T042LqI$lambda$7(recoveredExpressionCapture_935_0, recoveredExpressionCapture_935_1, recoveredExpressionCapture_935_2, recoveredExpressionCapture_935_3, recoveredExpressionCapture_935_4, recoveredExpressionCapture_935_5, recoveredExpressionCapture_935_6, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_935_0), ((java.lang.Integer)recoveredExpressionArgument_935_1).intValue()))",
+      "10944",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_935_0 = var0;\\n         final java.lang.String recoveredExpressionCapture_935_1 = var1;\\n         final long recoveredExpressionCapture_935_2 = var2;\\n         final androidx.compose.ui.text.TextStyle recoveredExpressionCapture_935_3 = var4;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_935_4 = var5;\\n         final int recoveredExpressionCapture_935_5 = var7;\\n         final int recoveredExpressionCapture_935_6 = var8;\\n         ",
+      "935",
+      "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,Ljava/lang/String;=var1,J=var2,Landroidx/compose/ui/text/TextStyle;=var4,Lkotlin/jvm/functions/Function1;=var5,I=var7,I=var8",
+      "recoveredExpressionCapture_935_0=var0@3542:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_935_1=var1@3567:LOCAL|1|1|0|var1|Ljava/lang/String;;recoveredExpressionCapture_935_2=var2@3589:LOCAL|2|2|0|var2|J;recoveredExpressionCapture_935_3=var4@3600:LOCAL|4|4|0|var4|Landroidx/compose/ui/text/TextStyle;;recoveredExpressionCapture_935_4=var5@3625:LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_935_5=var7@3676:LOCAL|7|7|0|var7|I;recoveredExpressionCapture_935_6=var8@3686:LOCAL|8|8|0|var8|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-WrapReportingTextKt/ast-input/io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.java",
+      "12185",
+      "12231",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_931_0, recoveredExpressionArgument_931_1) -> io.intercom.android.sdk.m5.home.ui.components.WrapReportingTextKt.PreviewShortText$lambda$8(recoveredExpressionCapture_931_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_931_0), ((java.lang.Integer)recoveredExpressionArgument_931_1).intValue()))",
+      "12164",
+      "final int recoveredExpressionCapture_931_0 = var1;\\n         ",
+      "931",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_931_0=var1@11189:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 931,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "PreviewShortText",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "PreviewShortText$lambda$8",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "PreviewShortText",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "PreviewShortText$lambda$8",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "PreviewShortText",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "PreviewShortText$lambda$8",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "PreviewShortText",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.PreviewShortText$lambda$8(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 932,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "233",
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "WrapReportingText_T042LqI$lambda$1$lambda$0",
+        "(Z)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Boolean;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "385"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$1$lambda$0",
+          "(Z)Lkotlin/Unit;",
+          "{385, 386, 387, 388, 389}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$1$lambda$0",
+          "(Z)Lkotlin/Unit;",
+          "{385, 386, 387, 388, 389}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "385",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.WrapReportingText_T042LqI$lambda$1$lambda$0(Z)Lkotlin/Unit; (6), (Ljava/lang/Boolean;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 933,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "391",
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "WrapReportingText_T042LqI$lambda$4$lambda$3",
+        "(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/MutableState;=var10",
+        "598"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$4$lambda$3",
+          "(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+          "{596, 597, 598, 599, 600, 601, 602}",
+          "LOCAL|10|42|0|var42|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$4$lambda$3",
+          "(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+          "{596, 597, 598, 599, 600, 601, 602}",
+          "LOCAL|10|42|0|var42|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "598",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.WrapReportingText_T042LqI$lambda$4$lambda$3(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit; (6), (Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 934,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "518",
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "WrapReportingText_T042LqI$lambda$6$lambda$5",
+        "(Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lkotlin/jvm/functions/Function1;=var5,Landroidx/compose/runtime/MutableState;=var10",
+        "771"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$6$lambda$5",
+          "(Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+          "{767, 768, 769, 770, 771, 772, 773, 774, 775}",
+          "LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|10|42|0|var42|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$6$lambda$5",
+          "(Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+          "{767, 768, 769, 770, 771, 772, 773, 774, 775}",
+          "LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|10|42|0|var42|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "771",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.WrapReportingText_T042LqI$lambda$6$lambda$5(Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit; (6), (Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 935,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "614",
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "WrapReportingText_T042LqI$lambda$7",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,Ljava/lang/String;=var1,J=var2,Landroidx/compose/ui/text/TextStyle;=var4,Lkotlin/jvm/functions/Function1;=var5,I=var7,I=var8",
+        "918"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$7",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{907, 908, 909, 910, 911, 912, 913, 914, 915, 916, 917, 918, 919, 920, 921, 922}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Ljava/lang/String;",
+          "LOCAL|2|2|0|var2|J",
+          "LOCAL|4|4|0|var4|Landroidx/compose/ui/text/TextStyle;",
+          "LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|7|7|0|var7|I",
+          "LOCAL|8|8|0|var8|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "recovered$e51f4221e6440197",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+          "WrapReportingText_T042LqI$lambda$7",
+          "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{907, 908, 909, 910, 911, 912, 913, 914, 915, 916, 917, 918, 919, 920, 921, 922}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Ljava/lang/String;",
+          "LOCAL|2|2|0|var2|J",
+          "LOCAL|4|4|0|var4|Landroidx/compose/ui/text/TextStyle;",
+          "LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|7|7|0|var7|I",
+          "LOCAL|8|8|0|var8|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt",
+        "recovered$e51f4221e6440197",
+        "(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "918",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/components/WrapReportingTextKt.WrapReportingText_T042LqI$lambda$7(Landroidx/compose/ui/Modifier;Ljava/lang/String;JLandroidx/compose/ui/text/TextStyle;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

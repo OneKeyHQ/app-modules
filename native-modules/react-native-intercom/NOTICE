@@ -1,0 +1,22 @@
+Intercom native source SDK recovery
+
+OneKey-authored package integration and recovery tooling retain the MIT license in LICENSE.
+The repository-generated MIT license does not replace upstream native SDK licenses.
+
+Intercom React Native 10.8.1:
+  MIT license; original notice retained in LICENSES/Intercom-React-Native-MIT.txt.
+
+Intercom Android SDK 18.10.0 / Nexus 6.4.0 / Twig 1.3.0:
+  Upstream POMs declare Apache License 2.0.
+  Official release license retained in LICENSES/Intercom-Android-Apache-2.0.txt.
+  Derived Android source and resources retain the upstream attribution and terms.
+
+Intercom iOS SDK 19.9.1:
+  Copyright 2017 Intercom, Inc.; Apache License 2.0 for components except TinyConstraints.
+  TinyConstraints (https://github.com/roberthein/TinyConstraints) is identified by
+  the original iOS release license as MIT licensed.
+  The complete unmodified upstream notice is retained in LICENSES/Intercom-iOS.txt.
+
+Exact original artifact provenance and recovery modifications are recorded in docs/PROVENANCE.md,
+docs/RECOVERY.md and platform conformance records. External runtime dependencies retain their
+own licenses; listing them as compile dependencies does not relicense them.

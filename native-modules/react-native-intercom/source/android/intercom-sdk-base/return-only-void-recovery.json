@@ -1,0 +1,416 @@
+{
+  "scope": "17 void invoke/Object invoke conflicts only",
+  "status": "SOURCE_ALIAS_NOT_COMPILED",
+  "descriptor_references_verified": 17,
+  "entries": [
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$14$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$ce76f631b9e841a0",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$14$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$14$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$15$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$3087e1fd00fa924a",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$15$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$15$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$16$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$d21699c85077d512",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$16$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$16$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$17$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$74d90e07dfd006d7",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$17$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$17$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$20$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$a26be75a3897bca1",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$20$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$20$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/components/InlineSourcesSheetContentKt$InlineSourcesSheetContent$1$1$1$2$1$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$979ff292a6da9613",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/components/InlineSourcesSheetContentKt$InlineSourcesSheetContent$1$1$1$2$1$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/components/InlineSourcesSheetContentKt$InlineSourcesSheetContent$1$1$1$2$1$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/components/composer/MediaItemsKt$MediaItems$1$1$2$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$2b3d92a81d3c32f5",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/MediaItemsKt$MediaItems$1$1$2$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/conversation/ui/components/composer/MediaItemsKt$MediaItems$1$1$2$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterScreen$1$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$4f812aabd4e134b2",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterScreen$1$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterScreenKt$HelpCenterScreen$1$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/home/HomeViewModel$uiState$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$82df0f9d0739bfbc",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/home/HomeViewModel$uiState$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/home/HomeViewModel$uiState$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/home/ui/HomeScreenKt$HomeScreen$3$1$2$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$c837018a8b1b607f",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/home/ui/HomeScreenKt$HomeScreen$3$1$2$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/home/ui/HomeScreenKt$HomeScreen$3$1$2$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/inbox/ui/InboxScreenKt$InboxScreen$1$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$bc18312e4563a769",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/inbox/ui/InboxScreenKt$InboxScreen$1$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/inbox/ui/InboxScreenKt$InboxScreen$1$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4$3$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$427c4117032775ac",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4$3$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4$3$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4$5$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$aa2e3fb42f87c103",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4$5$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4$5$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$17$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$8041c5c7a7136d75",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$17$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$17$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$8$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$a56415f42ed8f4e3",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$8$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/navigation/TicketDetailDestinationKt$ticketDetailDestination$8$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/navigation/TicketsDestinationKt$ticketsDestination$7$1$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$3ec68c5cf9b7a244",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/navigation/TicketsDestinationKt$ticketsDestination$7$1$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/navigation/TicketsDestinationKt$ticketsDestination$7$1$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$2$1$1$1$1",
+      "name": "invoke",
+      "descriptor": "()V",
+      "source_alias": "recoveredVoidInvoke$9fb4daaa74b15f46",
+      "callers": [
+        [
+          "CALL",
+          "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$2$1$1$1$1",
+          "invoke",
+          "()Ljava/lang/Object;",
+          "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$2$1$1$1$1",
+          "invoke",
+          "()V",
+          "182"
+        ]
+      ],
+      "status": "SOURCE_ALIAS_NOT_COMPILED",
+      "retained_methods": [
+        "()V original body",
+        "()Ljava/lang/Object; explicit original bridge"
+      ]
+    }
+  ],
+  "reference_command": [
+    "/opt/homebrew/opt/openjdk@17/bin/java",
+    "-cp",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base-mapping/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar",
+    "ExportMethodReferences",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base-mapping/void-return-alias-targets.tsv",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base-mapping/void-return-alias-references.tsv",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/intercom-sdk-base-reference.jar",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/intercom-sdk-lightcompressor-reference.jar",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/twig-reference.jar",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/nexus-client-android-reference.jar"
+  ],
+  "limited_probe": {
+    "owner": "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$2$1$1$1$1",
+    "receipt": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/return-only-alias-probe/receipt.json",
+    "status": "PASS_SOURCE_ABI_AND_LIMITED_DIFFERENTIAL",
+    "scope": "Only one of the 17 actual callback classes"
+  }
+}

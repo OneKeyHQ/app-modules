@@ -1,0 +1,39 @@
+{
+  "baseline": "Intercom19.9.1 original arm64 bounded asm/dSYM/metadata/data",
+  "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+  "sources": {
+    "ios/Session/VideoBlockView.swift": "cb5ac0b2d5bd3961c124e34a559ddf9678e9832b36898cf398e037fb57f2193e",
+    "ios/Session/VideoHTMLTemplateFactory.swift": "6f7cbe42d29fadb7b6e190b15c9f6d04fc54b6f1aac93439962c4a584048f249",
+    "ios/Session/LinkBlockView.swift": "4f879c1ed48654b12a70997b600b4569f72011b60264da77092f88318c82960d",
+    "ios/Session/NSAttributedStringScalable.swift": "dc39f497c33445929494a18dc7f13a60635134488bda3c5d8430bc56cc278566"
+  },
+  "evidence": [
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-modern-video-view/CONTRACT.md",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-modern-link-view/CONTRACT.md"
+  ],
+  "originalHTMLFormatSHA256": {
+    "youtube": "5554afc4436717b51c100743c644a9a1d98bb4d272be122376007cdefb930bbd",
+    "vimeo": "4d4299ad6ba3ba306cc3362f0c3f5dd0152624bbfaf65e49a67a9864dad54715",
+    "wistia": "42b40dbc66519afcbe625564bc051c2a7601ca0a90219ff26e45bc218fb986cc",
+    "streamio": "7bb55f47960c5ac95bb2ed24ba4d9b08afb64b78b7a2aba1a9e2dc0739257293",
+    "loom": "f536113a0a2427f76c4545cdc895bd3c1420e1274bc4500a90f32ef15663d1db",
+    "vidyard": "6b69ca5e1ccabe3e9a970704df580ef88df3faeca1e4ab079cdd6affcbfafbc9"
+  },
+  "exactOriginalFormatLiterals": true,
+  "runtimeBehaviorVerified": false,
+  "networkMediaOrWKTasksExecuted": false,
+  "scope": [
+    "True modern Video native UIView/default WKWebView/shimmer/failure/orientation+size reload and six original templates",
+    "True modern Link UIView/native UILabel/scalable font attributes and articleId delegate routing",
+    "Original String.count range quirk, nil title Foundation bridge empty string, no extra URL fallback"
+  ],
+  "unrecovered": [
+    "Video updateVisibility(isVisible:) deleted implementation and isPausedOffscreen consumers",
+    "Video general update(content:) deleted implementation; actual factory cache copy size/replace path independently evidenced, not yet linked",
+    "Original VideoHTMLTemplateFactory nominal kind absent afterWMO; source namespace is not privateSwiftABI proof",
+    "Full modern factory/remaining views/controller/36delegate/normal consumer"
+  ],
+  "delegateKnownRequirementsInProduct": 8,
+  "delegateOriginalTotalRequirements": 36,
+  "validation": "171ObjC+101Swift all3 iOS15 targets compile;18classes135ownselector/typeencoding exact;SHAstable/no duplicate Swift.N ObjC aliases"
+}

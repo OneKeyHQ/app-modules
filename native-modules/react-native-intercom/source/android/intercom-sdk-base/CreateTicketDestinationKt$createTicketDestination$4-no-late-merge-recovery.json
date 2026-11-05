@@ -1,0 +1,117 @@
+{
+  "status": "CAPTURES_VERIFIED_SOURCE_NOT_COMPILED",
+  "scope": "Only io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4 source selected from class-scoped no-late-merge diagnostic; child source outputs untouched",
+  "source_before_sha256": "087d55c090ac8c861841776f3926fab319477a38a0ace2c5c0d27174fe1e3bd6",
+  "raw_decompile_sha256": "d82b45d324b8184fb397ca063e8f4d5f4bfeae7de27715719e8dc0c12d241022",
+  "source_after_sha256": "759a08c5a31cc4085b7324fe4be006b40b89dbc81313987f5152bf68f103b0c9",
+  "source_applied": true,
+  "sites": [
+    {
+      "site": 1016,
+      "enclosing": "invoke",
+      "enclosing_descriptor": "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4",
+        "invoke$lambda$13$lambda$12",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/survey/ui/questiontype/AnswerClickData;)Lkotlin/Unit;"
+      ],
+      "bci": 1478,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_1016_0",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 1017,
+      "enclosing": "invoke",
+      "enclosing_descriptor": "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4",
+        "invoke$lambda$4$lambda$3$lambda$2",
+        "(Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 727,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_1017_0",
+          "original_slot": "11",
+          "ssa_index": "37",
+          "ssa_version": "0",
+          "final_name": "var37",
+          "descriptor": "Lkotlinx/coroutines/CoroutineScope;"
+        },
+        {
+          "identifier": "recoveredCapture_1017_1",
+          "original_slot": "9",
+          "ssa_index": "9",
+          "ssa_version": "0",
+          "final_name": "var9",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 1018,
+      "enclosing": "invoke",
+      "enclosing_descriptor": "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4",
+        "invoke$lambda$8$lambda$7",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit;"
+      ],
+      "bci": 1081,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_1018_0",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;"
+        },
+        {
+          "identifier": "recoveredCapture_1018_1",
+          "original_slot": "11",
+          "ssa_index": "37",
+          "ssa_version": "0",
+          "final_name": "var37",
+          "descriptor": "Lkotlinx/coroutines/CoroutineScope;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 1019,
+      "enclosing": "invoke",
+      "enclosing_descriptor": "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/navigation/CreateTicketDestinationKt$createTicketDestination$4",
+        "invoke$lambda$11$lambda$10",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Ljava/lang/String;)Lkotlin/Unit;"
+      ],
+      "bci": 1353,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_1019_0",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ],
+  "capture_bindings": 6,
+  "normal_source_build_uses_decompiler": false,
+  "command": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-CreateTicketDestination4/command.json"
+}

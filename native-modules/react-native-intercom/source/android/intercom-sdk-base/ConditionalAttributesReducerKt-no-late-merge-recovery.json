@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/tickets/create/reducers/ConditionalAttributesReducerKt",
+  "root_only": true,
+  "source_before_sha256": "93c976d2ef5a7d5c4e2bb8c1dc8fc08e551b70760522a3b8ad9a95432044e970",
+  "source_after_sha256": "f3245393fda45e78fbabd6acbce6b5a9eb7d450fea01f4024066ee8eb0225593",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 21,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

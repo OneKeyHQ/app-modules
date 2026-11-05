@@ -1,0 +1,164 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+  "root_only": true,
+  "source_before_sha256": "121c0dee08ec80c0ae350dfee0cc512828a9cc383469dda1fd9cd11b64a18273",
+  "source_after_sha256": "f43f7916e0e10c3f4943dcf929421ce5fd6c7be341e5834285a87aa4b360813f",
+  "source_capture_sites": 2,
+  "source_capture_bindings": 5,
+  "declaration_check_exit": 0,
+  "type_edits": 25,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-UploadFileQuestionKt$UploadFileQuestion$2/ast-input/io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2.java",
+      "9480",
+      "9556",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1464_0) -> io.intercom.android.sdk.survey.ui.questiontype.files.UploadFileQuestionKt$UploadFileQuestion$2.invoke$lambda$7$lambda$1$lambda$0(recoveredExpressionCapture_1464_0, recoveredExpressionCapture_1464_1, (io.intercom.android.sdk.survey.ui.models.Answer$MediaAnswer$MediaItem) ((io.intercom.android.sdk.survey.ui.models.Answer$MediaAnswer$MediaItem)recoveredExpressionArgument_1464_0)))",
+      "9459",
+      "final kotlin.jvm.functions.Function1 recoveredExpressionCapture_1464_0 = var8;\\n               final io.intercom.android.sdk.survey.model.SurveyData$Step$Question$UploadFileQuestionModel recoveredExpressionCapture_1464_1 = var9;\\n               ",
+      "1464",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Lkotlin/jvm/functions/Function1;=var8,Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;=var9",
+      "recoveredExpressionCapture_1464_0=var8@5431:LOCAL|8|8|0|var8|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_1464_1=var9@5478:LOCAL|9|9|0|var9|Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-UploadFileQuestionKt$UploadFileQuestion$2/ast-input/io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2.java",
+      "11498",
+      "11574",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1465_0) -> io.intercom.android.sdk.survey.ui.questiontype.files.UploadFileQuestionKt$UploadFileQuestion$2.invoke$lambda$7$lambda$6$lambda$5(recoveredExpressionCapture_1465_0, recoveredExpressionCapture_1465_1, recoveredExpressionCapture_1465_2, (java.util.List) ((java.util.List)recoveredExpressionArgument_1465_0)))",
+      "11480",
+      "final io.intercom.android.sdk.survey.ui.models.Answer recoveredExpressionCapture_1465_0 = var7;\\n               final kotlin.jvm.functions.Function1 recoveredExpressionCapture_1465_1 = var11;\\n               final android.content.Context recoveredExpressionCapture_1465_2 = var10;\\n               ",
+      "1465",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Lio/intercom/android/sdk/survey/ui/models/Answer;=var7,Lkotlin/jvm/functions/Function1;=var11,Landroid/content/Context;=var10",
+      "recoveredExpressionCapture_1465_0=var7@5394:LOCAL|7|7|0|var7|Lio/intercom/android/sdk/survey/ui/models/Answer;;recoveredExpressionCapture_1465_1=var11@5579:LOCAL|11|11|0|var11|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_1465_2=var10@5539:LOCAL|10|10|0|var10|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1464,
+      "original": [
+        "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "376",
+        "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+        "invoke$lambda$7$lambda$1$lambda$0",
+        "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lkotlin/jvm/functions/Function1;=var8,Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;=var9",
+        "591"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke$lambda$7$lambda$1$lambda$0",
+          "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem;)Lkotlin/Unit;",
+          "{587, 588, 589, 590, 591, 592, 593, 594, 595}",
+          "LOCAL|8|8|0|var8|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|9|9|0|var9|Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke$lambda$7$lambda$1$lambda$0",
+          "(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem;)Lkotlin/Unit;",
+          "{587, 588, 589, 590, 591, 592, 593, 594, 595}",
+          "LOCAL|8|8|0|var8|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|9|9|0|var9|Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "591",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2.invoke$lambda$7$lambda$1$lambda$0(Lkotlin/jvm/functions/Function1;Lio/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel;Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem;)Lkotlin/Unit; (6), (Lio/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1465,
+      "original": [
+        "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "556",
+        "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+        "invoke$lambda$7$lambda$6$lambda$5",
+        "(Lio/intercom/android/sdk/survey/ui/models/Answer;Lkotlin/jvm/functions/Function1;Landroid/content/Context;Ljava/util/List;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/util/List;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lio/intercom/android/sdk/survey/ui/models/Answer;=var7,Lkotlin/jvm/functions/Function1;=var11,Landroid/content/Context;=var10",
+        "876"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke$lambda$7$lambda$6$lambda$5",
+          "(Lio/intercom/android/sdk/survey/ui/models/Answer;Lkotlin/jvm/functions/Function1;Landroid/content/Context;Ljava/util/List;)Lkotlin/Unit;",
+          "{870, 871, 872, 873, 874, 875, 876, 877, 878, 879, 880}",
+          "LOCAL|7|7|0|var7|Lio/intercom/android/sdk/survey/ui/models/Answer;",
+          "LOCAL|11|11|0|var11|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|10|10|0|var10|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+          "invoke$lambda$7$lambda$6$lambda$5",
+          "(Lio/intercom/android/sdk/survey/ui/models/Answer;Lkotlin/jvm/functions/Function1;Landroid/content/Context;Ljava/util/List;)Lkotlin/Unit;",
+          "{870, 871, 872, 873, 874, 875, 876, 877, 878, 879, 880}",
+          "LOCAL|7|7|0|var7|Lio/intercom/android/sdk/survey/ui/models/Answer;",
+          "LOCAL|11|11|0|var11|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|10|10|0|var10|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "876",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/ui/questiontype/files/UploadFileQuestionKt$UploadFileQuestion$2.invoke$lambda$7$lambda$6$lambda$5(Lio/intercom/android/sdk/survey/ui/models/Answer;Lkotlin/jvm/functions/Function1;Landroid/content/Context;Ljava/util/List;)Lkotlin/Unit; (6), (Ljava/util/List;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

@@ -1,0 +1,21 @@
+{
+  "status": "WHOLE_JAVAC_FAMILY_REMOVED_WITHOUT_SOURCE_THROWS_CHANGES",
+  "scope": "Only three original external Exceptions attributes; no Code/runtime dependencies or own source declarations/body/handlers changed",
+  "attributes": [
+    "dependency-086.jar\tokhttp3/Interceptor\tintercept(Lokhttp3/Interceptor$Chain;)Lokhttp3/Response;\t\tjava/io/IOException",
+    "dependency-108.jar\tcom/google/gson/TypeAdapter\tread(Lcom/google/gson/stream/JsonReader;)Ljava/lang/Object;\t\tjava/io/IOException",
+    "dependency-108.jar\tcom/google/gson/TypeAdapter\twrite(Lcom/google/gson/stream/JsonWriter;Ljava/lang/Object;)V\t\tjava/io/IOException"
+  ],
+  "raw_inputs": [
+    {
+      "path": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/classpath/dependency-086.jar",
+      "sha256": "b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0"
+    },
+    {
+      "path": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/classpath/dependency-108.jar",
+      "sha256": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f"
+    }
+  ],
+  "compiler_effect": "297\u2192291: all six override diagnostics removed, no newly unhandled checked calls",
+  "tool_sha256": "32847c009fefa4d3e7a74ea0242269c7bfd5b306ecb6ddac2a21949d82194506"
+}

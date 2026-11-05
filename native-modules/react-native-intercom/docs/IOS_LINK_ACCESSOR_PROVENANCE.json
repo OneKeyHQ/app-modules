@@ -1,0 +1,1404 @@
+{
+  "baseline": "Intercom19.9.1 device MachO/metadata",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "validatedAccessors": [
+    {
+      "class": "ITBLinkBlock",
+      "selector": "titleAttributedString",
+      "ivar": "_titleAttributedString",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa25c",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_titleAttributedString",
+      "instructionsSHA256": "bafe7c23d40af003dee7d3cbd21de9ff5f90e08a6e30d1696573d9986abdab1e"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setTitleAttributedString:",
+      "ivar": "_titleAttributedString",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa25c",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_titleAttributedString",
+      "instructionsSHA256": "fb77583efc1189789ef67d35fe6df98755fac5eb25b1ca41c9fa9fe712092d7b"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "linkDescriptionAttributedString",
+      "ivar": "_linkDescriptionAttributedString",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa260",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_linkDescriptionAttributedString",
+      "instructionsSHA256": "fe046ff6b4eabf43a1d92ab7a1cd26c21334c0a56b2a48db1fc5d54cb5f8291b"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setLinkDescriptionAttributedString:",
+      "ivar": "_linkDescriptionAttributedString",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa260",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_linkDescriptionAttributedString",
+      "instructionsSHA256": "571ac1a9334ddb2813a1e931e2c4f2d592f5534bb01c70ab400e855be12cb2da"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "insets",
+      "ivar": "_insets",
+      "originalOffset": 120,
+      "offsetVariable": "0x4aa264",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_insets",
+      "instructionsSHA256": "81bd4b323f10a8790cd22e5c95df84b0e4358eadfaf5287bed9b7c23e85e2457"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setInsets:",
+      "ivar": "_insets",
+      "originalOffset": 120,
+      "offsetVariable": "0x4aa264",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_insets",
+      "instructionsSHA256": "772bd39299099ea3de1d4762c08912a9270fac59e380a081890d5ff55907d52a"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "textInsets",
+      "ivar": "_textInsets",
+      "originalOffset": 152,
+      "offsetVariable": "0x4aa268",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_textInsets",
+      "instructionsSHA256": "db466e23e03642d47c8c09c82f1e5184c6df9b24de8b61cd576988a022c9c7f7"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setTextInsets:",
+      "ivar": "_textInsets",
+      "originalOffset": 152,
+      "offsetVariable": "0x4aa268",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_textInsets",
+      "instructionsSHA256": "2c92e9648c7f777fe6c7221eeb1b7255764e038b4503c7309d0204ac1ee99171"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "avatarRadius",
+      "ivar": "_avatarRadius",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa26c",
+      "kind": "value",
+      "attributes": "Td,N,V_avatarRadius",
+      "instructionsSHA256": "965aee9efd3077676f47701f83266584aa557a43ae332b84b3937613b608e277"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setAvatarRadius:",
+      "ivar": "_avatarRadius",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa26c",
+      "kind": "value",
+      "attributes": "Td,N,V_avatarRadius",
+      "instructionsSHA256": "f522c7a18cf4ea7f9d5ae50fc8b8d055d0224f701e29f6f03bb7b22df851c2dc"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "url",
+      "ivar": "_url",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa270",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "03c05450de8d85728f023559e8e5bc15ee2eb1d8537e0fed9ecd6320d9b6544b"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setUrl:",
+      "ivar": "_url",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa270",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "8b7bdf191c243a843d574d5248efb566d85a1d859a3c075b0fef0f74f72dec12"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "title",
+      "ivar": "_title",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa274",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_title",
+      "instructionsSHA256": "1d2a6ac5cfafad40945cce8606bf397235bbcdf13297f9ed5b35f509cfc1b1ba"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setTitle:",
+      "ivar": "_title",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa274",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_title",
+      "instructionsSHA256": "54c9eb55b75df9a0636a196b359bd3b25c028085e17a89d7ce7f5c53cddfd711"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "articleId",
+      "ivar": "_articleId",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa278",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_articleId",
+      "instructionsSHA256": "f440c8aa763fd7c9cf3caa17382fe1b57a95e0792377a2af733f4e11505c952d"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setArticleId:",
+      "ivar": "_articleId",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa278",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_articleId",
+      "instructionsSHA256": "e529e4f2fb5232ec5e495efd72b28cef4dd6ee5b24432b043cc01df77a8d5eee"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "linkDescription",
+      "ivar": "_linkDescription",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa27c",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkDescription",
+      "instructionsSHA256": "0310603b4da837747c4044de15b61ec524eeaf50ce140e6a3780eb34da9874c9"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setLinkDescription:",
+      "ivar": "_linkDescription",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa27c",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkDescription",
+      "instructionsSHA256": "e011281ee1377302883cd49063d4aa4a4b9af954675857b598222edf4d3855cb"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "linkType",
+      "ivar": "_linkType",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa280",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkType",
+      "instructionsSHA256": "4b65f169b90f10953a96a8114f7cf53ef2a72958dd928e54f2c8256a36d72772"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setLinkType:",
+      "ivar": "_linkType",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa280",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkType",
+      "instructionsSHA256": "191edd3670eaa9e99aae6e45d9a8048e3ce6c2d203bd258b3bdd2281b2882415"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "siteName",
+      "ivar": "_siteName",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa284",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_siteName",
+      "instructionsSHA256": "8bb2570e037b26cdc303f2b3bef1afa53282915e4134e75d50c0753263abe2b3"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setSiteName:",
+      "ivar": "_siteName",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa284",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_siteName",
+      "instructionsSHA256": "52d3aca7c20f95bf8ffe40758c74d1195440b675992d9d0134b58cde7a5e3a7a"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "author",
+      "ivar": "_author",
+      "originalOffset": 80,
+      "offsetVariable": "0x4aa288",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkBlockAuthor\",&,N,V_author",
+      "instructionsSHA256": "cfb58906a62f86bb4b591bef39f951531bb767820d14da40c5320045a2582eb0"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setAuthor:",
+      "ivar": "_author",
+      "originalOffset": 80,
+      "offsetVariable": "0x4aa288",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkBlockAuthor\",&,N,V_author",
+      "instructionsSHA256": "349e45b45f65071d22948226f9efd3e0c60b55862ffb243f457950cc1b728270"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "image",
+      "ivar": "_image",
+      "originalOffset": 88,
+      "offsetVariable": "0x4aa28c",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkBlockImage\",&,N,V_image",
+      "instructionsSHA256": "a1363767a76027bb83be26f8f78968f4f853244b3c8708ee3f5ed05311a6170c"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setImage:",
+      "ivar": "_image",
+      "originalOffset": 88,
+      "offsetVariable": "0x4aa28c",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkBlockImage\",&,N,V_image",
+      "instructionsSHA256": "02cae8cafc9daaac6c9adcf9b1730dbe98a61329db05ab0da5577841e53604f5"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "data",
+      "ivar": "_data",
+      "originalOffset": 96,
+      "offsetVariable": "0x4aa290",
+      "kind": "strong",
+      "attributes": "T@\"NSDictionary\",&,N,V_data",
+      "instructionsSHA256": "9ff6ef4ba82954412320ebe42a8be7934f43d70d9b204f7fdff67c8f574ad142"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setData:",
+      "ivar": "_data",
+      "originalOffset": 96,
+      "offsetVariable": "0x4aa290",
+      "kind": "strong",
+      "attributes": "T@\"NSDictionary\",&,N,V_data",
+      "instructionsSHA256": "69ab0ad39564b882dd71318ed885b161bb2b43568b640e181b48c94eb1fde308"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "createdAt",
+      "ivar": "_createdAt",
+      "originalOffset": 104,
+      "offsetVariable": "0x4aa294",
+      "kind": "strong",
+      "attributes": "T@\"NSDate\",&,N,V_createdAt",
+      "instructionsSHA256": "1a139e0d6472474dc63bba5438b513d4a498bf27d023349d38ccc5718e9e60cf"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setCreatedAt:",
+      "ivar": "_createdAt",
+      "originalOffset": 104,
+      "offsetVariable": "0x4aa294",
+      "kind": "strong",
+      "attributes": "T@\"NSDate\",&,N,V_createdAt",
+      "instructionsSHA256": "bf71a55f65b2f5993c65a7ec18051a197c7f0a265edc0f0c471da415a11bbf74"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "updatedAt",
+      "ivar": "_updatedAt",
+      "originalOffset": 112,
+      "offsetVariable": "0x4aa298",
+      "kind": "strong",
+      "attributes": "T@\"NSDate\",&,N,V_updatedAt",
+      "instructionsSHA256": "8bad7ac59f1eff5b81b39420681260c4ed731ea1f9feb2df083c5c27db7679f0"
+    },
+    {
+      "class": "ITBLinkBlock",
+      "selector": "setUpdatedAt:",
+      "ivar": "_updatedAt",
+      "originalOffset": 112,
+      "offsetVariable": "0x4aa298",
+      "kind": "strong",
+      "attributes": "T@\"NSDate\",&,N,V_updatedAt",
+      "instructionsSHA256": "2cf315b3742c1aa8851fba8200b09a104e981d3e279fd832648e03010ffb7af1"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "initialsImage",
+      "ivar": "_initialsImage",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa29c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_initialsImage",
+      "instructionsSHA256": "9117147614559cfdb9b2fee03dcce9d9307308f469e9008f0ff89109d7bdbb2a"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setInitialsImage:",
+      "ivar": "_initialsImage",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa29c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_initialsImage",
+      "instructionsSHA256": "5d1cd64cf59f703c31f347d9584874b240f33a91aef218a369258d9a0f6e34fb"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "writtenByAttributedString",
+      "ivar": "_writtenByAttributedString",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2a0",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_writtenByAttributedString",
+      "instructionsSHA256": "4a07058f731a1153904c5288ecdff81b6d14709026ab12879d0ae2d7df29c0dc"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setWrittenByAttributedString:",
+      "ivar": "_writtenByAttributedString",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2a0",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_writtenByAttributedString",
+      "instructionsSHA256": "9ac86c3178d8cef384f8d3235ea59c746afaa2516f4983c4e74010f7f25f36b8"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "linkUpdatedAtAttributedString",
+      "ivar": "_linkUpdatedAtAttributedString",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa2a4",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_linkUpdatedAtAttributedString",
+      "instructionsSHA256": "ac35d00e40dbd0f8974438860ce12ae6bc259e8b6ae40239bd01eac09119b72a"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setLinkUpdatedAtAttributedString:",
+      "ivar": "_linkUpdatedAtAttributedString",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa2a4",
+      "kind": "copy",
+      "attributes": "T@\"NSAttributedString\",C,N,V_linkUpdatedAtAttributedString",
+      "instructionsSHA256": "357a8aa93831adf007a02df9abc13f8bf901a9540dcc0dc7ea950500a5c26ea0"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "name",
+      "ivar": "_name",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa2a8",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_name",
+      "instructionsSHA256": "de9cdb46ee83989cb76e24a754e207b0614f29ca0d75cf7da45e521f61bd614e"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setName:",
+      "ivar": "_name",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa2a8",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_name",
+      "instructionsSHA256": "755d525e62a938cc55e2d35e8d172729e4190c333a4543605d6ce70bd25b1980"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "firstName",
+      "ivar": "_firstName",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa2ac",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_firstName",
+      "instructionsSHA256": "9e6cc169d69498a1f30c86a17d4c256a7ecc47a9196d8bca40d6a3985f5cc76e"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setFirstName:",
+      "ivar": "_firstName",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa2ac",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_firstName",
+      "instructionsSHA256": "6d87d531e2861e030125db7db59fd6b330005a7eccab7b5d136bedf35e3a58b1"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "lastName",
+      "ivar": "_lastName",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa2b0",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_lastName",
+      "instructionsSHA256": "0b70649c95bb87feb8f2c2454259c48f3584f8a6ade8c82d20cee68c192331a4"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setLastName:",
+      "ivar": "_lastName",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa2b0",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_lastName",
+      "instructionsSHA256": "e1148922fc27ff2c69ee8dbcc9f2c3ac0ab22efb7b8f0ca0574805579e358007"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "avatar",
+      "ivar": "_avatar",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa2b4",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_avatar",
+      "instructionsSHA256": "9452f0b3074aefc0c0e9408eb0de872e11c23f689dea2f2855867740593d3e6a"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setAvatar:",
+      "ivar": "_avatar",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa2b4",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_avatar",
+      "instructionsSHA256": "91d1f9dcbda294d84a099006984379ef6ce44d2e4ed50fbcadfe236b492ea0db"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "avatarRadius",
+      "ivar": "_avatarRadius",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa2b8",
+      "kind": "value",
+      "attributes": "Td,N,V_avatarRadius",
+      "instructionsSHA256": "2c29bfc9d5d964247e21028967882db969db12d07b709429a58d99c70cdc65fb"
+    },
+    {
+      "class": "ITBLinkBlockAuthor",
+      "selector": "setAvatarRadius:",
+      "ivar": "_avatarRadius",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa2b8",
+      "kind": "value",
+      "attributes": "Td,N,V_avatarRadius",
+      "instructionsSHA256": "dd7442532515be7fe2a3fa3cba7af7466c69c024694b280f447510dc63c906db"
+    },
+    {
+      "class": "ITBLinkBlockImage",
+      "selector": "url",
+      "ivar": "_url",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2bc",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "f256eb408f3c33ea29f1a40322a07d05909798c3285705952eefc342704253cc"
+    },
+    {
+      "class": "ITBLinkBlockImage",
+      "selector": "setUrl:",
+      "ivar": "_url",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2bc",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "9e24d9c63bb07d7a53d7c7db558a388601660d9015d5ebd9c945b702100d1cf9"
+    },
+    {
+      "class": "ITBLinkBlockImage",
+      "selector": "alt",
+      "ivar": "_alt",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2c0",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_alt",
+      "instructionsSHA256": "7ee0cb32c4f0c06ed35b1b0e922f0b5632fb2f693adb0ad7c3db2214bbbbf064"
+    },
+    {
+      "class": "ITBLinkBlockImage",
+      "selector": "setAlt:",
+      "ivar": "_alt",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2c0",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_alt",
+      "instructionsSHA256": "a6c184ff3e2b30eb412bad284b7006615b1d8d12524da3f2a25e5ff22befa71c"
+    },
+    {
+      "class": "ITBLinkBlockImage",
+      "selector": "size",
+      "ivar": "_size",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa2c4",
+      "kind": "value",
+      "attributes": "T{CGSize=dd},N,V_size",
+      "instructionsSHA256": "a8d7abd4aba89fa79dae16ab267b01c00c5517bb95fb5f6837eb9375705a7bdc"
+    },
+    {
+      "class": "ITBLinkBlockImage",
+      "selector": "setSize:",
+      "ivar": "_size",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa2c4",
+      "kind": "value",
+      "attributes": "T{CGSize=dd},N,V_size",
+      "instructionsSHA256": "4aea7fdd93140df3fd7867b62cd582a68334c936307345318a69a46112ffac86"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "links",
+      "ivar": "_links",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2ec",
+      "kind": "strong",
+      "attributes": "T@\"NSArray\",&,N,V_links",
+      "instructionsSHA256": "1eec6b010864601f581f9bf355dc6c3558ee1eab092d59656fa584a19b852bbf"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setLinks:",
+      "ivar": "_links",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2ec",
+      "kind": "strong",
+      "attributes": "T@\"NSArray\",&,N,V_links",
+      "instructionsSHA256": "87fd6212148e43fef1da03cb137f90364ef74bdf85c5d6e1418a3e2f6ed9fcfb"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "footerLink",
+      "ivar": "_footerLink",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa314",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_footerLink",
+      "instructionsSHA256": "42d2e2fff9183ef4ba19a6f71b0656a38223e73e2bc9263b8e5cd3c8fba92bb3"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setFooterLink:",
+      "ivar": "_footerLink",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa314",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_footerLink",
+      "instructionsSHA256": "a9462171c86c92bed152fcd4b4f3c9bf36501debcb1d7a3f38071b158280306a"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "selectedLink",
+      "ivar": "_selectedLink",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa318",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_selectedLink",
+      "instructionsSHA256": "be2d617663eb21856a821b2447bfd25a7021c9a0f0556e086fc8c37877d1bcdc"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setSelectedLink:",
+      "ivar": "_selectedLink",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa318",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_selectedLink",
+      "instructionsSHA256": "5009b79462fdca7560e6c5eca9059a8c7de83907bdf68cfe3f85f089432f76d9"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "textInsets",
+      "ivar": "_textInsets",
+      "originalOffset": 96,
+      "offsetVariable": "0x4aa2f8",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_textInsets",
+      "instructionsSHA256": "abed05e03ce6a3069da0849b74e4891327fb346e75b2d93f9e4b93338c29b827"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setTextInsets:",
+      "ivar": "_textInsets",
+      "originalOffset": 96,
+      "offsetVariable": "0x4aa2f8",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_textInsets",
+      "instructionsSHA256": "44b8569efcb057d102bf006eb5c4439a27433e1a83d9a0575e43764950b6b2f1"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "linkTextColor",
+      "ivar": "_linkTextColor",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa2f4",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_linkTextColor",
+      "instructionsSHA256": "fcf9e7cd98fae5c88d2a79e41dc58335a8d6a843f2009d5516591287ccaa11f4"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setLinkTextColor:",
+      "ivar": "_linkTextColor",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa2f4",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_linkTextColor",
+      "instructionsSHA256": "b8ddf6b002355e5b091bb0a92b62cda54f9a61d30de44c19ab92d15a48fd89e4"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "separatorColor",
+      "ivar": "_separatorColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa2fc",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_separatorColor",
+      "instructionsSHA256": "74856fb15b9e2d4349d6cd4dfd060aa80132c85599f1c0a3ede8a4c2b7e68f98"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setSeparatorColor:",
+      "ivar": "_separatorColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa2fc",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_separatorColor",
+      "instructionsSHA256": "1e7414a04e618bb78813f51e7e0a3269634494c0a6e8703d68f1185f58060622"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "linkFont",
+      "ivar": "_linkFont",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa2f0",
+      "kind": "strong",
+      "attributes": "T@\"UIFont\",&,N,V_linkFont",
+      "instructionsSHA256": "fc467a6ea511747280bf89bfacc0acf80741c0e1dd3333a3a315073a38debbbc"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setLinkFont:",
+      "ivar": "_linkFont",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa2f0",
+      "kind": "strong",
+      "attributes": "T@\"UIFont\",&,N,V_linkFont",
+      "instructionsSHA256": "760c70b824bd30d6dfe5e85abbf1c18875ace3ed6be274d141825173d6f5865d"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "footerLinkIcon",
+      "ivar": "_footerLinkIcon",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa300",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_footerLinkIcon",
+      "instructionsSHA256": "17e5c4e6d4f1646e3a49d7e5d98ada6551d790e4e47a238c411d3ea56aab1e46"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setFooterLinkIcon:",
+      "ivar": "_footerLinkIcon",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa300",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_footerLinkIcon",
+      "instructionsSHA256": "fe141f2199c33224a96e54b4aa770623c11ca446ae917de9b57c1fb64104952f"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "defaultLinkHeight",
+      "ivar": "_defaultLinkHeight",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa304",
+      "kind": "value",
+      "attributes": "Td,N,V_defaultLinkHeight",
+      "instructionsSHA256": "c901c60cf997fcb4497cb3f2929f2a2d0eb0afd3f3c854f84650a2dd862ebee1"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setDefaultLinkHeight:",
+      "ivar": "_defaultLinkHeight",
+      "originalOffset": 64,
+      "offsetVariable": "0x4aa304",
+      "kind": "value",
+      "attributes": "Td,N,V_defaultLinkHeight",
+      "instructionsSHA256": "9e296f50cb9b942e1b3e5c0363cdd4829ae81d4cd509aee546687e4b190b030a"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "maxLinkHeight",
+      "ivar": "_maxLinkHeight",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa308",
+      "kind": "value",
+      "attributes": "Td,N,V_maxLinkHeight",
+      "instructionsSHA256": "558f7000eecfc90898daba217a8732cd56dcac986eef8b434fdc7fc7527dba3d"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setMaxLinkHeight:",
+      "ivar": "_maxLinkHeight",
+      "originalOffset": 72,
+      "offsetVariable": "0x4aa308",
+      "kind": "value",
+      "attributes": "Td,N,V_maxLinkHeight",
+      "instructionsSHA256": "25217fcd6df085d7734729688643abc6f5a9b5b5c818d278245d799b8194327d"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "linkFooterIconSize",
+      "ivar": "_linkFooterIconSize",
+      "originalOffset": 80,
+      "offsetVariable": "0x4aa30c",
+      "kind": "value",
+      "attributes": "T{CGSize=dd},N,V_linkFooterIconSize",
+      "instructionsSHA256": "e3b9a80240406b3bc7227149b5dec47cb26d6dee22049ae77c4ee3bccfac5efd"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setLinkFooterIconSize:",
+      "ivar": "_linkFooterIconSize",
+      "originalOffset": 80,
+      "offsetVariable": "0x4aa30c",
+      "kind": "value",
+      "attributes": "T{CGSize=dd},N,V_linkFooterIconSize",
+      "instructionsSHA256": "ba43b90c0d4ae006980d7c6eae3d85287b3cabb17ed365607128e7cad2d6669d"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "linkFooterInsets",
+      "ivar": "_linkFooterInsets",
+      "originalOffset": 128,
+      "offsetVariable": "0x4aa310",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_linkFooterInsets",
+      "instructionsSHA256": "2b4014bcea3ab6c40c7f5b0cdf45dca8f58faeb6981f7965764f5002f9e68e74"
+    },
+    {
+      "class": "ITBLinkListBlock",
+      "selector": "setLinkFooterInsets:",
+      "ivar": "_linkFooterInsets",
+      "originalOffset": 128,
+      "offsetVariable": "0x4aa310",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_linkFooterInsets",
+      "instructionsSHA256": "8556351042906fe01767939df164c0d16555ff24692125d18d7c140046fabf05"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "url",
+      "ivar": "_url",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa31c",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "dec12a575683f451f7805fea1bd5d210a678eb976482e94639a5a8c65fe6ba75"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "setUrl:",
+      "ivar": "_url",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa31c",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "86b044d26a126b3accb2fab5cb8f3b9ce3bb536c745a0d1325dd377071620e6f"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "title",
+      "ivar": "_title",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa320",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_title",
+      "instructionsSHA256": "0726845c619f2f0474e73841ed472de27f1ad42b997a69e506e46374be4e9510"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "setTitle:",
+      "ivar": "_title",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa320",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_title",
+      "instructionsSHA256": "f3e8d61e962ee34f1471241f953f85dcc323a621eb818daf471f78ad74b50252"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "linkType",
+      "ivar": "_linkType",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa324",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkType",
+      "instructionsSHA256": "dc7b74caea1dcdae7b4970c55c4a27fe241421de5438d553034d088efa4cdfd6"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "setLinkType:",
+      "ivar": "_linkType",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa324",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkType",
+      "instructionsSHA256": "28a47b034545cc78f32f4518f55326f7f69da4240442935845689583fcbb9064"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "linkId",
+      "ivar": "_linkId",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa328",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkId",
+      "instructionsSHA256": "8544847bc9d6cbf5febe771abaab52b85a5ce540f3df53e2f0a14f5800cc7aeb"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "setLinkId:",
+      "ivar": "_linkId",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa328",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_linkId",
+      "instructionsSHA256": "674fba8d88006224791687917d5acb90365c4e123c2146096ab564739974c25c"
+    },
+    {
+      "class": "ITBLink",
+      "selector": "setLinkIntentType:",
+      "ivar": "_linkIntentType",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa32c",
+      "kind": "value",
+      "attributes": "Tq,N,V_linkIntentType",
+      "instructionsSHA256": "37127ecbf93b3b3e68a17f88d91dc668048d0ecb97f39594592f541ebb972def"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "authorView",
+      "ivar": "_authorView",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa2e4",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkBlockAuthorView\",&,N,V_authorView",
+      "instructionsSHA256": "af3eec16ed0368e2614c8afde9bab1b36d3b571a85c1e755bbe911be64cb4c8f"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setAuthorView:",
+      "ivar": "_authorView",
+      "originalOffset": 48,
+      "offsetVariable": "0x4aa2e4",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkBlockAuthorView\",&,N,V_authorView",
+      "instructionsSHA256": "24b778bac257697cdd5bbcfb776b81f7d94d2b7f45978429f345b1e967240d10"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "cardInsets",
+      "ivar": "_cardInsets",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa2e8",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_cardInsets",
+      "instructionsSHA256": "509aa1a907f9cd62a44f4357d7484b036756f98cca18df2c1cede7bbaedbf739"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setCardInsets:",
+      "ivar": "_cardInsets",
+      "originalOffset": 56,
+      "offsetVariable": "0x4aa2e8",
+      "kind": "value",
+      "attributes": "T{UIEdgeInsets=dddd},N,V_cardInsets",
+      "instructionsSHA256": "724105bc4de30c824d6c803439dd37b471bef6cef4ede40efec14d3223e4630b"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "titleLabel",
+      "ivar": "_titleLabel",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2d8",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "ccd81132831b97fb42c1e4ad2d59aba4990069c901737fb6370ef1c8f3dc1be4"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setTitleLabel:",
+      "ivar": "_titleLabel",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2d8",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "e8c0f04e8286c120772b90379c2bb1362e7ceb0bce9650c0e411d2d49cc5feff"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "cardView",
+      "ivar": "_cardView",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2d0",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_cardView",
+      "instructionsSHA256": "7eb0a6a16baaee2f1b435f71584e07763d2ab10f3f763147bcd6d21de4fa0c05"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setCardView:",
+      "ivar": "_cardView",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2d0",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_cardView",
+      "instructionsSHA256": "88cc234e0f0dc3dc6cbc9c9d90b26d7772abc96e3bb8a9ea70f36b71f68f8429"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "containerView",
+      "ivar": "_containerView",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa2d4",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_containerView",
+      "instructionsSHA256": "b48f89ed32cfa8ae6009d1dcd06ec7decfa97abb3c5698e781c6b54003480845"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setContainerView:",
+      "ivar": "_containerView",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa2d4",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_containerView",
+      "instructionsSHA256": "ccceb400ca313412c6f88d0cb9796c3425a8b07964ebaf18d8090f372640ac8a"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "descriptionLabel",
+      "ivar": "_descriptionLabel",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa2dc",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_descriptionLabel",
+      "instructionsSHA256": "4178b29a78b4b81de9c08f103250a95b4a36aae79605904766451f19559758f9"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setDescriptionLabel:",
+      "ivar": "_descriptionLabel",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa2dc",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_descriptionLabel",
+      "instructionsSHA256": "01dc86aca6709cb3ed18c0cefef4389d484eba364276969875c714fa509da366"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "authorContainerView",
+      "ivar": "_authorContainerView",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa2e0",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_authorContainerView",
+      "instructionsSHA256": "07f5eaec4767ad9b2099836d3db89fd1c0e023fb8d43ff4cb66311abfae92f33"
+    },
+    {
+      "class": "ITBLinkBlockView",
+      "selector": "setAuthorContainerView:",
+      "ivar": "_authorContainerView",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa2e0",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_authorContainerView",
+      "instructionsSHA256": "feffc4eabf896354fdfe19f1978d7ece4003764dd3c100863ee3b124aaed7df7"
+    },
+    {
+      "class": "ITBLinkListBlockView",
+      "selector": "linkListBlock",
+      "ivar": "_linkListBlock",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa340",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "b9f33f9fc37801f07db008ae6cc228f5f2973c29f0e8fb05c88f51f5685153f7"
+    },
+    {
+      "class": "ITBLinkListBlockView",
+      "selector": "setLinkListBlock:",
+      "ivar": "_linkListBlock",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa340",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "6ad418231e20a3edbf5ebc637701432badc94e24bf4e8649e5f0043600ddee35"
+    },
+    {
+      "class": "ITBLinkListBlockView",
+      "selector": "linkItemViewArray",
+      "ivar": "_linkItemViewArray",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa344",
+      "kind": "strong",
+      "attributes": "T@\"NSArray\",&,N,V_linkItemViewArray",
+      "instructionsSHA256": "de8389f26c9d81f7e5c2f3991784ea7961eeb82ddfd819a1d08c5efae910b246"
+    },
+    {
+      "class": "ITBLinkListBlockView",
+      "selector": "setLinkItemViewArray:",
+      "ivar": "_linkItemViewArray",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa344",
+      "kind": "strong",
+      "attributes": "T@\"NSArray\",&,N,V_linkItemViewArray",
+      "instructionsSHA256": "b6309dd16fca825ab8fcc182fce13781bfead6722ccca2da4e563864433aeebf"
+    },
+    {
+      "class": "ITBLinkListBlockView",
+      "selector": "titleLabel",
+      "ivar": "_titleLabel",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa348",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "f5b7da1aa23b62fa1e86c63e20229af358f091b01188aa1eb734dfe66a344fd6"
+    },
+    {
+      "class": "ITBLinkListBlockView",
+      "selector": "setTitleLabel:",
+      "ivar": "_titleLabel",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa348",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "3542b5be03a58b74daaddf8f12e1512f8df4ae98dde9714720120f126b536710"
+    },
+    {
+      "class": "ITBLinkBlockAuthorView",
+      "selector": "avatarView",
+      "ivar": "_avatarView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2c8",
+      "kind": "strong",
+      "attributes": "T@\"ITBAnimatedImageView\",&,N,V_avatarView",
+      "instructionsSHA256": "d9fbbfaaa72489b568e64820141571349f27d92c6474f83bfcdddc5bde017f92"
+    },
+    {
+      "class": "ITBLinkBlockAuthorView",
+      "selector": "setAvatarView:",
+      "ivar": "_avatarView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa2c8",
+      "kind": "strong",
+      "attributes": "T@\"ITBAnimatedImageView\",&,N,V_avatarView",
+      "instructionsSHA256": "3818e1395541ed2f401b7a3f76734888b0e6a3b1f792b76972b02b3e80d54ef7"
+    },
+    {
+      "class": "ITBLinkBlockAuthorView",
+      "selector": "writtenByLabel",
+      "ivar": "_writtenByLabel",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2cc",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_writtenByLabel",
+      "instructionsSHA256": "d3faebdfb5c21fe169d4b838141b297275036cecf6ba26693d0a5abd68a2d21a"
+    },
+    {
+      "class": "ITBLinkBlockAuthorView",
+      "selector": "setWrittenByLabel:",
+      "ivar": "_writtenByLabel",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa2cc",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_writtenByLabel",
+      "instructionsSHA256": "1fb145a8fef830c07ea93893fc68267ebdeeafdb20e7204ace50fa04245cf2a6"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "link",
+      "ivar": "_link",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa360",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_link",
+      "instructionsSHA256": "ee77cd40fefa1e671bc6689226fd2f106d3ebbbeccbb520a51bb8c5eee87617c"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "setLink:",
+      "ivar": "_link",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa360",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_link",
+      "instructionsSHA256": "7f346ebccad26cb50685f2b38c498a807a8792dd40ce92b39ffd9c2848ab6942"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "titleLabel",
+      "ivar": "_titleLabel",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa36c",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "a0c67972f4dddb935fb85935fcdb03e286956eb5b1a7e35db8865b8de465e8ee"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "setTitleLabel:",
+      "ivar": "_titleLabel",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa36c",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "5f6f1e9da94bfdacf289a876a9d20c11e7ed99c8c2b65f0f655d1fcb5267557d"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "intentOpener",
+      "ivar": "_intentOpener",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa368",
+      "kind": "strong",
+      "attributes": "T@\"<ITBIntentOpenerDelegate>\",&,N,V_intentOpener",
+      "instructionsSHA256": "30ea5c92523bead0c558091270bbc3dc411dc9c33b3bf0c0efdc496e657b6027"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "setIntentOpener:",
+      "ivar": "_intentOpener",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa368",
+      "kind": "strong",
+      "attributes": "T@\"<ITBIntentOpenerDelegate>\",&,N,V_intentOpener",
+      "instructionsSHA256": "7c2ecb5d5a262e2038a08164f287ea6173703ac383e77ee15e58bbeba1bf2ae3"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "linkListBlock",
+      "ivar": "_linkListBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa364",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "b697a37fb21fc651a04644d10a8191a0f3dcd322c2089b3952669cdc6c65ab6b"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "setLinkListBlock:",
+      "ivar": "_linkListBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa364",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "5a0c9d65a8d79bc7cdf0787b34641d11967433bd356ce73269f5c7ff13fba5a4"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "separatorView",
+      "ivar": "_separatorView",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa370",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_separatorView",
+      "instructionsSHA256": "b7c477e48ddd3ec45a35d6338d0f63487f6d414f9754ca444e6feb31d0d0b2e4"
+    },
+    {
+      "class": "ITBLinkListItemView",
+      "selector": "setSeparatorView:",
+      "ivar": "_separatorView",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa370",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_separatorView",
+      "instructionsSHA256": "8949fcb181a2cf004b47838ad5cd19df7df1031e9a8cf6cc03c5c64555a996dd"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "link",
+      "ivar": "_link",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa34c",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_link",
+      "instructionsSHA256": "562f6c8bdde4009d103d618e0880599a4414a0df45640c9725493339e42cad99"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "setLink:",
+      "ivar": "_link",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa34c",
+      "kind": "strong",
+      "attributes": "T@\"ITBLink\",&,N,V_link",
+      "instructionsSHA256": "ec33684ec332afb4e4b1fa22d92db6bdd30cf678d2a139f31711bc45616b1fa2"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "iconImage",
+      "ivar": "_iconImage",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa358",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_iconImage",
+      "instructionsSHA256": "8b7691edc1924f7a61d4dcaf15bd3f5f552dba5a5c99420c3a807059e98cfb7a"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "setIconImage:",
+      "ivar": "_iconImage",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa358",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_iconImage",
+      "instructionsSHA256": "dbb5f1e359c706d594581393ee3a4fd6da412fc8e5f87217daca00454fd692cb"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "intentOpener",
+      "ivar": "_intentOpener",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa354",
+      "kind": "strong",
+      "attributes": "T@\"<ITBIntentOpenerDelegate>\",&,N,V_intentOpener",
+      "instructionsSHA256": "3e80f2dd6fd295f8e04991d357dae0bd645412c2a09d9e06e2e736a41236404b"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "setIntentOpener:",
+      "ivar": "_intentOpener",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa354",
+      "kind": "strong",
+      "attributes": "T@\"<ITBIntentOpenerDelegate>\",&,N,V_intentOpener",
+      "instructionsSHA256": "397c62ce60fa7e4b59fb853054008a6fd281f34348360d68023bf49d52710237"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "linkListBlock",
+      "ivar": "_linkListBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa350",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "f43d92379b6473c0863fac50c8166806ce2106953183c0bd299508f2307be32d"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "setLinkListBlock:",
+      "ivar": "_linkListBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa350",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "66d190990adf5969368f9208f425abe72b9a4066c78812ab845b66644d3a20f3"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "footerContainerView",
+      "ivar": "_footerContainerView",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa35c",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_footerContainerView",
+      "instructionsSHA256": "f1f61efe92c9aed9bff7a4c3ba342a59b3b40011ad2cb809bfad29b44a858043"
+    },
+    {
+      "class": "ITBLinkListFooterView",
+      "selector": "setFooterContainerView:",
+      "ivar": "_footerContainerView",
+      "originalOffset": 40,
+      "offsetVariable": "0x4aa35c",
+      "kind": "strong",
+      "attributes": "T@\"UIView\",&,N,V_footerContainerView",
+      "instructionsSHA256": "4ddb573a206e80331371ce775e77f1d95aa569d2d9f9a2fc5032580b506e4a19"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "iconImageView",
+      "ivar": "_iconImageView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa338",
+      "kind": "strong",
+      "attributes": "T@\"UIImageView\",&,N,V_iconImageView",
+      "instructionsSHA256": "c73a9403b181922111c8791e07875596c58ca4fc273e52a747976e78f262bb16"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "setIconImageView:",
+      "ivar": "_iconImageView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa338",
+      "kind": "strong",
+      "attributes": "T@\"UIImageView\",&,N,V_iconImageView",
+      "instructionsSHA256": "34ee1e3af7889dd4a67d1a033d9efc730a5e7bd1de64f70ab8f6a8bede8ca697"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "titleLabel",
+      "ivar": "_titleLabel",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa334",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "6ed383df9cead7407358825b06e085ab7e21ee542aaf970dc27a5eb00226e133"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "setTitleLabel:",
+      "ivar": "_titleLabel",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa334",
+      "kind": "strong",
+      "attributes": "T@\"UILabel\",&,N,V_titleLabel",
+      "instructionsSHA256": "b01e42ae91c3e2742f7baeb68b81ed6b3bd9aa5fe8dcfecde7747d6429d392b9"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "iconImage",
+      "ivar": "_iconImage",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa33c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_iconImage",
+      "instructionsSHA256": "01fd7217566fa61073389386ff7e94026dd40c615b25bb18333ef4806e564285"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "setIconImage:",
+      "ivar": "_iconImage",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa33c",
+      "kind": "strong",
+      "attributes": "T@\"UIImage\",&,N,V_iconImage",
+      "instructionsSHA256": "a2a2e731146db49568996541729eb4df2d946705b3ff4d3110e989bd919ef9e9"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "linkListBlock",
+      "ivar": "_linkListBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa330",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "97075f56827c4f7095caf4966fb43502e5ce496b73924a560621b4168de06d7c"
+    },
+    {
+      "class": "ITBFooterContainerView",
+      "selector": "setLinkListBlock:",
+      "ivar": "_linkListBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa330",
+      "kind": "strong",
+      "attributes": "T@\"ITBLinkListBlock\",&,N,V_linkListBlock",
+      "instructionsSHA256": "2de81f1a0892d555f7f90b73183e43f3c3ae006f105a20e5945b4b666da8a03f"
+    }
+  ],
+  "scope": "Trivial property methods only; custom methods, runtime layout and full ABI are not validated by this artifact.",
+  "proofChecks": [
+    "Original property metadata ivar name/offset and ownership",
+    "Only bounded load/store/copy/strong accessor instructions",
+    "Offset-variable address matches original adrp/ldrsw",
+    "Literal offsets match original ivar offset",
+    "Copy and strong setters call the corresponding original runtime helper"
+  ]
+}

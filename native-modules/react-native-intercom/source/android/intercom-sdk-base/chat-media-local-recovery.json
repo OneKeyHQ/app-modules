@@ -1,0 +1,21 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/overlay/ChatNotification.java",
+      "before_sha256": "f4e60a24e115696f8ae9374fbb00d43e84f9aea7bc8941bb5c86b17433083b76",
+      "after_sha256": "3f1b019efd92b98132b3ce58dba4df5e732c13dbee390102bdbd0c62d961efae"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/MediaUploadStateRepository.java",
+      "before_sha256": "1f587ad61f6d87dd3dc587a4dbf569d951eccf3a9ca723057d083d75dbce5546",
+      "after_sha256": "fbe16e7aaf4b9356df3e3fc71faac74912182daf56f9f436b9a928f7e525a39b"
+    }
+  ],
+  "scope": [
+    "Chat two inlined ValueAnimator listener local alpha-renames only; captured view and callback evaluation order unchanged",
+    "Media retryUpload raw Object search-result declaration, next\u2192MediaUploadItem cast\u2192predicate\u2192common cast/null-check unchanged"
+  ],
+  "original_evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/local-declarations-228",
+  "method_code_backfill": false
+}

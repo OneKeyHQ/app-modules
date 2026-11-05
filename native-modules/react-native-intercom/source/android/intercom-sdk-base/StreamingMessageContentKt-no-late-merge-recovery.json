@@ -1,0 +1,552 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+  "root_only": true,
+  "source_before_sha256": "5c611709767cf29d2a5c90295134696e67b676e22eab0024e05e17d08f16c8ee",
+  "source_after_sha256": "c571d6e81fd11812639603b52f21520ce7038b282d05136c231decb97614382a",
+  "source_capture_sites": 7,
+  "source_capture_bindings": 21,
+  "declaration_check_exit": 0,
+  "type_edits": 10,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "8945",
+      "9004",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_785_0, recoveredExpressionArgument_785_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingMessageContent$lambda$1(recoveredExpressionCapture_785_0, recoveredExpressionCapture_785_1, recoveredExpressionCapture_785_2, recoveredExpressionCapture_785_3, recoveredExpressionCapture_785_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_785_0), ((java.lang.Integer)recoveredExpressionArgument_785_1).intValue()))",
+      "8927",
+      "final kotlinx.coroutines.flow.StateFlow recoveredExpressionCapture_785_0 = var0;\\n               final androidx.compose.ui.Modifier recoveredExpressionCapture_785_1 = var1;\\n               final boolean recoveredExpressionCapture_785_2 = var2;\\n               final int recoveredExpressionCapture_785_3 = var4;\\n               final int recoveredExpressionCapture_785_4 = var5;\\n               ",
+      "785",
+      "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+      "Lkotlinx/coroutines/flow/StateFlow;=var0,Landroidx/compose/ui/Modifier;=var1,Z=var2,I=var4,I=var5",
+      "recoveredExpressionCapture_785_0=var0@7020:LOCAL|0|0|0|var0|Lkotlinx/coroutines/flow/StateFlow;;recoveredExpressionCapture_785_1=var1@7045:LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_785_2=var2@7070:LOCAL|2|2|0|var2|Z;recoveredExpressionCapture_785_3=var4@7109:LOCAL|4|4|0|var4|I;recoveredExpressionCapture_785_4=var5@7119:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "9706",
+      "9765",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_786_0, recoveredExpressionArgument_786_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingMessageContent$lambda$2(recoveredExpressionCapture_786_0, recoveredExpressionCapture_786_1, recoveredExpressionCapture_786_2, recoveredExpressionCapture_786_3, recoveredExpressionCapture_786_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_786_0), ((java.lang.Integer)recoveredExpressionArgument_786_1).intValue()))",
+      "9688",
+      "final kotlinx.coroutines.flow.StateFlow recoveredExpressionCapture_786_0 = var0;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_786_1 = var1;\\n         final boolean recoveredExpressionCapture_786_2 = var2;\\n         final int recoveredExpressionCapture_786_3 = var4;\\n         final int recoveredExpressionCapture_786_4 = var5;\\n         ",
+      "786",
+      "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+      "Lkotlinx/coroutines/flow/StateFlow;=var0,Landroidx/compose/ui/Modifier;=var1,Z=var2,I=var4,I=var5",
+      "recoveredExpressionCapture_786_0=var0@7020:LOCAL|0|0|0|var0|Lkotlinx/coroutines/flow/StateFlow;;recoveredExpressionCapture_786_1=var1@7045:LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_786_2=var2@7070:LOCAL|2|2|0|var2|Z;recoveredExpressionCapture_786_3=var4@7109:LOCAL|4|4|0|var4|I;recoveredExpressionCapture_786_4=var5@7119:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "15323",
+      "15390",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_788_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingRevealBlock$lambda$14$lambda$13(recoveredExpressionCapture_788_0, (androidx.compose.ui.graphics.GraphicsLayerScope) ((androidx.compose.ui.graphics.GraphicsLayerScope)recoveredExpressionArgument_788_0)))",
+      "15305",
+      "final androidx.compose.runtime.State recoveredExpressionCapture_788_0 = var38;\\n            ",
+      "788",
+      "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/State;=var8",
+      "recoveredExpressionCapture_788_0=var38@13071:LOCAL|8|38|0|var38|Landroidx/compose/runtime/State;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "16337",
+      "16404",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_789_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingRevealBlock$lambda$16$lambda$15(recoveredExpressionCapture_789_0, recoveredExpressionCapture_789_1, recoveredExpressionCapture_789_2, (androidx.compose.ui.graphics.drawscope.ContentDrawScope) ((androidx.compose.ui.graphics.drawscope.ContentDrawScope)recoveredExpressionArgument_789_0)))",
+      "16319",
+      "final float recoveredExpressionCapture_789_0 = var42;\\n            final androidx.compose.runtime.MutableState recoveredExpressionCapture_789_1 = var45;\\n            final androidx.compose.runtime.State recoveredExpressionCapture_789_2 = var40;\\n            ",
+      "789",
+      "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "F=var10,Landroidx/compose/runtime/MutableState;=var11,Landroidx/compose/runtime/State;=var9",
+      "recoveredExpressionCapture_789_0=var42@13802:LOCAL|10|42|0|var42|F;recoveredExpressionCapture_789_1=var45@14653:LOCAL|11|45|0|var45|Landroidx/compose/runtime/MutableState;;recoveredExpressionCapture_789_2=var40@13261:LOCAL|9|40|0|var40|Landroidx/compose/runtime/State;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "18135",
+      "18202",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_790_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingRevealBlock$lambda$18$lambda$17(recoveredExpressionCapture_790_0, (androidx.compose.ui.text.TextLayoutResult) ((androidx.compose.ui.text.TextLayoutResult)recoveredExpressionArgument_790_0)))",
+      "18117",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_790_0 = var45;\\n            ",
+      "790",
+      "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/MutableState;=var11",
+      "recoveredExpressionCapture_790_0=var45@14653:LOCAL|11|45|0|var45|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "19638",
+      "19695",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_791_0, recoveredExpressionArgument_791_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingRevealBlock$lambda$19(recoveredExpressionCapture_791_0, recoveredExpressionCapture_791_1, recoveredExpressionCapture_791_2, recoveredExpressionCapture_791_3, recoveredExpressionCapture_791_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_791_0), ((java.lang.Integer)recoveredExpressionArgument_791_1).intValue()))",
+      "19620",
+      "final io.intercom.android.sdk.survey.block.BlockRenderData recoveredExpressionCapture_791_0 = var0;\\n         final boolean recoveredExpressionCapture_791_1 = var1;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_791_2 = var2;\\n         final int recoveredExpressionCapture_791_3 = var4;\\n         final int recoveredExpressionCapture_791_4 = var5;\\n         ",
+      "791",
+      "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lio/intercom/android/sdk/survey/block/BlockRenderData;=var0,Z=var1,Landroidx/compose/ui/Modifier;=var2,I=var4,I=var5",
+      "recoveredExpressionCapture_791_0=var0@9920:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/survey/block/BlockRenderData;;recoveredExpressionCapture_791_1=var1@9951:LOCAL|1|1|0|var1|Z;recoveredExpressionCapture_791_2=var2@9965:LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_791_3=var4@10015:LOCAL|4|4|0|var4|I;recoveredExpressionCapture_791_4=var5@10025:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-StreamingMessageContentKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "21034",
+      "21101",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_787_0, recoveredExpressionArgument_787_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingMessageContentKt.StreamingMessageContentPreview$lambda$20(recoveredExpressionCapture_787_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_787_0), ((java.lang.Integer)recoveredExpressionArgument_787_1).intValue()))",
+      "21013",
+      "final int recoveredExpressionCapture_787_0 = var1;\\n         ",
+      "787",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_787_0=var1@19890:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 785,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContent",
+        "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+        "194",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContent$lambda$1",
+        "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lkotlinx/coroutines/flow/StateFlow;=var0,Landroidx/compose/ui/Modifier;=var1,Z=var2,I=var4,I=var5",
+        "297"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent$lambda$1",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301}",
+          "LOCAL|0|0|0|var0|Lkotlinx/coroutines/flow/StateFlow;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|Z",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent$lambda$1",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301}",
+          "LOCAL|0|0|0|var0|Lkotlinx/coroutines/flow/StateFlow;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|Z",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContent",
+        "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+        "297",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingMessageContent$lambda$1(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 786,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContent",
+        "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+        "288",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContent$lambda$2",
+        "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lkotlinx/coroutines/flow/StateFlow;=var0,Landroidx/compose/ui/Modifier;=var1,Z=var2,I=var4,I=var5",
+        "422"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent$lambda$2",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426}",
+          "LOCAL|0|0|0|var0|Lkotlinx/coroutines/flow/StateFlow;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|Z",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContent$lambda$2",
+          "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426}",
+          "LOCAL|0|0|0|var0|Lkotlinx/coroutines/flow/StateFlow;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|Z",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContent",
+        "(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZLandroidx/compose/runtime/Composer;II)V",
+        "422",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingMessageContent$lambda$2(Lkotlinx/coroutines/flow/StateFlow;Landroidx/compose/ui/Modifier;ZIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 787,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContentPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContentPreview$lambda$20",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContentPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContentPreview$lambda$20",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContentPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingMessageContentPreview$lambda$20",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingMessageContentPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingMessageContentPreview$lambda$20(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 788,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "499",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock$lambda$14$lambda$13",
+        "(Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/GraphicsLayerScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/graphics/GraphicsLayerScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/State;=var8",
+        "702"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$14$lambda$13",
+          "(Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/GraphicsLayerScope;)Lkotlin/Unit;",
+          "{700, 701, 702, 703, 704, 705, 706}",
+          "LOCAL|8|38|0|var38|Landroidx/compose/runtime/State;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$14$lambda$13",
+          "(Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/GraphicsLayerScope;)Lkotlin/Unit;",
+          "{700, 701, 702, 703, 704, 705, 706}",
+          "LOCAL|8|38|0|var38|Landroidx/compose/runtime/State;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "702",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingRevealBlock$lambda$14$lambda$13(Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/GraphicsLayerScope;)Lkotlin/Unit; (6), (Landroidx/compose/ui/graphics/GraphicsLayerScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 789,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "584",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock$lambda$16$lambda$15",
+        "(FLandroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "F=var10,Landroidx/compose/runtime/MutableState;=var11,Landroidx/compose/runtime/State;=var9",
+        "826"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$16$lambda$15",
+          "(FLandroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+          "{820, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830}",
+          "LOCAL|10|42|0|var42|F",
+          "LOCAL|11|45|0|var45|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|9|40|0|var40|Landroidx/compose/runtime/State;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$16$lambda$15",
+          "(FLandroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;",
+          "{820, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830}",
+          "LOCAL|10|42|0|var42|F",
+          "LOCAL|11|45|0|var45|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|9|40|0|var40|Landroidx/compose/runtime/State;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "826",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingRevealBlock$lambda$16$lambda$15(FLandroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit; (6), (Landroidx/compose/ui/graphics/drawscope/ContentDrawScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 790,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "686",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock$lambda$18$lambda$17",
+        "(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/MutableState;=var11",
+        "964"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$18$lambda$17",
+          "(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+          "{962, 963, 964, 965, 966, 967, 968}",
+          "LOCAL|11|45|0|var45|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$18$lambda$17",
+          "(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+          "{962, 963, 964, 965, 966, 967, 968}",
+          "LOCAL|11|45|0|var45|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "964",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingRevealBlock$lambda$18$lambda$17(Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit; (6), (Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 791,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "767",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock$lambda$19",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/survey/block/BlockRenderData;=var0,Z=var1,Landroidx/compose/ui/Modifier;=var2,I=var4,I=var5",
+        "1086"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$19",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1079, 1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/survey/block/BlockRenderData;",
+          "LOCAL|1|1|0|var1|Z",
+          "LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+          "StreamingRevealBlock$lambda$19",
+          "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1079, 1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/survey/block/BlockRenderData;",
+          "LOCAL|1|1|0|var1|Z",
+          "LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+        "StreamingRevealBlock",
+        "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "1086",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.StreamingRevealBlock$lambda$19(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt.java",
+      "start": 14267,
+      "end": 14272,
+      "replacement": "(kotlin.jvm.functions.Function2) var92",
+      "owner": "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingMessageContentKt",
+      "method": "StreamingRevealBlock",
+      "descriptor": "(Lio/intercom/android/sdk/survey/block/BlockRenderData;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "composer_group_key": 1007030428,
+      "function_type": "kotlin/jvm/functions/Function2",
+      "original_checkcast_bci": 405,
+      "original_store_slot": 8,
+      "source_line": 278,
+      "status": "SOURCE_CAST_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

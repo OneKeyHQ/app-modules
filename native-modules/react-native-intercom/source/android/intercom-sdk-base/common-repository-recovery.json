@@ -1,0 +1,31 @@
+{
+  "method": "io.intercom.android.sdk.m5.data.CommonRepository.openMessenger(Continuation):Object",
+  "before_sha256": "345cdc3992d60f6b02d6637bcd46720c265d6de0a8c2acb34503903437c43f79",
+  "after_sha256": "529a07976190ad396e1120ccfc9b7dab0d722d431a0e8ddd2258497e83b38b33",
+  "status": "STATIC_CONTROL_FLOW_COMPARED_NOT_RUNTIME",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/CommonRepository.javap.txt",
+  "states": [
+    0,
+    1,
+    2
+  ],
+  "protected_ranges_original_bci": [
+    [
+      174,
+      258
+    ],
+    [
+      293,
+      369
+    ]
+  ],
+  "invariants": [
+    "lock acquisition/resume failure outside protected region",
+    "cached non-null response only",
+    "network suspension retains mutex",
+    "only fetched Success updates open response and team presence",
+    "unlock outside normal protected body; original Throwable identity retained"
+  ],
+  "runtime_verified": false,
+  "compile_note": "No diagnostics in these restored method bodies in the latest full javac failure; complete base produced 0 classes"
+}

@@ -1,0 +1,158 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+  "root_only": true,
+  "source_before_sha256": "ee689a563838f16fa77aaa63f2eaff803bb4853afe260ac70f9840849fbeefaf",
+  "source_after_sha256": "31b4bada81229e5da7f03b5f130922006f7405470ee14b4aa529fd52920a6251",
+  "source_capture_sites": 2,
+  "source_capture_bindings": 2,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt$TextBlock$2/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2.java",
+      "5965",
+      "6014",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1314_0) -> io.intercom.android.sdk.survey.block.TextBlockKt$TextBlock$2.invoke$lambda$1$lambda$0(recoveredExpressionCapture_1314_0, recoveredExpressionCapture_1314_1, (androidx.compose.ui.semantics.SemanticsPropertyReceiver) ((androidx.compose.ui.semantics.SemanticsPropertyReceiver)recoveredExpressionArgument_1314_0)))",
+      "5947",
+      "final androidx.compose.ui.text.AnnotatedString recoveredExpressionCapture_1314_0 = var15;\\n            final io.intercom.android.sdk.survey.block.SuffixText recoveredExpressionCapture_1314_1 = var16;\\n            ",
+      "1314",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "Landroidx/compose/ui/text/AnnotatedString;=var15,Lio/intercom/android/sdk/survey/block/SuffixText;=var16",
+      "recoveredExpressionCapture_1314_0=var15@5511:LOCAL|15|15|0|var15|Landroidx/compose/ui/text/AnnotatedString;;recoveredExpressionCapture_1314_1=var16@5564:LOCAL|16|16|0|var16|Lio/intercom/android/sdk/survey/block/SuffixText;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt$TextBlock$2/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2.java",
+      "7095",
+      "7144",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1315_0) -> io.intercom.android.sdk.survey.block.TextBlockKt$TextBlock$2.invoke$lambda$3$lambda$2((androidx.compose.ui.text.TextLayoutResult) ((androidx.compose.ui.text.TextLayoutResult)recoveredExpressionArgument_1315_0)))",
+      "7080",
+      "",
+      "1315",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1314,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "168",
+        "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+        "invoke$lambda$1$lambda$0",
+        "(Landroidx/compose/ui/text/AnnotatedString;Lio/intercom/android/sdk/survey/block/SuffixText;Landroidx/compose/ui/semantics/SemanticsPropertyReceiver;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/semantics/SemanticsPropertyReceiver;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/ui/text/AnnotatedString;=var15,Lio/intercom/android/sdk/survey/block/SuffixText;=var16",
+        "274"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke$lambda$1$lambda$0",
+          "(Landroidx/compose/ui/text/AnnotatedString;Lio/intercom/android/sdk/survey/block/SuffixText;Landroidx/compose/ui/semantics/SemanticsPropertyReceiver;)Lkotlin/Unit;",
+          "{270, 271, 272, 273, 274, 275, 276, 277, 278}",
+          "LOCAL|15|15|0|var15|Landroidx/compose/ui/text/AnnotatedString;",
+          "LOCAL|16|16|0|var16|Lio/intercom/android/sdk/survey/block/SuffixText;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke$lambda$1$lambda$0",
+          "(Landroidx/compose/ui/text/AnnotatedString;Lio/intercom/android/sdk/survey/block/SuffixText;Landroidx/compose/ui/semantics/SemanticsPropertyReceiver;)Lkotlin/Unit;",
+          "{270, 271, 272, 273, 274, 275, 276, 277, 278}",
+          "LOCAL|15|15|0|var15|Landroidx/compose/ui/text/AnnotatedString;",
+          "LOCAL|16|16|0|var16|Lio/intercom/android/sdk/survey/block/SuffixText;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "274",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2.invoke$lambda$1$lambda$0(Landroidx/compose/ui/text/AnnotatedString;Lio/intercom/android/sdk/survey/block/SuffixText;Landroidx/compose/ui/semantics/SemanticsPropertyReceiver;)Lkotlin/Unit; (6), (Landroidx/compose/ui/semantics/SemanticsPropertyReceiver;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1315,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "256",
+        "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+        "invoke$lambda$3$lambda$2",
+        "(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "405"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke$lambda$3$lambda$2",
+          "(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+          "{405, 406, 407, 408, 409}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+          "invoke$lambda$3$lambda$2",
+          "(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;",
+          "{405, 406, 407, 408, 409}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "405",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt$TextBlock$2.invoke$lambda$3$lambda$2(Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit; (6), (Landroidx/compose/ui/text/TextLayoutResult;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

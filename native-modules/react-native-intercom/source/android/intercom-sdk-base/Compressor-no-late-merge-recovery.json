@@ -1,0 +1,13 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/lightcompressor/compressor/Compressor",
+  "root_only": true,
+  "source_before_sha256": "85cf1c883e411df98c08ef1e8d76eeb6784810d19068013b7933dbeed9f1ee76",
+  "source_after_sha256": "8c78547224ea6dfa8b47543a4e023293eaf1d4ffdf7169344706ae06f82325fd",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "first_attempt": "Type normalizer correctly rejected absent owner in base reference; rerun uses actual normalized lightcompressor reference. No gate relaxed.",
+  "normal_build_uses_decompiler": false
+}

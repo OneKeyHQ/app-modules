@@ -1,0 +1,104 @@
+{
+  "status": "SOURCE_PRIMITIVE_LIFETIMES_RESTORED_NOT_COMPILED",
+  "scope": "Four independently proved original expression/lifetime cases only; no global variable retyping or integer-to-boolean coercion",
+  "contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/primitive-lifetimes/CONTRACT.md",
+  "changes": [
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/usecase/PushNotificationsBannerUseCase",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/PushNotificationsBannerUseCase.java",
+      "before_sha256": "33373e510507ea3cc388293e5d9323796b64887c25ecaab6dee2155ce1f22339",
+      "after_sha256": "ba31bd1b8804207a8c84b0088c4b2d3d536abd6cd669e3d4365bd225e878d21f",
+      "source_diff": "--- before\n+++ source\n@@ -96,7 +96,7 @@\n             null,\n             false,\n             false,\n-            this.pushTokenStore.isDeviceTokenSubmitted() && !var2 && !this.intercomDataLayer.getPushNotificationsBannerDismissed().getValue()\n+            this.pushTokenStore.isDeviceTokenSubmitted() && !var2 && !((Boolean)this.intercomDataLayer.getPushNotificationsBannerDismissed().getValue()).booleanValue()\n                ? PushNotificationsBannerState.INSTANCE\n                : null,\n             null,\n",
+      "original_control_flow": {
+        "method": "invoke(MutableStateFlow,Z)V",
+        "raw_vendor_chain": [
+          "StateFlow.getValue@73",
+          "CHECKCAST Boolean@78",
+          "booleanValue()Z@81",
+          "IFNE@84"
+        ],
+        "ordering": "Strict cast/unbox remains third short-circuit operand, with original NPE/CCE; no tolerant/default coercion"
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/components/ConversationHistoryCardKt$ConversationHistoryCard$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/ConversationHistoryCardKt$ConversationHistoryCard$2.java",
+      "before_sha256": "edfe756b5b5ff55b723d77293532907308b85c229d093ad6075c387000fa6adc",
+      "after_sha256": "18836f972d3c5194412ce47ce9f46aec289b416257aba24469643d9848f56937",
+      "source_diff": "--- before\n+++ source\n@@ -107,10 +107,10 @@\n                int var26 = 8;\n                var11 = false;\n                float var48 = Dp.recovered$95b3d103663bf060(var26);\n-               var11 = (boolean)20;\n+               int recoveredHorizontalPadding = 20;\n                var12 = 0;\n                TicketRowKt.TicketRow(\n-                  var10000, var52, PaddingKt.recovered$4ebb4826aa57abc6(Dp.recovered$95b3d103663bf060(var11), var48), !var8.isRead(), var1, 0, 0\n+                  var10000, var52, PaddingKt.recovered$4ebb4826aa57abc6(Dp.recovered$95b3d103663bf060(recoveredHorizontalPadding), var48), !var8.isRead(), var1, 0, 0\n                );\n                var1.endReplaceGroup();\n             } else {\n",
+      "original_control_flow": {
+        "method": "invoke(Composer,I)V",
+        "raw_vendor_chain": [
+          "bipush20@294",
+          "ISTORE11@296",
+          "ILOAD11@301",
+          "I2F@303",
+          "Dp(F)F@304"
+        ],
+        "ordering": "Only later20dp lifetime split; earlier remember invalidation boolean and8dp path unchanged"
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/views/compose/TextAttributeCollectorKt",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/views/compose/TextAttributeCollectorKt.java",
+      "before_sha256": "f8e9beaebf91a9f4411e4983aca8e6c555ed9ad554c60f3f8c9d2839a88c9969",
+      "after_sha256": "2527632c8465889cf20cae4d53c33877f6d2b0b0f85aa03b55050c18329481a2",
+      "source_diff": "--- before\n+++ source\n@@ -253,12 +253,13 @@\n          var5.startReplaceGroup(1971791653);\n          ComposerKt.sourceInformation(var5, \"CC(remember):TextAttributeCollector.kt#9igjgp\");\n          Composer var19 = var5;\n-         int var20 = var5.changedInstance(var1);\n+         boolean recoveredAttributeChanged = var5.changedInstance(var1);\n+         int var20;\n          int var21 = 0;\n          Object var22 = var19.rememberedValue();\n          int var23 = 0;\n          Object var84;\n-         if (!var20 && var22 != Composer.Companion.getEmpty()) {\n+         if (!recoveredAttributeChanged && var22 != Composer.Companion.getEmpty()) {\n             var84 = (Function0)var22;\n          } else {\n             Object[] var34 = var79;\n@@ -278,12 +279,13 @@\n          var5.startReplaceGroup(1971794796);\n          ComposerKt.sourceInformation(var5, \"CC(remember):TextAttributeCollector.kt#9igjgp\");\n          Composer var59 = var5;\n-         int var62 = var5.changedInstance(var1) | var5.changedInstance(var49);\n-         var22 = 0;\n-         var23 = (int)var59.rememberedValue();\n+         boolean recoveredCountryChanged = var5.changedInstance(var1) | var5.changedInstance(var49);\n+         int var62;\n+         int recoveredCountryInlineMarker = 0;\n+         Object recoveredCountryCache = var59.rememberedValue();\n          int var69/* $VF was: $i$a$-let-ComposerKt$cache$1$ivx */ = 0;\n-         if (!var62 && var23 != Composer.Companion.getEmpty()) {\n-            var84 = var23;\n+         if (!recoveredCountryChanged && recoveredCountryCache != Composer.Companion.getEmpty()) {\n+            var84 = recoveredCountryCache;\n          } else {\n             Object[] var75 = var80;\n             int var71 = 0;\n@@ -296,7 +298,7 @@\n             var84 = (Function0)var26;\n          }\n \n-         Function0 var57 = var84;\n+         Function0 var57 = (Function0)var84;\n          var5.endReplaceGroup();\n          MutableState var56 = (MutableState)RememberSaveableKt.rememberSaveable(var80, var57, var5, 0);\n          Modifier var81;\n",
+      "original_control_flow": {
+        "method": "TextAttributeCollector(Modifier,AttributeData,Z,Function1,Function1,Composer,II)V",
+        "first_group": {
+          "key": 1971791653,
+          "boolean_producer": 705,
+          "ISTORE": 710,
+          "branch": 730,
+          "remembered_value": 718,
+          "reference_compare": 741
+        },
+        "second_group": {
+          "key": 1971794796,
+          "boolean_calls": [
+            830,
+            839
+          ],
+          "non_short_circuit_IOR": 844,
+          "ISTORE": 845,
+          "remembered_value": 853,
+          "ASTORE": 858,
+          "branch": 865
+        },
+        "numeric_lifetime": [
+          "int40@956",
+          "ISTORE20@958",
+          "ILOAD20@963",
+          "I2F@965",
+          "Dp(F)F@966"
+        ],
+        "ordering": "Keep both changedInstance reads with bitwise |; separate boolean/cache/numeric lifetimes; restore genuine Function0 check at common group end; retain later var22 KeyboardOptions"
+      },
+      "followup_original_proof": "Raw vendor iconst0@848/ISTORE22@849; separate integer inline-marker lifetime, avoid spurious Object boxing before rememberedValue"
+    },
+    {
+      "owner": "io/intercom/android/sdk/tickets/list/reducers/TicketsListReducerKt",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/reducers/TicketsListReducerKt.java",
+      "before_sha256": "047cab9e50543fed695948b0412c3c048a19d9fe420ee7c13e42969ca3c0b7ef",
+      "after_sha256": "8af0686b7c7147943ab8116de9d6f3efafb636c62f5765426e5a4f99cf84e6b4",
+      "source_diff": "--- before\n+++ source\n@@ -100,7 +100,8 @@\n          var2.startReplaceGroup(-374388312);\n          ComposerKt.sourceInformation(var2, \"\");\n          LazyPagingItems var75 = var0;\n-         byte var10001 = var0.getLoadState().getAppend() instanceof Loading;\n+         boolean recoveredAppendLoading = var0.getLoadState().getAppend() instanceof Loading;\n+         byte var10001;\n          LoadState var64 = var0.getLoadState().getAppend();\n          Error var10002 = var64 instanceof Error ? (Error)var64 : null;\n          ErrorState var86;\n@@ -108,7 +109,7 @@\n             var86 = null;\n          } else {\n             Error var12 = var10002;\n-            boolean var30 = (boolean)var10001;\n+            boolean var30 = recoveredAppendLoading;\n             LazyPagingItems var29 = var0;\n             int var13 = 0;\n             boolean var14 = var12.getError() instanceof IOException;\n@@ -165,13 +166,13 @@\n             var2.endReplaceGroup();\n             ErrorState var31 = var28;\n             var75 = var29;\n-            var10001 = var30;\n+            recoveredAppendLoading = var30;\n             var86 = var31;\n          }\n \n          String var43 = var56;\n          ErrorState var44 = var86;\n-         boolean var45 = (boolean)var10001;\n+         boolean var45 = recoveredAppendLoading;\n          LazyPagingItems var46 = var75;\n          TicketsScreenUiState$Content var60 = new TicketsScreenUiState$Content(var46, var45, var44, var43);\n          var2.endReplaceGroup();\n@@ -231,7 +232,7 @@\n             var78 = new TicketsScreenUiState$Error(var55, var54);\n          }\n \n-         TicketsScreenUiState$Error var61 = var78;\n+         TicketsScreenUiState var61 = var78;\n          var2.endReplaceGroup();\n          var78 = var61;\n       } else if (var0.getLoadState().getRefresh() instanceof Loading) {\n",
+      "original_control_flow": {
+        "method": "reduceToTicketsScreenUiState(LazyPagingItems,Function0,Composer,II)TicketsScreenUiState",
+        "boolean_stack_path": [
+          "INSTANCEOF Loading@224",
+          "ISTORE30@264",
+          "ILOAD30@524",
+          "ISTORE45@535",
+          "Content(LazyPagingItems,Z,ErrorState,String)@551"
+        ],
+        "numeric_constructor": [
+          "WithCTA(I,I,Integer,I,Function0,I,DefaultConstructorMarker)@485"
+        ],
+        "ordering": "Original append-loading read remains before error UI; separate boolean carrier/save/restore, leave numeric byte/zero constructor lifetimes untouched"
+      },
+      "followup_original_proof": "Raw vendor ASTORE7@872/endReplaceGroup@875/ALOAD7@880/widening parent CHECKCAST@882; no Error downcast at this join; parent typed local preserves value"
+    }
+  ],
+  "runtime_verified": false
+}

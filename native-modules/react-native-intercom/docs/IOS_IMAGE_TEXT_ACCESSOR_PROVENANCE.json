@@ -1,0 +1,148 @@
+{
+  "baseline": "Intercom19.9.1 device MachO/metadata",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "validatedAccessors": [
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "title",
+      "ivar": "_title",
+      "originalOffset": 8,
+      "offsetVariable": "0x4a9fa8",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_title",
+      "instructionsSHA256": "c17b884eef4ef989d8a655bfa4828f120631cc3e7b3d2f7f6de9a4b6e5b9a4f3"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setTitle:",
+      "ivar": "_title",
+      "originalOffset": 8,
+      "offsetVariable": "0x4a9fa8",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_title",
+      "instructionsSHA256": "ae8b5609f8045a9f15754ffde944e5d59a7a9e8b1038b58fa13f8681d9fc2999"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "url",
+      "ivar": "_url",
+      "originalOffset": 16,
+      "offsetVariable": "0x4a9fac",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "72735f1983ac1c862f4a53cab5c07aae233bb157a14ab7af986a2439d2f92d4e"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setUrl:",
+      "ivar": "_url",
+      "originalOffset": 16,
+      "offsetVariable": "0x4a9fac",
+      "kind": "copy",
+      "attributes": "T@\"NSString\",C,N,V_url",
+      "instructionsSHA256": "a9046bd16d4f5df2351197b3a20bca25d45a57cb1092b28cb7f7a7ed0cbf74cd"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "width",
+      "ivar": "_width",
+      "originalOffset": 24,
+      "offsetVariable": "0x4a9fb0",
+      "kind": "value",
+      "attributes": "Td,N,V_width",
+      "instructionsSHA256": "8fef3f39511faa5e7a5493db132fc280d034a2ebc6a0b4118420ed1525e35c7b"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setWidth:",
+      "ivar": "_width",
+      "originalOffset": 24,
+      "offsetVariable": "0x4a9fb0",
+      "kind": "value",
+      "attributes": "Td,N,V_width",
+      "instructionsSHA256": "93391698734a52ba5bfff77f9417bf4deda59947c14fab4a58f0a54b3428a5f1"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "height",
+      "ivar": "_height",
+      "originalOffset": 32,
+      "offsetVariable": "0x4a9fb4",
+      "kind": "value",
+      "attributes": "Td,N,V_height",
+      "instructionsSHA256": "500f33fee8ee135142990113ba8a928f47c75eceb2760e6f9fbd102208121a6a"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setHeight:",
+      "ivar": "_height",
+      "originalOffset": 32,
+      "offsetVariable": "0x4a9fb4",
+      "kind": "value",
+      "attributes": "Td,N,V_height",
+      "instructionsSHA256": "fe396cf973c376d33f4b4c2610f25936acb243aa89b0ab588b26f377cc47bd63"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "textColor",
+      "ivar": "_textColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4a9fb8",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_textColor",
+      "instructionsSHA256": "f3ce94e0933f3e9072e2e0d29cb00c2f63724d459aba91adb80220284a5c37a7"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setTextColor:",
+      "ivar": "_textColor",
+      "originalOffset": 40,
+      "offsetVariable": "0x4a9fb8",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_textColor",
+      "instructionsSHA256": "8a8d7541018fb17113703d91aba7ead85754b3832a2846c896b0c7465907b0b8"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "titleTextColor",
+      "ivar": "_titleTextColor",
+      "originalOffset": 48,
+      "offsetVariable": "0x4a9fbc",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_titleTextColor",
+      "instructionsSHA256": "12aec850eee8f19a73c7a1dfeed996370d5c50cc64910a14f3d4d8ec92836c42"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setTitleTextColor:",
+      "ivar": "_titleTextColor",
+      "originalOffset": 48,
+      "offsetVariable": "0x4a9fbc",
+      "kind": "strong",
+      "attributes": "T@\"UIColor\",&,N,V_titleTextColor",
+      "instructionsSHA256": "5744fabdd8b8b5dd6c3ace6e3f607f216c60c8b5933464447c347cb4bf26d213"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "loadingViewColorType",
+      "ivar": "_loadingViewColorType",
+      "originalOffset": 56,
+      "offsetVariable": "0x4a9fc0",
+      "kind": "value",
+      "attributes": "TQ,N,V_loadingViewColorType",
+      "instructionsSHA256": "8ceaeecb11d9b1589260fdadc2c07c9c1a0b7f2de1e1159570a32b6077f6b91b"
+    },
+    {
+      "class": "ICMImageTextBlock",
+      "selector": "setLoadingViewColorType:",
+      "ivar": "_loadingViewColorType",
+      "originalOffset": 56,
+      "offsetVariable": "0x4a9fc0",
+      "kind": "value",
+      "attributes": "TQ,N,V_loadingViewColorType",
+      "instructionsSHA256": "183200bd0930561043bc13c87552d9a4104939ab71a888b2cc28365e2c2e7fb9"
+    }
+  ],
+  "runtimeVerified": false,
+  "scope": "Metadata and original instruction-backed trivial model accessors only; no private Swift ABI or UIKit runtime acceptance."
+}

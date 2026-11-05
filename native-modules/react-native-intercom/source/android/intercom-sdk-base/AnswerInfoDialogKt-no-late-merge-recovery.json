@@ -1,0 +1,522 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+  "root_only": true,
+  "source_before_sha256": "838b0556a87e5d305fc4aed28ca6d446d170fe23d70f569d5ff8c4c6aa31d0fb",
+  "source_after_sha256": "3b50b8e011abc26d8869f157c64d389228ba4da8dc710d502cae3087ac330584",
+  "source_capture_sites": 7,
+  "source_capture_bindings": 14,
+  "declaration_check_exit": 0,
+  "type_edits": 2,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "6558",
+      "6612",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoDialog$lambda$1$lambda$0())",
+      "6543",
+      "",
+      "400",
+      "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "7384",
+      "7438",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoDialog$lambda$3$lambda$2())",
+      "7369",
+      "",
+      "401",
+      "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "8458",
+      "8503",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_402_0, recoveredExpressionArgument_402_1) -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoDialog$lambda$4(recoveredExpressionCapture_402_0, recoveredExpressionCapture_402_1, recoveredExpressionCapture_402_2, recoveredExpressionCapture_402_3, recoveredExpressionCapture_402_4, recoveredExpressionCapture_402_5, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_402_0), ((java.lang.Integer)recoveredExpressionArgument_402_1).intValue()))",
+      "8440",
+      "final io.intercom.android.sdk.models.AiAnswerInfo recoveredExpressionCapture_402_0 = var0;\\n         final boolean recoveredExpressionCapture_402_1 = var1;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_402_2 = var2;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_402_3 = var3;\\n         final int recoveredExpressionCapture_402_4 = var5;\\n         final int recoveredExpressionCapture_402_5 = var6;\\n         ",
+      "402",
+      "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "Lio/intercom/android/sdk/models/AiAnswerInfo;=var0,Z=var1,Lkotlin/jvm/functions/Function0;=var2,Lkotlin/jvm/functions/Function0;=var3,I=var5,I=var6",
+      "recoveredExpressionCapture_402_0=var0@4931:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/models/AiAnswerInfo;;recoveredExpressionCapture_402_1=var1@4959:LOCAL|1|1|0|var1|Z;recoveredExpressionCapture_402_2=var2@4973:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_402_3=var3@4999:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_402_4=var5@5050:LOCAL|5|5|0|var5|I;recoveredExpressionCapture_402_5=var6@5060:LOCAL|6|6|0|var6|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "10482",
+      "10536",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoButton$lambda$6$lambda$5(recoveredExpressionCapture_398_0))",
+      "10464",
+      "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_398_0 = var1;\\n            ",
+      "398",
+      "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lkotlin/jvm/functions/Function0;=var1",
+      "recoveredExpressionCapture_398_0=var1@8661:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "15741",
+      "15786",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_399_0, recoveredExpressionArgument_399_1) -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoButton$lambda$8(recoveredExpressionCapture_399_0, recoveredExpressionCapture_399_1, recoveredExpressionCapture_399_2, recoveredExpressionCapture_399_3, recoveredExpressionCapture_399_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_399_0), ((java.lang.Integer)recoveredExpressionArgument_399_1).intValue()))",
+      "15723",
+      "final java.lang.String recoveredExpressionCapture_399_0 = var0;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_399_1 = var1;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_399_2 = var2;\\n         final int recoveredExpressionCapture_399_3 = var4;\\n         final int recoveredExpressionCapture_399_4 = var5;\\n         ",
+      "399",
+      "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Ljava/lang/String;=var0,Lkotlin/jvm/functions/Function0;=var1,Landroidx/compose/ui/Modifier;=var2,I=var4,I=var5",
+      "recoveredExpressionCapture_399_0=var0@8648:LOCAL|0|0|0|var0|Ljava/lang/String;;recoveredExpressionCapture_399_1=var1@8661:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_399_2=var2@8677:LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_399_3=var4@8707:LOCAL|4|4|0|var4|I;recoveredExpressionCapture_399_4=var5@8717:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "17037",
+      "17089",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_403_0, recoveredExpressionArgument_403_1) -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoDialogPreview$lambda$9(recoveredExpressionCapture_403_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_403_0), ((java.lang.Integer)recoveredExpressionArgument_403_1).intValue()))",
+      "17016",
+      "final int recoveredExpressionCapture_403_0 = var1;\\n         ",
+      "403",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_403_0=var1@15983:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AnswerInfoDialogKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.java",
+      "18443",
+      "18515",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_404_0, recoveredExpressionArgument_404_1) -> io.intercom.android.sdk.m5.conversation.ui.components.AnswerInfoDialogKt.AnswerInfoDialogWithoutReportButtonPreview$lambda$10(recoveredExpressionCapture_404_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_404_0), ((java.lang.Integer)recoveredExpressionArgument_404_1).intValue()))",
+      "18422",
+      "final int recoveredExpressionCapture_404_0 = var1;\\n         ",
+      "404",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_404_0=var1@17305:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 398,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoButton",
+        "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "168",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoButton$lambda$6$lambda$5",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function0;=var1",
+        "249"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton",
+          "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton$lambda$6$lambda$5",
+          "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+          "{248, 249, 250, 251, 252, 253}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton",
+          "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton$lambda$6$lambda$5",
+          "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+          "{248, 249, 250, 251, 252, 253}",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoButton",
+        "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "249",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoButton$lambda$6$lambda$5(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 399,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoButton",
+        "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "626",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoButton$lambda$8",
+        "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Ljava/lang/String;=var0,Lkotlin/jvm/functions/Function0;=var1,Landroidx/compose/ui/Modifier;=var2,I=var4,I=var5",
+        "884"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton",
+          "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton$lambda$8",
+          "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{877, 878, 879, 880, 881, 882, 883, 884, 885, 886, 887, 888}",
+          "LOCAL|0|0|0|var0|Ljava/lang/String;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton",
+          "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoButton$lambda$8",
+          "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{877, 878, 879, 880, 881, 882, 883, 884, 885, 886, 887, 888}",
+          "LOCAL|0|0|0|var0|Ljava/lang/String;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|2|2|0|var2|Landroidx/compose/ui/Modifier;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoButton",
+        "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "884",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoButton$lambda$8(Ljava/lang/String;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 400,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "188",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog$lambda$1$lambda$0",
+        "()Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "",
+        "308"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog$lambda$1$lambda$0",
+          "()Lkotlin/Unit;",
+          "{308, 309, 310, 311, 312}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog$lambda$1$lambda$0",
+          "()Lkotlin/Unit;",
+          "{308, 309, 310, 311, 312}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "308",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoDialog$lambda$1$lambda$0()Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 401,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "261",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog$lambda$3$lambda$2",
+        "()Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "",
+        "408"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog$lambda$3$lambda$2",
+          "()Lkotlin/Unit;",
+          "{408, 409, 410, 411, 412}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog$lambda$3$lambda$2",
+          "()Lkotlin/Unit;",
+          "{408, 409, 410, 411, 412}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "408",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoDialog$lambda$3$lambda$2()Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 402,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "358",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog$lambda$4",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/models/AiAnswerInfo;=var0,Z=var1,Lkotlin/jvm/functions/Function0;=var2,Lkotlin/jvm/functions/Function0;=var3,I=var5,I=var6",
+        "546"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog$lambda$4",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{538, 539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/models/AiAnswerInfo;",
+          "LOCAL|1|1|0|var1|Z",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialog$lambda$4",
+          "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{538, 539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/models/AiAnswerInfo;",
+          "LOCAL|1|1|0|var1|Z",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialog",
+        "(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "546",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoDialog$lambda$4(Lio/intercom/android/sdk/models/AiAnswerInfo;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 403,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialogPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialogPreview$lambda$9",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogPreview$lambda$9",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogPreview$lambda$9",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialogPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoDialogPreview$lambda$9(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 404,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialogWithoutReportButtonPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialogWithoutReportButtonPreview$lambda$10",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogWithoutReportButtonPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogWithoutReportButtonPreview$lambda$10",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogWithoutReportButtonPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+          "AnswerInfoDialogWithoutReportButtonPreview$lambda$10",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt",
+        "AnswerInfoDialogWithoutReportButtonPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/AnswerInfoDialogKt.AnswerInfoDialogWithoutReportButtonPreview$lambda$10(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

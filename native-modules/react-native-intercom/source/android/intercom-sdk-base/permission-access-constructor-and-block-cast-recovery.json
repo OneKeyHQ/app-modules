@@ -1,0 +1,24 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/carousel/permission/PermissionRequestBefore30$NullPermissionResultListener.java",
+      "before_sha256": "31e77f1d822556cb5528f25193ce7ffaa326fcbcda344838acd2b8e9dd9ebe59",
+      "after_sha256": "b2c6b748e7c1b52e20356787061e267f9cb5994b3ae034099cac5838b5cfcfe2"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/BlockType.java",
+      "before_sha256": "efc8633a92bd2998059d1357d2cb157cbf778e595a0858a3844092de777f53cd",
+      "after_sha256": "db648ea4ac8910e62c8c5e8726aeb10416e7a3ca9ad36170f1c2840517a14e36"
+    }
+  ],
+  "scope": [
+    "Recover actual original package access constructor (PermissionRequestBefore30$1)V as this() forwarding; existing marker source retained, no new feature/noop stub. Original four null-listener methods were verified actual RETURN bodies; untouched. Original (null) call stays unchanged.",
+    "BlockType$20 raw getLocalAttachment\u2192List.get0\u2192CHECKCAST BlockAttachment14\u2192args\u2192invokeinterface20; only original argument-position cast restored"
+  ],
+  "original_evidence": [
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/permission-access-constructor-45",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/android/bytecode/intercom-sdk-base/2800.txt:3687"
+  ],
+  "code_backfill": false
+}

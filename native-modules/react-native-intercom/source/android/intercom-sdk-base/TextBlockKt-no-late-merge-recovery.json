@@ -1,0 +1,1090 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/survey/block/TextBlockKt",
+  "root_only": true,
+  "source_before_sha256": "066cc73985bcc69867eac1ab3edba31c05873ab62c190de24e57d0c4b736cdbf",
+  "source_after_sha256": "5746a0bc50f07548669bb0d896b17052f2b9e67f4f63ff113324a74978811278",
+  "source_capture_sites": 15,
+  "source_capture_bindings": 26,
+  "declaration_check_exit": 0,
+  "type_edits": 10,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "14798",
+      "14838",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1305_0) -> io.intercom.android.sdk.survey.block.TextBlockKt.TextBlock$lambda$1$lambda$0((java.util.List) ((java.util.List)recoveredExpressionArgument_1305_0)))",
+      "14783",
+      "",
+      "1305",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "17204",
+      "17235",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1306_0, recoveredExpressionArgument_1306_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.TextBlock$lambda$4(recoveredExpressionCapture_1306_0, recoveredExpressionCapture_1306_1, recoveredExpressionCapture_1306_2, recoveredExpressionCapture_1306_3, recoveredExpressionCapture_1306_4, recoveredExpressionCapture_1306_5, recoveredExpressionCapture_1306_6, recoveredExpressionCapture_1306_7, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1306_0), ((java.lang.Integer)recoveredExpressionArgument_1306_1).intValue()))",
+      "17186",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_1306_0 = var0;\\n         final io.intercom.android.sdk.survey.block.BlockRenderData recoveredExpressionCapture_1306_1 = var1;\\n         final io.intercom.android.sdk.survey.block.SuffixText recoveredExpressionCapture_1306_2 = var2;\\n         final boolean recoveredExpressionCapture_1306_3 = var3;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_1306_4 = var4;\\n         final kotlin.jvm.functions.Function1 recoveredExpressionCapture_1306_5 = var5;\\n         final int recoveredExpressionCapture_1306_6 = var7;\\n         final int recoveredExpressionCapture_1306_7 = var8;\\n         ",
+      "1306",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,Lio/intercom/android/sdk/survey/block/BlockRenderData;=var1,Lio/intercom/android/sdk/survey/block/SuffixText;=var2,Z=var3,Lkotlin/jvm/functions/Function1;=var4,Lkotlin/jvm/functions/Function1;=var5,I=var7,I=var8",
+      "recoveredExpressionCapture_1306_0=var0@12494:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_1306_1=var1@12525:LOCAL|1|1|0|var1|Lio/intercom/android/sdk/survey/block/BlockRenderData;;recoveredExpressionCapture_1306_2=var2@12562:LOCAL|2|2|0|var2|Lio/intercom/android/sdk/survey/block/SuffixText;;recoveredExpressionCapture_1306_3=var3@12595:LOCAL|3|3|0|var3|Z;recoveredExpressionCapture_1306_4=var4@12615:LOCAL|4|4|0|var4|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_1306_5=var5@12647:LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_1306_6=var7@12710:LOCAL|7|7|0|var7|I;recoveredExpressionCapture_1306_7=var8@12726:LOCAL|8|8|0|var8|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "19625",
+      "19681",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1312_0) -> io.intercom.android.sdk.survey.block.TextBlockKt.InlineSourceBadge_FNF3uiM$lambda$6$lambda$5(recoveredExpressionCapture_1312_0, (androidx.compose.ui.graphics.drawscope.DrawScope) ((androidx.compose.ui.graphics.drawscope.DrawScope)recoveredExpressionArgument_1312_0)))",
+      "19604",
+      "final long recoveredExpressionCapture_1312_0 = var2;\\n            ",
+      "1312",
+      "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+      "J=var2",
+      "recoveredExpressionCapture_1312_0=var2@17418:LOCAL|2|2|0|var2|J",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "23796",
+      "23843",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1313_0, recoveredExpressionArgument_1313_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.InlineSourceBadge_FNF3uiM$lambda$8(recoveredExpressionCapture_1313_0, recoveredExpressionCapture_1313_1, recoveredExpressionCapture_1313_2, recoveredExpressionCapture_1313_3, recoveredExpressionCapture_1313_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1313_0), ((java.lang.Integer)recoveredExpressionArgument_1313_1).intValue()))",
+      "23778",
+      "final java.lang.String recoveredExpressionCapture_1313_0 = var0;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_1313_1 = var1;\\n         final long recoveredExpressionCapture_1313_2 = var2;\\n         final int recoveredExpressionCapture_1313_3 = var5;\\n         final int recoveredExpressionCapture_1313_4 = var6;\\n         ",
+      "1313",
+      "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+      "Ljava/lang/String;=var0,Landroidx/compose/ui/Modifier;=var1,J=var2,I=var5,I=var6",
+      "recoveredExpressionCapture_1313_0=var0@17390:LOCAL|0|0|0|var0|Ljava/lang/String;;recoveredExpressionCapture_1313_1=var1@17403:LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_1313_2=var2@17418:LOCAL|2|2|0|var2|J;recoveredExpressionCapture_1313_3=var5@17444:LOCAL|5|5|0|var5|I;recoveredExpressionCapture_1313_4=var6@17454:LOCAL|6|6|0|var6|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "28383",
+      "28425",
+      "((androidx.compose.ui.text.LinkInteractionListener) (recoveredExpressionArgument_1311_0) -> io.intercom.android.sdk.survey.block.TextBlockKt.appendInlineSources$lambda$10(recoveredExpressionCapture_1311_0, recoveredExpressionCapture_1311_1, (androidx.compose.ui.text.LinkAnnotation) (recoveredExpressionArgument_1311_0)))",
+      "28030",
+      "final kotlin.jvm.functions.Function1 recoveredExpressionCapture_1311_0 = var3;\\n      final java.util.Set recoveredExpressionCapture_1311_1 = var2;\\n      ",
+      "1311",
+      "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/AnnotatedString;Ljava/util/Set;Lkotlin/jvm/functions/Function1;)V",
+      "Lkotlin/jvm/functions/Function1;=var3,Ljava/util/Set;=var2",
+      "recoveredExpressionCapture_1311_0=var3@28006:LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;;recoveredExpressionCapture_1311_1=var2@27996:LOCAL|2|2|0|var2|Ljava/util/Set;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "41807",
+      "41846",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1308_0, recoveredExpressionArgument_1308_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.TextBlockPreview$lambda$25(recoveredExpressionCapture_1308_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1308_0), ((java.lang.Integer)recoveredExpressionArgument_1308_1).intValue()))",
+      "41786",
+      "final int recoveredExpressionCapture_1308_0 = var1;\\n         ",
+      "1308",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1308_0=var1@40513:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "43332",
+      "43381",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1300_0, recoveredExpressionArgument_1300_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.InlineCodeTextBlockPreview$lambda$26(recoveredExpressionCapture_1300_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1300_0), ((java.lang.Integer)recoveredExpressionArgument_1300_1).intValue()))",
+      "43311",
+      "final int recoveredExpressionCapture_1300_0 = var1;\\n         ",
+      "1300",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1300_0=var1@42046:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "44487",
+      "44535",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1307_0, recoveredExpressionArgument_1307_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.TextBlockAlignmentPreview$lambda$27(recoveredExpressionCapture_1307_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1307_0), ((java.lang.Integer)recoveredExpressionArgument_1307_1).intValue()))",
+      "44466",
+      "final int recoveredExpressionCapture_1307_0 = var1;\\n         ",
+      "1307",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1307_0=var1@43580:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "45894",
+      "45940",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1299_0, recoveredExpressionArgument_1299_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.HeadingTextBlockPreview$lambda$28(recoveredExpressionCapture_1299_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1299_0), ((java.lang.Integer)recoveredExpressionArgument_1299_1).intValue()))",
+      "45873",
+      "final int recoveredExpressionCapture_1299_0 = var1;\\n         ",
+      "1299",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1299_0=var1@44732:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "47354",
+      "47403",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1304_0, recoveredExpressionArgument_1304_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.SubheadingTextBlockPreview$lambda$29(recoveredExpressionCapture_1304_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1304_0), ((java.lang.Integer)recoveredExpressionArgument_1304_1).intValue()))",
+      "47333",
+      "final int recoveredExpressionCapture_1304_0 = var1;\\n         ",
+      "1304",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1304_0=var1@46140:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "48827",
+      "48876",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1309_0, recoveredExpressionArgument_1309_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.TextBlockWithSuffixPreview$lambda$30(recoveredExpressionCapture_1309_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1309_0), ((java.lang.Integer)recoveredExpressionArgument_1309_1).intValue()))",
+      "48806",
+      "final int recoveredExpressionCapture_1309_0 = var1;\\n         ",
+      "1309",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1309_0=var1@47603:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "50286",
+      "50336",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1302_0, recoveredExpressionArgument_1302_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.OrderedListTextBlockPreview$lambda$31(recoveredExpressionCapture_1302_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1302_0), ((java.lang.Integer)recoveredExpressionArgument_1302_1).intValue()))",
+      "50265",
+      "final int recoveredExpressionCapture_1302_0 = var1;\\n         ",
+      "1302",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1302_0=var1@49077:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "51760",
+      "51812",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1310_0, recoveredExpressionArgument_1310_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.UnorderedListTextBlockPreview$lambda$32(recoveredExpressionCapture_1310_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1310_0), ((java.lang.Integer)recoveredExpressionArgument_1310_1).intValue()))",
+      "51739",
+      "final int recoveredExpressionCapture_1310_0 = var1;\\n         ",
+      "1310",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1310_0=var1@50539:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "53285",
+      "53348",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1303_0, recoveredExpressionArgument_1303_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.OrderedListWithEmptyItemTextBlockPreview$lambda$33(recoveredExpressionCapture_1303_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1303_0), ((java.lang.Integer)recoveredExpressionArgument_1303_1).intValue()))",
+      "53264",
+      "final int recoveredExpressionCapture_1303_0 = var1;\\n         ",
+      "1303",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1303_0=var1@52026:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-TextBlockKt/ast-input/io/intercom/android/sdk/survey/block/TextBlockKt.java",
+      "55286",
+      "55338",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_1301_0, recoveredExpressionArgument_1301_1) -> io.intercom.android.sdk.survey.block.TextBlockKt.InlineSourcesTextBlockPreview$lambda$34(recoveredExpressionCapture_1301_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_1301_0), ((java.lang.Integer)recoveredExpressionArgument_1301_1).intValue()))",
+      "55265",
+      "final int recoveredExpressionCapture_1301_0 = var1;\\n         ",
+      "1301",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_1301_0=var1@53551:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1299,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "HeadingTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "HeadingTextBlockPreview$lambda$28",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "HeadingTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "HeadingTextBlockPreview$lambda$28",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "HeadingTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "HeadingTextBlockPreview$lambda$28",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "HeadingTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.HeadingTextBlockPreview$lambda$28(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1300,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineCodeTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineCodeTextBlockPreview$lambda$26",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineCodeTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineCodeTextBlockPreview$lambda$26",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineCodeTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineCodeTextBlockPreview$lambda$26",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineCodeTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.InlineCodeTextBlockPreview$lambda$26(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1301,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineSourcesTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineSourcesTextBlockPreview$lambda$34",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "134"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourcesTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourcesTextBlockPreview$lambda$34",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{133, 134, 135, 136, 137, 138}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourcesTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourcesTextBlockPreview$lambda$34",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{133, 134, 135, 136, 137, 138}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineSourcesTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "134",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.InlineSourcesTextBlockPreview$lambda$34(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1302,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "OrderedListTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "OrderedListTextBlockPreview$lambda$31",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListTextBlockPreview$lambda$31",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListTextBlockPreview$lambda$31",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "OrderedListTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.OrderedListTextBlockPreview$lambda$31(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1303,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "OrderedListWithEmptyItemTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "OrderedListWithEmptyItemTextBlockPreview$lambda$33",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListWithEmptyItemTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListWithEmptyItemTextBlockPreview$lambda$33",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListWithEmptyItemTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "OrderedListWithEmptyItemTextBlockPreview$lambda$33",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "OrderedListWithEmptyItemTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.OrderedListWithEmptyItemTextBlockPreview$lambda$33(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1304,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "SubheadingTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "SubheadingTextBlockPreview$lambda$29",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "SubheadingTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "SubheadingTextBlockPreview$lambda$29",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "SubheadingTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "SubheadingTextBlockPreview$lambda$29",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "SubheadingTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.SubheadingTextBlockPreview$lambda$29(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1305,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlock",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "282",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlock$lambda$1$lambda$0",
+        "(Ljava/util/List;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/util/List;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "449"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock$lambda$1$lambda$0",
+          "(Ljava/util/List;)Lkotlin/Unit;",
+          "{449, 450, 451, 452, 453}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock$lambda$1$lambda$0",
+          "(Ljava/util/List;)Lkotlin/Unit;",
+          "{449, 450, 451, 452, 453}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlock",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "449",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.TextBlock$lambda$1$lambda$0(Ljava/util/List;)Lkotlin/Unit; (6), (Ljava/util/List;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1306,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlock",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "567",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlock$lambda$4",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,Lio/intercom/android/sdk/survey/block/BlockRenderData;=var1,Lio/intercom/android/sdk/survey/block/SuffixText;=var2,Z=var3,Lkotlin/jvm/functions/Function1;=var4,Lkotlin/jvm/functions/Function1;=var5,I=var7,I=var8",
+        "816"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock$lambda$4",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Lio/intercom/android/sdk/survey/block/BlockRenderData;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/survey/block/SuffixText;",
+          "LOCAL|3|3|0|var3|Z",
+          "LOCAL|4|4|0|var4|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|7|7|0|var7|I",
+          "LOCAL|8|8|0|var8|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlock$lambda$4",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Lio/intercom/android/sdk/survey/block/BlockRenderData;",
+          "LOCAL|2|2|0|var2|Lio/intercom/android/sdk/survey/block/SuffixText;",
+          "LOCAL|3|3|0|var3|Z",
+          "LOCAL|4|4|0|var4|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|5|5|0|var5|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|7|7|0|var7|I",
+          "LOCAL|8|8|0|var8|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlock",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+        "816",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.TextBlock$lambda$4(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/survey/block/BlockRenderData;Lio/intercom/android/sdk/survey/block/SuffixText;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1307,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockAlignmentPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockAlignmentPreview$lambda$27",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockAlignmentPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockAlignmentPreview$lambda$27",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockAlignmentPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockAlignmentPreview$lambda$27",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockAlignmentPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.TextBlockAlignmentPreview$lambda$27(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1308,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockPreview$lambda$25",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "134"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockPreview$lambda$25",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{133, 134, 135, 136, 137, 138}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockPreview$lambda$25",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{133, 134, 135, 136, 137, 138}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "134",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.TextBlockPreview$lambda$25(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1309,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockWithSuffixPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockWithSuffixPreview$lambda$30",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockWithSuffixPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockWithSuffixPreview$lambda$30",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockWithSuffixPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "TextBlockWithSuffixPreview$lambda$30",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "TextBlockWithSuffixPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.TextBlockWithSuffixPreview$lambda$30(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1310,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "UnorderedListTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "UnorderedListTextBlockPreview$lambda$32",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "135"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "UnorderedListTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "UnorderedListTextBlockPreview$lambda$32",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "UnorderedListTextBlockPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "UnorderedListTextBlockPreview$lambda$32",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{134, 135, 136, 137, 138, 139}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "UnorderedListTextBlockPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "135",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.UnorderedListTextBlockPreview$lambda$32(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1311,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "appendInlineSources",
+        "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/AnnotatedString;Ljava/util/Set;Lkotlin/jvm/functions/Function1;)V",
+        "44",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "appendInlineSources$lambda$10",
+        "(Lkotlin/jvm/functions/Function1;Ljava/util/Set;Landroidx/compose/ui/text/LinkAnnotation;)V",
+        "6",
+        "(Landroidx/compose/ui/text/LinkAnnotation;)V",
+        "(Landroidx/compose/ui/text/LinkAnnotation;)V",
+        "androidx/compose/ui/text/LinkInteractionListener",
+        "Lkotlin/jvm/functions/Function1;=var3,Ljava/util/Set;=var2",
+        "54"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "appendInlineSources",
+          "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/AnnotatedString;Ljava/util/Set;Lkotlin/jvm/functions/Function1;)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "appendInlineSources$lambda$10",
+          "(Lkotlin/jvm/functions/Function1;Ljava/util/Set;Landroidx/compose/ui/text/LinkAnnotation;)V",
+          "{52, 53, 54, 55, 56, 57, 58}",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|2|2|0|var2|Ljava/util/Set;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "appendInlineSources",
+          "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/AnnotatedString;Ljava/util/Set;Lkotlin/jvm/functions/Function1;)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "appendInlineSources$lambda$10",
+          "(Lkotlin/jvm/functions/Function1;Ljava/util/Set;Landroidx/compose/ui/text/LinkAnnotation;)V",
+          "{52, 53, 54, 55, 56, 57, 58}",
+          "LOCAL|3|3|0|var3|Lkotlin/jvm/functions/Function1;",
+          "LOCAL|2|2|0|var2|Ljava/util/Set;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "appendInlineSources",
+        "(Landroidx/compose/ui/text/AnnotatedString$Builder;Landroidx/compose/ui/text/AnnotatedString;Ljava/util/Set;Lkotlin/jvm/functions/Function1;)V",
+        "54",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Landroidx/compose/ui/text/LinkAnnotation;)V, io/intercom/android/sdk/survey/block/TextBlockKt.appendInlineSources$lambda$10(Lkotlin/jvm/functions/Function1;Ljava/util/Set;Landroidx/compose/ui/text/LinkAnnotation;)V (6), (Landroidx/compose/ui/text/LinkAnnotation;)V]"
+      ]
+    },
+    {
+      "site": 1312,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "recovered$578f218e7033db7a",
+        "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+        "250",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineSourceBadge_FNF3uiM$lambda$6$lambda$5",
+        "(JLandroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "J=var2",
+        "414"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "recovered$578f218e7033db7a",
+          "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourceBadge_FNF3uiM$lambda$6$lambda$5",
+          "(JLandroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit;",
+          "{413, 414, 415, 416, 417, 418}",
+          "LOCAL|2|2|0|var2|J"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "recovered$578f218e7033db7a",
+          "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourceBadge_FNF3uiM$lambda$6$lambda$5",
+          "(JLandroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit;",
+          "{413, 414, 415, 416, 417, 418}",
+          "LOCAL|2|2|0|var2|J"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "recovered$578f218e7033db7a",
+        "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+        "414",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.InlineSourceBadge_FNF3uiM$lambda$6$lambda$5(JLandroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit; (6), (Landroidx/compose/ui/graphics/drawscope/DrawScope;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1313,
+      "original": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "recovered$578f218e7033db7a",
+        "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+        "648",
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "InlineSourceBadge_FNF3uiM$lambda$8",
+        "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Ljava/lang/String;=var0,Landroidx/compose/ui/Modifier;=var1,J=var2,I=var5,I=var6",
+        "981"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "recovered$578f218e7033db7a",
+          "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourceBadge_FNF3uiM$lambda$8",
+          "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985}",
+          "LOCAL|0|0|0|var0|Ljava/lang/String;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|J",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "recovered$578f218e7033db7a",
+          "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/survey/block/TextBlockKt",
+          "InlineSourceBadge_FNF3uiM$lambda$8",
+          "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985}",
+          "LOCAL|0|0|0|var0|Ljava/lang/String;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|J",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TextBlockKt",
+        "recovered$578f218e7033db7a",
+        "(Ljava/lang/String;Landroidx/compose/ui/Modifier;JLandroidx/compose/runtime/Composer;II)V",
+        "981",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TextBlockKt.InlineSourceBadge_FNF3uiM$lambda$8(Ljava/lang/String;Landroidx/compose/ui/Modifier;JIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

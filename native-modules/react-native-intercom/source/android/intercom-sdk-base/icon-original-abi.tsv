@@ -1,0 +1,76 @@
+C	io/intercom/android/sdk/m5/home/data/IconType$BOT	52	48	io/intercom/android/sdk/m5/home/data/IconType		
+I	io/intercom/android/sdk/m5/home/data/IconType$BOT	io/intercom/android/sdk/R$drawable	io/intercom/android/sdk/R	drawable	25
+I	io/intercom/android/sdk/m5/home/data/IconType$BOT	io/intercom/android/sdk/m5/home/data/IconType$BOT	io/intercom/android/sdk/m5/home/data/IconType	BOT	24
+M	io/intercom/android/sdk/m5/home/data/IconType$BOT	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/m5/home/data/IconType$BOT	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/m5/home/data/IconType$FACE_PILE	52	48	io/intercom/android/sdk/m5/home/data/IconType		
+I	io/intercom/android/sdk/m5/home/data/IconType$FACE_PILE	io/intercom/android/sdk/m5/home/data/IconType$FACE_PILE	io/intercom/android/sdk/m5/home/data/IconType	FACE_PILE	24
+M	io/intercom/android/sdk/m5/home/data/IconType$FACE_PILE	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/m5/home/data/IconType$FACE_PILE	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/m5/home/data/IconType$FIN	52	48	io/intercom/android/sdk/m5/home/data/IconType		
+I	io/intercom/android/sdk/m5/home/data/IconType$FIN	io/intercom/android/sdk/R$drawable	io/intercom/android/sdk/R	drawable	25
+I	io/intercom/android/sdk/m5/home/data/IconType$FIN	io/intercom/android/sdk/m5/home/data/IconType$FIN	io/intercom/android/sdk/m5/home/data/IconType	FIN	24
+M	io/intercom/android/sdk/m5/home/data/IconType$FIN	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/m5/home/data/IconType$FIN	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	52	48	io/intercom/android/sdk/m5/home/data/IconType		
+I	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	io/intercom/android/sdk/R$drawable	io/intercom/android/sdk/R	drawable	25
+I	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	io/intercom/android/sdk/m5/home/data/IconType	TEAMMATE	24
+M	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/m5/home/data/IconType	52	17441	java/lang/Enum	Ljava/lang/Enum<Lio/intercom/android/sdk/m5/home/data/IconType;>;	
+I	io/intercom/android/sdk/m5/home/data/IconType	io/intercom/android/sdk/m5/home/data/IconType$BOT	io/intercom/android/sdk/m5/home/data/IconType	BOT	24
+I	io/intercom/android/sdk/m5/home/data/IconType	io/intercom/android/sdk/m5/home/data/IconType$FACE_PILE	io/intercom/android/sdk/m5/home/data/IconType	FACE_PILE	24
+I	io/intercom/android/sdk/m5/home/data/IconType	io/intercom/android/sdk/m5/home/data/IconType$FIN	io/intercom/android/sdk/m5/home/data/IconType	FIN	24
+I	io/intercom/android/sdk/m5/home/data/IconType	io/intercom/android/sdk/m5/home/data/IconType$TEAMMATE	io/intercom/android/sdk/m5/home/data/IconType	TEAMMATE	24
+F	io/intercom/android/sdk/m5/home/data/IconType	TEAMMATE	Lio/intercom/android/sdk/m5/home/data/IconType;	16409	
+F	io/intercom/android/sdk/m5/home/data/IconType	BOT	Lio/intercom/android/sdk/m5/home/data/IconType;	16409	
+F	io/intercom/android/sdk/m5/home/data/IconType	FIN	Lio/intercom/android/sdk/m5/home/data/IconType;	16409	
+F	io/intercom/android/sdk/m5/home/data/IconType	FACE_PILE	Lio/intercom/android/sdk/m5/home/data/IconType;	16409	
+F	io/intercom/android/sdk/m5/home/data/IconType	$VALUES	[Lio/intercom/android/sdk/m5/home/data/IconType;	4122	
+F	io/intercom/android/sdk/m5/home/data/IconType	$ENTRIES	Lkotlin/enums/EnumEntries;	4122	
+M	io/intercom/android/sdk/m5/home/data/IconType	<init>	(Ljava/lang/String;I)V	2	()V	
+M	io/intercom/android/sdk/m5/home/data/IconType	getIcon	()Ljava/lang/Integer;	1025		
+M	io/intercom/android/sdk/m5/home/data/IconType	values	()[Lio/intercom/android/sdk/m5/home/data/IconType;	9		
+M	io/intercom/android/sdk/m5/home/data/IconType	valueOf	(Ljava/lang/String;)Lio/intercom/android/sdk/m5/home/data/IconType;	9		
+M	io/intercom/android/sdk/m5/home/data/IconType	getEntries	()Lkotlin/enums/EnumEntries;	9	()Lkotlin/enums/EnumEntries<Lio/intercom/android/sdk/m5/home/data/IconType;>;	
+M	io/intercom/android/sdk/m5/home/data/IconType	$values	()[Lio/intercom/android/sdk/m5/home/data/IconType;	4122		
+P	io/intercom/android/sdk/m5/home/data/IconType	$values	()[Lio/intercom/android/sdk/m5/home/data/IconType;	74aacc0ad4f3ab79862cdbc2c727590e9ec34cabcaacc7ab3d77c229b1fe9543
+M	io/intercom/android/sdk/m5/home/data/IconType	<init>	(Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/m5/home/data/IconType	<clinit>	()V	8		
+C	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	52	48	io/intercom/android/sdk/models/OpenMessengerResponse$IconType		
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	io/intercom/android/sdk/R$drawable	io/intercom/android/sdk/R	drawable	25
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse	IconType	16409
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	CHEVRON	24
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	52	48	io/intercom/android/sdk/models/OpenMessengerResponse$IconType		
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	io/intercom/android/sdk/R$drawable	io/intercom/android/sdk/R	drawable	25
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse	IconType	16409
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	PAPER_PLANE	24
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	52	48	io/intercom/android/sdk/models/OpenMessengerResponse$IconType		
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	io/intercom/android/sdk/R$drawable	io/intercom/android/sdk/R	drawable	25
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse	IconType	16409
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	QUESTION_BUBBLE	24
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	<init>	(Ljava/lang/String;I)V	0	()V	
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	getIcon	()Ljava/lang/Integer;	1		
+C	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	52	17441	java/lang/Enum	Ljava/lang/Enum<Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;>;	
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse	IconType	16409
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$CHEVRON	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	CHEVRON	24
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$PAPER_PLANE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	PAPER_PLANE	24
+I	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	io/intercom/android/sdk/models/OpenMessengerResponse$IconType$QUESTION_BUBBLE	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	QUESTION_BUBBLE	24
+F	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	CHEVRON	Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	16409	
+F	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	QUESTION_BUBBLE	Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	16409	
+F	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	PAPER_PLANE	Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	16409	
+F	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	$VALUES	[Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	4122	
+F	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	$ENTRIES	Lkotlin/enums/EnumEntries;	4122	
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	<init>	(Ljava/lang/String;I)V	2	()V	
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	getIcon	()Ljava/lang/Integer;	1025		
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	values	()[Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	9		
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	valueOf	(Ljava/lang/String;)Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	9		
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	getEntries	()Lkotlin/enums/EnumEntries;	9	()Lkotlin/enums/EnumEntries<Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;>;	
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	$values	()[Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	4122		
+P	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	$values	()[Lio/intercom/android/sdk/models/OpenMessengerResponse$IconType;	b221dbcfa833769fae10157466087ed67c8e676e73abb17296f500ac6d0501e0
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	<init>	(Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	4097		
+M	io/intercom/android/sdk/models/OpenMessengerResponse$IconType	<clinit>	()V	8		

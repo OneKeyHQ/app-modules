@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/note_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_gravity="center"
+    android:background="@color/intercom_note_tint"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/note_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginStart="@dimen/intercom_note_layout_margin"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="@dimen/intercom_note_layout_margin"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/intercom_note_background"
+        android:clipChildren="false"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/app_bar_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/intercom_full_transparent_full_white"
+            android:elevation="0dp"
+            android:orientation="vertical">
+
+            <io.intercom.android.sdk.views.IntercomToolbar
+                android:id="@+id/intercom_toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:background="@color/intercom_full_transparent_full_white"
+                app:contentInsetEnd="8dp"
+                app:contentInsetLeft="0dp"
+                app:contentInsetRight="8dp"
+                app:contentInsetStart="0dp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <io.intercom.android.sdk.views.ContentAwareScrollView
+                android:id="@+id/note_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:orientation="vertical"
+                android:paddingTop="28dp"
+                android:paddingBottom="28dp"
+                app:intercomHeightLimit="300dp" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/note_composer_container"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/intercom_composer_height"
+            android:clipChildren="false"
+            android:visibility="gone">
+
+            <include layout="@layout/intercom_fake_composer" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:alpha="0.1"
+                android:background="@color/intercom_black" />
+
+            <io.intercom.android.sdk.conversation.ReactionInputView
+                android:id="@+id/reaction_input_view"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/intercom_composer_height"
+                android:clipChildren="false"
+                android:visibility="gone" />
+
+            <View
+                android:id="@+id/note_touch_target"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@color/intercom_full_transparent_full_white" />
+        </FrameLayout>
+    </LinearLayout>
+</FrameLayout>

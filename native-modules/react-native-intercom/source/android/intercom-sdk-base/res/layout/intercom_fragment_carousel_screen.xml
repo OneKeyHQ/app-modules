@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/intercom_carousel_fragment_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingBottom="36dp">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <io.intercom.android.sdk.views.ContentAwareScrollView
+            android:id="@+id/intercom_carousel_scroll_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <FrameLayout
+                android:id="@+id/intercom_carousel_content_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:contentDescription="carousel, content"
+                android:paddingTop="72dp" />
+
+        </io.intercom.android.sdk.views.ContentAwareScrollView>
+
+        <View
+            android:id="@+id/intercom_carousel_gradient"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_gravity="bottom"/>
+
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/intercom_carousel_action_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="0"
+        android:maxWidth="500dp"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/intercom_carousel_padding"
+        android:paddingEnd="@dimen/intercom_carousel_padding" />
+
+</LinearLayout>

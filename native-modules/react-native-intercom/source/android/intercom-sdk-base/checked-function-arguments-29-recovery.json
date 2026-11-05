@@ -1,0 +1,459 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+      "before_sha256": "2be65622d53ef294ac589fe753fb77b7ff908d2df7536fa7f8c64eedf9c56ebe",
+      "after_sha256": "2c9c59cccda95dcd25f95f2e62c5da4019fb3ee3f968cec3a54fd5d9ce9939aa",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+          "8331",
+          "8339",
+          "(kotlin.jvm.functions.Function0) var10002",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketContentScreen",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "2",
+          "544",
+          "8247",
+          "8384",
+          "var10002",
+          "67",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@152:var10002;RETRACE_PRIOR_RECOVERED_CAST@122:var10002;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;RETRACE_PRIOR_RECOVERED_CAST@122:var10002;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3;EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+          "8341",
+          "8349",
+          "(kotlin.jvm.functions.Function0) var10003",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketContentScreen",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "3",
+          "544",
+          "8247",
+          "8384",
+          "var10003",
+          "92",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@151:var10003;EXISTING_CAST@5461:GROUP=1605760228:REFERENCE_BCI=313:STORE=3;EXISTING_CAST@5461:GROUP=1605760228:REFERENCE_BCI=313:STORE=3;EXISTING_CAST@5461:GROUP=1605760228:REFERENCE_BCI=313:STORE=3;EXISTING_CAST@5461:GROUP=1605760228:REFERENCE_BCI=313:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+          "8351",
+          "8359",
+          "(kotlin.jvm.functions.Function1) var10004",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketContentScreen",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "4",
+          "544",
+          "8247",
+          "8384",
+          "var10004",
+          "119",
+          "kotlin/jvm/functions/Function1",
+          "EXISTING_CAST@6759:GROUP=1605761316:REFERENCE_BCI=419:STORE=3;EXISTING_CAST@6759:GROUP=1605761316:REFERENCE_BCI=419:STORE=3"
+        ]
+      ]
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "before_sha256": "b5b2dda319b8866cfdc8b20adca4224466e045091d03bc8c5e33ff7b0ad7cd8b",
+      "after_sha256": "2e40c073a92062501736e1c8da300da092851f80e40ca92bb9be15277e239290",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "7577",
+          "7585",
+          "(kotlin.jvm.functions.Function0) var10002",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketContentScreen",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "2",
+          "472",
+          "7493",
+          "7630",
+          "var10002",
+          "52",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@137:var10002;RETRACE_PRIOR_RECOVERED_CAST@107:var10002;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;RETRACE_PRIOR_RECOVERED_CAST@107:var10002;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3;EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "7587",
+          "7595",
+          "(kotlin.jvm.functions.Function0) var10003",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketContentScreen",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "3",
+          "472",
+          "7493",
+          "7630",
+          "var10003",
+          "77",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@136:var10003;EXISTING_CAST@4721:GROUP=1378020705:REFERENCE_BCI=241:STORE=3;EXISTING_CAST@4721:GROUP=1378020705:REFERENCE_BCI=241:STORE=3;EXISTING_CAST@4721:GROUP=1378020705:REFERENCE_BCI=241:STORE=3;EXISTING_CAST@4721:GROUP=1378020705:REFERENCE_BCI=241:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "7597",
+          "7605",
+          "(kotlin.jvm.functions.Function1) var10004",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketContentScreen",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "4",
+          "472",
+          "7493",
+          "7630",
+          "var10004",
+          "104",
+          "kotlin/jvm/functions/Function1",
+          "EXISTING_CAST@6011:GROUP=1378021793:REFERENCE_BCI=347:STORE=3;EXISTING_CAST@6011:GROUP=1378021793:REFERENCE_BCI=347:STORE=3"
+        ]
+      ]
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "before_sha256": "3878f3d505550618400c46a485299e521d90572f5dbf90b42ef88781d9053f92",
+      "after_sha256": "354a4b51c271d6a7de8503af171309480fcfe6a9a793928e4862f7e0aa32909b",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "8518",
+          "8526",
+          "(kotlin.jvm.functions.Function0) var10002",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketScreen",
+          "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "INVOKESTATIC",
+          "2",
+          "553",
+          "8454",
+          "8568",
+          "var10002",
+          "72",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@157:var10002;RETRACE_PRIOR_RECOVERED_CAST@127:var10002;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;RETRACE_PRIOR_RECOVERED_CAST@127:var10002;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3;EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "8528",
+          "8536",
+          "(kotlin.jvm.functions.Function0) var10003",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketScreen",
+          "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "INVOKESTATIC",
+          "3",
+          "553",
+          "8454",
+          "8568",
+          "var10003",
+          "97",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@156:var10003;EXISTING_CAST@5636:GROUP=-1409382846:REFERENCE_BCI=323:STORE=3;EXISTING_CAST@5636:GROUP=-1409382846:REFERENCE_BCI=323:STORE=3;EXISTING_CAST@5636:GROUP=-1409382846:REFERENCE_BCI=323:STORE=3;EXISTING_CAST@5636:GROUP=-1409382846:REFERENCE_BCI=323:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "8538",
+          "8546",
+          "(kotlin.jvm.functions.Function1) var10004",
+          "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/tickets/create/ui/CreateTicketContentScreenKt",
+          "CreateTicketScreen",
+          "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V",
+          "INVOKESTATIC",
+          "4",
+          "553",
+          "8454",
+          "8568",
+          "var10004",
+          "124",
+          "kotlin/jvm/functions/Function1",
+          "EXISTING_CAST@6949:GROUP=-1409381758:REFERENCE_BCI=429:STORE=3;EXISTING_CAST@6949:GROUP=-1409381758:REFERENCE_BCI=429:STORE=3"
+        ]
+      ]
+    }
+  ],
+  "proof_inputs": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+      "sha256": "2be65622d53ef294ac589fe753fb77b7ff908d2df7536fa7f8c64eedf9c56ebe",
+      "prior132": {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+        "before_sha256": "418e9a0b7fe9aa3059e83ac2291bc4c9e27b6b5917d6ab2f062f304d6c8be537",
+        "after_sha256": "2be65622d53ef294ac589fe753fb77b7ff908d2df7536fa7f8c64eedf9c56ebe"
+      },
+      "transparent_sites": [
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+          "start": 5988,
+          "end": 5996,
+          "replacement": "(kotlin.jvm.functions.Function0) var10002",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 122,
+          "checked_value_proofs": [
+            "EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3",
+            "EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+          "start": 7253,
+          "end": 7261,
+          "replacement": "(kotlin.jvm.functions.Function0) var10003",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 151,
+          "checked_value_proofs": [
+            "EXISTING_CAST@5461:GROUP=1605760228:REFERENCE_BCI=313:STORE=3",
+            "EXISTING_CAST@5461:GROUP=1605760228:REFERENCE_BCI=313:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+          "start": 7293,
+          "end": 7301,
+          "replacement": "(kotlin.jvm.functions.Function0) var10002",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner117a8bc0ad94bbf2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 152,
+          "checked_value_proofs": [
+            "EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3",
+            "EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3",
+            "EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3",
+            "EXISTING_CAST@4332:GROUP=1605759364:REFERENCE_BCI=211:STORE=3"
+          ]
+        }
+      ]
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "b5b2dda319b8866cfdc8b20adca4224466e045091d03bc8c5e33ff7b0ad7cd8b",
+      "prior132": {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+        "before_sha256": "5ba893d44d52f336939c2ff3d29331626412a68e6dc2f98d7e5fba535c48cafb",
+        "after_sha256": "b5b2dda319b8866cfdc8b20adca4224466e045091d03bc8c5e33ff7b0ad7cd8b"
+      },
+      "transparent_sites": [
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "start": 5234,
+          "end": 5242,
+          "replacement": "(kotlin.jvm.functions.Function0) var10002",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 107,
+          "checked_value_proofs": [
+            "EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3",
+            "EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "start": 6493,
+          "end": 6501,
+          "replacement": "(kotlin.jvm.functions.Function0) var10003",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 136,
+          "checked_value_proofs": [
+            "EXISTING_CAST@4721:GROUP=1378020705:REFERENCE_BCI=241:STORE=3",
+            "EXISTING_CAST@4721:GROUP=1378020705:REFERENCE_BCI=241:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "start": 6533,
+          "end": 6541,
+          "replacement": "(kotlin.jvm.functions.Function0) var10002",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInner7a24458254dd4cd9$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 137,
+          "checked_value_proofs": [
+            "EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3",
+            "EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3",
+            "EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3",
+            "EXISTING_CAST@3611:GROUP=1378019841:REFERENCE_BCI=139:STORE=3"
+          ]
+        }
+      ]
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "sha256": "3878f3d505550618400c46a485299e521d90572f5dbf90b42ef88781d9053f92",
+      "prior132": {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+        "before_sha256": "20a2cc7b9ef935b539213cf785e4eabee34ae7d57e9bfef7b46a01aaf676fe77",
+        "after_sha256": "3878f3d505550618400c46a485299e521d90572f5dbf90b42ef88781d9053f92"
+      },
+      "transparent_sites": [
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "start": 5017,
+          "end": 5022,
+          "replacement": "(kotlin.jvm.functions.Function0) var62",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 100,
+          "checked_value_proofs": [
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "start": 6117,
+          "end": 6125,
+          "replacement": "(kotlin.jvm.functions.Function0) var10002",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 127,
+          "checked_value_proofs": [
+            "EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3",
+            "EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "start": 6157,
+          "end": 6162,
+          "replacement": "(kotlin.jvm.functions.Function0) var62",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 128,
+          "checked_value_proofs": [
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "start": 7366,
+          "end": 7374,
+          "replacement": "(kotlin.jvm.functions.Function0) var10003",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 156,
+          "checked_value_proofs": [
+            "EXISTING_CAST@5603:GROUP=-1409382846:REFERENCE_BCI=323:STORE=3",
+            "EXISTING_CAST@5603:GROUP=-1409382846:REFERENCE_BCI=323:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "start": 7406,
+          "end": 7414,
+          "replacement": "(kotlin.jvm.functions.Function0) var10002",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 157,
+          "checked_value_proofs": [
+            "EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3",
+            "EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3",
+            "EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3",
+            "EXISTING_CAST@4503:GROUP=-1409383710:REFERENCE_BCI=221:STORE=3"
+          ]
+        },
+        {
+          "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1.java",
+          "start": 7446,
+          "end": 7451,
+          "replacement": "(kotlin.jvm.functions.Function0) var62",
+          "owner": "io/intercom/android/sdk/tickets/create/ui/ComposableSingletons$CreateTicketContentScreenKt$RecoveredInnerb8048fd051efd9e2$1",
+          "method": "invoke",
+          "descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+          "status": "SOURCE_CAST_RESTORED_NOT_COMPILED",
+          "function_type": "kotlin/jvm/functions/Function0",
+          "source_line": 158,
+          "checked_value_proofs": [
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3",
+            "EXISTING_CAST@3476:GROUP=-1409384766:REFERENCE_BCI=123:STORE=3"
+          ]
+        }
+      ]
+    }
+  ],
+  "scope": "Nine already-checked bare-local arguments in three unique static calls; existing132 casts transparent/retraced; original checks/end groups/call argument order untouched",
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/function-arguments-29",
+  "code_backfill": false
+}

@@ -1,0 +1,32 @@
+{
+  "status": "SOURCE_CACHE_LIFETIMES_RESTORED_NOT_COMPILED",
+  "owner": "io/intercom/android/sdk/m5/navigation/HomeScreenDestinationKt$homeScreen$2",
+  "method": "invoke(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+  "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/HomeScreenDestinationKt$homeScreen$2.java",
+  "before_sha256": "2cbc0d02e5de6c34ffdef92d194ee40978c5af864f5d071af8ac6a15632cd505",
+  "after_sha256": "29c40d187ddb12c832d6525e2595d7c6266bba75485cffb6ea596bdd6979bfdc",
+  "line_count_unchanged": true,
+  "scope": "Only two rememberedValue Object lifetimes and their condition/cache-hit propagation; retain all unrelated primitive marker lifetimes and45 earlier checked-local casts; restore strict original end checks",
+  "groups": [
+    {
+      "key": 940937500,
+      "reference_remembered_value_bci": 1372,
+      "reference_store_bci": 1377,
+      "reference_slot": 14,
+      "reference_common_checkcast_bci": 1474,
+      "type": "kotlin/jvm/functions/Function0"
+    },
+    {
+      "key": 940986683,
+      "reference_remembered_value_bci": 1681,
+      "reference_store_bci": 1686,
+      "reference_slot": 12,
+      "reference_common_checkcast_bci": 1741,
+      "type": "kotlin/jvm/functions/Function2"
+    }
+  ],
+  "coordinate": "SHA-pinned normalized-reference byte offsets, not universally raw-vendor values",
+  "reference_sha256": "495baebff1f55f833180ebd7c82cc1d3cb7cff3c3e0bb59322e6faee23b29391",
+  "source_diff": "--- before\n+++ source\n@@ -387,11 +387,11 @@\n       CoroutineScope var75 = this.$scope;\n       ComponentActivity var86 = this.$rootActivity;\n       var13 = 0;\n-      var14 = (int)var44.rememberedValue();\n+      Object recoveredExpandCache = var44.rememberedValue();\n       int var120/* $VF was: $i$a$-let-ComposerKt$cache$1$ivx */ = 0;\n       Object var10010;\n-      if (!var10 && var14 != Composer.Companion.getEmpty()) {\n-         var10010 = var14;\n+      if (!var10 && recoveredExpandCache != Composer.Companion.getEmpty()) {\n+         var10010 = recoveredExpandCache;\n       } else {\n          Function1 var194 = var40;\n          Function0 var192 = (kotlin.jvm.functions.Function0) var10008;\n@@ -422,7 +422,7 @@\n          var10010 = (Function0)var17;\n       }\n \n-      Function0 var41 = var10010;\n+      Function0 var41 = (Function0)var10010;\n       var3.endReplaceGroup();\n       var10010 = var41;\n       var3.startReplaceGroup(940976796);\n@@ -476,10 +476,10 @@\n       var44 = var3;\n       var10 = false;\n       int $i$f$cachex = 0;\n-      var12 = (int)var44.rememberedValue();\n+      Object recoveredLaunchCache = var44.rememberedValue();\n       var13 = 0;\n       Object var202;\n-      if (var12 == Composer.Companion.getEmpty()) {\n+      if (recoveredLaunchCache == Composer.Companion.getEmpty()) {\n          String var142 = \"\";\n          var14 = 0;\n          var202 = new HomeScreenDestinationKt$homeScreen$2$12$1(null);\n@@ -488,10 +488,10 @@\n          var44.updateRememberedValue(var111);\n          var202 = (Function2)var111;\n       } else {\n-         var202 = var12;\n-      }\n-\n-      Function2 var43 = var202;\n+         var202 = recoveredLaunchCache;\n+      }\n+\n+      Function2 var43 = (Function2)var202;\n       var3.endReplaceGroup();\n       EffectsKt.LaunchedEffect(var198, var43, var3, 6);\n       if (ComposerKt.isTraceInProgress()) {\n",
+  "runtime_verified": false
+}

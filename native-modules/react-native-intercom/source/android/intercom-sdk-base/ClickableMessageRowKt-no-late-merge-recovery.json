@@ -1,0 +1,151 @@
+{
+  "status": "CAPTURES_VERIFIED_SOURCE_NOT_COMPILED",
+  "scope": "Only io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt source selected from class-scoped no-late-merge diagnostic; child source outputs untouched",
+  "source_before_sha256": "4cd185b57a8eda57aaa4e7b5947eaa10b6fe4fbd9676406e6d9720966dc8b8ef",
+  "raw_decompile_sha256": "ba2bd6338da6985720f0c58fef95cb6035d68a32ccd9b1d4c6dec1222bb20ba8",
+  "source_after_sha256": "e8a501e7bc2305dca8ff3b34c5c8d5663e12f01c59f5a01e4ba04bae6aa73758",
+  "source_applied": true,
+  "sites": [
+    {
+      "site": 682,
+      "enclosing": "ClickableMessageRow",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/models/Part;Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/ui/components/row/BottomMetadata;Landroidx/compose/ui/Alignment$Horizontal;Landroidx/compose/foundation/layout/PaddingValues;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function5;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt",
+        "ClickableMessageRow$lambda$9",
+        "(Lio/intercom/android/sdk/models/Part;Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/ui/components/row/BottomMetadata;Landroidx/compose/ui/Alignment$Horizontal;Landroidx/compose/foundation/layout/PaddingValues;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function5;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 1781,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_682_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/models/Part;"
+        },
+        {
+          "identifier": "recoveredCapture_682_1",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Landroidx/compose/ui/Modifier;"
+        },
+        {
+          "identifier": "recoveredCapture_682_2",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/ui/components/row/BottomMetadata;"
+        },
+        {
+          "identifier": "recoveredCapture_682_3",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "Landroidx/compose/ui/Alignment$Horizontal;"
+        },
+        {
+          "identifier": "recoveredCapture_682_4",
+          "original_slot": "4",
+          "ssa_index": "4",
+          "ssa_version": "0",
+          "final_name": "var4",
+          "descriptor": "Landroidx/compose/foundation/layout/PaddingValues;"
+        },
+        {
+          "identifier": "recoveredCapture_682_5",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_682_6",
+          "original_slot": "6",
+          "ssa_index": "6",
+          "ssa_version": "0",
+          "final_name": "var6",
+          "descriptor": "Lkotlin/jvm/functions/Function5;"
+        },
+        {
+          "identifier": "recoveredCapture_682_7",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_682_8",
+          "original_slot": "9",
+          "ssa_index": "9",
+          "ssa_version": "0",
+          "final_name": "var9",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 683,
+      "enclosing": "ClickableMessageRow",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/models/Part;Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/ui/components/row/BottomMetadata;Landroidx/compose/ui/Alignment$Horizontal;Landroidx/compose/foundation/layout/PaddingValues;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function5;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt",
+        "ClickableMessageRow$lambda$4$lambda$3",
+        "(Landroidx/compose/ui/platform/ClipboardManager;Lio/intercom/android/sdk/models/Part;)Lkotlin/Unit;"
+      ],
+      "bci": 704,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_683_0",
+          "original_slot": "12",
+          "ssa_index": "53",
+          "ssa_version": "0",
+          "final_name": "var53",
+          "descriptor": "Landroidx/compose/ui/platform/ClipboardManager;"
+        },
+        {
+          "identifier": "recoveredCapture_683_1",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/models/Part;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 684,
+      "enclosing": "ClickableMessageRow",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/models/Part;Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/conversation/ui/components/row/BottomMetadata;Landroidx/compose/ui/Alignment$Horizontal;Landroidx/compose/foundation/layout/PaddingValues;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function5;Landroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt",
+        "ClickableMessageRow$lambda$6$lambda$5",
+        "(Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 826,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_684_0",
+          "original_slot": "11",
+          "ssa_index": "11",
+          "ssa_version": "0",
+          "final_name": "var11",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ],
+  "capture_bindings": 12,
+  "normal_source_build_uses_decompiler": false,
+  "command": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ClickableMessageRowKt/command.json"
+}

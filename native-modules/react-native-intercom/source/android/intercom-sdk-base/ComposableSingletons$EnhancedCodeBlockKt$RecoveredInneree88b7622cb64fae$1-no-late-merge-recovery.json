@@ -1,0 +1,86 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+  "root_only": true,
+  "source_before_sha256": "b8372be767f8267b0bba607bc25a0035bb9ba738d83d93804bf9e5b9c634ac46",
+  "source_after_sha256": "b437da44a1f1428ff075adf596022fd0335cb3d5047d5a68f680cc777be15028",
+  "source_capture_sites": 1,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 5,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1/ast-input/io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1.java",
+      "3385",
+      "3484",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.survey.block.ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1.invoke$lambda$1$lambda$0())",
+      "3370",
+      "",
+      "1244",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1244,
+      "original": [
+        "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "81",
+        "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+        "invoke$lambda$1$lambda$0",
+        "()Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "",
+        "117"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+          "invoke$lambda$1$lambda$0",
+          "()Lkotlin/Unit;",
+          "{117, 118, 119, 120, 121}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+          "invoke$lambda$1$lambda$0",
+          "()Lkotlin/Unit;",
+          "{117, 118, 119, 120, 121}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1",
+        "invoke",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "117",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/survey/block/ComposableSingletons$EnhancedCodeBlockKt$RecoveredInneree88b7622cb64fae$1.invoke$lambda$1$lambda$0()Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

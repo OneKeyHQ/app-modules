@@ -1,0 +1,305 @@
+{
+  "status": "SOURCE_ENTRY_ITERATOR_CASTS_RESTORED_NOT_COMPILED",
+  "scope": "21 currently failing typed Map.Entry enhanced-for loops; exact method descriptor and matching original Iterator.next\u2192CHECKCAST Map.Entry\u2192ASTORE loop count/order; direct entrySet, existing block bodies only. Preserve iterable evaluation, iteration, element cast timing and body unchanged except initial typed binding",
+  "source_sites": 21,
+  "files": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/Company$Builder.java",
+      "before_sha256": "60990a72a1136fc6d0416b7398d2605f412f22ac51455a0a860ac65d6624de06",
+      "after_sha256": "3a73e94ca52d2f5af036a72307d4c63d9599699e842a945a4c90abb428560f6c",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/Company$Builder",
+          "method": "withCustomAttributes(Ljava/util/Map;)Lio/intercom/android/sdk/Company$Builder;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=46:STORE_SLOT=3:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 67,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_67",
+          "body_prefix": "\\n            Entry var3 = (Entry) recoveredEntryElement_0_67;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/UserAttributes$Builder.java",
+      "before_sha256": "5fba1a415b80889d30c279c961f41486d88b636130230e8230d03cd06287b4cc",
+      "after_sha256": "0856902cbd3ace0a0c7f10c5562d5316fc6ff0290b5381689ee5004f105f2688",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/UserAttributes$Builder",
+          "method": "withCustomAttributes(Ljava/util/Map;)Lio/intercom/android/sdk/UserAttributes$Builder;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=46:STORE_SLOT=3:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 96,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_96",
+          "body_prefix": "\\n            Entry var3 = (Entry) recoveredEntryElement_0_96;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/AppIdentityStore$Companion$createSharedPrefsMigration$1.java",
+      "before_sha256": "7d74b36731b1cab6b18e29bf79977e3426312f2d82d4aca058870f63510c2d0f",
+      "after_sha256": "cfe76ca55a0c9293ac987500cf7663bc1c1471c4541279f4bed381c28e172b84",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/identity/AppIdentityStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=50:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 134,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_134",
+          "body_prefix": "\\n         Entry var6 = (Entry) recoveredEntryElement_0_134;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/gson/RuntimeTypeAdapterFactory$1.java",
+      "before_sha256": "31431e9b247021913ad43c43ddc3d0f1d68697ba140cf7661c80d555ac560119",
+      "after_sha256": "a3086effc194d4d8be45d0f073511485415cfbcb0c873b6b6e2464502c536b81",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/utilities/gson/RuntimeTypeAdapterFactory$1",
+          "method": "write(Lcom/google/gson/stream/JsonWriter;Ljava/lang/Object;)V",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=229:STORE_SLOT=9:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 84,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_84",
+          "body_prefix": "\\n            Entry var9 = (Entry) recoveredEntryElement_0_84;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/MessengerApiHelper.java",
+      "before_sha256": "8e3ba9296990c7a44748b969671605bb510e4fb5dcce19b620f91a8dcd13a98a",
+      "after_sha256": "71b765de3c21254e1e36821a4231c822ce6cfde3ca0bed146c8f5ec7a3dd166d",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/api/MessengerApiHelper",
+          "method": "getDefaultMultipartFields$intercom_sdk_base_release()Ljava/util/List;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=77:STORE_SLOT=7:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 101,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_101",
+          "body_prefix": "\\n         Entry var7 = (Entry) recoveredEntryElement_0_101;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/DeDuper.java",
+      "before_sha256": "104ddda89de0d28b2f7a296c581b9bafd9e066222b5b8fd52fdcc6c5aabfbc1f",
+      "after_sha256": "03dcb47ceef2385317cdc710bae8f0c8703e229c0310a5c9470de8ecc51c5e4e",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/api/DeDuper",
+          "method": "hasNewAttributeValues(Ljava/util/Map;)Z",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=53:STORE_SLOT=5:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 120,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_120",
+          "body_prefix": "\\n            Entry var5 = (Entry) recoveredEntryElement_0_120;"
+        },
+        {
+          "owner": "io/intercom/android/sdk/api/DeDuper",
+          "method": "hasNewAttributeValues(Ljava/util/Map;)Z",
+          "loop_ordinal": 1,
+          "original_instructions": "REFERENCE_BCI=128:STORE_SLOT=5:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 128,
+          "header_replacement": "java.lang.Object recoveredEntryElement_1_128",
+          "body_prefix": "\\n         Entry var8 = (Entry) recoveredEntryElement_1_128;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Link.java",
+      "before_sha256": "e36502ce2fda232ed6b0e31930f268619d805213c2b820c316eac80ccf0ed979",
+      "after_sha256": "5cbc1b053359ae3667d37fdc2f9bb3cdf26394a3e676c5adc36b2f76d0941c56",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/blocks/lib/models/Link",
+          "method": "writeToParcel(Landroid/os/Parcel;I)V",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=128:STORE_SLOT=4:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 250,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_250",
+          "body_prefix": "\\n         Entry var4 = (Entry) recoveredEntryElement_0_250;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "before_sha256": "32c74d202fc310f6194c0d8d97056083dbf4b6950c63bc6186864320f33f5339",
+      "after_sha256": "247722a4b06e46b0f57d61f524f8b4281f6506847cff889a7d3e25f366173cb9",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase",
+          "method": "invoke(Lkotlinx/coroutines/flow/MutableStateFlow;Lkotlinx/coroutines/flow/MutableSharedFlow;Lio/intercom/android/sdk/m5/upload/data/MediaData$Media;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=805:STORE_SLOT=23:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 291,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_291",
+          "body_prefix": "\\n               Entry var23 = (Entry) recoveredEntryElement_0_291;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Block.java",
+      "before_sha256": "8c2713d769742185f93304c2a9c39380345d9f502fe4e98632cf31d09b4bf02c",
+      "after_sha256": "c1a56d7d519282ee72decf78fdeb509840df92559ed1b335f297fa7f2be9283d",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/blocks/lib/models/Block",
+          "method": "writeToParcel(Landroid/os/Parcel;I)V",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=59:STORE_SLOT=4:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 711,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_711",
+          "body_prefix": "\\n         Entry var4 = (Entry) recoveredEntryElement_0_711;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/push/IntercomPushClient.java",
+      "before_sha256": "bc55e54ee3d1173966f7714ae3278400071d50b91391244dac4d267af42c4624",
+      "after_sha256": "8a998c9d183b8ed9dfd759fa723f301b6d1f2c5fabc876997077bd2ed37406aa",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/push/IntercomPushClient",
+          "method": "convertMessageMapToBundle(Ljava/util/Map;)Landroid/os/Bundle;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=41:STORE_SLOT=4:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 189,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_189",
+          "body_prefix": "\\n         Entry var4 = (Entry) recoveredEntryElement_0_189;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/UserIdentityStore$Companion$createSharedPrefsMigration$1.java",
+      "before_sha256": "b800e933badc274e63cd55b95dc4ef3be4a9903c1ae4b476ee9cd60c5c12c75d",
+      "after_sha256": "d196d5d94ff0fa81f5bd9268d7cc7cb0483146c4fcf5199aa8fa569b2cad6659",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/identity/UserIdentityStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=50:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 134,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_134",
+          "body_prefix": "\\n         Entry var6 = (Entry) recoveredEntryElement_0_134;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/push/NotificationPermissionCheckerKt.java",
+      "before_sha256": "6f18455cb5e70e2b412023fbc96fce069c0f940683f2d5ab25a86b2329f1c325",
+      "after_sha256": "ffb2337ef607712fcfbe343ceb60d186089cbf8ee923a0cd871ae7c053a6052b",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/m5/push/NotificationPermissionCheckerKt",
+          "method": "showNotifications(Landroid/content/Context;Ljava/util/Map;Lcom/intercom/twig/Twig;)V",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=98:STORE_SLOT=10:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 64,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_64",
+          "body_prefix": "\\n               Entry var10 = (Entry) recoveredEntryElement_0_64;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/AppConfigStore$Companion$createSharedPrefsMigration$1.java",
+      "before_sha256": "a6bab80e55f1acd602912821007dc319af60d27c8a7be1a2136e6dd4909529b3",
+      "after_sha256": "f354b4445d473958ce9361dd357c2bbf71355a5e37fa83366c9a37c0a74461e3",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/identity/AppConfigStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=50:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 114,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_114",
+          "body_prefix": "\\n         Entry var6 = (Entry) recoveredEntryElement_0_114;"
+        },
+        {
+          "owner": "io/intercom/android/sdk/identity/AppConfigStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 1,
+          "original_instructions": "REFERENCE_BCI=150:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 125,
+          "header_replacement": "java.lang.Object recoveredEntryElement_1_125",
+          "body_prefix": "\\n         Entry var14 = (Entry) recoveredEntryElement_1_125;"
+        },
+        {
+          "owner": "io/intercom/android/sdk/identity/AppConfigStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 2,
+          "original_instructions": "REFERENCE_BCI=244:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 133,
+          "header_replacement": "java.lang.Object recoveredEntryElement_2_133",
+          "body_prefix": "\\n         Entry var15 = (Entry) recoveredEntryElement_2_133;"
+        },
+        {
+          "owner": "io/intercom/android/sdk/identity/AppConfigStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 3,
+          "original_instructions": "REFERENCE_BCI=338:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 141,
+          "header_replacement": "java.lang.Object recoveredEntryElement_3_141",
+          "body_prefix": "\\n         Entry var16 = (Entry) recoveredEntryElement_3_141;"
+        },
+        {
+          "owner": "io/intercom/android/sdk/identity/AppConfigStore$Companion$createSharedPrefsMigration$1",
+          "method": "migrate(Landroidx/datastore/preferences/core/Preferences;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 4,
+          "original_instructions": "REFERENCE_BCI=432:STORE_SLOT=6:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 149,
+          "header_replacement": "java.lang.Object recoveredEntryElement_4_149",
+          "body_prefix": "\\n         Entry var17 = (Entry) recoveredEntryElement_4_149;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "before_sha256": "3d499adbcd2e9844609b8735063cfb3d26b5775455224f8f0b335ed1f8de22ed",
+      "after_sha256": "94c6a34006e006b12b8f1fdfdea28860820fb8b1fe53f68924a2dc8efcde0d1b",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase",
+          "method": "invoke(Lkotlinx/coroutines/flow/MutableStateFlow;Lio/intercom/android/sdk/m5/conversation/data/GetConversationReason;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=286:STORE_SLOT=15:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 222,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_222",
+          "body_prefix": "\\n            Entry var15 = (Entry) recoveredEntryElement_0_222;"
+        }
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/gson/RuntimeTypeAdapterFactory.java",
+      "before_sha256": "b99eaa84e911d741fe8fbb1f7558cd49bdbb2deedc8a8e2bb6ac90f5731cb3b0",
+      "after_sha256": "38629f94832157490c79c5ff30df04e35c135e7de249a57849370b211d5738d2",
+      "sites": [
+        {
+          "owner": "io/intercom/android/sdk/utilities/gson/RuntimeTypeAdapterFactory",
+          "method": "create(Lcom/google/gson/Gson;Lcom/google/gson/reflect/TypeToken;)Lcom/google/gson/TypeAdapter;",
+          "loop_ordinal": 0,
+          "original_instructions": "REFERENCE_BCI=89:STORE_SLOT=9:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 79,
+          "header_replacement": "java.lang.Object recoveredEntryElement_0_79",
+          "body_prefix": "\\n         Entry var9 = (Entry) recoveredEntryElement_0_79;"
+        },
+        {
+          "owner": "io/intercom/android/sdk/utilities/gson/RuntimeTypeAdapterFactory",
+          "method": "create(Lcom/google/gson/Gson;Lcom/google/gson/reflect/TypeToken;)Lcom/google/gson/TypeAdapter;",
+          "loop_ordinal": 1,
+          "original_instructions": "REFERENCE_BCI=190:STORE_SLOT=9:INVOKEINTERFACE=java/util/Iterator.next()Ljava/lang/Object;:CHECKCAST=java/util/Map$Entry",
+          "original_source_line": 85,
+          "header_replacement": "java.lang.Object recoveredEntryElement_1_85",
+          "body_prefix": "\\n         Entry var12 = (Entry) recoveredEntryElement_1_85;"
+        }
+      ]
+    }
+  ],
+  "reference_coordinate": "Real normalized-reference bytecode offsets, not universally raw-vendor offsets",
+  "reference_sha256": "495baebff1f55f833180ebd7c82cc1d3cb7cff3c3e0bb59322e6faee23b29391",
+  "tool_sha256": "86f87974d05a963f81b924a981ef20f4bbb3bdadbc505de66027384600bcd9b0",
+  "rejected": []
+}

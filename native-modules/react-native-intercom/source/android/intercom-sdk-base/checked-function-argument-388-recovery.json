@@ -1,0 +1,88 @@
+{
+  "status": "SOURCE_RESTORED_NOT_COMPILED",
+  "source_sites": 3,
+  "changed_files": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ComposableSingletons$ReactionsComponentKt$RecoveredInner7b5951eb09481206$1.java",
+      "before_sha256": "aef62feb4830e56bcdba1875a521b0fd3e61dbaeaf0f39134ed0c22467889301",
+      "after_sha256": "c04ec221c586fd31a7d0612619c12e01b2147fb1cb9e1ec74e3926d00c06b123",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ComposableSingletons$ReactionsComponentKt$RecoveredInner7b5951eb09481206$1.java",
+          "5442",
+          "5450",
+          "(kotlin.jvm.functions.Function0) var10002",
+          "io/intercom/android/sdk/helpcenter/articles/ComposableSingletons$ReactionsComponentKt$RecoveredInner7b5951eb09481206$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/ReactionsComponentKt",
+          "ReactionsComponent",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/helpcenter/articles/ArticleViewState$ReactionState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "2",
+          "355",
+          "5372",
+          "5483",
+          "var10002",
+          "46",
+          "kotlin/jvm/functions/Function0",
+          "RETRACE_PRIOR_RECOVERED_CAST@101:var10002;EXISTING_CAST@3082:GROUP=-613641924:REFERENCE_BCI=131:STORE=3;EXISTING_CAST@3082:GROUP=-613641924:REFERENCE_BCI=131:STORE=3;EXISTING_CAST@3082:GROUP=-613641924:REFERENCE_BCI=131:STORE=3;EXISTING_CAST@3082:GROUP=-613641924:REFERENCE_BCI=131:STORE=3"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ComposableSingletons$ReactionsComponentKt$RecoveredInner7b5951eb09481206$1.java",
+          "5452",
+          "5460",
+          "(kotlin.jvm.functions.Function0) var10003",
+          "io/intercom/android/sdk/helpcenter/articles/ComposableSingletons$ReactionsComponentKt$RecoveredInner7b5951eb09481206$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/helpcenter/articles/ReactionsComponentKt",
+          "ReactionsComponent",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/helpcenter/articles/ArticleViewState$ReactionState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "INVOKESTATIC",
+          "3",
+          "355",
+          "5372",
+          "5483",
+          "var10003",
+          "71",
+          "kotlin/jvm/functions/Function0",
+          "EXISTING_CAST@4155:GROUP=-613640516:REFERENCE_BCI=233:STORE=3;EXISTING_CAST@4155:GROUP=-613640516:REFERENCE_BCI=233:STORE=3"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/ComposableSingletons$PushNotificationsBannerKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "before_sha256": "f2b659744f685539ff92538a2fbc65768644a4639abecfe0a96ccc1fb224587f",
+      "after_sha256": "2f2b2d59621fa6fd210e7801ac757f33b0bc676c4a4983dcaaf78eedc694416f",
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/ComposableSingletons$PushNotificationsBannerKt$RecoveredInner7a24458254dd4cd9$1.java",
+          "3796",
+          "3804",
+          "(kotlin.jvm.functions.Function0) var10000",
+          "io/intercom/android/sdk/m5/conversation/ui/components/ComposableSingletons$PushNotificationsBannerKt$RecoveredInner7a24458254dd4cd9$1",
+          "invoke",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/PushNotificationsBannerKt",
+          "PushNotificationsBanner",
+          "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V",
+          "INVOKESTATIC",
+          "0",
+          "217",
+          "3746",
+          "3821",
+          "var10000",
+          "43",
+          "kotlin/jvm/functions/Function0",
+          "EXISTING_CAST@2767:GROUP=1900618384:REFERENCE_BCI=112:STORE=3;EXISTING_CAST@2767:GROUP=1900618384:REFERENCE_BCI=112:STORE=3"
+        ]
+      ]
+    }
+  ],
+  "scope": "Two additional independently reviewed static calls; unchanged existing unique full descriptor/arity/no shadow/same-statement-write/all-path checked-value gates; prior132 cast traced transparently to original root",
+  "contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/function-family-388/CONTRACT.md",
+  "baseline_errors": 365,
+  "reference_call_offsets": "Raw vendor BCI355/217; checked cast inventory uses pinned normalized-reference coordinates",
+  "runtime": "NOT_RUN"
+}

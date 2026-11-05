@@ -1,0 +1,12 @@
+{
+  "status": "SOURCE_CORRECTED_NOT_COMPILED",
+  "scope": "KeyboardStateKt.keyboardAsState",
+  "before_sha256": "74102014d26218cb84dda04ba9a49848307763088ff77f2e9b8b6e8e19529304",
+  "after_sha256": "cf7893034664e8ea5934904c3c58531abb2c5d854918b353a178fe68d05f3f4e",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/keyboard-allocation/original.javap.txt",
+  "correction": "NEW before visibility/animating branches and old-state getter; original fourth boolean argument expressed as short-circuit source argument",
+  "new_helper": false,
+  "old_state_reads": "Exactly once, only visible && animating",
+  "numeric_semantics": "int subtraction then float >=; signed int wrap and NaN false retained",
+  "history": "Prior syntax-repairs.json allocation timing NOT_RUNTIME_VERIFIED remains historical, superseded for this single site by semantic correction. Other allocation sites not generalized."
+}

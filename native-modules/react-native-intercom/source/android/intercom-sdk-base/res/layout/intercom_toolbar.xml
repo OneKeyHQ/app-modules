@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="@dimen/intercom_toolbar_height"
+    tools:background="@color/intercom_main_blue"
+    tools:layout_height="@dimen/intercom_home_screen_height">
+
+    <ImageView
+        android:id="@+id/wallpaper_image"
+        style="@style/intercom_wallpaper_image_style"
+        android:layout_width="match_parent"
+        android:importantForAccessibility="no"
+        android:layout_height="match_parent"
+        android:contentDescription="Header wallpaper" />
+
+    <RelativeLayout
+        android:id="@+id/toolbar_content_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/intercom_full_transparent_full_black"
+        tools:background="@color/intercom_main_blue"
+        tools:layout_height="56dp">
+
+        <ProgressBar
+            android:id="@+id/toolbar_progress_bar"
+            style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_alignParentBottom="true"
+            android:elevation="8dp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <FrameLayout
+            android:id="@+id/intercom_left_item_layout"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true">
+
+            <ImageButton
+                android:id="@+id/intercom_toolbar_inbox"
+                android:layout_width="48dp"
+                android:layout_height="match_parent"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:visibility="gone"
+                android:contentDescription="Navigate back from Inbox"
+                tools:visibility="visible" />
+
+            <ImageView
+                android:id="@+id/intercom_toolbar_avatar"
+                android:layout_width="@dimen/intercom_teammate_avatar_size"
+                android:layout_height="@dimen/intercom_teammate_avatar_size"
+                android:layout_marginStart="24dp"
+                android:layout_marginTop="14dp"
+                android:visibility="gone"
+                android:contentDescription="Teammate avatar"
+                tools:src="@drawable/intercom_solid_circle"
+                tools:visibility="visible" />
+
+            <View
+                android:id="@+id/intercom_toolbar_avatar_active_state"
+                android:layout_width="@dimen/intercom_teammate_active_state_size"
+                android:layout_height="@dimen/intercom_teammate_active_state_size"
+                android:layout_marginStart="48dp"
+                android:layout_marginTop="38dp"
+                android:visibility="gone"
+                tools:background="@drawable/intercom_solid_circle"
+                tools:backgroundTint="@color/intercom_active_state"
+                tools:visibility="visible" />
+
+        </FrameLayout>
+
+        <ImageButton
+            android:id="@+id/intercom_toolbar_close"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentTop="true"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:src="@drawable/intercom_close"
+            android:contentDescription="Close" />
+
+        <LinearLayout
+            android:id="@+id/intercom_toolbar_title_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="16dp"
+            android:layout_toStartOf="@id/intercom_toolbar_close"
+            android:layout_toEndOf="@id/intercom_left_item_layout"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/intercom_toolbar_title"
+                style="@style/intercom_toolbar_inbox_title_style"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="2"
+                android:text=""
+                tools:text="This is a title" />
+
+            <TextView
+                android:id="@+id/intercom_toolbar_subtitle"
+                style="@style/intercom_toolbar_subtitle_style"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:alpha="0"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text=""
+                tools:alpha=".5"
+                tools:text="This is a subtitle" />
+
+        </LinearLayout>
+
+        <View
+            android:id="@+id/intercom_toolbar_divider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_alignParentBottom="true"
+            android:alpha="0.1"
+            android:background="@color/intercom_white"
+            android:visibility="gone" />
+
+    </RelativeLayout>
+
+</FrameLayout>

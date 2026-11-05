@@ -1,0 +1,10 @@
+{
+  "schema": "jvm-field-constant-value-v1",
+  "sha256": "d035989666a1ed80425c23df624f5f95faebf10208aab16301aa4ca8f59716e9",
+  "field_count": 9376,
+  "constant_count": 728,
+  "origin": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/constant-value/all-original-field-constants.json",
+  "method_code_exported": false,
+  "normal_build_input": "Pure text expected owner/name/descriptor, presence/type/bits/string value metadata; validator integration pending main compilation",
+  "scope": "Seven pinned original Android SDK artifacts; 3389 classes, not third-party dependencies"
+}

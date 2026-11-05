@@ -1,0 +1,2201 @@
+{
+  "status": "SOURCE_RESTORED_NOT_COMPILED",
+  "edits": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 10039,
+      "end": 10043,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 10445,
+      "end": 10449,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 10662,
+      "end": 10666,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 10705,
+      "end": 10709,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 10930,
+      "end": 10934,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 11615,
+      "end": 11619,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 11724,
+      "end": 11728,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 11857,
+      "end": 11861,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 8076,
+      "end": 8076,
+      "replacement": "\n      AblyManager recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 8484,
+      "end": 8488,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 8837,
+      "end": 8841,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 8886,
+      "end": 8890,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 9109,
+      "end": 9113,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 9376,
+      "end": 9380,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 9599,
+      "end": 9603,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager.java",
+      "start": 9808,
+      "end": 9812,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getAblyConfiguration",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 2151,
+      "end": 2151,
+      "replacement": "\n      ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2 recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 2766,
+      "end": 2770,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 3235,
+      "end": 3239,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 3613,
+      "end": 3617,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 4005,
+      "end": 4009,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 4483,
+      "end": 4487,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 4912,
+      "end": 4916,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 5053,
+      "end": 5057,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 5374,
+      "end": 5378,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 5499,
+      "end": 5503,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 5628,
+      "end": 5632,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 5671,
+      "end": 5675,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 6496,
+      "end": 6500,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "start": 7642,
+      "end": 7646,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 10253,
+      "end": 10257,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 10397,
+      "end": 10401,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 11658,
+      "end": 11662,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 5188,
+      "end": 5188,
+      "replacement": "\n      DeviceIdentityStore recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 5625,
+      "end": 5629,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 6063,
+      "end": 6067,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 6124,
+      "end": 6128,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 7027,
+      "end": 7031,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/DeviceIdentityStore.java",
+      "start": 7842,
+      "end": 7846,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "loadDeviceIdentifier",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 1509,
+      "end": 1509,
+      "replacement": "\n      ConversationViewModel$8$1 recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 1904,
+      "end": 1908,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 2295,
+      "end": 2299,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 2398,
+      "end": 2402,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 2527,
+      "end": 2531,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 2823,
+      "end": 2827,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ConversationViewModel$8$1.java",
+      "start": 3128,
+      "end": 3132,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 4956,
+      "end": 4956,
+      "replacement": "\n      FallbackPollingUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 5347,
+      "end": 5351,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 5644,
+      "end": 5648,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 5768,
+      "end": 5772,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 5870,
+      "end": 5874,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 6127,
+      "end": 6131,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 6378,
+      "end": 6382,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 6864,
+      "end": 6868,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 6970,
+      "end": 6974,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 7119,
+      "end": 7123,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 7257,
+      "end": 7261,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 7499,
+      "end": 7503,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 7598,
+      "end": 7602,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 10415,
+      "end": 10419,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 10469,
+      "end": 10473,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 10711,
+      "end": 10715,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 5804,
+      "end": 5804,
+      "replacement": "\n      OpenConversationUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 6204,
+      "end": 6208,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 6522,
+      "end": 6526,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 6572,
+      "end": 6576,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 6983,
+      "end": 6987,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/OpenConversationUseCase.java",
+      "start": 7214,
+      "end": 7218,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 15478,
+      "end": 15482,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 15691,
+      "end": 15695,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 15755,
+      "end": 15759,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 15921,
+      "end": 15925,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 16009,
+      "end": 16013,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 16176,
+      "end": 16180,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 16260,
+      "end": 16264,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 6865,
+      "end": 6865,
+      "replacement": "\n      RefreshConversationUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 7279,
+      "end": 7283,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 7802,
+      "end": 7806,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 7858,
+      "end": 7862,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 8194,
+      "end": 8198,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 8424,
+      "end": 8428,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 9979,
+      "end": 9983,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "start": 4408,
+      "end": 4408,
+      "replacement": "\n      RefreshUnreadConversationsCountUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "start": 4868,
+      "end": 4872,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "start": 5290,
+      "end": 5294,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "start": 5337,
+      "end": 5341,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "start": 5648,
+      "end": 5652,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "start": 6101,
+      "end": 6105,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 11370,
+      "end": 11374,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 11422,
+      "end": 11426,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 11995,
+      "end": 11999,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 12697,
+      "end": 12701,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 7513,
+      "end": 7513,
+      "replacement": "\n      SendMediaUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 7887,
+      "end": 7891,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 9786,
+      "end": 9790,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 10898,
+      "end": 10898,
+      "replacement": "\n      SendMessageUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 11280,
+      "end": 11284,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 11746,
+      "end": 11750,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 11890,
+      "end": 11894,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 12135,
+      "end": 12139,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 12918,
+      "end": 12922,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 14323,
+      "end": 14327,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 14862,
+      "end": 14866,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 15232,
+      "end": 15236,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 15556,
+      "end": 15560,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 15874,
+      "end": 15878,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 16557,
+      "end": 16561,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 16622,
+      "end": 16626,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 17589,
+      "end": 17593,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 17651,
+      "end": 17655,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 17877,
+      "end": 17881,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 18027,
+      "end": 18031,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 20020,
+      "end": 20024,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 20073,
+      "end": 20077,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 20811,
+      "end": 20815,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 20938,
+      "end": 20942,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 21327,
+      "end": 21331,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 21595,
+      "end": 21599,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 5712,
+      "end": 5712,
+      "replacement": "\n      SendQuickReplyUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 6104,
+      "end": 6108,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 6866,
+      "end": 6870,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 7179,
+      "end": 7183,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 7365,
+      "end": 7369,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 7771,
+      "end": 7775,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 8344,
+      "end": 8348,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 8722,
+      "end": 8726,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 8843,
+      "end": 8847,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 10525,
+      "end": 10529,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 11790,
+      "end": 11794,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 5901,
+      "end": 5901,
+      "replacement": "\n      SendSuggestionUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 6293,
+      "end": 6297,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 7805,
+      "end": 7809,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 9275,
+      "end": 9279,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 9566,
+      "end": 9570,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 9894,
+      "end": 9898,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "invoke",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 11081,
+      "end": 11085,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 11195,
+      "end": 11199,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 11389,
+      "end": 11393,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 12753,
+      "end": 12757,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 12880,
+      "end": 12884,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 12984,
+      "end": 12988,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 13178,
+      "end": 13182,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 13488,
+      "end": 13492,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 13675,
+      "end": 13679,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 13868,
+      "end": 13872,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 14145,
+      "end": 14149,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 14244,
+      "end": 14248,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 14426,
+      "end": 14430,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 15820,
+      "end": 15820,
+      "replacement": "\n      VoiceTranscriptionUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 16280,
+      "end": 16284,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 16575,
+      "end": 16579,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 16631,
+      "end": 16635,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 16937,
+      "end": 16941,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 17201,
+      "end": 17205,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 17544,
+      "end": 17548,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 19531,
+      "end": 19535,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 19738,
+      "end": 19742,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "transcribeAudioFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 7972,
+      "end": 7972,
+      "replacement": "\n      VoiceTranscriptionUseCase recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 8460,
+      "end": 8464,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 8798,
+      "end": 8802,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 9104,
+      "end": 9108,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 9296,
+      "end": 9300,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/VoiceTranscriptionUseCase.java",
+      "start": 9640,
+      "end": 9644,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "stopRecordingAndTranscribe",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 24192,
+      "end": 24192,
+      "replacement": "\n      HelpCenterViewModel recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 24591,
+      "end": 24595,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 25241,
+      "end": 25245,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 25454,
+      "end": 25458,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 25507,
+      "end": 25511,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 25848,
+      "end": 25852,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 26009,
+      "end": 26013,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 26356,
+      "end": 26360,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 27291,
+      "end": 27295,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 27475,
+      "end": 27479,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 27522,
+      "end": 27526,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 27917,
+      "end": 27921,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "onNewConfig",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 28426,
+      "end": 28426,
+      "replacement": "\n      HelpCenterViewModel recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 28821,
+      "end": 28825,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 29082,
+      "end": 29086,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 29128,
+      "end": 29132,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 29337,
+      "end": 29341,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 29717,
+      "end": 29721,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 29957,
+      "end": 29961,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 30139,
+      "end": 30143,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getCtaData",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 5557,
+      "end": 5557,
+      "replacement": "\n      InboxPagingSource recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 5920,
+      "end": 5924,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 6265,
+      "end": 6269,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 6365,
+      "end": 6369,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 6694,
+      "end": 6698,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 6956,
+      "end": 6960,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 8291,
+      "end": 8295,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 8481,
+      "end": 8485,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 8700,
+      "end": 8704,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 8867,
+      "end": 8871,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxPagingSource.java",
+      "start": 9109,
+      "end": 9113,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "load",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 10861,
+      "end": 10865,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 5365,
+      "end": 5365,
+      "replacement": "\n      UploadRepository recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 5748,
+      "end": 5752,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 7310,
+      "end": 7314,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 7560,
+      "end": 7564,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 7605,
+      "end": 7609,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 7941,
+      "end": 7945,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 8873,
+      "end": 8877,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "uploadFile",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 7950,
+      "end": 7950,
+      "replacement": "\n      TicketRepository recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "createTicket",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 8346,
+      "end": 8350,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "createTicket",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 8606,
+      "end": 8610,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "createTicket",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 9312,
+      "end": 9316,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "createTicket",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 9532,
+      "end": 9536,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "createTicket",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 9902,
+      "end": 9906,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "createTicket",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 1195,
+      "end": 1195,
+      "replacement": "\n      FirstMessageUtilsKt$handleFirstMessageToast$1$1 recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 1678,
+      "end": 1682,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2016,
+      "end": 2020,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2029,
+      "end": 2033,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2289,
+      "end": 2293,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2337,
+      "end": 2341,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2516,
+      "end": 2520,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2771,
+      "end": 2775,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 2978,
+      "end": 2982,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/FirstMessageUtilsKt$handleFirstMessageToast$1$1.java",
+      "start": 3297,
+      "end": 3301,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "emit",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 4928,
+      "end": 4928,
+      "replacement": "\n      NativeCounterFallbackCoordinator recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 5375,
+      "end": 5379,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 5616,
+      "end": 5620,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 5680,
+      "end": 5684,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 5789,
+      "end": 5793,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 5830,
+      "end": 5834,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 5974,
+      "end": 5978,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 6021,
+      "end": 6025,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 6234,
+      "end": 6238,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 6461,
+      "end": 6465,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 6507,
+      "end": 6511,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 6837,
+      "end": 6841,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 6874,
+      "end": 6878,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "getVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 7198,
+      "end": 7198,
+      "replacement": "\n      NativeCounterFallbackCoordinator recoveredThis = this;",
+      "kind": "DECLARE",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 7693,
+      "end": 7697,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 7934,
+      "end": 7938,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 7998,
+      "end": 8002,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8119,
+      "end": 8123,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8160,
+      "end": 8164,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8316,
+      "end": 8320,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8363,
+      "end": 8367,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8588,
+      "end": 8592,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8815,
+      "end": 8819,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 8861,
+      "end": 8865,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 9203,
+      "end": 9207,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/NativeCounterFallbackCoordinator.java",
+      "start": 9240,
+      "end": 9244,
+      "replacement": "recoveredThis",
+      "kind": "RECEIVER",
+      "method": "incrementAndGetVersion",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

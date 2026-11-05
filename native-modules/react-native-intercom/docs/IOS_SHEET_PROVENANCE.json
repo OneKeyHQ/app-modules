@@ -1,0 +1,28 @@
+{
+  "baseline": "Intercom19.9.1 original asm/metadata",
+  "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+  "sources": {
+    "ios/Session/ICMAutoLayout.m": "005cb310e2cda088c37b178fb111b14e074ff16eb1d5a5cc22582e7eed7c6270",
+    "ios/Session/ICMPointerInteraction.m": "4605e3a1a3891e840f584b4a9bb0e7d3911f6b995dc4e953ad9b0221f4a68a44",
+    "ios/Session/ICMButton.m": "94387f105aa69d6233b8117fa5b25eb7454198f5cd0250dfceb5e53cee143e29",
+    "ios/Session/ICMActionButton.m": "3b78a4796fe2b4eea637da0f8293f793d612cf704be45a1c9df8208319855ee8",
+    "ios/Session/ICMErrorView.m": "d6b7cb946773d37d6156d951bd1150cf64f6992b3fdf3f48dda81480d87bd680",
+    "ios/Session/ICMNavigationController.m": "56ba4ae7bb86613f65228f57134dc21ad1bc0995cb59b3c90ae5aaf249df66ef",
+    "ios/Session/ICMMessengerNavigationController.m": "0bedf2f99279b5ef9e96a213c5604757aeed26f5c55ed3cfd5049d9f5f2bf6a2",
+    "ios/Session/ICMMessengerSheetViewController.m": "5b347b0dcd7181ef063245f7e19a537b17eec5cd2dfac7b219a92664e338c831",
+    "ios/Session/UIColor+HSL.m": "d6667ed584cec429780d6f1a3ee4fb6b1d053f388044c34664174de179d5e637",
+    "ios/Session/UIFont+ICMWeight.m": "1a3314595d016804cd205084256c794e95e2df2321365a115cdfea4c548cdb10"
+  },
+  "validation": "182ObjC+127Swift all3targets;8classes127ownselectors/types+10category methods exact",
+  "runtimeBehaviorVerified": false,
+  "scope": "Genuine Sheet41/defaultWK/JS/POST/navigation/progress/submittimer, ErrorView18/Button18/Action11, Nav22/MessengerNav1, AutoLayout15/Pointer1/HSL9/UIFont1. HSL green!=max originalNE branch corrected before frozencompile. No new safety policy/no lifecycle cleanup beyond original;23real SDK class gaps remain plus dynamic/selectors.",
+  "evidence": [
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-messenger-sheet-controller/source-static-review.json",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-sheet-common-views/CONTRACT.md"
+  ],
+  "limits": [
+    "No native UIKit/WK/HTTP/JS/upload/normalconsumer run",
+    "Previous Help empty destructor compiler-elision remains recorded separately",
+    "Whole SDK23realclass and further selector/controller/model gaps remain"
+  ]
+}

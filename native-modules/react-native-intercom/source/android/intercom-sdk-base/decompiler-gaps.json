@@ -1,0 +1,47 @@
+[
+  {
+    "path": "native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/AppConfigStore$job$1.java",
+    "matches": [
+      {
+        "line": 31,
+        "text": "      // $VF: Couldn't be decompiled"
+      }
+    ]
+  },
+  {
+    "path": "native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/data/CommonRepository.java",
+    "matches": [
+      {
+        "line": 69,
+        "text": "      // $VF: Couldn't be decompiled"
+      }
+    ]
+  },
+  {
+    "path": "native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository.java",
+    "matches": [
+      {
+        "line": 120,
+        "text": "      // $VF: Couldn't be decompiled"
+      }
+    ]
+  },
+  {
+    "path": "native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/MediaUploadStateRepository$startUploadJob$job$1.java",
+    "matches": [
+      {
+        "line": 46,
+        "text": "      // $VF: Couldn't be decompiled"
+      }
+    ]
+  },
+  {
+    "path": "native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/PreviewUriKt$loadPdfState$1$1.java",
+    "matches": [
+      {
+        "line": 47,
+        "text": "      // $VF: Couldn't be decompiled"
+      }
+    ]
+  }
+]

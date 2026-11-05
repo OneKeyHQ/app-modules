@@ -1,0 +1,258 @@
+{
+  "status": "SOURCE_CONTROL_FLOW_RESTORED_NOT_COMPILED",
+  "scope": "Exact nine two-state callers; typed original getter receiver and raw Object returned/resumed result; preserve original flow-getter/state-save/suspension/resume failure ordering; no result cast",
+  "methods": [
+    {
+      "owner": "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$1",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$1.java",
+      "source_before_sha256": "40690c84df80214023f3d0f3b8572ef485726cdd2a7289fde8ba659949d71a64",
+      "source_after_sha256": "035c98c019c41f207420e92855ceefade4af3d8b0144db0769b024a35da137ed",
+      "replacements": [
+        [
+          "            var10000 = HelpCenterViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = HelpCenterViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$onRetryOpen$1",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$onRetryOpen$1.java",
+      "source_before_sha256": "eed9e8b28f3a0a1f62fa94095cdff85300837d6edf11e069156290bfd561e9dd",
+      "source_after_sha256": "f548550dbd54c85fe39aa6ee7a12606c4cbb9171b9d3828e4b4dfe9ad65958de",
+      "replacements": [
+        [
+          "            var10000 = HelpCenterViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = HelpCenterViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/home/HomeViewModel$fetchHomeData$1$1$1$openDeferred$1",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "RETURN_RESULT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/HomeViewModel$fetchHomeData$1$1$1$openDeferred$1.java",
+      "source_before_sha256": "58368e03a5ee2a2cdb12ee4e7343e06c3710cad56f59e5f396253ee61cc52ecd",
+      "source_after_sha256": "51fc3f8a0b229bd24e4bf48a702d1ff8f362ff725d43b4599f5e381d226d4d52",
+      "replacements": [
+        [
+          "            var10000 = HomeViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = HomeViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "44: checkcast     #59                 // class kotlin/coroutines/Continuation"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/inbox/InboxViewModel$1",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/InboxViewModel$1.java",
+      "source_before_sha256": "8df4373fad7e78b1ef270b12cfccc2c860f92d93d5427dd69c88d90755d515c1",
+      "source_after_sha256": "f6637e94cb3b5d22e2d0f9260683e671ab722464b015edd7f0f82e49f6dc06dc",
+      "replacements": [
+        [
+          "            var10000 = InboxViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = InboxViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/inbox/InboxViewModel$3$1$3",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/InboxViewModel$3$1$3.java",
+      "source_before_sha256": "31e2f758992c64d88ac2e079f57595f06669c3cdab0769d5ab46d27781c57ae7",
+      "source_after_sha256": "6a180a48c50a5c5ba33ad318ff8ca881353dcecfc163b989fb94a721098126ad",
+      "replacements": [
+        [
+          "            var10000 = InboxViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = InboxViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/inbox/InboxViewModel$onRetryOpen$1",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/InboxViewModel$onRetryOpen$1.java",
+      "source_before_sha256": "bacccf9a3e3c2e27d16fe6c79073d38b752761dc503a3f35064bfbc00cb54fb9",
+      "source_after_sha256": "68bf14395a83aa00184eecfcd02a438dd220b90fa590dbeac6f87f53c56e5e0e",
+      "replacements": [
+        [
+          "            var10000 = InboxViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = InboxViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$2",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$2.java",
+      "source_before_sha256": "86f647c71b9174e3def49995afcbf066e2193a27eff80c1a0b8a7d6b1141b2ca",
+      "source_after_sha256": "f4ac92389bf2de968aeb83bef7fb517e822a6fcec6268b17401cbe11f0265e78",
+      "replacements": [
+        [
+          "            var10000 = TicketsScreenViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = TicketsScreenViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$4$1$3",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$4$1$3.java",
+      "source_before_sha256": "9bd03898ed9e8e870733dbd76487fe2d1154c360824285c16aa45b0a5323e9e7",
+      "source_after_sha256": "dc6f2f7c1310a926febcd1307369225224f58559dde9870ca2b4fa3bc83dbd12",
+      "replacements": [
+        [
+          "            var10000 = TicketsScreenViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = TicketsScreenViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    },
+    {
+      "owner": "io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$onRetryOpen$1",
+      "method": "invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+      "kind": "SET_STATE_THEN_UNIT",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$onRetryOpen$1.java",
+      "source_before_sha256": "493b04c246e1e46bb99ec6075d91aebd6c403d190c28cfde3f407b17c27fc9fb",
+      "source_after_sha256": "b58a85dba0c565855bdb9c0ec54b4695b3993911406c5bb4fc0311dff8f6a50a",
+      "replacements": [
+        [
+          "            var10000 = TicketsScreenViewModel.access$getCommonRepository$p(this.this$0);",
+          "            CommonRepository recoveredOpenMessengerRepository = TicketsScreenViewModel.access$getCommonRepository$p(this.this$0);"
+        ],
+        [
+          "var10000 = (CommonRepository)var10000.openMessenger(var10001);",
+          "var10000 = recoveredOpenMessengerRepository.openMessenger(var10001);"
+        ],
+        [
+          "var10000 = (CommonRepository)var1;",
+          "var10000 = var1;"
+        ]
+      ],
+      "preserved_original_checks": [
+        "52: checkcast     #65                 // class kotlin/coroutines/Continuation",
+        "79: checkcast     #75                 // class kotlinx/coroutines/flow/MutableStateFlow"
+      ],
+      "original_target": "io/intercom/android/sdk/m5/conversation/data/CommonRepository.openMessenger(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+      "static_contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/CONTRACT.md"
+    }
+  ],
+  "runtime_verified": false
+}

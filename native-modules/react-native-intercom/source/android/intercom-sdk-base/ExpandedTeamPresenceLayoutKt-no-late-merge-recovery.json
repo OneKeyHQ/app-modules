@@ -1,0 +1,376 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+  "root_only": true,
+  "source_before_sha256": "2decba74b726d97ebebbd2b2865f34b98b1944a6b37619785e194d93eee3c65d",
+  "source_after_sha256": "4177fc9e63935889f8d2015eca1aee3f2aac2c1628ee9bbcc885e9c0df288170",
+  "source_capture_sites": 5,
+  "source_capture_bindings": 9,
+  "declaration_check_exit": 0,
+  "type_edits": 18,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ExpandedTeamPresenceLayoutKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.java",
+      "24472",
+      "24573",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.row.ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayout$lambda$9$lambda$5$lambda$4$lambda$3$lambda$2(recoveredExpressionCapture_705_0, recoveredExpressionCapture_705_1))",
+      "24454",
+      "final io.intercom.android.sdk.models.Header$Expanded$SocialAccount recoveredExpressionCapture_705_0 = var70;\\n                     final android.content.Context recoveredExpressionCapture_705_1 = var6;\\n                     ",
+      "705",
+      "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;=var70,Landroid/content/Context;=var6",
+      "recoveredExpressionCapture_705_0=var70@21494:LOCAL|70|70|0|var70|Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;;recoveredExpressionCapture_705_1=var6@9501:LOCAL|6|6|0|var6|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ExpandedTeamPresenceLayoutKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.java",
+      "32792",
+      "32858",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_706_0, recoveredExpressionArgument_706_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayout$lambda$10(recoveredExpressionCapture_706_0, recoveredExpressionCapture_706_1, recoveredExpressionCapture_706_2, recoveredExpressionCapture_706_3, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_706_0), ((java.lang.Integer)recoveredExpressionArgument_706_1).intValue()))",
+      "32773",
+      "final io.intercom.android.sdk.m5.conversation.states.ExpandedTeamPresenceState recoveredExpressionCapture_706_0 = var0;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_706_1 = var1;\\n         final int recoveredExpressionCapture_706_2 = var3;\\n         final int recoveredExpressionCapture_706_3 = var4;\\n         ",
+      "706",
+      "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;=var0,Landroidx/compose/ui/Modifier;=var1,I=var3,I=var4",
+      "recoveredExpressionCapture_706_0=var0@7983:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;;recoveredExpressionCapture_706_1=var1@8024:LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_706_2=var3@8074:LOCAL|3|3|0|var3|I;recoveredExpressionCapture_706_3=var4@8084:LOCAL|4|4|0|var4|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ExpandedTeamPresenceLayoutKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.java",
+      "39586",
+      "39666",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_708_0, recoveredExpressionArgument_708_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayoutPreviewWithFin$lambda$11(recoveredExpressionCapture_708_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_708_0), ((java.lang.Integer)recoveredExpressionArgument_708_1).intValue()))",
+      "39565",
+      "final int recoveredExpressionCapture_708_0 = var1;\\n         ",
+      "708",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_708_0=var1@38414:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ExpandedTeamPresenceLayoutKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.java",
+      "41071",
+      "41160",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_709_0, recoveredExpressionArgument_709_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayoutPreviewWithFinAndHumans$lambda$12(recoveredExpressionCapture_709_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_709_0), ((java.lang.Integer)recoveredExpressionArgument_709_1).intValue()))",
+      "41050",
+      "final int recoveredExpressionCapture_709_0 = var1;\\n         ",
+      "709",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_709_0=var1@39880:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ExpandedTeamPresenceLayoutKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.java",
+      "42572",
+      "42662",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_707_0, recoveredExpressionArgument_707_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin$lambda$13(recoveredExpressionCapture_707_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_707_0), ((java.lang.Integer)recoveredExpressionArgument_707_1).intValue()))",
+      "42551",
+      "final int recoveredExpressionCapture_707_0 = var1;\\n         ",
+      "707",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_707_0=var1@41375:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 705,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayout",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "1384",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayout$lambda$9$lambda$5$lambda$4$lambda$3$lambda$2",
+        "(Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;Landroid/content/Context;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;=var70,Landroid/content/Context;=var6",
+        "2142"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout$lambda$9$lambda$5$lambda$4$lambda$3$lambda$2",
+          "(Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;Landroid/content/Context;)Lkotlin/Unit;",
+          "{2138, 2139, 2140, 2141, 2142, 2143, 2144, 2145, 2146}",
+          "LOCAL|70|70|0|var70|Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;",
+          "LOCAL|6|6|0|var6|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout$lambda$9$lambda$5$lambda$4$lambda$3$lambda$2",
+          "(Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;Landroid/content/Context;)Lkotlin/Unit;",
+          "{2138, 2139, 2140, 2141, 2142, 2143, 2144, 2145, 2146}",
+          "LOCAL|70|70|0|var70|Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;",
+          "LOCAL|6|6|0|var6|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayout",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "2142",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayout$lambda$9$lambda$5$lambda$4$lambda$3$lambda$2(Lio/intercom/android/sdk/models/Header$Expanded$SocialAccount;Landroid/content/Context;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 706,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayout",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "2134",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayout$lambda$10",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;=var0,Landroidx/compose/ui/Modifier;=var1,I=var3,I=var4",
+        "3154"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout$lambda$10",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{3149, 3150, 3151, 3152, 3153, 3154, 3155, 3156, 3157, 3158}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|3|3|0|var3|I",
+          "LOCAL|4|4|0|var4|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayout$lambda$10",
+          "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{3149, 3150, 3151, 3152, 3153, 3154, 3155, 3156, 3157, 3158}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;",
+          "LOCAL|1|1|0|var1|Landroidx/compose/ui/Modifier;",
+          "LOCAL|3|3|0|var3|I",
+          "LOCAL|4|4|0|var4|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayout",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "3154",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayout$lambda$10(Lio/intercom/android/sdk/m5/conversation/states/ExpandedTeamPresenceState;Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 707,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin$lambda$13",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin$lambda$13",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin$lambda$13",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayoutPreviewWithAssignedAdmin$lambda$13(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 708,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithFin",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithFin$lambda$11",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFin",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFin$lambda$11",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFin",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFin$lambda$11",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithFin",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayoutPreviewWithFin$lambda$11(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 709,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans$lambda$12",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans$lambda$12",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+          "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans$lambda$12",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt",
+        "ExpandedTeamPresenceLayoutPreviewWithFinAndHumans",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/ExpandedTeamPresenceLayoutKt.ExpandedTeamPresenceLayoutPreviewWithFinAndHumans$lambda$12(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

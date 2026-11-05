@@ -1,0 +1,28 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/overlay/InAppNotificationPresenter.java",
+      "before_sha256": "d4ad0e26c5f9b2896805fcaedda9503b994ebaf7c07fac97493988b4502bc5d5",
+      "after_sha256": "61ecea9a9e5c6e48343fc1de2dbbebf4645c75ffbe5cd907a8668f35bfe17225"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AppIdentityInjector$initializeEvents$2.java",
+      "before_sha256": "2bf7767026acb5560761a6ede28fd431a4e355ea11334437de7ccbf918dcd6da",
+      "after_sha256": "63094d7ec11480e2d2e2434fd5ba88f1427b0b9ed60586ac79f5a309fd2e84b7"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/Api$3.java",
+      "before_sha256": "4e20e6c8f0407cb55dd2aceae8b4443605563720d5089b6082c48198260ac865",
+      "after_sha256": "a311e13b4724ca8e90db4f021b5d7dda558679d6412d92a207ae5c3fd8ea22c4"
+    }
+  ],
+  "scope": [
+    "Injector raw regular SupervisorJob84 returns CompletableJob; restore only original deprecated Job-return regular overload SYNTHETIC alongside earlier default case, no source/runtime changes",
+    "InApp foreach immediate original Iterator.next174\u2192CHECKCAST179 before getPosition",
+    "AppIdentity original getNexusClient56 returns base NexusClient\u2192nullcheck62\u2192NexusWrappercast65; lifecycle suspend/result order unchanged",
+    "Api3 extractErrorString eager before Handler; Handler ctor79\u2192callback field83\u2192factory88; IntercomError/status formatting remains callback-only, original user-not-found retry branch untouched"
+  ],
+  "original_evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/last-local-callbacks-54",
+  "method_code_backfill": false
+}

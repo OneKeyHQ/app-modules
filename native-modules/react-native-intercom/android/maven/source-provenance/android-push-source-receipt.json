@@ -1,0 +1,104 @@
+{
+  "status": "PASS_SOURCE_AND_ABI_SYMBOLS",
+  "scope": "FCM4 + SDK marker1 source closure; no push service/token/account execution",
+  "reads_original_sdk": false,
+  "vendor_sdk_on_classpath": false,
+  "vendor_sdk_packaged": false,
+  "runtime_verified": false,
+  "source_prerequisites": [
+    {
+      "receipt": ".build/android-base-source/receipt.json",
+      "receipt_sha256": "5f2eef680600b85d2532debdfc4ff8fbfd16dbe6fdc25b2ae9669597c09937fa",
+      "artifact_sha256": "a4b1c5492029c931d70c852f018243d8b34829f871c9206142fea342ae163ec2"
+    },
+    {
+      "receipt": ".build/android-ui-source/receipt.json",
+      "receipt_sha256": "6f3c65e47149473a05de5f4c139806c605aa504c88b8717bf9e22e514131e03f",
+      "artifact_sha256": "cdf2295861282847a7f36ba207f4c324ecdeace75256b69eaa38a09ae10c41a5"
+    }
+  ],
+  "source_files": 3,
+  "classes": 5,
+  "missing_abi_records": 0,
+  "unexpected_extra_abi_records": 0,
+  "compile_command": [
+    "/opt/homebrew/opt/openjdk@17/bin/javac",
+    "--release",
+    "8",
+    "-Xpkginfo:always",
+    "-proc:none",
+    "-cp",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-000.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-001.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-002.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-003.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-004.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-005.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-006.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-007.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-008.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-009.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-010.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-011.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-012.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-013.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-014.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-015.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-016.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-017.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-018.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-019.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-020.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-021.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-022.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-023.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-024.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-025.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-026.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-027.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-028.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-029.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-030.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-031.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-032.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-033.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-034.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-035.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-036.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-037.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/external-038.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/android-base-source.jar:/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classpath/android-ui-source.jar:/Users/huhuanming/Library/Android/sdk/platforms/android-35/android.jar",
+    "-d",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/classes",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-push/java/io/intercom/android/BuildConfig.java",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-push/java/io/intercom/android/sdk/fcm/IntercomFcmMessengerService.java",
+    "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-push/java/io/intercom/android/sdk/fcm/package-info.java"
+  ],
+  "artifact": {
+    "path": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-push-source/intercom-fcm-marker-18.10.0-source.jar",
+    "sha256": "dc3e28a726d31a920ffee15bf7e3f1d18171f5857334ddc05196aef00a4d06ce"
+  },
+  "input_hashes": [
+    {
+      "path": "source/android/intercom-sdk-push/java/io/intercom/android/BuildConfig.java",
+      "sha256": "67e2689a9903b293b75c0ecb4257907ef139dcc4a060f23eeca9bc1ea0524ab4"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/java/io/intercom/android/sdk/fcm/IntercomFcmMessengerService.java",
+      "sha256": "58a554f44ff5b939ab61d66fa5d0cf1a487565af785c1fe6a3d0e8bceaced6cb"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/java/io/intercom/android/sdk/fcm/package-info.java",
+      "sha256": "35454715cd338114c488e9fb6e947a2516bb630381cc88579797bb75f4bfe90f"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/external-dependencies.json",
+      "sha256": "7827511e86dcb505298de425a788b6f9fe6c17bad7c157476a13e8f23bce8c9a"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/original-abi.tsv",
+      "sha256": "a8184b59cd7959a37971a0d4036b159d8a69900b69545c34aba6bc2958a02305"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/identifier-aliases.tsv",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/AndroidManifest.xml",
+      "sha256": "bf207bc6d4ba68d1d34ac90d6d1b71c832ecd8d09997249e41bf02a6b1fede74"
+    },
+    {
+      "path": "source/android/intercom-sdk-push/proguard.txt",
+      "sha256": "6206dff0ab266baea75e6be7d6fe16d62231135e9180a431a474ee40aaaf1c45"
+    },
+    {
+      "path": "tools/RestoreBuildMetadata.java",
+      "sha256": "e9d07c8cd78dbded9032fd7235d2687410a6cd3d5bc2b570e13ad91f6c82fd0b"
+    },
+    {
+      "path": "tools/check_field_constants.py",
+      "sha256": "98400674a05cc5ba875e88ddc2372dce757d307bb4dfdb63591ced5495de7331"
+    },
+    {
+      "path": "tools/export_field_constants.py",
+      "sha256": "1aeff1d723a79cdbca56a1a0090aef2a5de6759108c143784c16bdf54f8f0359"
+    },
+    {
+      "path": "tools/check_recovered_source.py",
+      "sha256": "3108547ed4e4e9b18f1e98930eac2215918ef7225c38246dc17f2ffde1d366a7"
+    },
+    {
+      "path": "source/android/original-field-constants.json",
+      "sha256": "d035989666a1ed80425c23df624f5f95faebf10208aab16301aa4ca8f59716e9"
+    },
+    {
+      "path": "source/android/tool-dependencies.json",
+      "sha256": "4db958788a037ddb8815e48fef5ed47ac37af7b2d8458d10b80df92fbeb57d2c"
+    },
+    {
+      "path": "scripts/android-build-push-source.py",
+      "sha256": "7d51a2cb1383e8b62571c0ea82eadcdfb3bf280010a69bfc3d585bf873893327"
+    }
+  ]
+}

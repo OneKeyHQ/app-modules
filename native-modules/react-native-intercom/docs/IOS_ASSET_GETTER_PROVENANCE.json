@@ -1,0 +1,607 @@
+{
+  "baseline": "Intercom iOS19.9.1 arm64",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "strictlyMatchedGetters": [
+    {
+      "selector": "streamingCursorImage",
+      "target": "imageNamed:",
+      "CFString": "0x44eab0",
+      "literal": "streaming_cursor",
+      "instructionsSHA256": "f0d19e4ba2e7b43f3e9f4eff7e29548b7288ff1a0bd29a553584f7fa8fbb060a"
+    },
+    {
+      "selector": "messageFailedImage",
+      "target": "imageNamed:",
+      "CFString": "0x44ead0",
+      "literal": "message_failed",
+      "instructionsSHA256": "a31f59578395165024eb50396509a8556c03544ce7995dced7a8b700e0cfa99c"
+    },
+    {
+      "selector": "intercomLogoImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44eaf0",
+      "literal": "intercom_logo",
+      "instructionsSHA256": "dec5266ab3643cb00afb8afbf356d38793faffb274779f8282a6e1ad1e3511ad"
+    },
+    {
+      "selector": "poweredByFinAIAgentIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44eb10",
+      "literal": "powered_by_fin_ai_agent_icon",
+      "instructionsSHA256": "efc8f62e1cf97d14c5557bcb0491ac1cebdb910e08f3ba394882d03699f4d3bc"
+    },
+    {
+      "selector": "closeImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44c670",
+      "literal": "close",
+      "instructionsSHA256": "e3cfff43f4787a7724c308cf0f16f7404bf5849f32e36571c8bfb138bbd50316"
+    },
+    {
+      "selector": "closeImageWithBackground",
+      "target": "imageNamed:",
+      "CFString": "0x44eb50",
+      "literal": "close_with_background",
+      "instructionsSHA256": "06d72494bb5ea17b98403d4e341efa199289bed760d70ce425d2be2360949c27"
+    },
+    {
+      "selector": "closeChevronImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44eb70",
+      "literal": "close_chevron",
+      "instructionsSHA256": "b9a090a58ebebfbecf3cf327d3362e0131f75e0decac294e8b170d26ada58270"
+    },
+    {
+      "selector": "linkIconImage",
+      "target": "imageNamed:",
+      "CFString": "0x44eb90",
+      "literal": "link_icon",
+      "instructionsSHA256": "5960fc0598c3c54c00b427c35edf21a270fa1fa3587b949ff7a37650608c0790"
+    },
+    {
+      "selector": "articleCitationIconImage",
+      "target": "imageNamed:",
+      "CFString": "0x44ebb0",
+      "literal": "article_citation_icon",
+      "instructionsSHA256": "c371f703c724da7811c512aef0fcb44b90c6f3b3e66dbd08bf0bd7cdb892b287"
+    },
+    {
+      "selector": "plusIcon",
+      "target": "tintableSystemImageNamed:",
+      "CFString": "0x44ebd0",
+      "literal": "plus",
+      "instructionsSHA256": "59d07b7edda0ea6098148b1a51d44de5926559fa903f39bc4191ccab60ef8640"
+    },
+    {
+      "selector": "smallPlusIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ebf0",
+      "literal": "icon_plus",
+      "instructionsSHA256": "de87c4ed7cc7681b7bbea3bea58ee9edd691b3c587e9dd5ff180e26bd5258b37"
+    },
+    {
+      "selector": "startConversationImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ec10",
+      "literal": "startConversationIcon",
+      "instructionsSHA256": "431d14796c1c4cae762fe37316e3b3ed3e951971d3ea1d1daa8bd3809fd0206a"
+    },
+    {
+      "selector": "submitButtonBackgroundImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ec30",
+      "literal": "submit_button_background",
+      "instructionsSHA256": "fc1051f3b3bf8cb97aa5e02cd6b4acea9c3aebcd9536588260cfb9e2e73e6c09"
+    },
+    {
+      "selector": "submitButtonBackgroundImageClear",
+      "target": "imageNamed:",
+      "CFString": "0x44ec50",
+      "literal": "submit_button_background_clear",
+      "instructionsSHA256": "baaf3a225855efe231bdd0d9642b72a422d118966d6596805968840d2a415d2e"
+    },
+    {
+      "selector": "submitImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ec70",
+      "literal": "icon_submit",
+      "instructionsSHA256": "779026d80ea2cef641644c24d476d6ad0611c7a35f02e081a70df3ea0ddce37d"
+    },
+    {
+      "selector": "pickerSelector",
+      "target": "imageNamed:",
+      "CFString": "0x44ec90",
+      "literal": "picker_selector",
+      "instructionsSHA256": "a2aed0b90c4bd14c901537cfc8efd82b0868cda6cc3d35303de37f4a945299e5"
+    },
+    {
+      "selector": "dateSelector",
+      "target": "imageNamed:",
+      "CFString": "0x44ecb0",
+      "literal": "date_selector",
+      "instructionsSHA256": "3ffd132940c653c05c3e5a21ca5f657de57e1578198e80eccf9d2e63d61911b3"
+    },
+    {
+      "selector": "greenCheckImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ecd0",
+      "literal": "icon_green_check",
+      "instructionsSHA256": "dca758ded1596aa6fae9cc33f4741baa0823372c2eda5164336a5758b2abe393"
+    },
+    {
+      "selector": "buttonLoadingImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ecf0",
+      "literal": "icon_loading",
+      "instructionsSHA256": "4567eae29b5e5709c4bf43caa4a232540063740a72f1f9493121d3edd3003dc2"
+    },
+    {
+      "selector": "screenActionCheckmark",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ee10",
+      "literal": "screen_action_checkmark",
+      "instructionsSHA256": "f8331346de69f3c6d4e61866b4c32e2cd771a91556b4609a8c975f7b322b33bb"
+    },
+    {
+      "selector": "carouselLoadingImage",
+      "target": "imageNamed:",
+      "CFString": "0x44ee30",
+      "literal": "carousel_loading_state",
+      "instructionsSHA256": "b4189a43a6ca317c9460ba7d1fe2eac7d0e0c13ffc06c3ab722140c13d611312"
+    },
+    {
+      "selector": "articleLoadingImage",
+      "target": "imageNamed:",
+      "CFString": "0x44ee50",
+      "literal": "article_loading_state",
+      "instructionsSHA256": "a4e5afa2d43dd4505162ba54a2d29102e23b57dc946833ac06fa1d7d5539d34d"
+    },
+    {
+      "selector": "launcherImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ea90",
+      "literal": "launcher",
+      "instructionsSHA256": "2b49f3fa7cf5c0ece90e5bb80c832405ddc60e13cb28e14fd7534295d717afc2"
+    },
+    {
+      "selector": "infoIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44eeb0",
+      "literal": "info_icon",
+      "instructionsSHA256": "b79e4eb3ec4263b34c61b5a25665b7d93ee82410e8b493fadfa6ad74459acbca"
+    },
+    {
+      "selector": "snoozeIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44eed0",
+      "literal": "snooze_icon",
+      "instructionsSHA256": "110c0178e839cc328bd822b94c64fdf3bede11ec3464b3ea9a5331b91e78b45d"
+    },
+    {
+      "selector": "sendIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44eef0",
+      "literal": "send_icon",
+      "instructionsSHA256": "320ae928bf910228482e6c0a1e530cc7b56499a6413043a202b86372edf414bb"
+    },
+    {
+      "selector": "copiedIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ef30",
+      "literal": "copied_icon",
+      "instructionsSHA256": "f6334821440022dd20a09d954d2340eba276d55d52db9cef70ad56fb085ca557"
+    },
+    {
+      "selector": "expandIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ef50",
+      "literal": "expand_icon",
+      "instructionsSHA256": "0146823f969d576610a375f24dc7ca319baa01c97002262fb24528098771c3c2"
+    },
+    {
+      "selector": "closeIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ef70",
+      "literal": "close_icon",
+      "instructionsSHA256": "5f4b4a30dc64976cec1c96a3bb8371a51b4c8aedd1112aa2c8ede9c427f6be57"
+    },
+    {
+      "selector": "homescreenFailedImage",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ef90",
+      "literal": "homescreenFailed",
+      "instructionsSHA256": "d0626c12ff54641efed4220b686a96d1adcae91d4931f4561669405c2f4c7dd6"
+    },
+    {
+      "selector": "textInputIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44efb0",
+      "literal": "icon_text_input",
+      "instructionsSHA256": "85b87f7ab336a1495a3cd2a3720d9e72c47054c221e48d463c3e39a447e5e91e"
+    },
+    {
+      "selector": "textInputSelectedIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44efb0",
+      "literal": "icon_text_input",
+      "instructionsSHA256": "6fed53a2256cdbc722c95e7e91561919f18b67261bad0316bca167697045e174"
+    },
+    {
+      "selector": "photoInputIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44efd0",
+      "literal": "icon_photo_input",
+      "instructionsSHA256": "a9897b37bd1f2336a8803edad5ee82342f6f630c49e609e003d578c6526ce9e5"
+    },
+    {
+      "selector": "photoInputSelectedIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44efd0",
+      "literal": "icon_photo_input",
+      "instructionsSHA256": "12935aa41c12fc0e76eb53967134322fd5d7618b652c9b4f7317802788be794d"
+    },
+    {
+      "selector": "expandPhotosIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44eff0",
+      "literal": "icon_expand_photos",
+      "instructionsSHA256": "f056b08ff88a9ef8d26f14fa2fa90626a8036d6897e43507bd0c05cea08ea958"
+    },
+    {
+      "selector": "videoInputIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44f010",
+      "literal": "icon_video_input",
+      "instructionsSHA256": "cc0c0181b72664b81320baea3d18b9a09eac63dea21d5204ed60d45e9139d634"
+    },
+    {
+      "selector": "cameraIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44f030",
+      "literal": "camera_icon",
+      "instructionsSHA256": "0a68938dea4b86fa484b066870db8c1d14f7bdb25e70bd95ba7115bdefffe502"
+    },
+    {
+      "selector": "attachmentIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44f050",
+      "literal": "icon_attachment",
+      "instructionsSHA256": "0d8ac8c14957beb5ea781ced5e7203226b05a9912e731e660fa268821e7e68fe"
+    },
+    {
+      "selector": "gif",
+      "target": "imageNamed:",
+      "CFString": "0x44f070",
+      "literal": "gif",
+      "instructionsSHA256": "61ae185ce58717db61b1b6d494d9c5bbd0c6c62fe2bf18b492f4cbad02f8825b"
+    },
+    {
+      "selector": "paperclip",
+      "target": "imageNamed:",
+      "CFString": "0x44f090",
+      "literal": "paperclip",
+      "instructionsSHA256": "1d30b5bf72d4662fc78ac4916d19186fb1ab211418d05663c873a20c3f931c35"
+    },
+    {
+      "selector": "mic",
+      "target": "imageNamed:",
+      "CFString": "0x44f0b0",
+      "literal": "mic",
+      "instructionsSHA256": "f5a17ca182a301e01b03cd3b0dc067dab78f3c9dc23ceddccae4f0084b8fc8e3"
+    },
+    {
+      "selector": "footerLinkIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f0d0",
+      "literal": "footer_link_icon",
+      "instructionsSHA256": "07bc6ffc63ef8c8c52d14d0f77eb28dd59006b08f70ffbddff00be582b481c95"
+    },
+    {
+      "selector": "teammateTimeIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f0f0",
+      "literal": "teammate_location",
+      "instructionsSHA256": "4c9322e04fe4a2087f54d4a579d473ef2312969c0c789f7fa0826de78334696e"
+    },
+    {
+      "selector": "searchIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f110",
+      "literal": "search_icon",
+      "instructionsSHA256": "0040a5747a8973fdff1d3eedb901c3b4d249b875c64054fbd52b8c5c8e813a53"
+    },
+    {
+      "selector": "composeIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f150",
+      "literal": "compose",
+      "instructionsSHA256": "1f19d71a1738aab33ff18dff07957674a92b409d067c875e6c8b3a7e9c705b92"
+    },
+    {
+      "selector": "inboxIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f170",
+      "literal": "inbox_icon",
+      "instructionsSHA256": "cc9222d43e62254c297096af8f9c87b74fc7d1b7bce6cb2a8146e133bf292079"
+    },
+    {
+      "selector": "inboxNavIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f190",
+      "literal": "nav_icon_inbox",
+      "instructionsSHA256": "938cad5083270053fa3ae196710dead16874ebbbe43f1aee723e4efe3a91ef42"
+    },
+    {
+      "selector": "chevronNavIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f1b0",
+      "literal": "nav_icon_chevron",
+      "instructionsSHA256": "da6f2fe20783791211bd6712423a33e1b013a80b441379aeb12b83411bb8f79b"
+    },
+    {
+      "selector": "closeNavIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f1d0",
+      "literal": "nav_icon_close",
+      "instructionsSHA256": "357bf3d14f8221786609b85d4691590ac6d1fea342ab46645a65542fed33cedc"
+    },
+    {
+      "selector": "menuNavIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f1f0",
+      "literal": "nav_icon_menu",
+      "instructionsSHA256": "5ce975f43fe18788cb7f6024e7671112abe7b7fd7547b15f92dfc237711204a6"
+    },
+    {
+      "selector": "searchBrowseNavIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f210",
+      "literal": "nav_icon_search_browse",
+      "instructionsSHA256": "5c54756ff0d3437773763a90bf50f3b9d7ae355beff0145987085619a0a5e2eb"
+    },
+    {
+      "selector": "informationIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f230",
+      "literal": "information_icon",
+      "instructionsSHA256": "4856eaf8ca1380f8de725a76acbfef6fd03e2c52cbb9c00699b43fc950cb657c"
+    },
+    {
+      "selector": "messagesLoadingImage",
+      "target": "imageNamed:",
+      "CFString": "0x44f250",
+      "literal": "messages_loading_state",
+      "instructionsSHA256": "4cc89f3a2207201a439a98db8520c665894dd2706ed910ecfe6dab2d15cd4fc9"
+    },
+    {
+      "selector": "starFillImage",
+      "target": "imageNamed:",
+      "CFString": "0x44f270",
+      "literal": "star_fill",
+      "instructionsSHA256": "84f7f321c0b1ced03ee106d27f9ed650ae942cdcb4c4169723df1bdf65d6e9c6"
+    },
+    {
+      "selector": "starUnselectedImage",
+      "target": "imageNamed:",
+      "CFString": "0x44f290",
+      "literal": "star_unselected_border",
+      "instructionsSHA256": "7194bb2be113571bfe4a2632b480a9315d429c68517dbb8f81b5aa653e73ece6"
+    },
+    {
+      "selector": "starSelectedImage",
+      "target": "imageNamed:",
+      "CFString": "0x44f2b0",
+      "literal": "star_selected_border",
+      "instructionsSHA256": "8c7843b1948db5f5a63f1e97fea548b4f92cb1c9184498deb4c18ff447af286e"
+    },
+    {
+      "selector": "externalLinkIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f2d0",
+      "literal": "external_link_icon",
+      "instructionsSHA256": "33db31f5e20806146857d77d326140495605f8118dee3891323b908d60b18a7f"
+    },
+    {
+      "selector": "surveyLoadingImage",
+      "target": "imageNamed:",
+      "CFString": "0x44f2f0",
+      "literal": "survey_loading_state",
+      "instructionsSHA256": "3d72f5a7dbaea6f0958a87a521ce2ce656b9ae774b049b1d90f5e83eaae11b06"
+    },
+    {
+      "selector": "bellIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f310",
+      "literal": "bell",
+      "instructionsSHA256": "ffd86b2045c306c7aeed433417d62489792bb48969ceb51ef3ac409e459016d0"
+    },
+    {
+      "selector": "descriptionIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44ca70",
+      "literal": "description",
+      "instructionsSHA256": "bf548a9b069c7f0f74bbb09db572da123df61896f846438bb42a7fbffddb3eee"
+    },
+    {
+      "selector": "ticketIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f330",
+      "literal": "ticket_icon",
+      "instructionsSHA256": "373c4b9f27cdcc0bda89d7cabc6b37d98dd87edaa2286dd9970f29d2f4be614e"
+    },
+    {
+      "selector": "ticketSubmittedIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f350",
+      "literal": "ticket_submitted_icon",
+      "instructionsSHA256": "dd12c605e99a7e4920f5ca3ee7b321e2413362d07873649cc4b1dbfbb2c4b3a1"
+    },
+    {
+      "selector": "ticketWaitingOnYouIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f370",
+      "literal": "ticket_waiting_on_you_icon",
+      "instructionsSHA256": "9fc8e3c6ed5571ad44ed43645c13bf16df5f3dc48d9a7a4632066b97792e2aae"
+    },
+    {
+      "selector": "ticketResolvedIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f390",
+      "literal": "ticket_resolved_icon",
+      "instructionsSHA256": "4c2dc53fd0720332af01e6582504b45fea969818f41ec439b272cf5ff2477cd8"
+    },
+    {
+      "selector": "stopwatchIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f3b0",
+      "literal": "stopwatch",
+      "instructionsSHA256": "f23bbfc683994b76d81c843730969ef2745518c405dae3b6d94ab175fdedbe3f"
+    },
+    {
+      "selector": "successImage",
+      "target": "imageNamed:",
+      "CFString": "0x44f3d0",
+      "literal": "success_image",
+      "instructionsSHA256": "4784cf1070ae5c4b35f077ee6e010a5dc1db22898d32fe888a62d690ee5a537a"
+    },
+    {
+      "selector": "trashIcon",
+      "target": "tintableSystemImageNamed:",
+      "CFString": "0x44f3f0",
+      "literal": "trash",
+      "instructionsSHA256": "ca2ff2b544014135988ed9f07da639009de2babc2a5967dcdfce6970e27d6135"
+    },
+    {
+      "selector": "playIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f410",
+      "literal": "play_icon@3x",
+      "instructionsSHA256": "8b21fb120c4ec6b44a3846e07d0a897992df3db3cc4f9361339c30224264ef20"
+    },
+    {
+      "selector": "messageSpaceIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f430",
+      "literal": "message_space_icon",
+      "instructionsSHA256": "4cb4d15f69501742d05192454fe92dc3dbf3fd1c773165df5c7855933a65e26e"
+    },
+    {
+      "selector": "articlesIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f450",
+      "literal": "articles",
+      "instructionsSHA256": "4ac31e5f96c3e288eb9b18b38a2c684d4e130fd70d4506147f0179c9800ed31e"
+    },
+    {
+      "selector": "helpIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f470",
+      "literal": "help_icon",
+      "instructionsSHA256": "291687fc07b8364b4bef2dcc55ba484902122ceb59bfbd4fa9346eea3c4baf56"
+    },
+    {
+      "selector": "homeExternalLinkIcon",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f490",
+      "literal": "home_external_link_icon",
+      "instructionsSHA256": "5663f960bcc6a8812176a979508adb906c41fbce38ea45fc2bc4ba0053ba3662"
+    },
+    {
+      "selector": "roundedChevronDown",
+      "target": "tintableImageNamed:",
+      "CFString": "0x44f4d0",
+      "literal": "rounded_chevron_down",
+      "instructionsSHA256": "1d73dbe3171f78194eade649e422d20e67749efecbba423a46f486d21e7641d4"
+    },
+    {
+      "selector": "finNameIcon",
+      "target": "imageNamed:",
+      "CFString": "0x44f510",
+      "literal": "icon_fin_name",
+      "instructionsSHA256": "4ae1a89a27fd7eb7d213242691e65e0f59f8233562e8f1475f70ed8fbd4e74bc"
+    },
+    {
+      "selector": "booleanButtonImage",
+      "target": "imageNamed:->resizableImageWithCapInsets:",
+      "literal": "boolean_button",
+      "CFString": "0x44ed10",
+      "instructionsSHA256": "3ec8dea93ad6259b52b452d82cb394026ac5d2a9a1810a2a204cc018b05aa307"
+    },
+    {
+      "selector": "booleanButtonImageSelected",
+      "target": "imageNamed:->resizableImageWithCapInsets:",
+      "literal": "boolean_button_selected",
+      "CFString": "0x44ed30",
+      "instructionsSHA256": "5159e4a0d4e76df8a70f9e228dbb8b8fd353a5e706884c77e02b9b05e1e18112"
+    },
+    {
+      "selector": "booleanButtonLeftImage",
+      "target": "imageNamed:->resizableImageWithCapInsets:",
+      "literal": "boolean_button_left",
+      "CFString": "0x44ed50",
+      "instructionsSHA256": "871c22ae67cd0ef8363afed183d85134c8d0abe61ed1d70a9f90b982e51d8856"
+    },
+    {
+      "selector": "booleanButtonLeftImageSelected",
+      "target": "imageNamed:->resizableImageWithCapInsets:",
+      "literal": "boolean_button_left_selected",
+      "CFString": "0x44ed70",
+      "instructionsSHA256": "deea43624117b481fd9dfd41ee86ad9305caa33629b6c8815221ad0c2fe899b9"
+    },
+    {
+      "selector": "booleanButtonRightImage",
+      "target": "imageNamed:->resizableImageWithCapInsets:",
+      "literal": "boolean_button_right",
+      "CFString": "0x44ed90",
+      "instructionsSHA256": "aa75fab23eccbd0ba66c9ad33dc243db95459654408b2acf85d9dd58047ae623"
+    },
+    {
+      "selector": "booleanButtonRightImageSelected",
+      "target": "imageNamed:->resizableImageWithCapInsets:",
+      "literal": "boolean_button_right_selected",
+      "CFString": "0x44edb0",
+      "instructionsSHA256": "90be887e587a1b37b2a7daa60894acc79082ab7341bf5cf648ac57ae2bca573b"
+    },
+    {
+      "selector": "soundForMessageSending",
+      "target": "ICMAssets.urlForFilename:",
+      "literal": "message_sending",
+      "CFString": "0x44f5d0",
+      "instructionsSHA256": "2cad1fd0c82ff13fbb63dc15234429bec022a277cb3224572d71e22ecf747ae9"
+    },
+    {
+      "selector": "soundForMessageSendingFailure",
+      "target": "ICMAssets.urlForFilename:",
+      "literal": "message_failed",
+      "CFString": "0x44ead0",
+      "instructionsSHA256": "a3cf8117140fc5d8d61b7a1506ba31bc370e20fab0c9a2aa8ec32ce080cbd46b"
+    },
+    {
+      "selector": "soundForIncomingAdminMessage",
+      "target": "ICMAssets.urlForFilename:",
+      "literal": "admin_reply_delivered",
+      "CFString": "0x44f5f0",
+      "instructionsSHA256": "b881568423f018233af0e71e0da727fc180e3bd868a18ae696e1122274b19e5f"
+    },
+    {
+      "selector": "soundForIncomingOperatorMessage",
+      "target": "ICMAssets.urlForFilename:",
+      "literal": "message_operator",
+      "CFString": "0x44f610",
+      "instructionsSHA256": "a6ecce5a06305003a8de88c3093bd66f6a44130812e0409dd2cd37d2f8b57045"
+    }
+  ],
+  "manualRemainingMethods": [
+    "copyIcon",
+    "createMessageIcon",
+    "tintableSystemImageNamed:",
+    "urlForFilename:",
+    "avatar constructors/drawing",
+    "imageNamed:",
+    "tintableImageNamed:"
+  ],
+  "missingSoundLogs": {
+    "bundle": "[Intercom] ERROR - 💥 There was an error trying to access the Intercom.bundle but it is not present. Check to see that it is included in your copy resources build phase.",
+    "file": "[Intercom] ERROR - 💥 Unable to play sounds as the file inside the Intercom.bundle can't be found."
+  }
+}

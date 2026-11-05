@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="io.intercom.android.sdk" >
+
+    <uses-sdk android:minSdkVersion="23" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+
+            <category android:name="android.intent.category.BROWSABLE" />
+
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Audio recording feature - not required, allows app to be installed on devices without microphone -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
+    <application android:supportsRtl="true" >
+        <activity
+            android:name="io.intercom.android.sdk.lightbox.LightBoxActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:theme="@style/Intercom_LightBoxTheme"
+            android:windowSoftInputMode="stateUnchanged|adjustResize" />
+        <activity
+            android:name="io.intercom.android.sdk.post.IntercomPostActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Intercom_PostTheme"
+            android:windowSoftInputMode="stateHidden" />
+        <activity
+            android:name="io.intercom.android.sdk.activities.IntercomNoteActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Intercom_NoteTheme"
+            android:windowSoftInputMode="stateUnchanged|adjustResize" />
+        <activity
+            android:name="io.intercom.android.sdk.activities.IntercomSheetActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Intercom_ModalActivityTheme"
+            android:windowSoftInputMode="stateHidden" />
+        <activity
+            android:name="io.intercom.android.sdk.activities.IntercomCarouselActivity"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Intercom_CarouselTheme"
+            android:windowSoftInputMode="stateHidden" />
+        <activity
+            android:name="io.intercom.android.sdk.helpcenter.articles.IntercomArticleActivity"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:theme="@style/Intercom_TransparentTheme_WithAnimations"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name="io.intercom.android.sdk.survey.ui.IntercomSurveyActivity"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:theme="@style/Intercom.BaseMaterial.Compose"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name="io.intercom.android.sdk.helpcenter.search.IntercomArticleSearchActivity"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:theme="@style/Intercom.BaseMaterial" />
+        <activity
+            android:name="io.intercom.android.sdk.m5.IntercomRootActivity"
+            android:enableOnBackInvokedCallback="true"
+            android:theme="@style/Intercom_TransparentTheme_WithAnimations"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name="io.intercom.android.sdk.m5.preview.ui.IntercomPreviewActivity"
+            android:theme="@style/Intercom_PreviewTheme" />
+        <activity
+            android:name="io.intercom.android.sdk.m5.bubble.IntercomBubbleActivity"
+            android:allowEmbedded="true"
+            android:documentLaunchMode="always"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:theme="@style/Intercom_TransparentTheme_WithAnimations" />
+
+        <provider
+            android:name="io.intercom.android.sdk.IntercomInitializeContentProvider"
+            android:authorities="${applicationId}.IntercomInitializeContentProvider"
+            android:exported="false" />
+        <provider
+            android:name="io.intercom.android.sdk.IntercomFileProvider"
+            android:authorities="${applicationId}.IntercomFileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true" >
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/intercom_file_paths" >
+            </meta-data>
+        </provider>
+    </application>
+
+</manifest>

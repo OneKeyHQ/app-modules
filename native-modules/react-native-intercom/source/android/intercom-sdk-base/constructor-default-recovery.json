@@ -1,0 +1,2307 @@
+{
+  "status": "SOURCE_RESTORED_NOT_COMPILED",
+  "rules": [
+    "Only this-delegating constructors with ordered independent parameter defaults",
+    "Each preceding statement is a mask test with one parameter assignment",
+    "No default expression references any reassigned parameter",
+    "this arguments are simple names; default evaluation order equals original prefix order"
+  ],
+  "constructors": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AppIdentityInjector.java",
+      "start": 13206,
+      "end": 13301,
+      "replacement": "this(var1, var2, var3, (((var6 & 8) != 0) ? null : var4), var5);",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/GalleryImage.java",
+      "start": 6939,
+      "end": 7685,
+      "replacement": "this((((var12 & 1) != 0) ? \"\" : var1), (((var12 & 2) != 0) ? \"\" : var2), (((var12 & 4) != 0) ? Uri.EMPTY : var3), (((var12 & 8) != 0) ? \"\" : var4), (((var12 & 16) != 0) ? \"\" : var5), (((var12 & 32) != 0) ? 0 : var6), (((var12 & 64) != 0) ? 0 : var7), (((var12 & 128) != 0) ? 0 : var8), (((var12 & 256) != 0) ? false : var9), (((var12 & 512) != 0) ? false : var10), (((var12 & 1024) != 0) ? \"\" : var11));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var11",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/IntercomError.java",
+      "start": 2260,
+      "end": 2392,
+      "replacement": "this((((var3 & 1) != 0) ? 0 : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/DeDuperStore$DeDuperFields.java",
+      "start": 2270,
+      "end": 2405,
+      "replacement": "this((((var4 & 1) != 0) ? \"{}\" : var1), (((var4 & 2) != 0) ? 0L : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/ShutdownStore$ShutdownFields.java",
+      "start": 2957,
+      "end": 3160,
+      "replacement": "this((((var4 & 1) != 0) ? null : var1), (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/UserJwtExpiryInterceptor.java",
+      "start": 3628,
+      "end": 3723,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? LumberMill.getLogger() : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Author.java",
+      "start": 4636,
+      "end": 4905,
+      "replacement": "this((((var5 & 1) != 0) ? null : var1), (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/BlockAttachment.java",
+      "start": 5485,
+      "end": 5884,
+      "replacement": "this((((var9 & 1) != 0) ? null : var1), (((var9 & 2) != 0) ? null : var2), (((var9 & 4) != 0) ? null : var3), (((var9 & 8) != 0) ? null : var4), (((var9 & 16) != 0) ? 0L : var5), (((var9 & 32) != 0) ? 0L : var7));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/ConversationRatingOption.java",
+      "start": 3757,
+      "end": 3958,
+      "replacement": "this((((var4 & 1) != 0) ? -1 : var1), (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/FormField.java",
+      "start": 5550,
+      "end": 5848,
+      "replacement": "this(var1, var2, (((var9 & 4) != 0) ? null : var3), var4, var5, (((var9 & 32) != 0) ? null : var6), (((var9 & 64) != 0) ? null : var7), (((var9 & 128) != 0) ? false : var8));",
+      "ordered_defaults": "var3,var6,var7,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Image.java",
+      "start": 5224,
+      "end": 5621,
+      "replacement": "this((((var7 & 1) != 0) ? null : var1), (((var7 & 2) != 0) ? null : var2), (((var7 & 4) != 0) ? null : var3), (((var7 & 8) != 0) ? null : var4), (((var7 & 16) != 0) ? 0 : var5), (((var7 & 32) != 0) ? 0 : var6));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/ListOption.java",
+      "start": 3408,
+      "end": 3497,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Options.java",
+      "start": 3275,
+      "end": 3498,
+      "replacement": "this((((var4 & 1) != 0) ? false : var1), (((var4 & 2) != 0) ? CollectionsKt.emptyList() : var2), (((var4 & 4) != 0) ? \"\" : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/TableCell.java",
+      "start": 2903,
+      "end": 2995,
+      "replacement": "this((((var2 & 1) != 0) ? CollectionsKt.emptyList() : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/TableRow.java",
+      "start": 2892,
+      "end": 2984,
+      "replacement": "this((((var2 & 1) != 0) ? CollectionsKt.emptyList() : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/TicketAttribute.java",
+      "start": 4890,
+      "end": 5013,
+      "replacement": "this(var1, var3, var4, var5, var6, (((var8 & 32) != 0) ? CollectionsKt.emptyList() : var7));",
+      "ordered_defaults": "var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/api/HelpCenterArticleSearchResult.java",
+      "start": 3368,
+      "end": 3571,
+      "replacement": "this(var1, (((var5 & 2) != 0) ? \"\" : var2), (((var5 & 4) != 0) ? \"\" : var3), (((var5 & 8) != 0) ? \"\" : var4));",
+      "ordered_defaults": "var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/Article.java",
+      "start": 4460,
+      "end": 4537,
+      "replacement": "this((((var3 & 1) != 0) ? null : var1), var2);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleMetadata.java",
+      "start": 2328,
+      "end": 2405,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleStatsArguments.java",
+      "start": 3074,
+      "end": 3210,
+      "replacement": "this((((var3 & 1) != 0) ? \"\" : var1), (((var3 & 2) != 0) ? false : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewModel.java",
+      "start": 10580,
+      "end": 10930,
+      "replacement": "this(var1, var2, var3, var4, var5, (((var13 & 32) != 0) ? false : var6), (((var13 & 64) != 0) ? false : var7), (((var13 & 128) != 0) ? Dispatchers.getIO() : var8), var9, var10, var11, (((var13 & 2048) != 0) ? false : var12));",
+      "ordered_defaults": "var6,var7,var8,var12",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewState$ConversationState.java",
+      "start": 2512,
+      "end": 2626,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? string.intercom_continue_the_conversation : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewState$ReactionState.java",
+      "start": 3889,
+      "end": 4004,
+      "replacement": "this(var1, (((var5 & 2) != 0) ? ArticleViewState$Reaction.None : var2), var3, var4);",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewState$TeamPresenceState.java",
+      "start": 8112,
+      "end": 8306,
+      "replacement": "this(var1, var2, var3, var4, var5, var6, var7, var8, (((var11 & 256) != 0) ? false : var9), (((var11 & 512) != 0) ? null : var10));",
+      "ordered_defaults": "var9,var10",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$ArticleActivityArguments.java",
+      "start": 3395,
+      "end": 3546,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? false : var3), (((var5 & 8) != 0) ? false : var4));",
+      "ordered_defaults": "var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/collections/HelpCenterCollection.java",
+      "start": 5780,
+      "end": 6046,
+      "replacement": "this((((var6 & 1) != 0) ? \"\" : var1), var2, (((var6 & 4) != 0) ? \"\" : var3), (((var6 & 8) != 0) ? 0 : var4), (((var6 & 16) != 0) ? 0 : var5));",
+      "ordered_defaults": "var1,var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchResultRow$ArticleResultRow.java",
+      "start": 3480,
+      "end": 3624,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? \"\" : var3), (((var5 & 8) != 0) ? 8 : var4));",
+      "ordered_defaults": "var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.java",
+      "start": 10211,
+      "end": 10395,
+      "replacement": "this(var1, var2, var3, (((var8 & 8) != 0) ? false : var4), (((var8 & 16) != 0) ? Dispatchers.getIO() : var5), var6, var7);",
+      "ordered_defaults": "var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/HelpCenterArticleSearchResponse$Highlight.java",
+      "start": 4294,
+      "end": 4427,
+      "replacement": "this((((var3 & 1) != 0) ? \"\" : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/HelpCenterArticleSearchResponse.java",
+      "start": 6530,
+      "end": 6862,
+      "replacement": "this(var1, (((var6 & 2) != 0) ? \"\" : var2), (((var6 & 4) != 0) ? \"\" : var3), (((var6 & 8) != 0) ? \"\" : var4), (((var6 & 16) != 0) ? new HelpCenterArticleSearchResponse$Highlight(null, null, 3, null) : var5));",
+      "ordered_defaults": "var2,var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/IntercomArticleSearchActivity$ArticleSearchArgs.java",
+      "start": 1865,
+      "end": 1937,
+      "replacement": "this((((var2 & 1) != 0) ? false : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/Author.java",
+      "start": 4868,
+      "end": 5036,
+      "replacement": "this(var1, (((var4 & 2) != 0) ? \"\" : var2), (((var4 & 4) != 0) ? new Avatar(null, null, 3, null) : var3));",
+      "ordered_defaults": "var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/Avatar.java",
+      "start": 4112,
+      "end": 4245,
+      "replacement": "this((((var3 & 1) != 0) ? \"\" : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/HelpCenterArticle.java",
+      "start": 4162,
+      "end": 4237,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/HelpCenterCollectionContent.java",
+      "start": 9462,
+      "end": 9959,
+      "replacement": "this(var1, (((var9 & 2) != 0) ? \"\" : var2), (((var9 & 4) != 0) ? \"\" : var3), (((var9 & 8) != 0) ? CollectionsKt.emptyList() : var4), (((var9 & 16) != 0) ? CollectionsKt.emptyList() : var5), (((var9 & 32) != 0) ? CollectionsKt.emptyList() : var6), var7, (((var9 & 128) != 0) ? CollectionsKt.emptyList() : var8));",
+      "ordered_defaults": "var2,var3,var4,var5,var6,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/HelpCenterSection.java",
+      "start": 4790,
+      "end": 4946,
+      "replacement": "this((((var3 & 1) != 0) ? CollectionsKt.emptyList() : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse$ServerError.java",
+      "start": 2526,
+      "end": 2603,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponseAdapterFactory.java",
+      "start": 2715,
+      "end": 2937,
+      "replacement": "this((((var2 & 1) != 0) ? ((kotlin.jvm.functions.Function1)(recoveredArgument_116_0)->NetworkResponseAdapterFactory._init_$lambda$0((java.lang.Throwable)recoveredArgument_116_0)) : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/AppIdentityStore$AppCredentials.java",
+      "start": 2395,
+      "end": 2528,
+      "replacement": "this((((var3 & 1) != 0) ? \"\" : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/UserIdentityStore$UserFields.java",
+      "start": 4744,
+      "end": 5200,
+      "replacement": "this((((var8 & 1) != 0) ? \"\" : var1), (((var8 & 2) != 0) ? \"\" : var2), (((var8 & 4) != 0) ? \"\" : var3), (((var8 & 8) != 0) ? \"\" : var4), (((var8 & 16) != 0) ? \"\" : var5), (((var8 & 32) != 0) ? \"\" : var6), (((var8 & 64) != 0) ? \"\" : var7));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/UserJwtRefresher.java",
+      "start": 9514,
+      "end": 10136,
+      "replacement": "this(var1, var2, var3, (((var9 & 8) != 0) ? TimeProvider.SYSTEM : var4), (((var9 & 16) != 0) ? UserJwtRefresher$1.INSTANCE : var5), (((var9 & 32) != 0) ? ((kotlin.jvm.functions.Function0)()->UserJwtRefresher._init_$lambda$0()) : var6), (((var9 & 64) != 0) ? ((kotlin.jvm.functions.Function1)(recoveredArgument_135_0)->UserJwtRefresher._init_$lambda$1((java.lang.Runnable)recoveredArgument_135_0)) : var7), (((var9 & 128) != 0) ? LumberMill.getLogger() : var8));",
+      "ordered_defaults": "var4,var5,var6,var7,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/config/AppSpecificStorageConfiguration.java",
+      "start": 1922,
+      "end": 1993,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/config/Configuration.java",
+      "start": 6423,
+      "end": 6916,
+      "replacement": "this((((var9 & 1) != 0) ? VideoQuality.MEDIUM : var1), (((var9 & 2) != 0) ? true : var2), (((var9 & 4) != 0) ? null : var3), (((var9 & 8) != 0) ? false : var4), (((var9 & 16) != 0) ? false : var5), (((var9 & 32) != 0) ? null : var6), (((var9 & 64) != 0) ? null : var7), var8);",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/config/SharedStorageConfiguration.java",
+      "start": 2770,
+      "end": 2907,
+      "replacement": "this((((var3 & 1) != 0) ? null : var1), (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/video/Result.java",
+      "start": 3301,
+      "end": 3455,
+      "replacement": "this(var1, var2, var3, (((var7 & 8) != 0) ? 0L : var4), (((var7 & 16) != 0) ? null : var6));",
+      "ordered_defaults": "var4,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/ErrorState$WithCTA.java",
+      "start": 4404,
+      "end": 4787,
+      "replacement": "this((((var6 & 1) != 0) ? drawable.intercom_ic_warning : var1), (((var6 & 2) != 0) ? string.intercom_spaces_error_title : var2), (((var6 & 4) != 0) ? string.intercom_spaces_error_description : var3), (((var6 & 8) != 0) ? string.intercom_reload : var4), var5);",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/ErrorState$WithoutCTA.java",
+      "start": 3254,
+      "end": 3547,
+      "replacement": "this((((var4 & 1) != 0) ? drawable.intercom_ic_warning : var1), (((var4 & 2) != 0) ? string.intercom_spaces_error_title : var2), (((var4 & 4) != 0) ? string.intercom_spaces_error_description : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/IntercomPrimaryButton.java",
+      "start": 4984,
+      "end": 5124,
+      "replacement": "this(var1, (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? 0 : var3));",
+      "ordered_defaults": "var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/TicketStatusHeaderArgs.java",
+      "start": 2613,
+      "end": 2718,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? FontWeight.Companion.getNormal() : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/avatar/AvatarWrapper.java",
+      "start": 3655,
+      "end": 3733,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? false : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/AblyEventData.java",
+      "start": 3342,
+      "end": 3425,
+      "replacement": "this(var1, var3, (((var5 & 4) != 0) ? null : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/ConversationRepository.java",
+      "start": 12215,
+      "end": 12803,
+      "replacement": "this((((var8 & 1) != 0) ? Injector.get().getMessengerApi() : var1), (((var8 & 2) != 0) ? new UploadRepository(null, null, null, null, 15, null) : var2), (((var8 & 4) != 0) ? Injector.get().getApi() : var3), (((var8 & 8) != 0) ? Injector.get().getUserIdentity() : var4), (((var8 & 16) != 0) ? Injector.get().getAblyManager() : var5), (((var8 & 32) != 0) ? Injector.get().getNexusClient() : var6), var7);",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository.java",
+      "start": 6024,
+      "end": 6270,
+      "replacement": "this(var1, (((var4 & 2) != 0) ? Injector.get().getApplication() : var2), (((var4 & 4) != 0) ? ((kotlin.jvm.functions.Function0)()->MediaUploadRepository._init_$lambda$0()) : var3));",
+      "ordered_defaults": "var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/NexusEventsRepository.java",
+      "start": 3530,
+      "end": 3728,
+      "replacement": "this((((var4 & 1) != 0) ? Injector.get().getNexusClient() : var1), (((var4 & 2) != 0) ? Injector.get().getUserIdentity() : var2), var3);",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/ParsedNexusEvent$ConversationNexusEvent$NewComment.java",
+      "start": 4041,
+      "end": 4190,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/errors/VoiceTranscriptionError$FileTooLarge.java",
+      "start": 1509,
+      "end": 1580,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/errors/VoiceTranscriptionError$RecordingFailed.java",
+      "start": 1993,
+      "end": 2064,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/errors/VoiceTranscriptionError$TranscriptionFailed.java",
+      "start": 1997,
+      "end": 2068,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationReducer.java",
+      "start": 6537,
+      "end": 6822,
+      "replacement": "this((((var3 & 1) != 0) ? ((kotlin.jvm.functions.Function0)()->ConversationReducer._init_$lambda$0()) : var1), (((var3 & 2) != 0) ? ((kotlin.jvm.functions.Function0)()->ConversationReducer._init_$lambda$1()) : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/BottomBarUiState.java",
+      "start": 4789,
+      "end": 4921,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? BottomBarUiState$BottomBadgeState$None.INSTANCE : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$ConversationEnded$ConversationEndedCta.java",
+      "start": 3279,
+      "end": 3362,
+      "replacement": "this(var1, var2, (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$ConversationEnded.java",
+      "start": 3352,
+      "end": 3429,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$Hidden.java",
+      "start": 1900,
+      "end": 1971,
+      "replacement": "this((((var2 & 1) != 0) ? true : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput.java",
+      "start": 5657,
+      "end": 6010,
+      "replacement": "this(var1, var2, (((var7 & 4) != 0) ? false : var3), (((var7 & 8) != 0) ? CollectionsKt.emptyList() : var4), (((var7 & 16) != 0) ? CollectionsKt.emptyList() : var5), (((var7 & 32) != 0) ? ComposerInputType$Text.INSTANCE : var6));",
+      "ordered_defaults": "var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ContentRow$BubbleMessageRow$PartWrapper.java",
+      "start": 4329,
+      "end": 4527,
+      "replacement": "this(var1, var2, var3, (((var6 & 8) != 0) ? CollectionsKt.emptyList() : var4), (((var6 & 16) != 0) ? CollectionsKt.emptyList() : var5));",
+      "ordered_defaults": "var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ContentRow$BubbleMessageRow.java",
+      "start": 6124,
+      "end": 6355,
+      "replacement": "this(var1, var2, var3, var4, (((var8 & 16) != 0) ? true : var5), (((var8 & 32) != 0) ? false : var6), (((var8 & 64) != 0) ? null : var7));",
+      "ordered_defaults": "var5,var6,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ContentRow$FinAnswerRow.java",
+      "start": 3888,
+      "end": 3971,
+      "replacement": "this(var1, var2, (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ConversationClientState.java",
+      "start": 18802,
+      "end": 20907,
+      "replacement": "this((((var24 & 1) != 0) ? MapsKt.emptyMap() : var1), (((var24 & 2) != 0) ? null : var2), (((var24 & 4) != 0) ? null : var3), (((var24 & 8) != 0) ? new CurrentlyTypingState(null, false, null, TypingIndicatorType.NONE, 7, null) : var4), (((var24 & 16) != 0) ? new ComposerState$TextInput(\"\", new StringRes(string.intercom_reply_to_conversation, null, 2, null), false, null, null, null, 60, null) : var5), (((var24 & 32) != 0) ? BottomSheetState$Empty.INSTANCE : var6), (((var24 & 64) != 0) ? LaunchMode.CLASSIC : var7), (((var24 & 128) != 0) ? null : var8), (((var24 & 256) != 0) ? null : var9), (((var24 & 512) != 0) ? NetworkState$Connected.INSTANCE : var10), (((var24 & 1024) != 0) ? CollectionsKt.emptyList() : var11), (((var24 & 2048) != 0) ? CollectionsKt.emptyList() : var12), (((var24 & 4096) != 0) ? new FinStreamingData(false, null, 3, null) : var13), (((var24 & 8192) != 0) ? null : var14), (((var24 & 16384) != 0) ? 0 : var15), (((var24 & 32768) != 0) ? 0 : var16), (((var24 & 65536) != 0) ? FloatingIndicatorState$None.INSTANCE : var17), (((var24 & 131072) != 0) ? null : var18), (((var24 & 262144) != 0) ? false : var19), (((var24 & 524288) != 0) ? false : var20), (((var24 & 1048576) != 0) ? null : var21), (((var24 & 2097152) != 0) ? VoiceTranscriptionState$Idle.INSTANCE : var22), (((var24 & 4194304) != 0) ? CollectionsKt.emptyList() : var23));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var11,var12,var13,var14,var15,var16,var17,var18,var19,var20,var21,var22,var23",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content.java",
+      "start": 7844,
+      "end": 8167,
+      "replacement": "this(var1, var2, var3, (((var9 & 8) != 0) ? NetworkState$Connected.INSTANCE : var4), (((var9 & 16) != 0) ? BottomSheetState$Empty.INSTANCE : var5), var6, var7, (((var9 & 128) != 0) ? VoiceTranscriptionState$Idle.INSTANCE : var8));",
+      "ordered_defaults": "var4,var5,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/CurrentlyTypingState.java",
+      "start": 4225,
+      "end": 4513,
+      "replacement": "this((((var5 & 1) != 0) ? AvatarWrapper.Companion.getNULL() : var1), (((var5 & 2) != 0) ? true : var2), (((var5 & 4) != 0) ? new StringRes(string.intercom_thinking, null, 2, null) : var3), var4);",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/EventLabelSegment.java",
+      "start": 2560,
+      "end": 2637,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/FinStreamingData.java",
+      "start": 2354,
+      "end": 2490,
+      "replacement": "this((((var3 & 1) != 0) ? false : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/HeaderMenuItem$Messages.java",
+      "start": 4154,
+      "end": 4243,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? true : var3), var4);",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/JumpToBottomButtonState.java",
+      "start": 2186,
+      "end": 2317,
+      "replacement": "this((((var3 & 1) != 0) ? 0 : var1), (((var3 & 2) != 0) ? 0 : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/MediaUploadItem.java",
+      "start": 4247,
+      "end": 4354,
+      "replacement": "this((((var4 & 1) != 0) ? UUID.randomUUID().toString() : var1), var2, var3);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/PendingMessage.java",
+      "start": 3718,
+      "end": 3867,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? true : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/SenderMetadata.java",
+      "start": 2271,
+      "end": 2349,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? false : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/composer/WaveformBuffer.java",
+      "start": 3389,
+      "end": 3458,
+      "replacement": "this((((var2 & 1) != 0) ? 70 : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/CategorizedBlocks.java",
+      "start": 3827,
+      "end": 4180,
+      "replacement": "this((((var5 & 1) != 0) ? CollectionsKt.emptyList() : var1), (((var5 & 2) != 0) ? CollectionsKt.emptyList() : var2), (((var5 & 4) != 0) ? CollectionsKt.emptyList() : var3), (((var5 & 8) != 0) ? CollectionsKt.emptyList() : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/MessageStyle.java",
+      "start": 5058,
+      "end": 5200,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? PaddingKt.recovered$0eefed217002276c(0.0F, 0.0F, 3, null) : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/AudioRecordingUseCase.java",
+      "start": 3622,
+      "end": 3717,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? LumberMill.getLogger() : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/ConversationScrolledState.java",
+      "start": 2912,
+      "end": 2998,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? 0 : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+      "start": 4263,
+      "end": 4511,
+      "replacement": "this((((var4 & 1) != 0) ? ((kotlin.jvm.functions.Function0)()->FallbackPollingUseCase._init_$lambda$0()) : var1), (((var4 & 2) != 0) ? Injector.get().getTimeProvider() : var2), var3);",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/HandleFinStreamingDeltaUseCase.java",
+      "start": 3544,
+      "end": 3640,
+      "replacement": "this((((var2 & 1) != 0) ? Injector.get().getDataLayer() : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/PushNotificationsBannerUseCase.java",
+      "start": 3385,
+      "end": 3577,
+      "replacement": "this((((var3 & 1) != 0) ? Injector.get().getDataLayer() : var1), (((var3 & 2) != 0) ? Injector.get().getPushTokenStore() : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RecordingException.java",
+      "start": 1501,
+      "end": 1578,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+      "start": 6634,
+      "end": 6748,
+      "replacement": "this(var1, (((var5 & 2) != 0) ? Injector.get().getDataLayer() : var2), var3, var4);",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+      "start": 7108,
+      "end": 7219,
+      "replacement": "this(var1, var2, (((var4 & 4) != 0) ? Injector.get().getUserIdentity() : var3));",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+      "start": 8986,
+      "end": 9195,
+      "replacement": "this(var1, var2, var3, (((var6 & 8) != 0) ? Injector.get().getUserIdentity() : var4), (((var6 & 16) != 0) ? Injector.get().getDataLayer() : var5));",
+      "ordered_defaults": "var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+      "start": 5468,
+      "end": 5585,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? Injector.get().getUserIdentity() : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+      "start": 5679,
+      "end": 5790,
+      "replacement": "this(var1, var2, (((var4 & 4) != 0) ? Injector.get().getUserIdentity() : var3));",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SoundEffectsUseCase.java",
+      "start": 2644,
+      "end": 2771,
+      "replacement": "this((((var3 & 1) != 0) ? (AppConfig)Injector.get().getAppConfigProvider().get() : var1), var2);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/TrackLastReceivedPartsUseCase.java",
+      "start": 3836,
+      "end": 4086,
+      "replacement": "this((((var3 & 1) != 0) ? Injector.get().getMetricTracker() : var1), (((var3 & 2) != 0) ? ((kotlin.jvm.functions.Function0)()->TrackLastReceivedPartsUseCase._init_$lambda$0()) : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/utils/KeyboardState.java",
+      "start": 3198,
+      "end": 3531,
+      "replacement": "this((((var6 & 1) != 0) ? false : var1), (((var6 & 2) != 0) ? 0 : var2), (((var6 & 4) != 0) ? false : var3), (((var6 & 8) != 0) ? false : var4), (((var6 & 16) != 0) ? 0 : var5));",
+      "ordered_defaults": "var1,var2,var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+      "start": 17197,
+      "end": 17420,
+      "replacement": "this(var1, var2, var3, var4, (((var9 & 16) != 0) ? HelpCenterEligibilityChecker.INSTANCE : var5), (((var9 & 32) != 0) ? Dispatchers.getIO() : var6), var7, var8);",
+      "ordered_defaults": "var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/states/CollectionRowData.java",
+      "start": 4040,
+      "end": 4197,
+      "replacement": "this(var1, var2, var3, var4, (((var7 & 16) != 0) ? 0 : var5), (((var7 & 32) != 0) ? 0 : var6));",
+      "ordered_defaults": "var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterLoadingScreen.java",
+      "start": 2392,
+      "end": 2532,
+      "replacement": "this(var1, (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? 0 : var3));",
+      "ordered_defaults": "var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/components/TeamPresenceComponent.java",
+      "start": 4863,
+      "end": 5003,
+      "replacement": "this(var1, (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? 0 : var3));",
+      "ordered_defaults": "var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/HomeViewModel.java",
+      "start": 9770,
+      "end": 9979,
+      "replacement": "this(var1, var2, var3, (((var7 & 8) != 0) ? new HomeReducer(null, null, 3, null) : var4), var5, (((var7 & 32) != 0) ? Dispatchers.getIO() : var6));",
+      "ordered_defaults": "var4,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/data/HomeCards$HomeTicketLinksData.java",
+      "start": 2226,
+      "end": 2307,
+      "replacement": "this((((var4 & 1) != 0) ? \"\" : var1), var2, var3);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/data/HomeRepository.java",
+      "start": 2869,
+      "end": 3061,
+      "replacement": "this((((var3 & 1) != 0) ? Injector.get().getMessengerApi() : var1), (((var3 & 2) != 0) ? Injector.get().getNexusClient() : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/reducers/HomeReducer.java",
+      "start": 5727,
+      "end": 5955,
+      "replacement": "this((((var3 & 1) != 0) ? ((kotlin.jvm.functions.Function0)()->HomeReducer._init_$lambda$0()) : var1), (((var3 & 2) != 0) ? Injector.get().getDataLayer() : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeClientState.java",
+      "start": 3579,
+      "end": 3783,
+      "replacement": "this((((var4 & 1) != 0) ? null : var1), (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? false : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader$CloseButtonColor.java",
+      "start": 3547,
+      "end": 3636,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? null : var3), var4);",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader$ColoredText.java",
+      "start": 4365,
+      "end": 4587,
+      "replacement": "this(var1, var2, (((var7 & 4) != 0) ? null : var3), (((var7 & 8) != 0) ? null : var4), (((var7 & 16) != 0) ? null : var5), var6);",
+      "ordered_defaults": "var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader.java",
+      "start": 8284,
+      "end": 8473,
+      "replacement": "this(var1, var2, (((var11 & 4) != 0) ? null : var3), var4, var5, var6, (((var11 & 64) != 0) ? null : var7), var8, var9, var10);",
+      "ordered_defaults": "var3,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxRepository.java",
+      "start": 3704,
+      "end": 3989,
+      "replacement": "this((((var4 & 1) != 0) ? Injector.get().getMessengerApi() : var1), (((var4 & 2) != 0) ? Injector.get().getNexusClient() : var2), (((var4 & 4) != 0) ? Injector.get().getAblyManager() : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/states/InboxUiState$Content.java",
+      "start": 4266,
+      "end": 4503,
+      "replacement": "this(var1, var2, var3, (((var7 & 8) != 0) ? false : var4), (((var7 & 16) != 0) ? null : var5), (((var7 & 32) != 0) ? MapsKt.emptyMap() : var6));",
+      "ordered_defaults": "var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/IntercomRootActivityArgs$ConversationScreenArgs.java",
+      "start": 5583,
+      "end": 6033,
+      "replacement": "this((((var7 & 1) != 0) ? null : var1), (((var7 & 2) != 0) ? \"\" : var2), (((var7 & 4) != 0) ? false : var3), (((var7 & 8) != 0) ? null : var4), (((var7 & 16) != 0) ? null : var5), (((var7 & 32) != 0) ? new TransitionArgs(null, null, null, null, 15, null) : var6));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/IntercomRootActivityArgs$HelpCenterCollectionsArgs.java",
+      "start": 3610,
+      "end": 3708,
+      "replacement": "this((((var3 & 1) != 0) ? CollectionsKt.emptyList() : var1), var2);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/data/IntercomPreviewArgs.java",
+      "start": 5467,
+      "end": 6001,
+      "replacement": "this((((var7 & 1) != 0) ? CollectionsKt.emptyList() : var1), (((var7 & 2) != 0) ? DeleteType$None.INSTANCE : var2), (((var7 & 4) != 0) ? null : var3), (((var7 & 8) != 0) ? false : var4), (((var7 & 16) != 0) ? 0 : var5), (((var7 & 32) != 0) ? new DownloadState(false, \"Saving...\", \"File saved\", \"Something went wrong\", \"Permission denied\") : var6));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/model/PreviewUiState.java",
+      "start": 5815,
+      "end": 6451,
+      "replacement": "this((((var10 & 1) != 0) ? CollectionsKt.emptyList() : var1), (((var10 & 2) != 0) ? 0 : var2), (((var10 & 4) != 0) ? false : var3), (((var10 & 8) != 0) ? false : var4), (((var10 & 16) != 0) ? null : var5), (((var10 & 32) != 0) ? false : var6), (((var10 & 64) != 0) ? null : var7), (((var10 & 128) != 0) ? null : var8), (((var10 & 256) != 0) ? null : var9));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/MediaData$Media$Image.java",
+      "start": 5553,
+      "end": 5674,
+      "replacement": "this(var1, var2, var3, var4, var6, var7, (((var9 & 64) != 0) ? MapsKt.emptyMap() : var8));",
+      "ordered_defaults": "var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+      "start": 4807,
+      "end": 5192,
+      "replacement": "this((((var5 & 1) != 0) ? Injector.get().getMessengerApi() : var1), (((var5 & 2) != 0) ? Injector.get().getExternalUploadApi() : var2), (((var5 & 4) != 0) ? Injector.get().getUserIdentity() : var3), (((var5 & 8) != 0) ? Injector.get().getApplication() : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/AblyConnectResponse.java",
+      "start": 2839,
+      "end": 2937,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? CollectionsKt.emptyList() : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/AblyEndpoint.java",
+      "start": 3822,
+      "end": 4031,
+      "replacement": "this(var1, (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ActiveBot.java",
+      "start": 3757,
+      "end": 4049,
+      "replacement": "this((((var5 & 1) != 0) ? new Participant$Builder() : var1), (((var5 & 2) != 0) ? false : var2), (((var5 & 4) != 0) ? false : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Attachments.java",
+      "start": 4602,
+      "end": 4871,
+      "replacement": "this((((var5 & 1) != 0) ? null : var1), (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Attribute.java",
+      "start": 6773,
+      "end": 7071,
+      "replacement": "this(var1, var2, var3, var4, (((var9 & 16) != 0) ? null : var5), (((var9 & 32) != 0) ? null : var6), (((var9 & 64) != 0) ? null : var7), (((var9 & 128) != 0) ? null : var8));",
+      "ordered_defaults": "var5,var6,var7,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CloseButtonModel.java",
+      "start": 3093,
+      "end": 3306,
+      "replacement": "this((((var4 & 1) != 0) ? \"#FFFFFF\" : var1), (((var4 & 2) != 0) ? 1.0F : var2), (((var4 & 4) != 0) ? \"#000000\" : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ComposerState.java",
+      "start": 3901,
+      "end": 3987,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? 0 : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ComposerSuggestions$Suggestion.java",
+      "start": 2500,
+      "end": 2633,
+      "replacement": "this((((var3 & 1) != 0) ? \"\" : var1), (((var3 & 2) != 0) ? \"\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ComposerSuggestions.java",
+      "start": 3579,
+      "end": 3804,
+      "replacement": "this((((var4 & 1) != 0) ? CollectionsKt.emptyList() : var1), (((var4 & 2) != 0) ? false : var2), (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ConfigModules.java",
+      "start": 4174,
+      "end": 4282,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? new HomeConfig(null, null, 3, null) : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Conversation.java",
+      "start": 16233,
+      "end": 17881,
+      "replacement": "this((((var22 & 1) != 0) ? \"\" : var1), (((var22 & 2) != 0) ? \"\" : var2), (((var22 & 4) != 0) ? false : var3), (((var22 & 8) != 0) ? CollectionsKt.emptyList() : var4), (((var22 & 16) != 0) ? CollectionsKt.emptyList() : var5), (((var22 & 32) != 0) ? CollectionsKt.emptyList() : var6), (((var22 & 64) != 0) ? new LastParticipatingAdmin$Builder() : var7), (((var22 & 128) != 0) ? ComposerState.Companion.getNULL() : var8), (((var22 & 256) != 0) ? false : var9), (((var22 & 512) != 0) ? false : var10), (((var22 & 1024) != 0) ? \"\" : var11), (((var22 & 2048) != 0) ? \"\" : var12), (((var22 & 4096) != 0) ? false : var13), (((var22 & 8192) != 0) ? null : var14), (((var22 & 16384) != 0) ? ConversationUiFlags.Companion.getDEFAULT() : var15), (((var22 & 32768) != 0) ? null : var16), (((var22 & 65536) != 0) ? null : var17), (((var22 & 131072) != 0) ? null : var18), (((var22 & 262144) != 0) ? null : var19), (((var22 & 524288) != 0) ? null : var20), (((var22 & 1048576) != 0) ? null : var21));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var11,var12,var13,var14,var15,var16,var17,var18,var19,var20,var21",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ConversationEndedButton.java",
+      "start": 4104,
+      "end": 4193,
+      "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ConversationUiFlags.java",
+      "start": 2456,
+      "end": 2527,
+      "replacement": "this((((var2 & 1) != 0) ? true : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CountryAreaCode.java",
+      "start": 5213,
+      "end": 5549,
+      "replacement": "this((((var6 & 1) != 0) ? null : var1), (((var6 & 2) != 0) ? null : var2), (((var6 & 4) != 0) ? null : var3), (((var6 & 8) != 0) ? null : var4), (((var6 & 16) != 0) ? null : var5));",
+      "ordered_defaults": "var1,var2,var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CrashReportingConfig.java",
+      "start": 1809,
+      "end": 1880,
+      "replacement": "this((((var2 & 1) != 0) ? true : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CustomizationModel.java",
+      "start": 8402,
+      "end": 8734,
+      "replacement": "this(var1, var2, (((var13 & 4) != 0) ? null : var3), var4, var5, var6, var7, (((var13 & 128) != 0) ? null : var8), (((var13 & 256) != 0) ? null : var9), var10, (((var13 & 1024) != 0) ? null : var11), var12);",
+      "ordered_defaults": "var3,var8,var9,var11",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EmptyState$Action.java",
+      "start": 3363,
+      "end": 3578,
+      "replacement": "this((((var4 & 1) != 0) ? ActionType.MESSAGE : var1), (((var4 & 2) != 0) ? \"\" : var2), (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EmptyState.java",
+      "start": 3418,
+      "end": 3661,
+      "replacement": "this((((var4 & 1) != 0) ? \"\" : var1), (((var4 & 2) != 0) ? \"\" : var2), (((var4 & 4) != 0) ? new EmptyState$Action(null, null, null, 7, null) : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EventContent.java",
+      "start": 3539,
+      "end": 3674,
+      "replacement": "this((((var3 & 1) != 0) ? \"\" : var1), (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EventData.java",
+      "start": 7757,
+      "end": 8295,
+      "replacement": "this((((var9 & 1) != 0) ? null : var1), (((var9 & 2) != 0) ? null : var2), (((var9 & 4) != 0) ? null : var3), (((var9 & 8) != 0) ? null : var4), (((var9 & 16) != 0) ? null : var5), (((var9 & 32) != 0) ? null : var6), (((var9 & 64) != 0) ? null : var7), (((var9 & 128) != 0) ? null : var8));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderBackgroundModel.java",
+      "start": 8102,
+      "end": 8886,
+      "replacement": "this((((var12 & 1) != 0) ? \"#FFFFFF\" : var1), (((var12 & 2) != 0) ? null : var2), (((var12 & 4) != 0) ? null : var3), (((var12 & 8) != 0) ? null : var4), (((var12 & 16) != 0) ? null : var5), (((var12 & 32) != 0) ? null : var6), (((var12 & 64) != 0) ? true : var7), (((var12 & 128) != 0) ? null : var8), (((var12 & 256) != 0) ? HeaderBackdropType.SOLID : var9), (((var12 & 512) != 0) ? null : var10), (((var12 & 1024) != 0) ? false : var11));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var11",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderConfig.java",
+      "start": 3398,
+      "end": 3780,
+      "replacement": "this((((var4 & 1) != 0) ? new HeaderBackgroundModel(null, null, null, null, null, null, false, null, null, null, false, 2047, null) : var1), (((var4 & 2) != 0) ? new HeaderContentModel(null, null, false, null, null, null, null, null, 255, null) : var2), (((var4 & 4) != 0) ? true : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderContentModel.java",
+      "start": 6145,
+      "end": 6822,
+      "replacement": "this((((var9 & 1) != 0) ? \"\" : var1), (((var9 & 2) != 0) ? null : var2), (((var9 & 4) != 0) ? true : var3), (((var9 & 8) != 0) ? new HeaderTextModel(null, 0.0F, null, null, 15, null) : var4), (((var9 & 16) != 0) ? new HeaderTextModel(null, 0.0F, null, null, 15, null) : var5), (((var9 & 32) != 0) ? new CloseButtonModel(null, 0.0F, null, 7, null) : var6), (((var9 & 64) != 0) ? null : var7), (((var9 & 128) != 0) ? null : var8));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderTextModel.java",
+      "start": 3455,
+      "end": 3727,
+      "replacement": "this((((var5 & 1) != 0) ? \"\" : var1), (((var5 & 2) != 0) ? 1.0F : var2), (((var5 & 4) != 0) ? \"#000000\" : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HomeConfig.java",
+      "start": 2821,
+      "end": 3035,
+      "replacement": "this((((var3 & 1) != 0) ? new HeaderConfig(null, null, false, 7, null) : var1), (((var3 & 2) != 0) ? new OpenConfig(null, null, null, 7, null) : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HostAppState.java",
+      "start": 5217,
+      "end": 5648,
+      "replacement": "this((((var8 & 1) != 0) ? AppLifecycleState.UNINITIALIZED : var1), (((var8 & 2) != 0) ? false : var2), (((var8 & 4) != 0) ? 0L : var3), (((var8 & 8) != 0) ? null : var5), (((var8 & 16) != 0) ? false : var6), (((var8 & 32) != 0) ? false : var7));",
+      "ordered_defaults": "var1,var2,var3,var5,var6,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Location.java",
+      "start": 4112,
+      "end": 4315,
+      "replacement": "this((((var4 & 1) != 0) ? null : var1), (((var4 & 2) != 0) ? null : var2), (((var4 & 4) != 0) ? null : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Metadata.java",
+      "start": 5372,
+      "end": 5639,
+      "replacement": "this((((var5 & 1) != 0) ? \"\" : var1), (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenConfig.java",
+      "start": 3569,
+      "end": 3844,
+      "replacement": "this((((var4 & 1) != 0) ? OpenToSpace.HOME : var1), (((var4 & 2) != 0) ? CollectionsKt.listOf(new Space(null, null, 3, null)) : var2), (((var4 & 4) != 0) ? OpenForm.DEFAULT : var3));",
+      "ordered_defaults": "var1,var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse$NewConversationData$Cta.java",
+      "start": 3366,
+      "end": 3449,
+      "replacement": "this(var1, (((var4 & 2) != 0) ? null : var2), var3);",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse$NewConversationData$HomeCard.java",
+      "start": 4165,
+      "end": 4374,
+      "replacement": "this(var1, (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse$NewConversationData.java",
+      "start": 6723,
+      "end": 7115,
+      "replacement": "this(var1, var2, (((var8 & 4) != 0) ? CollectionsKt.emptyList() : var3), (((var8 & 8) != 0) ? CollectionsKt.emptyList() : var4), (((var8 & 16) != 0) ? null : var5), (((var8 & 32) != 0) ? null : var6), (((var8 & 64) != 0) ? null : var7));",
+      "ordered_defaults": "var3,var4,var5,var6,var7",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse.java",
+      "start": 8703,
+      "end": 9439,
+      "replacement": "this((((var11 & 1) != 0) ? null : var1), (((var11 & 2) != 0) ? null : var2), (((var11 & 4) != 0) ? ComposerState.Companion.getNULL() : var3), (((var11 & 8) != 0) ? null : var4), (((var11 & 16) != 0) ? null : var5), (((var11 & 32) != 0) ? CollectionsKt.emptyList() : var6), (((var11 & 64) != 0) ? null : var7), (((var11 & 128) != 0) ? null : var8), (((var11 & 256) != 0) ? null : var9), (((var11 & 512) != 0) ? null : var10));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OverlayState.java",
+      "start": 8448,
+      "end": 9315,
+      "replacement": "this((((var12 & 1) != 0) ? SurveyData.Companion.getNULL() : var1), (((var12 & 2) != 0) ? Carousel.NULL : var2), (((var12 & 4) != 0) ? 0 : var3), (((var12 & 8) != 0) ? Intercom$Visibility.GONE : var4), (((var12 & 16) != 0) ? Intercom$Visibility.VISIBLE : var5), (((var12 & 32) != 0) ? true : var6), (((var12 & 64) != 0) ? true : var7), (((var12 & 128) != 0) ? CollectionsKt.emptyList() : var8), (((var12 & 256) != 0) ? SetsKt.emptySet() : var9), (((var12 & 512) != 0) ? null : var10), (((var12 & 1024) != 0) ? null : var11));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var11",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Reaction.java",
+      "start": 3246,
+      "end": 3380,
+      "replacement": "this((((var3 & 1) != 0) ? 0 : var1), (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/SocialAccount.java",
+      "start": 3573,
+      "end": 3710,
+      "replacement": "this((((var3 & 1) != 0) ? null : var1), (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Space.java",
+      "start": 2617,
+      "end": 2765,
+      "replacement": "this((((var3 & 1) != 0) ? Space$Type.HOME : var1), (((var3 & 2) != 0) ? null : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/StreamingPart.java",
+      "start": 2092,
+      "end": 2163,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/TeamPresence.java",
+      "start": 5224,
+      "end": 5493,
+      "replacement": "this((((var5 & 1) != 0) ? null : var1), (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$Status.java",
+      "start": 3894,
+      "end": 4223,
+      "replacement": "this((((var7 & 1) != 0) ? \"\" : var1), (((var7 & 2) != 0) ? \"\" : var2), (((var7 & 4) != 0) ? \"\" : var3), (((var7 & 8) != 0) ? false : var4), (((var7 & 16) != 0) ? 0L : var5));",
+      "ordered_defaults": "var1,var2,var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$DateTimeAttribute.java",
+      "start": 2707,
+      "end": 3127,
+      "replacement": "this((((var7 & 1) != 0) ? \"\" : var1), (((var7 & 2) != 0) ? \"\" : var2), (((var7 & 4) != 0) ? \"\" : var3), (((var7 & 8) != 0) ? false : var4), (((var7 & 16) != 0) ? TicketAttributeType.DATETIME : var5), (((var7 & 32) != 0) ? \"\" : var6));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$FilesAttribute.java",
+      "start": 2910,
+      "end": 3186,
+      "replacement": "this((((var7 & 1) != 0) ? \"\" : var1), (((var7 & 2) != 0) ? \"\" : var2), (((var7 & 4) != 0) ? \"\" : var3), (((var7 & 8) != 0) ? false : var4), var5, var6);",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$ListAttribute.java",
+      "start": 2691,
+      "end": 3107,
+      "replacement": "this((((var7 & 1) != 0) ? \"\" : var1), (((var7 & 2) != 0) ? \"\" : var2), (((var7 & 4) != 0) ? \"\" : var3), (((var7 & 8) != 0) ? false : var4), (((var7 & 16) != 0) ? TicketAttributeType.LIST : var5), (((var7 & 32) != 0) ? \"\" : var6));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$PrimitiveAttribute.java",
+      "start": 2711,
+      "end": 3129,
+      "replacement": "this((((var7 & 1) != 0) ? \"\" : var1), (((var7 & 2) != 0) ? \"\" : var2), (((var7 & 4) != 0) ? \"\" : var3), (((var7 & 8) != 0) ? false : var4), (((var7 & 16) != 0) ? TicketAttributeType.STRING : var5), (((var7 & 32) != 0) ? \"\" : var6));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$UnSupported.java",
+      "start": 2724,
+      "end": 2824,
+      "replacement": "this(var1, var2, var3, var4, var5, (((var7 & 32) != 0) ? \"\" : var6));",
+      "ordered_defaults": "var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket.java",
+      "start": 11218,
+      "end": 12366,
+      "replacement": "this((((var18 & 1) != 0) ? \"\" : var1), (((var18 & 2) != 0) ? null : var2), (((var18 & 4) != 0) ? \"\" : var3), (((var18 & 8) != 0) ? \"\" : var4), (((var18 & 16) != 0) ? \"\" : var5), (((var18 & 32) != 0) ? \"\" : var6), (((var18 & 64) != 0) ? new Ticket$Status(null, null, null, false, 0L, 31, null) : var7), (((var18 & 128) != 0) ? CollectionsKt.emptyList() : var8), (((var18 & 256) != 0) ? CollectionsKt.emptyList() : var9), (((var18 & 512) != 0) ? 0L : var10), (((var18 & 1024) != 0) ? new Participant$Builder() : var12), (((var18 & 2048) != 0) ? null : var13), (((var18 & 4096) != 0) ? null : var14), (((var18 & 8192) != 0) ? null : var15), (((var18 & 16384) != 0) ? 0L : var16));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var12,var13,var14,var15,var16",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/UploadMetadata.java",
+      "start": 1978,
+      "end": 2047,
+      "replacement": "this((((var2 & 1) != 0) ? \"\" : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ProgressBarState.java",
+      "start": 2120,
+      "end": 2258,
+      "replacement": "this((((var3 & 1) != 0) ? false : var1), (((var3 & 2) != 0) ? 0.0F : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyRepository.java",
+      "start": 4014,
+      "end": 4110,
+      "replacement": "this((((var2 & 1) != 0) ? Injector.get().getSurveyApi() : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyState$Error$WithCTA.java",
+      "start": 3205,
+      "end": 3329,
+      "replacement": "this((((var5 & 1) != 0) ? string.intercom_inbox_error_state_title : var1), var2, var3, var4);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyState$Error$WithoutCTA.java",
+      "start": 2624,
+      "end": 2742,
+      "replacement": "this((((var4 & 1) != 0) ? string.intercom_inbox_error_state_title : var1), var2, var3);",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyViewModel.java",
+      "start": 10329,
+      "end": 10822,
+      "replacement": "this((((var7 & 1) != 0) ? Dispatchers.getIO() : var1), var2, (((var7 & 4) != 0) ? new SurveyRepository(null, 1, null) : var3), (((var7 & 8) != 0) ? (AppConfig)Injector.get().getAppConfigProvider().get() : var4), (((var7 & 16) != 0) ? Injector.get().getMetricTracker() : var5), (((var7 & 32) != 0) ? Injector.get().getDataLayer() : var6));",
+      "ordered_defaults": "var1,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/TopBarState$NoTopBarState.java",
+      "start": 3587,
+      "end": 3708,
+      "replacement": "this(var1, var2, (((var4 & 4) != 0) ? new ProgressBarState(false, 0.0F, 3, null) : var3));",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/TopBarState$SenderTopBarState.java",
+      "start": 5404,
+      "end": 5544,
+      "replacement": "this(var1, var2, var3, var4, var5, (((var7 & 32) != 0) ? new ProgressBarState(false, 0.0F, 3, null) : var6));",
+      "ordered_defaults": "var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ValidationError$ValidationStringError.java",
+      "start": 3023,
+      "end": 3121,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? CollectionsKt.emptyList() : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/CodeBlockMode$Inline.java",
+      "start": 2287,
+      "end": 2358,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/TableBlockMode$Inline.java",
+      "start": 2293,
+      "end": 2364,
+      "replacement": "this((((var2 & 1) != 0) ? null : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyCustomization.java",
+      "start": 2595,
+      "end": 2742,
+      "replacement": "this((((var3 & 1) != 0) ? \"#FFFFFF\" : var1), (((var3 & 2) != 0) ? \"#000000\" : var2));",
+      "ordered_defaults": "var1,var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$DropDownQuestionModel.java",
+      "start": 3312,
+      "end": 3473,
+      "replacement": "this(var1, var2, var3, var4, (((var7 & 16) != 0) ? \"\" : var5), (((var7 & 32) != 0) ? null : var6));",
+      "ordered_defaults": "var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$QuestionData.java",
+      "start": 8888,
+      "end": 9047,
+      "replacement": "this(var1, var2, (((var14 & 4) != 0) ? new JsonArray() : var3), var4, var5, var6, var7, var8, var9, var10, var11, var12, var13);",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$QuestionModel.java",
+      "start": 2974,
+      "end": 3079,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? new ActualString(\"\") : var3), var4);",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$ShortTextQuestionModel.java",
+      "start": 4859,
+      "end": 5165,
+      "replacement": "this(var1, var2, var3, (((var10 & 8) != 0) ? \"\" : var4), var5, var6, (((var10 & 64) != 0) ? true : var7), (((var10 & 128) != 0) ? null : var8), (((var10 & 256) != 0) ? null : var9));",
+      "ordered_defaults": "var4,var7,var8,var9",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel.java",
+      "start": 3187,
+      "end": 3304,
+      "replacement": "this(var1, var2, (((var7 & 4) != 0) ? new ActualString(\"\") : var3), var4, var5, var6);",
+      "ordered_defaults": "var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step.java",
+      "start": 5404,
+      "end": 5588,
+      "replacement": "this(var1, var2, var3, var4, (((var7 & 16) != 0) ? CollectionsKt.emptyList() : var5), (((var7 & 32) != 0) ? null : var6));",
+      "ordered_defaults": "var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$SurveyActions.java",
+      "start": 3520,
+      "end": 3669,
+      "replacement": "this(var1, var2, (((var6 & 4) != 0) ? null : var4), (((var6 & 8) != 0) ? null : var5));",
+      "ordered_defaults": "var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData.java",
+      "start": 7726,
+      "end": 7848,
+      "replacement": "this(var1, var2, var3, var4, var5, var6, var7, var8, (((var10 & 256) != 0) ? true : var9));",
+      "ordered_defaults": "var9",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveySenderAvatar.java",
+      "start": 2037,
+      "end": 2106,
+      "replacement": "this((((var2 & 1) != 0) ? \"\" : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveySenderData.java",
+      "start": 3759,
+      "end": 4028,
+      "replacement": "this((((var5 & 1) != 0) ? null : var1), (((var5 & 2) != 0) ? null : var2), (((var5 & 4) != 0) ? null : var3), (((var5 & 8) != 0) ? null : var4));",
+      "ordered_defaults": "var1,var2,var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/models/Answer$MultipleAnswer.java",
+      "start": 3556,
+      "end": 3683,
+      "replacement": "this(var1, (((var3 & 2) != 0) ? Answer$MultipleAnswer$OtherAnswer$NotSelected.INSTANCE : var2));",
+      "ordered_defaults": "var2",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/TicketDetailViewModel.java",
+      "start": 8936,
+      "end": 9432,
+      "replacement": "this(var1, (((var7 & 2) != 0) ? Injector.get().getUserIdentity() : var2), (((var7 & 4) != 0) ? Injector.get().getMetricTracker() : var3), (((var7 & 8) != 0) ? new TicketRepository(null, null, null, null, null, 31, null) : var4), (((var7 & 16) != 0) ? Dispatchers.getIO() : var5), (((var7 & 32) != 0) ? Injector.get().getDataLayer() : var6));",
+      "ordered_defaults": "var2,var3,var4,var5,var6",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/TicketLaunchedFrom$Conversation.java",
+      "start": 2533,
+      "end": 2660,
+      "replacement": "this((((var2 & 1) != 0) ? (Ticket)Injector.get().getDataLayer().getTicket().getValue() : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+      "start": 7326,
+      "end": 7816,
+      "replacement": "this((((var6 & 1) != 0) ? Injector.get().getTicketApi() : var1), (((var6 & 2) != 0) ? new UploadRepository(null, null, null, null, 15, null) : var2), (((var6 & 4) != 0) ? Injector.get().getNexusClient() : var3), (((var6 & 8) != 0) ? Injector.get().getAblyManager() : var4), (((var6 & 16) != 0) ? Injector.get().getDataLayer() : var5));",
+      "ordered_defaults": "var1,var2,var3,var4,var5",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content.java",
+      "start": 3795,
+      "end": 3945,
+      "replacement": "this(var1, var2, (((var5 & 4) != 0) ? false : var3), (((var5 & 8) != 0) ? true : var4));",
+      "ordered_defaults": "var3,var4",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel.java",
+      "start": 13741,
+      "end": 14377,
+      "replacement": "this(var1, (((var11 & 2) != 0) ? new TicketRepository(null, null, null, null, null, 31, null) : var2), (((var11 & 4) != 0) ? Injector.get().getUserIdentity() : var3), (((var11 & 8) != 0) ? (AppConfig)Injector.get().getAppConfigProvider().get() : var4), (((var11 & 16) != 0) ? Dispatchers.getIO() : var5), (((var11 & 32) != 0) ? Injector.get().getMetricTracker() : var6), var7, var8, (((var11 & 256) != 0) ? Injector.get().getApplication() : var10));",
+      "ordered_defaults": "var2,var3,var4,var5,var6,var10",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/data/TicketsPagingSource.java",
+      "start": 3772,
+      "end": 3899,
+      "replacement": "this((((var2 & 1) != 0) ? new TicketRepository(null, null, null, null, null, 31, null) : var1));",
+      "ordered_defaults": "var1",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/data/TicketsScreenUiState$Content.java",
+      "start": 4153,
+      "end": 4303,
+      "replacement": "this(var1, (((var5 & 2) != 0) ? false : var2), (((var5 & 4) != 0) ? null : var3), var4);",
+      "ordered_defaults": "var2,var3",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ],
+  "boxed_arm_correction": {
+    "reason": "Conditional expressions must preserve declared parameter types to avoid nullable wrapper unboxing",
+    "status": "SOURCE_CORRECTED_NOT_COMPILED",
+    "constructors": [
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AppIdentityInjector.java",
+        "replacement": "this(var1, var2, var3, (((var6 & 8) != 0) ? (String) (null) : var4), var5);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/GalleryImage.java",
+        "replacement": "this((((var12 & 1) != 0) ? (String) (\"\") : var1), (((var12 & 2) != 0) ? (String) (\"\") : var2), (((var12 & 4) != 0) ? (Uri) (Uri.EMPTY) : var3), (((var12 & 8) != 0) ? (String) (\"\") : var4), (((var12 & 16) != 0) ? (String) (\"\") : var5), (((var12 & 32) != 0) ? (int) (0) : var6), (((var12 & 64) != 0) ? (int) (0) : var7), (((var12 & 128) != 0) ? (int) (0) : var8), (((var12 & 256) != 0) ? (boolean) (false) : var9), (((var12 & 512) != 0) ? (boolean) (false) : var10), (((var12 & 1024) != 0) ? (String) (\"\") : var11));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/IntercomError.java",
+        "replacement": "this((((var3 & 1) != 0) ? (int) (0) : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/DeDuperStore$DeDuperFields.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (\"{}\") : var1), (((var4 & 2) != 0) ? (long) (0L) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/ShutdownStore$ShutdownFields.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (null) : var1), (((var4 & 2) != 0) ? (Long) (null) : var2), (((var4 & 4) != 0) ? (String) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/UserJwtExpiryInterceptor.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (Twig) (LumberMill.getLogger()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Author.java",
+        "replacement": "this((((var5 & 1) != 0) ? (String) (null) : var1), (((var5 & 2) != 0) ? (String) (null) : var2), (((var5 & 4) != 0) ? (String) (null) : var3), (((var5 & 8) != 0) ? (String) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/BlockAttachment.java",
+        "replacement": "this((((var9 & 1) != 0) ? (String) (null) : var1), (((var9 & 2) != 0) ? (String) (null) : var2), (((var9 & 4) != 0) ? (String) (null) : var3), (((var9 & 8) != 0) ? (String) (null) : var4), (((var9 & 16) != 0) ? (long) (0L) : var5), (((var9 & 32) != 0) ? (long) (0L) : var7));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/ConversationRatingOption.java",
+        "replacement": "this((((var4 & 1) != 0) ? (int) (-1) : var1), (((var4 & 2) != 0) ? (String) (null) : var2), (((var4 & 4) != 0) ? (String) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/FormField.java",
+        "replacement": "this(var1, var2, (((var9 & 4) != 0) ? (String) (null) : var3), var4, var5, (((var9 & 32) != 0) ? (Options) (null) : var6), (((var9 & 64) != 0) ? (String) (null) : var7), (((var9 & 128) != 0) ? (boolean) (false) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Image.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (null) : var1), (((var7 & 2) != 0) ? (String) (null) : var2), (((var7 & 4) != 0) ? (String) (null) : var3), (((var7 & 8) != 0) ? (String) (null) : var4), (((var7 & 16) != 0) ? (int) (0) : var5), (((var7 & 32) != 0) ? (int) (0) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/ListOption.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (String) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/Options.java",
+        "replacement": "this((((var4 & 1) != 0) ? (boolean) (false) : var1), (((var4 & 2) != 0) ? (List) (CollectionsKt.emptyList()) : var2), (((var4 & 4) != 0) ? (String) (\"\") : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/TableCell.java",
+        "replacement": "this((((var2 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/TableRow.java",
+        "replacement": "this((((var2 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/blocks/lib/models/TicketAttribute.java",
+        "replacement": "this(var1, var3, var4, var5, var6, (((var8 & 32) != 0) ? (List) (CollectionsKt.emptyList()) : var7));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/api/HelpCenterArticleSearchResult.java",
+        "replacement": "this(var1, (((var5 & 2) != 0) ? (String) (\"\") : var2), (((var5 & 4) != 0) ? (String) (\"\") : var3), (((var5 & 8) != 0) ? (String) (\"\") : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/Article.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (null) : var1), var2);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleMetadata.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (String) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleStatsArguments.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"\") : var1), (((var3 & 2) != 0) ? (boolean) (false) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewModel.java",
+        "replacement": "this(var1, var2, var3, var4, var5, (((var13 & 32) != 0) ? (boolean) (false) : var6), (((var13 & 64) != 0) ? (boolean) (false) : var7), (((var13 & 128) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var8), var9, var10, var11, (((var13 & 2048) != 0) ? (boolean) (false) : var12));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewState$ConversationState.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (int) (string.intercom_continue_the_conversation) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewState$ReactionState.java",
+        "replacement": "this(var1, (((var5 & 2) != 0) ? (ArticleViewState$Reaction) (ArticleViewState$Reaction.None) : var2), var3, var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/ArticleViewState$TeamPresenceState.java",
+        "replacement": "this(var1, var2, var3, var4, var5, var6, var7, var8, (((var11 & 256) != 0) ? (boolean) (false) : var9), (((var11 & 512) != 0) ? (OpenMessengerResponse$NewConversationData$Cta) (null) : var10));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$ArticleActivityArguments.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (boolean) (false) : var3), (((var5 & 8) != 0) ? (boolean) (false) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/collections/HelpCenterCollection.java",
+        "replacement": "this((((var6 & 1) != 0) ? (String) (\"\") : var1), var2, (((var6 & 4) != 0) ? (String) (\"\") : var3), (((var6 & 8) != 0) ? (int) (0) : var4), (((var6 & 16) != 0) ? (int) (0) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchResultRow$ArticleResultRow.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (String) (\"\") : var3), (((var5 & 8) != 0) ? (int) (8) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.java",
+        "replacement": "this(var1, var2, var3, (((var8 & 8) != 0) ? (boolean) (false) : var4), (((var8 & 16) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var5), var6, var7);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/HelpCenterArticleSearchResponse$Highlight.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"\") : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/HelpCenterArticleSearchResponse.java",
+        "replacement": "this(var1, (((var6 & 2) != 0) ? (String) (\"\") : var2), (((var6 & 4) != 0) ? (String) (\"\") : var3), (((var6 & 8) != 0) ? (String) (\"\") : var4), (((var6 & 16) != 0) ? (HelpCenterArticleSearchResponse$Highlight) (new HelpCenterArticleSearchResponse$Highlight(null, null, 3, null)) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/IntercomArticleSearchActivity$ArticleSearchArgs.java",
+        "replacement": "this((((var2 & 1) != 0) ? (boolean) (false) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/Author.java",
+        "replacement": "this(var1, (((var4 & 2) != 0) ? (String) (\"\") : var2), (((var4 & 4) != 0) ? (Avatar) (new Avatar(null, null, 3, null)) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/Avatar.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"\") : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/HelpCenterArticle.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/HelpCenterCollectionContent.java",
+        "replacement": "this(var1, (((var9 & 2) != 0) ? (String) (\"\") : var2), (((var9 & 4) != 0) ? (String) (\"\") : var3), (((var9 & 8) != 0) ? (List) (CollectionsKt.emptyList()) : var4), (((var9 & 16) != 0) ? (List) (CollectionsKt.emptyList()) : var5), (((var9 & 32) != 0) ? (List) (CollectionsKt.emptyList()) : var6), var7, (((var9 & 128) != 0) ? (List) (CollectionsKt.emptyList()) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/sections/HelpCenterSection.java",
+        "replacement": "this((((var3 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse$ServerError.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (String) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponseAdapterFactory.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Function1) (((kotlin.jvm.functions.Function1)(recoveredArgument_116_0)->NetworkResponseAdapterFactory._init_$lambda$0((java.lang.Throwable)recoveredArgument_116_0))) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/AppIdentityStore$AppCredentials.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"\") : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/UserIdentityStore$UserFields.java",
+        "replacement": "this((((var8 & 1) != 0) ? (String) (\"\") : var1), (((var8 & 2) != 0) ? (String) (\"\") : var2), (((var8 & 4) != 0) ? (String) (\"\") : var3), (((var8 & 8) != 0) ? (String) (\"\") : var4), (((var8 & 16) != 0) ? (String) (\"\") : var5), (((var8 & 32) != 0) ? (String) (\"\") : var6), (((var8 & 64) != 0) ? (String) (\"\") : var7));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/UserJwtRefresher.java",
+        "replacement": "this(var1, var2, var3, (((var9 & 8) != 0) ? (TimeProvider) (TimeProvider.SYSTEM) : var4), (((var9 & 16) != 0) ? (Function0) (UserJwtRefresher$1.INSTANCE) : var5), (((var9 & 32) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->UserJwtRefresher._init_$lambda$0())) : var6), (((var9 & 64) != 0) ? (Function1) (((kotlin.jvm.functions.Function1)(recoveredArgument_135_0)->UserJwtRefresher._init_$lambda$1((java.lang.Runnable)recoveredArgument_135_0))) : var7), (((var9 & 128) != 0) ? (Twig) (LumberMill.getLogger()) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/config/AppSpecificStorageConfiguration.java",
+        "replacement": "this((((var2 & 1) != 0) ? (String) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/config/Configuration.java",
+        "replacement": "this((((var9 & 1) != 0) ? (VideoQuality) (VideoQuality.MEDIUM) : var1), (((var9 & 2) != 0) ? (boolean) (true) : var2), (((var9 & 4) != 0) ? (Integer) (null) : var3), (((var9 & 8) != 0) ? (boolean) (false) : var4), (((var9 & 16) != 0) ? (boolean) (false) : var5), (((var9 & 32) != 0) ? (Double) (null) : var6), (((var9 & 64) != 0) ? (Double) (null) : var7), var8);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/config/SharedStorageConfiguration.java",
+        "replacement": "this((((var3 & 1) != 0) ? (SaveLocation) (null) : var1), (((var3 & 2) != 0) ? (String) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/lightcompressor/video/Result.java",
+        "replacement": "this(var1, var2, var3, (((var7 & 8) != 0) ? (long) (0L) : var4), (((var7 & 16) != 0) ? (String) (null) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/ErrorState$WithCTA.java",
+        "replacement": "this((((var6 & 1) != 0) ? (int) (drawable.intercom_ic_warning) : var1), (((var6 & 2) != 0) ? (int) (string.intercom_spaces_error_title) : var2), (((var6 & 4) != 0) ? (Integer) (string.intercom_spaces_error_description) : var3), (((var6 & 8) != 0) ? (int) (string.intercom_reload) : var4), var5);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/ErrorState$WithoutCTA.java",
+        "replacement": "this((((var4 & 1) != 0) ? (int) (drawable.intercom_ic_warning) : var1), (((var4 & 2) != 0) ? (int) (string.intercom_spaces_error_title) : var2), (((var4 & 4) != 0) ? (Integer) (string.intercom_spaces_error_description) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/IntercomPrimaryButton.java",
+        "replacement": "this(var1, (((var4 & 2) != 0) ? (AttributeSet) (null) : var2), (((var4 & 4) != 0) ? (int) (0) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/TicketStatusHeaderArgs.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (FontWeight) (FontWeight.Companion.getNormal()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/avatar/AvatarWrapper.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (boolean) (false) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/AblyEventData.java",
+        "replacement": "this(var1, var3, (((var5 & 4) != 0) ? (Object) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/ConversationRepository.java",
+        "replacement": "this((((var8 & 1) != 0) ? (MessengerApi) (Injector.get().getMessengerApi()) : var1), (((var8 & 2) != 0) ? (UploadRepository) (new UploadRepository(null, null, null, null, 15, null)) : var2), (((var8 & 4) != 0) ? (Api) (Injector.get().getApi()) : var3), (((var8 & 8) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var4), (((var8 & 16) != 0) ? (AblyManager) (Injector.get().getAblyManager()) : var5), (((var8 & 32) != 0) ? (NexusClient) (Injector.get().getNexusClient()) : var6), var7);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository.java",
+        "replacement": "this(var1, (((var4 & 2) != 0) ? (Context) (Injector.get().getApplication()) : var2), (((var4 & 4) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->MediaUploadRepository._init_$lambda$0())) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/NexusEventsRepository.java",
+        "replacement": "this((((var4 & 1) != 0) ? (NexusClient) (Injector.get().getNexusClient()) : var1), (((var4 & 2) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var2), var3);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/ParsedNexusEvent$ConversationNexusEvent$NewComment.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (String) (null) : var3), (((var5 & 8) != 0) ? (Part$Builder) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/errors/VoiceTranscriptionError$FileTooLarge.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Throwable) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/errors/VoiceTranscriptionError$RecordingFailed.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Throwable) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/errors/VoiceTranscriptionError$TranscriptionFailed.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Throwable) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationReducer.java",
+        "replacement": "this((((var3 & 1) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->ConversationReducer._init_$lambda$0())) : var1), (((var3 & 2) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->ConversationReducer._init_$lambda$1())) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/BottomBarUiState.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (BottomBarUiState$BottomBadgeState) (BottomBarUiState$BottomBadgeState$None.INSTANCE) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$ConversationEnded$ConversationEndedCta.java",
+        "replacement": "this(var1, var2, (((var4 & 4) != 0) ? (String) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$ConversationEnded.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (ComposerState$ConversationEnded$ConversationEndedCta) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$Hidden.java",
+        "replacement": "this((((var2 & 1) != 0) ? (boolean) (true) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput.java",
+        "replacement": "this(var1, var2, (((var7 & 4) != 0) ? (boolean) (false) : var3), (((var7 & 8) != 0) ? (List) (CollectionsKt.emptyList()) : var4), (((var7 & 16) != 0) ? (List) (CollectionsKt.emptyList()) : var5), (((var7 & 32) != 0) ? (ComposerInputType) (ComposerInputType$Text.INSTANCE) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ContentRow$BubbleMessageRow$PartWrapper.java",
+        "replacement": "this(var1, var2, var3, (((var6 & 8) != 0) ? (List) (CollectionsKt.emptyList()) : var4), (((var6 & 16) != 0) ? (List) (CollectionsKt.emptyList()) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ContentRow$BubbleMessageRow.java",
+        "replacement": "this(var1, var2, var3, var4, (((var8 & 16) != 0) ? (boolean) (true) : var5), (((var8 & 32) != 0) ? (boolean) (false) : var6), (((var8 & 64) != 0) ? (SenderMetadata) (null) : var7));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ContentRow$FinAnswerRow.java",
+        "replacement": "this(var1, var2, (((var4 & 4) != 0) ? (SenderMetadata) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ConversationClientState.java",
+        "replacement": "this((((var24 & 1) != 0) ? (Map) (MapsKt.emptyMap()) : var1), (((var24 & 2) != 0) ? (Conversation) (null) : var2), (((var24 & 4) != 0) ? (String) (null) : var3), (((var24 & 8) != 0) ? (CurrentlyTypingState) (new CurrentlyTypingState(null, false, null, TypingIndicatorType.NONE, 7, null)) : var4), (((var24 & 16) != 0) ? (ComposerState) (new ComposerState$TextInput(\"\", new StringRes(string.intercom_reply_to_conversation, null, 2, null), false, null, null, null, 60, null)) : var5), (((var24 & 32) != 0) ? (BottomSheetState) (BottomSheetState$Empty.INSTANCE) : var6), (((var24 & 64) != 0) ? (LaunchMode) (LaunchMode.CLASSIC) : var7), (((var24 & 128) != 0) ? (NetworkResponse) (null) : var8), (((var24 & 256) != 0) ? (ArticleMetadata) (null) : var9), (((var24 & 512) != 0) ? (NetworkState) (NetworkState$Connected.INSTANCE) : var10), (((var24 & 1024) != 0) ? (List) (CollectionsKt.emptyList()) : var11), (((var24 & 2048) != 0) ? (List) (CollectionsKt.emptyList()) : var12), (((var24 & 4096) != 0) ? (FinStreamingData) (new FinStreamingData(false, null, 3, null)) : var13), (((var24 & 8192) != 0) ? (OpenMessengerResponse) (null) : var14), (((var24 & 16384) != 0) ? (int) (0) : var15), (((var24 & 32768) != 0) ? (int) (0) : var16), (((var24 & 65536) != 0) ? (FloatingIndicatorState) (FloatingIndicatorState$None.INSTANCE) : var17), (((var24 & 131072) != 0) ? (String) (null) : var18), (((var24 & 262144) != 0) ? (boolean) (false) : var19), (((var24 & 524288) != 0) ? (boolean) (false) : var20), (((var24 & 1048576) != 0) ? (PushNotificationsBannerState) (null) : var21), (((var24 & 2097152) != 0) ? (VoiceTranscriptionState) (VoiceTranscriptionState$Idle.INSTANCE) : var22), (((var24 & 4194304) != 0) ? (List) (CollectionsKt.emptyList()) : var23));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/ConversationUiState$Content.java",
+        "replacement": "this(var1, var2, var3, (((var9 & 8) != 0) ? (NetworkState) (NetworkState$Connected.INSTANCE) : var4), (((var9 & 16) != 0) ? (BottomSheetState) (BottomSheetState$Empty.INSTANCE) : var5), var6, var7, (((var9 & 128) != 0) ? (VoiceTranscriptionState) (VoiceTranscriptionState$Idle.INSTANCE) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/CurrentlyTypingState.java",
+        "replacement": "this((((var5 & 1) != 0) ? (AvatarWrapper) (AvatarWrapper.Companion.getNULL()) : var1), (((var5 & 2) != 0) ? (boolean) (true) : var2), (((var5 & 4) != 0) ? (StringProvider) (new StringRes(string.intercom_thinking, null, 2, null)) : var3), var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/EventLabelSegment.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (Weight) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/FinStreamingData.java",
+        "replacement": "this((((var3 & 1) != 0) ? (boolean) (false) : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/HeaderMenuItem$Messages.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (boolean) (true) : var3), var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/JumpToBottomButtonState.java",
+        "replacement": "this((((var3 & 1) != 0) ? (int) (0) : var1), (((var3 & 2) != 0) ? (int) (0) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/MediaUploadItem.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (UUID.randomUUID().toString()) : var1), var2, var3);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/PendingMessage.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (boolean) (true) : var3), (((var5 & 8) != 0) ? (PendingMessage$FailedMediaUploadData) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/states/SenderMetadata.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (boolean) (false) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/composer/WaveformBuffer.java",
+        "replacement": "this((((var2 & 1) != 0) ? (int) (70) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/CategorizedBlocks.java",
+        "replacement": "this((((var5 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1), (((var5 & 2) != 0) ? (List) (CollectionsKt.emptyList()) : var2), (((var5 & 4) != 0) ? (List) (CollectionsKt.emptyList()) : var3), (((var5 & 8) != 0) ? (List) (CollectionsKt.emptyList()) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/MessageStyle.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (PaddingValues) (PaddingKt.recovered$0eefed217002276c(0.0F, 0.0F, 3, null)) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/AudioRecordingUseCase.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (Twig) (LumberMill.getLogger()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/ConversationScrolledState.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (int) (0) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/FallbackPollingUseCase.java",
+        "replacement": "this((((var4 & 1) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->FallbackPollingUseCase._init_$lambda$0())) : var1), (((var4 & 2) != 0) ? (TimeProvider) (Injector.get().getTimeProvider()) : var2), var3);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/HandleFinStreamingDeltaUseCase.java",
+        "replacement": "this((((var2 & 1) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/PushNotificationsBannerUseCase.java",
+        "replacement": "this((((var3 & 1) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var1), (((var3 & 2) != 0) ? (PushTokenStore) (Injector.get().getPushTokenStore()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RecordingException.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (Throwable) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshConversationUseCase.java",
+        "replacement": "this(var1, (((var5 & 2) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var2), var3, var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMediaUseCase.java",
+        "replacement": "this(var1, var2, (((var4 & 4) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase.java",
+        "replacement": "this(var1, var2, var3, (((var6 & 8) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var4), (((var6 & 16) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendQuickReplyUseCase.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendSuggestionUseCase.java",
+        "replacement": "this(var1, var2, (((var4 & 4) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SoundEffectsUseCase.java",
+        "replacement": "this((((var3 & 1) != 0) ? (AppConfig) ((AppConfig)Injector.get().getAppConfigProvider().get()) : var1), var2);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/TrackLastReceivedPartsUseCase.java",
+        "replacement": "this((((var3 & 1) != 0) ? (MetricTracker) (Injector.get().getMetricTracker()) : var1), (((var3 & 2) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->TrackLastReceivedPartsUseCase._init_$lambda$0())) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/utils/KeyboardState.java",
+        "replacement": "this((((var6 & 1) != 0) ? (boolean) (false) : var1), (((var6 & 2) != 0) ? (int) (0) : var2), (((var6 & 4) != 0) ? (boolean) (false) : var3), (((var6 & 8) != 0) ? (boolean) (false) : var4), (((var6 & 16) != 0) ? (int) (0) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel.java",
+        "replacement": "this(var1, var2, var3, var4, (((var9 & 16) != 0) ? (HelpCenterEligibilityChecker) (HelpCenterEligibilityChecker.INSTANCE) : var5), (((var9 & 32) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var6), var7, var8);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/states/CollectionRowData.java",
+        "replacement": "this(var1, var2, var3, var4, (((var7 & 16) != 0) ? (int) (0) : var5), (((var7 & 32) != 0) ? (int) (0) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/HelpCenterLoadingScreen.java",
+        "replacement": "this(var1, (((var4 & 2) != 0) ? (AttributeSet) (null) : var2), (((var4 & 4) != 0) ? (int) (0) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/ui/components/TeamPresenceComponent.java",
+        "replacement": "this(var1, (((var4 & 2) != 0) ? (AttributeSet) (null) : var2), (((var4 & 4) != 0) ? (int) (0) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/HomeViewModel.java",
+        "replacement": "this(var1, var2, var3, (((var7 & 8) != 0) ? (HomeReducer) (new HomeReducer(null, null, 3, null)) : var4), var5, (((var7 & 32) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/data/HomeCards$HomeTicketLinksData.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (\"\") : var1), var2, var3);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/data/HomeRepository.java",
+        "replacement": "this((((var3 & 1) != 0) ? (MessengerApi) (Injector.get().getMessengerApi()) : var1), (((var3 & 2) != 0) ? (NexusClient) (Injector.get().getNexusClient()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/reducers/HomeReducer.java",
+        "replacement": "this((((var3 & 1) != 0) ? (Function0) (((kotlin.jvm.functions.Function0)()->HomeReducer._init_$lambda$0())) : var1), (((var3 & 2) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeClientState.java",
+        "replacement": "this((((var4 & 1) != 0) ? (NetworkResponse) (null) : var1), (((var4 & 2) != 0) ? (NetworkResponse) (null) : var2), (((var4 & 4) != 0) ? (boolean) (false) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader$CloseButtonColor.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (String) (null) : var3), var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader$ColoredText.java",
+        "replacement": "this(var1, var2, (((var7 & 4) != 0) ? (String) (null) : var3), (((var7 & 8) != 0) ? (String) (null) : var4), (((var7 & 16) != 0) ? (String) (null) : var5), var6);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader.java",
+        "replacement": "this(var1, var2, (((var11 & 4) != 0) ? (String) (null) : var3), var4, var5, var6, (((var11 & 64) != 0) ? (HomeUiState$Content$ContentHeader$HeaderBackdropStyle) (null) : var7), var8, var9, var10);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/data/InboxRepository.java",
+        "replacement": "this((((var4 & 1) != 0) ? (MessengerApi) (Injector.get().getMessengerApi()) : var1), (((var4 & 2) != 0) ? (NexusClient) (Injector.get().getNexusClient()) : var2), (((var4 & 4) != 0) ? (AblyManager) (Injector.get().getAblyManager()) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/inbox/states/InboxUiState$Content.java",
+        "replacement": "this(var1, var2, var3, (((var7 & 8) != 0) ? (boolean) (false) : var4), (((var7 & 16) != 0) ? (ErrorState) (null) : var5), (((var7 & 32) != 0) ? (Map) (MapsKt.emptyMap()) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/IntercomRootActivityArgs$ConversationScreenArgs.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (null) : var1), (((var7 & 2) != 0) ? (String) (\"\") : var2), (((var7 & 4) != 0) ? (boolean) (false) : var3), (((var7 & 8) != 0) ? (String) (null) : var4), (((var7 & 16) != 0) ? (String) (null) : var5), (((var7 & 32) != 0) ? (TransitionArgs) (new TransitionArgs(null, null, null, null, 15, null)) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/IntercomRootActivityArgs$HelpCenterCollectionsArgs.java",
+        "replacement": "this((((var3 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1), var2);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/data/IntercomPreviewArgs.java",
+        "replacement": "this((((var7 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1), (((var7 & 2) != 0) ? (DeleteType) (DeleteType$None.INSTANCE) : var2), (((var7 & 4) != 0) ? (String) (null) : var3), (((var7 & 8) != 0) ? (boolean) (false) : var4), (((var7 & 16) != 0) ? (int) (0) : var5), (((var7 & 32) != 0) ? (DownloadState) (new DownloadState(false, \"Saving...\", \"File saved\", \"Something went wrong\", \"Permission denied\")) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/model/PreviewUiState.java",
+        "replacement": "this((((var10 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1), (((var10 & 2) != 0) ? (int) (0) : var2), (((var10 & 4) != 0) ? (boolean) (false) : var3), (((var10 & 8) != 0) ? (boolean) (false) : var4), (((var10 & 16) != 0) ? (String) (null) : var5), (((var10 & 32) != 0) ? (boolean) (false) : var6), (((var10 & 64) != 0) ? (String) (null) : var7), (((var10 & 128) != 0) ? (String) (null) : var8), (((var10 & 256) != 0) ? (String) (null) : var9));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/MediaData$Media$Image.java",
+        "replacement": "this(var1, var2, var3, var4, var6, var7, (((var9 & 64) != 0) ? (Map) (MapsKt.emptyMap()) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/upload/data/UploadRepository.java",
+        "replacement": "this((((var5 & 1) != 0) ? (MessengerApi) (Injector.get().getMessengerApi()) : var1), (((var5 & 2) != 0) ? (ExternalUploadApi) (Injector.get().getExternalUploadApi()) : var2), (((var5 & 4) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var3), (((var5 & 8) != 0) ? (Context) (Injector.get().getApplication()) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/AblyConnectResponse.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (List) (CollectionsKt.emptyList()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/AblyEndpoint.java",
+        "replacement": "this(var1, (((var5 & 2) != 0) ? (List) (null) : var2), (((var5 & 4) != 0) ? (String) (null) : var3), (((var5 & 8) != 0) ? (String) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ActiveBot.java",
+        "replacement": "this((((var5 & 1) != 0) ? (Participant$Builder) (new Participant$Builder()) : var1), (((var5 & 2) != 0) ? (boolean) (false) : var2), (((var5 & 4) != 0) ? (boolean) (false) : var3), (((var5 & 8) != 0) ? (StreamingPart) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Attachments.java",
+        "replacement": "this((((var5 & 1) != 0) ? (String) (null) : var1), (((var5 & 2) != 0) ? (String) (null) : var2), (((var5 & 4) != 0) ? (String) (null) : var3), (((var5 & 8) != 0) ? (String) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Attribute.java",
+        "replacement": "this(var1, var2, var3, var4, (((var9 & 16) != 0) ? (String) (null) : var5), (((var9 & 32) != 0) ? (List) (null) : var6), (((var9 & 64) != 0) ? (Boolean) (null) : var7), (((var9 & 128) != 0) ? (String) (null) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CloseButtonModel.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (\"#FFFFFF\") : var1), (((var4 & 2) != 0) ? (float) (1.0F) : var2), (((var4 & 4) != 0) ? (String) (\"#000000\") : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ComposerState.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (int) (0) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ComposerSuggestions$Suggestion.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"\") : var1), (((var3 & 2) != 0) ? (String) (\"\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ComposerSuggestions.java",
+        "replacement": "this((((var4 & 1) != 0) ? (List) (CollectionsKt.emptyList()) : var1), (((var4 & 2) != 0) ? (boolean) (false) : var2), (((var4 & 4) != 0) ? (Long) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ConfigModules.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (HomeConfig) (new HomeConfig(null, null, 3, null)) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Conversation.java",
+        "replacement": "this((((var22 & 1) != 0) ? (String) (\"\") : var1), (((var22 & 2) != 0) ? (String) (\"\") : var2), (((var22 & 4) != 0) ? (boolean) (false) : var3), (((var22 & 8) != 0) ? (List) (CollectionsKt.emptyList()) : var4), (((var22 & 16) != 0) ? (List) (CollectionsKt.emptyList()) : var5), (((var22 & 32) != 0) ? (List) (CollectionsKt.emptyList()) : var6), (((var22 & 64) != 0) ? (LastParticipatingAdmin$Builder) (new LastParticipatingAdmin$Builder()) : var7), (((var22 & 128) != 0) ? (ComposerState) (ComposerState.Companion.getNULL()) : var8), (((var22 & 256) != 0) ? (boolean) (false) : var9), (((var22 & 512) != 0) ? (boolean) (false) : var10), (((var22 & 1024) != 0) ? (String) (\"\") : var11), (((var22 & 2048) != 0) ? (String) (\"\") : var12), (((var22 & 4096) != 0) ? (boolean) (false) : var13), (((var22 & 8192) != 0) ? (Ticket) (null) : var14), (((var22 & 16384) != 0) ? (ConversationUiFlags) (ConversationUiFlags.Companion.getDEFAULT()) : var15), (((var22 & 32768) != 0) ? (Header) (null) : var16), (((var22 & 65536) != 0) ? (ConversationEndedButton) (null) : var17), (((var22 & 131072) != 0) ? (FooterNotice) (null) : var18), (((var22 & 262144) != 0) ? (PoweredBy) (null) : var19), (((var22 & 524288) != 0) ? (String) (null) : var20), (((var22 & 1048576) != 0) ? (String) (null) : var21));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ConversationEndedButton.java",
+        "replacement": "this(var1, var2, var3, (((var5 & 8) != 0) ? (ConversationEndedButton$Metadata) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/ConversationUiFlags.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Boolean) (true) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CountryAreaCode.java",
+        "replacement": "this((((var6 & 1) != 0) ? (String) (null) : var1), (((var6 & 2) != 0) ? (String) (null) : var2), (((var6 & 4) != 0) ? (String) (null) : var3), (((var6 & 8) != 0) ? (Integer) (null) : var4), (((var6 & 16) != 0) ? (List) (null) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CrashReportingConfig.java",
+        "replacement": "this((((var2 & 1) != 0) ? (boolean) (true) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/CustomizationModel.java",
+        "replacement": "this(var1, var2, (((var13 & 4) != 0) ? (CustomizationColorsModel) (null) : var3), var4, var5, var6, var7, (((var13 & 128) != 0) ? (String) (null) : var8), (((var13 & 256) != 0) ? (String) (null) : var9), var10, (((var13 & 1024) != 0) ? (String) (null) : var11), var12);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EmptyState$Action.java",
+        "replacement": "this((((var4 & 1) != 0) ? (ActionType) (ActionType.MESSAGE) : var1), (((var4 & 2) != 0) ? (String) (\"\") : var2), (((var4 & 4) != 0) ? (IconType) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EmptyState.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (\"\") : var1), (((var4 & 2) != 0) ? (String) (\"\") : var2), (((var4 & 4) != 0) ? (EmptyState$Action) (new EmptyState$Action(null, null, null, 7, null)) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EventContent.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"\") : var1), (((var3 & 2) != 0) ? (Weight) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/EventData.java",
+        "replacement": "this((((var9 & 1) != 0) ? (EventParticipant$Builder) (null) : var1), (((var9 & 2) != 0) ? (String) (null) : var2), (((var9 & 4) != 0) ? (List) (null) : var3), (((var9 & 8) != 0) ? (String) (null) : var4), (((var9 & 16) != 0) ? (String) (null) : var5), (((var9 & 32) != 0) ? (String) (null) : var6), (((var9 & 64) != 0) ? (String) (null) : var7), (((var9 & 128) != 0) ? (String) (null) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderBackgroundModel.java",
+        "replacement": "this((((var12 & 1) != 0) ? (String) (\"#FFFFFF\") : var1), (((var12 & 2) != 0) ? (String) (null) : var2), (((var12 & 4) != 0) ? (List) (null) : var3), (((var12 & 8) != 0) ? (List) (null) : var4), (((var12 & 16) != 0) ? (String) (null) : var5), (((var12 & 32) != 0) ? (String) (null) : var6), (((var12 & 64) != 0) ? (boolean) (true) : var7), (((var12 & 128) != 0) ? (Boolean) (null) : var8), (((var12 & 256) != 0) ? (HeaderBackdropType) (HeaderBackdropType.SOLID) : var9), (((var12 & 512) != 0) ? (HeaderBackdropType) (null) : var10), (((var12 & 1024) != 0) ? (boolean) (false) : var11));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderConfig.java",
+        "replacement": "this((((var4 & 1) != 0) ? (HeaderBackgroundModel) (new HeaderBackgroundModel(null, null, null, null, null, null, false, null, null, null, false, 2047, null)) : var1), (((var4 & 2) != 0) ? (HeaderContentModel) (new HeaderContentModel(null, null, false, null, null, null, null, null, 255, null)) : var2), (((var4 & 4) != 0) ? (boolean) (true) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderContentModel.java",
+        "replacement": "this((((var9 & 1) != 0) ? (String) (\"\") : var1), (((var9 & 2) != 0) ? (String) (null) : var2), (((var9 & 4) != 0) ? (boolean) (true) : var3), (((var9 & 8) != 0) ? (HeaderTextModel) (new HeaderTextModel(null, 0.0F, null, null, 15, null)) : var4), (((var9 & 16) != 0) ? (HeaderTextModel) (new HeaderTextModel(null, 0.0F, null, null, 15, null)) : var5), (((var9 & 32) != 0) ? (CloseButtonModel) (new CloseButtonModel(null, 0.0F, null, 7, null)) : var6), (((var9 & 64) != 0) ? (String) (null) : var7), (((var9 & 128) != 0) ? (String) (null) : var8));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HeaderTextModel.java",
+        "replacement": "this((((var5 & 1) != 0) ? (String) (\"\") : var1), (((var5 & 2) != 0) ? (float) (1.0F) : var2), (((var5 & 4) != 0) ? (String) (\"#000000\") : var3), (((var5 & 8) != 0) ? (String) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HomeConfig.java",
+        "replacement": "this((((var3 & 1) != 0) ? (HeaderConfig) (new HeaderConfig(null, null, false, 7, null)) : var1), (((var3 & 2) != 0) ? (OpenConfig) (new OpenConfig(null, null, null, 7, null)) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/HostAppState.java",
+        "replacement": "this((((var8 & 1) != 0) ? (AppLifecycleState) (AppLifecycleState.UNINITIALIZED) : var1), (((var8 & 2) != 0) ? (boolean) (false) : var2), (((var8 & 4) != 0) ? (long) (0L) : var3), (((var8 & 8) != 0) ? (Long) (null) : var5), (((var8 & 16) != 0) ? (boolean) (false) : var6), (((var8 & 32) != 0) ? (boolean) (false) : var7));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Location.java",
+        "replacement": "this((((var4 & 1) != 0) ? (String) (null) : var1), (((var4 & 2) != 0) ? (String) (null) : var2), (((var4 & 4) != 0) ? (Integer) (null) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Metadata.java",
+        "replacement": "this((((var5 & 1) != 0) ? (String) (\"\") : var1), (((var5 & 2) != 0) ? (String) (null) : var2), (((var5 & 4) != 0) ? (Long) (null) : var3), (((var5 & 8) != 0) ? (List) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenConfig.java",
+        "replacement": "this((((var4 & 1) != 0) ? (OpenToSpace) (OpenToSpace.HOME) : var1), (((var4 & 2) != 0) ? (List) (CollectionsKt.listOf(new Space(null, null, 3, null))) : var2), (((var4 & 4) != 0) ? (OpenForm) (OpenForm.DEFAULT) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse$NewConversationData$Cta.java",
+        "replacement": "this(var1, (((var4 & 2) != 0) ? (String) (null) : var2), var3);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse$NewConversationData$HomeCard.java",
+        "replacement": "this(var1, (((var5 & 2) != 0) ? (String) (null) : var2), (((var5 & 4) != 0) ? (AvatarDetails) (null) : var3), (((var5 & 8) != 0) ? (OpenMessengerResponse$IconType) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse$NewConversationData.java",
+        "replacement": "this(var1, var2, (((var8 & 4) != 0) ? (List) (CollectionsKt.emptyList()) : var3), (((var8 & 8) != 0) ? (List) (CollectionsKt.emptyList()) : var4), (((var8 & 16) != 0) ? (Header) (null) : var5), (((var8 & 32) != 0) ? (String) (null) : var6), (((var8 & 64) != 0) ? (String) (null) : var7));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OpenMessengerResponse.java",
+        "replacement": "this((((var11 & 1) != 0) ? (ComposerSuggestions) (null) : var1), (((var11 & 2) != 0) ? (OpenMessengerResponse$NewConversationData) (null) : var2), (((var11 & 4) != 0) ? (ComposerState) (ComposerState.Companion.getNULL()) : var3), (((var11 & 8) != 0) ? (String) (null) : var4), (((var11 & 16) != 0) ? (PoweredBy) (null) : var5), (((var11 & 32) != 0) ? (List) (CollectionsKt.emptyList()) : var6), (((var11 & 64) != 0) ? (PrivacyNotice) (null) : var7), (((var11 & 128) != 0) ? (TeamPresence) (null) : var8), (((var11 & 256) != 0) ? (String) (null) : var9), (((var11 & 512) != 0) ? (String) (null) : var10));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/OverlayState.java",
+        "replacement": "this((((var12 & 1) != 0) ? (SurveyData) (SurveyData.Companion.getNULL()) : var1), (((var12 & 2) != 0) ? (Carousel) (Carousel.NULL) : var2), (((var12 & 4) != 0) ? (int) (0) : var3), (((var12 & 8) != 0) ? (Intercom$Visibility) (Intercom$Visibility.GONE) : var4), (((var12 & 16) != 0) ? (Intercom$Visibility) (Intercom$Visibility.VISIBLE) : var5), (((var12 & 32) != 0) ? (boolean) (true) : var6), (((var12 & 64) != 0) ? (boolean) (true) : var7), (((var12 & 128) != 0) ? (List) (CollectionsKt.emptyList()) : var8), (((var12 & 256) != 0) ? (Set) (SetsKt.emptySet()) : var9), (((var12 & 512) != 0) ? (Activity) (null) : var10), (((var12 & 1024) != 0) ? (Activity) (null) : var11));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Reaction.java",
+        "replacement": "this((((var3 & 1) != 0) ? (int) (0) : var1), (((var3 & 2) != 0) ? (String) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/SocialAccount.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (null) : var1), (((var3 & 2) != 0) ? (String) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Space.java",
+        "replacement": "this((((var3 & 1) != 0) ? (Space$Type) (Space$Type.HOME) : var1), (((var3 & 2) != 0) ? (String) (null) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/StreamingPart.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Metadata) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/TeamPresence.java",
+        "replacement": "this((((var5 & 1) != 0) ? (List) (null) : var1), (((var5 & 2) != 0) ? (ActiveBot) (null) : var2), (((var5 & 4) != 0) ? (String) (null) : var3), (((var5 & 8) != 0) ? (String) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$Status.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (\"\") : var1), (((var7 & 2) != 0) ? (String) (\"\") : var2), (((var7 & 4) != 0) ? (String) (\"\") : var3), (((var7 & 8) != 0) ? (boolean) (false) : var4), (((var7 & 16) != 0) ? (long) (0L) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$DateTimeAttribute.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (\"\") : var1), (((var7 & 2) != 0) ? (String) (\"\") : var2), (((var7 & 4) != 0) ? (String) (\"\") : var3), (((var7 & 8) != 0) ? (boolean) (false) : var4), (((var7 & 16) != 0) ? (TicketAttributeType) (TicketAttributeType.DATETIME) : var5), (((var7 & 32) != 0) ? (String) (\"\") : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$FilesAttribute.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (\"\") : var1), (((var7 & 2) != 0) ? (String) (\"\") : var2), (((var7 & 4) != 0) ? (String) (\"\") : var3), (((var7 & 8) != 0) ? (boolean) (false) : var4), var5, var6);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$ListAttribute.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (\"\") : var1), (((var7 & 2) != 0) ? (String) (\"\") : var2), (((var7 & 4) != 0) ? (String) (\"\") : var3), (((var7 & 8) != 0) ? (boolean) (false) : var4), (((var7 & 16) != 0) ? (TicketAttributeType) (TicketAttributeType.LIST) : var5), (((var7 & 32) != 0) ? (String) (\"\") : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$PrimitiveAttribute.java",
+        "replacement": "this((((var7 & 1) != 0) ? (String) (\"\") : var1), (((var7 & 2) != 0) ? (String) (\"\") : var2), (((var7 & 4) != 0) ? (String) (\"\") : var3), (((var7 & 8) != 0) ? (boolean) (false) : var4), (((var7 & 16) != 0) ? (TicketAttributeType) (TicketAttributeType.STRING) : var5), (((var7 & 32) != 0) ? (String) (\"\") : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket$TicketAttribute$UnSupported.java",
+        "replacement": "this(var1, var2, var3, var4, var5, (((var7 & 32) != 0) ? (Object) (\"\") : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Ticket.java",
+        "replacement": "this((((var18 & 1) != 0) ? (String) (\"\") : var1), (((var18 & 2) != 0) ? (String) (null) : var2), (((var18 & 4) != 0) ? (String) (\"\") : var3), (((var18 & 8) != 0) ? (String) (\"\") : var4), (((var18 & 16) != 0) ? (String) (\"\") : var5), (((var18 & 32) != 0) ? (String) (\"\") : var6), (((var18 & 64) != 0) ? (Ticket$Status) (new Ticket$Status(null, null, null, false, 0L, 31, null)) : var7), (((var18 & 128) != 0) ? (List) (CollectionsKt.emptyList()) : var8), (((var18 & 256) != 0) ? (List) (CollectionsKt.emptyList()) : var9), (((var18 & 512) != 0) ? (long) (0L) : var10), (((var18 & 1024) != 0) ? (Participant$Builder) (new Participant$Builder()) : var12), (((var18 & 2048) != 0) ? (String) (null) : var13), (((var18 & 4096) != 0) ? (Ticket$ConversationButton) (null) : var14), (((var18 & 8192) != 0) ? (Boolean) (null) : var15), (((var18 & 16384) != 0) ? (long) (0L) : var16));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/UploadMetadata.java",
+        "replacement": "this((((var2 & 1) != 0) ? (String) (\"\") : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ProgressBarState.java",
+        "replacement": "this((((var3 & 1) != 0) ? (boolean) (false) : var1), (((var3 & 2) != 0) ? (float) (0.0F) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyRepository.java",
+        "replacement": "this((((var2 & 1) != 0) ? (SurveyApi) (Injector.get().getSurveyApi()) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyState$Error$WithCTA.java",
+        "replacement": "this((((var5 & 1) != 0) ? (int) (string.intercom_inbox_error_state_title) : var1), var2, var3, var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyState$Error$WithoutCTA.java",
+        "replacement": "this((((var4 & 1) != 0) ? (int) (string.intercom_inbox_error_state_title) : var1), var2, var3);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyViewModel.java",
+        "replacement": "this((((var7 & 1) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var1), var2, (((var7 & 4) != 0) ? (SurveyRepository) (new SurveyRepository(null, 1, null)) : var3), (((var7 & 8) != 0) ? (AppConfig) ((AppConfig)Injector.get().getAppConfigProvider().get()) : var4), (((var7 & 16) != 0) ? (MetricTracker) (Injector.get().getMetricTracker()) : var5), (((var7 & 32) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/TopBarState$NoTopBarState.java",
+        "replacement": "this(var1, var2, (((var4 & 4) != 0) ? (ProgressBarState) (new ProgressBarState(false, 0.0F, 3, null)) : var3));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/TopBarState$SenderTopBarState.java",
+        "replacement": "this(var1, var2, var3, var4, var5, (((var7 & 32) != 0) ? (ProgressBarState) (new ProgressBarState(false, 0.0F, 3, null)) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ValidationError$ValidationStringError.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (List) (CollectionsKt.emptyList()) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/CodeBlockMode$Inline.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Function0) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/TableBlockMode$Inline.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Function0) (null) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyCustomization.java",
+        "replacement": "this((((var3 & 1) != 0) ? (String) (\"#FFFFFF\") : var1), (((var3 & 2) != 0) ? (String) (\"#000000\") : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$DropDownQuestionModel.java",
+        "replacement": "this(var1, var2, var3, var4, (((var7 & 16) != 0) ? (String) (\"\") : var5), (((var7 & 32) != 0) ? (Integer) (null) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$QuestionData.java",
+        "replacement": "this(var1, var2, (((var14 & 4) != 0) ? (JsonArray) (new JsonArray()) : var3), var4, var5, var6, var7, var8, var9, var10, var11, var12, var13);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$QuestionModel.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (StringProvider) (new ActualString(\"\")) : var3), var4);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$ShortTextQuestionModel.java",
+        "replacement": "this(var1, var2, var3, (((var10 & 8) != 0) ? (String) (\"\") : var4), var5, var6, (((var10 & 64) != 0) ? (boolean) (true) : var7), (((var10 & 128) != 0) ? (Integer) (null) : var8), (((var10 & 256) != 0) ? (Integer) (null) : var9));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step$Question$UploadFileQuestionModel.java",
+        "replacement": "this(var1, var2, (((var7 & 4) != 0) ? (StringProvider) (new ActualString(\"\")) : var3), var4, var5, var6);"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$Step.java",
+        "replacement": "this(var1, var2, var3, var4, (((var7 & 16) != 0) ? (List) (CollectionsKt.emptyList()) : var5), (((var7 & 32) != 0) ? (String) (null) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData$SurveyActions.java",
+        "replacement": "this(var1, var2, (((var6 & 4) != 0) ? (String) (null) : var4), (((var6 & 8) != 0) ? (String) (null) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveyData.java",
+        "replacement": "this(var1, var2, var3, var4, var5, var6, var7, var8, (((var10 & 256) != 0) ? (boolean) (true) : var9));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveySenderAvatar.java",
+        "replacement": "this((((var2 & 1) != 0) ? (String) (\"\") : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/model/SurveySenderData.java",
+        "replacement": "this((((var5 & 1) != 0) ? (String) (null) : var1), (((var5 & 2) != 0) ? (String) (null) : var2), (((var5 & 4) != 0) ? (String) (null) : var3), (((var5 & 8) != 0) ? (SurveySenderAvatar) (null) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/ui/models/Answer$MultipleAnswer.java",
+        "replacement": "this(var1, (((var3 & 2) != 0) ? (Answer$MultipleAnswer$OtherAnswer) (Answer$MultipleAnswer$OtherAnswer$NotSelected.INSTANCE) : var2));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/TicketDetailViewModel.java",
+        "replacement": "this(var1, (((var7 & 2) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var2), (((var7 & 4) != 0) ? (MetricTracker) (Injector.get().getMetricTracker()) : var3), (((var7 & 8) != 0) ? (TicketRepository) (new TicketRepository(null, null, null, null, null, 31, null)) : var4), (((var7 & 16) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var5), (((var7 & 32) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var6));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/TicketLaunchedFrom$Conversation.java",
+        "replacement": "this((((var2 & 1) != 0) ? (Ticket) ((Ticket)Injector.get().getDataLayer().getTicket().getValue()) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/data/TicketRepository.java",
+        "replacement": "this((((var6 & 1) != 0) ? (TicketApi) (Injector.get().getTicketApi()) : var1), (((var6 & 2) != 0) ? (UploadRepository) (new UploadRepository(null, null, null, null, 15, null)) : var2), (((var6 & 4) != 0) ? (NexusClient) (Injector.get().getNexusClient()) : var3), (((var6 & 8) != 0) ? (AblyManager) (Injector.get().getAblyManager()) : var4), (((var6 & 16) != 0) ? (IntercomDataLayer) (Injector.get().getDataLayer()) : var5));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content.java",
+        "replacement": "this(var1, var2, (((var5 & 4) != 0) ? (boolean) (false) : var3), (((var5 & 8) != 0) ? (boolean) (true) : var4));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel.java",
+        "replacement": "this(var1, (((var11 & 2) != 0) ? (TicketRepository) (new TicketRepository(null, null, null, null, null, 31, null)) : var2), (((var11 & 4) != 0) ? (UserIdentity) (Injector.get().getUserIdentity()) : var3), (((var11 & 8) != 0) ? (AppConfig) ((AppConfig)Injector.get().getAppConfigProvider().get()) : var4), (((var11 & 16) != 0) ? (CoroutineDispatcher) (Dispatchers.getIO()) : var5), (((var11 & 32) != 0) ? (MetricTracker) (Injector.get().getMetricTracker()) : var6), var7, var8, (((var11 & 256) != 0) ? (Context) (Injector.get().getApplication()) : var10));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/data/TicketsPagingSource.java",
+        "replacement": "this((((var2 & 1) != 0) ? (TicketRepository) (new TicketRepository(null, null, null, null, null, 31, null)) : var1));"
+      },
+      {
+        "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/list/data/TicketsScreenUiState$Content.java",
+        "replacement": "this(var1, (((var5 & 2) != 0) ? (boolean) (false) : var2), (((var5 & 4) != 0) ? (ErrorState) (null) : var3), var4);"
+      }
+    ]
+  },
+  "negative_mask_constructors": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/models/Config.java",
+      "start": 21407,
+      "end": 24271,
+      "replacement": "this((((var38 & 1) != 0) ? (String) (\"\") : var1), (((var38 & 2) != 0) ? (String) (null) : var2), (((var38 & 4) != 0) ? (String) (null) : var3), (((var38 & 8) != 0) ? (String) (\"\") : var4), (((var38 & 16) != 0) ? (String) (\"\") : var5), (((var38 & 32) != 0) ? (String) (\"\") : var6), (((var38 & 64) != 0) ? (String) (\"\") : var7), (((var38 & 128) != 0) ? (boolean) (false) : var8), (((var38 & 256) != 0) ? (boolean) (false) : var9), (((var38 & 512) != 0) ? (boolean) (true) : var10), (((var38 & 1024) != 0) ? (boolean) (true) : var11), (((var38 & 2048) != 0) ? (boolean) (true) : var12), (((var38 & 4096) != 0) ? (boolean) (false) : var13), (((var38 & 8192) != 0) ? (boolean) (false) : var14), (((var38 & 16384) != 0) ? (long) (60L) : var15), (((var38 & 32768) != 0) ? (int) (100) : var17), (((var38 & 65536) != 0) ? (long) (300L) : var18), (((var38 & 131072) != 0) ? (long) (1L) : var20), (((var38 & 262144) != 0) ? (long) (20L) : var22), (((var38 & 524288) != 0) ? (NexusConfig$Builder) (new NexusConfig$Builder()) : var24), (((var38 & 1048576) != 0) ? (String) (\"\") : var25), (((var38 & 2097152) != 0) ? (Set) (SetsKt.emptySet()) : var26), (((var38 & 4194304) != 0) ? (Set) (SetsKt.emptySet()) : var27), (((var38 & 8388608) != 0) ? (boolean) (false) : var28), (((var38 & 16777216) != 0) ? (boolean) (true) : var29), (((var38 & 33554432) != 0) ? (boolean) (false) : var30), (((var38 & 67108864) != 0) ? (boolean) (false) : var31), (((var38 & 134217728) != 0) ? (boolean) (false) : var32), (((var38 & 268435456) != 0) ? (ConfigModules) (null) : var33), (((var38 & 536870912) != 0) ? (AttachmentSettings) (AttachmentSettings.Companion.getDEFAULT()) : var34), (((var38 & 1073741824) != 0) ? (boolean) (true) : var35), (((var38 & -2147483648) != 0) ? (ConversationStateSyncSettings) (ConversationStateSyncSettings.Companion.getDEFAULT()) : var36), (((var39 & 1) != 0) ? (CrashReportingConfig) (new CrashReportingConfig(false, 1, null)) : var37));",
+      "ordered_defaults": "var1,var2,var3,var4,var5,var6,var7,var8,var9,var10,var11,var12,var13,var14,var15,var17,var18,var20,var22,var24,var25,var26,var27,var28,var29,var30,var31,var32,var33,var34,var35,var36,var37",
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "descriptor": "0x3f202c",
+  "raw64": "4300000024a5ffff2ce3fdff0100000001000000000000001f0000005a63feff00000000110000000000000050000000f8a4ffff20e3fdff6036dfff88930100",
+  "numSignatureRequirements": 1,
+  "numRequirements": 1,
+  "provenMethod": "didTapCitations([ITBInlineCitation]) -> Void",
+  "evidence": "dSYM BlockPartView protocol witness at1ec2f8 and TextView weak existential dispatch; private Swift ABI not runtime verified"
+}

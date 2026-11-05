@@ -1,0 +1,8 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "source_before_sha256": "92bf29ef3fd9138f35c2548a7a051588f77751e98c8a34eda8fda699f6e8c3b4",
+  "source_after_sha256": "59f062be7f837f0f376c648098d3c7e3e938a50d7fa45f15a2090c0fdbe6bbe9",
+  "scope": "Original first slot13 is Iterable (ALOAD11/ASTORE13@173) used iterator192; separate later slot11/13 Collection from CHECKCAST313 used toArray331. No added initial Collection cast; original fallback collection/connection construction/listener/catch and raw suspend configuration ordering retained.",
+  "original_evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/ably-collection-lifetimes/original.javap.txt",
+  "method_code_backfill": false
+}

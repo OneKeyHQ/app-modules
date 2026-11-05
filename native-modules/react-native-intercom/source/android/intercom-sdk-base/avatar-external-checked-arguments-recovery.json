@@ -1,0 +1,19 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "source_before_sha256": "2243a0916a2341266678e97482c55c9ddbf998ee89e69f0ed3bebd95c9cb697a",
+  "source_after_sha256": "53e16244ce22f02d39f9d744f000d17dc6ab7cac820bf2abaa75e6689dd24eb8",
+  "scope": "Two bounded already-checked Function1 carriers at original external Coil args8/9 only. Original CHECKCAST911/1074 and end918/1081 retained; callback parameter adaptation unchanged. Independently reviewed all-path typed72/73\u2192105/106/109 copies; old132 casts retraced rather than used as fresh roots. No general external gate expansion.",
+  "raw_dependency": {
+    "jar": "dependency-020.jar",
+    "sha256": "b5576bcfbbb1408c8b15a317aaa7ba1b2c9edfc6e7e208660cbb69ff2631e8bd"
+  },
+  "original_call": "vendor BCI1262 SubcomposeAsyncImage-TCQMD7g full descriptor matches unique compile alias recovered$9e62f4c19284676e; raw/view declarations saved",
+  "prior132": {
+    "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/components/avatar/AvatarIconKt$DefaultAvatar$1.java",
+    "before_sha256": "5560c939fc6bc0fcbf3007bf6d8a173d70d444cb8bc87756ba4cf17f05aabdfc",
+    "after_sha256": "2243a0916a2341266678e97482c55c9ddbf998ee89e69f0ed3bebd95c9cb697a"
+  },
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/function-arguments-14d/Avatar-CONTRACT.json",
+  "declarations": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/avatar-external-argument",
+  "code_backfill": false
+}

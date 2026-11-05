@@ -1,0 +1,32 @@
+{
+  "status": "SOURCE_CORRECTED_NOT_COMPILED",
+  "changes": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.java",
+      "before_sha256": "c64991ff8cee77adafbdd5e766c859f7176963e055df7cf107cadc1794d0bc11",
+      "after_sha256": "690972a8d0b475238c9cf154e19bd3cf4404eb9243fc1409bf1f44271a50bc9a",
+      "scope": "Only disable branch flow receiver: field GETFIELD338 kept at original point; typed carrier save/reload matches original 362/451 and setValue499",
+      "suspend_contract": "Raw result264/sentinel270/resume restore+throw308+rawjoin313 and plus323 unchanged"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SendMessageUseCase$Companion.java",
+      "before_sha256": "368fb467b78a6fa3a4bcde82b13dee323d014cd3c710773e62f92c30eac67cb1",
+      "after_sha256": "167f136a82b43c238bb6028f38e58a47c85c1037d30e54592b1d8b6ea3030d35",
+      "scope": "Only declare raw CAS expected object before loop; every retry still rereads getValue and uses original raw value in compareAndSet"
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/overlay/OverlayPresenter.java",
+      "before_sha256": "b0cff0b1460cd0d7585ac87f93e7a3f4cea845c63162ba2f2eee78ba958fd078",
+      "after_sha256": "c4f9220caa0e6c38bbd2db16bb42777c23c168495e7b939a678cfcd75f41ffe4",
+      "scope": "Four original ctor Function1 SAM instantiated entry types Set/AppConfig/OverlayState/IntercomEvent; retain adapter CHECKCAST before original helper body and allow null as original. Only two shadowing body local names change.",
+      "body_order": "Original state getters, size/count boxing, onStateChange/onNewConfig/lifecycle calls remain in original order",
+      "original_bsms": "Original handle7 private synthetic lambda$new$0/1/2/3, each returns Unit; full exact original descriptors in contract/javap"
+    }
+  ],
+  "contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/receiver-local-338/CONTRACT.md",
+  "runtime": "NOT_RUN",
+  "source_snapshots_verified": [
+    "ArticleSearchViewModel.java",
+    "SendMessageUseCase$Companion.java"
+  ]
+}

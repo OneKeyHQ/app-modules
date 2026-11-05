@@ -1,0 +1,7 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "source_before_sha256": "e18f376fdbca157e7840f4e3dfc6298093e7b22fa4bac9271761273c9f8089b5",
+  "source_after_sha256": "adf7c95bfc6cdd66e45789ea81db2d31be266d994d14c66a05740af6b45838ec",
+  "scope": "Only private withRefreshedJwt Java source throws IOException; preserves original explicit new IOException(\"Canceled\") branch, refresh/cancel/auth/replay body unchanged. Its direct caller intercept source already declares permitted IOException; output restores original private helper absent Exceptions. No wrapper/swallow/bypass.",
+  "code_backfill": false
+}

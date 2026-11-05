@@ -1,0 +1,2379 @@
+{
+  "baseline": "Intercom19.9.1 arm64 device original own ObjC selectors/type encodings",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "scope": "Static source-object metadata comparison only, no runtime/complete Swift ABI/ivar-layout or normal consumer acceptance",
+  "runtimeVerified": false,
+  "targets": [
+    {
+      "target": "arm64-apple-ios15.0",
+      "objectSHA256": "dba2679c99189586e5118b46cc299d6e8c2be463ccbf7b7bbdca1adfbf0b2644",
+      "classes": {
+        "CodeBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-highlightedHtml": "@16@0:8",
+            "-setHighlightedHtml:": "v24@0:8@16",
+            "-highlightedAttributedString": "@16@0:8",
+            "-setHighlightedAttributedString:": "v24@0:8@16",
+            "-type": "q16@0:8",
+            "-updateAppearance:": "v24@0:8@16",
+            "-updateWithAppearance:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-initWithDictionary:appearance:font:textColor:": "@48@0:8@16@24@32@40",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-highlightedHtml": "@16@0:8",
+            "-setHighlightedHtml:": "v24@0:8@16",
+            "-highlightedAttributedString": "@16@0:8",
+            "-setHighlightedAttributedString:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithDictionary:appearance:font:textColor:": "@48@0:8@16@24@32@40",
+            "-type": "q16@0:8",
+            "-updateAppearance:": "v24@0:8@16",
+            "-updateWithAppearance:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-rows": "@16@0:8",
+            "-setRows:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-setValue:forKey:": "v32@0:8@16@24",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-rows": "@16@0:8",
+            "-setRows:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-setValue:forKey:": "v32@0:8@16@24",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableRow": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-cells": "@16@0:8",
+            "-setCells:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-cells": "@16@0:8",
+            "-setCells:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableCell": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-content": "@16@0:8",
+            "-setContent:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-content": "@16@0:8",
+            "-setContent:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-ticketTypeTitle": "@16@0:8",
+            "-setTicketTypeTitle:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-ticketType": "@16@0:8",
+            "-setTicketType:": "v24@0:8@16",
+            "-viewClass": "#16@0:8",
+            "-type": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-ticketTypeTitle": "@16@0:8",
+            "-setTicketTypeTitle:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-ticketType": "@16@0:8",
+            "-setTicketType:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketType": {
+          "expected": {
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-initWithId:name:emoji:attributes:isArchived:": "@52@0:8@16@24@32@40B48",
+            "-id": "@16@0:8",
+            "-name": "@16@0:8",
+            "-emoji": "@16@0:8",
+            "-attributes": "@16@0:8",
+            "-isArchived": "B16@0:8",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-id": "@16@0:8",
+            "-name": "@16@0:8",
+            "-emoji": "@16@0:8",
+            "-attributes": "@16@0:8",
+            "-isArchived": "B16@0:8",
+            "-initWithId:name:emoji:attributes:isArchived:": "@52@0:8@16@24@32@40B48",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketBlockView": {
+          "expected": {
+            "-viewTapped": "v16@0:8",
+            "-initWithCoder:": "@24@0:8@16",
+            "-configureWithBlock:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-configureWithBlock:": "v24@0:8@16",
+            "-viewTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TextBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ListBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ButtonBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-buttonTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-buttonTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-trailingButtonTapped": "v16@0:8",
+            "-copyTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-trailingButtonTapped": "v16@0:8",
+            "-copyTapped": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "HeaderIconButton": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-pointInside:withEvent:": "B40@0:8{CGPoint=dd}16@32",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-handleHover:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-handleHover:": "v24@0:8@16",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-pointInside:withEvent:": "B40@0:8{CGPoint=dd}16@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockExpandedViewController": {
+          "expected": {
+            "-gestureRecognizer:shouldReceiveTouch:": "B32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-accessibilityPerformEscape": "B16@0:8",
+            "-scrimTapped": "v16@0:8",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-accessibilityPerformEscape": "B16@0:8",
+            "-scrimTapped": "v16@0:8",
+            "-gestureRecognizer:shouldReceiveTouch:": "B32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockView.UnwrappedTextView": {
+          "expected": {
+            "-initWithFrame:textContainer:": "@56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16@48",
+            "-initWithCoder:": "@24@0:8@16",
+            "-attributedText": "@16@0:8",
+            "-setAttributedText:": "v24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8"
+          },
+          "actual": {
+            "-initWithFrame:textContainer:": "@56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16@48",
+            "-initWithCoder:": "@24@0:8@16",
+            "-attributedText": "@16@0:8",
+            "-setAttributedText:": "v24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "AttachmentBlockView": {
+          "expected": {
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "FileAttachmentBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-fileTapped:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-fileTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:didFailNavigation:withError:": "v40@0:8@16@24@32",
+            "-orientationChanged": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-orientationChanged": "v16@0:8",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:didFailNavigation:withError:": "v40@0:8@16@24@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-blockTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-blockTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "DefaultBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkListBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-didMoveToWindow": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-didMoveToWindow": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkListItemView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-itemTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-itemTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppTextInputPayload": {
+          "expected": {
+            "-hash": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-hash": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppConversationView": {
+          "expected": {
+            "-messengerSheetDidClose:": "v24@0:8@16",
+            "-messengerSheetDidCloseAndTriggerReload:": "v24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-userContentController:didReceiveScriptMessage:": "v32@0:8@16@24",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:decidePolicyForNavigationAction:decisionHandler:": "v40@0:8@16@24@?32",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-userContentController:didReceiveScriptMessage:": "v32@0:8@16@24",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:decidePolicyForNavigationAction:decisionHandler:": "v40@0:8@16@24@?32",
+            "-messengerSheetDidClose:": "v24@0:8@16",
+            "-messengerSheetDidCloseAndTriggerReload:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoFileBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-orientationChanged": "v16@0:8",
+            "-playVideo": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-orientationChanged": "v16@0:8",
+            "-playVideo": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoPlayButton": {
+          "expected": {
+            "-didTouchUpInside": "v16@0:8",
+            "-initWithCoder:": "@24@0:8@16",
+            "-layoutSubviews": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-layoutSubviews": "v16@0:8",
+            "-didTouchUpInside": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "UIFlags": {
+          "expected": {
+            "-initWithDictionary:": "@24@0:8@16",
+            "-showLastPartMetadata": "B16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8"
+          },
+          "actual": {
+            "-showLastPartMetadata": "B16@0:8",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "FooterNotice": {
+          "expected": {
+            "-initWithDictionary:": "@24@0:8@16",
+            "-title": "@16@0:8",
+            "-subtitle": "@16@0:8",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-title": "@16@0:8",
+            "-subtitle": "@16@0:8",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "OutboundImageBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ConversationImageBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "HomeMetricService": {
+          "expected": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+addLauncherClickedMetric": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+addLauncherClickedMetric": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "PreviewHelper": {
+          "expected": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ImagePreviewerViewController": {
+          "expected": {
+            "-viewForZoomingInScrollView:": "@24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-handleDoubleTap:": "v24@0:8@16",
+            "-dismissViewController": "v16@0:8",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-handleDoubleTap:": "v24@0:8@16",
+            "-dismissViewController": "v16@0:8",
+            "-viewForZoomingInScrollView:": "@24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MediaPreviewerViewController": {
+          "expected": {
+            "-numberOfPreviewItemsInPreviewController:": "q24@0:8@16",
+            "-previewController:previewItemAtIndex:": "@32@0:8@16q24",
+            "-previewController:editingModeForPreviewItem:": "q32@0:8@16@24",
+            "-previewController:didSaveEditedCopyOfPreviewItem:atURL:": "v40@0:8@16@24@32",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-numberOfPreviewItemsInPreviewController:": "q24@0:8@16",
+            "-previewController:previewItemAtIndex:": "@32@0:8@16q24",
+            "-previewController:editingModeForPreviewItem:": "q32@0:8@16@24",
+            "-previewController:didSaveEditedCopyOfPreviewItem:atURL:": "v40@0:8@16@24@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "OutboundContentBlockDelegate": {
+          "expected": {
+            "-initWithContext:": "@24@0:8q16",
+            "-initWithContext:viewController:": "@32@0:8q16@24",
+            "-onShouldDismiss": "@?16@0:8",
+            "-setOnShouldDismiss:": "v24@0:8@?16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-onShouldDismiss": "@?16@0:8",
+            "-setOnShouldDismiss:": "v24@0:8@?16",
+            "-initWithContext:": "@24@0:8q16",
+            "-initWithContext:viewController:": "@32@0:8q16@24",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "BlockViewFactoryObjC": {
+          "expected": {
+            "-init": "@16@0:8",
+            "+viewFor:displayContext:blockDelegate:": "@40@0:8@16q24@32"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "+viewFor:displayContext:blockDelegate:": "@40@0:8@16q24@32"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        }
+      }
+    },
+    {
+      "target": "arm64-apple-ios15.0-simulator",
+      "objectSHA256": "28c05f8131bd93e9616955b3def06163914a0976f3500efdedb49a250c2b9a29",
+      "classes": {
+        "CodeBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-highlightedHtml": "@16@0:8",
+            "-setHighlightedHtml:": "v24@0:8@16",
+            "-highlightedAttributedString": "@16@0:8",
+            "-setHighlightedAttributedString:": "v24@0:8@16",
+            "-type": "q16@0:8",
+            "-updateAppearance:": "v24@0:8@16",
+            "-updateWithAppearance:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-initWithDictionary:appearance:font:textColor:": "@48@0:8@16@24@32@40",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-highlightedHtml": "@16@0:8",
+            "-setHighlightedHtml:": "v24@0:8@16",
+            "-highlightedAttributedString": "@16@0:8",
+            "-setHighlightedAttributedString:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithDictionary:appearance:font:textColor:": "@48@0:8@16@24@32@40",
+            "-type": "q16@0:8",
+            "-updateAppearance:": "v24@0:8@16",
+            "-updateWithAppearance:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-rows": "@16@0:8",
+            "-setRows:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-setValue:forKey:": "v32@0:8@16@24",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-rows": "@16@0:8",
+            "-setRows:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-setValue:forKey:": "v32@0:8@16@24",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableRow": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-cells": "@16@0:8",
+            "-setCells:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-cells": "@16@0:8",
+            "-setCells:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableCell": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-content": "@16@0:8",
+            "-setContent:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-content": "@16@0:8",
+            "-setContent:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-ticketTypeTitle": "@16@0:8",
+            "-setTicketTypeTitle:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-ticketType": "@16@0:8",
+            "-setTicketType:": "v24@0:8@16",
+            "-viewClass": "#16@0:8",
+            "-type": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-ticketTypeTitle": "@16@0:8",
+            "-setTicketTypeTitle:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-ticketType": "@16@0:8",
+            "-setTicketType:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketType": {
+          "expected": {
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-initWithId:name:emoji:attributes:isArchived:": "@52@0:8@16@24@32@40B48",
+            "-id": "@16@0:8",
+            "-name": "@16@0:8",
+            "-emoji": "@16@0:8",
+            "-attributes": "@16@0:8",
+            "-isArchived": "B16@0:8",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-id": "@16@0:8",
+            "-name": "@16@0:8",
+            "-emoji": "@16@0:8",
+            "-attributes": "@16@0:8",
+            "-isArchived": "B16@0:8",
+            "-initWithId:name:emoji:attributes:isArchived:": "@52@0:8@16@24@32@40B48",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketBlockView": {
+          "expected": {
+            "-viewTapped": "v16@0:8",
+            "-initWithCoder:": "@24@0:8@16",
+            "-configureWithBlock:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-configureWithBlock:": "v24@0:8@16",
+            "-viewTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TextBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ListBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ButtonBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-buttonTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-buttonTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-trailingButtonTapped": "v16@0:8",
+            "-copyTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-trailingButtonTapped": "v16@0:8",
+            "-copyTapped": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "HeaderIconButton": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-pointInside:withEvent:": "B40@0:8{CGPoint=dd}16@32",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-handleHover:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-handleHover:": "v24@0:8@16",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-pointInside:withEvent:": "B40@0:8{CGPoint=dd}16@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockExpandedViewController": {
+          "expected": {
+            "-gestureRecognizer:shouldReceiveTouch:": "B32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-accessibilityPerformEscape": "B16@0:8",
+            "-scrimTapped": "v16@0:8",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-accessibilityPerformEscape": "B16@0:8",
+            "-scrimTapped": "v16@0:8",
+            "-gestureRecognizer:shouldReceiveTouch:": "B32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockView.UnwrappedTextView": {
+          "expected": {
+            "-initWithFrame:textContainer:": "@56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16@48",
+            "-initWithCoder:": "@24@0:8@16",
+            "-attributedText": "@16@0:8",
+            "-setAttributedText:": "v24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8"
+          },
+          "actual": {
+            "-initWithFrame:textContainer:": "@56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16@48",
+            "-initWithCoder:": "@24@0:8@16",
+            "-attributedText": "@16@0:8",
+            "-setAttributedText:": "v24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "AttachmentBlockView": {
+          "expected": {
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "FileAttachmentBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-fileTapped:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-fileTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:didFailNavigation:withError:": "v40@0:8@16@24@32",
+            "-orientationChanged": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-orientationChanged": "v16@0:8",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:didFailNavigation:withError:": "v40@0:8@16@24@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-blockTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-blockTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "DefaultBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkListBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-didMoveToWindow": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-didMoveToWindow": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkListItemView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-itemTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-itemTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppTextInputPayload": {
+          "expected": {
+            "-hash": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-hash": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppConversationView": {
+          "expected": {
+            "-messengerSheetDidClose:": "v24@0:8@16",
+            "-messengerSheetDidCloseAndTriggerReload:": "v24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-userContentController:didReceiveScriptMessage:": "v32@0:8@16@24",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:decidePolicyForNavigationAction:decisionHandler:": "v40@0:8@16@24@?32",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-userContentController:didReceiveScriptMessage:": "v32@0:8@16@24",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:decidePolicyForNavigationAction:decisionHandler:": "v40@0:8@16@24@?32",
+            "-messengerSheetDidClose:": "v24@0:8@16",
+            "-messengerSheetDidCloseAndTriggerReload:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoFileBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-orientationChanged": "v16@0:8",
+            "-playVideo": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-orientationChanged": "v16@0:8",
+            "-playVideo": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoPlayButton": {
+          "expected": {
+            "-didTouchUpInside": "v16@0:8",
+            "-initWithCoder:": "@24@0:8@16",
+            "-layoutSubviews": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-layoutSubviews": "v16@0:8",
+            "-didTouchUpInside": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "UIFlags": {
+          "expected": {
+            "-initWithDictionary:": "@24@0:8@16",
+            "-showLastPartMetadata": "B16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8"
+          },
+          "actual": {
+            "-showLastPartMetadata": "B16@0:8",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "FooterNotice": {
+          "expected": {
+            "-initWithDictionary:": "@24@0:8@16",
+            "-title": "@16@0:8",
+            "-subtitle": "@16@0:8",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-title": "@16@0:8",
+            "-subtitle": "@16@0:8",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "OutboundImageBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ConversationImageBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "HomeMetricService": {
+          "expected": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+addLauncherClickedMetric": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+addLauncherClickedMetric": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "PreviewHelper": {
+          "expected": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ImagePreviewerViewController": {
+          "expected": {
+            "-viewForZoomingInScrollView:": "@24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-handleDoubleTap:": "v24@0:8@16",
+            "-dismissViewController": "v16@0:8",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-handleDoubleTap:": "v24@0:8@16",
+            "-dismissViewController": "v16@0:8",
+            "-viewForZoomingInScrollView:": "@24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MediaPreviewerViewController": {
+          "expected": {
+            "-numberOfPreviewItemsInPreviewController:": "q24@0:8@16",
+            "-previewController:previewItemAtIndex:": "@32@0:8@16q24",
+            "-previewController:editingModeForPreviewItem:": "q32@0:8@16@24",
+            "-previewController:didSaveEditedCopyOfPreviewItem:atURL:": "v40@0:8@16@24@32",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-numberOfPreviewItemsInPreviewController:": "q24@0:8@16",
+            "-previewController:previewItemAtIndex:": "@32@0:8@16q24",
+            "-previewController:editingModeForPreviewItem:": "q32@0:8@16@24",
+            "-previewController:didSaveEditedCopyOfPreviewItem:atURL:": "v40@0:8@16@24@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "OutboundContentBlockDelegate": {
+          "expected": {
+            "-initWithContext:": "@24@0:8q16",
+            "-initWithContext:viewController:": "@32@0:8q16@24",
+            "-onShouldDismiss": "@?16@0:8",
+            "-setOnShouldDismiss:": "v24@0:8@?16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-onShouldDismiss": "@?16@0:8",
+            "-setOnShouldDismiss:": "v24@0:8@?16",
+            "-initWithContext:": "@24@0:8q16",
+            "-initWithContext:viewController:": "@32@0:8q16@24",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "BlockViewFactoryObjC": {
+          "expected": {
+            "-init": "@16@0:8",
+            "+viewFor:displayContext:blockDelegate:": "@40@0:8@16q24@32"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "+viewFor:displayContext:blockDelegate:": "@40@0:8@16q24@32"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        }
+      }
+    },
+    {
+      "target": "x86_64-apple-ios15.0-simulator",
+      "objectSHA256": "3b47177c7d07c5359481455ec238ff42f938c982a953d492d87f235ad07b502d",
+      "classes": {
+        "CodeBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-highlightedHtml": "@16@0:8",
+            "-setHighlightedHtml:": "v24@0:8@16",
+            "-highlightedAttributedString": "@16@0:8",
+            "-setHighlightedAttributedString:": "v24@0:8@16",
+            "-type": "q16@0:8",
+            "-updateAppearance:": "v24@0:8@16",
+            "-updateWithAppearance:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-initWithDictionary:appearance:font:textColor:": "@48@0:8@16@24@32@40",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-highlightedHtml": "@16@0:8",
+            "-setHighlightedHtml:": "v24@0:8@16",
+            "-highlightedAttributedString": "@16@0:8",
+            "-setHighlightedAttributedString:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithDictionary:appearance:font:textColor:": "@48@0:8@16@24@32@40",
+            "-type": "q16@0:8",
+            "-updateAppearance:": "v24@0:8@16",
+            "-updateWithAppearance:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-rows": "@16@0:8",
+            "-setRows:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-setValue:forKey:": "v32@0:8@16@24",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-rows": "@16@0:8",
+            "-setRows:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-setValue:forKey:": "v32@0:8@16@24",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableRow": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-cells": "@16@0:8",
+            "-setCells:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-cells": "@16@0:8",
+            "-setCells:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TableCell": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-content": "@16@0:8",
+            "-setContent:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-content": "@16@0:8",
+            "-setContent:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketBlock": {
+          "expected": {
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-ticketTypeTitle": "@16@0:8",
+            "-setTicketTypeTitle:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-ticketType": "@16@0:8",
+            "-setTicketType:": "v24@0:8@16",
+            "-viewClass": "#16@0:8",
+            "-type": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-ticketTypeTitle": "@16@0:8",
+            "-setTicketTypeTitle:": "v24@0:8@16",
+            "-title": "@16@0:8",
+            "-setTitle:": "v24@0:8@16",
+            "-ticketType": "@16@0:8",
+            "-setTicketType:": "v24@0:8@16",
+            "-initWithDictionary:appearance:": "@32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-type": "q16@0:8",
+            "-viewClass": "#16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-copyWithZone:": "@24@0:8^v16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketType": {
+          "expected": {
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-initWithId:name:emoji:attributes:isArchived:": "@52@0:8@16@24@32@40B48",
+            "-id": "@16@0:8",
+            "-name": "@16@0:8",
+            "-emoji": "@16@0:8",
+            "-attributes": "@16@0:8",
+            "-isArchived": "B16@0:8",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "actual": {
+            "-id": "@16@0:8",
+            "-name": "@16@0:8",
+            "-emoji": "@16@0:8",
+            "-attributes": "@16@0:8",
+            "-isArchived": "B16@0:8",
+            "-initWithId:name:emoji:attributes:isArchived:": "@52@0:8@16@24@32@40B48",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-encodeWithCoder:": "v24@0:8@16",
+            "-init": "@16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-.cxx_destruct": "v16@0:8",
+            "+supportsSecureCoding": "B16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TicketBlockView": {
+          "expected": {
+            "-viewTapped": "v16@0:8",
+            "-initWithCoder:": "@24@0:8@16",
+            "-configureWithBlock:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-configureWithBlock:": "v24@0:8@16",
+            "-viewTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "TextBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ListBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ButtonBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-buttonTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-buttonTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-trailingButtonTapped": "v16@0:8",
+            "-copyTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-trailingButtonTapped": "v16@0:8",
+            "-copyTapped": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "HeaderIconButton": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-pointInside:withEvent:": "B40@0:8{CGPoint=dd}16@32",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-handleHover:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-handleHover:": "v24@0:8@16",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-pointInside:withEvent:": "B40@0:8{CGPoint=dd}16@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockExpandedViewController": {
+          "expected": {
+            "-gestureRecognizer:shouldReceiveTouch:": "B32@0:8@16@24",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-accessibilityPerformEscape": "B16@0:8",
+            "-scrimTapped": "v16@0:8",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-accessibilityPerformEscape": "B16@0:8",
+            "-scrimTapped": "v16@0:8",
+            "-gestureRecognizer:shouldReceiveTouch:": "B32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "CodeBlockView.UnwrappedTextView": {
+          "expected": {
+            "-initWithFrame:textContainer:": "@56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16@48",
+            "-initWithCoder:": "@24@0:8@16",
+            "-attributedText": "@16@0:8",
+            "-setAttributedText:": "v24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8"
+          },
+          "actual": {
+            "-initWithFrame:textContainer:": "@56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16@48",
+            "-initWithCoder:": "@24@0:8@16",
+            "-attributedText": "@16@0:8",
+            "-setAttributedText:": "v24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "AttachmentBlockView": {
+          "expected": {
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "FileAttachmentBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-fileTapped:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-fileTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:didFailNavigation:withError:": "v40@0:8@16@24@32",
+            "-orientationChanged": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-orientationChanged": "v16@0:8",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:didFailNavigation:withError:": "v40@0:8@16@24@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-blockTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-blockTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "DefaultBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkListBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-didMoveToWindow": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-didMoveToWindow": "v16@0:8",
+            "-traitCollectionDidChange:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "LinkListItemView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-itemTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-itemTapped": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppTextInputPayload": {
+          "expected": {
+            "-hash": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-hash": "q16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppConversationView": {
+          "expected": {
+            "-messengerSheetDidClose:": "v24@0:8@16",
+            "-messengerSheetDidCloseAndTriggerReload:": "v24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-userContentController:didReceiveScriptMessage:": "v32@0:8@16@24",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:decidePolicyForNavigationAction:decisionHandler:": "v40@0:8@16@24@?32",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-dealloc": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-userContentController:didReceiveScriptMessage:": "v32@0:8@16@24",
+            "-webView:didFinishNavigation:": "v32@0:8@16@24",
+            "-webView:decidePolicyForNavigationAction:decisionHandler:": "v40@0:8@16@24@?32",
+            "-messengerSheetDidClose:": "v24@0:8@16",
+            "-messengerSheetDidCloseAndTriggerReload:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MessengerAppBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoFileBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-orientationChanged": "v16@0:8",
+            "-playVideo": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-orientationChanged": "v16@0:8",
+            "-playVideo": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "VideoPlayButton": {
+          "expected": {
+            "-didTouchUpInside": "v16@0:8",
+            "-initWithCoder:": "@24@0:8@16",
+            "-layoutSubviews": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-layoutSubviews": "v16@0:8",
+            "-didTouchUpInside": "v16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "UIFlags": {
+          "expected": {
+            "-initWithDictionary:": "@24@0:8@16",
+            "-showLastPartMetadata": "B16@0:8",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8"
+          },
+          "actual": {
+            "-showLastPartMetadata": "B16@0:8",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-isEqual:": "B24@0:8@16",
+            "-init": "@16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "FooterNotice": {
+          "expected": {
+            "-initWithDictionary:": "@24@0:8@16",
+            "-title": "@16@0:8",
+            "-subtitle": "@16@0:8",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-title": "@16@0:8",
+            "-subtitle": "@16@0:8",
+            "-initWithDictionary:": "@24@0:8@16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "OutboundImageBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ConversationImageBlockView": {
+          "expected": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithFrame:": "@48@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16",
+            "-intrinsicContentSize": "{CGSize=dd}16@0:8",
+            "-layoutSubviews": "v16@0:8",
+            "-uploadProgressUpdated:": "v24@0:8d16",
+            "-uploadFailed": "v16@0:8",
+            "-progressButtonViewTapped": "v16@0:8",
+            "-imageTapped:": "v24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "HomeMetricService": {
+          "expected": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+addLauncherClickedMetric": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8",
+            "+addLauncherClickedMetric": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "PreviewHelper": {
+          "expected": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "ImagePreviewerViewController": {
+          "expected": {
+            "-viewForZoomingInScrollView:": "@24@0:8@16",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-handleDoubleTap:": "v24@0:8@16",
+            "-dismissViewController": "v16@0:8",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-handleDoubleTap:": "v24@0:8@16",
+            "-dismissViewController": "v16@0:8",
+            "-viewForZoomingInScrollView:": "@24@0:8@16",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "MediaPreviewerViewController": {
+          "expected": {
+            "-numberOfPreviewItemsInPreviewController:": "q24@0:8@16",
+            "-previewController:previewItemAtIndex:": "@32@0:8@16q24",
+            "-previewController:editingModeForPreviewItem:": "q32@0:8@16@24",
+            "-previewController:didSaveEditedCopyOfPreviewItem:atURL:": "v40@0:8@16@24@32",
+            "-initWithCoder:": "@24@0:8@16",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-initWithCoder:": "@24@0:8@16",
+            "-initWithNibName:bundle:": "@32@0:8@16@24",
+            "-viewDidLoad": "v16@0:8",
+            "-viewWillAppear:": "v20@0:8B16",
+            "-numberOfPreviewItemsInPreviewController:": "q24@0:8@16",
+            "-previewController:previewItemAtIndex:": "@32@0:8@16q24",
+            "-previewController:editingModeForPreviewItem:": "q32@0:8@16@24",
+            "-previewController:didSaveEditedCopyOfPreviewItem:atURL:": "v40@0:8@16@24@32",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "OutboundContentBlockDelegate": {
+          "expected": {
+            "-initWithContext:": "@24@0:8q16",
+            "-initWithContext:viewController:": "@32@0:8q16@24",
+            "-onShouldDismiss": "@?16@0:8",
+            "-setOnShouldDismiss:": "v24@0:8@?16",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "actual": {
+            "-onShouldDismiss": "@?16@0:8",
+            "-setOnShouldDismiss:": "v24@0:8@?16",
+            "-initWithContext:": "@24@0:8q16",
+            "-initWithContext:viewController:": "@32@0:8q16@24",
+            "-init": "@16@0:8",
+            "-.cxx_destruct": "v16@0:8"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        },
+        "BlockViewFactoryObjC": {
+          "expected": {
+            "-init": "@16@0:8",
+            "+viewFor:displayContext:blockDelegate:": "@40@0:8@16q24@32"
+          },
+          "actual": {
+            "-init": "@16@0:8",
+            "+viewFor:displayContext:blockDelegate:": "@40@0:8@16q24@32"
+          },
+          "missing": [],
+          "extra": [],
+          "typeDifferences": {}
+        }
+      }
+    }
+  ],
+  "status": "STATIC_OWN_OBJC_SELECTORS_TYPES_MATCH"
+}

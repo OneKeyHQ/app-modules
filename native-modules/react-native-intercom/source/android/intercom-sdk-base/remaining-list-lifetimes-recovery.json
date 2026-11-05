@@ -1,0 +1,18 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/SubmitAttributeUseCase.java",
+      "before_sha256": "7b5f8168a438b96dc90b21f584db2881401f43ccbe94e5ef0f2b38ab1e0bf10e",
+      "after_sha256": "424198703c946155adb3daa8564d49dc9b4df0e36d954065a1e188a2e81cd281"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/reducers/ConversationPartsReducerKt.java",
+      "before_sha256": "dc13e5e6e01480a7cbb61908117c1ceb3e4ff19db19f5e22a945e0a4abda9585",
+      "after_sha256": "e1b0e1fe02465e51b901dc0de8f6d2343ef6b19282d6d7c6c88ba75dba065eb8"
+    }
+  ],
+  "scope": "Split distinct Iterable and later List lifetimes at preexisting original List casts, retaining object identity and original cast/call order. Submit loading list cast646/store650 before withOrderedComposerState668; Conversation reducer Listcast418/store422 before lastOrNull433. No blanket Iterable downcasts.",
+  "original_evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/remaining-list-lifetimes-41",
+  "code_backfill": false
+}

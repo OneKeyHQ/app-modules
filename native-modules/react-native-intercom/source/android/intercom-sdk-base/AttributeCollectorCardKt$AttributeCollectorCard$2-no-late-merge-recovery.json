@@ -1,0 +1,156 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+  "root_only": true,
+  "source_before_sha256": "e8b8d3a74a2642ead160531f40a2d1acdae3378addb0b8329eda8568923bfc75",
+  "source_after_sha256": "1e6dd51e6837e07748ae98df03fab7341aca59d675b633da4ad91868cdb08cad",
+  "source_capture_sites": 2,
+  "source_capture_bindings": 1,
+  "declaration_check_exit": 0,
+  "type_edits": 0,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AttributeCollectorCardKt$AttributeCollectorCard$2/ast-input/io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2.java",
+      "22943",
+      "23038",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1630_0) -> io.intercom.android.sdk.views.compose.AttributeCollectorCardKt$AttributeCollectorCard$2.invoke$lambda$11$lambda$10$lambda$8$lambda$7(recoveredExpressionCapture_1630_0, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_1630_0)))",
+      "22924",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_1630_0 = var77;\\n                  ",
+      "1630",
+      "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+      "Landroidx/compose/runtime/MutableState;=var77",
+      "recoveredExpressionCapture_1630_0=var77@14427:LOCAL|77|77|0|var77|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-AttributeCollectorCardKt$AttributeCollectorCard$2/ast-input/io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2.java",
+      "14009",
+      "14104",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.views.compose.AttributeCollectorCardKt$AttributeCollectorCard$2.invoke$lambda$11$lambda$10$lambda$3$lambda$2())",
+      "13988",
+      "",
+      "1631",
+      "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 1630,
+      "original": [
+        "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "1536",
+        "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+        "invoke$lambda$11$lambda$10$lambda$8$lambda$7",
+        "(Landroidx/compose/runtime/MutableState;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/MutableState;=var77",
+        "2258"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke$lambda$11$lambda$10$lambda$8$lambda$7",
+          "(Landroidx/compose/runtime/MutableState;Ljava/lang/String;)Lkotlin/Unit;",
+          "{2256, 2257, 2258, 2259, 2260, 2261, 2262}",
+          "LOCAL|77|77|0|var77|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke$lambda$11$lambda$10$lambda$8$lambda$7",
+          "(Landroidx/compose/runtime/MutableState;Ljava/lang/String;)Lkotlin/Unit;",
+          "{2256, 2257, 2258, 2259, 2260, 2261, 2262}",
+          "LOCAL|77|77|0|var77|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "2258",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2.invoke$lambda$11$lambda$10$lambda$8$lambda$7(Landroidx/compose/runtime/MutableState;Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 1631,
+      "original": [
+        "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "733",
+        "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+        "invoke$lambda$11$lambda$10$lambda$3$lambda$2",
+        "()Landroidx/compose/runtime/MutableState;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Landroidx/compose/runtime/MutableState;",
+        "kotlin/jvm/functions/Function0",
+        "",
+        "1074"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke$lambda$11$lambda$10$lambda$3$lambda$2",
+          "()Landroidx/compose/runtime/MutableState;",
+          "{1074, 1075, 1076, 1077, 1078}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+          "invoke$lambda$11$lambda$10$lambda$3$lambda$2",
+          "()Landroidx/compose/runtime/MutableState;",
+          "{1074, 1075, 1076, 1077, 1078}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/ColumnScope;Landroidx/compose/runtime/Composer;I)V",
+        "1074",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/views/compose/AttributeCollectorCardKt$AttributeCollectorCard$2.invoke$lambda$11$lambda$10$lambda$3$lambda$2()Landroidx/compose/runtime/MutableState; (6), ()Landroidx/compose/runtime/MutableState;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

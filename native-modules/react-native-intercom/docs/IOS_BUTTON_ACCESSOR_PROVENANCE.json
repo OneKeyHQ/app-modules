@@ -1,0 +1,134 @@
+{
+  "baseline": "Intercom19.9.1 original device MachO/metadata",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "simplePairs": 7,
+  "validatedAccessors": [
+    {
+      "class": "ITBButtonBlock",
+      "selector": "url",
+      "ivar": "_url",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa1bc",
+      "ownership": "copy",
+      "instructionsSHA256": "d2dc3ea55ea9008c6ce5a8154f512f56d2baf9543c05f127f5c144f55b14377d"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "setUrl:",
+      "ivar": "_url",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa1bc",
+      "ownership": "copy",
+      "instructionsSHA256": "d67cafdd2aae2924a2abdc67544b6ee0d8a16579dbbd0a7340c5a6226a0a8328"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "font",
+      "ivar": "_font",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa1b0",
+      "ownership": "strong",
+      "instructionsSHA256": "773076a70ff7cb79684bf91068e70be35024d842f69dd3fba33f890e6cfc3aa2"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "setFont:",
+      "ivar": "_font",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa1b0",
+      "ownership": "strong",
+      "instructionsSHA256": "85c48d00a49a4eadf68fd5c2a63d6263823a789420c157932eabacc8218f907b"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "textColor",
+      "ivar": "_textColor",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa1b4",
+      "ownership": "strong",
+      "instructionsSHA256": "79be870984a6c65effd5fa148ca98d9929a70b57d9306e3b171b4ba602d6fee6"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "setTextColor:",
+      "ivar": "_textColor",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa1b4",
+      "ownership": "strong",
+      "instructionsSHA256": "9869f2390d7cf86bdad3936afe6d686034d9548501b46f3f40c92a9d6ef7a0d2"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "backgroundColor",
+      "ivar": "_backgroundColor",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa1b8",
+      "ownership": "strong",
+      "instructionsSHA256": "ffddbc9287fea9b80fdda186dbaee92f79e7fa044cab5b6434485b0e96206f14"
+    },
+    {
+      "class": "ITBButtonBlock",
+      "selector": "setBackgroundColor:",
+      "ivar": "_backgroundColor",
+      "originalOffset": 32,
+      "offsetVariable": "0x4aa1b8",
+      "ownership": "strong",
+      "instructionsSHA256": "5ac5bda11c1fc6d69618a96bc3fe253f4ca01e4ad2c40fa7b77335bda4e876b7"
+    },
+    {
+      "class": "ITBButtonBlockView",
+      "selector": "containerView",
+      "ivar": "_containerView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa1c0",
+      "ownership": "strong",
+      "instructionsSHA256": "289ac87a659cbe457e2b16fa35a8f9ce884bf27e798b7160f4e573946adf5c27"
+    },
+    {
+      "class": "ITBButtonBlockView",
+      "selector": "setContainerView:",
+      "ivar": "_containerView",
+      "originalOffset": 8,
+      "offsetVariable": "0x4aa1c0",
+      "ownership": "strong",
+      "instructionsSHA256": "222512323ac57c5f4a99954d53660f56899e5e005269ad730773db5730f8fcee"
+    },
+    {
+      "class": "ITBButtonBlockView",
+      "selector": "linkButton",
+      "ivar": "_linkButton",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa1c4",
+      "ownership": "strong",
+      "instructionsSHA256": "11ad67bcaf77157e6ebdb41b3b128f0596d63942c378371dd2709c247b0e3354"
+    },
+    {
+      "class": "ITBButtonBlockView",
+      "selector": "setLinkButton:",
+      "ivar": "_linkButton",
+      "originalOffset": 16,
+      "offsetVariable": "0x4aa1c4",
+      "ownership": "strong",
+      "instructionsSHA256": "d1b4544d160f4a0e2990e73a5ba38c7485ebc7aa2c0cd51720ac4131c1d4a467"
+    },
+    {
+      "class": "ITBButtonBlockView",
+      "selector": "linkUrl",
+      "ivar": "_linkUrl",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa1c8",
+      "ownership": "copy",
+      "instructionsSHA256": "5505c391258b5fff2181d46086a43d1fbd0834d3a6258ec6099514f008fb8b9c"
+    },
+    {
+      "class": "ITBButtonBlockView",
+      "selector": "setLinkUrl:",
+      "ivar": "_linkUrl",
+      "originalOffset": 24,
+      "offsetVariable": "0x4aa1c8",
+      "ownership": "copy",
+      "instructionsSHA256": "0ea3cc06cc79877fa06b4869821de308bc118c62758454abe7aee4839eab7edf"
+    }
+  ],
+  "literalTextValidation": "0x7772c..0x77738 passes CFString0x447f30 (literal text), not dictionary[text]"
+}

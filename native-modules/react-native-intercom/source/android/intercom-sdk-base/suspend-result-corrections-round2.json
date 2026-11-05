@@ -1,0 +1,144 @@
+{
+  "status": "SOURCE_SUSPEND_RESULT_LIFETIMES_RESTORED_NOT_COMPILED",
+  "scope": "Eight individually proved methods in seven files; raw Object through suspension, original completed result casts at common joins, original throw/save/catch ordering retained",
+  "coordinate": "Raw vendor javap offsets independently provided in per-method contracts",
+  "contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/SUSPENDED_CAST_REVIEW.md",
+  "changes": [
+    {
+      "owner": "io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.java",
+      "before_sha256": "1a961fe7af99e9e33d42e0f5fab516a9f80dcd719a891f98366f0b8f158b8da2",
+      "after_sha256": "c64991ff8cee77adafbdd5e766c859f7176963e055df7cf107cadc1794d0bc11",
+      "source_diff": "--- before\n+++ source\n@@ -284,15 +284,15 @@\n                return Unit.INSTANCE;\n             }\n \n-            var10000 = this._state;\n+            MutableStateFlow recoveredArticleState = this._state;\n             var16 = ((ArticleSearchState$Content)var2).getSearchResults();\n             var15 = (ArticleSearchState$Content)var2;\n-            var14 = var10000;\n+            var14 = recoveredArticleState;\n             var19.L$0 = var14;\n             var19.L$1 = var15;\n             var19.L$2 = var16;\n             var19.label = 1;\n-            var10000 = (MutableStateFlow)this.teammateHelpRow(var19);\n+            var10000 = this.teammateHelpRow(var19);\n             if (var10000 == var20) {\n                return var20;\n             }\n@@ -302,7 +302,7 @@\n             var15 = (ArticleSearchState$Content)var19.L$1;\n             var14 = (MutableStateFlow)var19.L$0;\n             ResultKt.throwOnFailure(var18);\n-            var10000 = (MutableStateFlow)var18;\n+            var10000 = var18;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n@@ -400,7 +400,7 @@\n             var19.L$0 = var3;\n             var19.L$1 = var17;\n             var19.label = 1;\n-            var10000 = (String)this.teammateHelpRow(var19);\n+            var10000 = this.teammateHelpRow(var19);\n             if (var10000 == var24) {\n                return var24;\n             }\n@@ -409,7 +409,7 @@\n             var17 = (Collection)var19.L$1;\n             var3 = (List)var19.L$0;\n             ResultKt.throwOnFailure(var18);\n-            var10000 = (String)var18;\n+            var10000 = var18;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n",
+      "raw_vendor_control_flow": {
+        "updateTeammateHelpRow": {
+          "raw_call": 264,
+          "compare": 270,
+          "saved_casts_preserved": [
+            281,
+            291,
+            301
+          ],
+          "resume_throw": 308,
+          "raw_result": 313,
+          "erased_use": 323
+        },
+        "transformToUiModel": {
+          "raw_call": 357,
+          "compare": 363,
+          "saved_casts_preserved": [
+            374,
+            384
+          ],
+          "resume_throw": 390,
+          "raw_result": 395,
+          "erased_use": 398
+        }
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/identity/PushTokenStore$submitted$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/PushTokenStore$submitted$2.java",
+      "before_sha256": "5a54d4c8800e6ccd43f6ded012823843fb8b99af951a6a0a38304edf4354a914",
+      "after_sha256": "7947dff46f7f23ddbc61ef5cce2fec439c266e4f7c6b09c9754a4c98fd68a16c",
+      "source_diff": "--- before\n+++ source\n@@ -28,17 +28,17 @@\n       switch (this.label) {\n          case 0:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = this.this$0;\n+            PushTokenStore recoveredTokenStore = this.this$0;\n             Continuation var10001 = this;\n             this.label = 1;\n-            var10000 = (PushTokenStore)PushTokenStore.access$loadSubmitted(var10000, var10001);\n+            var10000 = PushTokenStore.access$loadSubmitted(recoveredTokenStore, var10001);\n             if (var10000 == var2) {\n                return var2;\n             }\n             break;\n          case 1:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = (PushTokenStore)var1;\n+            var10000 = var1;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n",
+      "raw_vendor_control_flow": {
+        "raw_call": 49,
+        "compare": 54,
+        "resume_throw": 60,
+        "raw_return": 64,
+        "join_cast": null
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$uploadMediaItems$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/MediaUploadRepository$uploadMediaItems$2.java",
+      "before_sha256": "eeb53e662c521ea4917b6bc9c555f48b1d34c811be5565d138bfaafb75bfa92e",
+      "after_sha256": "e7055edf3d62143c94ef6afe11da375c4541b9b3541c090bd5c1dcb87e330215",
+      "source_diff": "--- before\n+++ source\n@@ -78,17 +78,17 @@\n                var14.add(BuildersKt.async$default(var2, null, null, new MediaUploadRepository$uploadMediaItems$2$1$1(var4, var12, var5, null), 3, null));\n             }\n \n-            var10000 = (Collection & List)var8;\n+            Collection recoveredUploadTasks = (Collection & List)var8;\n             Continuation var10001 = this;\n             this.label = 1;\n-            var10000 = (Collection)AwaitKt.awaitAll(var10000, var10001);\n+            var10000 = AwaitKt.awaitAll(recoveredUploadTasks, var10001);\n             if (var10000 == var15) {\n                return var15;\n             }\n             break;\n          case 1:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = (Collection)var1;\n+            var10000 = var1;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n",
+      "raw_vendor_control_flow": {
+        "raw_call": 188,
+        "compare": 194,
+        "resume_throw": 201,
+        "raw_return": 205,
+        "join_cast": null
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/RefreshUnreadConversationsCountUseCase.java",
+      "before_sha256": "a0aecfc12d16f31a05df0da19d42c2671ddbf42dd4c4f0cf8ca58aeba36fe302",
+      "after_sha256": "d23f923cfff6936a06d8f549ce015625d25d786cdc1d51f312a7c2d7efed7508",
+      "source_diff": "--- before\n+++ source\n@@ -112,7 +112,7 @@\n             var10.L$0 = recoveredThis;\n             var10.L$1 = var1;\n             var10.label = 1;\n-            var10000 = (UsersResponse)var14.fetchUnreadCounts(var10);\n+            var10000 = var14.fetchUnreadCounts(var10);\n             if (var10000 == var11) {\n                return var11;\n             }\n@@ -121,18 +121,18 @@\n             var1 = (MutableStateFlow)var10.L$1;\n             recoveredThis = (RefreshUnreadConversationsCountUseCase)var10.L$0;\n             ResultKt.throwOnFailure(var9);\n-            var10000 = (UsersResponse)var9;\n+            var10000 = var9;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n       }\n \n-      var10000 = var10000;\n-      if (var10000 == null) {\n+      UsersResponse recoveredUsersResponse = (UsersResponse)var10000;\n+      if (recoveredUsersResponse == null) {\n          return Unit.INSTANCE;\n       }\n \n-      UsersResponse var3 = var10000;\n+      UsersResponse var3 = recoveredUsersResponse;\n       IntercomDataLayer var16 = recoveredThis.intercomDataLayer;\n       Config var4 = var3.getConfig();\n       Intrinsics.checkNotNullExpressionValue(var4, \"getConfig(...)\");\n",
+      "raw_vendor_control_flow": {
+        "raw_call": 135,
+        "compare": 141,
+        "saved_local_casts_preserved": [
+          147,
+          164
+        ],
+        "resume_throw": 167,
+        "join_cast": {
+          "at": 172,
+          "type": "UsersResponse"
+        }
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadAvatarBitmap$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadAvatarBitmap$2.java",
+      "before_sha256": "ef95159e49056d578c4aac9921d383dd944152a9a089c7d720737d5c6bad2efc",
+      "after_sha256": "817faf118726373efa004cb66869a525ee8bc0dbd8034e123980633ed471f201",
+      "source_diff": "--- before\n+++ source\n@@ -63,25 +63,25 @@\n             ImageRequest var10001 = this.$request;\n             Continuation var10002 = this;\n             this.label = 1;\n-            var10000 = (Drawable)IntercomCoilKt.loadIntercomImageSuspend(var4, var10001, var10002);\n+            var10000 = IntercomCoilKt.loadIntercomImageSuspend(var4, var10001, var10002);\n             if (var10000 == var3) {\n                return var3;\n             }\n             break;\n          case 1:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = (Drawable)var1;\n+            var10000 = var1;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n       }\n \n-      var10000 = var10000;\n-      if (var10000 == null) {\n-         var10000 = this.$defaultDrawable;\n+      Drawable recoveredAvatarDrawable = (Drawable)var10000;\n+      if (recoveredAvatarDrawable == null) {\n+         recoveredAvatarDrawable = this.$defaultDrawable;\n       }\n \n-      Drawable var2 = var10000;\n+      Drawable var2 = recoveredAvatarDrawable;\n       Intrinsics.checkNotNull(var2);\n       return BitmapUtilsKt.drawableToBitmap(var2, this.$iconSize, this.$iconSize);\n    }\n",
+      "raw_vendor_control_flow": {
+        "raw_call": 53,
+        "compare": 58,
+        "resume_throw": 64,
+        "join_cast": {
+          "at": 68,
+          "type": "Drawable"
+        }
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/survey/block/EnhancedCodeBlockKt$CodeBlockHeader$2$1$1$1",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/EnhancedCodeBlockKt$CodeBlockHeader$2$1$1$1.java",
+      "before_sha256": "7cf884d5cff847c3cc3575142564b954b1d83d396a649f251b40a2d486897621",
+      "after_sha256": "373fe08f278f0470ddc39280038d45ee1de8c4878ec5788e8925242f239cc788",
+      "source_diff": "--- before\n+++ source\n@@ -61,15 +61,15 @@\n          case 0:\n             ResultKt.throwOnFailure(var1);\n \n-            Clipboard var7;\n+            Object var7;\n             try {\n-               var7 = this.$clipboard;\n+               Clipboard recoveredClipboard = this.$clipboard;\n                ClipData var10003 = ClipData.newPlainText(\"code\", this.$rawCode);\n                Intrinsics.checkNotNullExpressionValue(var10003, \"newPlainText(...)\");\n                ClipEntry var10001 = new ClipEntry(var10003);\n                Continuation var10002 = this;\n                this.label = 1;\n-               var7 = (Clipboard)var7.setClipEntry(var10001, var10002);\n+               var7 = recoveredClipboard.setClipEntry(var10001, var10002);\n             } catch (SecurityException var5) {\n                EnhancedCodeBlockKt.access$getTWIG$p().e(\"Clipboard access denied due to user restrictions: \" + var5.getMessage());\n                return Unit.INSTANCE;\n",
+      "raw_vendor_control_flow": {
+        "raw_call": 78,
+        "compare": 85,
+        "resume_throw": 92,
+        "discard": 96,
+        "join_cast": null,
+        "preserved_SecurityException_ranges": [
+          [
+            36,
+            83
+          ],
+          [
+            90,
+            120
+          ]
+        ]
+      }
+    },
+    {
+      "owner": "io/intercom/android/sdk/utilities/PreloadedValue$get$loaded$1",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/utilities/PreloadedValue$get$loaded$1.java",
+      "before_sha256": "7e238166bb4ce8890eb5279b4d5e05828987d70371fb2ec7493285b5b426356b",
+      "after_sha256": "bb4fefe88e1733e62224383cd8d2425475fa65bc5f4f9c8a54413f172d8d98b2",
+      "source_diff": "--- before\n+++ source\n@@ -44,17 +44,17 @@\n       switch (this.label) {\n          case 0:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = PreloadedValue.access$getPreload$p(this.this$0);\n+            Deferred recoveredPreload = PreloadedValue.access$getPreload$p(this.this$0);\n             Continuation var10001 = this;\n             this.label = 1;\n-            var10000 = (Deferred)var10000.await(var10001);\n+            var10000 = recoveredPreload.await(var10001);\n             if (var10000 == var2) {\n                return var2;\n             }\n             break;\n          case 1:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = (Deferred)var1;\n+            var10000 = var1;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n",
+      "raw_vendor_control_flow": {
+        "raw_call": 52,
+        "compare": 59,
+        "resume_throw": 65,
+        "raw_return": 69,
+        "join_cast": null
+      }
+    }
+  ],
+  "runtime_verified": false,
+  "remaining_scan_candidates": "Other 42-scan candidates remain functionality blockers pending exact original method/call/join/handler proof; not deferred to security review"
+}

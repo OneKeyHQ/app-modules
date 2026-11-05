@@ -1,0 +1,12 @@
+{
+  "status": "CAPTURES_VERIFIED_SOURCE_NOT_COMPILED",
+  "scope": "Only io/intercom/android/sdk/tickets/create/reducers/CreateTicketReducerKt source selected from class-scoped no-late-merge diagnostic; child source outputs untouched",
+  "source_before_sha256": "08d1a81db0b15faab63e2e51e77417785c675d1d03041f428de03b95c4d7fbcd",
+  "raw_decompile_sha256": "b6cf80128f731784366186b1a555294248633464258316b144cc24af8a7cb6e0",
+  "source_after_sha256": "ad671899e6acc00c8f5928a4053a6263392cda7c14981b5c35b508d4ff992543",
+  "source_applied": true,
+  "sites": [],
+  "capture_bindings": 0,
+  "normal_source_build_uses_decompiler": false,
+  "command": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-CreateTicketReducerKt/command.json"
+}

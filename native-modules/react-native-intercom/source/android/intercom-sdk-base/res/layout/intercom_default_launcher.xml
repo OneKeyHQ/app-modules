@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout android:id="@+id/launcher_root"
+             xmlns:android="http://schemas.android.com/apk/res/android"
+             xmlns:tools="http://schemas.android.com/tools"
+             android:layout_width="61dp"
+             android:layout_height="@dimen/intercom_launcher_height"
+             android:layout_gravity="bottom|end"
+             android:layout_marginBottom="@dimen/intercom_launcher_padding_bottom"
+             android:layout_marginEnd="@dimen/intercom_launcher_padding_right"
+             android:clipChildren="false"
+             android:clipToPadding="false">
+
+    <FrameLayout
+        android:layout_width="@dimen/intercom_launcher_height"
+        android:layout_height="@dimen/intercom_launcher_height"
+        android:layout_gravity="bottom|start"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <View
+            android:layout_width="72dp"
+            android:layout_height="80dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="4dp"
+            android:alpha="0.8"
+            android:background="@drawable/intercom_circular_shadow"/>
+
+        <ImageButton
+            android:id="@+id/launcher_icon"
+            android:layout_width="@dimen/intercom_launcher_height"
+            android:layout_height="@dimen/intercom_launcher_height"
+            android:layout_gravity="top"
+            android:background="@drawable/intercom_solid_circle"
+            android:clickable="false"
+            android:paddingTop="2dp"
+            android:src="@drawable/intercom_launcher_icon"
+            android:visibility="visible"
+            android:contentDescription="Intercom launcher"
+            tools:backgroundTint="#00f"/>
+
+    </FrameLayout>
+
+    <TextView android:id="@+id/launcher_badge_count"
+              android:layout_width="20dp"
+              android:layout_height="20dp"
+              android:layout_gravity="top|right"
+              android:background="@drawable/intercom_solid_circle"
+              android:gravity="center"
+              android:textColor="@color/intercom_white"
+              android:textSize="13sp"
+              tools:text="2"
+              tools:backgroundTint="#f00"/>
+
+</FrameLayout>

@@ -1,0 +1,2 @@
+io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponseCall	clone	()Lretrofit2/Call;	()Lio/intercom/android/sdk/helpcenter/utils/networking/NetworkResponseCall;	UNRESTORED: does not match strict same-argument pure forwarder or contains handlers
+io/intercom/android/sdk/models/ConversationResponse$Builder	build	()Lio/intercom/android/sdk/models/BaseResponse;	()Lio/intercom/android/sdk/models/ConversationResponse;	UNRESTORED: does not match strict same-argument pure forwarder or contains handlers

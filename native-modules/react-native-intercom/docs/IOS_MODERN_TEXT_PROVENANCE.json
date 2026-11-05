@@ -1,0 +1,33 @@
+{
+  "baseline": "Intercom19.9.1 arm64 device assembly/ObjC metadata/dSYM",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "source": [
+    "ios/Session/TextBlockView.swift",
+    "ios/Session/CitationTapDelegate.swift",
+    "ios/Session/UIViewTextAttachmentImage.swift"
+  ],
+  "runtimeVerified": false,
+  "originalBodiesSHA256": {
+    "IntercomSDKPrivate.TextBlockView.init(content: __C.ITBBlock, citationDelegate: IntercomSDKPrivate.CitationTapDelegate?, blockDelegate: IntercomSDKPrivate.ConversationCellBlockDelegate?) -> IntercomSDKPrivate.TextBlockView?": "60c0e66443be7e9cdb7dea78eb4f20acac289aa623a183efd0207db1c233453f",
+    "IntercomSDKPrivate.TextBlockView.didTapNonLinkInTextView() -> ()": "d05f4d18f2445ef0d7be8a8043ef3ff5188540a77508c93228b8d6bb8c53d13a",
+    "IntercomSDKPrivate.TextBlockView.(textView in _E891E8A3AAAF9B0AB95288551C16A160).getter : IntercomSDKPrivate.HyperLinkTextView": "50bc114195db5d9f79ef1595d547e3a180df4feee3a3c2bfb0f89a145d7963df",
+    "IntercomSDKPrivate.TextBlockView.(configure in _E891E8A3AAAF9B0AB95288551C16A160)() -> ()": "9efe9fc2fa7cedd7f8c732ed25f6e01abd63e790af902d3d2fecac05724190ec",
+    "IntercomSDKPrivate.TextBlockView.(appendInlineCitations in _E891E8A3AAAF9B0AB95288551C16A160)(to: __C.NSAttributedString) -> __C.NSAttributedString": "973f0e2fef1ce8bd639b6fe1f7a8d6efd56bd36f784ed2dcfef7a87bbb2317ac",
+    "IntercomSDKPrivate.TextBlockView.(buildCitationLabel in _E891E8A3AAAF9B0AB95288551C16A160)(for: __C.ITBInlineCitation, with: CoreGraphics.CGFloat) -> __C.UILabel": "adfa86f7eef398b5c80f91f59a9a01a661a4b53a58bf88480ce16491033fa568",
+    "IntercomSDKPrivate.TextBlockView.(buildCitationView in _E891E8A3AAAF9B0AB95288551C16A160)(with: CoreGraphics.CGFloat) -> __C.UIView": "f0bf823679560d978e63a34ae104a912e6b1c7cc5f8ff8933ae8c849fb0f0abf",
+    "@objc IntercomSDKPrivate.TextBlockView.init(coder: __C.NSCoder) -> IntercomSDKPrivate.TextBlockView?": "80d79b260e59fabd3e25470dff3c0eb05cf117bfd89deac46b0fc8d69f0cfae5",
+    "closure #1 () -> IntercomSDKPrivate.HyperLinkTextView in IntercomSDKPrivate.TextBlockView.(textView in _E891E8A3AAAF9B0AB95288551C16A160).getter : IntercomSDKPrivate.HyperLinkTextView": "f25243fba43b496cec18eb8f768cb89635f171cf66c104977cb926a9e1fa2d41",
+    "closure #1 (Foundation.URL) -> () in closure #1 () -> IntercomSDKPrivate.HyperLinkTextView in IntercomSDKPrivate.TextBlockView.(textView in _E891E8A3AAAF9B0AB95288551C16A160).getter : IntercomSDKPrivate.HyperLinkTextView": "29f1e3428a63410398babc51c646950075232548c91f11e9709bc4e66536f476",
+    "closure #1 ([__C.NSAttributedStringKey : Any], __C._NSRange, Swift.UnsafeMutablePointer<ObjectiveC.ObjCBool>) -> () in IntercomSDKPrivate.TextBlockView.(updateAttributes in _E891E8A3AAAF9B0AB95288551C16A160)(in: __C.ITBTextBlock) -> __C.NSAttributedString": "4d37588649d2ee508be235f0fac737e83e96e26b3995f110e26490f0a2d77c82",
+    "closure #1 (Any?, __C._NSRange, Swift.UnsafeMutablePointer<ObjectiveC.ObjCBool>) -> () in IntercomSDKPrivate.TextBlockView.(reserveChipLineHeight in _E891E8A3AAAF9B0AB95288551C16A160)(in: __C.NSMutableAttributedString) -> ()": "36ab3a81c434301bf818143c35fada64d886f4447c0759c591592fd96e5ec6c6",
+    "closure #2 (Any?, __C._NSRange, Swift.UnsafeMutablePointer<ObjectiveC.ObjCBool>) -> () in IntercomSDKPrivate.TextBlockView.(reserveChipLineHeight in _E891E8A3AAAF9B0AB95288551C16A160)(in: __C.NSMutableAttributedString) -> ()": "99f6e00844e80d1c64fe3c8d0e17b592d58cd7b2e738b280ab29e1d2e3c52b51",
+    "@objc IntercomSDKPrivate.TextBlockView.init(frame: __C.CGRect) -> IntercomSDKPrivate.TextBlockView": "02db65899ee37f0224e39d5e1d3694c8c8a42d83b320545b0d9494aff497093d",
+    "IntercomSDKPrivate.TextBlockView.__deallocating_deinit": "689a2b6d0a6d2936bbb94f380c338e2145cf5b1d194fabc9345983b159f7d33f",
+    "@objc IntercomSDKPrivate.TextBlockView.__ivar_destroyer": "000a8bcfbdc609a53fdb7410c3e6bfca7a3e2faff101d24fcb9619084e465cd4",
+    "function signature specialization <Arg[1] = Dead> of IntercomSDKPrivate.TextBlockView.(reserveChipLineHeight in _E891E8A3AAAF9B0AB95288551C16A160)(in: __C.NSMutableAttributedString) -> ()": "105f26c48b995036810f22517efd954d692da91a87538ad60f1e9c1f99e32a74",
+    "function signature specialization <Arg[0] = Dead> of IntercomSDKPrivate.TextBlockView.init(coder: __C.NSCoder) -> IntercomSDKPrivate.TextBlockView?": "79488db3c0fa18b260d136c6751652fedfa85a18ed1370a49043391b94c83905"
+  },
+  "geometry": "Citation label size=bodyFont.pointSize*.75; circular view size=bodyFont.pointSize, cornerWidth*.5; spacerwidth3/height0; image baselineOffset=bodyFont.pointSize*-.25",
+  "systemAttachmentSelector": "objc_msgSend$textAttachmentWithImage: via Swift NSTextAttachment(image:), original UIKit declaration",
+  "scope": "Static recovery and source compilation only; no render/tap/normal consumer or complete private Swift ABI validation"
+}

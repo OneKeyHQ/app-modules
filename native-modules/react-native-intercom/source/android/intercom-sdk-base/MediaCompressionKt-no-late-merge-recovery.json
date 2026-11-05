@@ -1,0 +1,29 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/utils/MediaCompressionKt",
+  "root_only": true,
+  "source_before_sha256": "8475174ede2cc9076247aefa5bf398419b82c70b918f0900e627d464af44dfde",
+  "source_after_sha256": "628a4a4db423b5cc424fa92bd9ba2de88e79067ff2aeae6fa80d3acc4f8492e4",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 32,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": [],
+  "continuation_replay": {
+    "basis": "continuation-local-recovery.json locals entry with same original method and two concrete assignments",
+    "variable": "var19",
+    "type": "MediaCompressionKt$getCompressedMediaData$1",
+    "assignments": [
+      "(MediaCompressionKt$getCompressedMediaData$1)var3",
+      "new MediaCompressionKt$getCompressedMediaData$1(var3)"
+    ],
+    "proof_concrete_source_sha256": "2c01dbb70af6516a0ede0580ab83c8d2b82210d4a55344d060775d05f1628565",
+    "before_sha256": "61b2932d672903629d305f5bff55e3dd7e71d331a04e0f44f26b3549357302fd",
+    "intermediate_compiler": "Fresh source re-exposed 12 missing fields before the old concrete-type replay; log preserved",
+    "preliminary_stage_note": "Initial stage selector queried wrong old-ledger key and produced zero replay edits; corrected against locals inventory"
+  }
+}

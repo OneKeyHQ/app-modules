@@ -1,0 +1,46 @@
+{
+  "baseline": "Intercom19.9.1 original arm64 asm/dSYM/metadata",
+  "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+  "sources": {
+    "ios/Session/HomeMetricService.swift": "8eda601423408993ddf37698f68bf0b8a2bf7aefe358a94379185ccdde05c6ba",
+    "ios/Session/HelpCenterMetricService.swift": "dc96eaa4eea6083ffdd439011dfd5af4760f05f5e91d0499b5ad6756caf6dcbe",
+    "ios/Session/AttachmentFileManager.swift": "bf73750436dff4a78834834ec640644ad291d82ce50a9bbb186d35d4dd5eef2c",
+    "ios/Session/PreviewAction.swift": "8d1761dd5af5573bebed397f289dd1f9c09dc0ad13783460db4649d6dbc7aeb4",
+    "ios/Session/PreviewHelper.swift": "d455a487d550fc99a4ad14d6513259154338ce638d733de4bab1a8223c7e545d",
+    "ios/Session/ImagePreviewerViewController.swift": "3301ee76dd5e5a679bb956a4fb235651219893fbe63f23ec97e57f18abfb4b2c",
+    "ios/Session/MediaPreviewerViewController.swift": "0584a31830c7198fe88176eeb420782efeb923192438005d79bb8d030899dd95",
+    "ios/Session/OutboundContentBlockDelegate.swift": "b174599dba994760a60887b83afe0c906cf369cf3a75f79311cbf34d264b170a",
+    "ios/Session/BlockViewFactoryObjC.swift": "454f9f85fa4e0cabcd37ef691402d14d5a8aff09bb80cd5bdaba65edb35d8e68",
+    "ios/Session/ICMMetric.h": "3ab980f593a4f49afaa94f9ac53301c3eb2344eb426581081dc7a93326c83f46",
+    "ios/Session/ICMRootDestinationDependencies.h": "c51c8b34691d8c72b5588de37b2adac5c5e1743a8989621b94f86b51632ab6b5",
+    "ios/Session/ICMSourceAggregateImports.h": "583a056d0a1439c1060ac55b871180f86beb45771084d86cd80796948dabc17d",
+    "ios/Session/ICMMessengerSheetViewController.h": "ba4d445e57a386fa5c09b64f9e08e24112ce422a15d7d4d1bd5c5ab3ff0b489e",
+    "ios/Identity/ICMUtils.h": "7f3a7cea20d0b9aae96049987e8d9c4f98101087be7a8c13e2083222b889dd7b",
+    "ios/Identity/ICMUtils.m": "8cf8cdf3fdff0b9745c7f685da46372833c85ba927a4276a70b5441b65c3ae73"
+  },
+  "validation": "172ObjC+127Swift all3targets;36classes230ownselectors/types exact plusHelp20/21;SHAstable/no Swift.Nduplicates",
+  "runtimeBehaviorVerified": false,
+  "scope": "Actual modern ObjC Factory routes into33known-requirement Outbound delegate and original real Metric events, AVPlayer/KVO, MainActor image Tasks, actual PreviewHelper/download/temp-copy and UIKit/QuickLook preview. Eighteen original ret witnesses/two nil getters/false style are real baseline bodies. Original 3deleted delegate and6Help protocol method signatures remain unrecovered; no fake defaults. Help original empty-.cxx_destruct@319f8c ret is elided by currentSwift compiler;20/21ownentries remainexact. Sheet41/Nav/controllers remain trueUNLINKED.",
+  "evidence": [
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-outbound-content-delegate/CONTRACT.md",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-preview-helper/source-static-review.json",
+    "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-home-help-metric-services/CONTRACT.md"
+  ],
+  "selectorDifferences": {
+    "HelpCenterMetricService": {
+      "missing": [
+        "-.cxx_destruct"
+      ],
+      "originalBody": "319f8c ret",
+      "sourceReason": "Bool-only Swift class has no reference fields; current compiler elides empty generated destructor; no fake field/extra runtime method injected"
+    }
+  },
+  "privateABILimits": [
+    "3/36delegate method signatures WMOdeleted",
+    "6/31Help protocol methods unnamed;25named restored",
+    "AttachmentFileManagerProtocol3requirements allWMOdeleted;concrete realbehavior recovered withoutfakeconformance",
+    "Image/Outbound context sourcecase spellings and Factory namespace nominal shape inferred",
+    "Original Swift custom Error bridge domain namespace not runtimecompared"
+  ],
+  "runtimeActionsRun": []
+}

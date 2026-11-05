@@ -1,0 +1,1010 @@
+{
+  "status": "CAPTURES_VERIFIED_SOURCE_NOT_COMPILED",
+  "scope": "Only io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt source selected from class-scoped no-late-merge diagnostic; child source outputs untouched",
+  "source_before_sha256": "b11ef61c7acf41fe3e540dd6df5442643e8201fbda34e23ff424e1384eaa07dc",
+  "raw_decompile_sha256": "77d8a6cf83b3efab9717842e08766e37d7a3305e1b600e456501ad3f1b3f26b4",
+  "source_after_sha256": "4f08752dc2bdbfdc4ef683205939f7f157458fb2dd43cad22be20afd725464ad",
+  "source_applied": true,
+  "sites": [
+    {
+      "site": 600,
+      "enclosing": "ComposerActionButton",
+      "enclosing_descriptor": "(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;ZILandroidx/compose/runtime/Composer;II)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "ComposerActionButton$lambda$72",
+        "(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;ZIIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 549,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_600_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_600_1",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Landroidx/compose/ui/Modifier;"
+        },
+        {
+          "identifier": "recoveredCapture_600_2",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Z"
+        },
+        {
+          "identifier": "recoveredCapture_600_3",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_600_4",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_600_5",
+          "original_slot": "6",
+          "ssa_index": "6",
+          "ssa_version": "0",
+          "final_name": "var6",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 601,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$11$lambda$10",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1672,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 602,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$13$lambda$12",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1776,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 603,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$15$lambda$14",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1880,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 604,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$17$lambda$16",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1984,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 605,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$19$lambda$18",
+        "(Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;)Lkotlin/Unit;"
+      ],
+      "bci": 2087,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 606,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$21$lambda$20",
+        "(Lio/intercom/android/sdk/m5/conversation/states/MediaUploadItem;)Lkotlin/Unit;"
+      ],
+      "bci": 2190,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 607,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$23$lambda$22",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 2293,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 608,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$25$lambda$24",
+        "(Ljava/lang/String;)Landroidx/compose/runtime/MutableState;"
+      ],
+      "bci": 2511,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_608_0",
+          "original_slot": "25",
+          "ssa_index": "175",
+          "ssa_version": "0",
+          "final_name": "var175",
+          "descriptor": "Ljava/lang/String;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 609,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$37$lambda$36",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;"
+      ],
+      "bci": 3964,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_609_0",
+          "original_slot": "11",
+          "ssa_index": "11",
+          "ssa_version": "0",
+          "final_name": "var11",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 610,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$39$lambda$38",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 4060,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 611,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$43$lambda$42",
+        "(Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function1;Ljava/util/List;)Lkotlin/Unit;"
+      ],
+      "bci": 4213,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_611_0",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;"
+        },
+        {
+          "identifier": "recoveredCapture_611_1",
+          "original_slot": "15",
+          "ssa_index": "15",
+          "ssa_version": "0",
+          "final_name": "var15",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 612,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$45$lambda$44",
+        "(Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 4939,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_612_0",
+          "original_slot": "13",
+          "ssa_index": "13",
+          "ssa_version": "0",
+          "final_name": "var13",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_612_1",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_612_2",
+          "original_slot": "28",
+          "ssa_index": "211",
+          "ssa_version": "0",
+          "final_name": "var211",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 613,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$47$lambda$46",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;"
+      ],
+      "bci": 5070,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_613_0",
+          "original_slot": "12",
+          "ssa_index": "12",
+          "ssa_version": "0",
+          "final_name": "var12",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 614,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$50$lambda$49",
+        "(Landroidx/activity/compose/ManagedActivityResultLauncher;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;I)Lkotlin/Unit;"
+      ],
+      "bci": 5286,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_614_0",
+          "original_slot": "45",
+          "ssa_index": "293",
+          "ssa_version": "0",
+          "final_name": "var293",
+          "descriptor": "Landroidx/activity/compose/ManagedActivityResultLauncher;"
+        },
+        {
+          "identifier": "recoveredCapture_614_1",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 615,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$59$lambda$56$lambda$52$lambda$51",
+        "(JJLandroidx/compose/runtime/MutableState;Landroidx/compose/ui/focus/FocusState;)Lkotlin/Unit;"
+      ],
+      "bci": 6396,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_615_0",
+          "original_slot": "37",
+          "ssa_index": "265",
+          "ssa_version": "0",
+          "final_name": "var265",
+          "descriptor": "J"
+        },
+        {
+          "identifier": "recoveredCapture_615_1",
+          "original_slot": "35",
+          "ssa_index": "263",
+          "ssa_version": "0",
+          "final_name": "var263",
+          "descriptor": "J"
+        },
+        {
+          "identifier": "recoveredCapture_615_2",
+          "original_slot": "39",
+          "ssa_index": "268",
+          "ssa_version": "0",
+          "final_name": "var268",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 616,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$59$lambda$56$lambda$55$lambda$54",
+        "(Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;Landroidx/compose/ui/text/input/TextFieldValue;)Lkotlin/Unit;"
+      ],
+      "bci": 6653,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_616_0",
+          "original_slot": "7",
+          "ssa_index": "7",
+          "ssa_version": "0",
+          "final_name": "var7",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_616_1",
+          "original_slot": "28",
+          "ssa_index": "211",
+          "ssa_version": "0",
+          "final_name": "var211",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 617,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$59$lambda$58$lambda$57",
+        "(Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 6984,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_617_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        },
+        {
+          "identifier": "recoveredCapture_617_1",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;"
+        },
+        {
+          "identifier": "recoveredCapture_617_2",
+          "original_slot": "17",
+          "ssa_index": "17",
+          "ssa_version": "0",
+          "final_name": "var17",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_617_3",
+          "original_slot": "28",
+          "ssa_index": "211",
+          "ssa_version": "0",
+          "final_name": "var211",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 618,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$68$lambda$61$lambda$60",
+        "(Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;"
+      ],
+      "bci": 7600,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_618_0",
+          "original_slot": "6",
+          "ssa_index": "6",
+          "ssa_version": "0",
+          "final_name": "var6",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_618_1",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 619,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$68$lambda$63$lambda$62",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;"
+      ],
+      "bci": 7735,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_619_0",
+          "original_slot": "4",
+          "ssa_index": "4",
+          "ssa_version": "0",
+          "final_name": "var4",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 620,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$68$lambda$65$lambda$64",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;"
+      ],
+      "bci": 7866,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_620_0",
+          "original_slot": "44",
+          "ssa_index": "284",
+          "ssa_version": "0",
+          "final_name": "var284",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 621,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$69$lambda$68$lambda$67$lambda$66",
+        "(Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;"
+      ],
+      "bci": 8062,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_621_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        },
+        {
+          "identifier": "recoveredCapture_621_1",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;"
+        },
+        {
+          "identifier": "recoveredCapture_621_2",
+          "original_slot": "17",
+          "ssa_index": "17",
+          "ssa_version": "0",
+          "final_name": "var17",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_621_3",
+          "original_slot": "28",
+          "ssa_index": "211",
+          "ssa_version": "0",
+          "final_name": "var211",
+          "descriptor": "Landroidx/compose/runtime/MutableState;"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 622,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$70",
+        "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;IIILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 8264,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_622_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Landroidx/compose/ui/Modifier;"
+        },
+        {
+          "identifier": "recoveredCapture_622_1",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Lkotlin/jvm/functions/Function2;"
+        },
+        {
+          "identifier": "recoveredCapture_622_2",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;"
+        },
+        {
+          "identifier": "recoveredCapture_622_3",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_4",
+          "original_slot": "4",
+          "ssa_index": "4",
+          "ssa_version": "0",
+          "final_name": "var4",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_5",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_622_6",
+          "original_slot": "6",
+          "ssa_index": "6",
+          "ssa_version": "0",
+          "final_name": "var6",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_622_7",
+          "original_slot": "7",
+          "ssa_index": "7",
+          "ssa_version": "0",
+          "final_name": "var7",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_8",
+          "original_slot": "8",
+          "ssa_index": "8",
+          "ssa_version": "0",
+          "final_name": "var8",
+          "descriptor": "Lkotlinx/coroutines/flow/SharedFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_622_9",
+          "original_slot": "9",
+          "ssa_index": "9",
+          "ssa_version": "0",
+          "final_name": "var9",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;"
+        },
+        {
+          "identifier": "recoveredCapture_622_10",
+          "original_slot": "10",
+          "ssa_index": "10",
+          "ssa_version": "0",
+          "final_name": "var10",
+          "descriptor": "Lkotlinx/coroutines/flow/StateFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_622_11",
+          "original_slot": "11",
+          "ssa_index": "11",
+          "ssa_version": "0",
+          "final_name": "var11",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_12",
+          "original_slot": "12",
+          "ssa_index": "12",
+          "ssa_version": "0",
+          "final_name": "var12",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_13",
+          "original_slot": "13",
+          "ssa_index": "13",
+          "ssa_version": "0",
+          "final_name": "var13",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_14",
+          "original_slot": "14",
+          "ssa_index": "14",
+          "ssa_version": "0",
+          "final_name": "var14",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_15",
+          "original_slot": "15",
+          "ssa_index": "15",
+          "ssa_version": "0",
+          "final_name": "var15",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_622_16",
+          "original_slot": "16",
+          "ssa_index": "16",
+          "ssa_version": "0",
+          "final_name": "var16",
+          "descriptor": "Lkotlin/jvm/functions/Function1;"
+        },
+        {
+          "identifier": "recoveredCapture_622_17",
+          "original_slot": "17",
+          "ssa_index": "17",
+          "ssa_version": "0",
+          "final_name": "var17",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_622_18",
+          "original_slot": "19",
+          "ssa_index": "19",
+          "ssa_version": "0",
+          "final_name": "var19",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_622_19",
+          "original_slot": "20",
+          "ssa_index": "20",
+          "ssa_version": "0",
+          "final_name": "var20",
+          "descriptor": "I"
+        },
+        {
+          "identifier": "recoveredCapture_622_20",
+          "original_slot": "21",
+          "ssa_index": "21",
+          "ssa_version": "0",
+          "final_name": "var21",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 623,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$1$lambda$0",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1099,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 624,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$3$lambda$2",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1201,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 625,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$5$lambda$4",
+        "(Lio/intercom/android/sdk/m5/conversation/ui/components/composer/ComposerInputType;)Lkotlin/Unit;"
+      ],
+      "bci": 1304,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 626,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$7$lambda$6",
+        "(Lio/intercom/android/sdk/m5/conversation/metrics/MetricData;)Lkotlin/Unit;"
+      ],
+      "bci": 1407,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 627,
+      "enclosing": "MessageComposer",
+      "enclosing_descriptor": "(Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lio/intercom/android/sdk/m5/conversation/states/ComposerState$TextInput;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlinx/coroutines/flow/SharedFlow;Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;III)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "MessageComposer$lambda$9$lambda$8",
+        "()Lkotlin/Unit;"
+      ],
+      "bci": 1511,
+      "captures": [],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 628,
+      "enclosing": "TextComposerPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "TextComposerPreview$lambda$78",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 94,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_628_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 629,
+      "enclosing": "TextComposerWithButtonsPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "TextComposerWithButtonsPreview$lambda$79",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 94,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_629_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 630,
+      "enclosing": "TextComposerWithFileItemsPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "TextComposerWithFileItemsPreview$lambda$82",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 94,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_630_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 631,
+      "enclosing": "TextComposerWithInitialTextPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "TextComposerWithInitialTextPreview$lambda$80",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 94,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_631_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 632,
+      "enclosing": "TextComposerWithMediaItemsPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "TextComposerWithMediaItemsPreview$lambda$81",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 94,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_632_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 633,
+      "enclosing": "VoiceNotesComposer",
+      "enclosing_descriptor": "(Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "VoiceNotesComposer$lambda$77",
+        "(Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;Lkotlinx/coroutines/flow/StateFlow;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 2525,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_633_0",
+          "original_slot": "0",
+          "ssa_index": "0",
+          "ssa_version": "0",
+          "final_name": "var0",
+          "descriptor": "Lio/intercom/android/sdk/m5/conversation/states/VoiceTranscriptionState;"
+        },
+        {
+          "identifier": "recoveredCapture_633_1",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "Lkotlinx/coroutines/flow/StateFlow;"
+        },
+        {
+          "identifier": "recoveredCapture_633_2",
+          "original_slot": "2",
+          "ssa_index": "2",
+          "ssa_version": "0",
+          "final_name": "var2",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_633_3",
+          "original_slot": "3",
+          "ssa_index": "3",
+          "ssa_version": "0",
+          "final_name": "var3",
+          "descriptor": "Lkotlin/jvm/functions/Function0;"
+        },
+        {
+          "identifier": "recoveredCapture_633_4",
+          "original_slot": "5",
+          "ssa_index": "5",
+          "ssa_version": "0",
+          "final_name": "var5",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    },
+    {
+      "site": 634,
+      "enclosing": "VoiceNotesComposerPreview",
+      "enclosing_descriptor": "(Landroidx/compose/runtime/Composer;I)V",
+      "target": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/composer/MessageComposerKt",
+        "VoiceNotesComposerPreview$lambda$83",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;"
+      ],
+      "bci": 94,
+      "captures": [
+        {
+          "identifier": "recoveredCapture_634_0",
+          "original_slot": "1",
+          "ssa_index": "1",
+          "ssa_version": "0",
+          "final_name": "var1",
+          "descriptor": "I"
+        }
+      ],
+      "status": "SOURCE_RESTORED_NOT_COMPILED"
+    }
+  ],
+  "capture_bindings": 65,
+  "normal_source_build_uses_decompiler": false,
+  "command": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/no-late-composer/MessageComposerKt/command.json"
+}

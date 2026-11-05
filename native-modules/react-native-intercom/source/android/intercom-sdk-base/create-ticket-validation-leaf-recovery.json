@@ -1,0 +1,8 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "scope": "Two exact original <clinit> GETSTATIC enum EMAIL qualifiers; retain existing binary-owner import",
+  "before_sha256": "3bc5be4717af04f62b5b0746d470321b5c19d846b7d4c314a663b399cff8bb7e",
+  "after_sha256": "21f736f6a0009382b8fefc5028e0ae32f3a3d9c5fda5f0fa7b2f677ac4d1f743",
+  "original_evidence": ".recovery/no-late-CreateTicketContentScreenKt/original.javap.txt",
+  "code_backfill": false
+}

@@ -1,0 +1,3047 @@
+{
+  "status": "SOURCE_EXPRESSIONS_RESTORED_NOT_COMPILED",
+  "scope": "Plain metafactory, static targets, direct locals and explicitly proved GETFIELD/local receivers; typed ordered snapshots at bounded statements with no writes to captured bindings; GETFIELD factories additionally reject earlier effectful/throwing expressions; original helper source retained",
+  "normal_source_build_uses_originals_or_decompiler": false,
+  "source_applied": true,
+  "selected_sites": 31,
+  "direct_local_requests": 31,
+  "restored_sites": 22,
+  "skipped": [],
+  "rejected": [
+    "93\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "814\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "815\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "1216\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "1217\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "1541\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "1565\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "1566\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation",
+    "1567\t/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1.java\tfield capture factory has earlier effectful/throwing expression or conditional evaluation"
+  ],
+  "unmatched_source_context": [],
+  "files": [
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$connect$1.java",
+      "before_sha256": "3899ca3ffa071a3e919a21b0636930f11eba1dd48937a7a9e63888d65e5762ee",
+      "after_sha256": "7d0b06ecb2d77bf7297b722b7555b958c19024e7c8c2de0c7cb25608822014f4",
+      "sites": [
+        1,
+        2,
+        3
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$connect$1.java",
+          "5247",
+          "5292",
+          "((io.ably.lib.realtime.ConnectionStateListener) (recoveredExpressionArgument_1_0) -> io.intercom.android.sdk.AblyManager$connect$1.invokeSuspend$lambda$2(recoveredExpressionCapture_1_0, (io.ably.lib.realtime.ConnectionStateListener.ConnectionStateChange) (recoveredExpressionArgument_1_0)))",
+          "5215",
+          "final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_1_0 = ((io.intercom.android.sdk.AblyManager$connect$1) this).this$0;\\n         ",
+          "1",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/AblyManager;=opcode180",
+          "recoveredExpressionCapture_1_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$connect$1|this$0|Lio/intercom/android/sdk/AblyManager$connect$1;",
+          "BLOCK"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$connect$1.java",
+          "5860",
+          "5905",
+          "((io.ably.lib.realtime.ChannelStateListener) (recoveredExpressionArgument_2_0) -> io.intercom.android.sdk.AblyManager$connect$1.invokeSuspend$lambda$3(recoveredExpressionCapture_2_0, (io.ably.lib.realtime.ChannelStateListener.ChannelStateChange) (recoveredExpressionArgument_2_0)))",
+          "5831",
+          "final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_2_0 = ((io.intercom.android.sdk.AblyManager$connect$1) this).this$0;\\n         ",
+          "2",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/AblyManager;=opcode180",
+          "recoveredExpressionCapture_2_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$connect$1|this$0|Lio/intercom/android/sdk/AblyManager$connect$1;",
+          "BLOCK"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$connect$1.java",
+          "6277",
+          "6322",
+          "((io.ably.lib.realtime.ChannelBase.MessageListener) (recoveredExpressionArgument_3_0) -> io.intercom.android.sdk.AblyManager$connect$1.invokeSuspend$lambda$4(recoveredExpressionCapture_3_0, (io.ably.lib.types.Message) (recoveredExpressionArgument_3_0)))",
+          "6261",
+          "final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_3_0 = ((io.intercom.android.sdk.AblyManager$connect$1) this).this$0;\\n            ",
+          "3",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/AblyManager;=opcode180",
+          "recoveredExpressionCapture_3_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$connect$1|this$0|Lio/intercom/android/sdk/AblyManager$connect$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.java",
+      "before_sha256": "513971de0fd8cfa356162f0b923cf26b2e6825c9590a63ba3be9315c32156ba1",
+      "after_sha256": "747a23e747631e2386cca7151e43d8f4fb843d6286de4b543642f55ab1e6665b",
+      "sites": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.java",
+          "2533",
+          "2590",
+          "((io.ably.lib.realtime.Channel.MessageListener) (recoveredExpressionArgument_4_0) -> io.intercom.android.sdk.AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$0(recoveredExpressionCapture_4_0, recoveredExpressionCapture_4_1, (io.ably.lib.types.Message) (recoveredExpressionArgument_4_0)))",
+          "2510",
+          "final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_4_0 = ((io.intercom.android.sdk.AblyManager$createAblyEventFlow$1) this).this$0;\\n            final kotlinx.coroutines.channels.ProducerScope recoveredExpressionCapture_4_1 = var2;\\n            ",
+          "4",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/AblyManager;=opcode180,Lkotlinx/coroutines/channels/ProducerScope;=var2",
+          "recoveredExpressionCapture_4_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$createAblyEventFlow$1|this$0|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;;recoveredExpressionCapture_4_1=var2@2452:LOCAL|2|2|0|var2|Lkotlinx/coroutines/channels/ProducerScope;",
+          "BLOCK"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.java",
+          "2635",
+          "2692",
+          "((io.ably.lib.realtime.ConnectionStateListener) (recoveredExpressionArgument_5_0) -> io.intercom.android.sdk.AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$1(recoveredExpressionCapture_5_0, recoveredExpressionCapture_5_1, (io.ably.lib.realtime.ConnectionStateListener.ConnectionStateChange) (recoveredExpressionArgument_5_0)))",
+          "2604",
+          "final kotlinx.coroutines.channels.ProducerScope recoveredExpressionCapture_5_0 = var2;\\n            final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_5_1 = ((io.intercom.android.sdk.AblyManager$createAblyEventFlow$1) this).this$0;\\n            ",
+          "5",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lkotlinx/coroutines/channels/ProducerScope;=var2,Lio/intercom/android/sdk/AblyManager;=opcode180",
+          "recoveredExpressionCapture_5_0=var2@2452:LOCAL|2|2|0|var2|Lkotlinx/coroutines/channels/ProducerScope;;recoveredExpressionCapture_5_1=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$createAblyEventFlow$1|this$0|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;",
+          "BLOCK"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.java",
+          "2734",
+          "2791",
+          "((io.ably.lib.realtime.ChannelStateListener) (recoveredExpressionArgument_6_0) -> io.intercom.android.sdk.AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$2(recoveredExpressionCapture_6_0, recoveredExpressionCapture_6_1, (io.ably.lib.realtime.ChannelStateListener.ChannelStateChange) (recoveredExpressionArgument_6_0)))",
+          "2706",
+          "final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_6_0 = ((io.intercom.android.sdk.AblyManager$createAblyEventFlow$1) this).this$0;\\n            final kotlinx.coroutines.channels.ProducerScope recoveredExpressionCapture_6_1 = var2;\\n            ",
+          "6",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/AblyManager;=opcode180,Lkotlinx/coroutines/channels/ProducerScope;=var2",
+          "recoveredExpressionCapture_6_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$createAblyEventFlow$1|this$0|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;;recoveredExpressionCapture_6_1=var2@2452:LOCAL|2|2|0|var2|Lkotlinx/coroutines/channels/ProducerScope;",
+          "BLOCK"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.java",
+          "3180",
+          "3237",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$3(recoveredExpressionCapture_7_0))",
+          "3159",
+          "final io.intercom.android.sdk.AblyManager recoveredExpressionCapture_7_0 = ((io.intercom.android.sdk.AblyManager$createAblyEventFlow$1) this).this$0;\\n            ",
+          "7",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/AblyManager;=opcode180",
+          "recoveredExpressionCapture_7_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/AblyManager;|io/intercom/android/sdk/AblyManager$createAblyEventFlow$1|this$0|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1.java",
+      "before_sha256": "41574ad17c1512a06c8d5d1c43f2856997867107f79881b2df17c472e2712665",
+      "after_sha256": "ca0166e9e8794b0b55d913d26aeaf1911dbcdc1b6c8c5d66c3fc551d8cab3420",
+      "sites": [
+        284
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1.java",
+          "1957",
+          "2018",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.data.NexusEventAsFlowKt$nexusEventAsFlow$1.invokeSuspend$lambda$0(recoveredExpressionCapture_284_0, recoveredExpressionCapture_284_1))",
+          "1936",
+          "final io.intercom.android.nexus.NexusClient recoveredExpressionCapture_284_0 = ((io.intercom.android.sdk.m5.conversation.data.NexusEventAsFlowKt$nexusEventAsFlow$1) this).$nexusClient;\\n            final io.intercom.android.sdk.m5.conversation.data.NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1 recoveredExpressionCapture_284_1 = var3;\\n            ",
+          "284",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/nexus/NexusClient;=opcode180,Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;=var3",
+          "recoveredExpressionCapture_284_0=this:FIELD|0|0|0|this|Lio/intercom/android/nexus/NexusClient;|io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1|$nexusClient|Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1;;recoveredExpressionCapture_284_1=var3@1754:LOCAL|3|3|0|var3|Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1.java",
+      "before_sha256": "967f7a0277eeb0d73b2e29f1267650653ff0d7aacf161901e4d64900d630b575",
+      "after_sha256": "30379d5517e872a1af5e31676f3f41ce232d732979e5b1234801aba04fbb74d8",
+      "sites": [
+        377
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1.java",
+          "2482",
+          "2550",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreen$13$1.invokeSuspend$lambda$0(recoveredExpressionCapture_377_0))",
+          "2461",
+          "final io.intercom.android.sdk.m5.conversation.ConversationViewModel recoveredExpressionCapture_377_0 = ((io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreen$13$1) this).$conversationViewModel;\\n            ",
+          "377",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;=opcode180",
+          "recoveredExpressionCapture_377_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;|io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1|$conversationViewModel|Lio/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1.java",
+      "before_sha256": "22e6262bdd3b2ee0934a21fa66dfc9b9e2d253b493017307e2b3fb5945e4a571",
+      "after_sha256": "bd4e7b7c5ec168cd96d950301bd6f214eabafbcc87fff5244feb96b9d83c4c04",
+      "sites": [
+        378
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1.java",
+          "2987",
+          "3062",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$37$1.invokeSuspend$lambda$0(recoveredExpressionCapture_378_0))",
+          "2946",
+          "final androidx.compose.foundation.lazy.LazyListState recoveredExpressionCapture_378_0 = ((io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$37$1) this).$lazyListState;\\n            ",
+          "378",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Landroidx/compose/foundation/lazy/LazyListState;=opcode180",
+          "recoveredExpressionCapture_378_0=this:FIELD|0|0|0|this|Landroidx/compose/foundation/lazy/LazyListState;|io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1|$lazyListState|Lio/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1.java",
+      "before_sha256": "e0cf1c2b38607ab9bd0f5e6ddc3b3062bf480665b814f6a8eef3cd3f5f6376a6",
+      "after_sha256": "635338c2d296618579cfc053b6ec2252b1aaf0c2515106ff2f6a3d6fbf235a30",
+      "sites": [
+        479
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1.java",
+          "2638",
+          "2710",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.StreamingMessageListKt$StreamingMessageList$13$1.invokeSuspend$lambda$0(recoveredExpressionCapture_479_0))",
+          "2597",
+          "final androidx.compose.foundation.lazy.LazyListState recoveredExpressionCapture_479_0 = ((io.intercom.android.sdk.m5.conversation.ui.components.StreamingMessageListKt$StreamingMessageList$13$1) this).$lazyListState;\\n            ",
+          "479",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Landroidx/compose/foundation/lazy/LazyListState;=opcode180",
+          "recoveredExpressionCapture_479_0=this:FIELD|0|0|0|this|Landroidx/compose/foundation/lazy/LazyListState;|io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1|$lazyListState|Lio/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1.java",
+      "before_sha256": "dec6646bbece6a74f4522d69eeb94c8611f56327b5984f023a0c1b81ce995eaf",
+      "after_sha256": "6ef61a20b5c29913a18b811c6f7fc31eb2905e9ef592def590500869b688c5ab",
+      "sites": [
+        484
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1.java",
+          "1821",
+          "1893",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.StreamingMessageListKt$streamingAnswerItem$1$2$1.invokeSuspend$lambda$0(recoveredExpressionCapture_484_0))",
+          "1776",
+          "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_484_0 = ((io.intercom.android.sdk.m5.conversation.ui.components.StreamingMessageListKt$streamingAnswerItem$1$2$1) this).$isAtBottom;\\n            ",
+          "484",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lkotlin/jvm/functions/Function0;=opcode180",
+          "recoveredExpressionCapture_484_0=this:FIELD|0|0|0|this|Lkotlin/jvm/functions/Function0;|io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1|$isAtBottom|Lio/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1.java",
+      "before_sha256": "b72ffd0fb988823e63665edfdc15ea0be9e8ca650d384c0c9d9bb87e394f23fc",
+      "after_sha256": "4dfe6ba529226b0006624b67da4801639d26f1b038da8dc0b136de2e0bf5c790",
+      "sites": [
+        485
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1.java",
+          "2035",
+          "2107",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.components.StreamingMessageListKt$streamingAnswerItem$1$3$1.invokeSuspend$lambda$0(recoveredExpressionCapture_485_0))",
+          "1990",
+          "final androidx.compose.runtime.MutableIntState recoveredExpressionCapture_485_0 = ((io.intercom.android.sdk.m5.conversation.ui.components.StreamingMessageListKt$streamingAnswerItem$1$3$1) this).$contentHeight$delegate;\\n            ",
+          "485",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Landroidx/compose/runtime/MutableIntState;=opcode180",
+          "recoveredExpressionCapture_485_0=this:FIELD|0|0|0|this|Landroidx/compose/runtime/MutableIntState;|io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1|$contentHeight$delegate|Lio/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1.java",
+      "before_sha256": "83f8356d5be29186d918f12a43a34d123e3d6cdf81c9d7f6d09d40b9e93dffa2",
+      "after_sha256": "300e11faedbd4a46cfa4088ff0171a9ed9871c98abc0148b1eca6d62a470dcb4",
+      "sites": [
+        686
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1.java",
+          "1081",
+          "1143",
+          "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_686_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.ClickableMessageRowKt$ClickableMessageRow$1$1.invoke$lambda$0(recoveredExpressionCapture_686_0, (androidx.compose.ui.geometry.Offset) ((androidx.compose.ui.geometry.Offset)recoveredExpressionArgument_686_0)))",
+          "976",
+          "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_686_0 = ((io.intercom.android.sdk.m5.conversation.ui.components.row.ClickableMessageRowKt$ClickableMessageRow$1$1) this).$onLongClick;\\n      ",
+          "686",
+          "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "Lkotlin/jvm/functions/Function0;=opcode180",
+          "recoveredExpressionCapture_686_0=this:FIELD|0|0|0|this|Lkotlin/jvm/functions/Function0;|io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1|$onLongClick|Lio/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1.java",
+      "before_sha256": "2b5b151f8f49ebc628e67dd23a0892126d0dae91395bd0b8a20a3ee13be39641",
+      "after_sha256": "2ad9aa249cd452995406d26204b72833380c5909460213a611bbce8df661a90d",
+      "sites": [
+        793
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1.java",
+          "2554",
+          "2626",
+          "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_793_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingTextRevealKt$rememberRevealedBlocks$1$1.invokeSuspend$lambda$0(recoveredExpressionCapture_793_0, recoveredExpressionCapture_793_1, recoveredExpressionCapture_793_2, recoveredExpressionCapture_793_3, ((java.lang.Long)recoveredExpressionArgument_793_0).longValue()))",
+          "2543",
+          "final kotlin.jvm.internal.Ref.LongRef recoveredExpressionCapture_793_0 = var3;\\n         final kotlin.jvm.internal.Ref.FloatRef recoveredExpressionCapture_793_1 = var2;\\n         final androidx.compose.runtime.State recoveredExpressionCapture_793_2 = ((io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingTextRevealKt$rememberRevealedBlocks$1$1) this).$currentTotal$delegate;\\n         final androidx.compose.runtime.MutableFloatState recoveredExpressionCapture_793_3 = ((io.intercom.android.sdk.m5.conversation.ui.components.row.StreamingTextRevealKt$rememberRevealedBlocks$1$1) this).$revealedUnitsRaw$delegate;\\n         ",
+          "793",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lkotlin/jvm/internal/Ref$LongRef;=var3,Lkotlin/jvm/internal/Ref$FloatRef;=var2,Landroidx/compose/runtime/State;=opcode180,Landroidx/compose/runtime/MutableFloatState;=opcode180",
+          "recoveredExpressionCapture_793_0=var3@1965:LOCAL|3|3|0|var3|Lkotlin/jvm/internal/Ref$LongRef;;recoveredExpressionCapture_793_1=var2@1944:LOCAL|2|2|0|var2|Lkotlin/jvm/internal/Ref$FloatRef;;recoveredExpressionCapture_793_2=this:FIELD|0|0|0|this|Landroidx/compose/runtime/State;|io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1|$currentTotal$delegate|Lio/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1;;recoveredExpressionCapture_793_3=this:FIELD|0|0|0|this|Landroidx/compose/runtime/MutableFloatState;|io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1|$revealedUnitsRaw$delegate|Lio/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1.java",
+      "before_sha256": "9e24a83e527c6eb1d8fd0af0b7a976778dfd58af25b4f370aea305daaed1bdef",
+      "after_sha256": "a83a2f81b3a397d2aedee99ae1c5e22a0654f9810791589309083cdb7bd10625",
+      "sites": [
+        806
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1.java",
+          "1820",
+          "1868",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.usecase.GetNetworkState$invoke$1.invokeSuspend$lambda$0(recoveredExpressionCapture_806_0))",
+          "1799",
+          "final io.intercom.android.sdk.m5.conversation.usecase.GetNetworkState recoveredExpressionCapture_806_0 = ((io.intercom.android.sdk.m5.conversation.usecase.GetNetworkState$invoke$1) this).this$0;\\n            ",
+          "806",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;=opcode180",
+          "recoveredExpressionCapture_806_0=this:FIELD|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;|io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1|this$0|Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.java",
+      "before_sha256": "fdc88a91733b5066755793e6b2ee629c7b19e2072fafcc312e7f3e3c7200bee1",
+      "after_sha256": "369e0f9ce7ec09887c71e08a06eed00f593896a2b700dce608b25b2c6a9e0fb8",
+      "sites": [
+        1006,
+        1007
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.java",
+          "8793",
+          "8862",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11.invoke$lambda$5(recoveredExpressionCapture_1006_0, recoveredExpressionCapture_1006_1))",
+          "8772",
+          "final androidx.navigation.NavHostController recoveredExpressionCapture_1006_0 = ((io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11) this).$navController;\\n      final kotlin.jvm.internal.Ref.BooleanRef recoveredExpressionCapture_1006_1 = var9;\\n      ",
+          "1006",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+          "recoveredExpressionCapture_1006_0=this:FIELD|0|0|0|this|Landroidx/navigation/NavHostController;|io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11|$navController|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;;recoveredExpressionCapture_1006_1=var9@3881:LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;",
+          "BLOCK"
+        ],
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.java",
+          "8891",
+          "8960",
+          "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1007_0) -> io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11.invoke$lambda$6(recoveredExpressionCapture_1007_0, recoveredExpressionCapture_1007_1, (java.lang.String) ((java.lang.String)recoveredExpressionArgument_1007_0)))",
+          "8870",
+          "final androidx.navigation.NavHostController recoveredExpressionCapture_1007_0 = ((io.intercom.android.sdk.m5.navigation.ConversationDestinationKt$conversationDestination$11) this).$navController;\\n      final kotlin.jvm.internal.Ref.BooleanRef recoveredExpressionCapture_1007_1 = var9;\\n      ",
+          "1007",
+          "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+          "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+          "recoveredExpressionCapture_1007_0=this:FIELD|0|0|0|this|Landroidx/navigation/NavHostController;|io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11|$navController|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;;recoveredExpressionCapture_1007_1=var9@3881:LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1.java",
+      "before_sha256": "0e46cfacde402f7fde74c1a6041cac3d74fb1504e1f04f79f46b90d993729531",
+      "after_sha256": "bba6c6e7aac63500a6dae5fa702d7a2fa20662a768a831a6b0bd504419e532d1",
+      "sites": [
+        1140
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1.java",
+          "2431",
+          "2491",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.preview.ui.PreviewBottomBarKt$ThumbnailList$1$1.invokeSuspend$lambda$1(recoveredExpressionCapture_1140_0))",
+          "2386",
+          "final androidx.compose.foundation.lazy.LazyListState recoveredExpressionCapture_1140_0 = ((io.intercom.android.sdk.m5.preview.ui.PreviewBottomBarKt$ThumbnailList$1$1) this).$listState;\\n            ",
+          "1140",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Landroidx/compose/foundation/lazy/LazyListState;=opcode180",
+          "recoveredExpressionCapture_1140_0=this:FIELD|0|0|0|this|Landroidx/compose/foundation/lazy/LazyListState;|io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1|$listState|Lio/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1.java",
+      "before_sha256": "737f5ead0d5454b829475847be24db7b4de11d0e5d7392d7e52fe76dbdaf8919",
+      "after_sha256": "f2971f77808f7eca744df7b44909a16b9951525ae46dd03a6219caf3bbe9ea6e",
+      "sites": [
+        1152
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1.java",
+          "1783",
+          "1855",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.preview.ui.PreviewRootScreenKt$PreviewRootScreenContent$6$1.invokeSuspend$lambda$0(recoveredExpressionCapture_1152_0))",
+          "1738",
+          "final androidx.compose.foundation.pager.PagerState recoveredExpressionCapture_1152_0 = ((io.intercom.android.sdk.m5.preview.ui.PreviewRootScreenKt$PreviewRootScreenContent$6$1) this).$pagerState;\\n            ",
+          "1152",
+          "(Ljava/lang/Object;)Ljava/lang/Object;",
+          "Landroidx/compose/foundation/pager/PagerState;=opcode180",
+          "recoveredExpressionCapture_1152_0=this:FIELD|0|0|0|this|Landroidx/compose/foundation/pager/PagerState;|io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1|$pagerState|Lio/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1.java",
+      "before_sha256": "6ed3b0b9bded32e0afa517a37fec6838c7fe3cfdb10eec9ed082615bb932187c",
+      "after_sha256": "6acb2c5acd9bd1bdab9d17db99aa83dfa7041d664c98d1858c7392cb3c877950",
+      "sites": [
+        1183
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1.java",
+          "2117",
+          "2169",
+          "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.preview.ui.ZoomableImageKt$ZoomableImage$5$2$1.invoke$lambda$0(recoveredExpressionCapture_1183_0))",
+          "2025",
+          "final androidx.compose.runtime.MutableFloatState recoveredExpressionCapture_1183_0 = ((io.intercom.android.sdk.m5.preview.ui.ZoomableImageKt$ZoomableImage$5$2$1) this).$scale$delegate;\\n      ",
+          "1183",
+          "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+          "Landroidx/compose/runtime/MutableFloatState;=opcode180",
+          "recoveredExpressionCapture_1183_0=this:FIELD|0|0|0|this|Landroidx/compose/runtime/MutableFloatState;|io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1|$scale$delegate|Lio/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1;",
+          "BLOCK"
+        ]
+      ]
+    },
+    {
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1.java",
+      "before_sha256": "1ae134180af7e0ea98c93dd72d39c4d5f45671fd4f3586dedf8b7955f6facb94",
+      "after_sha256": "eee71d7719c3b5d0e932a4c8c3b0f2e5bb7a0149a898d9bd07a7690c19a89e71",
+      "sites": [
+        1297
+      ],
+      "source_joins": [
+        [
+          "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java/io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1.java",
+          "7737",
+          "7789",
+          "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_1297_0) -> io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1.measure_3p2s80s$lambda$7(recoveredExpressionCapture_1297_0, recoveredExpressionCapture_1297_1, recoveredExpressionCapture_1297_2, recoveredExpressionCapture_1297_3, recoveredExpressionCapture_1297_4, recoveredExpressionCapture_1297_5, recoveredExpressionCapture_1297_6, recoveredExpressionCapture_1297_7, recoveredExpressionCapture_1297_8, recoveredExpressionCapture_1297_9, recoveredExpressionCapture_1297_10, recoveredExpressionCapture_1297_11, recoveredExpressionCapture_1297_12, recoveredExpressionCapture_1297_13, (androidx.compose.ui.layout.Placeable.PlacementScope) ((androidx.compose.ui.layout.Placeable.PlacementScope)recoveredExpressionArgument_1297_0)))",
+          "7670",
+          "final androidx.compose.foundation.ScrollState recoveredExpressionCapture_1297_0 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$verticalScrollState;\\n      final java.util.List recoveredExpressionCapture_1297_1 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$allRows;\\n      final int recoveredExpressionCapture_1297_2 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$horizontalPaddingPx;\\n      final int recoveredExpressionCapture_1297_3 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$columnCount;\\n      final java.util.List recoveredExpressionCapture_1297_4 = var9;\\n      final int recoveredExpressionCapture_1297_5 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$verticalPaddingPx;\\n      final java.util.List recoveredExpressionCapture_1297_6 = var34;\\n      final int recoveredExpressionCapture_1297_7 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$columnSpacingPx;\\n      final int recoveredExpressionCapture_1297_8 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$dividerCount;\\n      final java.util.List recoveredExpressionCapture_1297_9 = recoveredDividers;\\n      final java.util.List recoveredExpressionCapture_1297_10 = var36;\\n      final int recoveredExpressionCapture_1297_11 = ((io.intercom.android.sdk.survey.block.TableBlockKt$TableGrid$1$1) this).$dividerHeightPx;\\n      final androidx.compose.ui.layout.Placeable recoveredExpressionCapture_1297_12 = var61;\\n      final int recoveredExpressionCapture_1297_13 = $i$f$mapToxx;\\n      ",
+          "1297",
+          "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+          "Landroidx/compose/foundation/ScrollState;=opcode180,Ljava/util/List;=opcode180,I=opcode180,I=opcode180,Ljava/util/List;=var9,I=opcode180,Ljava/util/List;=var11,I=opcode180,I=opcode180,Ljava/util/List;=var18,Ljava/util/List;=var12,I=opcode180,Landroidx/compose/ui/layout/Placeable;=var20,I=var19",
+          "recoveredExpressionCapture_1297_0=this:FIELD|0|0|0|this|Landroidx/compose/foundation/ScrollState;|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$verticalScrollState|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_1=this:FIELD|0|0|0|this|Ljava/util/List;|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$allRows|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_2=this:FIELD|0|0|0|this|I|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$horizontalPaddingPx|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_3=this:FIELD|0|0|0|this|I|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$columnCount|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_4=var9@3814:LOCAL|9|9|0|var9|Ljava/util/List;;recoveredExpressionCapture_1297_5=this:FIELD|0|0|0|this|I|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$verticalPaddingPx|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_6=var34@5048:LOCAL|11|34|0|var34|Ljava/util/List;;recoveredExpressionCapture_1297_7=this:FIELD|0|0|0|this|I|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$columnSpacingPx|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_8=this:FIELD|0|0|0|this|I|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$dividerCount|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_9=recoveredDividers@7413:LOCAL|18|53|0|recoveredDividers|Ljava/util/List;;recoveredExpressionCapture_1297_10=var36@6379:LOCAL|12|36|0|var36|Ljava/util/List;;recoveredExpressionCapture_1297_11=this:FIELD|0|0|0|this|I|io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1|$dividerHeightPx|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;;recoveredExpressionCapture_1297_12=var61@7542:LOCAL|20|61|0|var61|Landroidx/compose/ui/layout/Placeable;;recoveredExpressionCapture_1297_13=$i$f$mapToxx@5406:LOCAL|19|56|0|$i$f$mapToxx|I",
+          "BLOCK"
+        ]
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "site": 1,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "248",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend$lambda$2",
+        "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "6",
+        "(Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "(Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "io/ably/lib/realtime/ConnectionStateListener",
+        "Lio/intercom/android/sdk/AblyManager;=opcode180",
+        "367"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend$lambda$2",
+        "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "{363, 364, 365, 366, 367, 368, 369, 370, 371}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "367",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V, io/intercom/android/sdk/AblyManager$connect$1.invokeSuspend$lambda$2(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V (6), (Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "invokeSuspend$lambda$2",
+            "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+            "{363, 364, 365, 366, 367, 368, 369, 370, 371}",
+            "0",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$connect$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 2,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "299",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend$lambda$3",
+        "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "6",
+        "(Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "(Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "io/ably/lib/realtime/ChannelStateListener",
+        "Lio/intercom/android/sdk/AblyManager;=opcode180",
+        "451"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend$lambda$3",
+        "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "{447, 448, 449, 450, 451, 452, 453, 454, 455}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "451",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V, io/intercom/android/sdk/AblyManager$connect$1.invokeSuspend$lambda$3(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V (6), (Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "invokeSuspend$lambda$3",
+            "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+            "{447, 448, 449, 450, 451, 452, 453, 454, 455}",
+            "0",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$connect$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 3,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "330",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend$lambda$4",
+        "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/types/Message;)V",
+        "6",
+        "(Lio/ably/lib/types/Message;)V",
+        "(Lio/ably/lib/types/Message;)V",
+        "io/ably/lib/realtime/ChannelBase$MessageListener",
+        "Lio/intercom/android/sdk/AblyManager;=opcode180",
+        "502"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend$lambda$4",
+        "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/types/Message;)V",
+        "{498, 499, 500, 501, 502, 503, 504, 505, 506}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$connect$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "502",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Lio/ably/lib/types/Message;)V, io/intercom/android/sdk/AblyManager$connect$1.invokeSuspend$lambda$4(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/types/Message;)V (6), (Lio/ably/lib/types/Message;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "invokeSuspend$lambda$4",
+            "(Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/types/Message;)V",
+            "{498, 499, 500, 501, 502, 503, 504, 505, 506}",
+            "0",
+            "io/intercom/android/sdk/AblyManager$connect$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$connect$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 4,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "22",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/types/Message;)V",
+        "6",
+        "(Lio/ably/lib/types/Message;)V",
+        "(Lio/ably/lib/types/Message;)V",
+        "io/ably/lib/realtime/Channel$MessageListener",
+        "Lio/intercom/android/sdk/AblyManager;=opcode180,Lkotlinx/coroutines/channels/ProducerScope;=var2",
+        "49"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/types/Message;)V",
+        "{44, 45, 46, 47, 48, 49, 50, 51, 52, 53}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;",
+        "LOCAL|2|2|0|var2|Lkotlinx/coroutines/channels/ProducerScope;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "49",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Lio/ably/lib/types/Message;)V, io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/types/Message;)V (6), (Lio/ably/lib/types/Message;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/types/Message;)V",
+            "{44, 45, 46, 47, 48, 49, 50, 51, 52, 53}",
+            "0",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 5,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "29",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$1",
+        "(Lkotlinx/coroutines/channels/ProducerScope;Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "6",
+        "(Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "(Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "io/ably/lib/realtime/ConnectionStateListener",
+        "Lkotlinx/coroutines/channels/ProducerScope;=var2,Lio/intercom/android/sdk/AblyManager;=opcode180",
+        "60"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$1",
+        "(Lkotlinx/coroutines/channels/ProducerScope;Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+        "{55, 56, 57, 58, 59, 60, 61, 62, 63, 64}",
+        "LOCAL|2|2|0|var2|Lkotlinx/coroutines/channels/ProducerScope;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "60",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V, io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$1(Lkotlinx/coroutines/channels/ProducerScope;Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V (6), (Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend$lambda$1",
+            "(Lkotlinx/coroutines/channels/ProducerScope;Lio/intercom/android/sdk/AblyManager;Lio/ably/lib/realtime/ConnectionStateListener$ConnectionStateChange;)V",
+            "{55, 56, 57, 58, 59, 60, 61, 62, 63, 64}",
+            "1",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 6,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "36",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$2",
+        "(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "6",
+        "(Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "(Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "io/ably/lib/realtime/ChannelStateListener",
+        "Lio/intercom/android/sdk/AblyManager;=opcode180,Lkotlinx/coroutines/channels/ProducerScope;=var2",
+        "72"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$2",
+        "(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+        "{67, 68, 69, 70, 71, 72, 73, 74, 75, 76}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;",
+        "LOCAL|2|2|0|var2|Lkotlinx/coroutines/channels/ProducerScope;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "72",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V, io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$2(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V (6), (Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend$lambda$2",
+            "(Lio/intercom/android/sdk/AblyManager;Lkotlinx/coroutines/channels/ProducerScope;Lio/ably/lib/realtime/ChannelStateListener$ChannelStateChange;)V",
+            "{67, 68, 69, 70, 71, 72, 73, 74, 75, 76}",
+            "0",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 7,
+      "original_site": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "73",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$3",
+        "(Lio/intercom/android/sdk/AblyManager;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/AblyManager;=opcode180",
+        "127"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend$lambda$3",
+        "(Lio/intercom/android/sdk/AblyManager;)Lkotlin/Unit;",
+        "{123, 124, 125, 126, 127, 128, 129, 130, 131}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/AblyManager;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "127",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/AblyManager$createAblyEventFlow$1.invokeSuspend$lambda$3(Lio/intercom/android/sdk/AblyManager;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "invokeSuspend$lambda$3",
+            "(Lio/intercom/android/sdk/AblyManager;)Lkotlin/Unit;",
+            "{123, 124, 125, 126, 127, 128, 129, 130, 131}",
+            "0",
+            "io/intercom/android/sdk/AblyManager$createAblyEventFlow$1",
+            "this$0",
+            "Lio/intercom/android/sdk/AblyManager;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/AblyManager$createAblyEventFlow$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 93,
+      "original_site": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+        "onArticleFinishedLoading",
+        "()V",
+        "13",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+        "onArticleFinishedLoading$lambda$0",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;)V",
+        "6",
+        "(Ljava/lang/Object;)V",
+        "(Ljava/lang/String;)V",
+        "android/webkit/ValueCallback",
+        "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;=opcode180",
+        "20"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+        "onArticleFinishedLoading",
+        "()V",
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+        "onArticleFinishedLoading$lambda$0",
+        "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;)V",
+        "{16, 17, 18, 19, 20, 21, 22, 23, 24}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+        "onArticleFinishedLoading",
+        "()V",
+        "20",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)V, io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1.onArticleFinishedLoading$lambda$0(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;)V (6), (Ljava/lang/String;)V]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+            "this$0",
+            "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+            "onArticleFinishedLoading",
+            "()V",
+            "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+            "onArticleFinishedLoading$lambda$0",
+            "(Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;Ljava/lang/String;)V",
+            "{16, 17, 18, 19, 20, 21, 22, 23, 24}",
+            "0",
+            "io/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1",
+            "this$0",
+            "Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/helpcenter/articles/IntercomArticleActivity$onCreate$1$1$3$1$1$1$1$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 284,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "37",
+        "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/nexus/NexusClient;Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/nexus/NexusClient;=opcode180,Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;=var3",
+        "70"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/nexus/NexusClient;Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;)Lkotlin/Unit;",
+        "{65, 66, 67, 68, 69, 70, 71, 72, 73, 74}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/nexus/NexusClient;",
+        "LOCAL|3|3|0|var3|Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "70",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1.invokeSuspend$lambda$0(Lio/intercom/android/nexus/NexusClient;Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+            "$nexusClient",
+            "Lio/intercom/android/nexus/NexusClient;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/nexus/NexusClient;Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1$listener$1;)Lkotlin/Unit;",
+            "{65, 66, 67, 68, 69, 70, 71, 72, 73, 74}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1",
+            "$nexusClient",
+            "Lio/intercom/android/nexus/NexusClient;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/data/NexusEventAsFlowKt$nexusEventAsFlow$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 377,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "30",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;=opcode180",
+        "58"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;",
+        "{54, 55, 56, 57, 58, 59, 60, 61, 62}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "58",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+            "$conversationViewModel",
+            "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;)Lkotlin/Unit;",
+            "{54, 55, 56, 57, 58, 59, 60, 61, 62}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1",
+            "$conversationViewModel",
+            "Lio/intercom/android/sdk/m5/conversation/ConversationViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreen$13$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 378,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "16",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/util/List;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/foundation/lazy/LazyListState;=opcode180",
+        "40"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+        "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/foundation/lazy/LazyListState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1.invokeSuspend$lambda$0(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List; (6), ()Ljava/util/List;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+            "$lazyListState",
+            "Landroidx/compose/foundation/lazy/LazyListState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+            "invokeSuspend$lambda$0",
+            "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+            "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1",
+            "$lazyListState",
+            "Landroidx/compose/foundation/lazy/LazyListState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$37$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 479,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "16",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/util/List;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/foundation/lazy/LazyListState;=opcode180",
+        "40"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+        "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/foundation/lazy/LazyListState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1.invokeSuspend$lambda$0(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List; (6), ()Ljava/util/List;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+            "$lazyListState",
+            "Landroidx/compose/foundation/lazy/LazyListState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+            "invokeSuspend$lambda$0",
+            "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+            "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1",
+            "$lazyListState",
+            "Landroidx/compose/foundation/lazy/LazyListState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$StreamingMessageList$13$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 484,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "16",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+        "invokeSuspend$lambda$0",
+        "(Lkotlin/jvm/functions/Function0;)Z",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/lang/Boolean;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function0;=opcode180",
+        "40"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+        "invokeSuspend$lambda$0",
+        "(Lkotlin/jvm/functions/Function0;)Z",
+        "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lkotlin/jvm/functions/Function0;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1.invokeSuspend$lambda$0(Lkotlin/jvm/functions/Function0;)Z (6), ()Ljava/lang/Boolean;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+            "$isAtBottom",
+            "Lkotlin/jvm/functions/Function0;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+            "invokeSuspend$lambda$0",
+            "(Lkotlin/jvm/functions/Function0;)Z",
+            "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1",
+            "$isAtBottom",
+            "Lkotlin/jvm/functions/Function0;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$2$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 485,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "16",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/runtime/MutableIntState;)I",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/lang/Integer;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/runtime/MutableIntState;=opcode180",
+        "40"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/runtime/MutableIntState;)I",
+        "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/runtime/MutableIntState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1.invokeSuspend$lambda$0(Landroidx/compose/runtime/MutableIntState;)I (6), ()Ljava/lang/Integer;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+            "$contentHeight$delegate",
+            "Landroidx/compose/runtime/MutableIntState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+            "invokeSuspend$lambda$0",
+            "(Landroidx/compose/runtime/MutableIntState;)I",
+            "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1",
+            "$contentHeight$delegate",
+            "Landroidx/compose/runtime/MutableIntState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/components/StreamingMessageListKt$streamingAnswerItem$1$3$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 686,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+        "invoke",
+        "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+        "6",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+        "invoke$lambda$0",
+        "(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/geometry/Offset;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/geometry/Offset;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lkotlin/jvm/functions/Function0;=opcode180",
+        "6"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+        "invoke",
+        "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+        "invoke$lambda$0",
+        "(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/geometry/Offset;)Lkotlin/Unit;",
+        "{2, 3, 4, 5, 6, 7, 8, 9, 10}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lkotlin/jvm/functions/Function0;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+        "invoke",
+        "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+        "6",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1.invoke$lambda$0(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/geometry/Offset;)Lkotlin/Unit; (6), (Landroidx/compose/ui/geometry/Offset;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+            "$onLongClick",
+            "Lkotlin/jvm/functions/Function0;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+            "invoke",
+            "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+            "invoke$lambda$0",
+            "(Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/geometry/Offset;)Lkotlin/Unit;",
+            "{2, 3, 4, 5, 6, 7, 8, 9, 10}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1",
+            "$onLongClick",
+            "Lkotlin/jvm/functions/Function0;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/components/row/ClickableMessageRowKt$ClickableMessageRow$1$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 793,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+        "invokeSuspend$lambda$0",
+        "(Lkotlin/jvm/internal/Ref$LongRef;Lkotlin/jvm/internal/Ref$FloatRef;Landroidx/compose/runtime/State;Landroidx/compose/runtime/MutableFloatState;J)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Long;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lkotlin/jvm/internal/Ref$LongRef;=var3,Lkotlin/jvm/internal/Ref$FloatRef;=var2,Landroidx/compose/runtime/State;=opcode180,Landroidx/compose/runtime/MutableFloatState;=opcode180",
+        "69"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+        "invokeSuspend$lambda$0",
+        "(Lkotlin/jvm/internal/Ref$LongRef;Lkotlin/jvm/internal/Ref$FloatRef;Landroidx/compose/runtime/State;Landroidx/compose/runtime/MutableFloatState;J)Lkotlin/Unit;",
+        "{59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}",
+        "LOCAL|3|3|0|var3|Lkotlin/jvm/internal/Ref$LongRef;",
+        "LOCAL|2|2|0|var2|Lkotlin/jvm/internal/Ref$FloatRef;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/runtime/State;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/runtime/MutableFloatState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "69",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1.invokeSuspend$lambda$0(Lkotlin/jvm/internal/Ref$LongRef;Lkotlin/jvm/internal/Ref$FloatRef;Landroidx/compose/runtime/State;Landroidx/compose/runtime/MutableFloatState;J)Lkotlin/Unit; (6), (Ljava/lang/Long;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 2,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "$currentTotal$delegate",
+            "Landroidx/compose/runtime/State;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "invokeSuspend$lambda$0",
+            "(Lkotlin/jvm/internal/Ref$LongRef;Lkotlin/jvm/internal/Ref$FloatRef;Landroidx/compose/runtime/State;Landroidx/compose/runtime/MutableFloatState;J)Lkotlin/Unit;",
+            "{59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}",
+            "2",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "$currentTotal$delegate",
+            "Landroidx/compose/runtime/State;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1;"
+          ]
+        },
+        {
+          "capture_index": 3,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "$revealedUnitsRaw$delegate",
+            "Landroidx/compose/runtime/MutableFloatState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "invokeSuspend$lambda$0",
+            "(Lkotlin/jvm/internal/Ref$LongRef;Lkotlin/jvm/internal/Ref$FloatRef;Landroidx/compose/runtime/State;Landroidx/compose/runtime/MutableFloatState;J)Lkotlin/Unit;",
+            "{59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}",
+            "3",
+            "io/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1",
+            "$revealedUnitsRaw$delegate",
+            "Landroidx/compose/runtime/MutableFloatState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/ui/components/row/StreamingTextRevealKt$rememberRevealedBlocks$1$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 806,
+      "original_site": [
+        "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "37",
+        "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;=opcode180",
+        "70"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;)Lkotlin/Unit;",
+        "{66, 67, 68, 69, 70, 71, 72, 73, 74}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "70",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+            "this$0",
+            "Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;)Lkotlin/Unit;",
+            "{66, 67, 68, 69, 70, 71, 72, 73, 74}",
+            "0",
+            "io/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1",
+            "this$0",
+            "Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/conversation/usecase/GetNetworkState$invoke$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 814,
+      "original_site": [
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "181",
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;=opcode180,Ljava/lang/String;=opcode180",
+        "309"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+        "{301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Ljava/lang/String;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "309",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/lang/String;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "this$0",
+            "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+            "{301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313}",
+            "0",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "this$0",
+            "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "$collectionId",
+            "Ljava/lang/String;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+            "{301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313}",
+            "1",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1",
+            "$collectionId",
+            "Ljava/lang/String;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollectionDetails$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 815,
+      "original_site": [
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "165",
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/Set;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;=opcode180,Ljava/util/Set;=opcode180",
+        "287"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/Set;)Lkotlin/Unit;",
+        "{279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Ljava/util/Set;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "287",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/Set;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "this$0",
+            "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/Set;)Lkotlin/Unit;",
+            "{279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291}",
+            "0",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "this$0",
+            "Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "$collectionIds",
+            "Ljava/util/Set;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel;Ljava/util/Set;)Lkotlin/Unit;",
+            "{279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291}",
+            "1",
+            "io/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1",
+            "$collectionIds",
+            "Ljava/util/Set;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/helpcenter/HelpCenterViewModel$fetchCollections$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1006,
+      "original_site": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "488",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$5",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+        "651"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$5",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;)Lkotlin/Unit;",
+        "{645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/navigation/NavHostController;",
+        "LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "651",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.invoke$lambda$5(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke",
+            "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke$lambda$5",
+            "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;)Lkotlin/Unit;",
+            "{645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655}",
+            "0",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1007,
+      "original_site": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "492",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$6",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/String;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/navigation/NavHostController;=opcode180,Lkotlin/jvm/internal/Ref$BooleanRef;=var9",
+        "662"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke$lambda$6",
+        "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit;",
+        "{656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/navigation/NavHostController;",
+        "LOCAL|9|9|0|var9|Lkotlin/jvm/internal/Ref$BooleanRef;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+        "invoke",
+        "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+        "662",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11.invoke$lambda$6(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit; (6), (Ljava/lang/String;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke",
+            "(Landroidx/compose/animation/AnimatedContentScope;Landroidx/navigation/NavBackStackEntry;Landroidx/compose/runtime/Composer;I)V",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "invoke$lambda$6",
+            "(Landroidx/navigation/NavHostController;Lkotlin/jvm/internal/Ref$BooleanRef;Ljava/lang/String;)Lkotlin/Unit;",
+            "{656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666}",
+            "0",
+            "io/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11",
+            "$navController",
+            "Landroidx/navigation/NavHostController;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/navigation/ConversationDestinationKt$conversationDestination$11;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1140,
+      "original_site": [
+        "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "16",
+        "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+        "invokeSuspend$lambda$1",
+        "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/util/List;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/foundation/lazy/LazyListState;=opcode180",
+        "40"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+        "invokeSuspend$lambda$1",
+        "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+        "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/foundation/lazy/LazyListState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1.invokeSuspend$lambda$1(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List; (6), ()Ljava/util/List;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+            "$listState",
+            "Landroidx/compose/foundation/lazy/LazyListState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+            "invokeSuspend$lambda$1",
+            "(Landroidx/compose/foundation/lazy/LazyListState;)Ljava/util/List;",
+            "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+            "0",
+            "io/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1",
+            "$listState",
+            "Landroidx/compose/foundation/lazy/LazyListState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/preview/ui/PreviewBottomBarKt$ThumbnailList$1$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1152,
+      "original_site": [
+        "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "16",
+        "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/foundation/pager/PagerState;)I",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/lang/Integer;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/foundation/pager/PagerState;=opcode180",
+        "40"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+        "invokeSuspend$lambda$0",
+        "(Landroidx/compose/foundation/pager/PagerState;)I",
+        "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/foundation/pager/PagerState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "40",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1.invokeSuspend$lambda$0(Landroidx/compose/foundation/pager/PagerState;)I (6), ()Ljava/lang/Integer;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+            "$pagerState",
+            "Landroidx/compose/foundation/pager/PagerState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+            "invokeSuspend$lambda$0",
+            "(Landroidx/compose/foundation/pager/PagerState;)I",
+            "{36, 37, 38, 39, 40, 41, 42, 43, 44}",
+            "0",
+            "io/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1",
+            "$pagerState",
+            "Landroidx/compose/foundation/pager/PagerState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/preview/ui/PreviewRootScreenKt$PreviewRootScreenContent$6$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1183,
+      "original_site": [
+        "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+        "invoke",
+        "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+        "5",
+        "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+        "invoke$lambda$0",
+        "(Landroidx/compose/runtime/MutableFloatState;)Z",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Ljava/lang/Boolean;",
+        "kotlin/jvm/functions/Function0",
+        "Landroidx/compose/runtime/MutableFloatState;=opcode180",
+        "5"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+        "invoke",
+        "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+        "invoke$lambda$0",
+        "(Landroidx/compose/runtime/MutableFloatState;)Z",
+        "{1, 2, 3, 4, 5, 6, 7, 8, 9}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/runtime/MutableFloatState;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+        "invoke",
+        "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+        "5",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1.invoke$lambda$0(Landroidx/compose/runtime/MutableFloatState;)Z (6), ()Ljava/lang/Boolean;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+            "$scale$delegate",
+            "Landroidx/compose/runtime/MutableFloatState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+            "invoke",
+            "(Landroidx/compose/ui/input/pointer/PointerInputScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+            "invoke$lambda$0",
+            "(Landroidx/compose/runtime/MutableFloatState;)Z",
+            "{1, 2, 3, 4, 5, 6, 7, 8, 9}",
+            "0",
+            "io/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1",
+            "$scale$delegate",
+            "Landroidx/compose/runtime/MutableFloatState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/m5/preview/ui/ZoomableImageKt$ZoomableImage$5$2$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1216,
+      "original_site": [
+        "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "314",
+        "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/survey/SurveyViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/survey/SurveyViewModel;=opcode180,Ljava/lang/String;=opcode180",
+        "451"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/survey/SurveyViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+        "{443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/survey/SurveyViewModel;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Ljava/lang/String;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "451",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/survey/SurveyViewModel;Ljava/lang/String;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "this$0",
+            "Lio/intercom/android/sdk/survey/SurveyViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/survey/SurveyViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+            "{443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455}",
+            "0",
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "this$0",
+            "Lio/intercom/android/sdk/survey/SurveyViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "$surveyId",
+            "Ljava/lang/String;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/survey/SurveyViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+            "{443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455}",
+            "1",
+            "io/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1",
+            "$surveyId",
+            "Ljava/lang/String;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/SurveyViewModel$fetchAndShowSurvey$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1217,
+      "original_site": [
+        "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "724",
+        "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+        "invokeSuspend$lambda$7",
+        "(Lio/intercom/android/sdk/survey/SurveyViewModel;Lio/intercom/android/sdk/survey/SurveyState$Content;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/survey/SurveyViewModel;=opcode180,Lio/intercom/android/sdk/survey/SurveyState$Content;=opcode180,Lkotlinx/coroutines/CoroutineScope;=opcode180",
+        "1101"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+        "invokeSuspend$lambda$7",
+        "(Lio/intercom/android/sdk/survey/SurveyViewModel;Lio/intercom/android/sdk/survey/SurveyState$Content;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit;",
+        "{1089, 1090, 1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1101, 1102, 1103, 1104, 1105}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/survey/SurveyViewModel;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/survey/SurveyState$Content;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lkotlinx/coroutines/CoroutineScope;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "1101",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1.invokeSuspend$lambda$7(Lio/intercom/android/sdk/survey/SurveyViewModel;Lio/intercom/android/sdk/survey/SurveyState$Content;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "this$0",
+            "Lio/intercom/android/sdk/survey/SurveyViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "invokeSuspend$lambda$7",
+            "(Lio/intercom/android/sdk/survey/SurveyViewModel;Lio/intercom/android/sdk/survey/SurveyState$Content;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit;",
+            "{1089, 1090, 1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1101, 1102, 1103, 1104, 1105}",
+            "0",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "this$0",
+            "Lio/intercom/android/sdk/survey/SurveyViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "$surveyContent",
+            "Lio/intercom/android/sdk/survey/SurveyState$Content;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "invokeSuspend$lambda$7",
+            "(Lio/intercom/android/sdk/survey/SurveyViewModel;Lio/intercom/android/sdk/survey/SurveyState$Content;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit;",
+            "{1089, 1090, 1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1101, 1102, 1103, 1104, 1105}",
+            "1",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "$surveyContent",
+            "Lio/intercom/android/sdk/survey/SurveyState$Content;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1;"
+          ]
+        },
+        {
+          "capture_index": 2,
+          "original_field": [
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "$compositionAwareScope",
+            "Lkotlinx/coroutines/CoroutineScope;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "invokeSuspend$lambda$7",
+            "(Lio/intercom/android/sdk/survey/SurveyViewModel;Lio/intercom/android/sdk/survey/SurveyState$Content;Lkotlinx/coroutines/CoroutineScope;)Lkotlin/Unit;",
+            "{1089, 1090, 1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1101, 1102, 1103, 1104, 1105}",
+            "2",
+            "io/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1",
+            "$compositionAwareScope",
+            "Lkotlinx/coroutines/CoroutineScope;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/SurveyViewModel$submitSurvey$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1297,
+      "original_site": [
+        "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+        "recovered$3f4264a38d526aac",
+        "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+        "634",
+        "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+        "measure_3p2s80s$lambda$7",
+        "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/foundation/ScrollState;=opcode180,Ljava/util/List;=opcode180,I=opcode180,I=opcode180,Ljava/util/List;=var9,I=opcode180,Ljava/util/List;=var11,I=opcode180,I=opcode180,Ljava/util/List;=var18,Ljava/util/List;=var12,I=opcode180,Landroidx/compose/ui/layout/Placeable;=var20,I=var19",
+        "985"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+        "recovered$3f4264a38d526aac",
+        "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+        "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+        "measure_3p2s80s$lambda$7",
+        "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+        "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Landroidx/compose/foundation/ScrollState;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Ljava/util/List;",
+        "UNRESTORED_EXPRESSION|FieldExprent|I",
+        "UNRESTORED_EXPRESSION|FieldExprent|I",
+        "LOCAL|9|9|0|var9|Ljava/util/List;",
+        "UNRESTORED_EXPRESSION|FieldExprent|I",
+        "LOCAL|11|34|0|var34|Ljava/util/List;",
+        "UNRESTORED_EXPRESSION|FieldExprent|I",
+        "UNRESTORED_EXPRESSION|FieldExprent|I",
+        "LOCAL|18|53|0|destination$iv$ivxx|Ljava/util/List;",
+        "LOCAL|12|36|0|var36|Ljava/util/List;",
+        "UNRESTORED_EXPRESSION|FieldExprent|I",
+        "LOCAL|20|61|0|var61|Landroidx/compose/ui/layout/Placeable;",
+        "LOCAL|19|56|0|$i$f$mapToxx|I"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+        "recovered$3f4264a38d526aac",
+        "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+        "985",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1.measure_3p2s80s$lambda$7(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit; (6), (Landroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$verticalScrollState",
+            "Landroidx/compose/foundation/ScrollState;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "0",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$verticalScrollState",
+            "Landroidx/compose/foundation/ScrollState;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$allRows",
+            "Ljava/util/List;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "1",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$allRows",
+            "Ljava/util/List;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 2,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$horizontalPaddingPx",
+            "I",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "2",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$horizontalPaddingPx",
+            "I",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 3,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$columnCount",
+            "I",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "3",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$columnCount",
+            "I",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 5,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$verticalPaddingPx",
+            "I",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "5",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$verticalPaddingPx",
+            "I",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 7,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$columnSpacingPx",
+            "I",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "7",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$columnSpacingPx",
+            "I",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 8,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$dividerCount",
+            "I",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "8",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$dividerCount",
+            "I",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "capture_index": 11,
+          "original_field": [
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$dividerHeightPx",
+            "I",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "recovered$3f4264a38d526aac",
+            "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "measure_3p2s80s$lambda$7",
+            "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;",
+            "{941, 942, 943, 944, 945, 946, 947, 948, 949, 950, 951, 952, 953, 954, 955, 956, 957, 958, 959, 960, 961, 962, 963, 964, 965, 966, 967, 968, 969, 970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984, 985, 986, 987, 988, 989}",
+            "11",
+            "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "$dividerHeightPx",
+            "I",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1;"
+          ]
+        },
+        {
+          "explicit_original_lifetime_split": {
+            "site": 1297,
+            "owner": "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+            "method": "recovered$3f4264a38d526aac",
+            "descriptor": "(Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;",
+            "bci": 985,
+            "target": [
+              "io/intercom/android/sdk/survey/block/TableBlockKt$TableGrid$1$1",
+              "measure_3p2s80s$lambda$7",
+              "(Landroidx/compose/foundation/ScrollState;Ljava/util/List;IILjava/util/List;ILjava/util/List;IILjava/util/List;Ljava/util/List;ILandroidx/compose/ui/layout/Placeable;ILandroidx/compose/ui/layout/Placeable$PlacementScope;)Lkotlin/Unit;"
+            ],
+            "capture_index": 9,
+            "original_slot": 18,
+            "source_name": "recoveredDividers",
+            "status": "REQUIRED_WHEN_UNRESTORED_FACTORY_IS_RECONSTRUCTED"
+          }
+        }
+      ]
+    },
+    {
+      "site": 1541,
+      "original_site": [
+        "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "117",
+        "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/tickets/TicketDetailViewModel;=opcode180,Ljava/lang/String;=opcode180",
+        "183"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+        "{175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/tickets/TicketDetailViewModel;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Ljava/lang/String;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "183",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/tickets/TicketDetailViewModel;Ljava/lang/String;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/TicketDetailViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/tickets/TicketDetailViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+            "{175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187}",
+            "0",
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/TicketDetailViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "$ticketId",
+            "Ljava/lang/String;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/tickets/TicketDetailViewModel;Ljava/lang/String;)Lkotlin/Unit;",
+            "{175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187}",
+            "1",
+            "io/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1",
+            "$ticketId",
+            "Ljava/lang/String;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/tickets/TicketDetailViewModel$fetchTicketDetail$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1565,
+      "original_site": [
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "229",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend$lambda$5",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;=opcode180",
+        "333"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend$lambda$5",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+        "{329, 330, 331, 332, 333, 334, 335, 336, 337}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "333",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1.invokeSuspend$lambda$5(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit; (6), (Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "invokeSuspend$lambda$5",
+            "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+            "{329, 330, 331, 332, 333, 334, 335, 336, 337}",
+            "0",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1566,
+      "original_site": [
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "318",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend$lambda$6",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;=opcode180",
+        "456"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend$lambda$6",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+        "{452, 453, 454, 455, 456, 457, 458, 459, 460}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "456",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1.invokeSuspend$lambda$6(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit; (6), (Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "invokeSuspend$lambda$6",
+            "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$CreateTicketFormUiState$Content;)Lkotlin/Unit;",
+            "{452, 453, 454, 455, 456, 457, 458, 459, 460}",
+            "0",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$createTicket$1$1;"
+          ]
+        }
+      ]
+    },
+    {
+      "site": 1567,
+      "original_site": [
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "164",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Ljava/util/List;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;=opcode180,Ljava/util/List;=opcode180",
+        "244"
+      ],
+      "ssa": [
+        "AT_END",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+        "invokeSuspend$lambda$0",
+        "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Ljava/util/List;)Lkotlin/Unit;",
+        "{236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248}",
+        "UNRESTORED_EXPRESSION|FieldExprent|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+        "UNRESTORED_EXPRESSION|FieldExprent|Ljava/util/List;"
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+        "invokeSuspend",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "244",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1.invokeSuspend$lambda$0(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Ljava/util/List;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ],
+      "field_evidence": [
+        {
+          "capture_index": 0,
+          "original_field": [
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Ljava/util/List;)Lkotlin/Unit;",
+            "{236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248}",
+            "0",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "this$0",
+            "Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1;"
+          ]
+        },
+        {
+          "capture_index": 1,
+          "original_field": [
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "$attributes",
+            "Ljava/util/List;",
+            "var0"
+          ],
+          "ssa_field": [
+            "AT_END",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "invokeSuspend",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "invokeSuspend$lambda$0",
+            "(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Ljava/util/List;)Lkotlin/Unit;",
+            "{236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248}",
+            "1",
+            "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1",
+            "$attributes",
+            "Ljava/util/List;",
+            "false",
+            "LOCAL|0|0|0|this|Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$fetchTicketType$1;"
+          ]
+        }
+      ]
+    }
+  ],
+  "commands": [
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/javac",
+      "-cp",
+      "/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "-d",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/tools",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/tools/ExportLambdaSites.java",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/tools/SourceCaptureBindings.java",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/tools/RecoverStaticCaptureExpressions.java"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/intercom-sdk-base-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/intercom-sdk-base-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/intercom-sdk-lightcompressor-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/intercom-sdk-lightcompressor-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/nexus-client-android-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/nexus-client-android-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "ExportLambdaSites",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/android-base/normalized/twig-reference.jar",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/twig-sites.tsv",
+      "--with-bci"
+    ],
+    [
+      "/opt/homebrew/opt/openjdk@17/bin/java",
+      "-cp",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/tools:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-commons-9.7.1.jar:/Volumes/T7Shield/Project/jpush-jcore-sdk-recovery-20261103/tools/asm/asm-tree-9.7.1.jar:/Users/huhuanming/.gradle/caches/modules-2/files-2.1/org.ow2.asm/asm-analysis/9.7.1/f97a3b319f0ed6a8cd944dc79060d3912a28985f/asm-analysis-9.7.1.jar",
+      "RecoverStaticCaptureExpressions",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/requests.tsv",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/source/android/intercom-sdk-base/java",
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/getfield-capture-expressions/source-edits.tsv"
+    ]
+  ],
+  "tool_hashes": {
+    "tools/ExportLambdaSites.java": "d35d1a1d46144701ed684e54a4bae53256d7e61678a7a05d6874b41b5a0dff2e",
+    "tools/RecoverStaticCaptureExpressions.java": "c7b22a9cef8b6f5d822c24d2d0a124ec69b2f113ddbe0d27badb96ba8ec49ae1",
+    "tools/SourceCaptureBindings.java": "77954ee774f8d6f70747a3a4c0505d4257fd9ef7799d80f6c30f2d08171b8a84",
+    "scripts/android-recover-static-expressions.py": "ac1b0167fcadf3095315e790cf10069e0e2c4e4e1b818237f8655e5eff147336"
+  },
+  "reference_offset_coordinate": "Actual byte offsets in SHA-pinned normalized reference jars; not universally raw-vendor offsets. Symbol normalization/ASM serialization can change constant-pool operand widths.",
+  "diagnostic_reference_jar_sha256": {
+    "intercom-sdk-base-reference.jar": "495baebff1f55f833180ebd7c82cc1d3cb7cff3c3e0bb59322e6faee23b29391",
+    "intercom-sdk-lightcompressor-reference.jar": "81e61790f192ce5f4e3fecabc2a185ea1943aab8ed17815a9cecb46311b37d78",
+    "twig-reference.jar": "d6edd68f52302295447ae0cbb112b50c9ab9a756ba011b79881c01868627efc2",
+    "nexus-client-android-reference.jar": "dc6bdb7657776d4fed976eb37caa8baf8c8e9aabcfa240443341a7106451c104"
+  }
+}

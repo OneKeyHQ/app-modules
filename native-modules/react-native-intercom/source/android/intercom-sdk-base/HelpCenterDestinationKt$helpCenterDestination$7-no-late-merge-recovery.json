@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/navigation/HelpCenterDestinationKt$helpCenterDestination$7",
+  "root_only": true,
+  "source_before_sha256": "2df1c11fad6870ceefcd1623aed13e8b31cbe84acb4c004c4dda20f42beed9c7",
+  "source_after_sha256": "82710347283cdcc9bca5e805433b55bafa792c5c3ffe20a77dc780691a35913f",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 2,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

@@ -1,0 +1,934 @@
+{
+  "status": "SOURCE_TRUE_POST_SUSPEND_JOIN_CASTS_RESTORED_NOT_COMPILED",
+  "scope": "Ten scanned expressions in five source classes, seven distinct raw original suspend sites; restore real completed-result checks only at original joins",
+  "contract": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/open-messenger-coroutines/ALL_CANDIDATES_CONTRACT.md",
+  "changes": [
+    {
+      "owner": "io/intercom/android/sdk/AblyManager$connect$1",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/AblyManager$connect$1.java",
+      "before_sha256": "7d0b06ecb2d77bf7297b722b7555b958c19024e7c8c2de0c7cb25608822014f4",
+      "after_sha256": "92bf29ef3fd9138f35c2548a7a051588f77751e98c8a34eda8fda699f6e8c3b4",
+      "source_diff": "--- before\n+++ source\n@@ -63,7 +63,7 @@\n                AblyManager var31 = this.this$0;\n                Continuation var10001 = this;\n                this.label = 1;\n-               var10000 = (Triple)AblyManager.access$getAblyConfiguration(var31, var10001);\n+               var10000 = AblyManager.access$getAblyConfiguration(var31, var10001);\n             } catch (Exception var23) {\n                AblyManager.access$getTwig$p(this.this$0).e(\"AblyManager: Connection error: \" + var23.getMessage());\n                return Unit.INSTANCE;\n@@ -76,7 +76,7 @@\n          case 1:\n             try {\n                ResultKt.throwOnFailure(var1);\n-               var10000 = (Triple)var1;\n+               var10000 = var1;\n                break;\n             } catch (Exception var24) {\n                AblyManager.access$getTwig$p(this.this$0).e(\"AblyManager: Connection error: \" + var24.getMessage());\n@@ -87,12 +87,12 @@\n       }\n \n       try {\n-         var10000 = var10000;\n-         if (var10000 == null) {\n+         Triple recoveredConfiguration = (Triple)var10000;\n+         if (recoveredConfiguration == null) {\n             return Unit.INSTANCE;\n          }\n \n-         Triple var2 = var10000;\n+         Triple var2 = recoveredConfiguration;\n          String var3 = (String)var2.component1();\n          String var4 = (String)var2.component2();\n          List var5 = (List)var2.component3();\n",
+      "original_site_contract": [
+        {
+          "owner": "io/intercom/android/sdk/AblyManager$connect$1",
+          "original_owner": "io/intercom/android/sdk/AblyManager$connect$1",
+          "source_calls": [
+            {
+              "line": 66,
+              "cast_type": "Triple",
+              "call": "AblyManager.access$getAblyConfiguration(var31, var10001)"
+            }
+          ],
+          "call_name": "access$getAblyConfiguration",
+          "original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 66,
+              "call": "#75                 // Method io/intercom/android/sdk/AblyManager.access$getAblyConfiguration:(Lio/intercom/android/sdk/AblyManager;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                72,
+                "if_acmpne",
+                "84"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                80
+              ],
+              "join_instructions": [
+                [
+                  84,
+                  "checkcast",
+                  "#77                 // class kotlin/Triple"
+                ],
+                [
+                  87,
+                  "dup",
+                  ""
+                ],
+                [
+                  88,
+                  "ifnonnull",
+                  "96"
+                ],
+                [
+                  91,
+                  "pop",
+                  ""
+                ],
+                [
+                  92,
+                  "getstatic",
+                  "#83                 // Field kotlin/Unit.INSTANCE:Lkotlin/Unit;"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 84,
+                  "target": "#77                 // class kotlin/Triple"
+                }
+              ],
+              "handlers": "from    to  target type\n          36    69   517   Class java/lang/Exception\n          78   514   517   Class java/lang/Exception",
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ],
+          "selected_candidate_original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 66,
+              "call": "#75                 // Method io/intercom/android/sdk/AblyManager.access$getAblyConfiguration:(Lio/intercom/android/sdk/AblyManager;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                72,
+                "if_acmpne",
+                "84"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                80
+              ],
+              "join_instructions": [
+                [
+                  84,
+                  "checkcast",
+                  "#77                 // class kotlin/Triple"
+                ],
+                [
+                  87,
+                  "dup",
+                  ""
+                ],
+                [
+                  88,
+                  "ifnonnull",
+                  "96"
+                ],
+                [
+                  91,
+                  "pop",
+                  ""
+                ],
+                [
+                  92,
+                  "getstatic",
+                  "#83                 // Field kotlin/Unit.INSTANCE:Lkotlin/Unit;"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 84,
+                  "target": "#77                 // class kotlin/Triple"
+                }
+              ],
+              "handlers": "from    to  target type\n          36    69   517   Class java/lang/Exception\n          78   514   517   Class java/lang/Exception",
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ]
+        }
+      ],
+      "note": "Triple cast at raw common join84 remains in existing second protected continuation; call/sentinel/resume failures and original Exception logging unchanged"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadContentBitmap$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadContentBitmap$2.java",
+      "before_sha256": "334f03423e8ed01053d92c4584cab0a6f628158266c989f69795eb33240e4fba",
+      "after_sha256": "237b9e6d1319f73bee5e1b1e01b01a12f6bbf100b47ef360cf7049b9e040d6ae",
+      "source_diff": "--- before\n+++ source\n@@ -66,23 +66,23 @@\n             ImageRequest var10001 = this.$request;\n             Continuation var10002 = this;\n             this.label = 1;\n-            var10000 = (Drawable)IntercomCoilKt.loadIntercomImageSuspend(var8, var10001, var10002);\n+            var10000 = IntercomCoilKt.loadIntercomImageSuspend(var8, var10001, var10002);\n             if (var10000 == var7) {\n                return var7;\n             }\n             break;\n          case 1:\n             ResultKt.throwOnFailure(var1);\n-            var10000 = (Drawable)var1;\n+            var10000 = var1;\n             break;\n          default:\n             throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n       }\n \n-      var10000 = var10000;\n+      Drawable recoveredContentDrawable = (Drawable)var10000;\n       Bitmap var10;\n-      if (var10000 != null) {\n-         Drawable var2 = var10000;\n+      if (recoveredContentDrawable != null) {\n+         Drawable var2 = recoveredContentDrawable;\n          int var3 = this.$width;\n          int var4 = this.$height;\n          Drawable var5 = var2;\n",
+      "original_site_contract": [
+        {
+          "owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadContentBitmap$2",
+          "original_owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadContentBitmap$2",
+          "source_calls": [
+            {
+              "line": 69,
+              "cast_type": "Drawable",
+              "call": "IntercomCoilKt.loadIntercomImageSuspend(var8, var10001, var10002)"
+            }
+          ],
+          "call_name": "loadIntercomImageSuspend",
+          "original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 53,
+              "call": "#68                 // Method io/intercom/android/sdk/utilities/IntercomCoilKt.loadIntercomImageSuspend:(Landroid/content/Context;Lcoil/request/ImageRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                59,
+                "if_acmpne",
+                "70"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                66
+              ],
+              "join_instructions": [
+                [
+                  70,
+                  "checkcast",
+                  "#70                 // class android/graphics/drawable/Drawable"
+                ],
+                [
+                  73,
+                  "dup",
+                  ""
+                ],
+                [
+                  74,
+                  "ifnull",
+                  "106"
+                ],
+                [
+                  77,
+                  "astore_2",
+                  ""
+                ],
+                [
+                  78,
+                  "aload_0",
+                  ""
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 70,
+                  "target": "#70                 // class android/graphics/drawable/Drawable"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ],
+          "selected_candidate_original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 53,
+              "call": "#68                 // Method io/intercom/android/sdk/utilities/IntercomCoilKt.loadIntercomImageSuspend:(Landroid/content/Context;Lcoil/request/ImageRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                59,
+                "if_acmpne",
+                "70"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                66
+              ],
+              "join_instructions": [
+                [
+                  70,
+                  "checkcast",
+                  "#70                 // class android/graphics/drawable/Drawable"
+                ],
+                [
+                  73,
+                  "dup",
+                  ""
+                ],
+                [
+                  74,
+                  "ifnull",
+                  "106"
+                ],
+                [
+                  77,
+                  "astore_2",
+                  ""
+                ],
+                [
+                  78,
+                  "aload_0",
+                  ""
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 70,
+                  "target": "#70                 // class android/graphics/drawable/Drawable"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ]
+        }
+      ],
+      "note": "Drawable cast at raw common join70 after sentinel/resume throw; null return and bitmap conversion unchanged"
+    },
+    {
+      "owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadAndApplyBitmaps$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadAndApplyBitmaps$2.java",
+      "before_sha256": "e4d8dfbe9bd1573898172c91987ccd3bbbcbe4037a84e5945d96055cdcfe07ae",
+      "after_sha256": "f32aec0f1869e355677b9e6f2cd413292e47c091f250eb96c1fd9bad5ee7f824",
+      "source_diff": "--- before\n+++ source\n@@ -75,7 +75,9 @@\n    @Override\n    public final Object invokeSuspend(Object var1) {\n       Bitmap var5;\n-      Bitmap var28;\n+      Object var28;\n+      Bitmap recoveredContentBitmap;\n+      Bitmap recoveredAvatarBitmap;\n       label116: {\n          label133: {\n             label121: {\n@@ -132,7 +134,7 @@\n                               Continuation var10001 = this;\n                               this.L$0 = var4;\n                               this.label = 1;\n-                              var28 = (Bitmap)var3.await(var10001);\n+                              var28 = var3.await(var10001);\n                            } catch (CancellationException var24) {\n                               throw var24;\n                            } catch (Exception var25) {\n@@ -149,7 +151,7 @@\n \n                            try {\n                               ResultKt.throwOnFailure(var1);\n-                              var28 = (Bitmap)var1;\n+                              var28 = var1;\n                               break;\n                            } catch (CancellationException var20) {\n                               throw var20;\n@@ -162,7 +164,7 @@\n \n                            try {\n                               ResultKt.throwOnFailure(var1);\n-                              var28 = (Bitmap)var1;\n+                              var28 = var1;\n                               break label121;\n                            } catch (CancellationException var14) {\n                               throw var14;\n@@ -175,7 +177,7 @@\n                      }\n \n                      try {\n-                        var28 = var28;\n+                        recoveredContentBitmap = (Bitmap)var28;\n                         break label112;\n                      } catch (CancellationException var18) {\n                         throw var18;\n@@ -186,7 +188,7 @@\n                   }\n \n                   try {\n-                     var28 = null;\n+                     recoveredContentBitmap = null;\n                   } catch (CancellationException var16) {\n                      throw var16;\n                   } catch (Exception var17) {\n@@ -196,7 +198,7 @@\n                }\n \n                try {\n-                  var5 = var28;\n+                  var5 = recoveredContentBitmap;\n                   if (var4 == null) {\n                      break label133;\n                   }\n@@ -204,7 +206,7 @@\n                   Continuation var29 = this;\n                   this.L$0 = var5;\n                   this.label = 2;\n-                  var28 = (Bitmap)var4.await(var29);\n+                  var28 = var4.await(var29);\n                } catch (CancellationException var22) {\n                   throw var22;\n                } catch (Exception var23) {\n@@ -218,7 +220,7 @@\n             }\n \n             try {\n-               var28 = var28;\n+               recoveredAvatarBitmap = (Bitmap)var28;\n                break label116;\n             } catch (CancellationException var12) {\n                throw var12;\n@@ -229,7 +231,7 @@\n          }\n \n          try {\n-            var28 = null;\n+            recoveredAvatarBitmap = null;\n          } catch (CancellationException var10) {\n             throw var10;\n          } catch (Exception var11) {\n@@ -239,7 +241,7 @@\n       }\n \n       try {\n-         Bitmap var6 = var28;\n+         Bitmap var6 = recoveredAvatarBitmap;\n          IntercomPushBitmapUtilsKt.access$getTwig$p().d(\"loadBitmaps result: contentBitmap=\" + (var5 != null) + \", avatarBitmap=\" + (var6 != null));\n          if (var5 != null || var6 != null) {\n             this.$onUpdate.invoke(var5, var6);\n",
+      "original_site_contract": [
+        {
+          "owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadAndApplyBitmaps$2",
+          "original_owner": "io/intercom/android/sdk/m5/push/IntercomPushBitmapUtilsKt$loadAndApplyBitmaps$2",
+          "source_calls": [
+            {
+              "line": 135,
+              "cast_type": "Bitmap",
+              "call": "var3.await(var10001)"
+            },
+            {
+              "line": 207,
+              "cast_type": "Bitmap",
+              "call": "var4.await(var29)"
+            }
+          ],
+          "call_name": "await",
+          "original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 194,
+              "call": "#120,  2          // InterfaceMethod kotlinx/coroutines/Deferred.await:(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                202,
+                "if_acmpne",
+                "223"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                219
+              ],
+              "join_instructions": [
+                [
+                  223,
+                  "checkcast",
+                  "#122                // class android/graphics/Bitmap"
+                ],
+                [
+                  226,
+                  "goto",
+                  "231"
+                ],
+                [
+                  229,
+                  "pop",
+                  ""
+                ],
+                [
+                  230,
+                  "aconst_null",
+                  ""
+                ],
+                [
+                  231,
+                  "astore",
+                  "5"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 212,
+                  "target": "#116                // class kotlinx/coroutines/Deferred"
+                },
+                {
+                  "bci": 223,
+                  "target": "#122                // class android/graphics/Bitmap"
+                }
+              ],
+              "handlers": "from    to  target type\n          48   199   376   Class java/util/concurrent/CancellationException\n         217   259   376   Class java/util/concurrent/CancellationException\n         277   373   376   Class java/util/concurrent/CancellationException\n          48   199   379   Class java/lang/Exception\n         217   259   379   Class java/lang/Exception\n         277   373   379   Class java/lang/Exception",
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            },
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 254,
+              "call": "#120,  2          // InterfaceMethod kotlinx/coroutines/Deferred.await:(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                262,
+                "if_acmpne",
+                "283"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                279
+              ],
+              "join_instructions": [
+                [
+                  283,
+                  "checkcast",
+                  "#122                // class android/graphics/Bitmap"
+                ],
+                [
+                  286,
+                  "goto",
+                  "291"
+                ],
+                [
+                  289,
+                  "pop",
+                  ""
+                ],
+                [
+                  290,
+                  "aconst_null",
+                  ""
+                ],
+                [
+                  291,
+                  "astore",
+                  "6"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 272,
+                  "target": "#122                // class android/graphics/Bitmap"
+                },
+                {
+                  "bci": 283,
+                  "target": "#122                // class android/graphics/Bitmap"
+                }
+              ],
+              "handlers": "from    to  target type\n          48   199   376   Class java/util/concurrent/CancellationException\n         217   259   376   Class java/util/concurrent/CancellationException\n         277   373   376   Class java/util/concurrent/CancellationException\n          48   199   379   Class java/lang/Exception\n         217   259   379   Class java/lang/Exception\n         277   373   379   Class java/lang/Exception",
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ],
+          "selected_candidate_original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 194,
+              "call": "#120,  2          // InterfaceMethod kotlinx/coroutines/Deferred.await:(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                202,
+                "if_acmpne",
+                "223"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                219
+              ],
+              "join_instructions": [
+                [
+                  223,
+                  "checkcast",
+                  "#122                // class android/graphics/Bitmap"
+                ],
+                [
+                  226,
+                  "goto",
+                  "231"
+                ],
+                [
+                  229,
+                  "pop",
+                  ""
+                ],
+                [
+                  230,
+                  "aconst_null",
+                  ""
+                ],
+                [
+                  231,
+                  "astore",
+                  "5"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 212,
+                  "target": "#116                // class kotlinx/coroutines/Deferred"
+                },
+                {
+                  "bci": 223,
+                  "target": "#122                // class android/graphics/Bitmap"
+                }
+              ],
+              "handlers": "from    to  target type\n          48   199   376   Class java/util/concurrent/CancellationException\n         217   259   376   Class java/util/concurrent/CancellationException\n         277   373   376   Class java/util/concurrent/CancellationException\n          48   199   379   Class java/lang/Exception\n         217   259   379   Class java/lang/Exception\n         277   373   379   Class java/lang/Exception",
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            },
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 254,
+              "call": "#120,  2          // InterfaceMethod kotlinx/coroutines/Deferred.await:(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                262,
+                "if_acmpne",
+                "283"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                279
+              ],
+              "join_instructions": [
+                [
+                  283,
+                  "checkcast",
+                  "#122                // class android/graphics/Bitmap"
+                ],
+                [
+                  286,
+                  "goto",
+                  "291"
+                ],
+                [
+                  289,
+                  "pop",
+                  ""
+                ],
+                [
+                  290,
+                  "aconst_null",
+                  ""
+                ],
+                [
+                  291,
+                  "astore",
+                  "6"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 272,
+                  "target": "#122                // class android/graphics/Bitmap"
+                },
+                {
+                  "bci": 283,
+                  "target": "#122                // class android/graphics/Bitmap"
+                }
+              ],
+              "handlers": "from    to  target type\n          48   199   376   Class java/util/concurrent/CancellationException\n         217   259   376   Class java/util/concurrent/CancellationException\n         277   373   376   Class java/util/concurrent/CancellationException\n          48   199   379   Class java/lang/Exception\n         217   259   379   Class java/lang/Exception\n         277   373   379   Class java/lang/Exception",
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ]
+        }
+      ],
+      "note": "Two distinct raw await lifetimes; Bitmap casts at223/283 in original protected continuation joins; preserve Deferred/Bitmap saved-field restore, null paths, cancellation-first catches and callback order"
+    },
+    {
+      "owner": "io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2.java",
+      "before_sha256": "a3a750aab20b57204670c32257c7df027fdf5501284073f5ca1cab2741bb56b7",
+      "after_sha256": "fc7d11c1715c7a51741174777e8f02cd735e0e6d5955d68a98c4876276120f6c",
+      "source_diff": "--- before\n+++ source\n@@ -54,7 +54,7 @@\n \n       Object var5;\n       FlowCollector var9;\n-      NetworkResponse var25;\n+      Object var25;\n       label70: {\n          label83: {\n             Object var4 = var3.result;\n@@ -91,7 +91,7 @@\n                      ArticleSearchViewModel var26 = recoveredThis.this$0;\n                      var3.L$0 = var9;\n                      var3.label = 1;\n-                     var25 = (List)ArticleSearchViewModel.access$transformToUiModel(var26, var13, var3);\n+                     var25 = ArticleSearchViewModel.access$transformToUiModel(var26, var13, var3);\n                      if (var25 == var5) {\n                         return var5;\n                      }\n@@ -115,7 +115,7 @@\n                   var3.L$1 = var9;\n                   var3.L$2 = var15;\n                   var3.label = 2;\n-                  var25 = (NetworkResponse)var24.openMessenger(var3);\n+                  var25 = var24.openMessenger(var3);\n                   if (var25 == var5) {\n                      return var5;\n                   }\n@@ -126,7 +126,7 @@\n                   int var21 = 0;\n                   var9 = (FlowCollector)var3.L$0;\n                   ResultKt.throwOnFailure(var4);\n-                  var25 = (List)var4;\n+                  var25 = var4;\n                   break label83;\n                }\n                case 2: {\n@@ -136,7 +136,7 @@\n                   var9 = (FlowCollector)var3.L$1;\n                   recoveredThis = (ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2)var3.L$0;\n                   ResultKt.throwOnFailure(var4);\n-                  var25 = (NetworkResponse)var4;\n+                  var25 = var4;\n                   break;\n                }\n                case 3: {\n@@ -148,7 +148,7 @@\n                   throw new IllegalStateException(\"call to 'resume' before 'invoke' with coroutine\");\n             }\n \n-            NetworkResponse var16 = var25;\n+            NetworkResponse var16 = (NetworkResponse)var25;\n             if (var16 instanceof NetworkResponse$Success) {\n                OpenMessengerResponse$NewConversationData var17 = ((OpenMessengerResponse)((NetworkResponse$Success)var16).getBody()).getNewConversationData();\n                if (var17 != null) {\n@@ -160,7 +160,7 @@\n             break label70;\n          }\n \n-         List var14 = var25;\n+         List var14 = (List)var25;\n          var25 = new ArticleSearchState$Content(var14);\n       }\n \n",
+      "original_site_contract": [
+        {
+          "owner": "io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2",
+          "original_owner": "io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$$inlined$map$2$2",
+          "source_calls": [
+            {
+              "line": 94,
+              "cast_type": "List",
+              "call": "ArticleSearchViewModel.access$transformToUiModel(var26, var13, var3)"
+            }
+          ],
+          "call_name": "access$transformToUiModel",
+          "original_sites": [
+            {
+              "method": "public final java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);",
+              "descriptor": "(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "call_bci": 262,
+              "call": "#114                // Method io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.access$transformToUiModel:(Lio/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                268,
+                "if_acmpne",
+                "296"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                291
+              ],
+              "join_instructions": [
+                [
+                  296,
+                  "checkcast",
+                  "#101                // class java/util/List"
+                ],
+                [
+                  299,
+                  "astore",
+                  "14"
+                ],
+                [
+                  301,
+                  "new",
+                  "#116                // class io/intercom/android/sdk/helpcenter/search/ArticleSearchState$Content"
+                ],
+                [
+                  304,
+                  "dup",
+                  ""
+                ],
+                [
+                  305,
+                  "aload",
+                  "14"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 284,
+                  "target": "#7                  // class kotlinx/coroutines/flow/FlowCollector"
+                },
+                {
+                  "bci": 296,
+                  "target": "#101                // class java/util/List"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ],
+          "selected_candidate_original_sites": [
+            {
+              "method": "public final java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);",
+              "descriptor": "(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "call_bci": 262,
+              "call": "#114                // Method io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel.access$transformToUiModel:(Lio/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                268,
+                "if_acmpne",
+                "296"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                291
+              ],
+              "join_instructions": [
+                [
+                  296,
+                  "checkcast",
+                  "#101                // class java/util/List"
+                ],
+                [
+                  299,
+                  "astore",
+                  "14"
+                ],
+                [
+                  301,
+                  "new",
+                  "#116                // class io/intercom/android/sdk/helpcenter/search/ArticleSearchState$Content"
+                ],
+                [
+                  304,
+                  "dup",
+                  ""
+                ],
+                [
+                  305,
+                  "aload",
+                  "14"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 284,
+                  "target": "#7                  // class kotlinx/coroutines/flow/FlowCollector"
+                },
+                {
+                  "bci": 296,
+                  "target": "#101                // class java/util/List"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ]
+        },
+        {
+          "owner": "io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$RecoveredInnere3b0c44298fc1c14$inlined$map$2$2",
+          "original_owner": "io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$$inlined$map$2$2",
+          "source_calls": [
+            {
+              "line": 118,
+              "cast_type": "NetworkResponse",
+              "call": "var24.openMessenger(var3)"
+            }
+          ],
+          "call_name": "openMessenger",
+          "original_sites": [
+            {
+              "method": "public final java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);",
+              "descriptor": "(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "call_bci": 384,
+              "call": "#166                // Method io/intercom/android/sdk/m5/data/CommonRepository.openMessenger:(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                390,
+                "if_acmpne",
+                "435"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                430
+              ],
+              "join_instructions": [
+                [
+                  435,
+                  "checkcast",
+                  "#60                 // class io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse"
+                ],
+                [
+                  438,
+                  "astore",
+                  "16"
+                ],
+                [
+                  440,
+                  "aload",
+                  "16"
+                ],
+                [
+                  442,
+                  "instanceof",
+                  "#96                 // class io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse$Success"
+                ],
+                [
+                  445,
+                  "ifeq",
+                  "494"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 406,
+                  "target": "#125                // class io/intercom/android/sdk/helpcenter/articles/ArticleViewState$TeamPresenceState"
+                },
+                {
+                  "bci": 415,
+                  "target": "#7                  // class kotlinx/coroutines/flow/FlowCollector"
+                },
+                {
+                  "bci": 424,
+                  "target": "#2                  // class io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$$inlined$map$2$2"
+                },
+                {
+                  "bci": 435,
+                  "target": "#60                 // class io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ],
+          "selected_candidate_original_sites": [
+            {
+              "method": "public final java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);",
+              "descriptor": "(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "call_bci": 384,
+              "call": "#166                // Method io/intercom/android/sdk/m5/data/CommonRepository.openMessenger:(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;",
+              "comparison": [
+                390,
+                "if_acmpne",
+                "435"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                430
+              ],
+              "join_instructions": [
+                [
+                  435,
+                  "checkcast",
+                  "#60                 // class io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse"
+                ],
+                [
+                  438,
+                  "astore",
+                  "16"
+                ],
+                [
+                  440,
+                  "aload",
+                  "16"
+                ],
+                [
+                  442,
+                  "instanceof",
+                  "#96                 // class io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse$Success"
+                ],
+                [
+                  445,
+                  "ifeq",
+                  "494"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 406,
+                  "target": "#125                // class io/intercom/android/sdk/helpcenter/articles/ArticleViewState$TeamPresenceState"
+                },
+                {
+                  "bci": 415,
+                  "target": "#7                  // class kotlinx/coroutines/flow/FlowCollector"
+                },
+                {
+                  "bci": 424,
+                  "target": "#2                  // class io/intercom/android/sdk/helpcenter/search/ArticleSearchViewModel$1$invokeSuspend$$inlined$map$2$2"
+                },
+                {
+                  "bci": 435,
+                  "target": "#60                 // class io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponse"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST"
+            }
+          ]
+        }
+      ],
+      "note": "Separate raw temporary from final ArticleSearchState values; actual List join296 and NetworkResponse join435 retained after their own sentinel/resume throws; saved casts and final emit label3 untouched"
+    },
+    {
+      "owner": "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$compressAndUploadFileAttachments$1$1",
+      "file": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$compressAndUploadFileAttachments$1$1.java",
+      "before_sha256": "7b062fa6fdeba27ec97d7773cd1b27f75cba2b9a98bf995f491e983650c5541b",
+      "after_sha256": "a61fa04d60faa127578c1dd0aa8d9088c165c884007d5435ba326c50bc4e28fb",
+      "source_diff": "--- before\n+++ source\n@@ -91,14 +91,14 @@\n             Object var14 = var5.next();\n             var17 = (Answer$MediaAnswer$MediaItem)var14;\n             boolean var20 = false;\n-            var26 = var17.getData();\n+            MediaData$Media recoveredInitialInput = var17.getData();\n             Context var32 = CreateTicketViewModel.access$getApplicationContext$p(var3);\n             this.L$0 = var3;\n             this.L$1 = var5;\n             this.L$2 = var17;\n             this.L$3 = null;\n             this.label = 1;\n-            var26 = (MediaData$Media)MediaCompressionKt.getCompressedMediaData$default(var26, var32, 0, this, 4, null);\n+            var26 = MediaCompressionKt.getCompressedMediaData$default(recoveredInitialInput, var32, 0, this, 4, null);\n             if (var26 == var11) {\n                return var11;\n             }\n@@ -111,7 +111,7 @@\n             var5 = (Iterator)this.L$1;\n             var3 = (CreateTicketViewModel)this.L$0;\n             ResultKt.throwOnFailure(var1);\n-            var26 = (MediaData$Media)var1;\n+            var26 = var1;\n             break;\n          }\n          case 2: {\n@@ -172,14 +172,14 @@\n             Object var6 = var5.next();\n             var17 = (Answer$MediaAnswer$MediaItem)var6;\n             boolean var18 = false;\n-            var26 = var17.getData();\n+            MediaData$Media recoveredResumedInput = var17.getData();\n             Context var10001 = CreateTicketViewModel.access$getApplicationContext$p(var3);\n             this.L$0 = var3;\n             this.L$1 = var5;\n             this.L$2 = var17;\n             this.L$3 = null;\n             this.label = 1;\n-            var26 = (MediaData$Media)MediaCompressionKt.getCompressedMediaData$default(var26, var10001, 0, this, 4, null);\n+            var26 = MediaCompressionKt.getCompressedMediaData$default(recoveredResumedInput, var10001, 0, this, 4, null);\n             if (var26 == var11) {\n                return var11;\n             }\n@@ -190,7 +190,7 @@\n       }\n \n       while (true) {\n-         MediaData$Media var23 = var26;\n+         MediaData$Media var23 = (MediaData$Media)var26;\n          if (CreateTicketViewModel.access$isFileSizeExceeded(var3, var23)) {\n             StringRes[] var25 = new StringRes[]{\n                new StringRes(string.intercom_upload_failed, null, 2, null),\n@@ -209,14 +209,14 @@\n             Object var16 = var5.next();\n             var17 = (Answer$MediaAnswer$MediaItem)var16;\n             boolean var22 = false;\n-            var26 = var17.getData();\n+            MediaData$Media recoveredOversizedNextInput = var17.getData();\n             Context var34 = CreateTicketViewModel.access$getApplicationContext$p(var3);\n             this.L$0 = var3;\n             this.L$1 = var5;\n             this.L$2 = var17;\n             this.L$3 = null;\n             this.label = 1;\n-            var26 = (MediaData$Media)MediaCompressionKt.getCompressedMediaData$default(var26, var34, 0, this, 4, null);\n+            var26 = MediaCompressionKt.getCompressedMediaData$default(recoveredOversizedNextInput, var34, 0, this, 4, null);\n             if (var26 == var11) {\n                return var11;\n             }\n@@ -289,7 +289,7 @@\n             this.L$2 = var17;\n             this.L$3 = null;\n             this.label = 1;\n-            var26 = (MediaData$Media)MediaCompressionKt.getCompressedMediaData$default(var30, var33, 0, this, 4, null);\n+            var26 = MediaCompressionKt.getCompressedMediaData$default(var30, var33, 0, this, 4, null);\n             if (var26 == var11) {\n                return var11;\n             }\n",
+      "original_site_contract": [
+        {
+          "owner": "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$compressAndUploadFileAttachments$1$1",
+          "original_owner": "io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel$compressAndUploadFileAttachments$1$1",
+          "source_calls": [
+            {
+              "line": 101,
+              "cast_type": "MediaData$Media",
+              "call": "MediaCompressionKt.getCompressedMediaData$default(var26, var32, 0, this, 4, null)"
+            },
+            {
+              "line": 182,
+              "cast_type": "MediaData$Media",
+              "call": "MediaCompressionKt.getCompressedMediaData$default(var26, var10001, 0, this, 4, null)"
+            },
+            {
+              "line": 219,
+              "cast_type": "MediaData$Media",
+              "call": "MediaCompressionKt.getCompressedMediaData$default(var26, var34, 0, this, 4, null)"
+            },
+            {
+              "line": 292,
+              "cast_type": "MediaData$Media",
+              "call": "MediaCompressionKt.getCompressedMediaData$default(var30, var33, 0, this, 4, null)"
+            }
+          ],
+          "call_name": "getCompressedMediaData$default",
+          "original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 133,
+              "call": "#106                // Method io/intercom/android/sdk/m5/utils/MediaCompressionKt.getCompressedMediaData$default:(Lio/intercom/android/sdk/m5/upload/data/MediaData$Media;Landroid/content/Context;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;",
+              "comparison": [
+                139,
+                "if_acmpne",
+                "182"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                178
+              ],
+              "join_instructions": [
+                [
+                  182,
+                  "checkcast",
+                  "#108                // class io/intercom/android/sdk/m5/upload/data/MediaData$Media"
+                ],
+                [
+                  185,
+                  "astore",
+                  "9"
+                ],
+                [
+                  187,
+                  "aload_3",
+                  ""
+                ],
+                [
+                  188,
+                  "aload",
+                  "9"
+                ],
+                [
+                  190,
+                  "invokestatic",
+                  "#112                // Method io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel.access$isFileSizeExceeded:(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/m5/upload/data/MediaData$Media;)Z"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 155,
+                  "target": "#82                 // class io/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem"
+                },
+                {
+                  "bci": 164,
+                  "target": "#73                 // class java/util/Iterator"
+                },
+                {
+                  "bci": 173,
+                  "target": "#88                 // class io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel"
+                },
+                {
+                  "bci": 182,
+                  "target": "#108                // class io/intercom/android/sdk/m5/upload/data/MediaData$Media"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST",
+              "candidate_mapping_note": "All four source loop/control-flow duplicates map this same original call133, label1 and join182; do not count as four original sites."
+            }
+          ],
+          "selected_candidate_original_sites": [
+            {
+              "method": "public final java.lang.Object invokeSuspend(java.lang.Object);",
+              "descriptor": "(Ljava/lang/Object;)Ljava/lang/Object;",
+              "call_bci": 133,
+              "call": "#106                // Method io/intercom/android/sdk/m5/utils/MediaCompressionKt.getCompressedMediaData$default:(Lio/intercom/android/sdk/m5/upload/data/MediaData$Media;Landroid/content/Context;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;",
+              "comparison": [
+                139,
+                "if_acmpne",
+                "182"
+              ],
+              "resume_throw_bcis_between_call_and_join": [
+                178
+              ],
+              "join_instructions": [
+                [
+                  182,
+                  "checkcast",
+                  "#108                // class io/intercom/android/sdk/m5/upload/data/MediaData$Media"
+                ],
+                [
+                  185,
+                  "astore",
+                  "9"
+                ],
+                [
+                  187,
+                  "aload_3",
+                  ""
+                ],
+                [
+                  188,
+                  "aload",
+                  "9"
+                ],
+                [
+                  190,
+                  "invokestatic",
+                  "#112                // Method io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel.access$isFileSizeExceeded:(Lio/intercom/android/sdk/tickets/create/model/CreateTicketViewModel;Lio/intercom/android/sdk/m5/upload/data/MediaData$Media;)Z"
+                ]
+              ],
+              "casts_between_call_and_join_plus4": [
+                {
+                  "bci": 155,
+                  "target": "#82                 // class io/intercom/android/sdk/survey/ui/models/Answer$MediaAnswer$MediaItem"
+                },
+                {
+                  "bci": 164,
+                  "target": "#73                 // class java/util/Iterator"
+                },
+                {
+                  "bci": 173,
+                  "target": "#88                 // class io/intercom/android/sdk/tickets/create/model/CreateTicketViewModel"
+                },
+                {
+                  "bci": 182,
+                  "target": "#108                // class io/intercom/android/sdk/m5/upload/data/MediaData$Media"
+                }
+              ],
+              "handlers": null,
+              "result_family": "REAL_POST_SENTINEL_CAST",
+              "candidate_mapping_note": "All four source loop/control-flow duplicates map this same original call133, label1 and join182; do not count as four original sites."
+            }
+          ]
+        }
+      ],
+      "note": "All four expanded compress calls map to raw original133 and preserve comparison139; single while common Media cast182 serves all paths. Upload raw call/sentinel and true NetworkResponse join377, resume saved fields/casts, cleanup/status/iterator order unchanged; no handler added"
+    }
+  ],
+  "runtime_verified": false
+}

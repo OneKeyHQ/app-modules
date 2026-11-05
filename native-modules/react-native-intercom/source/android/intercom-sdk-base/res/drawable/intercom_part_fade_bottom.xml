@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="90"
+        android:centerColor="@color/intercom_semi_transparent_white"
+        android:endColor="@color/intercom_transparent_white"
+        android:startColor="@color/intercom_white"
+        android:type="linear"/>
+</shape>

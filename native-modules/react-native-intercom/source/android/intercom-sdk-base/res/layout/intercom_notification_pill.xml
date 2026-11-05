@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<TextView
+    android:id="@+id/notification_pill"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="32dp"
+    android:layout_gravity="bottom|center_horizontal"
+    android:layout_marginBottom="@dimen/intercom_overlay_pill_bottom_margin"
+    android:background="@drawable/intercom_preview_pill"
+    android:elevation="4dp"
+    android:gravity="center"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:textColor="@color/intercom_grey_800"
+    android:textSize="14sp"
+    tools:text="@string/intercom_pill_display_text"/>

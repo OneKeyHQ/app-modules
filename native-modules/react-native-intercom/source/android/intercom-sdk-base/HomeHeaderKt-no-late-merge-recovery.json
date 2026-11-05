@@ -1,0 +1,522 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+  "root_only": true,
+  "source_before_sha256": "b3b51c2b9f3fad9145deea4c231c22a7b6b869be66bb055ace9788b18583c959",
+  "source_after_sha256": "f63b67e9738b19d2818374b22edda28789f19718ee7bfb8a09e79a68e9160e38",
+  "source_capture_sites": 7,
+  "source_capture_bindings": 14,
+  "declaration_check_exit": 0,
+  "type_edits": 11,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "22033",
+      "22101",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_953_0) -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeContentHeader$lambda$11$lambda$6$lambda$5$lambda$4(recoveredExpressionCapture_953_0, ((java.lang.Boolean)recoveredExpressionArgument_953_0).booleanValue()))",
+      "22014",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_953_0 = var76;\\n               ",
+      "953",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/MutableState;=var8",
+      "recoveredExpressionCapture_953_0=var76@10026:LOCAL|8|76|0|var76|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "24715",
+      "24784",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_954_0) -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeContentHeader$lambda$11$lambda$10$lambda$9$lambda$8(recoveredExpressionCapture_954_0, ((java.lang.Boolean)recoveredExpressionArgument_954_0).booleanValue()))",
+      "24696",
+      "final androidx.compose.runtime.MutableState recoveredExpressionCapture_954_0 = var76;\\n               ",
+      "954",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/runtime/MutableState;=var8",
+      "recoveredExpressionCapture_954_0=var76@10026:LOCAL|8|76|0|var76|Landroidx/compose/runtime/MutableState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "25922",
+      "25963",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_955_0, recoveredExpressionArgument_955_1) -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeContentHeader$lambda$12(recoveredExpressionCapture_955_0, recoveredExpressionCapture_955_1, recoveredExpressionCapture_955_2, recoveredExpressionCapture_955_3, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_955_0), ((java.lang.Integer)recoveredExpressionArgument_955_1).intValue()))",
+      "25903",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_955_0 = var0;\\n         final io.intercom.android.sdk.m5.home.states.HomeUiState$Content$ContentHeader recoveredExpressionCapture_955_1 = var1;\\n         final int recoveredExpressionCapture_955_2 = var3;\\n         final int recoveredExpressionCapture_955_3 = var4;\\n         ",
+      "955",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;=var1,I=var3,I=var4",
+      "recoveredExpressionCapture_955_0=var0@7345:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_955_1=var1@7370:LOCAL|1|1|0|var1|Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;;recoveredExpressionCapture_955_2=var3@7424:LOCAL|3|3|0|var3|I;recoveredExpressionCapture_955_3=var4@7434:LOCAL|4|4|0|var4|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "31831",
+      "31900",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeErrorHeader$lambda$17$lambda$16$lambda$14$lambda$13(recoveredExpressionCapture_957_0))",
+      "31813",
+      "final kotlin.jvm.functions.Function0 recoveredExpressionCapture_957_0 = var2;\\n            ",
+      "957",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "Lkotlin/jvm/functions/Function0;=var2",
+      "recoveredExpressionCapture_957_0=var2@26165:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "36893",
+      "36932",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_958_0, recoveredExpressionArgument_958_1) -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeErrorHeader$lambda$18(recoveredExpressionCapture_958_0, recoveredExpressionCapture_958_1, recoveredExpressionCapture_958_2, recoveredExpressionCapture_958_3, recoveredExpressionCapture_958_4, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_958_0), ((java.lang.Integer)recoveredExpressionArgument_958_1).intValue()))",
+      "36875",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_958_0 = var0;\\n         final io.intercom.android.sdk.m5.home.states.HomeUiState$Error$ErrorHeader recoveredExpressionCapture_958_1 = var1;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_958_2 = var2;\\n         final int recoveredExpressionCapture_958_3 = var4;\\n         final int recoveredExpressionCapture_958_4 = var5;\\n         ",
+      "958",
+      "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;=var1,Lkotlin/jvm/functions/Function0;=var2,I=var4,I=var5",
+      "recoveredExpressionCapture_958_0=var0@26113:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_958_1=var1@26138:LOCAL|1|1|0|var1|Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;;recoveredExpressionCapture_958_2=var2@26165:LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_958_3=var4@26215:LOCAL|4|4|0|var4|I;recoveredExpressionCapture_958_4=var5@26225:LOCAL|5|5|0|var5|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "38048",
+      "38096",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_956_0, recoveredExpressionArgument_956_1) -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeContentHeaderPreview$lambda$19(recoveredExpressionCapture_956_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_956_0), ((java.lang.Integer)recoveredExpressionArgument_956_1).intValue()))",
+      "38027",
+      "final int recoveredExpressionCapture_956_0 = var1;\\n         ",
+      "956",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_956_0=var1@37130:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-HomeHeaderKt/ast-input/io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.java",
+      "39234",
+      "39280",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_959_0, recoveredExpressionArgument_959_1) -> io.intercom.android.sdk.m5.home.ui.header.HomeHeaderKt.HomeErrorHeaderPreview$lambda$20(recoveredExpressionCapture_959_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_959_0), ((java.lang.Integer)recoveredExpressionArgument_959_1).intValue()))",
+      "39213",
+      "final int recoveredExpressionCapture_959_0 = var1;\\n         ",
+      "959",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_959_0=var1@38323:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 953,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+        "1309",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader$lambda$11$lambda$6$lambda$5$lambda$4",
+        "(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Boolean;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/MutableState;=var8",
+        "1885"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader$lambda$11$lambda$6$lambda$5$lambda$4",
+          "(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit;",
+          "{1883, 1884, 1885, 1886, 1887, 1888, 1889}",
+          "LOCAL|8|76|0|var76|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader$lambda$11$lambda$6$lambda$5$lambda$4",
+          "(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit;",
+          "{1883, 1884, 1885, 1886, 1887, 1888, 1889}",
+          "LOCAL|8|76|0|var76|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+        "1885",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeContentHeader$lambda$11$lambda$6$lambda$5$lambda$4(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit; (6), (Ljava/lang/Boolean;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 954,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+        "1543",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader$lambda$11$lambda$10$lambda$9$lambda$8",
+        "(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Boolean;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function1",
+        "Landroidx/compose/runtime/MutableState;=var8",
+        "2249"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader$lambda$11$lambda$10$lambda$9$lambda$8",
+          "(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit;",
+          "{2247, 2248, 2249, 2250, 2251, 2252, 2253}",
+          "LOCAL|8|76|0|var76|Landroidx/compose/runtime/MutableState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader$lambda$11$lambda$10$lambda$9$lambda$8",
+          "(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit;",
+          "{2247, 2248, 2249, 2250, 2251, 2252, 2253}",
+          "LOCAL|8|76|0|var76|Landroidx/compose/runtime/MutableState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+        "2249",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeContentHeader$lambda$11$lambda$10$lambda$9$lambda$8(Landroidx/compose/runtime/MutableState;Z)Lkotlin/Unit; (6), (Ljava/lang/Boolean;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 955,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+        "1663",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader$lambda$12",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;=var1,I=var3,I=var4",
+        "2396"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader$lambda$12",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{2391, 2392, 2393, 2394, 2395, 2396, 2397, 2398, 2399, 2400}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;",
+          "LOCAL|3|3|0|var3|I",
+          "LOCAL|4|4|0|var4|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeader$lambda$12",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{2391, 2392, 2393, 2394, 2395, 2396, 2397, 2398, 2399, 2400}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;",
+          "LOCAL|3|3|0|var3|I",
+          "LOCAL|4|4|0|var4|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;Landroidx/compose/runtime/Composer;II)V",
+        "2396",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeContentHeader$lambda$12(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Content$ContentHeader;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 956,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeaderPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeaderPreview$lambda$19",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeaderPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeaderPreview$lambda$19",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeaderPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeContentHeaderPreview$lambda$19",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeContentHeaderPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeContentHeaderPreview$lambda$19(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 957,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "514",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeader$lambda$17$lambda$16$lambda$14$lambda$13",
+        "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlin/jvm/functions/Function0;=var2",
+        "772"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader$lambda$17$lambda$16$lambda$14$lambda$13",
+          "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+          "{771, 772, 773, 774, 775, 776}",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader$lambda$17$lambda$16$lambda$14$lambda$13",
+          "(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit;",
+          "{771, 772, 773, 774, 775, 776}",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "772",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeErrorHeader$lambda$17$lambda$16$lambda$14$lambda$13(Lkotlin/jvm/functions/Function0;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 958,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "943",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeader$lambda$18",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;=var1,Lkotlin/jvm/functions/Function0;=var2,I=var4,I=var5",
+        "1356"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader$lambda$18",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1349, 1350, 1351, 1352, 1353, 1354, 1355, 1356, 1357, 1358, 1359, 1360}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeader$lambda$18",
+          "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1349, 1350, 1351, 1352, 1353, 1354, 1355, 1356, 1357, 1358, 1359, 1360}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|1|1|0|var1|Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;",
+          "LOCAL|2|2|0|var2|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|4|4|0|var4|I",
+          "LOCAL|5|5|0|var5|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeader",
+        "(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V",
+        "1356",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeErrorHeader$lambda$18(Landroidx/compose/ui/Modifier;Lio/intercom/android/sdk/m5/home/states/HomeUiState$Error$ErrorHeader;Lkotlin/jvm/functions/Function0;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 959,
+      "original": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeaderPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeaderPreview$lambda$20",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeaderPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeaderPreview$lambda$20",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeaderPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+          "HomeErrorHeaderPreview$lambda$20",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt",
+        "HomeErrorHeaderPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/home/ui/header/HomeHeaderKt.HomeErrorHeaderPreview$lambda$20(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

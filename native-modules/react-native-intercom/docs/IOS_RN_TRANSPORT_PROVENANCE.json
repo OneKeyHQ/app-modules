@@ -1,0 +1,81 @@
+{
+  "baseline": "@intercom/intercom-react-native10.8.1 pinned source MIT",
+  "status": "ORIGINAL_TRANSPORT_LEGACY_OBJECT_COMPILE_PASS_NORMAL_CONSUMER_PENDING",
+  "files": [
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomAttributesBuilder.h",
+      "source": "ios/IntercomAttributesBuilder.h",
+      "originalSHA256": "742e899ae8fe99a52b653809097e244b4328de4a387bb7ef38f7c3df80a0f883",
+      "sourceSHA256": "742e899ae8fe99a52b653809097e244b4328de4a387bb7ef38f7c3df80a0f883",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomAttributesBuilder.m",
+      "source": "ios/IntercomAttributesBuilder.m",
+      "originalSHA256": "e8a3780ec1492da08d6b245710897ee5848deba52d3d79d12b8951aafbd11f19",
+      "sourceSHA256": "e8a3780ec1492da08d6b245710897ee5848deba52d3d79d12b8951aafbd11f19",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomEventEmitter.h",
+      "source": "ios/IntercomEventEmitter.h",
+      "originalSHA256": "a8c65a1a778cd593f013a338cf8155e994519039dcc0085afa5dcea68d665de3",
+      "sourceSHA256": "a8c65a1a778cd593f013a338cf8155e994519039dcc0085afa5dcea68d665de3",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomEventEmitter.m",
+      "source": "ios/IntercomEventEmitter.m",
+      "originalSHA256": "fb70a586034671bb8aa9f1ad77fc29f2e64d7ee53d87993153a8657f3f6136d6",
+      "sourceSHA256": "fb70a586034671bb8aa9f1ad77fc29f2e64d7ee53d87993153a8657f3f6136d6",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomHelpCenterHelpers.h",
+      "source": "ios/IntercomHelpCenterHelpers.h",
+      "originalSHA256": "ed83b2a937d9da7506ffecce62656111513dda77b5756b64593c7264217ca4ec",
+      "sourceSHA256": "ed83b2a937d9da7506ffecce62656111513dda77b5756b64593c7264217ca4ec",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomHelpCenterHelpers.m",
+      "source": "ios/IntercomHelpCenterHelpers.m",
+      "originalSHA256": "84de533dc8ab5377b439be72660accd7c2a4dbfa54e5aa7cb2b0c9353cc41e28",
+      "sourceSHA256": "84de533dc8ab5377b439be72660accd7c2a4dbfa54e5aa7cb2b0c9353cc41e28",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomModule.h",
+      "source": "ios/IntercomModule.h",
+      "originalSHA256": "28a66ecef0f18c3cf3cb34a76627a9041b949f010d4c02d99b3ea7fb4bfd2c06",
+      "sourceSHA256": "28a66ecef0f18c3cf3cb34a76627a9041b949f010d4c02d99b3ea7fb4bfd2c06",
+      "changes": "byte-identical original MIT transport"
+    },
+    {
+      "original": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/rn/package/ios/IntercomModule.m",
+      "source": "ios/IntercomModule.mm",
+      "originalSHA256": "65a307d940c2588bafe9c9ddd1ecaf6ebbaf19e4e26a1d722d8b158345bf7d7b",
+      "sourceSHA256": "b22ccb7daed7080a9d32c01e84214cc7c880d4a52c25db0adccaeb17ef69a973",
+      "changes": "Original .m body compiled as .mm for actual C++ new-architecture adapter; canonical #import <Intercom/Intercom.h> replaces @import Intercom; transport semantics unchanged"
+    }
+  ],
+  "nitroHelloScaffoldRemoved": "ios/ReactNativeIntercom.swift",
+  "publicSDK": "ours ios/Intercom.h+actualModels; no vendor framework or Pod dependency",
+  "behaviorChanges": [],
+  "originalRCTUserJwtProviderRequestIdAndEmitterPreserved": true,
+  "normalConsumerLinked": false,
+  "runtimeBehaviorVerified": false,
+  "legacyCompileEvidence": "node_modules/.cache/ios-rct-bridge-recovery/legacy-compile.json",
+  "newArchitectureCompileVerified": false,
+  "normalSDKConsumerVerified": false,
+  "activeImporter": {
+    "publicGate": "ios/IntercomSourceImports.h",
+    "parentModule": "Intercom",
+    "podHeaderDir": "Intercom",
+    "SDKTargetOnlyMacro": "INTERCOM_SOURCE_BUILD=1",
+    "customModuleMapActive": false,
+    "bridgingHeaderUsed": false,
+    "privateHeadersExposed": false,
+    "minimalProbePacket": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/implementation-baseline/ios-static-pod-importer/receipt.json"
+  }
+}

@@ -1,0 +1,446 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+  "root_only": true,
+  "source_before_sha256": "dd684a49f6f65d8f15095df3b948faea7a690e9ae771440639736b4455190ab9",
+  "source_after_sha256": "17235b977f2f623a5d2761869cdfbdde7a99e3a8f63ed1bf8e9d4a7d493bf14d",
+  "source_capture_sites": 6,
+  "source_capture_bindings": 10,
+  "declaration_check_exit": 0,
+  "type_edits": 3,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BrowseAllHelpTopicsComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.java",
+      "8550",
+      "8628",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.helpcenter.ui.components.BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsComponent$lambda$1$lambda$0(recoveredExpressionCapture_863_0))",
+      "8535",
+      "final android.content.Context recoveredExpressionCapture_863_0 = var5;\\n            ",
+      "863",
+      "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Landroid/content/Context;=var5",
+      "recoveredExpressionCapture_863_0=var5@6817:LOCAL|5|5|0|var5|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BrowseAllHelpTopicsComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.java",
+      "9457",
+      "9526",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_864_0, recoveredExpressionArgument_864_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsComponent$lambda$2(recoveredExpressionCapture_864_0, recoveredExpressionCapture_864_1, recoveredExpressionCapture_864_2, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_864_0), ((java.lang.Integer)recoveredExpressionArgument_864_1).intValue()))",
+      "9439",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_864_0 = var0;\\n         final int recoveredExpressionCapture_864_1 = var2;\\n         final int recoveredExpressionCapture_864_2 = var3;\\n         ",
+      "864",
+      "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,I=var2,I=var3",
+      "recoveredExpressionCapture_864_0=var0@5490:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_864_1=var2@5540:LOCAL|2|2|0|var2|I;recoveredExpressionCapture_864_2=var3@5550:LOCAL|3|3|0|var3|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BrowseAllHelpTopicsComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.java",
+      "24369",
+      "24435",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_861_0, recoveredExpressionArgument_861_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsAsItem$lambda$8(recoveredExpressionCapture_861_0, recoveredExpressionCapture_861_1, recoveredExpressionCapture_861_2, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_861_0), ((java.lang.Integer)recoveredExpressionArgument_861_1).intValue()))",
+      "24350",
+      "final androidx.compose.ui.Modifier recoveredExpressionCapture_861_0 = var0;\\n         final int recoveredExpressionCapture_861_1 = var2;\\n         final int recoveredExpressionCapture_861_2 = var3;\\n         ",
+      "861",
+      "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Landroidx/compose/ui/Modifier;=var0,I=var2,I=var3",
+      "recoveredExpressionCapture_861_0=var0@9679:LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_861_1=var2@9729:LOCAL|2|2|0|var2|I;recoveredExpressionCapture_861_2=var3@9739:LOCAL|3|3|0|var3|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BrowseAllHelpTopicsComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.java",
+      "11876",
+      "11951",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.helpcenter.ui.components.BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsAsItem$lambda$4$lambda$3(recoveredExpressionCapture_862_0))",
+      "11858",
+      "final android.content.Context recoveredExpressionCapture_862_0 = var5;\\n            ",
+      "862",
+      "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Landroid/content/Context;=var5",
+      "recoveredExpressionCapture_862_0=var5@10929:LOCAL|5|5|0|var5|Landroid/content/Context;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BrowseAllHelpTopicsComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.java",
+      "25793",
+      "25869",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_865_0, recoveredExpressionArgument_865_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsComponentPreview$lambda$9(recoveredExpressionCapture_865_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_865_0), ((java.lang.Integer)recoveredExpressionArgument_865_1).intValue()))",
+      "25772",
+      "final int recoveredExpressionCapture_865_0 = var1;\\n         ",
+      "865",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_865_0=var1@24635:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BrowseAllHelpTopicsComponentKt/ast-input/io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.java",
+      "27216",
+      "27290",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_860_0, recoveredExpressionArgument_860_1) -> io.intercom.android.sdk.m5.helpcenter.ui.components.BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsASItemPreview$lambda$10(recoveredExpressionCapture_860_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_860_0), ((java.lang.Integer)recoveredExpressionArgument_860_1).intValue()))",
+      "27195",
+      "final int recoveredExpressionCapture_860_0 = var1;\\n         ",
+      "860",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_860_0=var1@26066:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 860,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsASItemPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsASItemPreview$lambda$10",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsASItemPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsASItemPreview$lambda$10",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsASItemPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsASItemPreview$lambda$10",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsASItemPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsASItemPreview$lambda$10(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 861,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsAsItem",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "1205",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsAsItem$lambda$8",
+        "(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,I=var2,I=var3",
+        "1697"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem$lambda$8",
+          "(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1694, 1695, 1696, 1697, 1698, 1699, 1700, 1701}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|I",
+          "LOCAL|3|3|0|var3|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem$lambda$8",
+          "(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{1694, 1695, 1696, 1697, 1698, 1699, 1700, 1701}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|I",
+          "LOCAL|3|3|0|var3|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsAsItem",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "1697",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsAsItem$lambda$8(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 862,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsAsItem",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "161",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsAsItem$lambda$4$lambda$3",
+        "(Landroid/content/Context;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroid/content/Context;=var5",
+        "239"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem$lambda$4$lambda$3",
+          "(Landroid/content/Context;)Lkotlin/Unit;",
+          "{237, 238, 239, 240, 241, 242, 243}",
+          "LOCAL|5|5|0|var5|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsAsItem$lambda$4$lambda$3",
+          "(Landroid/content/Context;)Lkotlin/Unit;",
+          "{237, 238, 239, 240, 241, 242, 243}",
+          "LOCAL|5|5|0|var5|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsAsItem",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "239",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsAsItem$lambda$4$lambda$3(Landroid/content/Context;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 863,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponent",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "231",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponent$lambda$1$lambda$0",
+        "(Landroid/content/Context;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Landroid/content/Context;=var5",
+        "340"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent$lambda$1$lambda$0",
+          "(Landroid/content/Context;)Lkotlin/Unit;",
+          "{338, 339, 340, 341, 342, 343, 344}",
+          "LOCAL|5|5|0|var5|Landroid/content/Context;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent$lambda$1$lambda$0",
+          "(Landroid/content/Context;)Lkotlin/Unit;",
+          "{338, 339, 340, 341, 342, 343, 344}",
+          "LOCAL|5|5|0|var5|Landroid/content/Context;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponent",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "340",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsComponent$lambda$1$lambda$0(Landroid/content/Context;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 864,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponent",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "312",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponent$lambda$2",
+        "(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Landroidx/compose/ui/Modifier;=var0,I=var2,I=var3",
+        "444"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent$lambda$2",
+          "(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{441, 442, 443, 444, 445, 446, 447, 448}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|I",
+          "LOCAL|3|3|0|var3|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent",
+          "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponent$lambda$2",
+          "(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{441, 442, 443, 444, 445, 446, 447, 448}",
+          "LOCAL|0|0|0|var0|Landroidx/compose/ui/Modifier;",
+          "LOCAL|2|2|0|var2|I",
+          "LOCAL|3|3|0|var3|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponent",
+        "(Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "444",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsComponent$lambda$2(Landroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 865,
+      "original": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponentPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponentPreview$lambda$9",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponentPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponentPreview$lambda$9",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponentPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+          "BrowseAllHelpTopicsComponentPreview$lambda$9",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt",
+        "BrowseAllHelpTopicsComponentPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/helpcenter/ui/components/BrowseAllHelpTopicsComponentKt.BrowseAllHelpTopicsComponentPreview$lambda$9(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

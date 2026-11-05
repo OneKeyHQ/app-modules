@@ -1,0 +1,26 @@
+[
+  {
+    "group": "org.ow2.asm",
+    "artifact": "asm",
+    "version": "9.7.1",
+    "extension": ".jar",
+    "sha256": "8cadd43ac5eb6d09de05faecca38b917a040bb9139c7edeb4cc81c740b713281",
+    "url": "https://repo.maven.apache.org/maven2/org/ow2/asm/asm/9.7.1/asm-9.7.1.jar"
+  },
+  {
+    "group": "org.ow2.asm",
+    "artifact": "asm-tree",
+    "version": "9.7.1",
+    "extension": ".jar",
+    "sha256": "9929881f59eb6b840e86d54570c77b59ce721d104e6dfd7a40978991c2d3b41f",
+    "url": "https://repo.maven.apache.org/maven2/org/ow2/asm/asm-tree/9.7.1/asm-tree-9.7.1.jar"
+  },
+  {
+    "group": "org.ow2.asm",
+    "artifact": "asm-commons",
+    "version": "9.7.1",
+    "extension": ".jar",
+    "sha256": "9a579b54d292ad9be171d4313fd4739c635592c2b5ac3a459bbd1049cddec6a0",
+    "url": "https://repo.maven.apache.org/maven2/org/ow2/asm/asm-commons/9.7.1/asm-commons-9.7.1.jar"
+  }
+]

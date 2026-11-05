@@ -1,0 +1,24 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/UserJwtExpiryInterceptor.java",
+      "header_before": "public Response intercept(@NotNull Chain var1) {",
+      "header_after": "public Response intercept(@NotNull Chain var1) throws java.io.IOException {",
+      "source_before_sha256": "d9214905962e981b4077c06c978349dd900ff6b30bde6714f75a4adfb3beef4c",
+      "source_after_sha256": "e18f376fdbca157e7840f4e3dfc6298093e7b22fa4bac9271761273c9f8089b5"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/api/S3HostRedirectInterceptor.java",
+      "header_before": "public Response intercept(@NotNull Chain var1) {",
+      "header_after": "public Response intercept(@NotNull Chain var1) throws java.io.IOException {",
+      "source_before_sha256": "d8f0d71878778e1e6397a5f36a8096943d26d8cc8aac0e647145d3d80269d529",
+      "source_after_sha256": "628630e1e1ad2b4c436c0bf4a99adc26e4ec4ee03ca13a9627bb42502d937b39"
+    }
+  ],
+  "scope": "Restore only exact original Chain.proceed(Request)Response IOException in compile view; Retry original IOException branch retained. Two Kotlin overrides add Java source throws IOException only, body/handler unchanged; interface permits it and SDK has no direct own intercept calls. Existing output metadata pass restores their original absent Exceptions. No wrapping, swallowing, retry/auth/redirect policy change.",
+  "row": "okhttp3/Interceptor$Chain\tproceed\t(Lokhttp3/Request;)Lokhttp3/Response;\tjava/io/IOException",
+  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/chain-proceed-exceptions-21",
+  "runtime_dependency_changed": false,
+  "code_backfill": false
+}

@@ -1,0 +1,522 @@
+[
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-parcelize-runtime",
+    "version": "2.0.20",
+    "extension": ".jar",
+    "sha256": "3f2ec02a496efeb9e56166dfb86c741ac6bbd8f238ed0aea6e1ed04b7bcd5cd7",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-parcelize-runtime/2.0.20/kotlin-parcelize-runtime-2.0.20.jar"
+  },
+  {
+    "group": "androidx.navigation",
+    "artifact": "navigation-common-android",
+    "version": "2.9.8",
+    "extension": ".aar",
+    "sha256": "d43832772012afa0d5c71d03153aef764f1c5f683fe7605f0db77cada8515102",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-common-android/2.9.8/navigation-common-android-2.9.8.aar"
+  },
+  {
+    "group": "androidx.navigation",
+    "artifact": "navigation-compose-android",
+    "version": "2.9.8",
+    "extension": ".aar",
+    "sha256": "53dccc442276cde3898751f53fcc869f335340fd677fb1ca5c6c0abc0575d180",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-compose-android/2.9.8/navigation-compose-android-2.9.8.aar"
+  },
+  {
+    "group": "androidx.navigation",
+    "artifact": "navigation-runtime-android",
+    "version": "2.9.8",
+    "extension": ".aar",
+    "sha256": "7d741a3b0a299a8c8990712009c63bfca8d52d060afe8f5ad9c200619f113237",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-runtime-android/2.9.8/navigation-runtime-android-2.9.8.aar"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity-ktx",
+    "version": "1.13.0",
+    "extension": ".aar",
+    "sha256": "b5541dc5f74e35389f1e9fdca8b5770c49d2c1360de16f398ce5c1e07a003244",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity-ktx/1.13.0/activity-ktx-1.13.0.aar"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity",
+    "version": "1.13.0",
+    "extension": ".aar",
+    "sha256": "bd4f19a5f00effed0eecad0a310b1f2169b9fc66236a3ba743a222eb77747ee1",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.13.0/activity-1.13.0.aar"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity-compose",
+    "version": "1.13.0",
+    "extension": ".aar",
+    "sha256": "2b5da3033d4924e833868e140c3edfc0c03208710b6b9fb2c9d9a47560ba55fa",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-gif",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "sha256": "e1d2729f1971eee2957664273b84b6efc8d002ebe32a5cb6094084d9c8a98b40",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-gif/2.7.0/coil-gif-2.7.0.aar"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-video",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "sha256": "7422a9c1ef5efd82669e014948035628b49f95ef56496a7b876b86b3734ad8db",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-video/2.7.0/coil-video-2.7.0.aar"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-compose",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "sha256": "8d2ead07c9c9a08696be52a03e689a4afe57d57610e7bf9f05fd88893ee76935",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-compose/2.7.0/coil-compose-2.7.0.aar"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-compose-base",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "sha256": "2885960db57beb8a7d521810386f48b98b2c21c0350bfd9d9e80d812d25b2eb1",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-compose-base/2.7.0/coil-compose-base-2.7.0.aar"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "sha256": "6e8e46eb813c7290c5ae9954d43f3ffa022c0500096ed4585801a38262b3f851",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil/2.7.0/coil-2.7.0.aar"
+  },
+  {
+    "group": "io.coil-kt",
+    "artifact": "coil-base",
+    "version": "2.7.0",
+    "extension": ".aar",
+    "sha256": "f45c1e118038266734321f54c3b84ce2d52b491bb00481134724ac33d3d5e2b2",
+    "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-base/2.7.0/coil-base-2.7.0.aar"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-android-extensions-runtime",
+    "version": "2.0.20",
+    "extension": ".jar",
+    "sha256": "a72e14b4aee164e1e81d56169554a1514ec5c623574ae0ed589235e59fe9b68b",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-android-extensions-runtime/2.0.20/kotlin-android-extensions-runtime-2.0.20.jar"
+  },
+  {
+    "group": "androidx.compose.material3",
+    "artifact": "material3-android",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "sha256": "3a37e8b36df3822fe1e6059f0f9fafda8800388860477624ac1b9422c418a36e",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/material3/material3-android/1.4.0/material3-android-1.4.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime-ktx-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "871883703339f87284d232cb436e317c6f4af5612d92b43f27c6b13b92109fa7",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-ktx-android/2.10.0/lifecycle-runtime-ktx-android-2.10.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-ktx",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "54295ac86b67886dc0613e38f621c531995d0662005fc763e340e19a90994f84",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-ktx/2.10.0/lifecycle-viewmodel-ktx-2.10.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata-core",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "12dd61a9843ccebb4547d3ebe2f6d030ca8f6988d22f8fad19c0af93b4a97e95",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core/2.10.0/lifecycle-livedata-core-2.10.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime-compose-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "46e996d526829596f6db4626169a967f056fde7103507ff596bcd177b73c3675",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-android/2.10.0/lifecycle-runtime-compose-android-2.10.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "2193a1573d623f37b20c7d27d1a8f903a72f651cc6f32e5794f85dda744fee75",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-android/2.10.0/lifecycle-runtime-android-2.10.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "9303287030027ca0b8cf98a748ddeb121ec1bfa1312c0069428e4765bbabce78",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-android/2.10.0/lifecycle-viewmodel-android-2.10.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-savedstate-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "19404239fa584322c2f81e9659e162bc011b746d29dc950a11d260624d83225e",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-android/2.10.0/lifecycle-viewmodel-savedstate-android-2.10.0.aar"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core-ktx",
+    "version": "1.18.0",
+    "extension": ".aar",
+    "sha256": "c7c511e3df838fcbcb61ace36944de6bb7c10eb597be546974f001119939c85d",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.18.0/core-ktx-1.18.0.aar"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core",
+    "version": "1.18.0",
+    "extension": ".aar",
+    "sha256": "311d83ac67d394076ec21d12ed2d10a44b59cb2929b7dce00e5a90a93842e37d",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core/1.18.0/core-1.18.0.aar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-common-jvm",
+    "version": "2.10.0",
+    "extension": ".jar",
+    "sha256": "15943082d87bcd78830398fa377f2c8b12643de290d0906ed8e49a2d335ddb54",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-jvm/2.10.0/lifecycle-common-jvm-2.10.0.jar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel-compose-android",
+    "version": "2.10.0",
+    "extension": ".aar",
+    "sha256": "225904e54ad5154768630471e108b98e143c261df0c08380ff43ea7e832dad7e",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-compose-android/2.10.0/lifecycle-viewmodel-compose-android-2.10.0.aar"
+  },
+  {
+    "group": "androidx.compose.animation",
+    "artifact": "animation-core-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "66d489454bfcb1230b60ae33c3c1c6c756358ce0ba3ca96c98cda9430c67e21f",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.11.4/animation-core-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.animation",
+    "artifact": "animation-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "4a9534afa595551d97b991319055c73b76014a89cf43b811aa99102e2d6ffd73",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-android/1.11.4/animation-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.foundation",
+    "artifact": "foundation-layout-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "23ff32f548deccf48d1e2094a868b08ed738a01de1d65940d68633bcdd04bf33",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-layout-android/1.11.4/foundation-layout-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.material",
+    "artifact": "material-ripple-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "38bd10db57ffd6f82fc6f32443e379fb640ae93e138bdd31daea0d584441b10e",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/material/material-ripple-android/1.11.4/material-ripple-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.foundation",
+    "artifact": "foundation-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "a6aac6be46b7756982436b11118d3e630f9a1845e167bf821ae6986ef2c45895",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.11.4/foundation-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-util-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "d6ca2aaed3f71455988b2d7bcc708d7811640309e12f0482598f9d318d1efa45",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.11.4/ui-util-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-unit-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "8b778afa16102b89da672c3324566e66bbf90e29a2fc7acdc1db1595d976933f",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.11.4/ui-unit-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-graphics-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "4ccaf8e169c158f74c15a1377a28d62197f8ca209db1a997a81a54624f5db306",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-graphics-android/1.11.4/ui-graphics-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-geometry-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "393066ecd102f8cd60e585367dd7bc1c5d2d3ecc3ed82a43aab0668e5ce85285",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-geometry-android/1.11.4/ui-geometry-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-text-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "01284212abb9ab6bba5de336adbe392888bba53711d8293c6713f5c2b56313fd",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.11.4/ui-text-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "893c3b0a4f90631bbd8cc053a0271e51c525b427b900cc10c6f1a4b3c89e3041",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-android/1.11.4/ui-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.ui",
+    "artifact": "ui-tooling-preview-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "86124401724b7e188b09af7f6b5cde5b215a3a273f3d7d6f8a15f898b5803793",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-preview-android/1.11.4/ui-tooling-preview-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.navigationevent",
+    "artifact": "navigationevent-android",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "sha256": "cda4bb83d1c892a208732e99c2d59e4f247ab5c23a1d2524fc004db2e4e9a780",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-android/1.0.0/navigationevent-android-1.0.0.aar"
+  },
+  {
+    "group": "androidx.navigationevent",
+    "artifact": "navigationevent-compose-android",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "sha256": "5cee018dbe130b538d2c43cc6f383a109a98f19ba9c8d7a6dda8ca90a2034671",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-compose-android/1.0.0/navigationevent-compose-android-1.0.0.aar"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-retain-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "48d960544c81e82b674e86e04ead25eeb5d05a54948b6b2ca8690cc94067e600",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-retain-android/1.11.4/runtime-retain-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-annotation-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "ea7cc60386f10fe5b33f57f366c294859c1f860cbfa77b437a11f1f0ac7bc4fd",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-annotation-android/1.11.4/runtime-annotation-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-saveable-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "75acd64c040fc768dd38b6f40c2e46de0dee13cd1f828e4c3480dd7745c737c1",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-android/1.11.4/runtime-saveable-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate-ktx",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "sha256": "23593939446bc5a154a1e35fddd87b82f19e2adf072207f115bf29a8b431c1d3",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-ktx/1.4.0/savedstate-ktx-1.4.0.aar"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate-android",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "sha256": "1656ce62cd233d488bdbbd42e533b80b22435b7a690acae6dbe7302392512c14",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-android/1.4.0/savedstate-android-1.4.0.aar"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate-compose-android",
+    "version": "1.4.0",
+    "extension": ".aar",
+    "sha256": "0f0ae3032d6c6eea834ee22179c8976160d09d841d30e47f53f56b1b3438774b",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-android/1.4.0/savedstate-compose-android-1.4.0.aar"
+  },
+  {
+    "group": "androidx.compose.runtime",
+    "artifact": "runtime-android",
+    "version": "1.11.4",
+    "extension": ".aar",
+    "sha256": "18fd863f42c06100a046dbc2e04f420db0c1b5196d2b63a9006ee8464c69738d",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-android/1.11.4/runtime-android-1.11.4.aar"
+  },
+  {
+    "group": "androidx.annotation",
+    "artifact": "annotation-experimental",
+    "version": "1.4.1",
+    "extension": ".aar",
+    "sha256": "6bd4c7c7476f8260cd3bdbb81183583e93fc9f790c27dea7dc314181cbf87aa0",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-experimental/1.4.1/annotation-experimental-1.4.1.aar"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core-viewtree",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "sha256": "dc1b678d58ebcf2bfa1587be68ff826694ce3d221251b9ef30d4d4b36297e6de",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core-viewtree/1.0.0/core-viewtree-1.0.0.aar"
+  },
+  {
+    "group": "com.squareup.okhttp3",
+    "artifact": "okhttp",
+    "version": "4.12.0",
+    "extension": ".jar",
+    "sha256": "b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0",
+    "url": "https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar"
+  },
+  {
+    "group": "com.squareup.okio",
+    "artifact": "okio-jvm",
+    "version": "3.9.0",
+    "extension": ".jar",
+    "sha256": "ddc386ff14bd25d5c934167196eaf45b18de4f28e1c55a4db37ae594cbfd37e4",
+    "url": "https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.9.0/okio-jvm-3.9.0.jar"
+  },
+  {
+    "group": "androidx.versionedparcelable",
+    "artifact": "versionedparcelable",
+    "version": "1.1.1",
+    "extension": ".aar",
+    "sha256": "57e8d93260d18d5b9007c9eed3c64ad159de90c8609ebfc74a347cbd514535a4",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar"
+  },
+  {
+    "group": "androidx.arch.core",
+    "artifact": "core-common",
+    "version": "2.2.0",
+    "extension": ".jar",
+    "sha256": "65308a06b1c00ee186cb9e19321383f043b993813f1522c47f4a3e3303bdba41",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar"
+  },
+  {
+    "group": "androidx.collection",
+    "artifact": "collection-jvm",
+    "version": "1.5.0",
+    "extension": ".jar",
+    "sha256": "70b35924e4babcdffa37d0e575ee039c56a2d97123342624c48b603233704341",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/collection/collection-jvm/1.5.0/collection-jvm-1.5.0.jar"
+  },
+  {
+    "group": "androidx.annotation",
+    "artifact": "annotation-jvm",
+    "version": "1.9.1",
+    "extension": ".jar",
+    "sha256": "1e343917ebf27ba96fe4dc52b1cad7fd32b738fbc6355bb6cd5b3b305d7212d0",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-jvm/1.9.1/annotation-jvm-1.9.1.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib-jdk8",
+    "version": "1.8.21",
+    "extension": ".jar",
+    "sha256": "3db752a30074f06ee6c57984aa6f27da44f4d2bbc7f5442651f6988f1cb2b7d7",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-coroutines-core-jvm",
+    "version": "1.9.0",
+    "extension": ".jar",
+    "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-coroutines-android",
+    "version": "1.9.0",
+    "extension": ".jar",
+    "sha256": "bd783acd2f9738845d58380f46f45b5cde95d0cb03027d56725338b26bfc4d72",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-android/1.9.0/kotlinx-coroutines-android-1.9.0.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-serialization-core-jvm",
+    "version": "1.7.3",
+    "extension": ".jar",
+    "sha256": "f0adde45864144475385cf4aa7e0b7feb27f61fcf9472665ed98cc971b06b1eb",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.7.3/kotlinx-serialization-core-jvm-1.7.3.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib-jdk7",
+    "version": "1.8.21",
+    "extension": ".jar",
+    "sha256": "33d148db0e11debd0d90677d28242bced907f9c77730000fd597867089039d86",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib",
+    "version": "2.1.20",
+    "extension": ".jar",
+    "sha256": "1bcc74e8ce84e2c25eaafde10f1248349cce3062b6e36978cbeec610db1e930a",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.jar"
+  },
+  {
+    "group": "androidx.exifinterface",
+    "artifact": "exifinterface",
+    "version": "1.4.2",
+    "extension": ".aar",
+    "sha256": "6bb2b68682a2023c55f35f941444ffea0157947b061e4fd7606ba935e2e77425",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/exifinterface/exifinterface/1.4.2/exifinterface-1.4.2.aar"
+  },
+  {
+    "group": "org.jetbrains",
+    "artifact": "annotations",
+    "version": "23.0.0",
+    "extension": ".jar",
+    "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar"
+  },
+  {
+    "group": "org.jspecify",
+    "artifact": "jspecify",
+    "version": "1.0.0",
+    "extension": ".jar",
+    "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+    "url": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+  },
+  {
+    "group": "com.google.guava",
+    "artifact": "listenablefuture",
+    "version": "1.0",
+    "extension": ".jar",
+    "sha256": "e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "status": "SOURCE_RESTORED_PENDING_COMPILER",
+  "scope": "Two original inline Result result-carrier lifetimes; no Result value cast before exceptionOrNull/isFailure branch",
+  "evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/inline-result-244",
+  "changes": [
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/identity/AppConfigStore.java",
+      "before_sha256": "95f64916dd38d1a17fd15bddf91d5bde2a219b8fc279125f946b33947dfcada2",
+      "after_sha256": "1292ae21c8d7ef4c5ea2a341055073830b639365bff1378edaad728e03446707"
+    },
+    {
+      "source": "source/android/intercom-sdk-base/java/io/intercom/android/sdk/helpcenter/utils/networking/NetworkResponseCall.java",
+      "before_sha256": "36f131db012d3767469bfa1ff145f05b75176c69fb9678dbb9238d3c7be6e712",
+      "after_sha256": "ac0339b82a31cea3bb6d55e21642c0e31bc9fa2f1ae2d67ebb369bebbc4eff4f"
+    }
+  ],
+  "original_join_casts": "ConfigModules at original984, String at64 retained; original Throwable handler boundary unchanged",
+  "code_backfill": false
+}

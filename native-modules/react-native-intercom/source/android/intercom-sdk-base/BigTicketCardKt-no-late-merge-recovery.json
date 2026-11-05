@@ -1,0 +1,374 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+  "root_only": true,
+  "source_before_sha256": "194baaef9cf281d9014dc555a37fabad387bc4059bc1bc3157b921ce117bbc93",
+  "source_after_sha256": "c37223f479969b0e063a3253c25c322efb44890c6df2641dbc89257a956fd87d",
+  "source_capture_sites": 5,
+  "source_capture_bindings": 8,
+  "declaration_check_exit": 0,
+  "type_edits": 5,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BigTicketCardKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.java",
+      "6202",
+      "6250",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_649_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.BigTicketCardKt.BigTicketCard$lambda$1$lambda$0(((java.lang.Integer)recoveredExpressionArgument_649_0).intValue()))",
+      "6184",
+      "",
+      "649",
+      "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BigTicketCardKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.java",
+      "7427",
+      "7475",
+      "((kotlin.jvm.functions.Function1) (recoveredExpressionArgument_650_0) -> io.intercom.android.sdk.m5.conversation.ui.components.row.BigTicketCardKt.BigTicketCard$lambda$3$lambda$2(((java.lang.Integer)recoveredExpressionArgument_650_0).intValue()))",
+      "7409",
+      "",
+      "650",
+      "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "",
+      "",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BigTicketCardKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.java",
+      "8852",
+      "8891",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_651_0, recoveredExpressionArgument_651_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.BigTicketCardKt.BigTicketCard$lambda$4(recoveredExpressionCapture_651_0, recoveredExpressionCapture_651_1, recoveredExpressionCapture_651_2, recoveredExpressionCapture_651_3, recoveredExpressionCapture_651_4, recoveredExpressionCapture_651_5, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_651_0), ((java.lang.Integer)recoveredExpressionArgument_651_1).intValue()))",
+      "8834",
+      "final io.intercom.android.sdk.tickets.TicketDetailState$TicketDetailContentState recoveredExpressionCapture_651_0 = var0;\\n         final kotlin.jvm.functions.Function0 recoveredExpressionCapture_651_1 = var1;\\n         final boolean recoveredExpressionCapture_651_2 = var2;\\n         final androidx.compose.ui.Modifier recoveredExpressionCapture_651_3 = var3;\\n         final int recoveredExpressionCapture_651_4 = var5;\\n         final int recoveredExpressionCapture_651_5 = var6;\\n         ",
+      "651",
+      "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+      "Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;=var0,Lkotlin/jvm/functions/Function0;=var1,Z=var2,Landroidx/compose/ui/Modifier;=var3,I=var5,I=var6",
+      "recoveredExpressionCapture_651_0=var0@3422:LOCAL|0|0|0|var0|Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;;recoveredExpressionCapture_651_1=var1@3462:LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;;recoveredExpressionCapture_651_2=var2@3487:LOCAL|2|2|0|var2|Z;recoveredExpressionCapture_651_3=var3@3501:LOCAL|3|3|0|var3|Landroidx/compose/ui/Modifier;;recoveredExpressionCapture_651_4=var5@3551:LOCAL|5|5|0|var5|I;recoveredExpressionCapture_651_5=var6@3561:LOCAL|6|6|0|var6|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BigTicketCardKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.java",
+      "10134",
+      "10180",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_652_0, recoveredExpressionArgument_652_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.BigTicketCardKt.BigTicketCardPreview$lambda$5(recoveredExpressionCapture_652_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_652_0), ((java.lang.Integer)recoveredExpressionArgument_652_1).intValue()))",
+      "10113",
+      "final int recoveredExpressionCapture_652_0 = var1;\\n         ",
+      "652",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_652_0=var1@9085:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-BigTicketCardKt/ast-input/io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.java",
+      "11447",
+      "11500",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_653_0, recoveredExpressionArgument_653_1) -> io.intercom.android.sdk.m5.conversation.ui.components.row.BigTicketCardKt.BigTicketCardWaitingPreview$lambda$6(recoveredExpressionCapture_653_0, (androidx.compose.runtime.Composer) ((androidx.compose.runtime.Composer)recoveredExpressionArgument_653_0), ((java.lang.Integer)recoveredExpressionArgument_653_1).intValue()))",
+      "11426",
+      "final int recoveredExpressionCapture_653_0 = var1;\\n         ",
+      "653",
+      "(Landroidx/compose/runtime/Composer;I)V",
+      "I=var1",
+      "recoveredExpressionCapture_653_0=var1@10381:LOCAL|1|1|0|var1|I",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 649,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "278",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard$lambda$1$lambda$0",
+        "(I)I",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Integer;)Ljava/lang/Integer;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "436"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard$lambda$1$lambda$0",
+          "(I)I",
+          "{436, 437, 438, 439, 440}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard$lambda$1$lambda$0",
+          "(I)I",
+          "{436, 437, 438, 439, 440}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "436",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.BigTicketCard$lambda$1$lambda$0(I)I (6), (Ljava/lang/Integer;)Ljava/lang/Integer;]"
+      ]
+    },
+    {
+      "site": 650,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "391",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard$lambda$3$lambda$2",
+        "(I)I",
+        "6",
+        "(Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/lang/Integer;)Ljava/lang/Integer;",
+        "kotlin/jvm/functions/Function1",
+        "",
+        "583"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard$lambda$3$lambda$2",
+          "(I)I",
+          "{583, 584, 585, 586, 587}"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard$lambda$3$lambda$2",
+          "(I)I",
+          "{583, 584, 585, 586, 587}"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "583",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.BigTicketCard$lambda$3$lambda$2(I)I (6), (Ljava/lang/Integer;)Ljava/lang/Integer;]"
+      ]
+    },
+    {
+      "site": 651,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "548",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard$lambda$4",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;=var0,Lkotlin/jvm/functions/Function0;=var1,Z=var2,Landroidx/compose/ui/Modifier;=var3,I=var5,I=var6",
+        "784"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard$lambda$4",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|2|2|0|var2|Z",
+          "LOCAL|3|3|0|var3|Landroidx/compose/ui/Modifier;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCard$lambda$4",
+          "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788}",
+          "LOCAL|0|0|0|var0|Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;",
+          "LOCAL|1|1|0|var1|Lkotlin/jvm/functions/Function0;",
+          "LOCAL|2|2|0|var2|Z",
+          "LOCAL|3|3|0|var3|Landroidx/compose/ui/Modifier;",
+          "LOCAL|5|5|0|var5|I",
+          "LOCAL|6|6|0|var6|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCard",
+        "(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V",
+        "784",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.BigTicketCard$lambda$4(Lio/intercom/android/sdk/tickets/TicketDetailState$TicketDetailContentState;Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;IILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 652,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCardPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCardPreview$lambda$5",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardPreview$lambda$5",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardPreview$lambda$5",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCardPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.BigTicketCardPreview$lambda$5(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 653,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCardWaitingPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "52",
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCardWaitingPreview$lambda$6",
+        "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "I=var1",
+        "94"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardWaitingPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardWaitingPreview$lambda$6",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardWaitingPreview",
+          "(Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+          "BigTicketCardWaitingPreview$lambda$6",
+          "(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit;",
+          "{93, 94, 95, 96, 97, 98}",
+          "LOCAL|1|1|0|var1|I"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt",
+        "BigTicketCardWaitingPreview",
+        "(Landroidx/compose/runtime/Composer;I)V",
+        "94",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/components/row/BigTicketCardKt.BigTicketCardWaitingPreview$lambda$6(ILandroidx/compose/runtime/Composer;I)Lkotlin/Unit; (6), (Landroidx/compose/runtime/Composer;Ljava/lang/Integer;)Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

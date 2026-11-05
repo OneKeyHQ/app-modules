@@ -1,0 +1,44 @@
+{
+  "baseline": "Intercom19.9.1 device MachO/metadata",
+  "originalMethods": {
+    "-[ICMContainerCardBlockAppearance init]": "63298eb2dcfbb5c5cb6b3c44b32a0482d109aa046d2091275d58ce1a8ac3c72b",
+    "-[ICMInAppBlockAppearance init]": "44fd3afe08b230fa54c41afa09dbcb4c55bfed463495a21e29c95f07877053c6",
+    "-[ICMLinkCardBlockAppearance init]": "b1ec16dab53afaeebee2b6c411d6974594d56788d723b8e2d87eee8009fd6066",
+    "-[ICMLinkCardBlockAppearance linkWrittenByAttributedStringForName:]": "475ddc731c5f6ba915d696c62b813443a77428bdda37346053985642443ef8ae",
+    "-[ICMLinkCardBlockAppearance avatarRadius]": "569f3c69a63e16472a41df0fc83002b079a71cdb096bb0ddefbf76349dbe2eb7",
+    "-[ICMLinkCardBlockAppearance setAvatarRadius:]": "8370136a9ae72cccaee3ab669afacac0f430855d1926014c8f93e85a04b965ef",
+    "-[ICMLinkListBlockAppearance init]": "8c4037eed249fb91ce0065594257fe76ce6d16f7ccc3a2cea390616450bfa21f",
+    "-[ICMMessengerCardBlockAppearance init]": "30549260cceb02bfec7bd6bf78a98d93137ca70e15f8f84574163f526534fa33",
+    "-[ICMPostBlockAppearance init]": "1a7ce05617fa7ba5b849fdeda4d18e7df16a3bea9074c634bae4f1ccfaced085"
+  },
+  "originalParentClasses": {
+    "ICMLinkCardBlockAppearance": "ICMBlockAppearance",
+    "ICMLinkListBlockAppearance": "ICMLinkCardBlockAppearance",
+    "ICMContainerCardBlockAppearance": "ICMBlockAppearance",
+    "ICMInAppBlockAppearance": "ICMBlockAppearance",
+    "ICMMessengerCardBlockAppearance": "ICMAdminBlockAppearance",
+    "ICMPostBlockAppearance": "ICMBlockAppearance"
+  },
+  "ownPropertyMetadata": {
+    "ICMLinkCardBlockAppearance": [],
+    "ICMLinkListBlockAppearance": [],
+    "ICMContainerCardBlockAppearance": [],
+    "ICMInAppBlockAppearance": [],
+    "ICMMessengerCardBlockAppearance": [],
+    "ICMPostBlockAppearance": []
+  },
+  "originalIvar": {
+    "class": "ICMLinkCardBlockAppearance",
+    "name": "avatarRadius",
+    "offset": 8,
+    "offsetVariable": "0x4a99bc",
+    "type": "double"
+  },
+  "doubleLiterals": {
+    "0x3c2278": 0.8588235378265381,
+    "0x3c2280": 0.800000011920929,
+    "0x3c2288": 51.0,
+    "0x3c2290": 70.0
+  },
+  "runtimeVerified": false
+}

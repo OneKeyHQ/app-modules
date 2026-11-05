@@ -1,0 +1,1562 @@
+{
+  "status": "PASS_SOURCE_AND_ABI_SYMBOLS",
+  "scope": "intercom-sdk-ui 18.10.0 source-only module, not full Intercom SDK",
+  "reads_original_sdk": false,
+  "vendor_sdk_on_classpath": false,
+  "vendor_sdk_packaged": false,
+  "runtime_verified": false,
+  "input_hashes": [
+    {
+      "path": "scripts/android-build-source.py",
+      "sha256": "24f1e4174a06154174213eda5c0535ebcb3714ffa766d2e3505b89d97f0f3b44"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/AndroidManifest.xml",
+      "sha256": "b8a5d198655a81caa2474fca7814e55f37230be9a167b9c9478769fad14fdfba"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/external-dependencies.json",
+      "sha256": "4936c52de18a2b56a0c0b16965c7e5cfc751453bc340f3ced05bb209fd27c3ca"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/identifier-aliases.tsv",
+      "sha256": "8f45f03417b44136f7743385dcd0fcb358d3105909a82f869bb2c1734067552a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/IntercomPreviews.java",
+      "sha256": "d75e64f15f2aeeec9e233845639ec89961397b0487301b641437c1f8d1ffa326"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt.java",
+      "sha256": "f62ee08c8a813f1adedb9be5d577059096816dd98cccecea299ac208b9166b30"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoder$Factory.java",
+      "sha256": "2c598ad156c0ef9c24543fad7339bad1d4346a5add528c7f6e5bb2ad865b4f48"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1.java",
+      "sha256": "4b939cebe098bd4f3a31c0b072376c7ce49ad201a84ec6e5341d2d2f85844d74"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoder.java",
+      "sha256": "364139e5c8790c4174c40f18a06af1df39c5bbfc48532da0ba02d50caf5d301e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings.java",
+      "sha256": "7cf016e64f149528e8a57104b677687a6b887fa06ce53ec0a3cd529b8a9c6016"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoderKt.java",
+      "sha256": "330cc4d8dfef1468a64a281359c3fc04d85d5761a761095cdaff8d1c05ca6236"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/ActualStringOrResKt.java",
+      "sha256": "f1f2273c046749095c3a54766a65f250c875b244b48f78055140cd0d82f99f2e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1.java",
+      "sha256": "b80b9b2c1c1cddd1a35fbae190c8c87d65827d59df1dfbed66e2cbbd916e2196"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/IntercomArrangement.java",
+      "sha256": "d34553b6b3c29a5d42d0fd567ccc375c3d19bebcc1ec821039ea63c46c647764"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/IntercomTopBarState.java",
+      "sha256": "e687eafd69070a040379bb30990d03a94a852cf66a8700c569bf16d050f76d54"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/StringProvider$ActualString.java",
+      "sha256": "807e1bb1207033c8a3ca0d80e2c8247b3edddf84873a42a5c52a47638829a5c3"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/StringProvider$StringRes.java",
+      "sha256": "a5a6838f26726281638ab5b5a996d5fa1413bf47a38ee1a56132b5b8ff496858"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/StringProvider.java",
+      "sha256": "f289d596aebc2968190f702c3f828d2bd642c2da52b5f10d6b799d6e35abf71d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/TransitionsKt.java",
+      "sha256": "17ee022257bb67eb21942be24815393c16f6b8771a7b3516bfb6c38c8db354b1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/BoxedTextLayoutKt.java",
+      "sha256": "083e18411bf2a741670af8e2d59d04f1467d9b116d31abe9b50b668786490fd4"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "3f6c3ee59a6eaf45fccd54960e4204212075da5ec85be19ba9a0ed6bafa639d3"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "40b2140581f8d8b8b23a43728af122cb0070b612aba0f1976238999939d690c5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "sha256": "8dd4dd6b30271eb2f9305ee79f87a5c2349bdc0e8a036948eef0fc30169f65c2"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt.java",
+      "sha256": "2507aef877b0a4f3f007dcae2e19f45fb6ca5c63086671fd2b019f13a0043dad"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+      "sha256": "7a2a7297eec893f4e68807a7465c7d0793e1f29a63b39341299c7d5ae4907134"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner18df663aad2d7886$1.java",
+      "sha256": "af403e736fb1ffbe926269a3254cd94b971f60c9552c5eb5b0c6117eea9bf1ac"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "469896cfd38867716e8f54d5e94c164fa1d1845ffc5e7a4bb0c507b143538e13"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "9820ce32c4df5890bce71e2930aaffe3ce3bbe8e1e1826e989caa35696d0f744"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "sha256": "6061f42f4981b772e02a2209f9482d57599ff3eac83cc71c6f4e5a1ddf1f70b7"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt.java",
+      "sha256": "ec88e2e57027226e0f3054e26ac619fb0f916cd2195d64776544dde28896d6bb"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "117e16d60ac993ba5699413a880611a77d8953feb4c609685c9033aa7bf50b45"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt.java",
+      "sha256": "2063597c2e031a222e406da893f94a32ce242be8f83210fa8438eb556d20421a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "7acbce27ff849a4bdf2bfbed0fc476fe4774250222ef4d3c9a81a24ef045cbbe"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt.java",
+      "sha256": "f322617d7f8b988d0fd8dac57e2bfbabb9e81a3a407972ccc352aa6fc0598a61"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "7cb9a620e4deea4bf7e0d9a305adfdbdb811b1037c403d92a9b4262626619a77"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "2c9e796f5c8264fa9b60997ca73e6b2698755cd67e13a72600dc55badf2dbe02"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt.java",
+      "sha256": "88f9df26f2cda25ed4cae88d8ab5b54a0a88e368c25b2bf87cfda871498bce35"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt.java",
+      "sha256": "a1248ca8d87de7bbad8889fbcf3643cac05ea3f5ef340f03273006932901d5e6"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButton$Style.java",
+      "sha256": "32d419232b4ed02270d4cc6b2fb851a47bf501c2b60dcad3288f755c7334e330"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButton.java",
+      "sha256": "23682fbb05a0084bf26fc7ac2b1af6e4a8b36309080a3484588d526d89ee7805"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1.java",
+      "sha256": "eff41733c0aa2ddf31921cdfba4f957918adf46562ac1cd5d084ede42695e696"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButtonKt.java",
+      "sha256": "003c4c261917205b7020dffa551d1f4666c3bbdd76a217de006d2b504384d416"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomCardKt.java",
+      "sha256": "2fb1d331146ddd23f75dbd5cf4f4c901df94fd8f7c4d89fe16630d208c4a0dfa"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomCardStyle$Style.java",
+      "sha256": "873fb086cc6dd4d82f5eab9f1c70aa3e85a2451d445d2826fa107808d686ea83"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomCardStyle.java",
+      "sha256": "d15ea3494cc4069b3cb6b51db5425a9338ebfa68514a237f9e8b6227e184da29"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomDividerKt.java",
+      "sha256": "ce63b51f27f6aca302cf7b644a9ed7b1a487d58a350b4aae38e8ba87287fb3d1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomTopBarIcon.java",
+      "sha256": "4b23854d78732b2fd4b4dd5825c31d416e87af661997665b37bf4ed6673313f2"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2.java",
+      "sha256": "291104dc9580483bc39c1b037399450ead2894207398bd05f5700798ae8583ca"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomTopBarKt.java",
+      "sha256": "8e4059e902f09f93921fbf4113e6dc05360c11704b499ce54709360016e0ac77"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1.java",
+      "sha256": "84317668362daba6e28be66b9a09664061774bba1f2d503c8c330988ebb2fe70"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1.java",
+      "sha256": "97375f482eb5f1b32f39bf78aa8df5d35140ce220e5a35f2bd4ca5d7e44f44bc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1.java",
+      "sha256": "93e6dee9e938d19f25aa6042ab085c5120da3497d015afbefcc66adeda70a711"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2.java",
+      "sha256": "0547c3392fd1653ee61f049ba7a94e0cd0cdc424fae0a868b36d94eb0cf7a097"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1.java",
+      "sha256": "927665b6783b0b27e30a3305aaa8d3633e728e6bcbc135b320f77ebbc978af24"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings.java",
+      "sha256": "6dfca3e12bd0f40f5f7d23221e8613775a3e1e4c24329421c9f5cd308fa095f0"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt.java",
+      "sha256": "673a6d8a7ecdd6375852d1b2c25979175b4bc7ccd7dcf56d00447982ffdb2652"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1.java",
+      "sha256": "0ddadb2f6a80f5abbb960782f8bcadb0858d96b478738a72066796ccd7327bdf"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3.java",
+      "sha256": "9acd9b87f4c3b8a602efbeb0e89dba38c38cf62a9e9786ecc7385b8ed9ed1dd2"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1.java",
+      "sha256": "9f43f42c8e47e37b065660ff39ff44308ff3956ae53d8a83a9c83b107384fd43"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4.java",
+      "sha256": "cc16581649ebe9c32842eb9e2d816d87d364de72325a36c92154274498092a99"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5.java",
+      "sha256": "cf8905d8934f88ce6af9e1cabc4751f32b00dc2947531749e54a695551d84792"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6.java",
+      "sha256": "0a6b0147cc0c44e4c5c02f325c7a7a709ab234f2db6155d07e897ab415438df5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt.java",
+      "sha256": "de878511cbf613d9467b427afb882746de2c93ee54af14dc8812c52ae59bf58a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1.java",
+      "sha256": "de8f67a3675f568ab0aa137e879619768593fb027895043d6de225aebe337afc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2.java",
+      "sha256": "ce6dbd79d0da91ba7e4e40230133f23e9de57f025ccb07500676637dd0f80b01"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PulsatingBoxKt.java",
+      "sha256": "19fcb23ae3c107746bbb3ebfcddc911d0d1163a635fa57c71a22939092402d2e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt.java",
+      "sha256": "c4b6ef6d80ec170bc7c42b90198f153982a9dcf329ee08763981fe0f855c0b79"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/extension/ModifierExtensionsKt.java",
+      "sha256": "10d6219eeeee96cf77b8721a12517071e8c515bd392c4c303d5760651bfaab8d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/extension/NavBackStackEntryExtensionKt.java",
+      "sha256": "80dec92b079f0f4df95d512520772f7a34e9b328db2dbc3705c1fb645d74f94e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme.java",
+      "sha256": "89298f96a5fc8aea9f3274c591381c5f974f0402a0fcb9f158466283e0377bed"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/BaseColors.java",
+      "sha256": "d5267d13d010b47ac4434b258e6380cb6c67482656292ba6807a04351c5d9940"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomAlphaColors.java",
+      "sha256": "f41183f730bd1d245ea050712c6eef5e6cfa1fb591877b914483c4e353018f49"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomBaseColors.java",
+      "sha256": "1b28f2c64792df9b4597bd7e3cf034090aa1071120569dccf64e867b190fd704"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomBorderColors.java",
+      "sha256": "aa9d9abf680bd6fbeced64e686b2bf34d70a944f15432a19261f7da69cc45cb1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomColors.java",
+      "sha256": "8bb7ea92b295e5a2f048ca844e9a7ed2247e13ca8cfdc6c1c6fb658e62a0d8d5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomColorsKt.java",
+      "sha256": "a26803186cf8f3d07247f2a835f6fd085848d349b06825cba62584658df36667"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomContainerColors.java",
+      "sha256": "63bb45339545bacf411a0bb377bbf0f9108cc865c8269da494377629c5b37d62"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomIconColors.java",
+      "sha256": "358b5e54389ecb753b2f3fa115d4ca9b7a3c2048c1b753a462fd903db2b32468"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomSyntaxColors.java",
+      "sha256": "3561f9872ea9d2e83d604fa46debb2ff0b810ece640cd86857fd7fb00d7b251c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTextColors.java",
+      "sha256": "16c27875dc6be0642d3fc8f60b989de820ced87a1e01a10918078b758a6387e5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTheme.java",
+      "sha256": "c66b73cd82a19cc30a4ef6d02696df461ebf34e93eed4395904fe3677d582bb8"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1.java",
+      "sha256": "df461a6bf5bbea6a6398deeece515fa9ce1c3049d74838dfbe04be43242e491b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomThemeKt.java",
+      "sha256": "217e83a8155cd4040db24fb6f0299d0945c8eb35ebb9917607177ebdec8c9861"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTypography.java",
+      "sha256": "8cb18158cde68ff4aa049842432e66321693a78bf834a705dece04dcc320e762"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTypographyKt.java",
+      "sha256": "7337291560cb9314a82cd6587fc975c16e0852abea3ed677088ae3836c855787"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/ThemeManager.java",
+      "sha256": "73dce93d1786e873ccb07f68f8f23bf5cb74cc8d1382eac714b916bf4e42d8d8"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/ThemeMode.java",
+      "sha256": "ab1d4c5fb6a763a2a0e1feb05ed8729aa3275c4f5d44ffefdb698e65b097691c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/kotlin-module.json",
+      "sha256": "efd6fec6a9ca3ea8429a93520c9eeafc6d499c84fe09ee7261c724e436a56d17"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/original-abi.tsv",
+      "sha256": "d5cfa3d96f22dfe74bb350ecc62523b282f0c082375875631b6e4574de17497c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_arrow_up.xml",
+      "sha256": "4f43d11210efd251907528c1fc2136d0a7c414d0a5f448da2a7008cac377f645"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_back.xml",
+      "sha256": "7bfd5a79f5ecd4924b0609c77bd0d8b0bd448750890cb696e92316bd16633567"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_check.xml",
+      "sha256": "14a8a233166c68339ca009c4d25be0bb6b16ef09a543a2a44ab7d60f8f894029"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_copy.xml",
+      "sha256": "3a5f731268e3c11c74e983808cd4f07a4bdc952d51915edb0c935d31747dda20"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_csv.xml",
+      "sha256": "7cc26049ea236770e8cee42cdd444a2427c8f1fba9b2852192393a351b80c45b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_delete.xml",
+      "sha256": "f41ed904de6934680ee1ec29998234456ab5e5493a6d5b69de43d90780204e16"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_document.xml",
+      "sha256": "f2f5ff5dd20047f20159473254f4f8f2f0b466ddffe552fc5ee557a09bc07683"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_down_arrow.xml",
+      "sha256": "4f523bf543969f649c6730d403f370b1a670165aa18cddeb84841a1ce163173b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_edit.xml",
+      "sha256": "07b3074c97097aeca565ef85dfae2abb0bc2185450a9f31cb979eda1ebd02a00"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_exlamation_mark.xml",
+      "sha256": "3e282cdab6f316a85c984112edc9b0d87f25d1ac3f0d2aac54bf7058f16663ec"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_expand.xml",
+      "sha256": "7cd5e0fda1cb412d525c7aab7ba79b3636fab6f2ff4064536be8c534efbb7367"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_file.xml",
+      "sha256": "2c705940cd2b0779f7d74d8b9cc09619d0f29d575fe745cb4acf23406df3d58e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_info_filled.xml",
+      "sha256": "b7345d37d6b44835582bed8412bf0eb0f37f98e3c1e5e6a76494d595d330debb"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_link.xml",
+      "sha256": "e15639a8b332f5993c5213bcb1b85f19b179ebcf5232de614e39a9afe0123140"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_microphone.xml",
+      "sha256": "ce553fce950412105d837959c985bdb76b2615333b95bae1eb587fed3b472135"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_play.xml",
+      "sha256": "358933e46828dcd619f142fe16c7f37bbf005520cc51839381feb70b10a83916"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_public_article.xml",
+      "sha256": "63fe82cf98587b6268378bbf0396a72d85e2e12c525ccc0afe69db7e046a655b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_stop.xml",
+      "sha256": "99a4fb8417676858a4a74108638fc52640a0abc9de696ca274769bc3bc3aa017"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_txt.xml",
+      "sha256": "147fb807ba85d288e15b3a3110ab9d7b5090d49fbc5187adadd06827d97533b5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable/intercom_ic_zip.xml",
+      "sha256": "25d16d706250349cf4ff43916e7faffb23327d1c90378b5188eea29bfd29852f"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_attachment.xml",
+      "sha256": "dbe9d7c684e04c81071ccc525ab333e959b0c9722baa587714e174c9dc777fc9"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_chevron_down.xml",
+      "sha256": "337b426c5b9ebf9bc7bedc08607a9efc6e3e64c01b285c1f9f56603ec9185362"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_close.xml",
+      "sha256": "e12cdee6d5eaf5f2b1902514873d9dfaee5cdb0386a7032afbe372325e751f6e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_download.xml",
+      "sha256": "03da0493b996a77a18f6f36ef966ac9539df9e45f95b6e4da5cf7d28b0bc9d29"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_error.xml",
+      "sha256": "746dc3ba13f73a54138c5f1fe2942f92ca67167afc0e0ee36b96ca745c0b9a08"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_gif.xml",
+      "sha256": "ade4887563757e27fbd7a0d0d604e6b9b9501a5b7bc12fe94a0e0d65d3cab5fb"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_ic_x_mark.xml",
+      "sha256": "49ba9f7145529e5299f76c21979ce078e6fb5f53aa81f224b234dc444dd3d017"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-anydpi-v24/intercom_send.xml",
+      "sha256": "59eba43c82699f30f7ec7d7ec0e78e628be2530e77df63fe16eff94056c441c7"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_attachment.png",
+      "sha256": "5c1bf33b7dcf45927ce9e29571d8b59a10bb5486e73e5e90f51fcd6ed826e401"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_chevron_down.png",
+      "sha256": "ec182ecaf6ace98bafca26eedd19bdc915cfa5cb38902798994a0f5517026889"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_close.png",
+      "sha256": "110db08ac85926df86149faab69cc3cb0a169c10609668b34adc6c513ce03903"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_download.png",
+      "sha256": "de6e50f46fa11a9bcff139046cb0693647cd4970b549ddf2a85961be9cd8ee59"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_error.png",
+      "sha256": "1e8301618664dfd80d22d1d82644c90a98eadd06239196e4f47b273e5694d5d8"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_gif.png",
+      "sha256": "b26b3dd2fd5a364a45652e331749f22f27c8652fb0ce2c4e053eeab767deaf4b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_ic_x_mark.png",
+      "sha256": "ca3ab3b7161c9aa1c588698e6944cd6502ff13477f48af20d91014a1ff5f3c72"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-hdpi-v4/intercom_send.png",
+      "sha256": "8c325d10cf9d1701f690410da3dcfe01d9652b99800e092d406d122b6f479288"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_attachment.png",
+      "sha256": "7b4f5342bf4dee9a1b81680ab08df790e935eae49139993585e361a899d07f26"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_chevron_down.png",
+      "sha256": "f3439d22cd014325513528b4292507caac7b5beaed1aeed08900a5b099a62a81"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_close.png",
+      "sha256": "fb34882490dcc2fb9cd40e04e6bdeb40368efbd361096b326f42960da8deaec0"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_download.png",
+      "sha256": "971a5acff038770320b6a433fadd36fc1b521c7460cdbb58f99f458b9d4989e0"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_error.png",
+      "sha256": "b6b3186441dce3ed2c1bf0341b803a73dbf01a965e48695218baf911d6bb595c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_gif.png",
+      "sha256": "41c36d239e2d5ff2ba03c6e5f068c297e90e5ea8e85499152202d155d3918289"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_ic_x_mark.png",
+      "sha256": "99bab5ec2c1f97def48148f46ad45102c64e6c89a7c8e76a6db31c3e31c9443b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-ldpi-v4/intercom_send.png",
+      "sha256": "46a04765c00c8f76cfc4a0abdd0883532ae296da0a2fe548c021ff9bdbea9e76"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_attachment.png",
+      "sha256": "0c8b1f1af50f28eba938dab98cf79f814c1e6a3990bef58fc57e4a5f11965b9b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_chevron_down.png",
+      "sha256": "c4b921e2179d454547f88b2250c2d814ff882a05e1a104fecd729f2ca323d06a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_close.png",
+      "sha256": "ceb7ae52b93b181ce3315319f661a0e8385ede26765c9958bb3cc276ca5cc06b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_download.png",
+      "sha256": "2c6cd6fd3ea3e0bcc223c3df374188b9603737dcac494ff233ba439577b709e4"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_error.png",
+      "sha256": "e227b692b0337735fa6f847e398cb862a4de9fe52cd22916925cf3795a447043"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_gif.png",
+      "sha256": "71ba39b69766e44e4e3ba4c0039fedb2a417abd111e98a7d154a7865e877600e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_ic_x_mark.png",
+      "sha256": "697386a818db30c776a57e2a0db1032f01446c1bb3c4e600ae40b36ea2d07605"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-mdpi-v4/intercom_send.png",
+      "sha256": "a6bee8f556b01d9063d2990123ad7ba9cc05d1f09165bcd08b61133da8ac960d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_attachment.png",
+      "sha256": "8d166841455811675454ab907b57959ff24457c71cb30d23d25d1b6ba07f0ee1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_chevron_down.png",
+      "sha256": "0599c9e8dffad1585e8e7c337e5250ceccbc5169393039542852a16dc4ee9132"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_close.png",
+      "sha256": "c7975d021031314a7c7f0ea36be33240fc31241963457f0731f63ded724ff83d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_download.png",
+      "sha256": "90922294fbfb776402167696a30d8af3378aea53e9e0caeddc3c4627b3a85355"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_error.png",
+      "sha256": "10f096603dd995cf743e6ad7063bb1e7aa1ef17c7d78001d08336cbf36281934"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_gif.png",
+      "sha256": "bfc4ec0c30fdf99fdc97accbd18997f91691a2a02704e286b31106f22f73b511"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_ic_x_mark.png",
+      "sha256": "128348c9887fc9d96ff2cc6f50b962a38ee832eafab79821d45040bc19717f4d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xhdpi-v4/intercom_send.png",
+      "sha256": "234762d0c8c941f928e8a8a0c919270923d99edbcf54ff3b643a95a4b4fac687"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_attachment.png",
+      "sha256": "ef2e303b73ef2db7a0a4b11d2374500edde29735dfdcf5d93392e0f5c97cd445"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_chevron_down.png",
+      "sha256": "d934a52b99ef7f12bac77ce632a671f2f1aafecfd86c233841f5b6d2aec32bbc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_close.png",
+      "sha256": "5434abdfd4dfe826dd4960efbd90597152d0ce80fe5f17ae21523ee0ba885e38"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_download.png",
+      "sha256": "77a6d45189b53f3dc58571ff0adfe9ce99ad7eb83657d2cd2adae02365bea3f8"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_error.png",
+      "sha256": "74a003b2d93d4f1853add406288724c1446ce1bef2bed1f78d73bd2c49918a06"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_gif.png",
+      "sha256": "171bd854f5f3bef5561718b86560238f6ef98b1ba14b5e8feaa3528c9fd91405"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_ic_x_mark.png",
+      "sha256": "c5082d8a8496452fbfc0747d3525272e48d013b4a6f10bf136a176a125b6783a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxhdpi-v4/intercom_send.png",
+      "sha256": "f409a1a2db8c4c4b9263d4710a54148d939218ee4213a38380eecdbdb1e97baf"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_attachment.png",
+      "sha256": "a96f98dc623cbb03de0fc36ab3aecd1a40c4c7e753e3a660adfbf709b26f4bcc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_chevron_down.png",
+      "sha256": "63ace1128f54987beee3cf44ae53c1cb0e6ea087b5e53cdaabbb0fd5842978a7"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_close.png",
+      "sha256": "837311eef95f43b9459f43e6efc0267e0efba3b1fc34d7b4d706e4ed0c6f8f8f"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_download.png",
+      "sha256": "ce45cefee5bb2abc31cf87846aa7abad9fa87dce3d2c5dea1c1a9e4f0e0a025c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_error.png",
+      "sha256": "545046dbed82f000665ec2dfb208278926b853ad11617f8f5cbfb1a49a80092c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_gif.png",
+      "sha256": "1df5bee3192e2da26ce49012224cc70e64a10ef2f5897ee54d2d66510d6386bc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_ic_x_mark.png",
+      "sha256": "331c4510d8594f5a8cbb043b58163fff033a6d4cb70b6abf18f2fe9cbe1a0bd1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/res/drawable-xxxhdpi-v4/intercom_send.png",
+      "sha256": "07d72833cae83208f8f84c936b5808f98ee531c6e3b744f277e3a9777e8e35b8"
+    },
+    {
+      "path": "source/android/tool-dependencies.json",
+      "sha256": "4db958788a037ddb8815e48fef5ed47ac37af7b2d8458d10b80df92fbeb57d2c"
+    },
+    {
+      "path": "tools/NormalizeJvmNames.java",
+      "sha256": "288084f1f437c311a48fb347020228324e81df513d96d93b8fde00260195d708"
+    },
+    {
+      "path": "tools/RestoreBuildMetadata.java",
+      "sha256": "e9d07c8cd78dbded9032fd7235d2687410a6cd3d5bc2b570e13ad91f6c82fd0b"
+    },
+    {
+      "path": "tools/check_recovered_source.py",
+      "sha256": "3108547ed4e4e9b18f1e98930eac2215918ef7225c38246dc17f2ffde1d366a7"
+    },
+    {
+      "path": "tools/write_kotlin_module.py",
+      "sha256": "aca3b414fd487d9d5ef966095c53b547c08a55bd24fd4e78f71ed4b5fafa5e31"
+    }
+  ],
+  "build_environment": {
+    "android_jar_sha256": "4566663c3876e022b4fa4ced8c8697c4ab1688267f090114fd92d027b32e619b",
+    "aapt2_sha256": "729a6a8deba828992c50cb448d4ef3947003ec5a0d1deead7534897c8fc3486f",
+    "javac_sha256": "3c3941351a57e30698b40c1ade87a40c3f90030467fa5aef79a4cc41a108f6a2",
+    "java_sha256": "52d95414d4094e4d4c84c0e4f72712f5df81914ac574dcdb4fa6c57d05838d53"
+  },
+  "source_files": 84,
+  "classes": 83,
+  "missing_abi_records": 0,
+  "unexpected_extra_abi_records": 0,
+  "private_compiler_lambda_helpers": 36,
+  "artifact": {
+    "path": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/android-ui-source/intercom-sdk-ui-18.10.0-source.jar",
+    "sha256": "cdf2295861282847a7f36ba207f4c324ecdeace75256b69eaa38a09ae10c41a5"
+  },
+  "source_hashes": [
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/IntercomPreviews.java",
+      "sha256": "d75e64f15f2aeeec9e233845639ec89961397b0487301b641437c1f8d1ffa326"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/IntercomImageLoaderKt.java",
+      "sha256": "f62ee08c8a813f1adedb9be5d577059096816dd98cccecea299ac208b9166b30"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoder$Factory.java",
+      "sha256": "2c598ad156c0ef9c24543fad7339bad1d4346a5add528c7f6e5bb2ad865b4f48"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoder$decode$1.java",
+      "sha256": "4b939cebe098bd4f3a31c0b072376c7ce49ad201a84ec6e5341d2d2f85844d74"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoder.java",
+      "sha256": "364139e5c8790c4174c40f18a06af1df39c5bbfc48532da0ba02d50caf5d301e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoderKt$WhenMappings.java",
+      "sha256": "7cf016e64f149528e8a57104b677687a6b887fa06ce53ec0a3cd529b8a9c6016"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/coil/PdfDecoderKt.java",
+      "sha256": "330cc4d8dfef1468a64a281359c3fc04d85d5761a761095cdaff8d1c05ca6236"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/ActualStringOrResKt.java",
+      "sha256": "f1f2273c046749095c3a54766a65f250c875b244b48f78055140cd0d82f99f2e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/IntercomArrangement$itemAtBottom$1.java",
+      "sha256": "b80b9b2c1c1cddd1a35fbae190c8c87d65827d59df1dfbed66e2cbbd916e2196"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/IntercomArrangement.java",
+      "sha256": "d34553b6b3c29a5d42d0fd567ccc375c3d19bebcc1ec821039ea63c46c647764"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/IntercomTopBarState.java",
+      "sha256": "e687eafd69070a040379bb30990d03a94a852cf66a8700c569bf16d050f76d54"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/StringProvider$ActualString.java",
+      "sha256": "807e1bb1207033c8a3ca0d80e2c8247b3edddf84873a42a5c52a47638829a5c3"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/StringProvider$StringRes.java",
+      "sha256": "a5a6838f26726281638ab5b5a996d5fa1413bf47a38ee1a56132b5b8ff496858"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/StringProvider.java",
+      "sha256": "f289d596aebc2968190f702c3f828d2bd642c2da52b5f10d6b799d6e35abf71d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/common/TransitionsKt.java",
+      "sha256": "17ee022257bb67eb21942be24815393c16f6b8771a7b3516bfb6c38c8db354b1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/BoxedTextLayoutKt.java",
+      "sha256": "083e18411bf2a741670af8e2d59d04f1467d9b116d31abe9b50b668786490fd4"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "3f6c3ee59a6eaf45fccd54960e4204212075da5ec85be19ba9a0ed6bafa639d3"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "40b2140581f8d8b8b23a43728af122cb0070b612aba0f1976238999939d690c5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "sha256": "8dd4dd6b30271eb2f9305ee79f87a5c2349bdc0e8a036948eef0fc30169f65c2"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomButtonKt.java",
+      "sha256": "2507aef877b0a4f3f007dcae2e19f45fb6ca5c63086671fd2b019f13a0043dad"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner117a8bc0ad94bbf2$1.java",
+      "sha256": "7a2a7297eec893f4e68807a7465c7d0793e1f29a63b39341299c7d5ae4907134"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner18df663aad2d7886$1.java",
+      "sha256": "af403e736fb1ffbe926269a3254cd94b971f60c9552c5eb5b0c6117eea9bf1ac"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "469896cfd38867716e8f54d5e94c164fa1d1845ffc5e7a4bb0c507b143538e13"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "9820ce32c4df5890bce71e2930aaffe3ce3bbe8e1e1826e989caa35696d0f744"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt$RecoveredInnerb8048fd051efd9e2$1.java",
+      "sha256": "6061f42f4981b772e02a2209f9482d57599ff3eac83cc71c6f4e5a1ddf1f70b7"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$IntercomTopBarKt.java",
+      "sha256": "ec88e2e57027226e0f3054e26ac619fb0f916cd2195d64776544dde28896d6bb"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "117e16d60ac993ba5699413a880611a77d8953feb4c609685c9033aa7bf50b45"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$JumpToBottomKt.java",
+      "sha256": "2063597c2e031a222e406da893f94a32ce242be8f83210fa8438eb556d20421a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "7acbce27ff849a4bdf2bfbed0fc476fe4774250222ef4d3c9a81a24ef045cbbe"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PermissionDeniedDialogKt.java",
+      "sha256": "f322617d7f8b988d0fd8dac57e2bfbabb9e81a3a407972ccc352aa6fc0598a61"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$RecoveredInner7a24458254dd4cd9$1.java",
+      "sha256": "7cb9a620e4deea4bf7e0d9a305adfdbdb811b1037c403d92a9b4262626619a77"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt$RecoveredInner7b5951eb09481206$1.java",
+      "sha256": "2c9e796f5c8264fa9b60997ca73e6b2698755cd67e13a72600dc55badf2dbe02"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ComposableSingletons$PulsatingBoxKt.java",
+      "sha256": "88f9df26f2cda25ed4cae88d8ab5b54a0a88e368c25b2bf87cfda871498bce35"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/ErrorMessageLayoutKt.java",
+      "sha256": "a1248ca8d87de7bbad8889fbcf3643cac05ea3f5ef340f03273006932901d5e6"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButton$Style.java",
+      "sha256": "32d419232b4ed02270d4cc6b2fb851a47bf501c2b60dcad3288f755c7334e330"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButton.java",
+      "sha256": "23682fbb05a0084bf26fc7ac2b1af6e4a8b36309080a3484588d526d89ee7805"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButtonKt$IntercomButton$1.java",
+      "sha256": "eff41733c0aa2ddf31921cdfba4f957918adf46562ac1cd5d084ede42695e696"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomButtonKt.java",
+      "sha256": "003c4c261917205b7020dffa551d1f4666c3bbdd76a217de006d2b504384d416"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomCardKt.java",
+      "sha256": "2fb1d331146ddd23f75dbd5cf4f4c901df94fd8f7c4d89fe16630d208c4a0dfa"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomCardStyle$Style.java",
+      "sha256": "873fb086cc6dd4d82f5eab9f1c70aa3e85a2451d445d2826fa107808d686ea83"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomCardStyle.java",
+      "sha256": "d15ea3494cc4069b3cb6b51db5425a9338ebfa68514a237f9e8b6227e184da29"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomDividerKt.java",
+      "sha256": "ce63b51f27f6aca302cf7b644a9ed7b1a487d58a350b4aae38e8ba87287fb3d1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomTopBarIcon.java",
+      "sha256": "4b23854d78732b2fd4b4dd5825c31d416e87af661997665b37bf4ed6673313f2"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomTopBarKt$IntercomTopBar$2$2$2.java",
+      "sha256": "291104dc9580483bc39c1b037399450ead2894207398bd05f5700798ae8583ca"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/IntercomTopBarKt.java",
+      "sha256": "8e4059e902f09f93921fbf4113e6dc05360c11704b499ce54709360016e0ac77"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$1.java",
+      "sha256": "84317668362daba6e28be66b9a09664061774bba1f2d503c8c330988ebb2fe70"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1$1$1.java",
+      "sha256": "97375f482eb5f1b32f39bf78aa8df5d35140ce220e5a35f2bd4ca5d7e44f44bc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2$1.java",
+      "sha256": "93e6dee9e938d19f25aa6042ab085c5120da3497d015afbefcc66adeda70a711"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$JumpToBottom$2.java",
+      "sha256": "0547c3392fd1653ee61f049ba7a94e0cd0cdc424fae0a868b36d94eb0cf7a097"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$UnreadBadge$1.java",
+      "sha256": "927665b6783b0b27e30a3305aaa8d3633e728e6bcbc135b320f77ebbc978af24"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt$WhenMappings.java",
+      "sha256": "6dfca3e12bd0f40f5f7d23221e8613775a3e1e4c24329421c9f5cd308fa095f0"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/JumpToBottomKt.java",
+      "sha256": "673a6d8a7ecdd6375852d1b2c25979175b4bc7ccd7dcf56d00447982ffdb2652"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3$1.java",
+      "sha256": "0ddadb2f6a80f5abbb960782f8bcadb0858d96b478738a72066796ccd7327bdf"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$3.java",
+      "sha256": "9acd9b87f4c3b8a602efbeb0e89dba38c38cf62a9e9786ecc7385b8ed9ed1dd2"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4$1.java",
+      "sha256": "9f43f42c8e47e37b065660ff39ff44308ff3956ae53d8a83a9c83b107384fd43"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$4.java",
+      "sha256": "cc16581649ebe9c32842eb9e2d816d87d364de72325a36c92154274498092a99"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$5.java",
+      "sha256": "cf8905d8934f88ce6af9e1cabc4751f32b00dc2947531749e54a695551d84792"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt$PermissionDeniedDialog$6.java",
+      "sha256": "0a6b0147cc0c44e4c5c02f325c7a7a709ab234f2db6155d07e897ab415438df5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PermissionDeniedDialogKt.java",
+      "sha256": "de878511cbf613d9467b427afb882746de2c93ee54af14dc8812c52ae59bf58a"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$1$1.java",
+      "sha256": "de8f67a3675f568ab0aa137e879619768593fb027895043d6de225aebe337afc"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PulsatingBoxKt$PulsatingBox$2.java",
+      "sha256": "ce6dbd79d0da91ba7e4e40230133f23e9de57f025ccb07500676637dd0f80b01"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/component/PulsatingBoxKt.java",
+      "sha256": "19fcb23ae3c107746bbb3ebfcddc911d0d1163a635fa57c71a22939092402d2e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/extension/ContentTypeExtensionKt.java",
+      "sha256": "c4b6ef6d80ec170bc7c42b90198f153982a9dcf329ee08763981fe0f855c0b79"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/extension/ModifierExtensionsKt.java",
+      "sha256": "10d6219eeeee96cf77b8721a12517071e8c515bd392c4c303d5760651bfaab8d"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/extension/NavBackStackEntryExtensionKt.java",
+      "sha256": "80dec92b079f0f4df95d512520772f7a34e9b328db2dbc3705c1fb645d74f94e"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/BaseColors$NewColorScheme.java",
+      "sha256": "89298f96a5fc8aea9f3274c591381c5f974f0402a0fcb9f158466283e0377bed"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/BaseColors.java",
+      "sha256": "d5267d13d010b47ac4434b258e6380cb6c67482656292ba6807a04351c5d9940"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomAlphaColors.java",
+      "sha256": "f41183f730bd1d245ea050712c6eef5e6cfa1fb591877b914483c4e353018f49"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomBaseColors.java",
+      "sha256": "1b28f2c64792df9b4597bd7e3cf034090aa1071120569dccf64e867b190fd704"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomBorderColors.java",
+      "sha256": "aa9d9abf680bd6fbeced64e686b2bf34d70a944f15432a19261f7da69cc45cb1"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomColors.java",
+      "sha256": "8bb7ea92b295e5a2f048ca844e9a7ed2247e13ca8cfdc6c1c6fb658e62a0d8d5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomColorsKt.java",
+      "sha256": "a26803186cf8f3d07247f2a835f6fd085848d349b06825cba62584658df36667"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomContainerColors.java",
+      "sha256": "63bb45339545bacf411a0bb377bbf0f9108cc865c8269da494377629c5b37d62"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomIconColors.java",
+      "sha256": "358b5e54389ecb753b2f3fa115d4ca9b7a3c2048c1b753a462fd903db2b32468"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomSyntaxColors.java",
+      "sha256": "3561f9872ea9d2e83d604fa46debb2ff0b810ece640cd86857fd7fb00d7b251c"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTextColors.java",
+      "sha256": "16c27875dc6be0642d3fc8f60b989de820ced87a1e01a10918078b758a6387e5"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTheme.java",
+      "sha256": "c66b73cd82a19cc30a4ef6d02696df461ebf34e93eed4395904fe3677d582bb8"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomThemeKt$IntercomTheme$1.java",
+      "sha256": "df461a6bf5bbea6a6398deeece515fa9ce1c3049d74838dfbe04be43242e491b"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomThemeKt.java",
+      "sha256": "217e83a8155cd4040db24fb6f0299d0945c8eb35ebb9917607177ebdec8c9861"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTypography.java",
+      "sha256": "8cb18158cde68ff4aa049842432e66321693a78bf834a705dece04dcc320e762"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/IntercomTypographyKt.java",
+      "sha256": "7337291560cb9314a82cd6587fc975c16e0852abea3ed677088ae3836c855787"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/ThemeManager.java",
+      "sha256": "73dce93d1786e873ccb07f68f8f23bf5cb74cc8d1382eac714b916bf4e42d8d8"
+    },
+    {
+      "path": "source/android/intercom-sdk-ui/java/io/intercom/android/sdk/ui/theme/ThemeMode.java",
+      "sha256": "ab1d4c5fb6a763a2a0e1feb05ed8729aa3275c4f5d44ffefdb698e65b097691c"
+    }
+  ],
+  "dependencies": [
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-parcelize-runtime",
+      "version": "2.0.20",
+      "extension": ".jar",
+      "sha256": "3f2ec02a496efeb9e56166dfb86c741ac6bbd8f238ed0aea6e1ed04b7bcd5cd7",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-parcelize-runtime/2.0.20/kotlin-parcelize-runtime-2.0.20.jar"
+    },
+    {
+      "group": "androidx.navigation",
+      "artifact": "navigation-common-android",
+      "version": "2.9.8",
+      "extension": ".aar",
+      "sha256": "d43832772012afa0d5c71d03153aef764f1c5f683fe7605f0db77cada8515102",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-common-android/2.9.8/navigation-common-android-2.9.8.aar"
+    },
+    {
+      "group": "androidx.navigation",
+      "artifact": "navigation-compose-android",
+      "version": "2.9.8",
+      "extension": ".aar",
+      "sha256": "53dccc442276cde3898751f53fcc869f335340fd677fb1ca5c6c0abc0575d180",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-compose-android/2.9.8/navigation-compose-android-2.9.8.aar"
+    },
+    {
+      "group": "androidx.navigation",
+      "artifact": "navigation-runtime-android",
+      "version": "2.9.8",
+      "extension": ".aar",
+      "sha256": "7d741a3b0a299a8c8990712009c63bfca8d52d060afe8f5ad9c200619f113237",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigation/navigation-runtime-android/2.9.8/navigation-runtime-android-2.9.8.aar"
+    },
+    {
+      "group": "androidx.activity",
+      "artifact": "activity-ktx",
+      "version": "1.13.0",
+      "extension": ".aar",
+      "sha256": "b5541dc5f74e35389f1e9fdca8b5770c49d2c1360de16f398ce5c1e07a003244",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity-ktx/1.13.0/activity-ktx-1.13.0.aar"
+    },
+    {
+      "group": "androidx.activity",
+      "artifact": "activity",
+      "version": "1.13.0",
+      "extension": ".aar",
+      "sha256": "bd4f19a5f00effed0eecad0a310b1f2169b9fc66236a3ba743a222eb77747ee1",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.13.0/activity-1.13.0.aar"
+    },
+    {
+      "group": "androidx.activity",
+      "artifact": "activity-compose",
+      "version": "1.13.0",
+      "extension": ".aar",
+      "sha256": "2b5da3033d4924e833868e140c3edfc0c03208710b6b9fb2c9d9a47560ba55fa",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar"
+    },
+    {
+      "group": "io.coil-kt",
+      "artifact": "coil-gif",
+      "version": "2.7.0",
+      "extension": ".aar",
+      "sha256": "e1d2729f1971eee2957664273b84b6efc8d002ebe32a5cb6094084d9c8a98b40",
+      "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-gif/2.7.0/coil-gif-2.7.0.aar"
+    },
+    {
+      "group": "io.coil-kt",
+      "artifact": "coil-video",
+      "version": "2.7.0",
+      "extension": ".aar",
+      "sha256": "7422a9c1ef5efd82669e014948035628b49f95ef56496a7b876b86b3734ad8db",
+      "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-video/2.7.0/coil-video-2.7.0.aar"
+    },
+    {
+      "group": "io.coil-kt",
+      "artifact": "coil-compose",
+      "version": "2.7.0",
+      "extension": ".aar",
+      "sha256": "8d2ead07c9c9a08696be52a03e689a4afe57d57610e7bf9f05fd88893ee76935",
+      "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-compose/2.7.0/coil-compose-2.7.0.aar"
+    },
+    {
+      "group": "io.coil-kt",
+      "artifact": "coil-compose-base",
+      "version": "2.7.0",
+      "extension": ".aar",
+      "sha256": "2885960db57beb8a7d521810386f48b98b2c21c0350bfd9d9e80d812d25b2eb1",
+      "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-compose-base/2.7.0/coil-compose-base-2.7.0.aar"
+    },
+    {
+      "group": "io.coil-kt",
+      "artifact": "coil",
+      "version": "2.7.0",
+      "extension": ".aar",
+      "sha256": "6e8e46eb813c7290c5ae9954d43f3ffa022c0500096ed4585801a38262b3f851",
+      "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil/2.7.0/coil-2.7.0.aar"
+    },
+    {
+      "group": "io.coil-kt",
+      "artifact": "coil-base",
+      "version": "2.7.0",
+      "extension": ".aar",
+      "sha256": "f45c1e118038266734321f54c3b84ce2d52b491bb00481134724ac33d3d5e2b2",
+      "url": "https://repo.maven.apache.org/maven2/io/coil-kt/coil-base/2.7.0/coil-base-2.7.0.aar"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-android-extensions-runtime",
+      "version": "2.0.20",
+      "extension": ".jar",
+      "sha256": "a72e14b4aee164e1e81d56169554a1514ec5c623574ae0ed589235e59fe9b68b",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-android-extensions-runtime/2.0.20/kotlin-android-extensions-runtime-2.0.20.jar"
+    },
+    {
+      "group": "androidx.compose.material3",
+      "artifact": "material3-android",
+      "version": "1.4.0",
+      "extension": ".aar",
+      "sha256": "3a37e8b36df3822fe1e6059f0f9fafda8800388860477624ac1b9422c418a36e",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/material3/material3-android/1.4.0/material3-android-1.4.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-runtime-ktx-android",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "871883703339f87284d232cb436e317c6f4af5612d92b43f27c6b13b92109fa7",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-ktx-android/2.10.0/lifecycle-runtime-ktx-android-2.10.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-viewmodel-ktx",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "54295ac86b67886dc0613e38f621c531995d0662005fc763e340e19a90994f84",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-ktx/2.10.0/lifecycle-viewmodel-ktx-2.10.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-livedata-core",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "12dd61a9843ccebb4547d3ebe2f6d030ca8f6988d22f8fad19c0af93b4a97e95",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core/2.10.0/lifecycle-livedata-core-2.10.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-runtime-compose-android",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "46e996d526829596f6db4626169a967f056fde7103507ff596bcd177b73c3675",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-android/2.10.0/lifecycle-runtime-compose-android-2.10.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-runtime-android",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "2193a1573d623f37b20c7d27d1a8f903a72f651cc6f32e5794f85dda744fee75",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-android/2.10.0/lifecycle-runtime-android-2.10.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-viewmodel-android",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "9303287030027ca0b8cf98a748ddeb121ec1bfa1312c0069428e4765bbabce78",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-android/2.10.0/lifecycle-viewmodel-android-2.10.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-viewmodel-savedstate-android",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "19404239fa584322c2f81e9659e162bc011b746d29dc950a11d260624d83225e",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-android/2.10.0/lifecycle-viewmodel-savedstate-android-2.10.0.aar"
+    },
+    {
+      "group": "androidx.core",
+      "artifact": "core-ktx",
+      "version": "1.18.0",
+      "extension": ".aar",
+      "sha256": "c7c511e3df838fcbcb61ace36944de6bb7c10eb597be546974f001119939c85d",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.18.0/core-ktx-1.18.0.aar"
+    },
+    {
+      "group": "androidx.core",
+      "artifact": "core",
+      "version": "1.18.0",
+      "extension": ".aar",
+      "sha256": "311d83ac67d394076ec21d12ed2d10a44b59cb2929b7dce00e5a90a93842e37d",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/core/core/1.18.0/core-1.18.0.aar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-common-jvm",
+      "version": "2.10.0",
+      "extension": ".jar",
+      "sha256": "15943082d87bcd78830398fa377f2c8b12643de290d0906ed8e49a2d335ddb54",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-jvm/2.10.0/lifecycle-common-jvm-2.10.0.jar"
+    },
+    {
+      "group": "androidx.lifecycle",
+      "artifact": "lifecycle-viewmodel-compose-android",
+      "version": "2.10.0",
+      "extension": ".aar",
+      "sha256": "225904e54ad5154768630471e108b98e143c261df0c08380ff43ea7e832dad7e",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-compose-android/2.10.0/lifecycle-viewmodel-compose-android-2.10.0.aar"
+    },
+    {
+      "group": "androidx.compose.animation",
+      "artifact": "animation-core-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "66d489454bfcb1230b60ae33c3c1c6c756358ce0ba3ca96c98cda9430c67e21f",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.11.4/animation-core-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.animation",
+      "artifact": "animation-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "4a9534afa595551d97b991319055c73b76014a89cf43b811aa99102e2d6ffd73",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-android/1.11.4/animation-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.foundation",
+      "artifact": "foundation-layout-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "23ff32f548deccf48d1e2094a868b08ed738a01de1d65940d68633bcdd04bf33",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-layout-android/1.11.4/foundation-layout-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.material",
+      "artifact": "material-ripple-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "38bd10db57ffd6f82fc6f32443e379fb640ae93e138bdd31daea0d584441b10e",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/material/material-ripple-android/1.11.4/material-ripple-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.foundation",
+      "artifact": "foundation-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "a6aac6be46b7756982436b11118d3e630f9a1845e167bf821ae6986ef2c45895",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.11.4/foundation-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-util-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "d6ca2aaed3f71455988b2d7bcc708d7811640309e12f0482598f9d318d1efa45",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.11.4/ui-util-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-unit-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "8b778afa16102b89da672c3324566e66bbf90e29a2fc7acdc1db1595d976933f",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.11.4/ui-unit-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-graphics-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "4ccaf8e169c158f74c15a1377a28d62197f8ca209db1a997a81a54624f5db306",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-graphics-android/1.11.4/ui-graphics-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-geometry-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "393066ecd102f8cd60e585367dd7bc1c5d2d3ecc3ed82a43aab0668e5ce85285",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-geometry-android/1.11.4/ui-geometry-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-text-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "01284212abb9ab6bba5de336adbe392888bba53711d8293c6713f5c2b56313fd",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.11.4/ui-text-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "893c3b0a4f90631bbd8cc053a0271e51c525b427b900cc10c6f1a4b3c89e3041",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-android/1.11.4/ui-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.ui",
+      "artifact": "ui-tooling-preview-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "86124401724b7e188b09af7f6b5cde5b215a3a273f3d7d6f8a15f898b5803793",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-preview-android/1.11.4/ui-tooling-preview-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.navigationevent",
+      "artifact": "navigationevent-android",
+      "version": "1.0.0",
+      "extension": ".aar",
+      "sha256": "cda4bb83d1c892a208732e99c2d59e4f247ab5c23a1d2524fc004db2e4e9a780",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-android/1.0.0/navigationevent-android-1.0.0.aar"
+    },
+    {
+      "group": "androidx.navigationevent",
+      "artifact": "navigationevent-compose-android",
+      "version": "1.0.0",
+      "extension": ".aar",
+      "sha256": "5cee018dbe130b538d2c43cc6f383a109a98f19ba9c8d7a6dda8ca90a2034671",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-compose-android/1.0.0/navigationevent-compose-android-1.0.0.aar"
+    },
+    {
+      "group": "androidx.compose.runtime",
+      "artifact": "runtime-retain-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "48d960544c81e82b674e86e04ead25eeb5d05a54948b6b2ca8690cc94067e600",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-retain-android/1.11.4/runtime-retain-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.runtime",
+      "artifact": "runtime-annotation-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "ea7cc60386f10fe5b33f57f366c294859c1f860cbfa77b437a11f1f0ac7bc4fd",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-annotation-android/1.11.4/runtime-annotation-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.compose.runtime",
+      "artifact": "runtime-saveable-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "75acd64c040fc768dd38b6f40c2e46de0dee13cd1f828e4c3480dd7745c737c1",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-android/1.11.4/runtime-saveable-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.savedstate",
+      "artifact": "savedstate-ktx",
+      "version": "1.4.0",
+      "extension": ".aar",
+      "sha256": "23593939446bc5a154a1e35fddd87b82f19e2adf072207f115bf29a8b431c1d3",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-ktx/1.4.0/savedstate-ktx-1.4.0.aar"
+    },
+    {
+      "group": "androidx.savedstate",
+      "artifact": "savedstate-android",
+      "version": "1.4.0",
+      "extension": ".aar",
+      "sha256": "1656ce62cd233d488bdbbd42e533b80b22435b7a690acae6dbe7302392512c14",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-android/1.4.0/savedstate-android-1.4.0.aar"
+    },
+    {
+      "group": "androidx.savedstate",
+      "artifact": "savedstate-compose-android",
+      "version": "1.4.0",
+      "extension": ".aar",
+      "sha256": "0f0ae3032d6c6eea834ee22179c8976160d09d841d30e47f53f56b1b3438774b",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-android/1.4.0/savedstate-compose-android-1.4.0.aar"
+    },
+    {
+      "group": "androidx.compose.runtime",
+      "artifact": "runtime-android",
+      "version": "1.11.4",
+      "extension": ".aar",
+      "sha256": "18fd863f42c06100a046dbc2e04f420db0c1b5196d2b63a9006ee8464c69738d",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-android/1.11.4/runtime-android-1.11.4.aar"
+    },
+    {
+      "group": "androidx.annotation",
+      "artifact": "annotation-experimental",
+      "version": "1.4.1",
+      "extension": ".aar",
+      "sha256": "6bd4c7c7476f8260cd3bdbb81183583e93fc9f790c27dea7dc314181cbf87aa0",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-experimental/1.4.1/annotation-experimental-1.4.1.aar"
+    },
+    {
+      "group": "androidx.core",
+      "artifact": "core-viewtree",
+      "version": "1.0.0",
+      "extension": ".aar",
+      "sha256": "dc1b678d58ebcf2bfa1587be68ff826694ce3d221251b9ef30d4d4b36297e6de",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/core/core-viewtree/1.0.0/core-viewtree-1.0.0.aar"
+    },
+    {
+      "group": "com.squareup.okhttp3",
+      "artifact": "okhttp",
+      "version": "4.12.0",
+      "extension": ".jar",
+      "sha256": "b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0",
+      "url": "https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar"
+    },
+    {
+      "group": "com.squareup.okio",
+      "artifact": "okio-jvm",
+      "version": "3.9.0",
+      "extension": ".jar",
+      "sha256": "ddc386ff14bd25d5c934167196eaf45b18de4f28e1c55a4db37ae594cbfd37e4",
+      "url": "https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.9.0/okio-jvm-3.9.0.jar"
+    },
+    {
+      "group": "androidx.versionedparcelable",
+      "artifact": "versionedparcelable",
+      "version": "1.1.1",
+      "extension": ".aar",
+      "sha256": "57e8d93260d18d5b9007c9eed3c64ad159de90c8609ebfc74a347cbd514535a4",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar"
+    },
+    {
+      "group": "androidx.arch.core",
+      "artifact": "core-common",
+      "version": "2.2.0",
+      "extension": ".jar",
+      "sha256": "65308a06b1c00ee186cb9e19321383f043b993813f1522c47f4a3e3303bdba41",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar"
+    },
+    {
+      "group": "androidx.collection",
+      "artifact": "collection-jvm",
+      "version": "1.5.0",
+      "extension": ".jar",
+      "sha256": "70b35924e4babcdffa37d0e575ee039c56a2d97123342624c48b603233704341",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/collection/collection-jvm/1.5.0/collection-jvm-1.5.0.jar"
+    },
+    {
+      "group": "androidx.annotation",
+      "artifact": "annotation-jvm",
+      "version": "1.9.1",
+      "extension": ".jar",
+      "sha256": "1e343917ebf27ba96fe4dc52b1cad7fd32b738fbc6355bb6cd5b3b305d7212d0",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-jvm/1.9.1/annotation-jvm-1.9.1.jar"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-stdlib-jdk8",
+      "version": "1.8.21",
+      "extension": ".jar",
+      "sha256": "3db752a30074f06ee6c57984aa6f27da44f4d2bbc7f5442651f6988f1cb2b7d7",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar"
+    },
+    {
+      "group": "org.jetbrains.kotlinx",
+      "artifact": "kotlinx-coroutines-core-jvm",
+      "version": "1.9.0",
+      "extension": ".jar",
+      "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar"
+    },
+    {
+      "group": "org.jetbrains.kotlinx",
+      "artifact": "kotlinx-coroutines-android",
+      "version": "1.9.0",
+      "extension": ".jar",
+      "sha256": "bd783acd2f9738845d58380f46f45b5cde95d0cb03027d56725338b26bfc4d72",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-android/1.9.0/kotlinx-coroutines-android-1.9.0.jar"
+    },
+    {
+      "group": "org.jetbrains.kotlinx",
+      "artifact": "kotlinx-serialization-core-jvm",
+      "version": "1.7.3",
+      "extension": ".jar",
+      "sha256": "f0adde45864144475385cf4aa7e0b7feb27f61fcf9472665ed98cc971b06b1eb",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.7.3/kotlinx-serialization-core-jvm-1.7.3.jar"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-stdlib-jdk7",
+      "version": "1.8.21",
+      "extension": ".jar",
+      "sha256": "33d148db0e11debd0d90677d28242bced907f9c77730000fd597867089039d86",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-stdlib",
+      "version": "2.1.20",
+      "extension": ".jar",
+      "sha256": "1bcc74e8ce84e2c25eaafde10f1248349cce3062b6e36978cbeec610db1e930a",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.jar"
+    },
+    {
+      "group": "androidx.exifinterface",
+      "artifact": "exifinterface",
+      "version": "1.4.2",
+      "extension": ".aar",
+      "sha256": "6bb2b68682a2023c55f35f941444ffea0157947b061e4fd7606ba935e2e77425",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/exifinterface/exifinterface/1.4.2/exifinterface-1.4.2.aar"
+    },
+    {
+      "group": "org.jetbrains",
+      "artifact": "annotations",
+      "version": "23.0.0",
+      "extension": ".jar",
+      "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar"
+    },
+    {
+      "group": "org.jspecify",
+      "artifact": "jspecify",
+      "version": "1.0.0",
+      "extension": ".jar",
+      "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+      "url": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+    },
+    {
+      "group": "com.google.guava",
+      "artifact": "listenablefuture",
+      "version": "1.0",
+      "extension": ".jar",
+      "sha256": "e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+    }
+  ],
+  "metadata_scope": "Names, descriptors, declaration flags, generic signatures, inner/enclosing metadata; ConstantValue/annotations/behavior not fully compared"
+}

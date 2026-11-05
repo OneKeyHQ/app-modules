@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/push/ConversationDeepLinkRouterKt",
+  "root_only": true,
+  "source_before_sha256": "b37c2a2432898c1998c691f0b2ad25461b7564bc2de17431d1464dd1d88e0f23",
+  "source_after_sha256": "ebeed96874783024457d6c392b637dee4e4d7a0c33a3c37d57103807e8702c1e",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 4,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

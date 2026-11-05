@@ -1,0 +1,108 @@
+{
+  "baseline": "Intercom19.9.1 device MachO/metadata",
+  "binarySHA256": "3673aa7343bdb0d242c662d064b0d4c30ca5ce8b14fda82ccb36c0fe36949543",
+  "validatedAccessors": [
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "emptySuccessBlock",
+      "ivar": "_emptySuccessBlock",
+      "originalOffset": 16,
+      "offsetVariable": "0x4a9edc",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_emptySuccessBlock",
+      "instructionsSHA256": "f86e5485db90f46d573f7048085a3701bdc91ed530d0bba5e4bbdc2cc7280f57"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "setEmptySuccessBlock:",
+      "ivar": "_emptySuccessBlock",
+      "originalOffset": 16,
+      "offsetVariable": "0x4a9edc",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_emptySuccessBlock",
+      "instructionsSHA256": "46af3373718e6bd0da56f9f8a733ecf61075b78e9e17e8a219facda3da2d9172"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "downloadContentSuccessBlock",
+      "ivar": "_downloadContentSuccessBlock",
+      "originalOffset": 24,
+      "offsetVariable": "0x4a9ee0",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_downloadContentSuccessBlock",
+      "instructionsSHA256": "293b8a59f863dc07b09a0f7fda7f1c81b530e3b90e1b5015928ea929933ac362"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "setDownloadContentSuccessBlock:",
+      "ivar": "_downloadContentSuccessBlock",
+      "originalOffset": 24,
+      "offsetVariable": "0x4a9ee0",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_downloadContentSuccessBlock",
+      "instructionsSHA256": "927029a9a51838f0edfc992718382aa0050f5329e46ba53e62fbe061231eec32"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "failureBlock",
+      "ivar": "_failureBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4a9ee4",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_failureBlock",
+      "instructionsSHA256": "e76f5374ba073d3766f0f1102e327acb0dcf99bc470005eb270e81528528fb16"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "setFailureBlock:",
+      "ivar": "_failureBlock",
+      "originalOffset": 32,
+      "offsetVariable": "0x4a9ee4",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_failureBlock",
+      "instructionsSHA256": "899bd8faac5c2cc6a7681ac8304696a54f492fed5d9b0bf29df34c73cf42de81"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "progressBlock",
+      "ivar": "_progressBlock",
+      "originalOffset": 40,
+      "offsetVariable": "0x4a9ee8",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_progressBlock",
+      "instructionsSHA256": "c6d5b82d0bb8d6ca2877142f66ee83f6d822ecc2d6b744bf324b52a226193946"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "setProgressBlock:",
+      "ivar": "_progressBlock",
+      "originalOffset": 40,
+      "offsetVariable": "0x4a9ee8",
+      "kind": "copy",
+      "attributes": "T@?,C,N,V_progressBlock",
+      "instructionsSHA256": "891de7c7684340fd4e78617e65e331f256629619d26bca25e2954867190a62fe"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "ignoreRedirects",
+      "ivar": "_ignoreRedirects",
+      "originalOffset": 8,
+      "offsetVariable": "0x4a9ed8",
+      "kind": "value",
+      "attributes": "TB,N,V_ignoreRedirects",
+      "instructionsSHA256": "1a00c5e8601098b92bf2b7b42063f2b7e32c906733865b56d13629aef33a8b82"
+    },
+    {
+      "class": "ICMEngineSessionDelegate",
+      "selector": "setIgnoreRedirects:",
+      "ivar": "_ignoreRedirects",
+      "originalOffset": 8,
+      "offsetVariable": "0x4a9ed8",
+      "kind": "value",
+      "attributes": "TB,N,V_ignoreRedirects",
+      "instructionsSHA256": "ec2ec7da25aa1755f143336c546348d0d578ffc95418606fcd5971e55a34d148"
+    }
+  ],
+  "runtimeVerified": false,
+  "scope": "Metadata and original instruction-backed trivial engine session accessors only; no private Swift ABI or UIKit runtime acceptance."
+}

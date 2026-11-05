@@ -1,0 +1,16 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/tickets/list/ui/TicketsScreenViewModel$4$1",
+  "root_only": true,
+  "source_before_sha256": "affa6fa2a346d18b96b20d2ea50c9453ec4aa2d3d29c4d299fb27aad6579f996",
+  "source_after_sha256": "eb20318b3508c5fa8f44c29dae0276be8771907a54dd2ccae356022f2b309adc",
+  "source_capture_sites": 0,
+  "source_capture_bindings": 0,
+  "declaration_check_exit": 0,
+  "type_edits": 2,
+  "source_joins": [],
+  "ssa_evidence": [],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}

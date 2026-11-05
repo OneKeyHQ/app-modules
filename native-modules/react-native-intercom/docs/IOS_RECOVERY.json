@@ -1,0 +1,3519 @@
+{
+  "baseline": "Intercom iOS 19.9.1",
+  "minimumDeploymentTarget": "15.0",
+  "fullSDKStatus": "NOT_RESTORED",
+  "originalSDKLinkedInRecovery": false,
+  "nativeUIReplacedWithWebClient": false,
+  "hardeningApplied": false,
+  "closures": [
+    {
+      "name": "Foundation models",
+      "source": "ios/Models",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-models.py",
+      "hostAssertions": 50,
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "originalDifferential": "ios-model-differential",
+      "runtimeTarget": "iOS27.0 arm64 simulator; finite fixtures only"
+    },
+    {
+      "name": "UserIdentity and Keychain",
+      "source": "ios/Identity",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-identity.py",
+      "sharedIdentitySuiteAssertions": 76,
+      "originalDifferential": "ios-identity-differential",
+      "runtimeTarget": "iOS27.0 arm64 simulator; finite fixtures and memory Keychain substitute",
+      "realOSKeychainPersistenceVerified": false
+    },
+    {
+      "name": "DeviceTokenData and PersistenceProxy",
+      "source": "ios/Identity",
+      "status": "BEHAVIOR_COMPARED",
+      "originalDifferential": "ios-helpers-differential",
+      "runtimeTarget": "iOS27.0 arm64 simulator; synthetic archive files only"
+    },
+    {
+      "name": "JWTExpiry",
+      "source": "ios/Identity/JWTExpiry.swift",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-jwt-expiry.py",
+      "hostAssertions": 21,
+      "originalDifferential": "ios-helpers-differential",
+      "verifiesJWTSignature": false
+    },
+    {
+      "name": "ErrorProcessor",
+      "source": "ios/Identity/ErrorProcessor.swift",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-errors.py",
+      "hostAssertions": 21,
+      "originalDifferential": "ios-helpers-differential"
+    },
+    {
+      "name": "BaseURLConfiguration",
+      "source": "ios/Identity/ICMBaseURLConfiguration.m",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-identity.py",
+      "sharedIdentitySuiteAssertions": 76,
+      "originalDifferential": "ios-network-helpers-differential",
+      "scope": "Region/custom-host/app-id construction; finite fixtures, no DNS/network",
+      "runtimeTarget": "iOS27.0 arm64 simulator"
+    },
+    {
+      "name": "MultipartTaskBuilder",
+      "source": "ios/Session/MultipartTaskBuilder.swift",
+      "status": "BEHAVIOR_COMPARED_REQUESTS_ONLY",
+      "validation": "python3 scripts/ios-verify-multipart.py",
+      "hostAssertions": 20,
+      "originalDifferential": "ios-network-helpers-differential",
+      "scope": "Request/body construction and suspended upload task creation only; no network tasks resumed",
+      "runtimeTarget": "iOS27.0 arm64 simulator; 2 request fixtures with boundary normalization",
+      "uploadTaskOriginalDifferential": "PENDING",
+      "dictionaryIterationOrderingOriginalDifferential": "PENDING"
+    },
+    {
+      "name": "Logger",
+      "source": "ios/Identity/ICMLogger.m",
+      "status": "SOURCE_COMPILED",
+      "originalDifferential": "PENDING",
+      "scope": "Six original native logging methods; logger OSLog output not behavior-compared"
+    },
+    {
+      "name": "URLSessionTaskOperation and UserJwtReplay",
+      "source": "ios/Session",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-operations.py",
+      "hostAssertions": 14,
+      "originalDifferential": "ios-operation-differential",
+      "scope": "Actual NSOperation/KVO/queue with synthetic task; copied replay context, no network or JWT refresh orchestration",
+      "comparisonScope": "Same 14 shared synthetic task fixtures independently adapted/executed in separate iOS27.0 arm64 simulator processes; full observed KVO arrays equal"
+    },
+    {
+      "name": "ErrorStatus",
+      "source": "ios/Identity/ICMErrorStatus.m",
+      "status": "SOURCE_COMPILED_TESTED",
+      "validation": "python3 scripts/ios-verify-error-status.py",
+      "hostAssertions": 43,
+      "originalDifferential": "PENDING",
+      "scope": "Four original code-only classifier methods; no retry execution in this helper"
+    },
+    {
+      "name": "NexusConfiguration",
+      "source": "ios/Identity/IntercomNexusConfiguration.m",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-nexus.py",
+      "hostAssertions": 13,
+      "originalDifferential": "ios-nexus-differential",
+      "scope": "Four-field Foundation parser/equality model only; no realtime transport",
+      "comparisonScope": "Same 13 shared fixtures in separate iOS27.0 arm64 processes; Foundation model only, no realtime transport"
+    },
+    {
+      "name": "SafeNetworkModel and Sheet",
+      "source": [
+        "ios/Identity/ICMSafeNetworkModel.m",
+        "ios/Identity/ICMSheet.m"
+      ],
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-sheets.py",
+      "hostAssertions": 22,
+      "originalDifferential": "ios-sheet-routing-differential",
+      "scope": "Complete two-method original KVC base and single-field Sheet model; assertion count includes HTTP mapping test-only dependencies",
+      "comparisonScope": "23 independently designed Sheet model/HTTP fixtures in separate original/source iOS27.0 arm64 processes; HTTP dependencies diagnostic only"
+    },
+    {
+      "name": "AppEnvironmentChecker",
+      "source": "ios/Identity/ICMAppEnvironmentChecker.m",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-environment.py",
+      "hostAssertions": 37,
+      "originalDifferential": "ios-environment-differential",
+      "comparisonScope": "38 shared original/source iOS27.0 arm64 fixtures including simulator default; synthetic bundle/provision/receipt; no real provisioning or signature validation"
+    },
+    {
+      "name": "PushNotificationStatus",
+      "source": [
+        "ios/Session/PushNotificationStatus.swift",
+        "ios/Session/ICMPushNotificationManager.m"
+      ],
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-push-status.py",
+      "hostAssertions": 18,
+      "originalDifferential": "ios-push-status-differential",
+      "scope": "Full status state/helper source only; host injected core, iOS default/observer source object compiled; actual OS authorization query not executed; no push integration",
+      "independentFixtureGroups": 21,
+      "comparisonScope": "Original/source iOS27.0 arm64 default init, providers/UNCenter/notification center diagnostics; recorded ObjC ABI matched; real OS authorization query not executed"
+    },
+    {
+      "name": "ConversationStateSyncSettings",
+      "source": "ios/Session/ConversationStateSyncSettings.swift",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-sync-settings.py",
+      "hostAssertions": 14,
+      "originalDifferential": "ios-config-settings-differential",
+      "scope": "Required real Config default/model; no conversation sync scheduler",
+      "comparisonScope": "Attachment shared25 + independent Sync11 groups and seven Bool coercion cases; actual secure archive, synthetic bundle/defaults/logger"
+    },
+    {
+      "name": "AttachmentSettings",
+      "source": "ios/Session/AttachmentSettings.swift",
+      "status": "BEHAVIOR_COMPARED",
+      "validation": "python3 scripts/ios-verify-attachment-settings.py",
+      "hostAssertions": 25,
+      "originalDifferential": "ios-config-settings-differential",
+      "scope": "Required real Config default/model with original usage-description checks; test-only bundle/defaults/logger, no media or permission request",
+      "comparisonScope": "Attachment shared25 + independent Sync11 groups and seven Bool coercion cases; actual secure archive, synthetic bundle/defaults/logger"
+    },
+    {
+      "name": "UnreadManager Foundation state",
+      "source": "ios/Session/UnreadManager.swift",
+      "status": "SOURCE_LINKED_HOST_TESTED",
+      "validation": "python3 scripts/ios-verify-unread-source.py",
+      "hostAssertions": 12,
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "iOSRuntimeBehaviorVerified": false
+    },
+    {
+      "name": "Image pipeline",
+      "source": [
+        "ios/Session/ImageCaches.swift",
+        "ios/Session/AnimatedImage.swift",
+        "ios/Session/ImageDownloader.swift",
+        "ios/Session/ImageLoaderCore.swift",
+        "ios/Session/Dispatcher.swift"
+      ],
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "validation": "python3 scripts/ios-link-config-source.py",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "fixtureImplementationsUsed": false,
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "Nexus realtime source closure",
+      "source": [
+        "ios/Session/IntercomNexusClient.m",
+        "ios/Session/IntercomNexusConnection.m",
+        "ios/Session/IntercomNexusSocket.m",
+        "ios/Session/IntercomNexusEvent.m",
+        "ios/Identity/IntercomNexusConfiguration.m"
+      ],
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "validation": "python3 scripts/ios-link-nexus-source.py",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "hostEventAssertions": 12,
+      "sessionsCreatedByValidation": 0,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "runtimeNetworkBehaviorVerified": false
+    },
+    {
+      "name": "Open and new-conversation response parsing source",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "source": [
+        "OpenResponse.swift",
+        "NewConversationResponse.swift",
+        "NewConversationHomeCardResponse.swift",
+        "NewConversationCTAResponse.swift",
+        "MessagesEmptyState.swift",
+        "MessagesEmptyStateAction.swift",
+        "PrivacyPolicyNotice.swift",
+        "PoweredBy.swift",
+        "ReplyOption.swift",
+        "Avatar.swift",
+        "AvatarDetails.swift",
+        "Participant.swift",
+        "ConversationHeader.swift",
+        "CollapsedConversationHeader.swift",
+        "ExpandedConversationHeader.swift",
+        "ConversationHeaderContent.swift",
+        "DictionaryDecoder.swift",
+        "ICMComposerState.m",
+        "ICMComposerSuggestions.m"
+      ],
+      "validation": "aggregate compile iOS15 device arm64/simulator arm64/x86_64",
+      "runtimeBehaviorVerified": false,
+      "remainingDependencies": [
+        "ICMConversation",
+        "ICMConversationPart",
+        "ICMTeamPresence"
+      ],
+      "knownUnrestoredEntry": "Avatar original typed seven-argument initializer declaration remains unrestored; parser entry is restored",
+      "privateSwiftABIExact": false
+    },
+    {
+      "name": "Original text block parser/model/native UITextView component",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "sourceUnits": 11,
+      "validation": "node_modules/.cache/ios-text-block-recovery/strict-text-link-receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Caller-supplied appearance contract, actual native text view/parser/citation plus Heading/SubHeading/List/Ordered/Unordered/ITBCode models; not full chat/render controllers or Swift specialized CodeBlock"
+    },
+    {
+      "name": "Original native text/button/social Blocks component",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "sourceUnits": 14,
+      "validation": "python3 scripts/ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-blocks-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Actual text/parser/native UITextView plus Button UIView/UIButtonConfiguration and Facebook/Twitter models; caller-supplied appearance; no full messenger controllers"
+    },
+    {
+      "name": "Original image pipeline, upload model and native animation components",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 7,
+      "swiftSourceUnits": 6,
+      "validation": "python3 scripts/ios-link-image-component.py",
+      "receipt": "node_modules/.cache/ios-image-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Real cache/download/decode/AnimatedImageView/weakDisplayLinkProxy, ImageLoader adapter, ImageUtils, PreviewMetadata, Upload/FileLoader/ProgressButton, ShimmeringView/Mask/Delegate. Excludes full messenger, ImageBlockView and LoadingView requiring incomplete original Blocks factory."
+    },
+    {
+      "name": "Native text, buttons, attachments and image/upload dependencies",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 24,
+      "swiftSourceUnits": 6,
+      "validation": "python3 scripts/ios-link-image-component.py followed by python3 scripts/ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-native-blocks-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Actual text/Button/Attachment models/nativeViews/Icon/ReuseManager plus actual image pipeline/Upload/FileLoader/Progress/Shimmer dependencies. Excludes incomplete original Blocks factory/ImageBlockView/LoadingView and messenger controllers."
+    },
+    {
+      "name": "Native text, button, attachment and Link/Card/List views with actual image dependencies",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 32,
+      "swiftSourceUnits": 6,
+      "validation": "python3 scripts/ios-link-source-aggregate.py then ios-link-image-component.py then ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-native-link-blocks-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Actual Link/Card/List/Author/Item/Footer/Container native UIKit implementations plus prior text/button/attachment and image/upload/shimmer closure. Caller-provided appearance; excludes incomplete Blocks factory/ImageBlockView/LoadingView and full messenger/normal Pod consumer."
+    },
+    {
+      "name": "Native text/button/attachment/Link/typing UIKit components with actual image pipeline",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 33,
+      "swiftSourceUnits": 6,
+      "validation": "python3 scripts/ios-link-source-aggregate.py then ios-link-image-component.py then ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-native-typing-blocks-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Previous native Link/text/button/attachment/image/upload/shimmer source plus actual Typing model/BlockView/TypingView/TypingDotView. Caller-provided appearance, excludes full Blocks factory/ImageBlockView/LoadingView/full messenger/normal Pod consumer."
+    },
+    {
+      "name": "Native text/button/attachment/Link/typing/NotificationCard components with actual image pipeline",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 35,
+      "swiftSourceUnits": 6,
+      "validation": "python3 scripts/ios-link-source-aggregate.py then ios-link-image-component.py then ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-native-notification-blocks-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Previous native component plus actual NotificationCard/Channel models and UIKit NotificationCardView. Caller-provided appearance; excludes incomplete full Blocks factory/ImageBlockView/LoadingView/full messenger and normal Pod consumer."
+    },
+    {
+      "name": "Native Blocks/renderers with original messenger fallback card WKWebView component",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 42,
+      "swiftSourceUnits": 6,
+      "validation": "python3 scripts/ios-link-source-aggregate.py then ios-link-image-component.py then ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-native-messenger-card-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Prior native text/button/attachment/Link/typing/NotificationCard/image source plus actual ITB fallback model/View and ICP model/Payload/JSBuilder/Loading/WKWebView component. Caller-provided appearance; incomplete full Blocks factory/ImageBlockView/LoadingView/full messenger and normal Pod consumer remain excluded."
+    },
+    {
+      "name": "Original ImageText model and native Swift View",
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "objcSourceUnits": 1,
+      "swiftSourceUnits": 2,
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "receipt": "node_modules/.cache/ios-image-text-recovery/frozen-164-aggregate-receipt.json",
+      "scope": "Actual25method model, UIView-based ImageTextBlockView/associated-type ConversationCellContentView. BlockViewFactory inlined initializer identified but factory implementation and conversation consumer remain unrestored; not independently linked UI/normal Pod product. Protocol content getter spelling inferred from original conformer field; original witness eliminated by WMO."
+    },
+    {
+      "name": "Actual image/upload/shimmer and generic Engine transport",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 8,
+      "swiftSourceUnits": 7,
+      "validation": "scripts/ios-link-source-aggregate.py then ios-link-image-component.py then ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-image-engine-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Real cache/decode/download/image/upload/shimmer plus generic Engine/SessionDelegate and true MultipartTaskBuilder. Original config input selectors; excludes full config models/SDK caller integration."
+    },
+    {
+      "name": "Native Blocks/cards and genuine image/generic Engine transport",
+      "status": "SOURCE_LINKED_RUNTIME_UNVERIFIED",
+      "objcSourceUnits": 43,
+      "swiftSourceUnits": 7,
+      "validation": "scripts/ios-link-source-aggregate.py then ios-link-image-component.py then ios-link-blocks-component.py",
+      "receipt": "node_modules/.cache/ios-native-engine-blocks-component/receipt.json",
+      "sourceTargets": [
+        "iOS15 arm64",
+        "iOS15 simulator arm64",
+        "iOS15 simulator x86_64"
+      ],
+      "runtimeBehaviorVerified": false,
+      "fixtureImplementationsUsed": false,
+      "originalSDKCompileOrLinkInput": false,
+      "scope": "Prior original native text/button/attachment/link/typing/notification/WK card plus real image/upload/shimmer and generic Engine/multipart source. Excludes full factory, ImageBlockView/LoadingView, newer Swift Rating/ImageText/HyperLink consumer UI, SDK controllers and normal Pod product."
+    }
+  ],
+  "partialClasses": [
+    {
+      "name": "ICMUtils",
+      "source": "ios/Identity/ICMUtils.m",
+      "status": "PARTIAL_CLASS_SOURCE_COMPILED",
+      "restoredMethods": [
+        "debugLoggingEnabled",
+        "setDebugLoggingEnabled:",
+        "intercomDocumentsDirectory",
+        "intercomCachesDirectory",
+        "intercomDocumentsPath",
+        "intercomLegacyDocumentsPath",
+        "migrateDocumentsIfNeeded",
+        "intercomCachesPath",
+        "intercomVersion",
+        "intercomAgent",
+        "appVersion",
+        "messengerEnvironmentIdentifier",
+        "applicationName",
+        "bundleIdentifier",
+        "shouldHandlePushNotificationsAutomatically",
+        "isRunningNotificationServiceExtension",
+        "fetchSDKType",
+        "sceneManifestPresent",
+        "fetchApplicationWindows"
+      ],
+      "directoryOriginalDifferential": "PENDING",
+      "remainingMethods": "NOT_RESTORED",
+      "deviceHelperValidation": "python3 scripts/ios-verify-device-helpers.py",
+      "deviceHelperHostAssertions": 28,
+      "deviceHelperOriginalDifferential": "ios-device-helpers-differential",
+      "ownSelectorPresence": {
+        "present": 27,
+        "expected": 40
+      },
+      "integrationCheckSource": "ios/Session/ICMUtils+Integration.m"
+    },
+    {
+      "name": "ICMOreoEngine",
+      "source": "ios/Session/ICMOreoEngine.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "restoredMethods": [
+        "ignoredResponseError",
+        "userJwtInParameters:",
+        "parameters:replacingUserJwt:",
+        "shouldRetryRequestURL:",
+        "backOffTimeForReplyNumber:",
+        "setAuthorisationHeaderForAppID:apiKey:",
+        "createRequest:urlString:parameters:failure:",
+        "random16CharacterHexString",
+        "random8CharacterHexString",
+        "multipartRequest:parameters:fileData:fileName:mimeType:fieldName:"
+      ],
+      "validation": "python3 scripts/ios-verify-oreo-request.py",
+      "hostAssertions": 23,
+      "originalDifferential": "ios-network-helpers-differential",
+      "remainingMethods": "All original Objective-C methods mapped and recorded reflection fields matched; product identity/refresher/Bridge closure unlinked",
+      "comparisonScope": "11 groups shared with BaseURL and multipart request builder; no session/task/transport",
+      "transport": {
+        "source": "ios/Session/ICMOreoEngine+Transport.m",
+        "status": "SOURCE_COMPILED_FIXTURE_TESTED_PRODUCT_UNLINKED",
+        "restoredMethods": [
+          "shutdownState",
+          "setShutdownState:",
+          "dataTaskWithRequest:completionHandler:"
+        ],
+        "validation": "python3 scripts/ios-verify-oreo-transport.py",
+        "hostAssertions": 28,
+        "actualInterceptedRequests": 14,
+        "originalDifferential": "ios-transport-differential",
+        "fixtureOnlyIdentityAndSession": true,
+        "comparisonScope": "Same 21 shared fixture assertions adapted independently against original/recovered separate iOS27.0 arm64 simulator processes; 10 protocol-intercepted resumed tasks in each"
+      },
+      "operations": {
+        "source": "ios/Session/ICMOreoEngine+Operations.m",
+        "status": "SOURCE_RESTORED_UNLINKED",
+        "restoredMethods": [
+          "ignoreAllPendingRequests",
+          "operationWithRequest:retries:success:failure:",
+          "operationWithRequest:retries:replay:success:failure:",
+          "dataTaskWithRequest:retries:success:failure:",
+          "dataTaskWithRequest:retries:replay:success:failure:",
+          "retryDataTask:numberOfRetries:replay:success:failure:",
+          "replayRequestTo:replay:success:failure:otherwise:ignored:"
+        ],
+        "missingProductImplementations": [
+          "UserJwtRefresher",
+          "Engine initialization",
+          "IdentityStore full session closure"
+        ],
+        "originalDifferential": "ios-orchestration-differential",
+        "hostFixtureValidation": "python3 scripts/ios-verify-oreo-transport.py",
+        "sharedHostAssertions": 28,
+        "comparisonScope": "Same 28 finite shared fixture assertions independently adapted/run in separate iOS27.0 arm64 simulators; 14 intercepted actual requests each; test-only refresher dependency"
+      },
+      "initialization": {
+        "source": "ios/Session/ICMOreoEngine+Initialization.m",
+        "status": "SOURCE_RESTORED_UNLINKED",
+        "restoredMethods": [
+          "initWithApiKey:appId:",
+          "initWithBaseURL:",
+          "configureHTTPHeaders"
+        ],
+        "missingProductImplementations": [
+          "Complete IdentityStore/Bridge closure"
+        ],
+        "validation": "python3 scripts/ios-verify-session-source.py"
+      },
+      "requestEntries": {
+        "source": "ios/Session/ICMOreoEngine+Requests.m",
+        "status": "BEHAVIOR_COMPARED_WITH_TEST_SINK",
+        "originalDifferential": "ios-request-routing-differential",
+        "sharedFixtureAssertions": 18,
+        "scope": "Request routing, placeholder cancellation/generation and wrapper mapping; real placeholder factory not compared; no authentication claim"
+      },
+      "expectedObjCInventory": {
+        "ownInstanceMethodsIncludingDestructor": 36,
+        "ownClassMethods": 7,
+        "ivars": 8,
+        "instanceSize": 72,
+        "propertiesIncludingNSObjectProtocol": 12,
+        "status": "MATCHED_FOR_RECORDED_FIELDS",
+        "evidence": "ios-engine-abi-differential"
+      }
+    },
+    {
+      "name": "TranslationManager",
+      "source": "ios/Identity/TranslationManager.swift",
+      "status": "SOURCE_RESTORED_COMPILED_AGGREGATE_UNLINKED_RUNTIME_UNVERIFIED",
+      "restoredMethods": [
+        "supportedLocales",
+        "initWithLocaleProvider:",
+        "messenger",
+        "helpCenter",
+        "translationLocale",
+        "translationForKey:",
+        "translationForKey:params:",
+        "init original unavailable trap"
+      ],
+      "validation": "165 ObjC+74 Swift WMO/clang all3 iOS15 targets; prior supportedLocales2assertions remain historical only",
+      "hostAssertions": 2,
+      "orderedLocaleCount": 47,
+      "constantProvenance": "Original getter 0xe0e98..0xe0ed0; static Swift String array 0x4c6f68, decoded 47 UTF8 small strings",
+      "remainingMethods": [],
+      "originalDifferential": "NOT_RUN",
+      "runtimeBehaviorVerified": false,
+      "scope": "Real localeProvider/config locale/flat bundle lookup/English fallback/parameter replacement plus genuine Utils translationsBundle once/loading. No key-return substitute: returning key when original bundle missing is original branch."
+    },
+    {
+      "name": "ICMHTTPClient",
+      "source": "ios/Session/ICMHTTPClient.m",
+      "status": "PARTIAL_CLASS_SOURCE_COMPILED_FIXTURE_TESTED_PRODUCT_UNLINKED",
+      "restoredMethods": [
+        "failWithNetworkError:whenTryingTo:failureBlock:",
+        "httpErrorWithCode:fromNetworkError:",
+        "failWithErrorMessage:recoverySuggestion:errorCode:underlyingError:failureBlock:",
+        "bailIfMissingIdentityWhenTryingTo:withFailureBlock:",
+        "getHelpCenterCollections:error:",
+        "getHelpCenterCollection:success:error:",
+        "getHelpCenterSearchResults:source:success:error:",
+        "fetchMessengerSheetData:success:failure:",
+        "submitMessengerSheet:uri:success:failure:",
+        "setAuthTokens:success:failure:",
+        "buildMultipartParametersForCurrentIdentity"
+      ],
+      "validation": "python3 scripts/ios-verify-http-failures.py",
+      "hostAssertions": 16,
+      "originalDifferential": "ios-http-failures-differential",
+      "fixtureOnlyIdentityConditions": true,
+      "remainingMethods": "Remaining endpoints/response/BaseResponse/config integration NOT_RESTORED",
+      "comparisonScope": "Same 16 failure/admission fixtures in separate iOS27.0 arm64 processes with test-only identity conditions; product session unlinked",
+      "helpCenterRequests": {
+        "source": "ios/Session/ICMHTTPClient+HelpCenter.m",
+        "validation": "python3 scripts/ios-verify-helpcenter-requests.py",
+        "hostAssertions": 16,
+        "status": "BEHAVIOR_COMPARED_WITH_TEST_SINK",
+        "originalDifferential": "ios-helpcenter-routing-differential",
+        "scope": "Actual three request mappings with test-only identity/engine sinks; DeviceData actual source with diagnostic defaults/UUID; no network",
+        "independentFixtureAssertions": 18,
+        "comparisonScope": "18 independently designed fixtures in separate original/source iOS27.0 arm64 processes; test-only identity/engine/defaults/UUID, zero network tasks"
+      },
+      "sheetRequests": {
+        "source": "ios/Session/ICMHTTPClient+Sheets.m",
+        "status": "BEHAVIOR_COMPARED_WITH_TEST_SINK",
+        "validation": "python3 scripts/ios-verify-sheets.py",
+        "hostAssertions": 22,
+        "originalDifferential": "ios-sheet-routing-differential",
+        "scope": "Two actual HTTP mappings and real Sheet parser; test-only identity/engine/defaults; UI/bridge/full product not restored",
+        "independentFixtureAssertions": 23
+      },
+      "identityRequests": {
+        "source": "ios/Session/ICMHTTPClient+IdentityRequests.m",
+        "status": "BEHAVIOR_COMPARED_WITH_TEST_SINK",
+        "validation": "python3 scripts/ios-verify-identity-requests.py",
+        "hostAssertions": 17,
+        "originalDifferential": "ios-auth-multipart-differential",
+        "scope": "Actual auth token request mapping and multipart parameter construction; diagnostic identity/engine/defaults, no network/authentication",
+        "independentFixtureAssertions": 22,
+        "comparisonScope": "22 independently designed original/source iOS27.0 arm64 fixtures; diagnostic identity/engine/defaults, zero network tasks/authentication"
+      },
+      "ownSelectorPresence": {
+        "present": 18,
+        "expected": 60
+      }
+    },
+    {
+      "name": "ICMPushNotificationManager",
+      "source": "ios/Session/ICMPushNotificationManager.m",
+      "status": "PARTIAL_CLASS_SOURCE_COMPILED",
+      "restoredMethods": [
+        "isPushNotificationsEnabled",
+        "safeGetAuthorizationStatusWithCompletion:"
+      ],
+      "validation": "python3 scripts/ios-verify-push-status.py",
+      "remainingMethods": "Swizzling, delegates, push routing/media/token lifecycle and all other methods NOT_RESTORED",
+      "originalDifferential": "ios-push-status-differential",
+      "scope": "Only two status methods with original UNCenter/provider test diagnostics; all routing/delegates still missing",
+      "ownSelectorPresence": {
+        "present": 32,
+        "expected": 38
+      },
+      "restoredScope": "Status query + runtime installation/4callbacks/RN launch + identity-gated delivery/pending dispatch; foreground/rich bodies still missing",
+      "runtimeBehaviorVerifiedScope": "Only prior finite PushStatus diagnostic fixtures; no installation/OS notification runtime"
+    },
+    {
+      "name": "ICMConfig",
+      "source": [
+        "ios/Session/ICMConfig.m",
+        "ios/Session/ICMConfig+ImagesAndUI.m"
+      ],
+      "status": "PARTIAL_CLASS_SOURCE_COMPILED_FIXTURE_TESTED_PRODUCT_UNLINKED",
+      "validation": "python3 scripts/ios-verify-config.py",
+      "hostAssertions": 28,
+      "originalDifferential": "ios-config-differential",
+      "comparisonScope": "28 shared original/source iOS27.0 arm64 fixtures; earlier snapshot had three nested model diagnostics plus four image sinks; current host suite links actual AttachmentSettings/ConversationStateSyncSettings but ConfigModules/image remain diagnostics; fourteen newly source-restored nested models object compiled only, original runtime comparison NOT_RUN",
+      "restoredScope": "37 fields/accessors, defaults, parser, secure coding, equality/hash, actual shared/archive/persistence/notification path and exceptional setters; all ten original image/UI methods source restored, object compiled only; all fourteen genuine Home/Customization nested models now compile in aggregate with two genuine Settings; genuine memory/disk cache, ImageIO animated decoding, coalesced real URLSession downloader and Core now strict source-linked for all three targets",
+      "remainingMethods": [],
+      "missingProductDependencies": [
+        "ICMDataManager lifecycle with genuine Nexus/Unread/Conversation/Presentation dependencies"
+      ]
+    },
+    {
+      "name": "ConversationCellBlockDelegate",
+      "source": "ios/Session/ConversationCellBlockDelegate.swift",
+      "status": "PARTIAL_PROTOCOL_DECLARATION",
+      "originalRequirements": 36,
+      "restoredRequirementDeclarations": 5,
+      "remainingRequirementDeclarations": 31,
+      "scope": "Original open(url:)/createTicketTapped/presentAlert/rateConversation/addRemark only; genuine remaining known model/view types still required. Three original deleted-method slots lack names/signatures. No fake defaults or complete private protocol ABI assertion.",
+      "provenCompleteSignaturesInOriginal": 33,
+      "deletedUnknownSignatures": 3
+    },
+    {
+      "name": "ConversationContainerCardViewStylable",
+      "status": "PRIVATE_PROTOCOL_REQUIREMENT_UNRECOVERED",
+      "originalEvidence": "descriptor0x3f23e4: Self:UIView,1instance method; method spelling/signature optimized away, default absent, Ticket witness swift_deletedMethodError",
+      "sourcePlaceholderAdded": false,
+      "scope": "No fake empty marker/default body. TicketView contract recovered separately; full private protocol ABI remains unresolved."
+    }
+  ],
+  "unlinkedSource": [
+    {
+      "name": "ICMAppIdentity",
+      "source": "ios/Session/ICMAppIdentity.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "missingProductDependencies": [
+        "ICMOreoEngine"
+      ]
+    },
+    {
+      "name": "ICMIdentityStore",
+      "source": "ios/Session/ICMIdentityStore.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "missingProductDependencies": [
+        "ICMOreoEngine",
+        "ICMConfig",
+        "ICMHTTPBridge"
+      ]
+    },
+    {
+      "name": "ICMAppInstallationFingerprint",
+      "source": "ios/Session/ICMAppInstallationFingerprint.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "missingProductDependencies": [
+        "ICMIdentityStore session closure"
+      ],
+      "validation": "python3 scripts/ios-verify-network-models.py",
+      "sharedFixtureAssertions": 25,
+      "fixtureOnlyIdentitySingleton": true,
+      "originalDifferential": "ios-network-models-differential",
+      "comparisonScope": "Same 25 shared synthetic fixtures independently adapted/executed in separate iOS27.0 arm64 simulator processes; fixture-only identity provider, no product closure claim"
+    },
+    {
+      "name": "ICMOreoShutdownState",
+      "source": "ios/Session/ICMOreoShutdownState.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "missingProductDependencies": [
+        "ICMIdentityStore session closure"
+      ],
+      "validation": "python3 scripts/ios-verify-network-models.py",
+      "sharedFixtureAssertions": 25,
+      "fixtureOnlyIdentitySingleton": true,
+      "originalDifferential": "ios-network-models-differential",
+      "comparisonScope": "Same 25 shared synthetic fixtures independently adapted/executed in separate iOS27.0 arm64 simulator processes; fixture-only identity provider, no product closure claim"
+    },
+    {
+      "name": "ICMOreoErrorResponse",
+      "source": "ios/Session/ICMOreoErrorResponse.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "missingProductDependencies": [
+        "ICMIdentityStore session closure"
+      ],
+      "validation": "python3 scripts/ios-verify-network-models.py",
+      "sharedFixtureAssertions": 25,
+      "fixtureOnlyIdentitySingleton": true,
+      "originalDifferential": "ios-network-models-differential",
+      "comparisonScope": "Same 25 shared synthetic fixtures independently adapted/executed in separate iOS27.0 arm64 simulator processes; fixture-only identity provider, no product closure claim"
+    },
+    {
+      "name": "UserJwtRefresher",
+      "source": "ios/Session/UserJwtRefresher.swift",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "validation": "python3 scripts/ios-verify-refresher.py",
+      "hostAssertions": 30,
+      "hostScope": "Injected core state-machine fixtures; iOS default initializer object-compiles for 3 targets",
+      "originalDifferential": "ios-refresher-differential",
+      "missingProductDependencies": [
+        "Complete IdentityStore session",
+        "ICMBridge.refreshedUserJwtWasApplied and initialization"
+      ],
+      "exactPrivateSwiftProtocolABIProven": false,
+      "comparisonScope": "40 shared default-init fixtures in separate iOS27.0 arm64 simulator processes; actual ten-second timers, provider callback threads/order; test-only identity/Bridge/application-state injection; product closure unlinked"
+    },
+    {
+      "name": "ICMDeviceData",
+      "source": "ios/Identity/ICMDeviceData.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "validation": "python3 scripts/ios-verify-device-helpers.py",
+      "hostHelperAssertions": 28,
+      "iOSMethodInventory": {
+        "instanceMethodsIncludingDestructor": 25,
+        "classMethods": 4,
+        "ivars": 21,
+        "instanceSize": 136,
+        "comparison": "MATCHED_FOR_RECORDED_OBJC_FIELDS",
+        "evidence": "ios-device-helpers-differential"
+      },
+      "hostScope": "Foundation static/style/wrapper/bundle helpers and readonly getters only; UIKit init/serializer compile only on iOS targets",
+      "missingProductDependencies": [
+        "Complete ICMIdentityStore session"
+      ],
+      "priorDeviceIdentifierComparison": "ios-helpcenter-routing-differential; prior source snapshot, unchanged method; not full new class acceptance",
+      "originalFullClassDifferential": "PENDING",
+      "helperOriginalDifferential": "ios-device-helpers-differential",
+      "helperComparisonScope": "28 shared Foundation helper fixtures on iOS27.0 arm64; class_createInstance avoids UIKit init/serializer, only link-only Store/Push fixture classes abort if called"
+    },
+    {
+      "name": "ICMBaseResponse",
+      "source": "ios/Session/ICMBaseResponse.m",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "validation": "python3 scripts/ios-verify-base-response.py",
+      "hostAssertions": 24,
+      "sourceInventory": {
+        "ownInstanceMethodsIncludingDestructor": 21,
+        "ownClassMethods": 1,
+        "ivars": 7,
+        "instanceSize": 64
+      },
+      "missingProductDependencies": [
+        "ICMConfig actual shared configuration/persistence/image behavior",
+        "ICMUnreadConversationsResponse",
+        "ICMUnreadTicketsResponse",
+        "ICMCarousel",
+        "Survey",
+        "Complete IdentityStore and HTTPBridge"
+      ],
+      "fixtureOnlyDependencies": [
+        "Config",
+        "Store",
+        "Unread/Carousel/Survey/User factories",
+        "HTTPBridge failure sink"
+      ],
+      "originalDifferential": "ios-base-response-differential",
+      "independentFixtureGroups": 23,
+      "objcReflectionABI": "ios-base-response-abi; matched recorded fields only"
+    },
+    {
+      "name": "ConfigModules and required Home/Customization models",
+      "source": [
+        "ios/Session/ConfigModules.swift",
+        "ios/Session/HomeHeaderBackground.swift",
+        "ios/Session/HomeHeaderContent.swift",
+        "ios/Session/CustomizationColors.swift",
+        "ios/Session/CustomizationConfig.swift"
+      ],
+      "status": "SOURCE_RESTORED_OBJECT_COMPILED_UNLINKED",
+      "validation": "python3 scripts/ios-compile-config-dependencies.py",
+      "classes": 14,
+      "runtimeBehaviorVerified": false,
+      "missingProductDependencies": [],
+      "scope": "Required constructors/coders/equality/default traps/dynamic colors and actual HeaderContent logo loading calls; no original private Swift ABI claim; real image dependency now source-linked; enclosing Config aggregate remains unlinked through DataManager"
+    },
+    {
+      "name": "Unread responses",
+      "source": [
+        "ios/Session/ICMUnreadConversationsResponse.m",
+        "ios/Session/ICMUnreadTicketsResponse.m"
+      ],
+      "status": "SOURCE_RESTORED_OBJECT_COMPILED_UNLINKED",
+      "validation": "python3 scripts/ios-verify-unread-source.py",
+      "missingProductDependencies": [
+        "ICMDataManager",
+        "ICMConversation"
+      ],
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "ICMDataManager mainline",
+      "source": [
+        "ios/Session/ICMDataManager.m",
+        "ios/Session/ICMDataManager+Conversations.inc",
+        "ios/Session/ICMDataManager+Tickets.inc",
+        "ios/Session/ICMDataManager+Open.inc"
+      ],
+      "status": "PRIMARY_SOURCE_88_OWN_SELECTORS_COMPILED_PROTOCOL_RESTORED_PRODUCT_UNLINKED",
+      "restoredScope": "All88 original own selectors accounted for (including synthesized accessors and ARC destructor); actual singleton/lifecycle/presence, conversation/ticket request/merge/cache/read/Open/realtime paths. No runtime equivalence or ABI claim.",
+      "missingProductDependencies": [
+        "Genuine Carousel/Survey/native destination dependency closure; full SDK aggregate remains unlinked"
+      ],
+      "remainingOriginalMethods": [],
+      "validation": "scripts/ios-link-source-aggregate.py and bounded ios-avatar-recovery/foundation-receipt.json",
+      "metadataGaps": [
+        "Original 34 required selectors and 12 properties restored; extended type/property/runtime full protocol ABI comparison still pending"
+      ],
+      "bodyPreservationReceipt": "node_modules/.cache/ios-avatar-recovery/data-manager-primary-consolidation.json"
+    },
+    {
+      "name": "HTTPBridge response orchestration",
+      "source": [
+        "ios/Session/ICMHTTPBridge.m",
+        "ios/Session/ICMHTTPBridge+UserUpdate.m"
+      ],
+      "status": "PARTIAL_CLASS_SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "restoredMethods": [
+        "handleBaseResponse:",
+        "storeUserIdentity:",
+        "storeUnreadConversations:",
+        "storeUnreadTickets:",
+        "presentCarousel:",
+        "presentSurvey:",
+        "handleRealtimeConfig:",
+        "updateUser:success:failure:"
+      ],
+      "remainingOriginalMethods": "Other request/metrics/upload methods missing; submitMetrics is still an unresolved Objective-C selector, even if class symbols resolve",
+      "missingProductDependencies": [
+        "IdentityStore complete linked product closure",
+        "Presentation original Root/InApps/native destination/theme/metrics/translation closure",
+        "CarouselService",
+        "SurveyService"
+      ],
+      "validation": "python3 scripts/ios-verify-session-source.py",
+      "restoredMethodsNote": "Expanded aggregate covers15/50 original own selectors including token/metrics/diagnostics; all remaining original methods still required"
+    },
+    {
+      "name": "User update request/deduper",
+      "source": [
+        "ios/Session/ICMUserUpdateRequest.m",
+        "ios/Session/ICMUserUpdateDeduper.m"
+      ],
+      "status": "SOURCE_RESTORED_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "python3 scripts/ios-link-source-aggregate.py",
+      "scope": "All original class methods/state/coding/merges and real disk API calls; no original dynamic comparison or runtime persistence acceptance yet",
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "HTTPClient user update endpoint",
+      "source": "ios/Session/ICMHTTPClient+UserUpdate.m",
+      "status": "PARTIAL_CLASS_SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "restoredMethods": [
+        "updateUserWithUserAttributes:newSession:sessionId:sentFromBackground:carouselVisible:success:error:",
+        "setDeviceTokenSubmitted:"
+      ],
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "Proactive visibility state",
+      "source": "ios/Session/ProactiveContentVisibility.swift",
+      "status": "SOURCE_RESTORED_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "python3 scripts/ios-compile-mainline-swift.py and scripts/ios-link-source-aggregate.py",
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "Original presentation manager/window/root/appearance/host-state source",
+      "source": [
+        "ios/Session/ICMPresentationManager.m",
+        "ios/Session/ICMWindow.m",
+        "ios/Session/ICMAppearanceReset.m",
+        "ios/Session/ICMHostAppState.m",
+        "ios/Session/ICMRootViewController.m",
+        "ios/Session/ICMRootViewController+ModalLifecycle.m",
+        "ios/Session/ICMRootViewController+Presentation.m",
+        "ios/Session/ICMRootViewController+Destinations.m",
+        "ios/Session/ICMRootViewController+Content.m",
+        "ios/Session/ICMRootViewController+Callbacks.m",
+        "ios/Session/ICMPresentationProtocols.h"
+      ],
+      "status": "SOURCE_RESTORED_COMPILED_AGGREGATE_UNLINKED",
+      "ownSelectorPresence": {
+        "ICMPresentationManager": {
+          "expected": 55,
+          "present": 55,
+          "missing": []
+        },
+        "ICMWindow": {
+          "expected": 9,
+          "present": 9,
+          "missing": []
+        },
+        "ICMAppearanceReset": {
+          "expected": 3,
+          "present": 3,
+          "missing": []
+        },
+        "ICMRootViewController": {
+          "expected": 120,
+          "present": 120,
+          "missing": []
+        }
+      },
+      "protocolSource": "Original Root 8 protocols and required/optional declarations restored; required method bodies reside in primary implementation, no warning suppression",
+      "runtimeBehaviorVerified": false,
+      "runtimeABICompared": false,
+      "missingProductDependencies": "Original 28 classes in aggregate receipt; remaining TranslationManager messenger/translation selectors, HTTPBridge marking/metrics and UIView/native resources require real bodies/packaging, not success stubs",
+      "validation": "python3 scripts/ios-verify-session-source.py and scripts/ios-link-source-aggregate.py"
+    },
+    {
+      "name": "OpenCallService and first conversation routing",
+      "source": [
+        "ios/Session/OpenCallService.swift",
+        "ios/Session/NotificationCenterInterface.swift",
+        "ios/Session/UIViewController+ConversationRouting.swift"
+      ],
+      "status": "SOURCE_RESTORED_COMPILED_AGGREGATE_UNLINKED",
+      "runtimeBehaviorVerified": false,
+      "privateSwiftABIVerified": false,
+      "metadataGap": "Initializer stores concrete genuine ICMDataManager until original complete ICMDataManagerProtocol is restored; private Swift protocol/field ABI not claimed",
+      "validation": "python3 scripts/ios-link-source-aggregate.py"
+    },
+    {
+      "name": "ICMBridge complete original own-selector source",
+      "source": "ios/Session/ICMBridge*.{h,m}",
+      "status": "SOURCE_RESTORED_UNLINKED",
+      "ownSelectorsPresent": 69,
+      "ownSelectorsExpected": 69,
+      "runtimeBehaviorVerified": false,
+      "missingProductDependencies": [
+        "DiagnosticSubscriber",
+        "HelpCenterDataService",
+        "Push foreground/rich methods",
+        "HTTPBridge remaining selectors",
+        "original native destination classes"
+      ],
+      "validation": "aggregate own-selector gate69/69 only; not ABI/runtime/product closure"
+    },
+    {
+      "name": "SessionManager/StartAttempt/SessionIdentifierManager",
+      "source": [
+        "ios/Session/ICMSessionManager.m",
+        "ios/Session/ICMSessionStartAttempt.m",
+        "ios/Session/SessionIdentifierManager.swift"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "hostAssertions": 29,
+      "validation": "python3 scripts/ios-verify-session-start.py",
+      "fixtureOnlyDependencies": [
+        "Config threshold",
+        "session ID recorder"
+      ],
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "Composer/metric events/integration checks/Push installation",
+      "source": [
+        "ios/Session/ICMLocalComposerPersistManager.m",
+        "ios/Session/ICMMetric.m",
+        "ios/Session/ICMMetricEvent.m",
+        "ios/Session/ICMOpsMetricEvent.m",
+        "ios/Session/ICMUtils+Integration.m",
+        "ios/Session/ICMPushNotificationManager+Installation.m",
+        "ios/Session/ICMBridge+Push.m"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "runtimeBehaviorVerified": false,
+      "missingProductDependencies": [
+        "ICMConversation",
+        "ICMConversationPart",
+        "Push foreground/rich/media methods",
+        "DiagnosticSubscriber"
+      ],
+      "ownSelectorPresence": {
+        "Composer": "5/5",
+        "Metric": "23/23",
+        "MetricEvent": "26/26",
+        "OpsMetricEvent": "18/18"
+      },
+      "hostEvidence": "node_modules/.cache/ios-source-ops-metric/receipt.json",
+      "hostAssertions": 14,
+      "hostScope": "macOS Foundation actual OpsMetricEvent validation/retain-vs-copy/archive/hash; no original comparison"
+    },
+    {
+      "name": "Push pending/payload and core HTTP token/metrics request mapping",
+      "source": [
+        "ios/Session/ICMPendingPush.m",
+        "ios/Session/ICMPushPayload.m",
+        "ios/Session/ICMPushNotificationManager+Dispatch.m",
+        "ios/Session/ICMHTTPBridge+Metrics.m",
+        "ios/Session/ICMHTTPClient+Metrics.m",
+        "ios/Session/ICMHTTPBridge+DeviceTokens.m",
+        "ios/Session/ICMHTTPClient+DeviceTokens.m",
+        "ios/Session/ICMBridge+Application.m"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "runtimeBehaviorVerified": false,
+      "validation": "python3 scripts/ios-link-source-aggregate.py",
+      "missingProductDependencies": [
+        "DiagnosticSubscriber",
+        "Push foreground/rich methods",
+        "Conversation/UI and other original selectors"
+      ]
+    },
+    {
+      "name": "Original event RateLimiter/MaxSizeQueue",
+      "source": [
+        "ios/Session/ICMRateLimiter.m",
+        "ios/Session/ICMMaxSizeQueue.m"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "validation": "Aggregate compile3targets + own-selector presence original11/11 and9/9",
+      "runtimeBehaviorVerified": false
+    },
+    {
+      "name": "TeamPresence actual parser/state dependency chain",
+      "source": [
+        "ios/Session/ICMTeamPresence.m",
+        "ios/Session/ActiveBot.swift",
+        "ios/Session/ParticipatingAdmin.swift",
+        "ios/Session/StreamingPart.swift",
+        "ios/Session/PartMetadata.swift"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "runtimeBehaviorVerified": false,
+      "validation": "three-target aggregate; no vendor/fixtures",
+      "remainingPrivateEntryGaps": [
+        "Avatar typed initializer",
+        "Participant adminAppNameTitle:appName:"
+      ],
+      "subclassCopyDispatchRuntimeCompared": false
+    },
+    {
+      "name": "ConversationPart original state, classification, appearance selection, parsing and construction",
+      "source": "ios/Session/ICMConversationPart*.m",
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "validation": "all3 aggregate targets;135/135 originalownselectors",
+      "runtimeBehaviorVerified": false,
+      "originalSDKLinked": false,
+      "missingProductDependencies": [
+        "ICMBlockLoader",
+        "ITBBlockUtils",
+        "Original BlockAppearance concrete classes",
+        "Form",
+        "EventData",
+        "FinAnswerSourceWrapper",
+        "ICMReactionsSet"
+      ],
+      "plainAccessorPairsFromStrictStaticPattern": 40,
+      "accessorEvidence": "docs/IOS_PART_ACCESSOR_PROVENANCE.json"
+    },
+    {
+      "name": "Original Theme, dynamic palette, ThemeProvider and foreground calculations",
+      "source": [
+        "ios/Session/Theme.swift",
+        "ios/Session/DefaultThemeProvider.swift",
+        "ios/Session/ColorHelper.swift",
+        "ios/Session/PartBlockAppearance.swift",
+        "ios/Session/ICMConfigProtocol.h"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "validation": "119 ObjC+66 Swift three-target aggregate targeting iOS15; no source SHA drift or duplicate Swift runtime .N classes",
+      "scope": "70 stored fields;58 lazy palette constants;11 grey constants;10 computed colors;ConfigProvider init/refresh/notification;Personal appearance;24 required Config protocol selectors/12 properties",
+      "provenance": "docs/IOS_THEME_PALETTE_PROVENANCE.json; audit implementation-baseline/ios-theme",
+      "runtimeBehaviorVerified": false,
+      "normalCocoaPodsConsumerVerified": false,
+      "privateSwiftABIExact": false,
+      "unrestoredRelatedEntry": "UIColor.init(hex:) private Swift extension not restored; current Theme/Provider/ColorHelper path does not call it"
+    },
+    {
+      "name": "InlineCodeChipLayoutManager original glyph and native drawing path",
+      "source": "ios/Session/InlineCodeChipLayoutManager.swift",
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "validation": "119 ObjC+67 Swift aggregate3 iOS15 targets, SHA unchanged/no duplicate runtime classes",
+      "runtimeBehaviorVerified": false,
+      "dependencies": "Only actual UIKit NSLayoutManager/NSTextStorage/UIBezierPath; no replacement text renderer"
+    },
+    {
+      "name": "Original TextBlock/Paragraph HTML and citation pipeline",
+      "source": [
+        "ios/Session/ITBTextBlock.m",
+        "ios/Session/ITBHTMLParser.m",
+        "ios/Session/ITBInlineCitation.m",
+        "ios/Session/ITBInlineCitationParser.m"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "validation": "123 ObjC+67 Swift aggregate all3 iOS15 targets;44/2/3/12/1 selected ownselector coverage;SHA unchanged/no duplicate classes",
+      "runtimeBehaviorVerified": false,
+      "genuineMissingDependency": "ITBTextBlockView",
+      "systemDependency": "SDK libxml2 headers + xml2 link; normal Pod configuration pending",
+      "accessorEvidence": "docs/IOS_TEXT_ACCESSOR_PROVENANCE.json"
+    },
+    {
+      "name": "Original Heading/SubHeading/List/Ordered/Unordered/ITBCode classes",
+      "source": [
+        "ios/Session/ITBHeadingBlock.m",
+        "ios/Session/ITBListBlock.m",
+        "ios/Session/ITBCodeBlock.m"
+      ],
+      "status": "SOURCE_COMPILED_PRODUCT_UNLINKED",
+      "validation": "128 ObjC+67 Swift all3 targets, original selected3/3/13/2/2/3selectors present; actual11unit textcomponent source strictlinks3targets",
+      "runtimeBehaviorVerified": false,
+      "originalAbstractBaseBehavior": "ITBListBlock bulletStringForIndex original8bc10 returnsnil; concrete two bullet bodies restored",
+      "fullSDKStatus": "NOT_RESTORED"
+    },
+    {
+      "name": "Original ConversationRating/HyperLink native Swift views and original TranslationManager",
+      "source": [
+        "ios/Session/ICMConversationRatingBlock.m",
+        "ios/Session/ConversationRatingBlockView.swift",
+        "ios/Session/HyperLinkTextView.swift",
+        "ios/Session/UIViewDisplayScale.swift",
+        "ios/Identity/TranslationManager.swift",
+        "ios/Session/ICMUtils+Integration.m"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "165 ObjC+74 Swift sources all3 iOS15 targets;40/40 original Rating/Option/twoIntent ownselectors and20metadata/instruction-backed accessors; frozen SHA unchanged/no runtime duplicateclasses",
+      "runtimeBehaviorVerified": false,
+      "missingProductDependencies": [
+        "ICMLinkOpener original implementation",
+        "Full36requirement ConversationCellBlockDelegate/genuine associated model/view types",
+        "BlockViewFactory/full native conversation consumer"
+      ],
+      "scope": "Original models/native UIKit states/images/alerts/accessibility/string translation source; no replacement UI/transport or normal Pod/runtime acceptance"
+    },
+    {
+      "name": "Original LinkOpener and real generic transport/HTTP tracking",
+      "source": [
+        "ios/Session/LinkOpener.swift",
+        "ios/Session/ICMEngine.m",
+        "ios/Session/ICMHTTPClient+Tracking.m",
+        "ios/Session/ICMUtils+Integration.m"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "167ObjC+75Swift all3 iOS15 targets; 4+15 original Engine/SessionDelegate selectors plus actual HTTPtrack and foreground-scenes utility; source SHA unchanged/no duplicate runtimeclass",
+      "runtimeBehaviorVerified": false,
+      "scope": "Actual7closure LinkOpener init/defaults, scene/appdelegate delivery, original predicates/query/ID/regex/HCpresentation, tracking recursion and true URLSession delegate/data/download/upload transport using actual MultipartTaskBuilder. No real tasks/host callbacks/navigation created. Full native controllers/factory and normal Pod consumer still unlinked. HTTPClient23/60 original selectedselectors and Utils33/40 present; class link gap count does not inventory all missing method implementations."
+    },
+    {
+      "name": "Original provider Video and native VideoFile rendering",
+      "source": [
+        "ios/Session/ITBVideoBlocks.m",
+        "ios/Session/ITBVideoBlockView.m",
+        "ios/Session/ITBVideoFileBlockView.m"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "170ObjC+75Swift all3 iOS15 targets;117/117 ownselectors across5classes;46 original simpleaccessors; unchanged frozenSHA/no Swift.N duplicate runtimeclasses",
+      "runtimeBehaviorVerified": false,
+      "scope": "Actual6provider defaultWKWebView originalHTML, AVPlayer/AVPlayerViewController, original playbutton/thumbnail/loading/metrics. No live HTML/player/network/hostcallback/runtime acceptance. Full native factory/controller/normal Pod consumer remains unrestored."
+    },
+    {
+      "name": "Original Swift CodeBlock/CodeSyntaxHighlighter/Table/Ticket models",
+      "source": [
+        "ios/Session/CodeBlock.swift",
+        "ios/Session/CodeSyntaxHighlighter.swift",
+        "ios/Session/TableBlock.swift",
+        "ios/Session/TicketType.swift",
+        "ios/Session/TicketBlock.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "170ObjC+80Swift all3 iOS15 targets;6classes75 own ObjCselectors/typeencodings statically equal original per source-object metadata;SHAunchanged/no duplicateSwift.Nruntimeclasses",
+      "runtimeBehaviorVerified": false,
+      "selectorEvidence": "docs/IOS_CODE_TABLE_TICKET_SELECTORS.json",
+      "highlighterEvidence": "docs/IOS_CODE_HIGHLIGHTER_PROVENANCE.json",
+      "scope": "Actual syntax span/entity parser and original appearance roles; real nestedTable factory/securecoding/copy; real TicketType/FormAttribute mapping and original coder/equality. Original TableBlock.viewClass is ITBBlockView, modern Table/Code View consumers not restored. TicketBlockView is declared genuine missing implementation, not replaced. Full factory/36delegate/controller/normalPod remains incomplete."
+    },
+    {
+      "name": "Original TicketBlockView",
+      "source": "ios/Session/TicketBlockView.swift",
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "170ObjC+81Swift all3 iOS15 targets,7class80ownselector/type metadata matches including5TicketView;SHAunchanged/no duplicateSwift.Nruntimeclasses",
+      "runtimeBehaviorVerified": false,
+      "scope": "Actual native title/type/icon/stack/tap/accessibility/theme layout and original archived/ticket disable semantics. Genuine optional Ticket remains missing model declaration only. ConversationCellContentView getter spelling inferred; original Stylable single method unrecovered, no fake empty protocol/conformance added. Complete factory/delegate/controller/normal consumer not restored."
+    },
+    {
+      "name": "Original modern Swift TextBlockView and citation/attachment rendering",
+      "source": [
+        "ios/Session/TextBlockView.swift",
+        "ios/Session/CitationTapDelegate.swift",
+        "ios/Session/UIViewTextAttachmentImage.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "170ObjC+84Swift all3 iOS15 targets;8classes83own ObjCselectors/typeencoding statically equal original includingTextView3;SHAunchanged/no runtimeclass duplicates",
+      "runtimeBehaviorVerified": false,
+      "scope": "Actual UIKit text/chip/dynamicfont/inline citation badge image attachments, real optional weak citation/block delegates and real LinkOpener fallback. Typed original citation-array header bridge restored. Full modern factory/other modern Views/delegate/controller/normal consumer still unrestored."
+    },
+    {
+      "name": "Original modern Swift ListBlockView and ButtonBlockView",
+      "source": [
+        "ios/Session/ListBlockView.swift",
+        "ios/Session/ITBBlockPlainText.swift",
+        "ios/Session/UIStackViewArrangedSubviews.swift",
+        "ios/Session/ButtonBlockView.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "170ObjC+88Swift all3 iOS15 targets;10classes90own ObjCselectors/typeencodings statically match original;inputSHAstable/no duplicate Swift.N ObjC aliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "Real TextBlockView stack with original nil-array/spacing6/physical RTL edge order and child plain-text join; real custom UIButton plain configuration, attributed title, fixed corner4, height>=44 and delegate/LinkOpener routing. Factory/remaining modern renderers/delegate/controller and normal consumer not restored."
+    },
+    {
+      "name": "Original modern Code UIView / Expanded controller / Header image path / default copier / scheduler subset / feedback",
+      "source": [
+        "ios/Session/CodeBlockView.swift",
+        "ios/Session/CodeBlockExpandedViewController.swift",
+        "ios/Session/HeaderIconButton.swift",
+        "ios/Session/CodeBlockCopier.swift",
+        "ios/Session/DefaultScheduler.swift",
+        "ios/Session/ICMFeedbackGenerator.m"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED_PRIVATE_INJECTION_ABI_PARTIAL",
+      "runtimeBehaviorVerified": false,
+      "validation": "171ObjC+93Swift three targets compile;14classes116ownselectors/typeencodings plus Feedback3 exact;SHAstable/no duplicate Swift.N aliases",
+      "unrecovered": [
+        "DefaultScheduler.isTimerValid Bool implementation",
+        "CodeBlockCopying private requirement name/signature and original injected protocol ABI",
+        "complete modern factory/36delegate/controller/normal consumer"
+      ],
+      "scope": "Real native Code highlighting/gutter/scroll/layout/copy feedback and timer state reset; genuine default clipboard path. No clipboard/haptics/UI/runtime invoked."
+    },
+    {
+      "name": "Modern personal SwiftUI/nonpersonal text Attachment Views and genuine shared bubble corners",
+      "source": [
+        "ios/Session/AttachmentBlockView.swift",
+        "ios/Session/FileAttachmentBlockView.swift",
+        "ios/Session/FileTypeIconView.swift",
+        "ios/Session/UIViewBubbleCorners.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "171ObjC+97Swift all3 iOS15 targets,16classes123ownselectors/typeencodings exact;SHAstable/no duplicate Swift.N aliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "Native text subclass and true SwiftUI file content/type icons/UTType, original nil width268/Any sender/weak delegate, grouped RTL/newUIKit and old mask/border. Header symbol ctor added. Text parent trap initializers markedSwift unavailable to inherit exact original method table. Full factory/controller/privateprotocolABI/normal consumer still unrestored."
+    },
+    {
+      "name": "Modern VideoBlockView/templates and LinkBlockView/scalable attributed text",
+      "source": [
+        "ios/Session/VideoBlockView.swift",
+        "ios/Session/VideoHTMLTemplateFactory.swift",
+        "ios/Session/LinkBlockView.swift",
+        "ios/Session/NSAttributedStringScalable.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "171ObjC+101Swift all3targets;18classes135ownselector/typeencoding exact;inputSHAstable/no duplicate Swift.Naliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "True WK video/shimmer/failure/orientation-size reload; six exact modern format literals; true UILabel article title/one nil bridge/String.count range quirk/font scaling/articleId route. Partialdelegate8/36. Private Video visibility/general update bodies and nominalFactoryshape WMOdeleted; no guessed pauseJS/no-op. Actual cache update route independently evidenced for future factory. Complete factory/controller/normal consumer not restored."
+    },
+    {
+      "name": "Modern LinkListBlockView/LinkListItemView and DefaultBlockView",
+      "source": [
+        "ios/Session/LinkListBlockView.swift",
+        "ios/Session/DefaultBlockView.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "171ObjC+103Swift all3targets;21classes147ownselector/typeencodings exact;SHAstable/no duplicateSwift.Naliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "Real typed links bridge/nil traps/re-readcount/footer separators/callout-font andscale-only separators, original article/HelpCenter taps. Real Default text/subheadline/6x8 constraints. Fullfactory/remaining Views/controller/privateprotocolABI/normalconsumer still unrestored; unused original lazy separator accessor deleted, only evidencednil field retained without fake body. Delegate9/36."
+    },
+    {
+      "name": "Modern MessengerApp wrapper/Conversation/shared concrete implementation/Payload/JS/URL/async category",
+      "source": [
+        "ios/Session/MessengerAppBlockView.swift",
+        "ios/Session/MessengerAppConversationView.swift",
+        "ios/Session/MessengerAppTextInputPayload.swift",
+        "ios/Session/MessengerAppCardJSBuilder.swift",
+        "ios/Session/ContentType.swift",
+        "ios/Session/URLMessengerTheme.swift",
+        "ios/Session/MessengerAppConstants.swift",
+        "ios/Session/WKWebView+ICMAsyncJavaScript.m"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "172ObjC+110Swift all3 targets;24classes164ownselector/types exact plus WKcategory1;5JS literalSHAexact;inputSHAstable/no duplicateSwift.Naliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "Original modern nonpersistent WK card/nativecontainer/textinput/height/Sheet callbacks/async pageWorldJS/HTTPSSheet gate/duplicateTheme append. Actual Sheet controller41ownmethods only declared/notrestored; does not appear as a new LLVMundefined class in current link, not a product closure. MessengerAppViewProtocol complete private conformance, Stylable unknownmethod, ContentType privatecase spellings/ABI unrecovered; actual concrete behavior implemented without fake protocol. Delegate17/36. Fullfactory/images/VideoFile/controller/normalconsumer still unrestored."
+    },
+    {
+      "name": "Modern VideoFile View/Button/Processor and FooterNotice/UIFlags/Sheet HTTP forwards",
+      "source": [
+        "ios/Session/VideoFileBlockView.swift",
+        "ios/Session/VideoPlayButton.swift",
+        "ios/Session/VideoFileProcessor.swift",
+        "ios/Session/FooterNotice.swift",
+        "ios/Session/UIFlags.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "172ObjC+115Swift all3targets;28classes183ownselector/types +2Sheetforwardtypes exact;SHAstable/no duplicateSwift.Naliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "True AVFoundation thumbnail+MediumQuality compression worker/native UIKit delegate controls, true values and actual HTTP forwarding. HTTPBridge22/50 selectors now present; fullstrict27class gaps afterFooter/UIFlags resolved, not complete factory/SDK. No media/exports/playback/UI/normalconsumer run; privateSwiftABI includingErrorbridge domains remains unverified."
+    },
+    {
+      "name": "Modern outbound/conversation image renderers",
+      "source": [
+        "ios/Session/OutboundImageBlockView.swift",
+        "ios/Session/ConversationImageBlockView.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "172ObjC+117Swift all3targets;30classes200ownselector/types exact;inputSHAstable/no duplicateSwift.Naliases",
+      "runtimeBehaviorVerified": false,
+      "scope": "Original modern image loaders/fallback, shimmering/progress, resize/geometry, image/link tap routes and conversation grouping/borders. Delegate20/36; no modelsize writes during resize. Genuine CGFloat importer correction retains original 64-bit ObjC d encoding. Factory/OutboundDelegate/Sheet/controller/normalconsumer/runtime remain unrestored."
+    },
+    {
+      "name": "Modern BlockViewFactory pure Swift routing and cache",
+      "source": [
+        "ios/Session/BlockViewFactory.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "172ObjC+118Swift compile all3 iOS15 targets;inputSHAstable",
+      "runtimeBehaviorVerified": false,
+      "scope": "Real renderer route/cache/Code expanded presentation paths;33named delegate requirements,3deleted unknown remain absent. Original context raw0/1/2 retained with inferred labels; namespace nominal shape not proved. ObjC adapter not restored pending real OutboundContentBlockDelegate/Preview/File dependencies."
+    },
+    {
+      "name": "Real Outbound delegate and ObjC Factory/Metric/Preview dependency closure",
+      "source": [
+        "ios/Session/HomeMetricService.swift",
+        "ios/Session/HelpCenterMetricService.swift",
+        "ios/Session/AttachmentFileManager.swift",
+        "ios/Session/PreviewAction.swift",
+        "ios/Session/PreviewHelper.swift",
+        "ios/Session/ImagePreviewerViewController.swift",
+        "ios/Session/MediaPreviewerViewController.swift",
+        "ios/Session/OutboundContentBlockDelegate.swift",
+        "ios/Session/BlockViewFactoryObjC.swift"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "172ObjC+127Swift compile all3 iOS15 targets;36classes230ownselector/types exact plus Help20/21;SHAstable/no Swift.Nduplicates;26real class gaps",
+      "runtimeBehaviorVerified": false,
+      "scope": "Actual modern ObjC Factory routes into33known-requirement Outbound delegate and original real Metric events, AVPlayer/KVO, MainActor image Tasks, actual PreviewHelper/download/temp-copy and UIKit/QuickLook preview. Eighteen original ret witnesses/two nil getters/false style are real baseline bodies. Original 3deleted delegate and6Help protocol method signatures remain unrecovered; no fake defaults. Help original empty-.cxx_destruct@319f8c ret is elided by currentSwift compiler;20/21ownentries remainexact. Sheet41/Nav/controllers remain trueUNLINKED."
+    },
+    {
+      "name": "Original native Sheet/navigation/error/button dependency closure",
+      "source": [
+        "ios/Session/ICMAutoLayout.m",
+        "ios/Session/ICMPointerInteraction.m",
+        "ios/Session/ICMButton.m",
+        "ios/Session/ICMActionButton.m",
+        "ios/Session/ICMErrorView.m",
+        "ios/Session/ICMNavigationController.m",
+        "ios/Session/ICMMessengerNavigationController.m",
+        "ios/Session/ICMMessengerSheetViewController.m",
+        "ios/Session/UIColor+HSL.m",
+        "ios/Session/UIFont+ICMWeight.m"
+      ],
+      "status": "SOURCE_COMPILED_AGGREGATE_UNLINKED",
+      "validation": "182ObjC+127Swift all3targets;new8classes127ownselector/types plus10categorymethodtypes exact;SHAstable/no Swift.Nduplicates",
+      "runtimeBehaviorVerified": false,
+      "scope": "Genuine Sheet41/defaultWK/JS/POST/navigation/progress/submittimer, ErrorView18/Button18/Action11, Nav22/MessengerNav1, AutoLayout15/Pointer1/HSL9/UIFont1. HSL green!=max originalNE branch corrected before frozencompile. No new safety policy/no lifecycle cleanup beyond original;23real SDK class gaps remain plus dynamic/selectors."
+    }
+  ],
+  "unlinkedValidation": "python3 scripts/ios-verify-session-source.py",
+  "reflectionABI": {
+    "status": "MATCHED_FOR_RECORDED_FIELDS",
+    "classes": 17,
+    "fields": [
+      "superclass",
+      "own method selectors",
+      "Objective-C type encodings",
+      "property attributes",
+      "ivar names/types/offsets",
+      "instance sizes"
+    ],
+    "evidence": "ios-abi-differential",
+    "fullSwiftABIProven": false,
+    "additionalClasses": {
+      "classes": 7,
+      "evidence": "ios-engine-abi-differential",
+      "scope": "Engine, Refresher, Fingerprint, Shutdown, ErrorResponse, TaskOperation, Replay; same recorded ObjC runtime fields only; link-only dependency fixture classes not counted"
+    },
+    "sheetAndNexusClasses": {
+      "classes": 3,
+      "evidence": "ios-sheet-nexus-abi",
+      "scope": "ICMSafeNetworkModel/ICMSheet/IntercomNexusConfiguration same recorded Objective-C fields; no Swift ABI or product closure claim"
+    }
+  },
+  "notRestored": [
+    "Complete SDK initialization/login/session/nativeUI/card/sheet/backend behavior and real-device acceptance",
+    "Five complete UI resource callsites, other catalog/data assets and foreign receiver behavior",
+    "WMO-deleted private protocol/injection ABI and complete behavioral equivalence beyond recorded source/metadata/finite fixtures",
+    "Actual RN JS lifecycle/event/provider semantics and old-architecture consumer runtime"
+  ],
+  "evidenceRoot": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review",
+  "constraints": [
+    "Do not interpret finite fixture comparison as whole SDK equivalence",
+    "No production credentials or service calls used",
+    "No user wallet or default host Keychain data accessed",
+    "No app-monorepo consumer change, publication, merge or deployment"
+  ],
+  "keychainOSPersistence": {
+    "status": "NOT_RUN",
+    "evidence": "ios-keychain-security-differential",
+    "reason": "Isolated simulator diagnostic hosts compiled/installed but launchd policy 163 blocked execution; real Security assertion count zero",
+    "hostDefaultKeychainAccessed": false
+  },
+  "configAggregateSourceLink": {
+    "status": "AGGREGATE_SOURCE_UNLINKED",
+    "validation": "python3 scripts/ios-link-config-source.py",
+    "evidence": "node_modules/.cache/ios-source-config-link/receipt.json",
+    "targets": [
+      "arm64 iOS15",
+      "arm64 iOS15 simulator",
+      "x86_64 iOS15 simulator"
+    ],
+    "actualNestedModelClasses": 14,
+    "actualSettingsClasses": 2,
+    "fixtureImplementationsUsed": false,
+    "undefinedSDKClasses": [
+      "ICMHTTPBridge",
+      "ICMPresentationManager",
+      "ICMCarouselService",
+      "_TtC18IntercomSDKPrivate13SurveyService"
+    ],
+    "warnings": "Xcode27.2 SDK auto-link UIUtilities/SwiftUICore warnings preserved in per-target logs",
+    "fullSDKLinked": false,
+    "transitiveMissingClosure": "Actual Nexus and Unread source linked; DataManager now has all88 method selectors in source but remains product-unlinked through actual HTTP/UI/model dependencies. Original ICMDataManagerProtocol metadata pending. Strict link failure alone does not enumerate absent ObjC selectors.",
+    "partialDataManagerSourceIncluded": true,
+    "sourceSnapshotNotice": "Last aggregate receipt predates DataManager Open/new cache methods and HTTPBridge response source. Re-run before claiming current aggregate undefined class list."
+  },
+  "nativeSourceAggregate": {
+    "status": "SOURCE_AGGREGATE_LINKED",
+    "fullSDKStatus": "NOT_RESTORED",
+    "objcSourceUnits": 290,
+    "swiftSourceUnits": 395,
+    "fixtureImplementationsUsed": false,
+    "originalSDKCompileOrLinkInput": false,
+    "scaffoldIncluded": false,
+    "runtimeBehaviorVerified": false,
+    "sessionsCreatedByValidation": 0,
+    "missingSelectorsWarning": "Selected own-selector presence is checked separately; ABI, protocol metadata, all other selectors and resources remain unverified",
+    "targets": [
+      {
+        "target": "arm64-apple-ios15.0",
+        "sourceCompiled": true,
+        "linked": true,
+        "selectedOwnSelectorCoverage": {
+          "ICMRootViewController": {
+            "expected": 120,
+            "present": 120,
+            "missing": []
+          },
+          "ICMPresentationManager": {
+            "expected": 55,
+            "present": 55,
+            "missing": []
+          },
+          "ICMWindow": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ICMAppearanceReset": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ICMHTTPBridge": {
+            "expected": 50,
+            "present": 50,
+            "missing": []
+          },
+          "ICMHTTPClient": {
+            "expected": 60,
+            "present": 60,
+            "missing": []
+          },
+          "ICMUtils": {
+            "expected": 40,
+            "present": 40,
+            "missing": []
+          },
+          "ICMBridge": {
+            "expected": 69,
+            "present": 69,
+            "missing": []
+          },
+          "ICMPushNotificationManager": {
+            "expected": 38,
+            "present": 38,
+            "missing": []
+          },
+          "ICMLocalComposerPersistManager": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ICMMetric": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ICMMetricEvent": {
+            "expected": 26,
+            "present": 26,
+            "missing": []
+          },
+          "ICMOpsMetricEvent": {
+            "expected": 18,
+            "present": 18,
+            "missing": []
+          },
+          "ICMSessionManager": {
+            "expected": 27,
+            "present": 27,
+            "missing": []
+          },
+          "ICMSessionStartAttempt": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICMMaxSizeQueue": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ICMRateLimiter": {
+            "expected": 11,
+            "present": 11,
+            "missing": []
+          },
+          "ICMPendingPush": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICMPushPayload": {
+            "expected": 25,
+            "present": 25,
+            "missing": []
+          },
+          "ICMConversationPageResponse": {
+            "expected": 14,
+            "present": 14,
+            "missing": []
+          },
+          "ICMConversationsResponse": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ICMComposerState": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ICMComposerSuggestions": {
+            "expected": 21,
+            "present": 21,
+            "missing": []
+          },
+          "ICMTeamPresence": {
+            "expected": 19,
+            "present": 19,
+            "missing": []
+          },
+          "ICMConversationPart": {
+            "expected": 135,
+            "present": 135,
+            "missing": []
+          },
+          "ICMReactionsOption": {
+            "expected": 10,
+            "present": 10,
+            "missing": []
+          },
+          "ICMReactionsSet": {
+            "expected": 10,
+            "present": 10,
+            "missing": []
+          },
+          "ICMConversation": {
+            "expected": 85,
+            "present": 85,
+            "missing": []
+          },
+          "Intercom": {
+            "expected": 45,
+            "present": 45,
+            "missing": []
+          },
+          "ICMBlockLoader": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBBlockUtils": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBBlock": {
+            "expected": 32,
+            "present": 32,
+            "missing": []
+          },
+          "ITBBlockView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICMBlockAppearance": {
+            "expected": 94,
+            "present": 94,
+            "missing": []
+          },
+          "ICMAdminBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMAssets": {
+            "expected": 99,
+            "present": 99,
+            "missing": []
+          },
+          "ITBTextBlock": {
+            "expected": 44,
+            "present": 44,
+            "missing": []
+          },
+          "ITBParagraphBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBHTMLParser": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBInlineCitation": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ITBInlineCitationParser": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBHyperlinkTextView": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBTextBlockView": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBTextBlockViewIntent": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBHeadingBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBSubHeadingBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBListBlock": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBOrderedListBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBUnorderedListBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBCodeBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBButtonBlock": {
+            "expected": 22,
+            "present": 22,
+            "missing": []
+          },
+          "ITBButtonBlockView": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBFacebookBlock": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBTwitterBlock": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBImageBlock": {
+            "expected": 42,
+            "present": 42,
+            "missing": []
+          },
+          "ITBImageBlockView": {
+            "expected": 31,
+            "present": 31,
+            "missing": []
+          },
+          "ITBAnimatedImageView": {
+            "expected": 28,
+            "present": 28,
+            "missing": []
+          },
+          "ITBAnimatedImageViewDisplayLinkProxy": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBImagePreviewMetadata": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ITBImageUtils": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBLoadingView": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBUploadProgressButton": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBUpload": {
+            "expected": 51,
+            "present": 51,
+            "missing": []
+          },
+          "ITBImageFileLoader": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBAttachmentBlock": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBAttachmentListBlock": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBAttachmentBlockView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBAttachmentIconView": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBAttachmentListBlockView": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ITBBlockViewsReuseManager": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBLinkBlock": {
+            "expected": 45,
+            "present": 45,
+            "missing": []
+          },
+          "ITBLinkBlockAuthor": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ITBLinkBlockImage": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ITBLinkListBlock": {
+            "expected": 39,
+            "present": 39,
+            "missing": []
+          },
+          "ITBLink": {
+            "expected": 14,
+            "present": 14,
+            "missing": []
+          },
+          "ITBLinkBlockView": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBLinkListBlockView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ITBLinkBlockAuthorView": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBLinkListItemView": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBLinkListFooterView": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ITBFooterContainerView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICMLinkCardBlockAppearance": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICMLinkListBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMContainerCardBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMInAppBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMMessengerCardBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMPostBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBTypingBlock": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBTypingBlockView": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ITBTypingDotView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBTypingView": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ITBNotificationCardBlock": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBNotificationChannel": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ITBNotificationCardBlockView": {
+            "expected": 26,
+            "present": 26,
+            "missing": []
+          },
+          "ICPCardFallbackModel": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBMessengerCardFallbackBlock": {
+            "expected": 29,
+            "present": 29,
+            "missing": []
+          },
+          "ITBMessengerCardFallbackView": {
+            "expected": 46,
+            "present": 46,
+            "missing": []
+          },
+          "ICPTextInputPayload": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICPCardFallbackJSBuilder": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICPLoadingView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICPMessengerCardFallbackView": {
+            "expected": 40,
+            "present": 40,
+            "missing": []
+          },
+          "ICMImageTextBlock": {
+            "expected": 25,
+            "present": 25,
+            "missing": []
+          },
+          "ICMConversationRatingBlock": {
+            "expected": 21,
+            "present": 21,
+            "missing": []
+          },
+          "ICMConversationRatingOption": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ICMConversationRatedIntent": {
+            "expected": 6,
+            "present": 6,
+            "missing": []
+          },
+          "ICMConversationRatingRemarkIntent": {
+            "expected": 6,
+            "present": 6,
+            "missing": []
+          },
+          "ICMEngine": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICMEngineSessionDelegate": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBVideoBlock": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ITBVideoFileBlock": {
+            "expected": 27,
+            "present": 27,
+            "missing": []
+          },
+          "ITBVideoBlockView": {
+            "expected": 22,
+            "present": 22,
+            "missing": []
+          },
+          "ITBVideoFileBlockView": {
+            "expected": 38,
+            "present": 38,
+            "missing": []
+          },
+          "ITBVideoFilePlayButton": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          }
+        },
+        "linkLog": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/ios-final-native-source/iphoneos-arm64-link.log",
+        "undefinedObjCClasses": []
+      },
+      {
+        "target": "arm64-apple-ios15.0-simulator",
+        "sourceCompiled": true,
+        "linked": true,
+        "selectedOwnSelectorCoverage": {
+          "ICMRootViewController": {
+            "expected": 120,
+            "present": 120,
+            "missing": []
+          },
+          "ICMPresentationManager": {
+            "expected": 55,
+            "present": 55,
+            "missing": []
+          },
+          "ICMWindow": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ICMAppearanceReset": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ICMHTTPBridge": {
+            "expected": 50,
+            "present": 50,
+            "missing": []
+          },
+          "ICMHTTPClient": {
+            "expected": 60,
+            "present": 60,
+            "missing": []
+          },
+          "ICMUtils": {
+            "expected": 40,
+            "present": 40,
+            "missing": []
+          },
+          "ICMBridge": {
+            "expected": 69,
+            "present": 69,
+            "missing": []
+          },
+          "ICMPushNotificationManager": {
+            "expected": 38,
+            "present": 38,
+            "missing": []
+          },
+          "ICMLocalComposerPersistManager": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ICMMetric": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ICMMetricEvent": {
+            "expected": 26,
+            "present": 26,
+            "missing": []
+          },
+          "ICMOpsMetricEvent": {
+            "expected": 18,
+            "present": 18,
+            "missing": []
+          },
+          "ICMSessionManager": {
+            "expected": 27,
+            "present": 27,
+            "missing": []
+          },
+          "ICMSessionStartAttempt": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICMMaxSizeQueue": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ICMRateLimiter": {
+            "expected": 11,
+            "present": 11,
+            "missing": []
+          },
+          "ICMPendingPush": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICMPushPayload": {
+            "expected": 25,
+            "present": 25,
+            "missing": []
+          },
+          "ICMConversationPageResponse": {
+            "expected": 14,
+            "present": 14,
+            "missing": []
+          },
+          "ICMConversationsResponse": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ICMComposerState": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ICMComposerSuggestions": {
+            "expected": 21,
+            "present": 21,
+            "missing": []
+          },
+          "ICMTeamPresence": {
+            "expected": 19,
+            "present": 19,
+            "missing": []
+          },
+          "ICMConversationPart": {
+            "expected": 135,
+            "present": 135,
+            "missing": []
+          },
+          "ICMReactionsOption": {
+            "expected": 10,
+            "present": 10,
+            "missing": []
+          },
+          "ICMReactionsSet": {
+            "expected": 10,
+            "present": 10,
+            "missing": []
+          },
+          "ICMConversation": {
+            "expected": 85,
+            "present": 85,
+            "missing": []
+          },
+          "Intercom": {
+            "expected": 45,
+            "present": 45,
+            "missing": []
+          },
+          "ICMBlockLoader": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBBlockUtils": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBBlock": {
+            "expected": 32,
+            "present": 32,
+            "missing": []
+          },
+          "ITBBlockView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICMBlockAppearance": {
+            "expected": 94,
+            "present": 94,
+            "missing": []
+          },
+          "ICMAdminBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMAssets": {
+            "expected": 99,
+            "present": 99,
+            "missing": []
+          },
+          "ITBTextBlock": {
+            "expected": 44,
+            "present": 44,
+            "missing": []
+          },
+          "ITBParagraphBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBHTMLParser": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBInlineCitation": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ITBInlineCitationParser": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBHyperlinkTextView": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBTextBlockView": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBTextBlockViewIntent": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBHeadingBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBSubHeadingBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBListBlock": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBOrderedListBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBUnorderedListBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBCodeBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBButtonBlock": {
+            "expected": 22,
+            "present": 22,
+            "missing": []
+          },
+          "ITBButtonBlockView": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBFacebookBlock": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBTwitterBlock": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBImageBlock": {
+            "expected": 42,
+            "present": 42,
+            "missing": []
+          },
+          "ITBImageBlockView": {
+            "expected": 31,
+            "present": 31,
+            "missing": []
+          },
+          "ITBAnimatedImageView": {
+            "expected": 28,
+            "present": 28,
+            "missing": []
+          },
+          "ITBAnimatedImageViewDisplayLinkProxy": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBImagePreviewMetadata": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ITBImageUtils": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBLoadingView": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBUploadProgressButton": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBUpload": {
+            "expected": 51,
+            "present": 51,
+            "missing": []
+          },
+          "ITBImageFileLoader": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBAttachmentBlock": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBAttachmentListBlock": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBAttachmentBlockView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBAttachmentIconView": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBAttachmentListBlockView": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ITBBlockViewsReuseManager": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBLinkBlock": {
+            "expected": 45,
+            "present": 45,
+            "missing": []
+          },
+          "ITBLinkBlockAuthor": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ITBLinkBlockImage": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ITBLinkListBlock": {
+            "expected": 39,
+            "present": 39,
+            "missing": []
+          },
+          "ITBLink": {
+            "expected": 14,
+            "present": 14,
+            "missing": []
+          },
+          "ITBLinkBlockView": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBLinkListBlockView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ITBLinkBlockAuthorView": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBLinkListItemView": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBLinkListFooterView": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ITBFooterContainerView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICMLinkCardBlockAppearance": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICMLinkListBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMContainerCardBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMInAppBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMMessengerCardBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMPostBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBTypingBlock": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBTypingBlockView": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ITBTypingDotView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBTypingView": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ITBNotificationCardBlock": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBNotificationChannel": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ITBNotificationCardBlockView": {
+            "expected": 26,
+            "present": 26,
+            "missing": []
+          },
+          "ICPCardFallbackModel": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBMessengerCardFallbackBlock": {
+            "expected": 29,
+            "present": 29,
+            "missing": []
+          },
+          "ITBMessengerCardFallbackView": {
+            "expected": 46,
+            "present": 46,
+            "missing": []
+          },
+          "ICPTextInputPayload": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICPCardFallbackJSBuilder": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICPLoadingView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICPMessengerCardFallbackView": {
+            "expected": 40,
+            "present": 40,
+            "missing": []
+          },
+          "ICMImageTextBlock": {
+            "expected": 25,
+            "present": 25,
+            "missing": []
+          },
+          "ICMConversationRatingBlock": {
+            "expected": 21,
+            "present": 21,
+            "missing": []
+          },
+          "ICMConversationRatingOption": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ICMConversationRatedIntent": {
+            "expected": 6,
+            "present": 6,
+            "missing": []
+          },
+          "ICMConversationRatingRemarkIntent": {
+            "expected": 6,
+            "present": 6,
+            "missing": []
+          },
+          "ICMEngine": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICMEngineSessionDelegate": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBVideoBlock": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ITBVideoFileBlock": {
+            "expected": 27,
+            "present": 27,
+            "missing": []
+          },
+          "ITBVideoBlockView": {
+            "expected": 22,
+            "present": 22,
+            "missing": []
+          },
+          "ITBVideoFileBlockView": {
+            "expected": 38,
+            "present": 38,
+            "missing": []
+          },
+          "ITBVideoFilePlayButton": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          }
+        },
+        "linkLog": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/ios-final-native-source/iphonesimulator-arm64-link.log",
+        "undefinedObjCClasses": []
+      },
+      {
+        "target": "x86_64-apple-ios15.0-simulator",
+        "sourceCompiled": true,
+        "linked": true,
+        "selectedOwnSelectorCoverage": {
+          "ICMRootViewController": {
+            "expected": 120,
+            "present": 120,
+            "missing": []
+          },
+          "ICMPresentationManager": {
+            "expected": 55,
+            "present": 55,
+            "missing": []
+          },
+          "ICMWindow": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ICMAppearanceReset": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ICMHTTPBridge": {
+            "expected": 50,
+            "present": 50,
+            "missing": []
+          },
+          "ICMHTTPClient": {
+            "expected": 60,
+            "present": 60,
+            "missing": []
+          },
+          "ICMUtils": {
+            "expected": 40,
+            "present": 40,
+            "missing": []
+          },
+          "ICMBridge": {
+            "expected": 69,
+            "present": 69,
+            "missing": []
+          },
+          "ICMPushNotificationManager": {
+            "expected": 38,
+            "present": 38,
+            "missing": []
+          },
+          "ICMLocalComposerPersistManager": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ICMMetric": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ICMMetricEvent": {
+            "expected": 26,
+            "present": 26,
+            "missing": []
+          },
+          "ICMOpsMetricEvent": {
+            "expected": 18,
+            "present": 18,
+            "missing": []
+          },
+          "ICMSessionManager": {
+            "expected": 27,
+            "present": 27,
+            "missing": []
+          },
+          "ICMSessionStartAttempt": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICMMaxSizeQueue": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ICMRateLimiter": {
+            "expected": 11,
+            "present": 11,
+            "missing": []
+          },
+          "ICMPendingPush": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICMPushPayload": {
+            "expected": 25,
+            "present": 25,
+            "missing": []
+          },
+          "ICMConversationPageResponse": {
+            "expected": 14,
+            "present": 14,
+            "missing": []
+          },
+          "ICMConversationsResponse": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ICMComposerState": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ICMComposerSuggestions": {
+            "expected": 21,
+            "present": 21,
+            "missing": []
+          },
+          "ICMTeamPresence": {
+            "expected": 19,
+            "present": 19,
+            "missing": []
+          },
+          "ICMConversationPart": {
+            "expected": 135,
+            "present": 135,
+            "missing": []
+          },
+          "ICMReactionsOption": {
+            "expected": 10,
+            "present": 10,
+            "missing": []
+          },
+          "ICMReactionsSet": {
+            "expected": 10,
+            "present": 10,
+            "missing": []
+          },
+          "ICMConversation": {
+            "expected": 85,
+            "present": 85,
+            "missing": []
+          },
+          "Intercom": {
+            "expected": 45,
+            "present": 45,
+            "missing": []
+          },
+          "ICMBlockLoader": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBBlockUtils": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBBlock": {
+            "expected": 32,
+            "present": 32,
+            "missing": []
+          },
+          "ITBBlockView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICMBlockAppearance": {
+            "expected": 94,
+            "present": 94,
+            "missing": []
+          },
+          "ICMAdminBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMAssets": {
+            "expected": 99,
+            "present": 99,
+            "missing": []
+          },
+          "ITBTextBlock": {
+            "expected": 44,
+            "present": 44,
+            "missing": []
+          },
+          "ITBParagraphBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBHTMLParser": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBInlineCitation": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ITBInlineCitationParser": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBHyperlinkTextView": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBTextBlockView": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBTextBlockViewIntent": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBHeadingBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBSubHeadingBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBListBlock": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBOrderedListBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBUnorderedListBlock": {
+            "expected": 2,
+            "present": 2,
+            "missing": []
+          },
+          "ITBCodeBlock": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBButtonBlock": {
+            "expected": 22,
+            "present": 22,
+            "missing": []
+          },
+          "ITBButtonBlockView": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBFacebookBlock": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBTwitterBlock": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBImageBlock": {
+            "expected": 42,
+            "present": 42,
+            "missing": []
+          },
+          "ITBImageBlockView": {
+            "expected": 31,
+            "present": 31,
+            "missing": []
+          },
+          "ITBAnimatedImageView": {
+            "expected": 28,
+            "present": 28,
+            "missing": []
+          },
+          "ITBAnimatedImageViewDisplayLinkProxy": {
+            "expected": 3,
+            "present": 3,
+            "missing": []
+          },
+          "ITBImagePreviewMetadata": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ITBImageUtils": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ITBLoadingView": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBUploadProgressButton": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBUpload": {
+            "expected": 51,
+            "present": 51,
+            "missing": []
+          },
+          "ITBImageFileLoader": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBAttachmentBlock": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBAttachmentListBlock": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBAttachmentBlockView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBAttachmentIconView": {
+            "expected": 5,
+            "present": 5,
+            "missing": []
+          },
+          "ITBAttachmentListBlockView": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ITBBlockViewsReuseManager": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBLinkBlock": {
+            "expected": 45,
+            "present": 45,
+            "missing": []
+          },
+          "ITBLinkBlockAuthor": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ITBLinkBlockImage": {
+            "expected": 12,
+            "present": 12,
+            "missing": []
+          },
+          "ITBLinkListBlock": {
+            "expected": 39,
+            "present": 39,
+            "missing": []
+          },
+          "ITBLink": {
+            "expected": 14,
+            "present": 14,
+            "missing": []
+          },
+          "ITBLinkBlockView": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBLinkListBlockView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ITBLinkBlockAuthorView": {
+            "expected": 13,
+            "present": 13,
+            "missing": []
+          },
+          "ITBLinkListItemView": {
+            "expected": 20,
+            "present": 20,
+            "missing": []
+          },
+          "ITBLinkListFooterView": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ITBFooterContainerView": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICMLinkCardBlockAppearance": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICMLinkListBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMContainerCardBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMInAppBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMMessengerCardBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ICMPostBlockAppearance": {
+            "expected": 1,
+            "present": 1,
+            "missing": []
+          },
+          "ITBTypingBlock": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBTypingBlockView": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ITBTypingDotView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ITBTypingView": {
+            "expected": 9,
+            "present": 9,
+            "missing": []
+          },
+          "ITBNotificationCardBlock": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBNotificationChannel": {
+            "expected": 17,
+            "present": 17,
+            "missing": []
+          },
+          "ITBNotificationCardBlockView": {
+            "expected": 26,
+            "present": 26,
+            "missing": []
+          },
+          "ICPCardFallbackModel": {
+            "expected": 24,
+            "present": 24,
+            "missing": []
+          },
+          "ITBMessengerCardFallbackBlock": {
+            "expected": 29,
+            "present": 29,
+            "missing": []
+          },
+          "ITBMessengerCardFallbackView": {
+            "expected": 46,
+            "present": 46,
+            "missing": []
+          },
+          "ICPTextInputPayload": {
+            "expected": 16,
+            "present": 16,
+            "missing": []
+          },
+          "ICPCardFallbackJSBuilder": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICPLoadingView": {
+            "expected": 8,
+            "present": 8,
+            "missing": []
+          },
+          "ICPMessengerCardFallbackView": {
+            "expected": 40,
+            "present": 40,
+            "missing": []
+          },
+          "ICMImageTextBlock": {
+            "expected": 25,
+            "present": 25,
+            "missing": []
+          },
+          "ICMConversationRatingBlock": {
+            "expected": 21,
+            "present": 21,
+            "missing": []
+          },
+          "ICMConversationRatingOption": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          },
+          "ICMConversationRatedIntent": {
+            "expected": 6,
+            "present": 6,
+            "missing": []
+          },
+          "ICMConversationRatingRemarkIntent": {
+            "expected": 6,
+            "present": 6,
+            "missing": []
+          },
+          "ICMEngine": {
+            "expected": 4,
+            "present": 4,
+            "missing": []
+          },
+          "ICMEngineSessionDelegate": {
+            "expected": 15,
+            "present": 15,
+            "missing": []
+          },
+          "ITBVideoBlock": {
+            "expected": 23,
+            "present": 23,
+            "missing": []
+          },
+          "ITBVideoFileBlock": {
+            "expected": 27,
+            "present": 27,
+            "missing": []
+          },
+          "ITBVideoBlockView": {
+            "expected": 22,
+            "present": 22,
+            "missing": []
+          },
+          "ITBVideoFileBlockView": {
+            "expected": 38,
+            "present": 38,
+            "missing": []
+          },
+          "ITBVideoFilePlayButton": {
+            "expected": 7,
+            "present": 7,
+            "missing": []
+          }
+        },
+        "linkLog": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.build/ios-final-native-source/iphonesimulator-x86_64-link.log",
+        "undefinedObjCClasses": []
+      }
+    ],
+    "selectorInventory": {
+      "path": "docs/IOS_EXPECTED_SELECTORS.json",
+      "sha256": "b98c4f37f7ec00bcf2e4eefee1b56c0240858e08a323e1a2f908a92688d7baa1"
+    },
+    "inputHashDrift": [],
+    "sourceFilesAddedDuringBuild": [],
+    "frozenHistoricalSnapshot": true,
+    "receiptPath": ".build/ios-final-native-source/receipt.json",
+    "receiptSHA256": "555e11b3fbd8f8dbb755ad6606442a51a481fd8190c335bd3af74f368d49729f",
+    "currentInputBoundary": "Only private aggregate redundant public import differs from frozen290/395 input; normal consumers recompiled fullSDK+RCT on bothsim architectures. Separate device395-Swift -O proof also uses correctedheader. Resource packaging Info.plist is an additional owned metadata file; original63 data unchanged."
+  },
+  "resourceLayoutSeams": {
+    "status": "SOURCE_IMPLEMENTED_CONSUMER_NOT_RUN",
+    "sdkBundleResourceFiles": 63,
+    "sdkBundleResourceIntegrity": "Original files and hashes retained; normal consumer bundle presence/loading not verified",
+    "assetManager": "Exact default AssetManager receiver uses existing SDKbundle; foreign receiver retains Bundle(for:self).",
+    "blockUtils": "One Class receiver=[self class] per call; exact ITBBlockUtils receiver uses existing ICMUtils.intercomBundle; foreign uses bundleForClass:receiver; no once/cache or extra helper fallback.",
+    "nilBundleBoundary": "Existing UIKit UIImage imageNamed:inBundle:nil callers may fall back to the App bundle. Nil helper result does not prove resource availability or isolation. Normal static/dynamic consumer must verify SDKbundle, all63resources and five actual icon callsites including videoFilePlayIcon/image-loading-fail.",
+    "fileTypeSwiftUI": "Fixed AssetManager.self FileType.icon now locates original SDK Assets.car via ICMUtils.intercomBundle. Nil may still invoke SwiftUI main bundle semantics; all resources/icons remain normal-consumer unverified."
+  },
+  "swiftBlockInitializationSeam": {
+    "status": "SOURCE_COMPILED_STATIC_METADATA_VERIFIED_CONSUMER_NOT_RUN",
+    "header": "ios/Session/ITBBlock.h",
+    "purpose": "Original Swift Code/Table/Ticket classes have no own init selector and rely on inherited Objective-C NSObject.init from existing base copy/coder paths. Prevent Swift importer from synthesizing extra unavailable-init override traps.",
+    "implementation": "Primary init declaration NS_SWIFT_UNAVAILABLE is visible only when verified __swift__ importer macro is defined; Objective-C compilation sees no new declaration/body. No category/pragma/diagnostic suppression or fake initializer.",
+    "originalPrivateHeaderTextRecovered": false,
+    "evidence": "Direct original own-method metadata plus compiled6class75selector/type comparison; macro diagnostic-only compile succeeded.",
+    "normalPrivateClangModuleInitCopyCoderVerified": false
+  },
+  "asyncJSImporterSeam": {
+    "header": "ios/Session/WKWebView+ICMAsyncJavaScript.h",
+    "annotation": "NS_SWIFT_DISABLE_ASYNC",
+    "originalHeaderAnnotationRecovered": false,
+    "purpose": "Preserve original MainActorTask callback API; prevent compiler-invented async overload rejection without changing ObjectiveC selector/body/completion identity."
+  },
+  "currentImporter": {
+    "status": "SOURCE_GATE_IMPLEMENTED_NORMAL_FULL_CONSUMER_PENDING",
+    "publicHeaderGate": "ios/IntercomSourceImports.h",
+    "headerDir": "Intercom",
+    "macroScope": "SDK pod_target only",
+    "sourcePrivateImports": 0,
+    "customModuleMapActive": false,
+    "PCHUsed": false,
+    "privateHeadersRemainPrivate": true,
+    "actualFullSDKConsumerVerified": false
+  },
+  "currentInboxFoundation": {
+    "boundedReceipt": "node_modules/.cache/ios-avatar-recovery/foundation-receipt.json",
+    "scope": "Historical frozen 132 core Swift +12 ObjC snapshot; subsequent Inbox/Ticket/Keyboard/ChatLayout and Survey slices have separate bounded receipts",
+    "runtimeVerified": false,
+    "dataManagerPrimaryBodyReceipt": "node_modules/.cache/ios-avatar-recovery/data-manager-primary-consolidation.json",
+    "wholeSourceGate": "node_modules/.cache/ios-source-aggregate/receipt.json",
+    "wholeSourceGateStatus": "SOURCE_COMPILE_FAILED:210 ObjC +210 Swift, three iOS15 targets, all ObjC compiled; true Conversation VM and complex renderer source dependencies remain missing; no source exclusions or input hash drift",
+    "newTicketAndSurveySources": "Complete genuine Survey selected 202 Swift slice passed all three targets with explicit pending-Conversation exclusions; not whole SDK or runtime acceptance"
+  },
+  "currentConversationRendering": {
+    "chatLayout": "docs/IOS_CHAT_LAYOUT_PROVENANCE.json",
+    "keyboard": "SOURCE_IMPLEMENTED_THREE_TARGET_OBJECTS_6_OWN_SELECTORS_MATCH",
+    "baseControllerAndScrollHelpers": "THREE_TARGET_OBJECT_COMPILE_PASS; finite original static review",
+    "cellAndDiffableIdentity": {
+      "sources": [
+        "ios/Session/ConversationCollectionViewCell.swift",
+        "ios/Session/ConversationCellType.swift"
+      ],
+      "status": "SOURCE_WRITTEN_UNLINKED",
+      "actualMissingDependencies": [
+        "Genuine complete ConversationViewModel/Interactor/Controller graph and protocol operations"
+      ],
+      "placeholderImplementationsAdded": false,
+      "privateDelegateABI": "UNRECOVERED:original composite transported two protocols; one inputtable requirement deleted. Explicit source uses concrete genuine ConversationViewModel default consumer without alias, wrapper or empty protocol."
+    },
+    "wholeSDKRuntimeVerified": false,
+    "routingFactories": "SOURCE_WRITTEN_UNLINKED: actual Cell and Part factory routing, no substitutes",
+    "smallRenderers": "Greeting/Temporary/Day/Unread/Footer plus AvatarDetails/Bot composed from genuine lower views; bounded three-target objects and exact selected own-selector/types; finite static review",
+    "gridAndStatus": "BOUNDED_THREE_TARGET_OBJECT_PASS: genuine Survey/Table/Timeline/Attribute/Banner plus prior renderers;250Swift17ObjC72selectedClasses680ownentries0diff; seven explicit VM-dependent sources excluded, not wholeSDK/normalconsumer/runtime",
+    "provenance": "docs/IOS_CONVERSATION_RENDERING_PROVENANCE.json",
+    "wholeSourceTypecheck": {
+      "path": "node_modules/.cache/ios-conversation-whole-typecheck-shared/receipt.json",
+      "sha256": "7acd325e43b489346cd885f50da84b3a71a182afb4a3745785734d15aa935b37",
+      "swiftUnits": 257,
+      "status": "FAIL",
+      "inputHashDrift": [],
+      "scope": "All actual source Swift typecheck only; no exclusions/vendor input; not object/link/runtime acceptance",
+      "remaining": "Genuine ConversationViewController/VM/Interactor and real protocol/API operations; no renderer placeholders"
+    }
+  },
+  "nativeConversationHeaders": {
+    "sourceSHA256": {
+      "ios/Session/CollapsedConversationHeaderView.swift": "bf9d60f024f957a9ab9dbb310891bfa9afc87dcab0aad13eaae8f655ade598a3",
+      "ios/Session/ExpandedConversationHeaderView.swift": "ebcca155a70a1dd7a4bdf2e9d9de408133b07de22c10d89acedd8a93bf8b8d47",
+      "ios/Session/SheetConversationHeaderViewController.swift": "50dfdd65f55037c63f02ee968783852359aafd3a80d97c2c5cfd4ffec1f654a6",
+      "ios/Session/UIColor+Hex.swift": "1f9b08afeb02569e0cebbc90eace4119775d5a97cf96a65934b0205a06c0a0bb",
+      "ios/Session/NavigationBarManagerMetricService.swift": "8013f6d9cdabefa0ac0917c76d2640a47b1be66c708fc7e6c9075d55f7d88520",
+      "ios/Session/NavigationBarManager.swift": "2c9d3b57b4b7462d01fc352453e672fb6e21cc7e9e686dfd180033c17a131e6c"
+    },
+    "sourceObjectReceipt": "node_modules/.cache/ios-native-headers/receipt.json",
+    "sourceObjectReceiptSHA256": "fa4bdc2470aca8981ae8017bd9a2a314e4679ea39ac234b5e7446dfdc25ec650",
+    "scope": "Explicit prior250Swift closure plus three genuine native header classes, trueUIColor hex helper and navigation metric service; excludes unresolved VM/Interactor/cell/factories/Merged/TicketCard and new Composer/picker/NavigationManager/controller pending graph. Not all source/strict link/Pod/runtime or deleted-private-protocol ABI acceptance.",
+    "swiftUnits": 255,
+    "selectedOwnObjCEntries": 23,
+    "selectedMetadataDifferences": 0,
+    "inputHashDrift": [],
+    "status": "BOUNDED_SOURCE_OBJECT_AND_SELECTED_METADATA_PASS",
+    "navigationManager": "SOURCE_WRITTEN_UNLINKED: true root Swift fields/constructor/updateTitle, actual ConversationViewController missing; private two-requirement interface and routing/metric witness ABI deleted",
+    "runtimeVerified": false
+  },
+  "functionalGapInventory": "docs/IOS_FUNCTIONAL_GAPS.json",
+  "remoteCardSheetFunctionalPath": "docs/IOS_REMOTE_CARD_SHEET_PATHS.md",
+  "remoteCardSheetCurrentHardGaps": [
+    "All new source and remaining Ticket Create graph must enter the next no-exclusion whole strict link",
+    "Actual unimplemented native method inventory, WMO-deleted private injection/protocol ABI and all-method parity remain explicit",
+    "Normal static/dynamic/RN consumer, complete SDK resource calls and actual UIKit/WebKit/backend runtime"
+  ],
+  "nativeContentAndInApps": {
+    "path": "node_modules/.cache/ios-native-content-containers/receipt.json",
+    "sha256": "45340580fdee160d90bd884fbd1e5201a5a11fab93455367dfdf4fa0184b021c",
+    "scope": "Four true content-controller/preloader/InApps own source bodies and object metadata only; no whole SDK/normal consumer/UIKit/WebKit runtime acceptance",
+    "status": "THREE_TARGET_SOURCE_OBJECT_AND_98_SELECTED_OWN_METADATA_PASS",
+    "inputHashDrift": [],
+    "selectedClasses": 4,
+    "selectedOwnEntries": 98,
+    "runtimeVerified": false,
+    "pending": "Actual Launcher/Badge/ImageLoader,ChatNotification/StackedChat,full-screen Note/Post,complete native Conversation and normal consumer graph",
+    "laterParentPrivateIvarSourceOrganization": "Parent fields moved to .m private extension for original Note shadow; current parent proof is native-full-screen receipt; prior98 receipt remains a historical source snapshot."
+  },
+  "nativeLauncherAndNotifications": {
+    "status": "SOURCE_WRITTEN_BOUNDED_OBJECT_METADATA_VERIFIED_NOT_WHOLE_SDK",
+    "launcherReceipt": "node_modules/.cache/ios-launcher-recovery/receipt.json",
+    "launcherScope": "260 explicit selected Swift plus AnimationUtils; three targets, four original own runtime classes,42 own entries. Frozen pre-later-shared-header snapshot. No UIKit/startup/whole link acceptance.",
+    "notificationReceipt": "node_modules/.cache/ios-chat-notification-recovery/all-receipt.json",
+    "notificationScope": "263 explicit selected Swift plus five true ObjC notification bodies; three targets, all eight original notification runtime classes/154 own entries; source/input snapshot fixed by receipt. No whole SDK/link/Pod/UIKit runtime acceptance.",
+    "newSwift": [
+      "DefaultImageLoader.swift",
+      "BadgeView.swift",
+      "LauncherView.swift",
+      "LauncherViewController.swift",
+      "TicketInfoView.swift",
+      "ChatNotificationContentView.swift",
+      "ChatNotificationView.swift"
+    ],
+    "newObjC": [
+      "ICMLauncherAnimationUtils",
+      "ICMChatNotificationViewController",
+      "ICMStackedChatNotificationsViewController",
+      "ICMStackedChatNotificationsPillView",
+      "ICMStackedChatNotificationsViewItem",
+      "ICMStackedChatNotificationsView"
+    ],
+    "sourceSeams": [
+      "OriginalWMO QuickReplyView consumers require mutable replyOptions/internal stackView/addButtons; bodies unchanged.",
+      "Original sole ReplyOption declaration canonicalized/moved to PartValueImports so true selectedReplyOption property imports.",
+      "PoweredBy canonical/source identity and three existing getters; original body unchanged.",
+      "AttachmentFileManager fileManager/copyLocalFile source visibility to true picker caller, body unchanged."
+    ],
+    "remaining": [
+      "true Note/Post/FullScreen native controllers and Header/Fake/Separator/Reactions implementations",
+      "whole current Controller/VM/UI graph",
+      "normal static/dynamic Pod/RN consumer link",
+      "UIKit/remote WebJS/backend/native startup runtime"
+    ]
+  },
+  "nativeFullScreenInApps": {
+    "status": "BOUNDED_THREE_TARGET_TWENTY_CLASS_374_OWN_PASS",
+    "receipt": "node_modules/.cache/ios-native-full-screen/receipt.json",
+    "ownSource": [
+      "ICMNoteViewController",
+      "ICMPostViewController",
+      "ICMFullScreenInAppViewController",
+      "ICMInAppHeaderViewController",
+      "ICMSeparatorView",
+      "ICMReactionsViewController",
+      "FakeComposerView"
+    ],
+    "helpers": [
+      "Original UIImage.icm_resizeImageToSize renderer and renderingMode preservation",
+      "Anonymous80byte native ICMInAppAttributes with six exact scalar field names and UIEdgeInsets",
+      "ContentContainer original three ivars moved in original order to private class extension so Note retains independent same-name background field"
+    ],
+    "boundaries": [
+      "Actual FullScreen loadView/Note/Post actions/default children bodies retained",
+      "Original read/react native HTTP chain reused",
+      "Source/own metadata only, no UIKit startup/link/normalPod/backend acceptance",
+      "Deleted/private Swift source ABI remains independently limited"
+    ],
+    "snapshot": {
+      "swiftUnits": 264,
+      "objCUnits": 14,
+      "runtimeClasses": 20,
+      "ownEntriesPerTarget": 374,
+      "targets": 3,
+      "inputHashDrift": []
+    }
+  },
+  "nativeHomescreenData": {
+    "status": "BOUNDED_HOME_DEFAULT_THREE_TARGET_17_OWN_PASS",
+    "receipt": "node_modules/.cache/ios-homescreen-recovery/receipt.json",
+    "scope": "270 selected Swift + Home native HTTP; three source runtime classes16own and one original HTTP own method per target. Frozen pre-Header followups.",
+    "functionalSources": [
+      "Home.swift",
+      "HomeCards.swift",
+      "NewConversationCard.swift",
+      "InternalHelpCenterArticle.swift",
+      "HomescreenInteractor.swift",
+      "SwiftAPIBridge+Home.swift",
+      "ICMHTTPClient+Home.h",
+      "ICMHTTPClient+Home.m"
+    ],
+    "boundaries": [
+      "HomeCard second getter deleted/private ABI not recreated; proven cardType and DictionaryInitializable behavior only.",
+      "Interactor/API bridge use original concrete defaults; alternate optimized private injection ABI not recreated.",
+      "Home Controller/VM/card UI remain independently required; no startup/link/normalPod/runtime claim."
+    ]
+  },
+  "nativeHomescreenHeader": {
+    "status": "BOUNDED_HOME_HEADER_DEFAULT_THREE_TARGET_38_OWN_PASS",
+    "receipt": "node_modules/.cache/ios-homescreen-recovery/header-receipt.json",
+    "scope": "275 selected Swift+2ObjC; eight source classes37 own plus HTTP1 on3targets. Frozen pre-later-payload name fix; no completeHome/normalPod/runtime claim.",
+    "sourceBoundaries": [
+      "HeaderDelegate is proven single headerDidUpdate(state), not a marker; private witness ABI not recreated.",
+      "Other Header VM/view/interactor injection protocols contain deleted requirements; concrete defaults retain explicit alternate ABI limitation.",
+      "HeaderViewInfo three payloads/order proved; standalone labels/layout unrecovered.",
+      "Cached-image conversion UIImage-first/AnimatedImage-second is original; case source labels descriptive.",
+      "Existing Header background/content enums/fields changed only private-to-internal for original WMO siblings."
+    ],
+    "remaining": [
+      "wholeSDK strictlink and normal consumers",
+      "UIKit/network/remote execution acceptance"
+    ],
+    "laterSourceUpdate": "True main Home VM/Controller and full Help Center default graph now implemented; see nativeHelpCenterAndHomeParent. This field retains the earlier bounded evidence only."
+  },
+  "nativePermissions": {
+    "status": "THREE_TARGET_SOURCE_OBJECT_AND_70_SELECTED_OWN_METADATA_PASS",
+    "receipt": "node_modules/.cache/ios-permission-recovery/receipt.json",
+    "scope": "Five actual ObjC class bodies/70own entries and true4required protocol; threeiOS15targets, source/own types only. Objects retained by SHA under audit/ios-permissions/source-objects.",
+    "fixedSelectorLowering": "authorizationStatus result goes directly performSelector ->ptrtoint i64->trunc i32, no object retain of scalar return; LLVMIR retained.",
+    "systemFrameworks": [
+      "AVFoundation",
+      "Photos",
+      "UserNotifications",
+      "CoreLocation"
+    ],
+    "notExecuted": [
+      "No OS permission request",
+      "No Settings/openURL execution",
+      "No camera/photo/location/APNs registration execution",
+      "No wholeSDK or normalPod acceptance"
+    ]
+  },
+  "nativeHomescreenRenderers": {
+    "status": "PASS_BOUNDED_HOME_RENDERER_SOURCE",
+    "receipt": ".build/ios-home-renderer-source/complete-default/receipt.json",
+    "scope": "333 selected actual Swift+one actual ObjC;18 Home renderer/support classes90 own types match on3targets, no drift. Four later Article Swift units outside frozen333 inputs. Not whole SDK/link/runtime.",
+    "privateBoundaries": [
+      "StandardOutline original full ctor signature retained; arbitrary frame/CGSize input behavior outside reached zero-frame/fixed16 defaults unrecovered.",
+      "Accessory protocol getter ABI not fabricated; concrete true default bodies restored.",
+      "RecentTickets sole-conformer weak transport explicit, deleted abstract requirement not invented.",
+      "MessengerHome delegate full inherited base+two own requirements proven; shared MessengerAppView private ABI incomplete."
+    ],
+    "remaining": [
+      "wholeSDK strictlink and normal consumers",
+      "native UIKit/remote WebJS/backend acceptance"
+    ],
+    "laterSourceUpdate": "True main Home VM/Controller and full Help Center default graph now implemented; see nativeHelpCenterAndHomeParent. This field retains the earlier bounded evidence only."
+  },
+  "nativeHelpCenterAndHomeParent": {
+    "status": "SOURCE_WRITTEN_WHOLE377_COMPILED_WITH_LATER_OWN_METADATA_FIX",
+    "receipt": ".build/ios-help-center-ui-source/selector-fixed/receipt.json",
+    "selectedClasses": 16,
+    "selectedOwnEntries": 127,
+    "targets": 3,
+    "scope": "Normal underlying import; source objects/own selectors/plain types only. Current Home/HC source, no UIKit/WebJS/consumer/privateABI acceptance."
+  },
+  "nativeCarousel": {
+    "status": "THREE_TARGET_FIFTEEN_CLASSES_343_OWN_PLUS_EIGHT_HTTP_CATEGORY_ENTRIES_PASS",
+    "receipt": ".build/ios-carousel-source/native-complete/three-target-receipt.json",
+    "supportReceipt": ".build/ios-carousel-source/support/receipt.json",
+    "classes": 15,
+    "classOwnEntries": 343,
+    "supportEntries": 8,
+    "scope": "Real default native model/service/filter/metrics/reporting/HTTP/Page/Action/Permission graph. Source objects/plain selectors/types only; whole-source/link, consumer, resources, permissions/UI/backend runtime unverified."
+  },
+  "normalConsumer": {
+    "status": "PASS_NORMAL_STATIC_DYNAMIC_BUILD_PUBLIC_CLIENT_RESOURCE_SMOKE",
+    "receipt": ".build/ios-normal-consumer/receipt.json",
+    "sha256": "60077188d2d2f2ff0001fac954080a407397f2443d277df5f01b096f38e660e7",
+    "reactNativeVersion": "0.86.2",
+    "sourceUnitsPerPodTarget": {
+      "sdkObjC": 290,
+      "RCTObjC": 3,
+      "RCTObjCpp": 1,
+      "swift": 395,
+      "cocoaPodsMarker": 1
+    },
+    "publicAPISwiftAndObjCCompiled": true,
+    "selectedPrivateICMConfigRejected": true,
+    "originalResourceHashesPerMode": 63,
+    "XCTestBuilt": true,
+    "XCTestExecuted": false,
+    "SDKSessionsOrBackendExercised": false,
+    "boundary": "Actual normal Pod build/link and selected Host runtime resources/class loading only; no full SDK behavior/privateABI/runtime readiness claim."
+  }
+}

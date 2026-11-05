@@ -1,0 +1,246 @@
+{
+  "status": "SCOPED_SOURCE_RESTORED_NOT_COMPILED",
+  "scope": "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+  "root_only": true,
+  "source_before_sha256": "f091f1a9f1f945b2d8ead41678c780faf22e4e67b049567e25de8c4d8d6aaf71",
+  "source_after_sha256": "37ca8040e877c61a0d41fcd99f9024aedbfbec17131e1bc988c9f1c63d8d06f7",
+  "source_capture_sites": 3,
+  "source_capture_bindings": 12,
+  "declaration_check_exit": 0,
+  "type_edits": 28,
+  "source_joins": [
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ConversationScreenKt$ConversationScreenContent$41$4/ast-input/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4.java",
+      "22928",
+      "23014",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$41$4.invoke$lambda$8$lambda$7$lambda$6(recoveredExpressionCapture_389_0, recoveredExpressionCapture_389_1))",
+      "22909",
+      "final kotlinx.coroutines.CoroutineScope recoveredExpressionCapture_389_0 = var24;\\n                  final androidx.compose.foundation.lazy.LazyListState recoveredExpressionCapture_389_1 = var12;\\n                  ",
+      "389",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lkotlinx/coroutines/CoroutineScope;=var24,Landroidx/compose/foundation/lazy/LazyListState;=var12",
+      "recoveredExpressionCapture_389_0=var24@10154:LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;;recoveredExpressionCapture_389_1=var12@9444:LOCAL|12|12|0|var12|Landroidx/compose/foundation/lazy/LazyListState;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ConversationScreenKt$ConversationScreenContent$41$4/ast-input/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4.java",
+      "15998",
+      "16084",
+      "((kotlin.jvm.functions.Function2) (recoveredExpressionArgument_390_0, recoveredExpressionArgument_390_1) -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$41$4.invoke$lambda$8$lambda$2$lambda$1(recoveredExpressionCapture_390_0, recoveredExpressionCapture_390_1, recoveredExpressionCapture_390_2, recoveredExpressionCapture_390_3, recoveredExpressionCapture_390_4, (java.util.List) ((java.util.List)recoveredExpressionArgument_390_0), (java.util.List) ((java.util.List)recoveredExpressionArgument_390_1)))",
+      "15980",
+      "final kotlin.jvm.functions.Function2 recoveredExpressionCapture_390_0 = var22;\\n               final androidx.compose.ui.platform.SoftwareKeyboardController recoveredExpressionCapture_390_1 = var23;\\n               final kotlinx.coroutines.CoroutineScope recoveredExpressionCapture_390_2 = var24;\\n               final androidx.compose.runtime.MutableState recoveredExpressionCapture_390_3 = var26;\\n               final androidx.compose.runtime.State recoveredExpressionCapture_390_4 = var25;\\n               ",
+      "390",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lkotlin/jvm/functions/Function2;=var22,Landroidx/compose/ui/platform/SoftwareKeyboardController;=var23,Lkotlinx/coroutines/CoroutineScope;=var24,Landroidx/compose/runtime/MutableState;=var26,Landroidx/compose/runtime/State;=var25",
+      "recoveredExpressionCapture_390_0=var22@10023:LOCAL|22|22|0|var22|Lkotlin/jvm/functions/Function2;;recoveredExpressionCapture_390_1=var23@10081:LOCAL|23|23|0|var23|Landroidx/compose/ui/platform/SoftwareKeyboardController;;recoveredExpressionCapture_390_2=var24@10154:LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;;recoveredExpressionCapture_390_3=var26@10269:LOCAL|26|26|0|var26|Landroidx/compose/runtime/MutableState;;recoveredExpressionCapture_390_4=var25@10211:LOCAL|25|25|0|var25|Landroidx/compose/runtime/State;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ],
+    [
+      "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/no-late-ConversationScreenKt$ConversationScreenContent$41$4/ast-input/io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4.java",
+      "20398",
+      "20484",
+      "((kotlin.jvm.functions.Function0) () -> io.intercom.android.sdk.m5.conversation.ui.ConversationScreenKt$ConversationScreenContent$41$4.invoke$lambda$8$lambda$5$lambda$4(recoveredExpressionCapture_391_0, recoveredExpressionCapture_391_1, recoveredExpressionCapture_391_2, recoveredExpressionCapture_391_3, recoveredExpressionCapture_391_4))",
+      "20379",
+      "final kotlinx.coroutines.CoroutineScope recoveredExpressionCapture_391_0 = var24;\\n                  final io.intercom.android.sdk.m5.conversation.states.ConversationUiState recoveredExpressionCapture_391_1 = var9;\\n                  final androidx.compose.foundation.lazy.LazyListState recoveredExpressionCapture_391_2 = var12;\\n                  final androidx.compose.ui.unit.Density recoveredExpressionCapture_391_3 = var28;\\n                  final kotlin.jvm.functions.Function1 recoveredExpressionCapture_391_4 = var29;\\n                  ",
+      "391",
+      "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+      "Lkotlinx/coroutines/CoroutineScope;=var24,Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;=var9,Landroidx/compose/foundation/lazy/LazyListState;=var12,Landroidx/compose/ui/unit/Density;=var28,Lkotlin/jvm/functions/Function1;=var29",
+      "recoveredExpressionCapture_391_0=var24@10154:LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;;recoveredExpressionCapture_391_1=var9@9273:LOCAL|9|9|0|var9|Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;;recoveredExpressionCapture_391_2=var12@9444:LOCAL|12|12|0|var12|Landroidx/compose/foundation/lazy/LazyListState;;recoveredExpressionCapture_391_3=var28@10379:LOCAL|28|28|0|var28|Landroidx/compose/ui/unit/Density;;recoveredExpressionCapture_391_4=var29@10422:LOCAL|29|29|0|var29|Lkotlin/jvm/functions/Function1;",
+      "BLOCK",
+      "-1",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ssa_evidence": [
+    {
+      "site": 389,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1125",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke$lambda$8$lambda$7$lambda$6",
+        "(Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlinx/coroutines/CoroutineScope;=var24,Landroidx/compose/foundation/lazy/LazyListState;=var12",
+        "1709"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke$lambda$8$lambda$7$lambda$6",
+          "(Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;)Lkotlin/Unit;",
+          "{1705, 1706, 1707, 1708, 1709, 1710, 1711, 1712, 1713}",
+          "LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|12|12|0|var12|Landroidx/compose/foundation/lazy/LazyListState;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke$lambda$8$lambda$7$lambda$6",
+          "(Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;)Lkotlin/Unit;",
+          "{1705, 1706, 1707, 1708, 1709, 1710, 1711, 1712, 1713}",
+          "LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|12|12|0|var12|Landroidx/compose/foundation/lazy/LazyListState;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1709",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4.invoke$lambda$8$lambda$7$lambda$6(Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/foundation/lazy/LazyListState;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 390,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "627",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke$lambda$8$lambda$2$lambda$1",
+        "(Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Ljava/util/List;Ljava/util/List;)Lkotlin/Unit;",
+        "6",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+        "(Ljava/util/List;Ljava/util/List;)Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function2",
+        "Lkotlin/jvm/functions/Function2;=var22,Landroidx/compose/ui/platform/SoftwareKeyboardController;=var23,Lkotlinx/coroutines/CoroutineScope;=var24,Landroidx/compose/runtime/MutableState;=var26,Landroidx/compose/runtime/State;=var25",
+        "980"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke$lambda$8$lambda$2$lambda$1",
+          "(Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Ljava/util/List;Ljava/util/List;)Lkotlin/Unit;",
+          "{970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984}",
+          "LOCAL|22|22|0|var22|Lkotlin/jvm/functions/Function2;",
+          "LOCAL|23|23|0|var23|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+          "LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|26|26|0|var26|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|25|25|0|var25|Landroidx/compose/runtime/State;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke$lambda$8$lambda$2$lambda$1",
+          "(Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Ljava/util/List;Ljava/util/List;)Lkotlin/Unit;",
+          "{970, 971, 972, 973, 974, 975, 976, 977, 978, 979, 980, 981, 982, 983, 984}",
+          "LOCAL|22|22|0|var22|Lkotlin/jvm/functions/Function2;",
+          "LOCAL|23|23|0|var23|Landroidx/compose/ui/platform/SoftwareKeyboardController;",
+          "LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|26|26|0|var26|Landroidx/compose/runtime/MutableState;",
+          "LOCAL|25|25|0|var25|Landroidx/compose/runtime/State;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "980",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4.invoke$lambda$8$lambda$2$lambda$1(Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/platform/SoftwareKeyboardController;Lkotlinx/coroutines/CoroutineScope;Landroidx/compose/runtime/MutableState;Landroidx/compose/runtime/State;Ljava/util/List;Ljava/util/List;)Lkotlin/Unit; (6), (Ljava/util/List;Ljava/util/List;)Lkotlin/Unit;]"
+      ]
+    },
+    {
+      "site": 391,
+      "original": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "949",
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke$lambda$8$lambda$5$lambda$4",
+        "(Lkotlinx/coroutines/CoroutineScope;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/foundation/lazy/LazyListState;Landroidx/compose/ui/unit/Density;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit;",
+        "6",
+        "()Ljava/lang/Object;",
+        "()Lkotlin/Unit;",
+        "kotlin/jvm/functions/Function0",
+        "Lkotlinx/coroutines/CoroutineScope;=var24,Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;=var9,Landroidx/compose/foundation/lazy/LazyListState;=var12,Landroidx/compose/ui/unit/Density;=var28,Lkotlin/jvm/functions/Function1;=var29",
+        "1439"
+      ],
+      "ssa": [
+        [
+          "AT_END",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke$lambda$8$lambda$5$lambda$4",
+          "(Lkotlinx/coroutines/CoroutineScope;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/foundation/lazy/LazyListState;Landroidx/compose/ui/unit/Density;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit;",
+          "{1429, 1430, 1431, 1432, 1433, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1442, 1443}",
+          "LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|9|9|0|var9|Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;",
+          "LOCAL|12|12|0|var12|Landroidx/compose/foundation/lazy/LazyListState;",
+          "LOCAL|28|28|0|var28|Landroidx/compose/ui/unit/Density;",
+          "LOCAL|29|29|0|var29|Lkotlin/jvm/functions/Function1;"
+        ],
+        [
+          "LATE_PROCESSING",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke",
+          "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+          "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+          "invoke$lambda$8$lambda$5$lambda$4",
+          "(Lkotlinx/coroutines/CoroutineScope;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/foundation/lazy/LazyListState;Landroidx/compose/ui/unit/Density;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit;",
+          "{1429, 1430, 1431, 1432, 1433, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1442, 1443}",
+          "LOCAL|24|24|0|var24|Lkotlinx/coroutines/CoroutineScope;",
+          "LOCAL|9|9|0|var9|Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;",
+          "LOCAL|12|12|0|var12|Landroidx/compose/foundation/lazy/LazyListState;",
+          "LOCAL|28|28|0|var28|Landroidx/compose/ui/unit/Density;",
+          "LOCAL|29|29|0|var29|Lkotlin/jvm/functions/Function1;"
+        ]
+      ],
+      "bootstrap": [
+        "io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4",
+        "invoke",
+        "(Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)V",
+        "1439",
+        "java/lang/invoke/LambdaMetafactory",
+        "metafactory",
+        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+        "3",
+        "[()Ljava/lang/Object;, io/intercom/android/sdk/m5/conversation/ui/ConversationScreenKt$ConversationScreenContent$41$4.invoke$lambda$8$lambda$5$lambda$4(Lkotlinx/coroutines/CoroutineScope;Lio/intercom/android/sdk/m5/conversation/states/ConversationUiState;Landroidx/compose/foundation/lazy/LazyListState;Landroidx/compose/ui/unit/Density;Lkotlin/jvm/functions/Function1;)Lkotlin/Unit; (6), ()Lkotlin/Unit;]"
+      ]
+    }
+  ],
+  "coordinate": "Actual offsets of SHA-pinned normalized reference, not necessarily vendor raw BCI",
+  "normal_build_uses_decompiler": false,
+  "previous_remember_cast": []
+}
