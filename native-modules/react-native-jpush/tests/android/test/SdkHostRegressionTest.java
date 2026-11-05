@@ -1576,7 +1576,14 @@ public final class SdkHostRegressionTest {
         JCoreStorage.setCollectionAuth(context, true);
         JCoreStorage.setPushStopped(context, false);
         JCoreStorage.clearRegistration(context);
-        final AtomicInteger tokenRequests = new AtomicInteger();
+        final AtomicInteger tokenRequests = new AtomicInteger(), acknowledgedBinds = new AtomicInteger();
+        JPushMessageReceiver bindReceiver = new JPushMessageReceiver() {
+            @Override public void onCommandResult(Context c, CmdMessage message) {
+                if (message.cmd == 10000 && message.errorCode == 0 && message.extra != null
+                    && "loopback_rebind_token".equals(message.extra.getString("token"))) acknowledgedBinds.incrementAndGet();
+            }
+        };
+        ActionHelper.getInstance().registerReceiver(bindReceiver);
         cn.jpush.android.api.JThirdPlatFormInterface adapter = new cn.jpush.android.api.JThirdPlatFormInterface() {
             public void init(Context c) {} public void register(Context c, Bundle b) {}
             public String getToken(Context c) {
@@ -1634,39 +1641,52 @@ public final class SdkHostRegressionTest {
                 java.lang.reflect.Field started = JCoreTcpEngine.class.getDeclaredField("started"); started.setAccessible(true);
                 check(!started.getBoolean(engine), "Stopped init must not reserve started");
                 JPushInterface.resumePush(context);
-                awaitCondition(() -> engine.isLoggedIn() && binds.get() >= 1, "First resume must register, login and bind");
-                CountDownLatch stable = new CountDownLatch(1); engine.executeAsync(stable::countDown);
-                check(stable.await(3000L, TimeUnit.MILLISECONDS), "Initial FCM request work must stabilize");
+                awaitCondition(() -> engine.isLoggedIn() && tokenRequests.get() == 2 && binds.get() == 2
+                    && acknowledgedBinds.get() == 2, "First resume and login must complete both FCM token requests and bind callbacks");
                 int initialRequests = tokenRequests.get();
                 String initialRid = JCoreStorage.getRegistrationId(context);
                 engine.start(context); engine.start(context);
                 check(connections.get() == 1, "Repeated init must not establish another connection");
                 engine.stop(context); JCoreStorage.clearRegistration(context); engine.start(context);
-                awaitCondition(() -> engine.isLoggedIn() && boundUids.contains(880002L), "Second real registration must receive a bind ACK on its new UID");
+                awaitCondition(() -> engine.isLoggedIn() && boundUids.contains(880002L)
+                    && tokenRequests.get() == initialRequests + 1 && binds.get() == initialRequests + 1
+                    && acknowledgedBinds.get() == initialRequests + 1, "Second real registration must complete its new-UID bind acknowledgement callback");
                 check(registrations.get() == 2 && !initialRid.equals(JCoreStorage.getRegistrationId(context)), "Rebind must follow a changed RID from real Register");
                 check(tokenRequests.get() == initialRequests + 1, "Successful re-registration requests the current FCM token once");
                 awaitCondition(() -> "loopback_rebind_token".equals(JCoreStorage.getThirdToken(context, (byte) 8)), "Successful bind acknowledgement persists current token");
 
                 engine.stop(context); JCoreStorage.clearRegistration(context);
-                CountDownLatch blocked = new CountDownLatch(1), release = new CountDownLatch(1);
-                engine.executeAsync(() -> { blocked.countDown(); try { release.await(3000L, TimeUnit.MILLISECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } });
-                check(blocked.await(3000L, TimeUnit.MILLISECONDS), "Block only the I/O queue before scheduling generations");
-                engine.start(context); JPushInterface.stopPush(context); JPushInterface.resumePush(context); release.countDown();
-                awaitCondition(() -> engine.isLoggedIn() && registrations.get() == 3, "An obsolete queued start cannot cancel the newer resume");
-                check(connections.get() == 3, "Only current start generation may connect");
-                CountDownLatch generationStable = new CountDownLatch(1); engine.executeAsync(generationStable::countDown);
-                check(generationStable.await(3000L, TimeUnit.MILLISECONDS), "Current login FCM work stabilizes");
+                java.lang.reflect.Field handshakeLatch = JCoreTcpEngine.class.getDeclaredField("handshakeLatch");
+                handshakeLatch.setAccessible(true);
+                final CountDownLatch obsoleteStart, currentStart;
+                // Both workers must wait for this monitor before checking their start generation.
+                synchronized (engine) {
+                    engine.start(context);
+                    obsoleteStart = (CountDownLatch) handshakeLatch.get(engine);
+                    JPushInterface.stopPush(context);
+                    JPushInterface.resumePush(context);
+                    currentStart = (CountDownLatch) handshakeLatch.get(engine);
+                    check(obsoleteStart != currentStart, "Resume must own a new handshake latch");
+                }
+                check(obsoleteStart.await(3000L, TimeUnit.MILLISECONDS), "Obsolete queued start must release its own latch");
+                check(currentStart.await(3000L, TimeUnit.MILLISECONDS), "Current start must complete its handshake");
+                awaitCondition(() -> engine.isLoggedIn() && registrations.get() == 3
+                    && tokenRequests.get() == initialRequests + 3 && binds.get() == initialRequests + 3
+                    && acknowledgedBinds.get() == initialRequests + 3, "Current resume and login must complete both FCM bind callbacks");
+                check(connections.get() == 3 && started.getBoolean(engine) && engine.isLoggedIn(),
+                    "An obsolete queued start must leave the current owner started and logged in with only one new connection");
                 int beforeFailedLogin = tokenRequests.get();
                 engine.stop(context); JCoreStorage.clearRegistration(context); failLogin.set(true); engine.start(context);
                 check(engine.awaitHandshake(3000L), "Failed login must complete the handshake wait");
-                CountDownLatch failedStable = new CountDownLatch(1); engine.executeAsync(failedStable::countDown);
-                check(failedStable.await(3000L, TimeUnit.MILLISECONDS), "Failed login work completes");
-                check(!engine.isLoggedIn() && tokenRequests.get() == beforeFailedLogin, "Failed login does not initialize FCM");
+                check(!engine.isLoggedIn() && tokenRequests.get() == beforeFailedLogin
+                    && binds.get() == beforeFailedLogin && acknowledgedBinds.get() == beforeFailedLogin,
+                    "Failed login does not request or acknowledge another FCM bind");
                 check(serverError.get() == null, "Loopback registration server must remain healthy");
             } finally {
                 done.set(true); engine.stop(context);
                 Socket socket = active.get(); if (socket != null) socket.close();
                 plugin.set(null, null); registered.setBoolean(null, false);
+                ActionHelper.getInstance().unregisterReceiver(bindReceiver);
             }
         }
     }
