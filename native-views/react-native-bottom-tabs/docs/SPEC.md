@@ -329,7 +329,9 @@ placement and can draw one round accessory button above the vertical bar.
 - **Height on placement change:** every placement event is followed by
   `onTabBarMeasured` with the bar's current height, because the height reported
   for the previous placement no longer applies. A vertical bar reports its full
-  column height, so consumers MUST NOT treat that value as bottom space.
+  column height, so `BottomTabs` MUST expose 0 through
+  `BottomTabBarHeightContext` and the drawer's `bottomBarHeight` for `leading`
+  and `trailing` placement, and the measured height only for `bottom`.
 - **Side accessory:** `sideAccessoryIcon` (an image source, loaded with the
   React image loader and drawn as a template tinted with `inactiveTintColor`),
   `sideAccessoryLabel` (accessibility label), and `onSideAccessoryPress`. The
