@@ -11,6 +11,7 @@ import { mapConcurrent, packumentUrl } from "./verify-published.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const nativeListName = "@onekeyfe/react-native-native-list";
+const pagerName = "@onekeyfe/react-native-pager-view";
 
 export function selectUnpublished(workspaces, packuments, distTag) {
   const missing = [];
@@ -94,7 +95,9 @@ async function main() {
   console.log(
     `${missing.length} package(s) need publishing; ${retags.length} existing version(s) need the ${distTag} tag`
   );
-  const first = missing.filter(({ name }) => name !== nativeListName);
+  const first = missing.filter(
+    ({ name }) => name !== nativeListName && name !== pagerName
+  );
   if (first.length > 0) {
     runYarn([
       "workspaces",
@@ -112,11 +115,15 @@ async function main() {
       distTag,
     ]);
   }
-  if (missing.some(({ name }) => name === nativeListName)) {
+  if (missing.some(({ name }) => name === nativeListName || name === pagerName)) {
     // A recovery runner may skip the already-published Image workspace, but
-    // NativeList still needs its generated declarations during the build.
+    // Pager and NativeList still need its generated declarations during the build.
     runYarn(["workspace", "@onekeyfe/react-native-image", "prepare"]);
-    runYarn(["workspace", nativeListName, "release", "--tag", distTag]);
+    for (const name of [pagerName, nativeListName]) {
+      if (missing.some((workspace) => workspace.name === name)) {
+        runYarn(["workspace", name, "release", "--tag", distTag]);
+      }
+    }
   }
   for (const { name, version } of retags) {
     runNpm(["dist-tag", "add", `${name}@${version}`, distTag]);
