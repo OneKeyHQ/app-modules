@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMHelpCenterArticle.h"
 #import "ICMHelpCenterArticleAuthor.h"
 #import "ICMHelpCenterArticleSearchResult.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "IntercomNexusEvent.h"
 @implementation IntercomNexusEvent
 @synthesize showAvatar = _showAvatar, isBot = _isBot, hasAi = _hasAi, type = _type, eventGuid = _eventGuid, fromUser = _fromUser, toUser = _toUser, conversationId = _conversationId, ticketId = _ticketId, adminName = _adminName, avatarShapeString = _avatarShapeString, adminId = _adminId, adminAvatar = _adminAvatar, assigneeId = _assigneeId, conversationPartType = _conversationPartType, topics = _topics, creationTime = _creationTime, entityId = _entityId, entityType = _entityType, thinkingStatusTransitionDelay = _thinkingStatusTransitionDelay, thinkingStatusStrings = _thinkingStatusStrings, tokenSequenceIndex = _tokenSequenceIndex, blocks = _blocks, acknowledgementPart = _acknowledgementPart, createdAt = _createdAt, clientAssignedUUID = _clientAssignedUUID, clientId = _clientId, title = _title;

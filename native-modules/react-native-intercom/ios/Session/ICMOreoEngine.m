@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // SOURCE_RESTORED_UNLINKED: full identity/Bridge/session closure is still incomplete.
 #import "ICMOreoEngine.h"
 #import "ICMMultipartTaskBuilder.h"

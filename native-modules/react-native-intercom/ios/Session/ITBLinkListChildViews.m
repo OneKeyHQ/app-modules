@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBLinkListViewDependencies.h"
 // Signature inferred from original call sites; the delegate protocol definition is absent.
 @interface NSObject (ITBLinkListIntentDispatch)

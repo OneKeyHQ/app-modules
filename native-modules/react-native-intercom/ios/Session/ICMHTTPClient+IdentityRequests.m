@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMHTTPClient.h"
 #import "ICMIdentityStore.h"
 #import "ICMOreoEngine.h"

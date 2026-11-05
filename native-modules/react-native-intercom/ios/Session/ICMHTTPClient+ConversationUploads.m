@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 #import "ICMHTTPClient+ConversationUploads.h"
 #import "ICMAWSConfiguration.h"
 #import "ICMIdentityStore.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "ICMWebHelpCenterJSBuilder.h"
 @implementation ICMWebHelpCenterJSBuilder
 + (NSString *)configureBridgeWithActionHandler:(NSString *)handler {

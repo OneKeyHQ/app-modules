@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMIntegerTextField.h"
 #import "ICMIntegerValidator.h"
 #import "ICMValidator.h"

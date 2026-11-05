@@ -1,7 +1,0 @@
-{
-  "status": "COMPILER_DECLARATION_RESTORED_PENDING_COMPILER",
-  "scope": "Only API35 original JSONArray(String) constructor JSONException attribute. Exactly one String-constructor caller in main source (Video$2), already has original JSON/IO/finally handling; other Collection/Object constructors untouched. Native runtime platform unchanged.",
-  "row": "org/json/JSONArray\t<init>\t(Ljava/lang/String;)V\torg/json/JSONException",
-  "primary_evidence": "raw .recovery/android-base/classpath/android.jar org.json.JSONArray javap; original Video$2 source handler",
-  "code_backfill": false
-}

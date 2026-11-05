@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 import UIKit
 
 // The functional calls survive; optimized-away private witness spelling/order is not claimed recovered.

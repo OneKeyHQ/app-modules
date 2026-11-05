@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 import Foundation
 
 @objc(_TtC18IntercomSDKPrivate13SurveyService)

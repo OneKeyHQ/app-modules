@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBAttachmentBlockView.h"
 #import "ITBAttachmentBlock.h"
 #import "ITBBlockViewsReuseManager.h"

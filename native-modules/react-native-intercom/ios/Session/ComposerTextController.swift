@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 import Combine
 
 @_objcRuntimeName(_TtC18IntercomSDKPrivate22ComposerTextController)

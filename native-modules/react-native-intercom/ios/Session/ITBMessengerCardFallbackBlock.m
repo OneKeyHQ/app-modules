@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBMessengerCardFallbackBlock.h"
 #import "ITBMessengerCardFallbackView.h"
 #import "ICPCardFallbackModel.h"

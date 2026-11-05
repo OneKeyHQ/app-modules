@@ -1,7 +1,0 @@
-{
-  "status": "COMPILER_DECLARATION_RESTORED_PENDING_COMPILER",
-  "scope": "Only exact original API35 JSONObject(String) constructor JSONException attribute in compiler android.jar view; Shutdown original[98,168) JSON catch retained. All four original String-constructor callers have matching existing catches; no getString/getLong broad changes. Runtime platform unchanged.",
-  "row": "org/json/JSONObject\t<init>\t(Ljava/lang/String;)V\torg/json/JSONException",
-  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/json-constructor-exceptions-14",
-  "code_backfill": false
-}

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBUploadProgressButton.h"
 #import "ITBImageLoader.h"
 #pragma clang diagnostic push

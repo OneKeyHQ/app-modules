@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMReactions.h"
 @implementation ICMReactionsOption
 @synthesize index = _index, unicodeEmoticon = _unicodeEmoticon, imageUrl = _imageUrl;

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICPCardFallbackJSBuilder.h"
 @implementation ICPCardFallbackJSBuilder
 + (NSString *)configureBridgeWithActionHandler:(NSString *)handler {

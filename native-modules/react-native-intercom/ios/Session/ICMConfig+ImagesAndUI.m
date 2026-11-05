@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // UNLINKED until the actual image core and DataManager close.
 #import "ICMConfig.h"
 #import "ICMConfigUIModels.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMURLSessionTaskOperation.h"
 @implementation ICMURLSessionTaskOperation
 @synthesize task = _task, ignoreResponse = _ignoreResponse, taskCompleted = _taskCompleted;

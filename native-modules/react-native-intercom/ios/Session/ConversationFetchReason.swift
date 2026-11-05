@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 import Foundation
 
 // Recovery labels for six reached HTTP values; original spellings/ordinals remain unproved.

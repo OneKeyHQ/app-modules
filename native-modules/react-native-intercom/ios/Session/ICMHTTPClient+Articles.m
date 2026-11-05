@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "ICMHTTPClient+Articles.h"
 #import "ICMIdentityStore.h"
 #import "ICMOreoEngine.h"

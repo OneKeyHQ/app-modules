@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMUserUpdateDeduper.h"
 #import "ICMUserUpdateRequest.h"
 #import "ICMConfig.h"

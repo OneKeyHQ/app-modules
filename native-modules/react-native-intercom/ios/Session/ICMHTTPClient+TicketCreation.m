@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 #import "ICMHTTPClient+TicketCreation.h"
 #import "ICMConversationDependencies.h"
 #import "ICMIdentityStore.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMHTTPClient+Surveys.h"
 #import "ICMIdentityStore.h"
 #import "ICMOreoEngine.h"

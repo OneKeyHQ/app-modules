@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 import Foundation
 
 enum SurveyDismissalType: Hashable { case original0, original1 }

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/HELP_CENTER_RECOVERY.md.
 import Foundation
 
 extension SwiftAPIBridge {

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 import UIKit
 
 @objc enum MessagesEmptyStateActionType: Int { case message = 0, help }

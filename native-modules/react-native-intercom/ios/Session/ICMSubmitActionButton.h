@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 #import "ICMActionButton.h"
 @interface ICMSubmitActionButton : ICMActionButton
 @property (nonatomic, strong) UIImage *image;

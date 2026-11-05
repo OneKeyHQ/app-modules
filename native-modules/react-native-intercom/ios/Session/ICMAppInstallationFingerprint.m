@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMAppInstallationFingerprint.h"
 #import "ICMIdentityStore.h"
 #import "../Identity/ICMUtils.h"

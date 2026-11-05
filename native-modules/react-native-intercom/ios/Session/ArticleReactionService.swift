@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 import Foundation
 
 @_objcRuntimeName(_TtC18IntercomSDKPrivate22ArticleReactionService)

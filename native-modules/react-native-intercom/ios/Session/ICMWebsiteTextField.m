@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMWebsiteTextField.h"
 #import "ICMWebsiteValidator.h"
 #import "ICMValidator.h"

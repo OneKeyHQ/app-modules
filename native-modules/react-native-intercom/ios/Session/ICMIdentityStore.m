@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // SOURCE_RESTORED_UNLINKED: Engine, Config and HTTPBridge are not restored.
 #import "ICMIdentityStore.h"
 #import "ICMIdentityStoreDependencies.h"

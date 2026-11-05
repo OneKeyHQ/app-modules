@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 import UIKit
 
 // Surviving direct calls establish this functional interface; deleted private witness names remain unproved.

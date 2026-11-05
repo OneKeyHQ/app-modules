@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICPCardFallbackModel.h"
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-property-ivar"

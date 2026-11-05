@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMSubmitButton.h"
 #import "ICMFormInputDependencies.h"
 #import <QuartzCore/QuartzCore.h>

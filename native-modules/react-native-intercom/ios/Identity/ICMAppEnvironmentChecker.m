@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMAppEnvironmentChecker.h"
 #import <TargetConditionals.h>
 @implementation ICMAppEnvironmentChecker

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // SOURCE_RESTORED_UNLINKED: complete identity/refresher/Bridge closure is missing.
 #import "ICMOreoEngine.h"
 #import "ICMOreoUserJwtReplay.h"

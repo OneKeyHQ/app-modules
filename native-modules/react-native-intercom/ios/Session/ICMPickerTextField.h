@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMTextField.h"
 
 NS_ASSUME_NONNULL_BEGIN

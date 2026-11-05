@@ -17,6 +17,5 @@ Intercom iOS SDK 19.9.1:
   the original iOS release license as MIT licensed.
   The complete unmodified upstream notice is retained in LICENSES/Intercom-iOS.txt.
 
-Exact original artifact provenance and recovery modifications are recorded in docs/PROVENANCE.md,
-docs/RECOVERY.md and platform conformance records. External runtime dependencies retain their
-own licenses; listing them as compile dependencies does not relicense them.
+External runtime dependencies retain their own licenses; listing them as compile dependencies
+does not relicense them.

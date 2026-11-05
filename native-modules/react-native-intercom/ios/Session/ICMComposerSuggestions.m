@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMComposerSuggestions.h"
 #import "ICMComposerSuggestionsDependencies.h"
 @implementation ICMComposerSuggestions

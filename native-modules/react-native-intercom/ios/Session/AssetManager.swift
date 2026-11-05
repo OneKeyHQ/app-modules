@@ -1,4 +1,3 @@
-// Original asset data; approved source resource relocation: docs/IOS_PROVENANCE.md.
 import UIKit
 
 @objc(_TtC18IntercomSDKPrivate12AssetManager)

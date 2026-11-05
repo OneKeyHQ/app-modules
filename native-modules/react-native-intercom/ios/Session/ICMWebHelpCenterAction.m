@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "ICMWebHelpCenterAction.h"
 @implementation ICMWebHelpCenterAction
 - (instancetype)initWithType:(NSString *)type value:(NSDictionary *)value {

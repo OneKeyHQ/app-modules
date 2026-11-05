@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMLogger.h"
 #import "ICMUtils.h"
 @implementation ICMLogger

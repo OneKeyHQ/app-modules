@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 import UIKit
 
 @objc(_TtC18IntercomSDKPrivate23GIFPickerViewController)

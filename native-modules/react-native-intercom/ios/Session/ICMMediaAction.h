@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 #import "ICMTextAction.h"
 @class ITBUpload;
 @interface ICMMediaAction : NSObject <ICMAction> {

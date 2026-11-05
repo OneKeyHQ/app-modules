@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBTextBlockView.h"
 #import "ITBTextBlock.h"
 #import <math.h>

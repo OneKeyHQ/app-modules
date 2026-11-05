@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICPTextInputPayload.h"
 @implementation ICPTextInputPayload
 @synthesize title = _title, placeholder = _placeholder, currentText = _currentText;

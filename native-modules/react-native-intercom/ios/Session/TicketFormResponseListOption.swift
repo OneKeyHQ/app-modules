@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 import Foundation
 
 @objc(_TtC18IntercomSDKPrivate28TicketFormResponseListOption)

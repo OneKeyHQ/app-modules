@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "IntercomNexusConfiguration.h"
 @implementation IntercomNexusConfiguration
 @synthesize endpoints = _endpoints, connectionTimeout = _connectionTimeout, connectionHeartbeatInterval = _connectionHeartbeatInterval, backgroundConnectionTimeout = _backgroundConnectionTimeout;

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBInlineCitation.h"
 #import <libxml/HTMLparser.h>
 #import <libxml/xpath.h>

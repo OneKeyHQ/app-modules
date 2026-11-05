@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "../Identity/ICMSafeNetworkModel.h"
 @class ITBBlock, ICMReactionsSet;
 @interface ICMArticle : ICMSafeNetworkModel <NSCopying>

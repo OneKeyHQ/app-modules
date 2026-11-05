@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 import UIKit
 
 // Thirty-three named original requirements. Three WMO-deleted private

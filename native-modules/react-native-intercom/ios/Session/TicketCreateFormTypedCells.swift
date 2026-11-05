@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 import UIKit
 
 @objc(_TtC18IntercomSDKPrivate36TicketCreateFormBooleanTableViewCell)

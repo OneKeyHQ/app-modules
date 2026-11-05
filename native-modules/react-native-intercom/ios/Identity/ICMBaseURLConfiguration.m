@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMBaseURLConfiguration.h"
 #import "ICMLogger.h"
 @implementation ICMBaseURLConfiguration

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBNotificationCardBlockView.h"
 #import <math.h>
 @implementation ITBNotificationCardBlockView

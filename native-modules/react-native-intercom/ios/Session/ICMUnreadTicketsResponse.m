@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMUnreadTicketsResponse.h"
 #import "ICMUnreadResponseDependencies.h"
 #import <objc/runtime.h>

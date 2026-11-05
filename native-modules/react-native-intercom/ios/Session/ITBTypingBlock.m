@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBTypingBlock.h"
 #import "ICMBlockAppearance.h"
 #import <math.h>

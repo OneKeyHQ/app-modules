@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMPhoneValidator.h"
 #import "ICMRootDestinationDependencies.h"
 #import "../Identity/ICMUtils.h"

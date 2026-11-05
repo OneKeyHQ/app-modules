@@ -1,12 +1,9 @@
 apply plugin: 'com.android.library'
 
-def newArchitecture = rootProject.hasProperty('newArchEnabled') && rootProject.property('newArchEnabled') == 'true'
-if (newArchitecture) {
-  apply plugin: 'com.facebook.react'
-  react {
-    libraryName = 'IntercomReactNativeSpec'
-    codegenJavaPackageName = 'com.intercom.reactnative'
-  }
+apply plugin: 'com.facebook.react'
+react {
+  libraryName = 'IntercomReactNativeSpec'
+  codegenJavaPackageName = 'com.intercom.reactnative'
 }
 
 def sdkVersion = { name, fallback -> rootProject.ext.has(name) ? rootProject.ext.get(name) : fallback }
@@ -14,7 +11,7 @@ android {
   namespace 'com.intercom.reactnative'
   compileSdkVersion sdkVersion('compileSdkVersion', 36)
   defaultConfig {
-    minSdkVersion sdkVersion('minSdkVersion', 23)
+    minSdkVersion sdkVersion('minSdkVersion', 24)
     targetSdkVersion sdkVersion('targetSdkVersion', 36)
     buildConfigField 'String', 'INTERCOM_VERSION_NAME', '"10.8.1"'
   }
@@ -23,7 +20,7 @@ android {
     sourceCompatibility JavaVersion.VERSION_1_8
     targetCompatibility JavaVersion.VERSION_1_8
   }
-  sourceSets.main.java.srcDirs += newArchitecture ? ['src/newarch'] : ['src/oldarch']
+  sourceSets.main.java.srcDirs += ['src/newarch']
 }
 
 // The source artifacts' transitive dependencies are resolved in the consumer graph.
@@ -31,6 +28,7 @@ def sourceRepository = file('maven')
 rootProject.allprojects { candidate ->
   candidate.repositories.maven {
     url = sourceRepository.toURI()
+    metadataSources { mavenPom(); ignoreGradleMetadataRedirection() }
     content { includeGroup 'com.onekey.intercom.source' }
   }
 }

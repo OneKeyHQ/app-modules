@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMSafeNetworkModel.h"
 @implementation ICMSafeNetworkModel
 // Both original handlers consist of a single ret instruction.

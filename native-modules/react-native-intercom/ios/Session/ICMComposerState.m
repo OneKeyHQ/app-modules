@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMComposerState.h"
 @implementation ICMComposerState
 @synthesize workflowActive = _workflowActive, displayState = _displayState, version = _version, placeholder = _placeholder;

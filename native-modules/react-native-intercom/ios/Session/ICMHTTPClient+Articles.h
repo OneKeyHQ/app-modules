@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "ICMHTTPClient.h"
 #import "ICMHTTPBridge.h"
 #import "ICMArticle.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 #import "ICMMediaAction.h"
 #import "ITBUpload.h"
 @implementation ICMMediaAction

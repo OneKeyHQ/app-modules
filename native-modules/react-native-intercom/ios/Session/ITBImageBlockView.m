@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBImageBlockView.h"
 #import "ITBImageLoader.h"
 #import <math.h>

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // All original method paths restored; real HTTP/UI/model dependencies remain UNLINKED.
 #import "ICMDataManager.h"
 #import "ICMDataManagerDependencies.h"

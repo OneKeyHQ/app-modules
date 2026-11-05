@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 #import "ICMHTTPClient.h"
 #import "ICMDataManagerRequestDependencies.h"
 NS_ASSUME_NONNULL_BEGIN

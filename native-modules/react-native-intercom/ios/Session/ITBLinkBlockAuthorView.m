@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBLinkBlockView.h"
 @implementation ITBLinkBlockAuthorView
 @synthesize avatarView = _avatarView, writtenByLabel = _writtenByLabel;

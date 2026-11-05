@@ -1,22 +1,26 @@
 # @onekeyfe/react-native-intercom
 
-**Recovery in progress. Not a usable SDK or a publishable replacement.**
+Source-built Intercom native SDK targeting React Native **0.88 New Architecture** / React **19.3**. The public transport follows Intercom React Native 10.8.1, with Android SDK 18.10.0, Nexus 6.4.0, Twig 1.3.0 and iOS SDK 19.9.1 behavior.
 
-This repository-template package is restoring the original Intercom native SDK from auditable source, with RN 10.8.1 / Android 18.10.0 / iOS 19.9.1 compatibility. The native implementation, original messenger UI, cards/sheets, media, authentication and identity are required; a vendor binary wrapper or simplified client does not satisfy the work.
+Local React Native 0.88.0 / React 19.3.0 consumer builds pass: Android assembleDebug with native JSI linking, and iOS normal static/dynamic Pod and Codegen builds/linking for arm64/x86_64 simulators. Selected iOS API compilation probes and resource smoke checks pass. XCTest was built, not executed. Business sessions, backend, complete UI, cards/sheets, push, security and private ABI remain unverified. See the [compatibility contract](docs/SPEC.md).
 
-- [Compatibility contract](docs/SPEC.md)
-- [Actual recovery status](docs/RECOVERY.md)
-- [Provenance and binary exclusion rules](docs/PROVENANCE.md)
-- [Survey source scope and private ABI limitations](docs/SURVEY_RECOVERY.md)
+## Integration
 
-All 3389 original Android native classes now have source compilation coverage. The normal base build passes ABI, source-method preservation, class-feature/access and D8 min-api 23 checks. Full original SDK behavior remains unverified; see the recovery ledger.
+Add this workspace package to the consumer's dependencies and use React Native autolinking/codegen. Import the API from `@onekeyfe/react-native-intercom`; declarations are in `src/index.tsx` and `src/NativeIntercomSpec.ts`.
 
-The frozen iOS 290 ObjC / 395 Swift snapshot strictly links on three targets. Normal static/dynamic consumers, selected public/private API compiler probes and 63-resource Host smoke pass. Backend/session, cards/sheets, complete UI behavior, security and private ABI remain unverified.
+- Android: minimum SDK 24 for React Native 0.88 (native source AAR minimum 23). Consume the provided two AARs and two POMs under `android/maven`. The consumer retains ownership of its React Native and Android toolchain.
+- iOS: minimum iOS 15.1 and Xcode 16.1 for React Native 0.88. Run the consumer's normal `pod install`; `ReactNativeIntercom.podspec` compiles the checked-in native sources and packages `Intercom.bundle` and `IntercomTranslations.bundle`. Retain the initialization, permissions and push/notification-extension configuration required by the features used.
 
-Build the two own-source Android AARs, retaining their original resource namespaces:
+The package must not link vendor Intercom pods, XCFrameworks or Android SDK artifacts alongside its source-built SDK. Native SDK state is shared within the process; separate mobile JavaScript runtimes do not isolate native sessions.
+
+## Rebuild Android artifacts
+
+After modifying native SDK sources, rebuild the Android artifacts from this package directory:
 
 ```sh
-python3 scripts/android-build-artifacts.py --offline --gradle /absolute/path/to/gradle-8.13/bin/gradle
+python3 scripts/android-build-artifacts.py --gradle /absolute/path/to/gradle-8.13/bin/gradle
 ```
 
-This independent SDK build requires JDK 17, JDK 24 for recovered Java source compilation, Android SDK 36/build tools, and the pinned external artifact/tool caches (omit `--offline` for the initial dependency download). It generates package-local artifacts under `android/maven`; it never publishes remotely. Consumer Gradle uses its existing React Native/toolchain. The bridge preserves the pinned original RCT/TurboModule/EventEmitter transport under the documented template exception.
+Use `--offline` after pinned dependencies are cached. The independent build requires Python 3, Gradle 8.13, JDK 17, JDK 24 for recovered Java sources, Android SDK platforms 35/36 and build tools 35.0.0. Current compiler paths are declared in the retained scripts. It compiles checked-in Java/Kotlin/resources and text metadata, then generates package-local AARs under `android/maven`; it does not publish remotely. Original SDK binaries and local audit directories are not build inputs.
+
+Build logs and receipts remain local under `.build`. `LICENSE`, `LICENSES` and `NOTICE` retain the applicable license and attribution terms.

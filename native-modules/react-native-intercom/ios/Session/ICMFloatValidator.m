@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMFloatValidator.h"
 #import "ICMRootDestinationDependencies.h"
 @implementation ICMFloatValidator

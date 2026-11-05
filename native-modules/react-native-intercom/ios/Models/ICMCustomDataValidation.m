@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMCustomDataValidation.h"
 #import "ICMCompany.h"
 #import <limits.h>

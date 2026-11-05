@@ -1,4 +1,3 @@
-// Original DictionaryInitializable/DictionaryDecoder; see docs/IOS_PROVENANCE.md.
 import Foundation
 
 protocol DictionaryInitializable {

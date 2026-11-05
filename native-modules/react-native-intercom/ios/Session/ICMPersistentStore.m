@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMPersistentStore.h"
 #import "../Identity/ICMPersistenceProxy.h"
 #import "../Identity/ICMUtils.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMOreoUserJwtReplay.h"
 @implementation ICMOreoUserJwtReplay
 @synthesize userJwt = _userJwt, fingerprint = _fingerprint, buildRequest = _buildRequest;

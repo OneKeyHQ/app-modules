@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // PARTIAL_CLASS: Engine initialization, scheduling and retries remain unrestored.
 #import "ICMOreoEngine.h"
 #import "ICMOreoErrorResponse.h"

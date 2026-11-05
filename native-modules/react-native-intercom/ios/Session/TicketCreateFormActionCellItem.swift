@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 import UIKit
 
 @_objcRuntimeName(_TtC18IntercomSDKPrivate30TicketCreateFormActionCellItem)

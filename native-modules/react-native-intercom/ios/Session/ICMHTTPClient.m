@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // PARTIAL_CLASS: four failure/admission methods; endpoint implementation missing.
 #import "ICMHTTPClient.h"
 #import "ICMIdentityStore.h"

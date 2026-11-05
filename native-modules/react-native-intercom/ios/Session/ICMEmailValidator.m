@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMEmailValidator.h"
 #import "ICMRootDestinationDependencies.h"
 @implementation ICMEmailValidator

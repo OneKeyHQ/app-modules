@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // Product UNLINKED: actual Config/HTTPBridge and dependent models remain missing.
 #import "ICMBaseResponse.h"
 #import "ICMIdentityStore.h"

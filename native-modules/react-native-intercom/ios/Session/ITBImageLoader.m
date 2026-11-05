@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // Uses the genuine source-built ImageLoaderCore/cache/downloader pipeline.
 #import "ITBImageLoader.h"
 #import "ICMImageLoaderCore.h"

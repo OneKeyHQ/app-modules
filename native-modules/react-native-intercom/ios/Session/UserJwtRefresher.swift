@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // SOURCE_RESTORED_UNLINKED: complete IdentityStore/Bridge dependencies remain missing.
 import Foundation
 import os

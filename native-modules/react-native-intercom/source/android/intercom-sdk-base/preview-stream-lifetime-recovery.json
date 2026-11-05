@@ -1,9 +1,0 @@
-{
-  "status": "SOURCE_RESTORED_PENDING_COMPILER",
-  "method": "PreviewViewModel.saveFileToStream(String,OutputStream)V",
-  "source_before_sha256": "177fcf95a5b938e61a70a5f180228e0d9e7974834bfff819cc730a23071c5502",
-  "source_after_sha256": "8fa90bf12d7b54147a819e2fd359caec6f780d23c01d5c57397fe4661a7e799f",
-  "original_coordinates": "Raw vendor BCI29 getInputStream():InputStream \u219232 CHECKCAST Closeable\u219235 ASTORE8;43 CHECKCAST InputStream\u219246 ASTORE10",
-  "scope": "Only declaration and original InputStream cast; original NEW URL expression, read/copy/closeFinally order and Throwable handlers unchanged",
-  "evidence": "/Volumes/T7Shield/Project/app-modules-intercom-source-sdk/native-modules/react-native-intercom/.recovery/preview-stream-lifetime/original.javap.txt"
-}

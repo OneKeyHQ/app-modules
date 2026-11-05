@@ -1,8 +1,0 @@
-{
-  "status": "SOURCE_NARROWED_NOT_COMPILED",
-  "method": "showNetworkMessage",
-  "original_selector_descriptor": "ConversationScreenKt$showNetworkMessage$1.label:I",
-  "reason": "Root NoLate refresh required restoring the previously proved concrete continuation local; preserve all int switch states and default throw",
-  "assignment_evidence": "var11 = (ConversationScreenKt$showNetworkMessage$1)var4 | var11 = new ConversationScreenKt$showNetworkMessage$1(var4)",
-  "java24_boolean_switch_error": "Error-recovery consequence of unresolved label on broad Continuation, not a real boolean selector"
-}

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBLinkListViewDependencies.h"
 @implementation ITBFooterContainerView
 @synthesize iconImageView = _iconImageView, titleLabel = _titleLabel, iconImage = _iconImage, linkListBlock = _linkListBlock;

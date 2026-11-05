@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 import Foundation
 
 @_objcRuntimeName(_TtC18IntercomSDKPrivate19VideoBlockViewCache)

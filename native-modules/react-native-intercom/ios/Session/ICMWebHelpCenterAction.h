@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import <Foundation/Foundation.h>
 @interface ICMWebHelpCenterAction : NSObject {
     NSString *_type;

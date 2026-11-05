@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBUpload.h"
 #import "ITBImageLoader.h"
 #import <AVFoundation/AVFoundation.h>

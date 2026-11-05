@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMDeviceData.h"
 #import "ICMUtils.h"
 #import <sys/utsname.h>

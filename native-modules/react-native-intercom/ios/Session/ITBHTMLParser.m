@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBHTMLParser.h"
 #import <libxml/HTMLparser.h>
 #import <string.h>

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 #import "ICMSubmitActionButton.h"
 #import "ICMBlockAppearanceDependencies.h"
 #import <QuartzCore/QuartzCore.h>

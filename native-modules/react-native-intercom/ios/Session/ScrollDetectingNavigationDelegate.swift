@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 import WebKit
 
 @objc(_TtC18IntercomSDKPrivate33ScrollDetectingNavigationDelegate)

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBLinkListBlock.h"
 #import "ITBLinkListBlockView.h"
 #import "ICMBlockAppearance.h"

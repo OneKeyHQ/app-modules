@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBButtonBlockView.h"
 #import "ITBButtonBlock.h"
 #import <math.h>

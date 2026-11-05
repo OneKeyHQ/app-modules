@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 #import "ICMHTTPClient.h"
 #import "ICMBaseResponse.h"
 NS_ASSUME_NONNULL_BEGIN

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/CONVERSATION_RECOVERY.md.
 #import <Foundation/Foundation.h>
 @class ITBUpload;
 NS_ASSUME_NONNULL_BEGIN

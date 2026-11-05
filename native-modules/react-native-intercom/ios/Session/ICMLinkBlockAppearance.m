@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMLinkBlockAppearance.h"
 #import "ICMBlockAppearanceDependencies.h"
 @implementation ICMLinkCardBlockAppearance

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // SOURCE_RESTORED_UNLINKED: actual Presentation/Carousel/Survey/Store paths required.
 #import "ICMHTTPBridge.h"
 #import "ICMHTTPClient+Surveys.h"

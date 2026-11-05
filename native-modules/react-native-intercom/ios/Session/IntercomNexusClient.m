@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "IntercomNexusClient.h"
 @implementation IntercomNexusClient
 @synthesize configuration = _configuration, topics = _topics, observers = _observers, seenGuids = _seenGuids, connection = _connection, lastNewCommentEventReceivedAt = _lastNewCommentEventReceivedAt, lastEventReceived = _lastEventReceived;

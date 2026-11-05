@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBAnimatedImageView.h"
 #import "ITBImageLoader.h"
 

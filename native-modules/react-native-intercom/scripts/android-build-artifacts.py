@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,54 @@ def source_artifact(name, required):
     return artifact, dict(receipt=str(receipt_path.relative_to(ROOT)), receipt_sha256=sha(receipt_path), artifact_sha256=sha(artifact))
 
 
+def integration_pom(module, pom, target):
+    graphs = {}
+    for variant in json.loads(module.read_text())['variants']:
+        usage = variant.get('attributes', {}).get('org.gradle.usage')
+        if usage not in ['java-api', 'java-runtime']:
+            raise RuntimeError('Unsupported publication variant: ' + variant['name'])
+        if usage in graphs or variant.get('dependencyConstraints'):
+            raise RuntimeError('Unsupported publication dependency constraints')
+        graph = {}
+        for dependency in variant.get('dependencies', []):
+            if set(dependency) != {'group', 'module', 'version'} or set(dependency['version']) != {'requires'}:
+                raise RuntimeError('Unsupported publication dependency: ' + repr(dependency))
+            key = (dependency['group'], dependency['module'])
+            version = dependency['version']['requires']
+            previous = graph.get(key)
+            if previous is not None and previous != version:
+                if not all(re.fullmatch(r'\d+(?:\.\d+)*', value) for value in [previous, version]):
+                    raise RuntimeError('Unsupported conflicting dependency versions: ' + repr(key))
+                version = max([previous, version], key=lambda value: tuple(map(int, value.split('.'))))
+            graph[key] = version
+        graphs[usage] = graph
+    if set(graphs) != {'java-api', 'java-runtime'} or graphs['java-api'] != graphs['java-runtime']:
+        raise RuntimeError('API/runtime publication dependency graphs differ')
+    graph = graphs['java-api']
+    tree = ET.parse(pom)
+    namespace = '{http://maven.apache.org/POM/4.0.0}'
+    rows = tree.getroot().find(namespace + 'dependencies')
+    if rows is None:
+        raise RuntimeError('Publication POM has no dependencies')
+    found = set()
+    for dependency in rows:
+        key = (dependency.findtext(namespace + 'groupId'), dependency.findtext(namespace + 'artifactId'))
+        if key in found or key not in graph:
+            raise RuntimeError('Unexpected/duplicate publication POM dependency: ' + repr(key))
+        version = dependency.find(namespace + 'version')
+        if version is None:
+            raise RuntimeError('Publication POM dependency has no version: ' + repr(key))
+        version.text = graph[key]
+        found.add(key)
+    if found != set(graph):
+        raise RuntimeError('Publication POM/module dependency sets differ')
+    ET.register_namespace('', namespace[1:-1])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    ET.indent(tree, space='  ')
+    tree.write(target, encoding='utf-8', xml_declaration=True)
+    return dict(dependencies=len(graph), module_sha256=sha(module), pom_sha256=sha(target))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--offline', action='store_true')
@@ -72,7 +121,8 @@ def main():
     try:
         project = BUILD / 'project'
         project.mkdir(exist_ok=True)
-        repository = ROOT / 'android/maven'
+        repository = BUILD / 'published-maven'
+        integration_repository = ROOT / 'android/maven'
         env = dict(os.environ)
         java17 = env.get('JAVA17_HOME', '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home')
         env['JAVA_HOME'] = java17
@@ -132,6 +182,7 @@ def main():
                         expected[part][filename] = hashlib.sha256(archive.read(filename)).hexdigest()
         run(command + [':base:publishReleasePublicationToPackageSourceRepository', ':ui:publishReleasePublicationToPackageSourceRepository'], BUILD / 'artifacts.log', env)
         receipt['artifacts'] = []
+        integration_files = set()
         for part in ['base', 'ui']:
             aar = repository / GROUP.replace('.', '/') / ('intercom-' + part) / VERSION / ('intercom-' + part + '-' + VERSION + '.aar')
             actual = {}
@@ -154,10 +205,16 @@ def main():
             pom = aar.with_suffix('.pom')
             if 'io.intercom.android' in pom.read_text():
                 raise RuntimeError('Vendor dependency in own-source POM')
-            receipt['artifacts'].append(dict(path=str(aar.relative_to(ROOT)), sha256=sha(aar), classes=sum(n.endswith('.class') for n in actual), kotlin_modules=sum(n.endswith('.kotlin_module') for n in actual)))
+            destination = integration_repository / aar.relative_to(repository)
+            dependency_proof = integration_pom(aar.with_suffix('.module'), pom, destination.with_suffix('.pom'))
+            shutil.copy2(aar, destination)
+            integration_files.update([destination, destination.with_suffix('.pom')])
+            receipt['artifacts'].append(dict(path=str(destination.relative_to(ROOT)), sha256=sha(destination), classes=sum(n.endswith('.class') for n in actual), kotlin_modules=sum(n.endswith('.kotlin_module') for n in actual), pom=dependency_proof))
+        if {path for path in integration_repository.rglob('*') if path.is_file()} != integration_files:
+            raise RuntimeError('Integration repository must contain only the two AARs and two POMs')
         receipt['resource_header'] = dict(sha256=sha(resource_header), path=str(resource_header.relative_to(ROOT)))
         receipt['status'] = 'PASS_SOURCE_AAR_PACKAGING'
-        proof_folder = repository / 'source-provenance'
+        proof_folder = BUILD / 'source-provenance'
         proof_folder.mkdir(exist_ok=True)
         for row in receipt['sources']:
             origin = ROOT / row['receipt']

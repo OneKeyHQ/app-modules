@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMErrorStatus.h"
 @implementation ICMErrorStatus
 + (BOOL)isRetryable:(NSError *)error {

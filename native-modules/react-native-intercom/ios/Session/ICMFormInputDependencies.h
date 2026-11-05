@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import "ICMBlockAppearanceDependencies.h"
 #import "ICMUtils+Fonts.h"
 #import "ICMFeedbackGenerator.h"

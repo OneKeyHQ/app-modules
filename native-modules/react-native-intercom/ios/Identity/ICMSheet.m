@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMSheet.h"
 @implementation ICMSheet
 + (instancetype)instanceFromDictionary:(NSDictionary *)dictionary {

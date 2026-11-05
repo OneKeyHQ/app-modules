@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import <Foundation/Foundation.h>
 #import "ICMBaseResponseDependencies.h"
 NS_ASSUME_NONNULL_BEGIN

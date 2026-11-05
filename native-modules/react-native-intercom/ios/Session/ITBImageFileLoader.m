@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ITBImageFileLoader.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 @implementation ITBImageFileLoader

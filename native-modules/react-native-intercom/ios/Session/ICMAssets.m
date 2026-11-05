@@ -1,4 +1,3 @@
-// Required original asset subset; see docs/IOS_PROVENANCE.md.
 #import "ICMAssets.h"
 @implementation ICMAssets
 + (UIImage *)spinnerImage { return [self imageNamed:@"spinner"]; }

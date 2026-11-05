@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 import Foundation
 
 // Concrete Survey behavior; the original thirty-requirement private injection protocol remains separately recorded.

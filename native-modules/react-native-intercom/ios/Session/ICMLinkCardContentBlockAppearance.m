@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "ICMLinkCardContentBlockAppearance.h"
 #import "ICMBlockAppearanceDependencies.h"
 #import "ICMChatNotificationContentImports.h"

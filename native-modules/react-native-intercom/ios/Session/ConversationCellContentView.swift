@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 import UIKit
 
 // Descriptor proves the UIView constraint, associated type and read-only getter;

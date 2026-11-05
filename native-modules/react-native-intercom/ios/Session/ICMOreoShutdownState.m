@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMOreoShutdownState.h"
 #import "../Identity/ICMPersistenceProxy.h"
 #import "../Identity/ICMUtils.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // PARTIAL_CLASS_UNLINKED: nested Swift models and original image/UI methods missing.
 #import "ICMConfig.h"
 #import "../Identity/ICMUtils.h"

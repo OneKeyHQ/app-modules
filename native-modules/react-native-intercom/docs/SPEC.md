@@ -1,82 +1,64 @@
-# Intercom native source SDK compatibility contract
+# Intercom native source SDK contract
 
-Status: **Approved original compatibility baseline; recovery in progress; full SDK behavior not runtime verified.** The generated Nitro template is scaffolding, not an Intercom implementation. A successful template build does not satisfy this contract.
+Status: **React Native 0.88 New Architecture / React 19.3 local consumer builds and selected iOS resource smoke checks passed; full runtime acceptance remains unverified.**
 
-## 1. Purpose, scope, and non-goals
+## 1. Purpose and scope
 
-Restore an independently source-built native Intercom SDK, with the behavior of React Native SDK 10.8.1, Android SDK 18.10.0 and iOS SDK 19.9.1. The package must include the native implementation, not wrap a vendor AAR/XCFramework or replace native messenger UI with a simpler chat/web client. Original conversations, help center, cards/sheets, media, recording, push, proactive content, authentication and identity semantics remain in scope.
+Provide a source-built native Intercom SDK targeting React Native 0.88 while preserving the public behavior of Intercom React Native 10.8.1, Android SDK 18.10.0, Nexus 6.4.0, Twig 1.3.0 and iOS SDK 19.9.1. Original messenger UI, conversations, help center, cards/sheets, media, recording, push, proactive content, authentication and identity remain in scope.
 
-This recovery does not modify app-monorepo consumers, publish, merge, or implement the separate hardening proposal. Origin allowlists, extra native approval, profile isolation, and modified POST protocols are not authorized changes in this baseline.
+The package was created with the repository module template. It retains the original RCT/TurboModule/EventEmitter transport and TypeScript facade instead of translating the API into generated Nitro types. This explicit template exception preserves original promises, errors, dictionary conversions, events and JWT lifecycle. The generated example scaffold is not SDK functionality.
 
-## 2. Definitions and ownership
+App migration, remote publishing and independent security hardening are outside this change. No simplified client, additional origin allowlist, approval protocol or profile-isolation policy is introduced.
 
-The SDK owns its native process singleton, identity models, HTTP/realtime clients, UI, native storage/cache, media and push integration. Main and background JavaScript heaps are separate in mobile consumers; this does not isolate shared native SDK resources. Native UI work stays on the platform UI thread. The pinned RCT/TurboModule/EventEmitter transport owns JavaScript/native conversion and lifecycle only; it cannot stand in for native feature implementation. The transport exception below records why the generated Nitro scaffold is not the final bridge.
+## 2. Ownership and boundaries
 
-Original artifacts may be used offline for provenance, disassembly, ABI and comparison. They must not be linked or loaded by the recovered SDK/build, copied into build output, supplied as SDK compile dependencies, or used to fill missing methods/classes. A separate isolated original-SDK comparison harness may load reference artifacts for differential diagnosis; it must never become an input or dependency of the recovered product build. Third-party external dependencies retain their actual upstream implementations and are recorded separately.
+The SDK owns its native process singleton, identity models, HTTP/realtime clients, UI, storage/cache, media and push integration. The bridge owns JavaScript/native conversion and event delivery. iOS/Android `main` and `bg` initialize independently with separate JavaScript module state, subscriptions and heaps; the underlying native SDK remains shared. One runtime's readiness does not establish the other's. No new per-runtime deserialization or native session ownership is introduced.
+
+Original SDK binaries must never be compiler, linker or runtime inputs, copied into output, or used to fill missing implementation. External dependencies retain their upstream implementations. Android name/metadata transformations may use checked-in text metadata; they must preserve source-compiled method bodies.
 
 ## 3. Public API and defaults
 
-The 31 original `NativeIntercomSpec` methods must be preserved: initialize; loginUnidentifiedUser; loginUserWithUserAttributes; logout; setUserHash; updateUser; isUserLoggedIn; fetchLoggedInUserAttributes; logEvent; presentIntercom; presentIntercomSpace; presentContent; presentMessageComposer; fetchHelpCenterCollections; fetchHelpCenterCollection; searchHelpCenter; getUnreadConversationCount; hideIntercom; setBottomPadding; setInAppMessageVisibility; suppressProactiveContent; setLauncherVisibility; setNeedsStatusBarAppearanceUpdate; sendTokenToIntercom; setLogLevel; setThemeMode; setUserJwt; setUserJwtProvider; removeUserJwtProvider; completeUserJwtRequest; setAuthTokens.
+`src/index.tsx`, `src/NativeIntercomSpec.ts` and `src/types.ts` define the JavaScript contract. Preserve the 31 native methods: initialize; loginUnidentifiedUser; loginUserWithUserAttributes; logout; setUserHash; updateUser; isUserLoggedIn; fetchLoggedInUserAttributes; logEvent; presentIntercom; presentIntercomSpace; presentContent; presentMessageComposer; fetchHelpCenterCollections; fetchHelpCenterCollection; searchHelpCenter; getUnreadConversationCount; hideIntercom; setBottomPadding; setInAppMessageVisibility; suppressProactiveContent; setLauncherVisibility; setNeedsStatusBarAppearanceUpdate; sendTokenToIntercom; setLogLevel; setThemeMode; setUserJwt; setUserJwtProvider; removeUserJwtProvider; completeUserJwtRequest; setAuthTokens.
 
-Public TypeScript factories, event subscriptions/bootstrap, JWT request completion, content types, user/company attributes and native platform SDK APIs are also part of the compatibility inventory; matching only the 31 method names is insufficient. Exact signatures, constants, null/empty behavior, validation errors and observable defaults are taken from the pinned artifacts and RN source, and must be inventoried before marking any API restored. No success-returning fallback is permitted for absent behavior.
+Content factories, event subscriptions/bootstrap, JWT completion, user/company attributes, native pre-JS initialization and push helpers remain part of the API. Preserve original signatures, constants, null/empty handling, defaults, validation errors and reject payloads. Help Center wire collection content contains `articles` and `collections`; the baseline TypeScript `sections` declaration must not cause fields to be discarded or synthesized. An absent feature must not return placeholder success.
 
 ## 4. Lifecycle and concurrency
 
-Preserve original initialization, login/logout, JWT/authentication callbacks, visibility, push registration and native singleton ownership. Do not weaken JWT/hash/auth validation or replace failures with success. Preserve original callback ordering, pending work and cancellation behavior where established by source/binary evidence. Missing ordering/resource limits remain explicitly unverified rather than invented as compatibility guarantees.
+Preserve initialization, login/logout, JWT/hash/authentication checks, visibility, push registration, callback ordering, cancellation and pending work. Native UI work remains on the platform UI thread. iOS JWT pending completions belong to the module on the main queue; Android uses the original process-static pending callback map and provider's captured React context. Provider replacement, removal, invalidation and reload retain original effects.
 
-## 5. Data, cache, identity and remote content
+Preserve weak delegate ownership, view reuse, attachment upload cancellation and asynchronous state delivery. Original request and UI owners determine cleanup and callback timing; the bridge must not introduce extra queues, retries, callbacks or success fallbacks.
 
-Preserve the original native identity models and serialization, disk format and cache keys. Cards/sheets retain original remote Web JavaScript, native bridge action schemas, navigation, storage and POST semantics. Original Android default CookieManager and card cache identity are baseline behavior for this recovery. The separate security design must not silently change them in this branch.
+## 5. Data, cache and remote content
 
-No user/account secrets, credentials, JWTs, wallet data or production captures are included in source recovery materials. Tests use synthetic values only.
+Preserve native identity serialization, disk format, cache keys and login/logout effects. Cards/sheets retain original remote Web JavaScript, bridge actions, navigation, storage and POST semantics. Android retains its original default CookieManager and card cache identity. No hardening or new identity partition is introduced here. Never commit credentials, JWTs, secrets, wallet data or production captures.
 
-## 6. Platform contract
+## 6. Platform integration
 
-| Target | Native baseline | Status |
-| --- | --- | --- |
-| Android | Five Intercom 18.10.0 AARs; Nexus 6.4.0; Twig 1.3.0; original native UI/resources | Source-built; full native/RN runtime acceptance pending |
-| iOS | Intercom 19.9.1; iOS 15+; original UIKit/Swift UI, media and native behavior | Frozen 290 ObjC / 395 Swift snapshot strictly links on three targets; normal static/dynamic consumer builds, selected API compiler probes and 63-resource Host smoke pass; full runtime acceptance pending |
-| Web/desktop/extension | Not supplied by this native package | Not applicable |
+| Target | Contract |
+| --- | --- |
+| React Native | 0.88 New Architecture, React 19.3; original module registration, codegen and event transport |
+| Android | React Native 0.88 consumer minimum SDK 24; native source AAR minimum 23; source-built base/UI artifacts, original resources and required external dependencies |
+| iOS consumer | Minimum iOS 15.1 and Xcode 16.1 under React Native 0.88; checked-in Objective-C/Swift through ReactNativeIntercom.podspec; Intercom.bundle and IntercomTranslations.bundle |
+| Web/desktop/extension | Not supplied by this native package |
 
-Platform differences must match original behavior and be listed as such. Existing app-specific iOS recording/video suppression patches are not part of this upstream baseline; do not remove these features from the recovered SDK.
+Use the consumer's React Native/toolchain and required Firebase messaging dependency. No vendor `Intercom` pod or `io.intercom.android:*` dependency may enter the native graph. Consumers use the provided two source-built AARs and two dependency POMs. After native SDK source changes, rebuild them with `scripts/android-build-artifacts.py`; intermediate artifacts and build evidence remain local under `.build`. POM dependencies must preserve the effective Gradle dependency graph when module metadata is omitted.
 
-## 7. Failure, fallback and safety
+Android BuildConfig.INTERCOM_VERSION_NAME retains the original wrapper version `10.8.1`, independently of this package version. iOS preserves the IntercomFramework bundle CFBundleShortVersionString lookup, then main-bundle IntercomRnVersion, then `0`; do not fabricate a missing metadata bundle. Host permissions, pre-JS initialization and push/notification-extension setup remain consumer responsibilities.
 
-Every unresolved method, class, renderer, coroutine/state machine, resource, ABI entry and external integration is recorded in RECOVERY.md/machine receipts. Stub, empty, simplified or always-success code does not count as restored. Template example methods must not be represented as SDK behavior. Builds fail if restored source closure is incomplete for their claimed module. No vendor bytecode fallback or opaque binary payload is allowed.
+## 7. Failure and compatibility limits
 
-Source aliases may legalize JVM names for Java compilation. A transparent postcompile pass may restore names and ABI metadata only; it must not copy original method Code attributes. Full input/output class sets, ABI differences and method provenance remain reviewable.
+Authentication, validation, transaction-independent native risk checks and original error paths must not be bypassed. Missing features, constructors or private protocol metadata are not closed by stubs, empty callbacks or guessed requirements. Where WMO erased original private Swift protocols, concrete source types express observed calls; private existential/injection ABI parity is not claimed.
 
-## 8. Performance and resource budget
+No new resource limits or fallback guarantees are asserted. Preserve original I/O, cancellation, failure and cleanup behavior; unsupported behavior remains an explicit acceptance gap.
 
-No performance claim is currently made. Restored threading, cache sizes, I/O and media behavior follow the original baseline. Source-only or ABI checks do not establish startup, frame rate, memory or device behavior. Platform runtime acceptance is required for those claims.
+## 8. Performance
+
+No startup, frame-rate, memory or device performance claim is made. Native threading, cache sizes, I/O and media behavior follow the baseline. Source compilation and metadata checks do not establish runtime performance.
 
 ## 9. Conformance and acceptance
 
-A restored module requires: source-only compilation without original SDK on classpath; complete expected class/resource inventory; explicit ABI comparison; no decompiler error/unsupported placeholders in packaged runtime; behavioral tests of real restored code; and per-feature provenance. Android first validates the complete UI module, then base/realtime/FCM/media and package assembly. iOS requires actual compiled implementation and original feature-by-feature rendering/identity/media/network behavior comparison, not merely API headers.
+Acceptance requires source-only native compilation/linking; normal React Native 0.88 autolinking/codegen and consumer builds; resource packaging; successful and failed API calls with original errors/null conversions; JWT pending/replacement/reload cleanup; and unread/visibility events in the correct JavaScript runtime.
 
-Final acceptance includes initialized authenticated/unidentified sessions, JWT failure/refresh, message rendering/realtime updates, unread state, help center, cards/sheets actions/navigation/POST, attachment upload/file chooser, recording/playback/video, push and logout/reuse. This branch has not performed those cases. The independent later audit may harden behavior in a separate change.
+Verified locally with React Native 0.88.0 / React 19.3.0 New Architecture: fresh source AAR rebuilding and Android assembleDebug passed, including 31-method Codegen and arm64 native C++/JSI linking. Fresh iOS Pod/Codegen static and dynamic consumer builds/linking passed for arm64/x86_64 simulators, together with selected API compilation probes and independent Host smoke checks for 63 resource hashes, two same-name asset isolation cases, actual getters, missing-resource nil behavior and React Native classes. XCTest was built, not executed.
 
-## RN transport exception and source SDK integration (Approved baseline; integration in progress)
-
-This package was created with the repository module template. Under Native Module Development Requirements section 3, it intentionally retains the pinned Intercom RN 10.8.1 public TypeScript facade and original RCT/TurboModule/EventEmitter transport instead of translating that surface into Nitro 0.37 generated types. This exception preserves original promise rejection data, platform dictionary conversions, native initialization entry points and runtime-bound JWT/event lifecycle. It does not introduce a second SDK, a JSON-string wire format, or a vendor AAR/XCFramework dependency. The existing Nitro `hello` scaffold is not a public Intercom feature and must not ship as a substitute for missing behavior. Shared repository templates and consumer App code are outside this change.
-
-The 31 public native methods, TS exports/five content factories, defaults, error codes and event/bootstrap behavior follow the recorded RN baseline. Native wire payloads remain original even where the old TypeScript declarations disagree: Help Center collection content contains `articles` and `collections`; the baseline `sections` declaration must not cause fields to be discarded or synthesized. This stage does not silently change public declaration shapes.
-
-Native Intercom identity/network/UI resources remain process-shared. Mobile main/background JavaScript runtimes have separate JS module state and subscriptions. The bridge preserves original per-platform provider ownership: iOS module-local pending completions on main queue; Android process-static pending callback map and provider captured React context. Removal/invalidation retains original native effects; no new cross-runtime security policy is introduced. Real native `Intercom` facades and public pre-JS initialization/push helpers must be source-linked; method declarations or successful template builds are insufficient.
-
-Package builds select original old/new RN architecture adapters and generate the original `IntercomReactNativeSpec` contract with `com.intercom.reactnative` Android namespace. Wrapper sources may depend on the consumer's React Native and already-required upstream external dependencies (including the existing Firebase messaging dependency), but all Intercom native SDK dependencies must resolve to this package's recovered source-built artifacts. No vendor `Intercom` pod or `io.intercom.android:*` dependency may re-enter the build. Do not copy the original package's floating `react-native:+`, standalone Gradle/toolchain overrides or unrelated package build scripts into this monorepo; use its existing supported dependency/build ownership without upgrading consumers.
-
-The original wrapper's RN-version reporting is distinct from this package's release version: Android BuildConfig.INTERCOM_VERSION_NAME originates from the original package version `10.8.1`; do not accidentally replace it with the OneKey package release version. iOS reads IntercomFramework bundle CFBundleShortVersionString, otherwise main-bundle IntercomRnVersion, otherwise string `0`; preserve that lookup/fallback rather than hardcoding Android behavior. The recorded tarball has no ios/assets directory even though the podspec resource glob mentions it, so no original version bundle can be presumed present or fabricated. Consumer packaging must verify the actual selected iOS value and account for any required metadata resource explicitly. Packaging may change resource location only according to the documented source-SDK resource plan, not by silently dropping version metadata.
-
-Acceptance requires source-only native closure, real RN codegen/consumer compilation, exact module registration, representative successful/failed calls with original reject payloads and null/numeric conversion, JWT pending/replacement/reload cleanup and unread/visibility events on the correct runtime. Original and recovered native binaries must never co-link in that consumer. Android source-only native closure, real RN codegen/autolinking and old/new Java wrapper compilation with consumer resource/duplicate-class checks pass. The frozen iOS 290 ObjC / 395 Swift source snapshot strictly links on three targets. Normal static/dynamic iOS consumer builds, selected public/private API compiler probes and 63-resource Host smoke checks pass. Complete Android APK/C++/JSI linking and the remaining behavioral/session/runtime gates are pending. Backend/session, cards/sheets, complete UI behavior, security and private ABI remain unverified; no complete RN SDK or native feature readiness is asserted.
-
-
-## Survey native source restoration
-
-Survey questions retain the original native view/controller and concrete input implementations. Required indicators, response/error state, character counts, form validation, keyboard scrolling and accessibility strings follow the pinned native behavior, including known original quirks recorded in the Survey contracts. No generic form/UIView fallback, new validation policy or API success placeholder may replace missing native dependencies. Survey source work is not linked/runtime verified until its actual model, input, block-renderer, controller and service dependencies close in the normal SDK build.
-
-Survey Step restoration preserves original native constraints, asynchronous state delivery, repeated successful submit notifications, per-question validation and keyboard/accessibility scrolling. Where WMO removed private protocol witness signatures, the actual sole Step/Survey controller and view-model types express the observed direct calls; this changes private existential storage/injection ABI and is recorded in SURVEY_RECOVERY.md rather than represented as a recovered protocol. No invented delegate forwarding API is introduced.
-
-## Conversation native source restoration
-
-Conversation recovery retains the original native controller/interactor/renderer route, eighteen VM dependencies, independent schedulers, Date.distantPast scroll threshold, weak ownership and post-super typing/streaming/state-sync installation. Lifecycle preserves six observers, independent weak loads and real request/interactor routing. Concrete default-path types may express original WMO calls where private protocols were deleted; original private existential/injection ABI remains explicitly different. No substitute chat/WebView, fabricated requirement, empty callback or success stub closes a dependency. Missing true bodies remain build/link failures, separately recorded from restored sources.
+Runtime acceptance still requires authenticated/unidentified sessions, JWT failure/refresh, conversation/realtime rendering, help center, cards/sheets actions/navigation/POST, attachment upload/file selection, recording/playback/video, push, and logout/reuse on each supported platform. Business sessions, backend, complete UI, cards/sheets, push, security and private ABI remain unverified. Compiler, resource smoke and source metadata checks must not be reported as full feature, security or private ABI acceptance.

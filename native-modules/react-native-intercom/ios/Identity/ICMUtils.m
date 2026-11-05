@@ -1,5 +1,4 @@
 #import <UIKit/UIKit.h>
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMUtils.h"
 #import "ICMPersistenceProxy.h"
 #import "../Session/ICMUtils+Integration.h"

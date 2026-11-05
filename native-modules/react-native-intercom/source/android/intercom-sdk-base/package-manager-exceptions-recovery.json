@@ -1,7 +1,0 @@
-{
-  "status": "COMPILER_DECLARATION_RESTORED_PENDING_COMPILER",
-  "scope": "Only original API35 PackageManager.getPackageInfo(String,int)PackageInfo NameNotFoundException attribute in compile-only android.jar view. Six original callers already catch it; other overloads unchanged. Original PermissionManager[0,32) NameNotFoundException handler kept.",
-  "row": "android/content/pm/PackageManager\tgetPackageInfo\t(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;\tandroid/content/pm/PackageManager$NameNotFoundException",
-  "runtime_platform_changed": false,
-  "code_backfill": false
-}

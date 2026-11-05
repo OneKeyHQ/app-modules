@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMPushNotificationManager.h"
 #import "ICMPushNotificationStatus.h"
 @implementation ICMPushNotificationManager

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 // SOURCE_RESTORED_UNLINKED: ICMOreoEngine has no product implementation yet.
 #import "ICMAppIdentity.h"
 #import "ICMOreoEngine.h"

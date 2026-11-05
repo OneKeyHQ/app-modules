@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/TICKETS_RECOVERY.md.
 import Foundation
 
 @objc(_TtC18IntercomSDKPrivate21TicketsListInteractor)

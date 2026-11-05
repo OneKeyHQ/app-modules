@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/ARTICLE_RECOVERY.md.
 #import "ICMArticle.h"
 #import "ITBBlock.h"
 #import "ICMReactions.h"

@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/SURVEY_PROVENANCE.json.
 #import <UIKit/UIKit.h>
 #import "ICMInputViewProtocol.h"
 #import "ICMFormInputDependencies.h"

@@ -1,7 +1,0 @@
-{
-  "status": "COMPILER_DECLARATION_RESTORED_PENDING_COMPILER",
-  "scope": "Only frozen dependency-086 okhttp3/ResponseBody.string()String original IOException Exceptions attribute; native runtime unchanged. All six source calls already have original catches/throws. ErrorObject original[11,18) IOException branch retained; no handler deletion or new wrapper.",
-  "row": "okhttp3/ResponseBody\tstring\t()Ljava/lang/String;\tjava/io/IOException",
-  "original_evidence": "/Volumes/T7Shield/Project/intercom-native-audit-20261104/independent-review/android-base/responsebody-exceptions-37",
-  "code_backfill": false
-}

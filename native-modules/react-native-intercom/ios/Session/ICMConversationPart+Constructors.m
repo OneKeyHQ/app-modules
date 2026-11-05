@@ -1,4 +1,3 @@
-// Source recovery modifications: see docs/IOS_PROVENANCE.md.
 #import "ICMConversationPart.h"
 #import "ICMConversation.h"
 #import "ICMConversationPartDependencies.h"
