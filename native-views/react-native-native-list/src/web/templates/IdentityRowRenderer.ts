@@ -407,13 +407,15 @@ function createIdentityRow(
       if (lines !== undefined)
         column
           .querySelectorAll<HTMLElement>(`[data-nl-slot="${key}"]`)
-          .forEach((text) =>
+          .forEach((text) => {
             applyTextLayout(
               text,
               lines === 0 ? {} : { lines },
               lines === 0 ? 0 : undefined
-            )
-          );
+            );
+            if (key === 'subtitle')
+              text.style.overflowWrap = lines === 1 ? '' : 'anywhere';
+          });
     }
   }
   body.appendChild(column);
@@ -695,6 +697,10 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
   }
 
   applyIdentityStyle(body, row);
+  body.style.height =
+    row.contentHeight === 'auto' && !hasExplicitRowHeight(row)
+      ? 'auto'
+      : '100%';
 }
 function create(
   document: Document,
@@ -741,7 +747,7 @@ export const identityRowRenderer = {
   ): number | undefined => {
     if (row.contentHeight !== 'auto' || hasExplicitRowHeight(row))
       return undefined;
-    const height = body.getBoundingClientRect().height;
+    const height = body.offsetHeight;
     return height > 0 ? height : undefined;
   },
 };

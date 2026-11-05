@@ -74,7 +74,7 @@ prevention; there is no automatic fitting or shrinking pass.
 ### Recipient identity and inline warning rows
 
 Status: implemented in local source for the Select Address and Swap selectors;
-native device and Web runtime verification remain pending. These fields travel in snapshot/patch JSON
+native device and broader Web runtime verification remain pending. These fields travel in snapshot/patch JSON
 and do not change the Nitro ABI.
 
 An `identity` row may opt into `subtitleLines: 0`, meaning the complete subtitle
@@ -87,6 +87,18 @@ or `row.height` still wins over content measurement, in that order. Content
 height changes with row width, text, style or configured font and may not retain
 a stale prior width's measurement. The existing 4096 UTF-16-code-unit bound per
 text field still applies; zero is not an unlimited data-size allowance.
+
+On Web, opt-in auto-height identity rows without an explicit height use the
+intrinsic body height in CSS layout pixels, before ancestor transforms. A hidden
+body with zero layout height supplies no rendered measurement; zero MUST NOT
+replace a valid layout height. Rebinding between automatic and explicit height
+restores the corresponding body sizing. Multiline subtitles, including
+`subtitleLines: 0`, break unspaced words within the text-column width; single-line
+behavior remains unchanged.
+
+Auto-height recipient rows are production-consumer verified with isolated wallet
+fixtures, including modal scaling, width changes and row reuse. This scoped
+acceptance does not establish Electron or browser-extension runtime acceptance.
 
 An `identity` row may set `longPressActionKey` to a nonempty action key. A valid
 touch long press on an enabled row emits one `onRowAction` with its current row key,
