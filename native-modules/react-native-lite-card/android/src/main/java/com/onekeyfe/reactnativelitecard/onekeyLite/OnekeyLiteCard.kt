@@ -147,6 +147,11 @@ object OneKeyLiteCard {
       overwrite: Boolean = false,
       expectedSerial: String? = null
     ): Boolean {
+        val maxBytes = if (session.connection.getCardType() == AppleCardType.V2) 65511 else 65535
+        if (mnemonic.isNullOrEmpty() || mnemonic.length > maxBytes * 2 ||
+            mnemonic.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
+            throw NFCExceptions.ExecFailureException()
+        }
         val cardState = session.cardState
         val serial = cardState.serialNum
         if (expectedSerial != null && (serial.isEmpty() ||
@@ -199,7 +204,6 @@ object OneKeyLiteCard {
             }
         }
 
-        if (mnemonic.isNullOrEmpty()) throw NFCExceptions.ExecFailureException()
         OneKeyLog.info("LiteCard", "operation=setMnemonic stage=backup_begin")
         val backupSuccess = session.connection.backupData(mnemonic)
         OneKeyLog.info("LiteCard", "operation=setMnemonic stage=backup_result success=$backupSuccess")

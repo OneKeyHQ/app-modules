@@ -17,7 +17,7 @@ const stubs = {
   Activity: 'package android.app\nopen class Activity',
   IsoDep: `package android.nfc.tech
 class IsoDep(val label: String, val serial: String = label, val newCard: Boolean = true,
-             val backedUp: Boolean = false, val failStage: String? = null) {
+             val backedUp: Boolean = false, val failStage: String? = null, val v2: Boolean = true) {
   var isConnected = false
 }`,
   Lifecycle: `package androidx.lifecycle

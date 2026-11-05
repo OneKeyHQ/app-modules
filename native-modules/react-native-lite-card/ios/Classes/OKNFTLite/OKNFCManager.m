@@ -27,6 +27,15 @@
 #define kChangePinBlock      @"kChangePinBlock"
 #define kResetBlock          @"kResetBlock"
 
+static BOOL validBackupInput(NSString *input, NSUInteger maxBytes) {
+    if (!input.length || input.length > maxBytes * 2) return NO;
+    for (NSUInteger index = 0; index < input.length; ++index) {
+        const unichar digit = [input characterAtIndex:index];
+        if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') ||
+              (digit >= 'A' && digit <= 'F'))) return NO;
+    }
+    return YES;
+}
 
 
 
@@ -279,6 +288,10 @@
      expectedSerial:(NSString * _Nullable)expectedSerial
            complete:(SetMnemonicCallback)complete {
 
+    if (!validBackupInput(mnemonic, 65535)) {
+        complete(nil, OKNFCLiteSetMncStatusError);
+        return;
+    }
     if (pin.length != OKNFC_PIN_LENGTH) {
         [self logSessionStage:@"input_rejected" details:@"operation=setMnemonic"];
         return;
@@ -305,6 +318,13 @@
     // Clear sensitive data from properties immediately
     self.exportMnemonic = nil;
     self.pin = nil;
+    const NSUInteger maxBytes = self.lite.version == OKNFCLiteVersionV2 ? 65511 : 65535;
+    if (!validBackupInput(mnemonic, maxBytes)) {
+        SetMnemonicCallback callback = [self takeCompletionForKey:kSetMnemonicBlock];
+        [self endNFCSessionWithError:YES];
+        if (callback) callback(nil, OKNFCLiteSetMncStatusError);
+        return;
+    }
     if (expectedSerial != nil) {
         BOOL infoValid = [self.lite syncLiteInfo];
         if (!infoValid || ![expectedSerial isEqualToString:self.lite.SN]) {

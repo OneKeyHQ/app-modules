@@ -67,8 +67,14 @@ JUB_RV build(bool safe, JUB_ULONG cla, JUB_ULONG ins, JUB_ULONG p1,
         auto result = configure(builder);
         if (result != JUBR_OK) return result;
     }
+    if (!hex) return JUBR_ARGUMENTS_BAD;
+    const auto length = strnlen(hex, 65535 * 2 + 1);
+    if (length > 65535 * 2) return JUBR_ARGUMENTS_BAD;
+    // The vendor treats an odd command as a leading zero nibble, not a trailing one.
+    const std::string command = length % 2 ? "0" + std::string(hex, length)
+                                           : std::string(hex, length);
     uchar_vector data;
-    if (!decodeHex(hex, data)) return JUBR_ARGUMENTS_BAD;
+    if (!decodeHex(command.c_str(), data)) return JUBR_ARGUMENTS_BAD;
     // Encryption adds up to one AES block and an eight-byte MAC to Lc.
     if (safe && data.size() > 65511) return JUBR_ARGUMENTS_BAD;
     jub::APDU apdu(cla, ins, p1, p2, data.size(), data.data());

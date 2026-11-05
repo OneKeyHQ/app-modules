@@ -122,6 +122,12 @@ jobs:
           cmake --build "$RUNNER_TEMP/lite-card-sdk-build" --parallel
           ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
           grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
+      - name: Run Lite Card iOS manager input regressions
+        working-directory: native-modules/react-native-lite-card
+        shell: bash
+        run: |
+          node tests/ios-input.cjs | tee "$RUNNER_TEMP/lite-card-input-tests.log"
+          grep -Eq '^ManagerInput: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-input-tests.log"
       - name: Run JPush & JCore iOS native E2E regressions
         working-directory: native-modules/react-native-jpush
         shell: bash

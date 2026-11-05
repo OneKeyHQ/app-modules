@@ -17,7 +17,7 @@ private fun CountDownLatch.awaitBounded() {
     check(await(5, TimeUnit.SECONDS)) { "Controlled operation did not advance" }
 }
 private fun write(session: OneKeyLiteCard.CardSession, expected: String? = session.cardState.serialNum) =
-    OneKeyLiteCard.setMnemonic(session, "synthetic-backup", "synthetic-pin", false, expected)
+    OneKeyLiteCard.setMnemonic(session, "12345678901234567890123456789012345678900000001", "synthetic-pin", false, expected)
 private fun phases(tag: IsoDep) = Probe.events.filter { it.connection.isoDep === tag }.map { it.phase }
 
 fun main() = runBlocking {
@@ -84,10 +84,36 @@ fun main() = runBlocking {
         expect(OneKeyLiteCard.withCardSession(unguarded) { write(it, null) }, "Omitted guard retains existing write behavior")
         val overwritten = IsoDep("overwrite", newCard = false, backedUp = true)
         expect(OneKeyLiteCard.withCardSession(overwritten) {
-            OneKeyLiteCard.setMnemonic(it, "synthetic-backup", "synthetic-pin", true, "overwrite")
+            OneKeyLiteCard.setMnemonic(it, "1234", "synthetic-pin", true, "overwrite")
         }, "Overwrite retains existing phases")
         expect(phases(overwritten) == listOf("construct", "info", "verify", "setup", "verify", "backup", "finalize"), "Overwrite verifies and writes through the owned connection")
         println("PASS identity guards and existing write modes")
+
+        for (v2 in listOf(false, true)) {
+            val maxDigits = (if (v2) 65511 else 65535) * 2
+            for (overwrite in listOf(false, true)) {
+                for (input in listOf(null, "", "g", "12g", " 1", "0x1", "1\u0000", "１２", "a".repeat(maxDigits + 1))) {
+                    Probe.reset()
+                    val tag = IsoDep("invalid-input", newCard = !overwrite, backedUp = overwrite, v2 = v2)
+                    val result = runCatching {
+                        OneKeyLiteCard.withCardSession(tag) {
+                            OneKeyLiteCard.setMnemonic(it, input, "synthetic-pin", overwrite)
+                        }
+                    }
+                    expect((result.exceptionOrNull() as? NFCExceptions)?.code == 4000, "Invalid input returns existing execution error")
+                    expect(phases(tag) == listOf("construct", "info", "finalize"), "Input rejection precedes PIN, reset, overwrite and backup phases")
+                }
+            }
+            for (input in listOf("1", "AbC", "12", "a".repeat(maxDigits - 1), "a".repeat(maxDigits))) {
+                Probe.reset()
+                val tag = IsoDep("valid-input", v2 = v2)
+                expect(OneKeyLiteCard.withCardSession(tag) {
+                    OneKeyLiteCard.setMnemonic(it, input, "synthetic-pin")
+                }, "Odd/even input and decoded-byte boundaries retain write phases")
+                expect(phases(tag) == listOf("construct", "info", "setup", "verify", "backup", "finalize"), "Valid input executes original write sequence")
+            }
+        }
+        println("PASS input preflight without PIN or write side effects")
 
         for (failure in listOf("construct", "info", "setup", "verify", "backup")) {
             Probe.reset()

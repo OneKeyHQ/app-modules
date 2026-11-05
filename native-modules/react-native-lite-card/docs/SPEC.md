@@ -32,6 +32,29 @@ and reopen before another secure operation. No persistent cache or migration.
 
 ## Failure and safety
 
+Command input compatibility (Implemented in source; physical-card acceptance
+open): `JUB_GPC_BuildAPDU` and
+`JUB_GPC_BuildSafeAPDU` accept ASCII hexadecimal data of either parity. An odd
+number of digits is decoded exactly as if one `0` were prepended to the whole
+input; even input is unchanged. Plain command data remains bounded to 65535
+decoded bytes and safe command data to 65511 decoded bytes, including that
+leading nibble. Empty command data remains supported by the core. Invalid
+characters and oversized inputs fail with bad arguments and a null output.
+This compatibility applies only to command construction. Certificate, TLV,
+handshake and response decoding retain strict even-length validation, including
+protected response length, receipt and MAC checks.
+
+Before any PIN setup/verification, reset or backup write, native `setMnemonic`
+rejects null, empty, non-ASCII-hex (including embedded NUL) and oversized backup
+input without constructing a safe APDU or advancing secure-channel state. Both
+parities are allowed. V1 permits at most 65535 decoded bytes; V2 permits 65511.
+The iOS manager checks syntax and the V1 limit before retaining inputs or starting
+NFC, then checks the detected version's limit before identity or write phases.
+It completes invalid input once with nil card and existing generic write error
+(2001). Android checks the known session version before any write phases and
+throws existing execution failure (4000). These checks do not infer mnemonic
+format, word count or metadata. No public ABI or new dependency is introduced.
+
 No production keys, PINs or mnemonics enter recovery tests. Debug logging is
 disabled in recovered builds, including Debug configurations. Invalid caller
 pointers, malformed inputs and missing contexts must not trigger the original
@@ -116,9 +139,10 @@ counts, parser presence/return status and effective status words.
 
 ### API, lifecycle, and compatibility
 
-Except for the identity guard, fail-closed state reads and Android operation
-ownership above, card commands, callback payloads, validation, operation ordering,
-cancellation, retry and timeout behavior remain unchanged. No server logs, new
+Except for command input compatibility/preflight, the identity guard, fail-closed
+state reads and Android operation ownership above, card commands, callback
+payloads, validation, operation ordering, cancellation, retry and timeout behavior
+remain unchanged. No server logs, new
 dependencies, or cross-layer correlation parameters are added.
 
 - iOS records native method entry, SDK checks, callback error codes and elapsed
@@ -166,6 +190,30 @@ cancelled waiters, initialization/command failure cleanup and completion reentry
 The fake transport does not prove Android NFC, React Native event delivery,
 module lifecycle or physical-card behavior. The module keeps tag waits outside
 ownership and terminal UI cleanup in its single operation `finally`.
+
+Command compatibility/preflight regressions:
+
+- `sdk/tests/safety.cpp` calls the production C ABI with raw odd/even/invalid
+  strings and decoded-byte limits. A synthetic 45-digit backup is encrypted and
+  checked against independently constructed plaintext/padding and CMAC, followed
+  by authenticated response decryption and tampered/short/odd response rejection.
+  The same CTest target retains its JNI and malformed-input coverage in CI.
+- `sdk/tests/verify.py` (and the Android adapter in `android_verify.py`) preserves
+  raw command strings across the ABI/JNI boundary, compares leading-zero plain
+  commands and chained safe exchanges against an independent crypto oracle, and
+  optionally compares the original vendor library. Differential checks require a
+  separately supplied reference; no reference binary is committed.
+- `node tests/android-session.cjs` executes production `setMnemonic` validation
+  for V1/V2, both write modes, invalid syntax and byte limits before fake PIN,
+  verify/reset and backup phases. Valid odd/even inputs retain the write sequence.
+- `node tests/ios-input.cjs` compiles the production iOS manager on macOS with
+  fake CoreNFC/card adapters. It covers syntax rejection before session creation,
+  detected-version byte limits before identity/card-operation dispatch, one
+  existing generic-error callback, cleared input properties and unchanged valid
+  input forwarding for V1/V2 and both write modes. It does not execute a real
+  card's PIN/backup commands or React Native callback mapping. The runner is part
+  of the existing native CI job.
+
 Physical iOS/Android card runs must confirm entry-to-callback timelines,
 PIN-to-NFC handoff, first backup failure, cancellation, and successful backup.
 Source inspection/builds do not prove those device outcomes or identify the

@@ -274,7 +274,32 @@ int main() {
     require(JUB_GPC_OpenSecureChannel("") == JUBR_CONTEXT_NOT_SATISFIED);
     require(JUB_GPC_BuildSafeAPDU(0, 0, 0, 0, "", &output) == JUBR_CONTEXT_NOT_SATISFIED);
     require(JUB_GPC_BuildAPDU(0, 0, 0, 0, "zz", &output) == JUBR_ARGUMENTS_BAD);
+    for (const auto& text : {"0", "123", "AbC", "0123", "ABCDEF", ""}) {
+        require(JUB_GPC_BuildAPDU(0x80, 0x3b, 0, 0, text, &output) == JUBR_OK && output,
+                "Valid odd and even command inputs must build");
+        const std::string input(text);
+        const std::string normalized = input.size() % 2 ? "0" + input : input;
+        char* expected = nullptr;
+        require(JUB_GPC_BuildAPDU(0x80, 0x3b, 0, 0, normalized.c_str(), &expected) == JUBR_OK);
+        require(std::string(output) == expected, "Odd command must equal whole-input leading-zero encoding");
+        require(JUB_FreeMemory(output) == JUBR_OK);
+        require(JUB_FreeMemory(expected) == JUBR_OK);
+    }
+    for (const auto& text : {"z", "12z", "0x1", " 1", "+1", "1\n"}) {
+        output = reinterpret_cast<char*>(1);
+        require(JUB_GPC_BuildAPDU(0, 0, 0, 0, text, &output) == JUBR_ARGUMENTS_BAD && !output,
+                "Invalid odd/even command must fail with null output");
+    }
+    for (size_t digits : {size_t(131069), size_t(131070), size_t(131071)}) {
+        const std::string input(digits, 'a');
+        const auto result = JUB_GPC_BuildAPDU(0x80, 0x3b, 0, 0, input.c_str(), &output);
+        require(result == (digits <= 131070 ? JUBR_OK : JUBR_ARGUMENTS_BAD),
+                "Plain command limits count decoded bytes after leading-zero normalization");
+        if (output) require(JUB_FreeMemory(output) == JUBR_OK);
+    }
     JUB_UINT16 status = 0;
+    require(JUB_GPC_ParseAPDUResponse("900", &status, &output) == JUBR_ARGUMENTS_BAD && !output,
+            "Odd response input must remain rejected");
     require(JUB_GPC_ParseAPDUResponse("9000", &status, &output) == 0);
     require(status == 0x9000 && output && !*output);
     require(JUB_FreeMemory(output) == 0);
@@ -293,8 +318,19 @@ int main() {
     std::string validCert = buildCertificate(ocePub);
     std::string offCurveCert = buildCertificate(offCurvePub);
 
+    char* strictSerial = nullptr;
+    char* strictSubject = nullptr;
+    const std::string oddCert = validCert.substr(1);
+    require(JUB_GPC_ParseCertificate(oddCert.c_str(), &strictSerial, &strictSubject) == JUBR_ARGUMENTS_BAD &&
+            !strictSerial && !strictSubject, "Odd certificate must remain rejected");
+    JUB_ULONG strictTag = 0;
+    require(JUB_GPC_TLVDecode("53100", &strictTag, &output) == JUBR_ARGUMENTS_BAD && !output,
+            "Odd TLV input must remain rejected");
+
     require(JUB_GPC_Initialize(info, validCert.c_str(), validOcePriv.c_str()) == JUBR_OK,
             "Valid scalar and certificate should initialize");
+    require(JUB_GPC_OpenSecureChannel("5f490") == JUBR_ARGUMENTS_BAD,
+            "Odd handshake response must remain rejected");
     require(JUB_GPC_Finalize() == JUBR_OK);
 
     require(JUB_GPC_Initialize(info, validCert.c_str(), zeroPriv.c_str()) == JUBR_ARGUMENTS_BAD,
@@ -393,24 +429,47 @@ int main() {
     require(JUB_GPC_OpenSecureChannel(maRespHex.c_str()) == JUBR_OK,
             "Valid mutual authentication response must open secure channel");
 
+    for (const auto& input : {std::string("xyz"), std::string(131023, 'a'), std::string(131024, 'a')}) {
+        output = reinterpret_cast<char*>(1);
+        require(JUB_GPC_BuildSafeAPDU(0x80, 0x3b, 0, 0, input.c_str(), &output) == JUBR_ARGUMENTS_BAD && !output,
+                "Invalid and oversized safe command inputs must not build");
+    }
+
     // Encrypted APDU build must succeed while session is open
     char* safeApduHex = nullptr;
-    require(JUB_GPC_BuildSafeAPDU(0x80, 0x20, 0x00, 0x00, "06313233343536", &safeApduHex) == JUBR_OK && safeApduHex);
+    const std::string oddBackup = "12345678901234567890123456789012345678900000001";
+    require(JUB_GPC_BuildSafeAPDU(0x80, 0x20, 0x00, 0x00, oddBackup.c_str(), &safeApduHex) == JUBR_OK && safeApduHex);
     std::vector<unsigned char> safeApduBytes = unhex(safeApduHex);
     require(JUB_FreeMemory(safeApduHex) == JUBR_OK);
-    require(safeApduBytes.size() == 5 + 16 + 8 && safeApduBytes[0] == 0x84);
+    require(safeApduBytes.size() == 5 + 32 + 8 && safeApduBytes[0] == 0x84);
+    aes_encrypt_ctx commandEnc;
+    aes_encrypt_key128(derivedKeys.data() + 16, &commandEnc);
+    unsigned char commandCounter[16] = {0};
+    commandCounter[15] = 1;
+    unsigned char commandIv[16] = {0};
+    aes_ecb_encrypt(commandCounter, commandIv, 16, &commandEnc);
+    aes_decrypt_ctx commandDec;
+    aes_decrypt_key128(derivedKeys.data() + 16, &commandDec);
+    unsigned char commandPlain[32] = {0};
+    aes_cbc_decrypt(safeApduBytes.data() + 5, commandPlain, 32, commandIv, &commandDec);
+    const auto expectedCommand = unhex("0" + oddBackup);
+    require(std::equal(expectedCommand.begin(), expectedCommand.end(), commandPlain) &&
+            commandPlain[expectedCommand.size()] == 0x80 &&
+            std::all_of(commandPlain + expectedCommand.size() + 1, commandPlain + 32,
+                        [](unsigned char byte) { return byte == 0; }),
+            "45-digit backup must encrypt whole-input leading-zero bytes with unchanged padding");
 
     // Verify JUB_GPC_ParseSafeAPDUResponse with valid RMAC, tampered RMAC, and status-only error:
     // derivedKeys layout: [0..16]=key_dek, [16..32]=s_enc, [32..48]=s_mac, [48..64]=s_rmac
     // After BuildSafeAPDU #1 (counter == 1), the SDK's 16-byte chaining CMAC is computed over:
-    // receipt(16B) || 84 20 00 00 18 || ciphertext(16B)
+    // receipt(16B) || header/Lc || ciphertext
     std::vector<unsigned char> maRespBytes = unhex(maRespHex);
     std::vector<unsigned char> receiptBytes(maRespBytes.end() - 16, maRespBytes.end());
     std::vector<unsigned char> cmacInput = receiptBytes;
-    cmacInput.insert(cmacInput.end(), safeApduBytes.begin(), safeApduBytes.begin() + 5 + 16);
+    cmacInput.insert(cmacInput.end(), safeApduBytes.begin(), safeApduBytes.end() - 8);
     unsigned char cmdChain[16] = {0};
     AES_CMAC(derivedKeys.data() + 32, cmacInput.data(), static_cast<unsigned>(cmacInput.size()), cmdChain);
-    require(std::memcmp(cmdChain, safeApduBytes.data() + 5 + 16, 8) == 0,
+    require(std::memcmp(cmdChain, safeApduBytes.data() + safeApduBytes.size() - 8, 8) == 0,
             "Command CMAC prefix must match independent AES-CMAC");
 
     // Construct encrypted response for counter == 2 (incCounter() pre-increments 1 -> 2):
@@ -452,6 +511,9 @@ int main() {
             "Tampered RMAC response must be rejected");
     require(!output);
 
+    require(JUB_GPC_ParseSafeAPDUResponse("900", &status, &output) == JUBR_ARGUMENTS_BAD && !output,
+            "Odd protected response input must remain rejected");
+
     // Unauthenticated plain "9000" on safe channel must be rejected
     require(JUB_GPC_ParseSafeAPDUResponse("9000", &status, &output) != JUBR_OK,
             "Unauthenticated 9000 response on safe channel must be rejected");
@@ -470,6 +532,13 @@ int main() {
             "Status-only card error 63c2 must parse cleanly");
     require(status == 0x63c2 && output && std::string(output).empty());
     require(JUB_FreeMemory(output) == JUBR_OK);
+
+    for (size_t digits : {size_t(131021), size_t(131022)}) {
+        const std::string input(digits, 'a');
+        require(JUB_GPC_BuildSafeAPDU(0x80, 0x3b, 0, 0, input.c_str(), &output) == JUBR_OK && output,
+                "Safe command accepts both parities at the decoded-byte limit");
+        require(JUB_FreeMemory(output) == JUBR_OK);
+    }
 
     // Failed re-initialization must clear the open session
     require(JUB_GPC_Initialize(info, "deadbeef", validOcePriv.c_str()) == JUBR_ARGUMENTS_BAD);
