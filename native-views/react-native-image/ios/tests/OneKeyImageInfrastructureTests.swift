@@ -234,7 +234,7 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     let url = try XCTUnwrap(URL(string: "https://example.com/image.png"))
     XCTAssertEqual(
       OneKeyImageRequestContext.filteredCacheKey(for: url),
-      "https://example.com/image.png|onekey-image-safety-v3"
+      "https://example.com/image.png|onekey-image-safety-v4"
     )
     let thumbnailOptions = OneKeyImageRequestContext.thumbnailOptions(pixelSize: size)
     XCTAssertEqual(

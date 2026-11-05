@@ -17,9 +17,9 @@ class OneKeySVGForeignObjectTest {
 
   @Test
   fun embeddedPNGConvertsToAndroidSVGImageWithoutChangingItsSource() {
-    val source = document("<style>img { width:100%; height:100%; image-rendering:pixelated; }</style>" + foreign(image))
+    val source = document("<style>img { width:100%; height:100%; }</style>" + foreign(image))
     var validatedImages = 0
-    val normalized = OneKeySVG.normalize(source) { validatedImages++ }.toString(Charsets.UTF_8)
+    val normalized = OneKeySVG.normalize(source) { _, _ -> validatedImages++; null }.toString(Charsets.UTF_8)
     assertFalse(normalized.contains("foreignObject"))
     assertTrue(normalized.contains("xlink:href=\"data:image/png;base64,$png\""))
     assertTrue(normalized.contains("preserveAspectRatio=\"none\""))
@@ -29,13 +29,31 @@ class OneKeySVGForeignObjectTest {
   @Test
   fun ordinarySVGKeepsItsExistingDecoderInput() {
     val source = document("<rect width=\"24\" height=\"24\" fill=\"red\"/>")
-    assertArrayEquals(source, OneKeySVG.normalize(source) { throw AssertionError("Ordinary SVG must not decode embedded PNGs") })
+    assertArrayEquals(source, OneKeySVG.normalize(source) { _, _ -> throw AssertionError("Ordinary SVG must not decode embedded PNGs") })
+    val commented = document("<!-- foreignObject is not used --><style>rect { fill:red; }</style><rect width=\"24\" height=\"24\"/>")
+    assertArrayEquals(commented, OneKeySVG.normalize(commented) { _, _ -> null })
+  }
+
+  @Test
+  fun imageRenderingUsesDocumentOrderAndKeepsSmoothImagesSmooth() {
+    for ((css, expected) in listOf(
+      "" to "optimizeQuality",
+      "<style>img { image-rendering:pixelated; }</style>" to "optimizeSpeed",
+      "<style>img { image-rendering:pixelated; image-rendering:auto; -ms-interpolation-mode:nearest-neighbor; }</style>" to "optimizeQuality",
+      "<style>img { image-rendering:pixelated; }</style><style>img { image-rendering:smooth; }</style>" to "optimizeQuality",
+      "<style>img { -ms-interpolation-mode:nearest-neighbor; }</style>" to "optimizeSpeed",
+    )) {
+      val converted = OneKeySVG.normalize(document(foreign(image) + css)) { _, nearest ->
+        if (nearest) intArrayOf(0xffff0000.toInt()) else null
+      }.toString(Charsets.UTF_8)
+      assertTrue(converted.contains("image-rendering=\"$expected\""))
+    }
   }
 
   @Test
   fun embeddedRasterDecodeFailureIsNotAConvertedSuccess() {
     assertThrows(IOException::class.java) {
-      OneKeySVG.normalize(document(foreign(image))) { throw IOException("Corrupt PNG pixels") }
+      OneKeySVG.normalize(document(foreign(image))) { _, _ -> throw IOException("Corrupt PNG pixels") }
     }
   }
 
@@ -49,15 +67,15 @@ class OneKeySVGForeignObjectTest {
       foreign(image.replace("100%", "50%")),
       "<style>img { object-fit:cover; }</style>" + foreign(image),
       foreign("<img xmlns=\"http://www.w3.org/1999/xhtml\" src=\"data:image/png;base64,AAAA\"/>"),
-    )) assertThrows(IOException::class.java) { OneKeySVG.normalize(document(body)) {} }
+    )) assertThrows(IOException::class.java) { OneKeySVG.normalize(document(body)) { _, _ -> null } }
   }
 
   @Test
   fun boundsAndEntitiesFailBeforeNativeRendering() {
     val nested = "<g>".repeat(64) + foreign(image) + "</g>".repeat(64)
-    assertThrows(IOException::class.java) { OneKeySVG.normalize(document(nested)) {} }
-    assertThrows(IOException::class.java) { OneKeySVG.normalize(document(foreign(image).repeat(17))) {} }
+    assertThrows(IOException::class.java) { OneKeySVG.normalize(document(nested)) { _, _ -> null } }
+    assertThrows(IOException::class.java) { OneKeySVG.normalize(document(foreign(image).repeat(17))) { _, _ -> null } }
     val entity = "<!DOCTYPE svg [<!ENTITY image 'test'>]>".toByteArray() + document(foreign(image))
-    assertThrows(IOException::class.java) { OneKeySVG.normalize(entity) {} }
+    assertThrows(IOException::class.java) { OneKeySVG.normalize(entity) { _, _ -> null } }
   }
 }

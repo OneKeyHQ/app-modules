@@ -21,6 +21,11 @@
 @property(nonatomic) NSUInteger foreignCount;
 @property(nonatomic) NSUInteger imageBytes;
 @property(nonatomic) uint64_t imagePixels;
+@property(nonatomic) BOOL hasForeignObject;
+@property(nonatomic) BOOL hasImageRendering;
+@property(nonatomic) BOOL nearestNeighbor;
+@property(nonatomic) NSUInteger pixelRuns;
+@property(nonatomic) NSUInteger pathCharacters;
 + (nullable NSData *)normalize:(NSData *)data;
 @end
 
@@ -63,8 +68,9 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
   parser.shouldResolveExternalEntities = NO;
   parser.delegate = normalizer;
   if (![parser parse] || !normalizer.root ||
-      ![OneKeySVGLocalName(normalizer.root.name) isEqualToString:@"svg"] ||
-      ![normalizer convert:normalizer.root]) return nil;
+      ![OneKeySVGLocalName(normalizer.root.name) isEqualToString:@"svg"]) return nil;
+  if (!normalizer.hasForeignObject) return data;
+  if (![normalizer collectStyles:normalizer.root] || ![normalizer convert:normalizer.root]) return nil;
   return [OneKeySVGSerialize(normalizer.root) dataUsingEncoding:NSUTF8StringEncoding];
 }
 
@@ -72,6 +78,7 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
   namespaceURI:(NSString *)namespaceURI qualifiedName:(NSString *)qualifiedName
   attributes:(NSDictionary<NSString *, NSString *> *)attributes {
   if (++self.nodeCount > 10000 || self.stack.count >= 64) { [parser abortParsing]; return; }
+  if ([OneKeySVGLocalName(elementName) isEqualToString:@"foreignObject"]) self.hasForeignObject = YES;
   OneKeySVGNode *node = [OneKeySVGNode new];
   node.name = elementName;
   node.attributes = attributes;
@@ -117,9 +124,94 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
     NSString *key = [parts[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     NSString *value = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (([key isEqualToString:@"width"] || [key isEqualToString:@"height"]) && [value isEqualToString:@"100%"]) continue;
-    if ([key isEqualToString:@"image-rendering"] && [@[@"optimizeSpeed", @"-moz-crisp-edges", @"-o-crisp-edges", @"-webkit-optimize-contrast", @"optimize-contrast", @"crisp-edges", @"pixelated"] containsObject:value]) continue;
-    if ([key isEqualToString:@"-ms-interpolation-mode"] && [value isEqualToString:@"nearest-neighbor"]) continue;
+    if ([key isEqualToString:@"image-rendering"]) {
+      BOOL smooth = [@[@"auto", @"smooth", @"optimizeQuality"] containsObject:value];
+      BOOL nearest = [@[@"optimizeSpeed", @"-moz-crisp-edges", @"-o-crisp-edges", @"-webkit-optimize-contrast", @"optimize-contrast", @"crisp-edges", @"pixelated"] containsObject:value];
+      if (!smooth && !nearest) return NO;
+      self.hasImageRendering = YES;
+      self.nearestNeighbor = nearest;
+      continue;
+    }
+    if ([key isEqualToString:@"-ms-interpolation-mode"] && [value isEqualToString:@"nearest-neighbor"]) {
+      if (!self.hasImageRendering) self.nearestNeighbor = YES;
+      continue;
+    }
     return NO;
+  }
+  return YES;
+}
+
+- (BOOL)collectStyles:(OneKeySVGNode *)node {
+  if ([OneKeySVGLocalName(node.name) isEqualToString:@"style"]) return [self validStylesheet:node];
+  for (id child in node.children) {
+    if ([child isKindOfClass:OneKeySVGNode.class] && ![self collectStyles:child]) return NO;
+  }
+  return YES;
+}
+
+// CoreSVG smooths embedded bitmaps regardless of image-rendering. Pixel runs
+// retain the small raster's edges without replacing the surrounding SVG scene.
+- (BOOL)convertPixels:(CGImageRef)image node:(OneKeySVGNode *)node {
+  size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
+  NSMutableData *rgba = [NSMutableData dataWithLength:width * height * 4];
+  CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+  if (!colorSpace) return NO;
+  if (!rgba) { CGColorSpaceRelease(colorSpace); return NO; }
+  CGContextRef context = CGBitmapContextCreate(rgba.mutableBytes, width, height, 8, width * 4,
+    colorSpace, kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
+  CGColorSpaceRelease(colorSpace);
+  if (!context) return NO;
+  CGContextSetInterpolationQuality(context, kCGInterpolationNone);
+  CGContextSetBlendMode(context, kCGBlendModeCopy);
+  CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+  CGContextRelease(context);
+  NSMutableDictionary<NSNumber *, NSMutableString *> *paths = [NSMutableDictionary new];
+  const uint32_t *pixels = rgba.bytes;
+  for (size_t y = 0; y < height; y++) {
+    for (size_t x = 0; x < width;) {
+      uint32_t color = pixels[y * width + x];
+      size_t end = x + 1;
+      while (end < width && pixels[y * width + end] == color) end++;
+      const uint8_t *channels = (const uint8_t *)&color;
+      if (channels[3]) {
+        if (++self.pixelRuns > 16384) return NO;
+        NSNumber *key = @(color);
+        NSMutableString *path = paths[key];
+        if (!path) {
+          if (++self.nodeCount > 10000) return NO;
+          paths[key] = path = [NSMutableString new];
+        }
+        NSString *run = [NSString stringWithFormat:@"M%zu %zuh%zuv1H%zuz", x, y, end - x, x];
+        self.pathCharacters += run.length;
+        if (self.pathCharacters > 512 * 1024) return NO;
+        [path appendString:run];
+      }
+      x = end;
+    }
+  }
+  NSMutableDictionary *attributes = [node.attributes mutableCopy];
+  attributes[@"xmlns"] = @"http://www.w3.org/2000/svg";
+  attributes[@"viewBox"] = [NSString stringWithFormat:@"0 0 %zu %zu", width, height];
+  attributes[@"preserveAspectRatio"] = @"none";
+  attributes[@"overflow"] = @"hidden";
+  NSRange colon = [node.name rangeOfString:@":"];
+  node.name = colon.location == NSNotFound ? @"svg" : [[node.name substringToIndex:colon.location + 1] stringByAppendingString:@"svg"];
+  node.attributes = attributes;
+  [node.children removeAllObjects];
+  for (NSNumber *key in [paths.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+    uint32_t color = key.unsignedIntValue;
+    const uint8_t *channels = (const uint8_t *)&color;
+    unsigned alpha = channels[3];
+    OneKeySVGNode *path = [OneKeySVGNode new];
+    path.name = @"path";
+    path.attributes = @{@"d": paths[key],
+      @"fill": [NSString stringWithFormat:@"rgb(%u,%u,%u)",
+        MIN(255u, (channels[0] * 255u + alpha / 2) / alpha),
+        MIN(255u, (channels[1] * 255u + alpha / 2) / alpha),
+        MIN(255u, (channels[2] * 255u + alpha / 2) / alpha)],
+      @"fill-opacity": [NSString stringWithFormat:@"%.8f", alpha / 255.0]};
+    path.children = [NSMutableArray new];
+    [node.children addObject:path];
   }
   return YES;
 }
@@ -138,7 +230,7 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
   }
   node.attributes = colors;
   NSString *localName = OneKeySVGLocalName(node.name);
-  if ([localName isEqualToString:@"style"]) return [self validStylesheet:node];
+  if ([localName isEqualToString:@"style"]) return YES;
   if (![localName isEqualToString:@"foreignObject"]) {
     for (id child in node.children) {
       if ([child isKindOfClass:OneKeySVGNode.class] && ![self convert:child]) return NO;
@@ -192,14 +284,17 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
     (__bridge CFDictionaryRef)@{(__bridge NSString *)kCGImageSourceShouldCacheImmediately: @YES});
   CFRelease(metadata);
   if (!decoded) return NO;
+  BOOL convertedPixels = !self.nearestNeighbor || [self convertPixels:decoded node:node];
   CGImageRelease(decoded);
+  if (!convertedPixels) return NO;
   self.imageBytes += png.length;
   self.imagePixels += width * height;
+  if (self.nearestNeighbor) return YES;
   NSMutableDictionary *attributes = [node.attributes mutableCopy];
   attributes[@"xmlns:xlink"] = @"http://www.w3.org/1999/xlink";
   attributes[@"xlink:href"] = [prefix stringByAppendingString:[source substringFromIndex:prefix.length]];
   attributes[@"preserveAspectRatio"] = @"none";
-  attributes[@"image-rendering"] = @"optimizeSpeed";
+  attributes[@"image-rendering"] = @"optimizeQuality";
   NSRange colon = [node.name rangeOfString:@":"];
   node.name = colon.location == NSNotFound ? @"image" : [[node.name substringToIndex:colon.location + 1] stringByAppendingString:@"image"];
   node.attributes = attributes;
@@ -227,8 +322,9 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
       CGFloat ratio = MIN(1, sqrt(4194304.0 / pixels.width / pixels.height));
       CGFloat scale = MAX(1, UIScreen.mainScreen.scale);
       NSMutableDictionary *bounded = [options mutableCopy];
+      // Keep point-to-pixel roundoff from making UIGraphics ceil an extra pixel.
       bounded[SDImageCoderDecodeThumbnailPixelSize] = [NSValue valueWithCGSize:
-        CGSizeMake(pixels.width * ratio / scale, pixels.height * ratio / scale)];
+        CGSizeMake(nextafter(pixels.width * ratio / scale, 0), nextafter(pixels.height * ratio / scale, 0))];
       options = bounded;
     }
   }

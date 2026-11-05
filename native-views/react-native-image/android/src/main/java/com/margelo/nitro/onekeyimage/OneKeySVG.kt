@@ -26,16 +26,20 @@ object OneKeySVG {
   fun decode(source: InputStream): OneKeySVGDocument = OneKeySVGDocument(parse(source))
   internal fun parse(source: InputStream): SVG {
     val data = OneKeyLimitedInputStream(source).readBytes()
-    val normalized = normalize(data) { png ->
+    val normalized = normalize(data) { png, readPixels ->
       val decoded = BitmapFactory.decodeByteArray(png, 0, png.size)
         ?: throw IOException("Invalid PNG in SVG foreignObject")
-      decoded.recycle()
+      try {
+        if (readPixels) IntArray(decoded.width * decoded.height).also {
+          decoded.getPixels(it, 0, decoded.width, 0, 0, decoded.width, decoded.height)
+        } else null
+      } finally { decoded.recycle() }
     }
     return SVG.getFromInputStream(normalized.inputStream())
   }
 
   @OptIn(ExperimentalEncodingApi::class)
-  internal fun normalize(data: ByteArray, validatePNG: (ByteArray) -> Unit): ByteArray {
+  internal fun normalize(data: ByteArray, decodePNG: (ByteArray, Boolean) -> IntArray?): ByteArray {
     val xml = when {
       data.size >= 2 && ((data[0] == 0xff.toByte() && data[1] == 0xfe.toByte()) ||
         (data[0] == 0xfe.toByte() && data[1] == 0xff.toByte())) -> String(data, Charsets.UTF_16)
@@ -61,10 +65,15 @@ object OneKeySVG {
     builder.setEntityResolver { _, _ -> throw SAXException("External SVG entities are disabled") }
     val document = builder.parse(data.inputStream())
     if (document.documentElement.localName != "svg") unsupported()
+    if (document.getElementsByTagNameNS("*", "foreignObject").length == 0) return data
     var nodes = 0
     var objects = 0
     var imageBytes = 0L
     var imagePixels = 0L
+    var hasImageRendering = false
+    var nearestNeighbor = false
+    var pixelRuns = 0
+    var pathCharacters = 0
     val allowed = setOf("x", "y", "width", "height", "transform", "opacity", "clip-path", "mask", "id")
     val imageAllowed = setOf("xmlns", "src", "width", "height", "alt")
     fun children(node: Node) = (0 until node.childNodes.length).map { node.childNodes.item(it) }
@@ -80,12 +89,27 @@ object OneKeySVG {
         if (parts.size != 2) unsupported()
         val (key, value) = parts
         if (key in setOf("width", "height") && value == "100%") continue
-        if (key == "image-rendering" && value in setOf("optimizeSpeed", "-moz-crisp-edges",
-          "-o-crisp-edges", "-webkit-optimize-contrast", "optimize-contrast", "crisp-edges", "pixelated")) continue
-        if (key == "-ms-interpolation-mode" && value == "nearest-neighbor") continue
+        if (key == "image-rendering") {
+          val smooth = value in setOf("auto", "smooth", "optimizeQuality")
+          val nearest = value in setOf("optimizeSpeed", "-moz-crisp-edges",
+            "-o-crisp-edges", "-webkit-optimize-contrast", "optimize-contrast", "crisp-edges", "pixelated")
+          if (!smooth && !nearest) unsupported()
+          hasImageRendering = true
+          nearestNeighbor = nearest
+          continue
+        }
+        if (key == "-ms-interpolation-mode" && value == "nearest-neighbor") {
+          if (!hasImageRendering) nearestNeighbor = true
+          continue
+        }
         unsupported()
       }
     }
+    fun collectStyles(node: Node) {
+      if (node is Element && node.localName == "style") validateStyle(node)
+      else children(node).forEach(::collectStyles)
+    }
+    collectStyles(document)
     fun convert(node: Node, depth: Int) {
       if (depth > 64) unsupported()
       if (node.nodeType == Node.PROCESSING_INSTRUCTION_NODE) unsupported()
@@ -98,7 +122,7 @@ object OneKeySVG {
         val alpha = (rgba and 255) / 255.0
         node.setAttribute(key, "rgba(${(rgba shr 24) and 255},${(rgba shr 16) and 255},${(rgba shr 8) and 255},$alpha)")
       }
-      if (node.localName == "style") { validateStyle(node); return }
+      if (node.localName == "style") return
       if (node.localName != "foreignObject") {
         children(node).forEach { convert(it, depth + 1) }
         return
@@ -144,16 +168,53 @@ object OneKeySVG {
       imagePixels += width * height
       if (metadata.animated || width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
         imagePixels > 4194304) unsupported()
-      validatePNG(png)
-      val replacement = document.createElementNS("http://www.w3.org/2000/svg", "image")
+      val pixels = decodePNG(png, nearestNeighbor)
+      val replacement = document.createElementNS("http://www.w3.org/2000/svg", if (nearestNeighbor) "svg" else "image")
       for (index in 0 until node.attributes.length) {
         val attribute = node.attributes.item(index)
         replacement.setAttribute(attribute.nodeName, attribute.nodeValue)
       }
-      replacement.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:xlink", "http://www.w3.org/1999/xlink")
-      replacement.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", prefix + source.substring(prefix.length))
       replacement.setAttribute("preserveAspectRatio", "none")
-      replacement.setAttribute("image-rendering", "optimizeSpeed")
+      replacement.setAttribute("image-rendering", if (nearestNeighbor) "optimizeSpeed" else "optimizeQuality")
+      if (nearestNeighbor) {
+        // Paint(0) still filters bitmaps on Android Q+. Preserve pixel edges as
+        // bounded vector geometry instead of depending on the library's hint.
+        if (pixels == null || pixels.size.toLong() != width * height) unsupported()
+        val paths = linkedMapOf<Int, StringBuilder>()
+        val rasterWidth = width.toInt()
+        for (y in 0 until height.toInt()) {
+          var x = 0
+          while (x < rasterWidth) {
+            val color = pixels[y * rasterWidth + x]
+            var end = x + 1
+            while (end < rasterWidth && pixels[y * rasterWidth + end] == color) end++
+            if (color ushr 24 != 0) {
+              if (++pixelRuns > 16384) unsupported()
+              val path = paths.getOrPut(color) {
+                if (++elementCount > 10000) unsupported()
+                StringBuilder()
+              }
+              val run = "M$x ${y}h${end - x}v1H${x}z"
+              pathCharacters += run.length
+              if (pathCharacters > 512 * 1024) unsupported()
+              path.append(run)
+            }
+            x = end
+          }
+        }
+        replacement.setAttribute("viewBox", "0 0 $width $height")
+        replacement.setAttribute("overflow", "hidden")
+        for ((color, path) in paths) {
+          val shape = document.createElementNS("http://www.w3.org/2000/svg", "path")
+          shape.setAttribute("d", path.toString())
+          shape.setAttribute("fill", "rgb(${(color ushr 16) and 255},${(color ushr 8) and 255},${color and 255})")
+          shape.setAttribute("fill-opacity", ((color ushr 24) / 255.0).toString())
+          replacement.appendChild(shape)
+        }
+      } else {
+        replacement.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:xlink", "http://www.w3.org/1999/xlink")
+        replacement.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", prefix + source.substring(prefix.length))
+      }
       node.parentNode.replaceChild(replacement, node)
     }
     children(document).forEach { convert(it, 1) }

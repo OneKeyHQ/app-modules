@@ -216,8 +216,9 @@ an exact decoded-memory hit.
 The native image decoder, including preload and reusable native-list hosts,
 recognizes SVG content independently of URL extensions. A `foreignObject`
 containing exactly one XHTML `img` with a base64 PNG source may be converted
-to an SVG `image`. The image must fill the explicitly sized foreign-object
-viewport; its geometry, transform, opacity, mask and clip remain in the SVG.
+to an SVG `image` or bounded pixel geometry. The image must fill the explicitly
+sized foreign-object viewport; its geometry, transform, opacity, mask and clip
+remain in the SVG.
 Eight-digit hexadecimal paint attributes are translated to RGBA for both
 backends so the retained background and its alpha do not become black.
 Converted iOS thumbnails compensate for SVGCoder's screen-scale rasterization:
@@ -240,7 +241,7 @@ The bounded PNG must also pass the platform raster decoder before conversion;
 a valid metadata header alone is insufficient to claim successful rendering.
 Only full-viewport `img` dimensions (omitted or `100%`) are supported. The
 supported HTML stylesheet is an `img` rule containing only full-viewport width
-and height and nearest-neighbor image-rendering declarations. Unsupported
+and height and recognized image-rendering declarations. Unsupported
 foreign-object documents return the ordinary image-error/fallback result.
 Ordinary SVGs without foreign objects keep their existing decoder path.
 
@@ -259,8 +260,48 @@ all-networks NFT list in light/dark themes and an On-Chain All-Stars detail.
 Thirty downward swipe gestures and a return to cached rows completed without
 an app restart, but the current list reached its end early; this does not
 establish thirty distinct screens or physical-device crash acceptance.
-Android full-wallet acceptance remains open. Native interpolation may differ
-from browser CSS pixelation.
+Android full-wallet acceptance remains open.
+
+#### Pixel-art sampling — Implemented; focused runtime verified
+
+Supported `img` stylesheets are resolved in document/declaration order before
+conversion. The last recognized `image-rendering` value selects pixelated or
+smooth sampling; `auto`, `smooth` and `optimizeQuality` select smooth sampling.
+Without a declaration the HTML image keeps smooth sampling. Legacy nearest
+declarations are supported; `-ms-interpolation-mode` is a fallback only when no
+`image-rendering` declaration is present. This does not add general CSS support.
+
+CoreSVG ignores the embedded image's sampling hints. AndroidSVG 1.4 constructs
+`Paint(0)` for nearest sampling, which still enables filtering on Android Q+.
+For explicitly pixelated PNGs, both platforms convert equal-color horizontal
+pixel runs into filled SVG paths in a nested SVG viewport. Geometry, alpha,
+surrounding SVG layers and clipping are retained; other images keep the raster
+path. Integer-aligned enlargement
+must not introduce interpolated colors. Fractional/transformed vector edges
+may cover one output pixel; this is not an exact browser CSS pixel-grid match.
+Generated geometry shares a document-wide 16,384-run and 512-KiB path-data
+budget and the existing 10,000-element budget; exceeding it fails through the
+ordinary image fallback. PNG decoding retains the existing aggregate 4MP
+limit. A temporary pixel buffer may add at most 16 MiB during conversion and is
+released with the decode job; no JS heap copies or UI-thread pixel work is added.
+
+Smooth images retain native SVG bitmap drawing. Android acceptance must
+exercise `renderToPicture` and the wallet's `PictureDrawable` path, rather than
+only `renderToCanvas`. Both
+platforms invalidate older decoded cache entries. Pixel tests must cover
+integer/fractional sizes, alpha/background, stylesheet order, smooth images,
+ordinary SVGs and generated-geometry limits; wallet list/detail verification
+and physical-device acceptance are recorded separately.
+
+The production iOS coder passes nine focused XCTest cases. Android passes
+23 SVG/safety JVM tests and three emulator instrumentation cases through
+`PictureDrawable` and `ImageView`, including fractional display sizes and
+geometry-budget rejection. The real #1982 document renders at 192, 197 and
+480 pixels through both backends: integer sizes have exactly the source's
+22 composited colors, and pixels away from fractional edges match the source
+with zero channel error. The rebuilt iOS wallet displays sharp NFT list and
+detail images in dark mode. These checks do not establish physical-device,
+full Android wallet or the original thirty-distinct-screen stress acceptance.
 
 ## 8. Safety and resource limits
 

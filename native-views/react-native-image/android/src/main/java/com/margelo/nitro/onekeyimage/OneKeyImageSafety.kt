@@ -802,7 +802,7 @@ internal class OneKeyImageSafetyVersionedKey(
   override fun hashCode(): Int = 31 * delegate.hashCode() + CACHE_VERSION.hashCode()
 
   companion object {
-    internal const val CACHE_VERSION = "onekey-image-safety-v3"
+    internal const val CACHE_VERSION = "onekey-image-safety-v4"
     private val VERSION_BYTES = CACHE_VERSION.toByteArray(Key.CHARSET)
   }
 }
