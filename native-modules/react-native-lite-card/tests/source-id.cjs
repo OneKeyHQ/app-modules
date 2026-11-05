@@ -31,6 +31,7 @@ function binaryId(library) {
   return run('python3', ['-c', 'import ctypes,sys; print((ctypes.c_char*75).in_dll(ctypes.CDLL(sys.argv[1]), "GPChannelSDKCoreVersionString").value.decode())', library]);
 }
 try {
+  run('ninja', ['--version']);
   const first = join(output, 'first');
   const second = join(output, 'different-location');
   copySource(first);
@@ -45,7 +46,8 @@ try {
   }
   expect(rubyHeader(first, ruby) === baseline, 'Logs, hidden/cache/build files and keys are excluded');
   const build = join(output, 'cmake');
-  run('cmake', ['-S', join(first, 'sdk'), '-B', build, '-DBUILD_TESTING=OFF']);
+  // GNU Make 3.81 can miss same-second archive updates during this rapid rebuild.
+  run('cmake', ['-G', 'Ninja', '-S', join(first, 'sdk'), '-B', build, '-DBUILD_TESTING=OFF']);
   expect(header(join(build, 'generated')) === baseline, 'CMake and CocoaPods generator use identical content rules');
   run('cmake', ['--build', build, '--target', 'GPChannelSDKCore', '--parallel', '4']);
   const library = join(build, process.platform === 'darwin' ? 'libGPChannelSDKCore.dylib' : 'libGPChannelSDKCore.so');
