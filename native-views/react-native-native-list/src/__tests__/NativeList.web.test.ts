@@ -578,6 +578,15 @@ describe('NativeList pure DOM web layout', () => {
     );
   });
 
+  it('keeps the default cursor on pressable rows and trailing buttons', () => {
+    expect(WEB_LIST_CSS).not.toMatch(
+      /row-press-enabled="true"\]>\.ok-native-list-row\{[^}]*cursor:pointer/
+    );
+    expect(WEB_LIST_CSS).toMatch(
+      /\.ok-native-list-trailing-button\{[^}]*cursor:default/
+    );
+  });
+
   it('keeps the default row cursor from disarming interactive controls', () => {
     const rule = WEB_LIST_CSS.split('\n').find(
       (line) =>

@@ -872,6 +872,13 @@ not establish visual acceptance. Acceptance includes two independent runtimes,
 two list instances, changed/reset mappings, invalid configuration without partial
 state, all templates and container text, and retained selection/scroll behavior.
 
+### Web row and trailing button cursor
+
+Pressable rows and trailing buttons keep the default cursor on Web and signal
+interactivity through their hover background, like the host app's rows and
+buttons. Reorderable rows keep their grab cursor. Icon buttons, checkboxes and
+action buttons keep the pointer because some of them have no hover background.
+
 ### Trailing text accessory hit area (OK-65494)
 
 Status: implemented on iOS and Android. iOS XCTest
