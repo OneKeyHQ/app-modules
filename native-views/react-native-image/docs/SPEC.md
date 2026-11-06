@@ -245,6 +245,20 @@ and height and recognized image-rendering declarations. Unsupported
 foreign-object documents return the ordinary image-error/fallback result.
 Ordinary SVGs without foreign objects keep their existing decoder path.
 
+Flat SVG rules for the bare element selectors `rect`, `circle`, `ellipse`,
+`line`, `polyline`, `polygon`, `text`, `tspan` and `stop` (including comma-separated
+lists of these selectors) retain their original stylesheet text for the native
+SVG backend. They may share a stylesheet with supported `img` rules and do not
+select converted image containers or generated pixel paths. Only `img` rules
+participate in embedded-image sampling. Selectors that could affect converted
+content, class/ID/compound selectors, at-rules and nested rules remain outside
+this subset and fail decoding. This is not a general CSS cascade implementation.
+Styles retain the backend's existing rendering semantics. In the current iOS
+CoreSVG backend, SVG rules must precede the artwork they style, and explicit
+presentation attributes take precedence over these rules. Later rules do not
+restyle preceding SVG elements. Embedded `img` sampling still resolves the whole
+document before conversion on both platforms.
+
 Acceptance requires the real On-Chain All-Stars #1982 document, a standard SVG,
 an unsupported HTML subtree, malformed and over-budget embedded PNGs, cached
 reloads and recycled hosts on both platforms. Source completion alone does not

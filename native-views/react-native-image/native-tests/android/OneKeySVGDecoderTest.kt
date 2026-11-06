@@ -98,6 +98,27 @@ class OneKeySVGDecoderTest : InstrumentationTestCase() {
     } finally { plain.recycle() }
   }
 
+  fun testSurroundingSVGStylesAndImageSamplingRenderTogether() {
+    for (css in listOf(
+      "<style>rect, circle { fill:red; }</style>",
+      "<style>rect, circle { fill:red; } img { image-rendering:pixelated; }</style>",
+      "<style>img { image-rendering:pixelated; } rect { fill:red; }</style><style>img { image-rendering:smooth; }</style>",
+    )) {
+      val source = document(css).replace(" fill='#00ff00'", " fill='green'")
+      val output = displayed(source, 192, 96)
+      try {
+        // The transparent PNG quadrant exposes the SVG rectangle's CSS fill.
+        assertEquals(Color.RED, output.getPixel(24, 72))
+        assertEquals(Color.RED, output.getPixel(24, 24))
+        assertEquals(Color.BLUE, output.getPixel(72, 24))
+        val edge = output.getPixel(47, 24)
+        if (css.contains("smooth") || !css.contains("pixelated")) {
+          assertTrue(Color.red(edge) in 1..254)
+        } else assertEquals(Color.RED, edge)
+      } finally { output.recycle() }
+    }
+  }
+
   fun testSmoothDeclarationOverridesPixelatedInPictureDrawable() {
     for (css in listOf("", "<style>img { image-rendering:pixelated; image-rendering:auto; }</style>")) {
       val bitmap = displayed(document(css), 192, 32)

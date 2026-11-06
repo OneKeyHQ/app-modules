@@ -51,6 +51,36 @@ class OneKeySVGForeignObjectTest {
   }
 
   @Test
+  fun surroundingSVGStylesArePreservedWithoutChangingImageSampling() {
+    for ((css, nearest) in listOf(
+      "<style>rect, circle { fill:red; }</style>" to false,
+      "<style>rect, circle { fill:red; } img { image-rendering:pixelated; }</style>" to true,
+      "<style>img { image-rendering:pixelated; } rect { fill:red; }</style><style>img { image-rendering:smooth; }</style>" to false,
+    )) {
+      val output = OneKeySVG.normalize(document(css + foreign(image))) { _, actual ->
+        assertTrue(actual == nearest)
+        if (actual) intArrayOf(0xffff0000.toInt()) else null
+      }.toString(Charsets.UTF_8)
+      assertTrue(output.contains("fill:red;"))
+      assertTrue(output.contains("image-rendering=\"${if (nearest) "optimizeSpeed" else "optimizeQuality"}\""))
+    }
+  }
+
+  @Test
+  fun stylesThatCouldAffectConvertedContentStillFail() {
+    for (selector in listOf("*", ".art", "#art", "g", "svg", "image", "path", "img, rect", "rect img", "rect:hover")) {
+      assertThrows(IOException::class.java) {
+        OneKeySVG.normalize(document("<style>$selector { fill:red; }</style>" + foreign(image))) { _, _ -> null }
+      }
+    }
+    for (css in listOf("@media all { rect { fill:red; } }", "@import 'external.css'; rect { fill:red; }")) {
+      assertThrows(IOException::class.java) {
+        OneKeySVG.normalize(document("<style>$css</style>" + foreign(image))) { _, _ -> null }
+      }
+    }
+  }
+
+  @Test
   fun embeddedRasterDecodeFailureIsNotAConvertedSuccess() {
     assertThrows(IOException::class.java) {
       OneKeySVG.normalize(document(foreign(image))) { _, _ -> throw IOException("Corrupt PNG pixels") }

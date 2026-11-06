@@ -89,6 +89,37 @@ final class OneKeySVGForeignObjectTests: XCTestCase {
     }
   }
 
+  func testSurroundingSVGStylesAndImageSamplingRenderTogether() throws {
+    let content = foreign(pixelImage(), attributes: "x=\"4\" y=\"4\" width=\"16\" height=\"16\"")
+      .replacingOccurrences(of: "width=\"24\" height=\"24\"", with: "")
+    for css in [
+      "<style>rect, circle { fill:red; }</style>",
+      "<style>rect, circle { fill:red; } img { image-rendering:pixelated; }</style>",
+      "<style>img { image-rendering:pixelated; } rect { fill:red; }</style><style>img { image-rendering:smooth; }</style>",
+    ] {
+      let output = try pixels(document(css + "<rect width=\"24\" height=\"24\"/>" + content), size: 96)
+      for (x, y, color) in [(8, 8, [255, 0, 0, 255]), (24, 24, [255, 0, 0, 255]), (64, 24, [0, 0, 255, 255])] {
+        let offset = (y * 96 + x) * 4
+        XCTAssertEqual(Array(output[offset..<offset + 4]), color.map(UInt8.init), css)
+      }
+      let edge = (24 * 96 + 47) * 4
+      if css.contains("smooth") || !css.contains("pixelated") {
+        XCTAssertTrue(output[edge] > 0 && output[edge] < 255)
+      } else {
+        XCTAssertEqual(Array(output[edge..<edge + 4]), [255, 0, 0, 255])
+      }
+    }
+  }
+
+  func testStylesThatCouldAffectConvertedContentStillFail() {
+    for selector in ["*", ".art", "#art", "g", "svg", "image", "path", "img, rect", "rect img", "rect:hover"] {
+      XCTAssertNil(OneKeyImageCoderBridge.decodeSVG(document("<style>\(selector) { fill:red; }</style>" + foreign(embeddedImage())), pixelSize: CGSize(width: 96, height: 96)))
+    }
+    for css in ["@media all { rect { fill:red; } }", "@import 'external.css'; rect { fill:red; }"] {
+      XCTAssertNil(OneKeyImageCoderBridge.decodeSVG(document("<style>\(css)</style>" + foreign(embeddedImage())), pixelSize: CGSize(width: 96, height: 96)))
+    }
+  }
+
   func testSmoothDefaultAndLastStyleDeclarationAreRetained() throws {
     for css in ["", "<style>img { image-rendering:pixelated; image-rendering:auto; -ms-interpolation-mode:nearest-neighbor; }</style>",
       "<style>img { image-rendering:pixelated; }</style><style>img { image-rendering:smooth; }</style>"] {

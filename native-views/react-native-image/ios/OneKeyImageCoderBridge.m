@@ -113,30 +113,43 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
     if (![child isKindOfClass:NSString.class]) return NO;
     [css appendString:child];
   }
-  NSRegularExpression *rule = [NSRegularExpression regularExpressionWithPattern:@"^\\s*img\\s*\\{([^{}]*)\\}\\s*$" options:0 error:nil];
-  NSTextCheckingResult *match = [rule firstMatchInString:css options:0 range:NSMakeRange(0, css.length)];
-  if (!match) return NO;
-  for (NSString *declaration in [[css substringWithRange:[match rangeAtIndex:1]] componentsSeparatedByString:@";"]) {
-    NSString *trimmed = [declaration stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!trimmed.length) continue;
-    NSArray *parts = [trimmed componentsSeparatedByString:@":"];
-    if (parts.count != 2) return NO;
-    NSString *key = [parts[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    NSString *value = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (([key isEqualToString:@"width"] || [key isEqualToString:@"height"]) && [value isEqualToString:@"100%"]) continue;
-    if ([key isEqualToString:@"image-rendering"]) {
-      BOOL smooth = [@[@"auto", @"smooth", @"optimizeQuality"] containsObject:value];
-      BOOL nearest = [@[@"optimizeSpeed", @"-moz-crisp-edges", @"-o-crisp-edges", @"-webkit-optimize-contrast", @"optimize-contrast", @"crisp-edges", @"pixelated"] containsObject:value];
-      if (!smooth && !nearest) return NO;
-      self.hasImageRendering = YES;
-      self.nearestNeighbor = nearest;
-      continue;
+  NSRegularExpression *rule = [NSRegularExpression regularExpressionWithPattern:@"([^{}]+)\\{([^{}]*)\\}" options:0 error:nil];
+  // These selectors cannot match converted containers or generated pixel paths.
+  NSArray *svgSelectors = @[@"rect", @"circle", @"ellipse", @"line", @"polyline", @"polygon", @"text", @"tspan", @"stop"];
+  NSUInteger cursor = 0;
+  while (cursor < css.length) {
+    NSTextCheckingResult *match = [rule firstMatchInString:css options:NSMatchingAnchored range:NSMakeRange(cursor, css.length - cursor)];
+    if (!match) return ![[css substringFromIndex:cursor] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length;
+    cursor = NSMaxRange(match.range);
+    NSString *selector = [[css substringWithRange:[match rangeAtIndex:1]] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    BOOL svgOnly = YES;
+    for (NSString *part in [selector componentsSeparatedByString:@","]) {
+      if (![svgSelectors containsObject:[part stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]]) svgOnly = NO;
     }
-    if ([key isEqualToString:@"-ms-interpolation-mode"] && [value isEqualToString:@"nearest-neighbor"]) {
-      if (!self.hasImageRendering) self.nearestNeighbor = YES;
-      continue;
+    if (svgOnly) continue;
+    if (![selector isEqualToString:@"img"]) return NO;
+    for (NSString *declaration in [[css substringWithRange:[match rangeAtIndex:2]] componentsSeparatedByString:@";"]) {
+      NSString *trimmed = [declaration stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+      if (!trimmed.length) continue;
+      NSArray *parts = [trimmed componentsSeparatedByString:@":"];
+      if (parts.count != 2) return NO;
+      NSString *key = [parts[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+      NSString *value = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+      if (([key isEqualToString:@"width"] || [key isEqualToString:@"height"]) && [value isEqualToString:@"100%"]) continue;
+      if ([key isEqualToString:@"image-rendering"]) {
+        BOOL smooth = [@[@"auto", @"smooth", @"optimizeQuality"] containsObject:value];
+        BOOL nearest = [@[@"optimizeSpeed", @"-moz-crisp-edges", @"-o-crisp-edges", @"-webkit-optimize-contrast", @"optimize-contrast", @"crisp-edges", @"pixelated"] containsObject:value];
+        if (!smooth && !nearest) return NO;
+        self.hasImageRendering = YES;
+        self.nearestNeighbor = nearest;
+        continue;
+      }
+      if ([key isEqualToString:@"-ms-interpolation-mode"] && [value isEqualToString:@"nearest-neighbor"]) {
+        if (!self.hasImageRendering) self.nearestNeighbor = YES;
+        continue;
+      }
+      return NO;
     }
-    return NO;
   }
   return YES;
 }

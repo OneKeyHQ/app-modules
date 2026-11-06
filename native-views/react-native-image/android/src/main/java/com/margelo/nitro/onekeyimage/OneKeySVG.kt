@@ -82,27 +82,40 @@ object OneKeySVG {
         if (it.nodeType != Node.TEXT_NODE && it.nodeType != Node.CDATA_SECTION_NODE) unsupported()
         it.nodeValue
       }
-      val body = Regex("^\\s*img\\s*\\{([^{}]*)\\}\\s*$").matchEntire(css)?.groupValues?.get(1)
-        ?: unsupported()
-      for (declaration in body.split(';').map(String::trim).filter(String::isNotEmpty)) {
-        val parts = declaration.split(':').map(String::trim)
-        if (parts.size != 2) unsupported()
-        val (key, value) = parts
-        if (key in setOf("width", "height") && value == "100%") continue
-        if (key == "image-rendering") {
-          val smooth = value in setOf("auto", "smooth", "optimizeQuality")
-          val nearest = value in setOf("optimizeSpeed", "-moz-crisp-edges",
-            "-o-crisp-edges", "-webkit-optimize-contrast", "optimize-contrast", "crisp-edges", "pixelated")
-          if (!smooth && !nearest) unsupported()
-          hasImageRendering = true
-          nearestNeighbor = nearest
-          continue
+      val rule = Regex("([^{}]+)\\{([^{}]*)\\}")
+      // These selectors cannot match converted containers or generated pixel paths.
+      val svgSelectors = setOf("rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "stop")
+      var cursor = 0
+      while (cursor < css.length) {
+        val match = rule.matchAt(css, cursor) ?: run {
+          if (css.substring(cursor).isBlank()) return
+          unsupported()
         }
-        if (key == "-ms-interpolation-mode" && value == "nearest-neighbor") {
-          if (!hasImageRendering) nearestNeighbor = true
-          continue
+        cursor = match.range.last + 1
+        val selector = match.groupValues[1].trim()
+        if (selector.split(',').all { it.trim() in svgSelectors }) continue
+        if (selector != "img") unsupported()
+        val body = match.groupValues[2]
+        for (declaration in body.split(';').map(String::trim).filter(String::isNotEmpty)) {
+          val parts = declaration.split(':').map(String::trim)
+          if (parts.size != 2) unsupported()
+          val (key, value) = parts
+          if (key in setOf("width", "height") && value == "100%") continue
+          if (key == "image-rendering") {
+            val smooth = value in setOf("auto", "smooth", "optimizeQuality")
+            val nearest = value in setOf("optimizeSpeed", "-moz-crisp-edges",
+              "-o-crisp-edges", "-webkit-optimize-contrast", "optimize-contrast", "crisp-edges", "pixelated")
+            if (!smooth && !nearest) unsupported()
+            hasImageRendering = true
+            nearestNeighbor = nearest
+            continue
+          }
+          if (key == "-ms-interpolation-mode" && value == "nearest-neighbor") {
+            if (!hasImageRendering) nearestNeighbor = true
+            continue
+          }
+          unsupported()
         }
-        unsupported()
       }
     }
     fun collectStyles(node: Node) {
