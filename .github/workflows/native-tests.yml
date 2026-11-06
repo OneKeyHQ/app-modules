@@ -90,9 +90,8 @@ jobs:
           grep -Eq '^ManagerInput: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-input-tests.log"
           node tests/source-id.cjs | tee "$RUNNER_TEMP/lite-card-source-id-tests.log"
           grep -Eq '^SourceIdentity: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-source-id-tests.log"
-          node tests/native-log-sanitization.cjs "$RUNNER_TEMP/lite-card-jni-build-messages.txt" "$RUNNER_TEMP/lite-card-ios-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
+          node tests/native-log-sanitization.cjs --swift "$RUNNER_TEMP/lite-card-ios-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^SwiftLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
-          grep -Eq '^KotlinLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
       - name: Run JPush & JCore iOS native E2E regressions
         working-directory: native-modules/react-native-jpush
         shell: bash
@@ -216,11 +215,20 @@ jobs:
       - name: Run Lite Card SDK C++ and JNI native regressions
         working-directory: native-modules/react-native-lite-card/sdk
         shell: bash
+        env:
+          ONEKEY_LITE_JNI_LOG_TEST_OUTPUT: ${{ runner.temp }}/lite-card-jni-build-messages.txt
         run: |
           cmake -S . -B "$RUNNER_TEMP/lite-card-sdk-build" -DBUILD_TESTING=ON -DGPCHANNEL_HOST_JNI=ON
           cmake --build "$RUNNER_TEMP/lite-card-sdk-build" --parallel
           ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
           grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
+      - name: Run production Kotlin logger sanitization regression
+        working-directory: native-modules/react-native-lite-card
+        shell: bash
+        run: |
+          test -s "$RUNNER_TEMP/lite-card-jni-build-messages.txt"
+          node tests/native-log-sanitization.cjs --kotlin "$RUNNER_TEMP/lite-card-jni-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
+          grep -Eq '^KotlinLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
       - name: Run twelve Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |

@@ -48,25 +48,34 @@ class SizeAndTimeBasedRollingPolicy<T> {
 }`,
 };
 try {
-  const [jniMessages, iosMessages] = process.argv.slice(2);
-  if (!jniMessages || !iosMessages) throw new Error('Actual JNI and bridge captures are required');
-  run('xcrun', ['swiftc', '-emit-library', '-emit-module', '-module-name', 'CocoaLumberjack',
-    join(__dirname, 'logger/CocoaLumberjack.swift'), '-o', join(output, 'libCocoaLumberjack.dylib'),
-    '-emit-module-path', join(output, 'CocoaLumberjack.swiftmodule')]);
-  // Private Swift access is appended to a temporary full copy; no production
-  // function body is extracted, rewritten or duplicated, and configured is not called.
-  const swift = join(output, 'main.swift');
-  writeFileSync(swift, readFileSync(join(logger, 'ios/OneKeyLog.swift'), 'utf8') + readFileSync(join(__dirname, 'logger/Format.swift'), 'utf8'));
-  run('xcrun', ['swiftc', '-I', output, '-L', output, '-lCocoaLumberjack', '-Xlinker', '-rpath', '-Xlinker', output,
-    swift, '-o', join(output, 'swift-format')]);
-  console.log(run(join(output, 'swift-format'), [iosMessages]));
-  const declarations = Object.entries(stubs).map(([name, source]) => {
-    const path = join(output, `${name}.kt`); writeFileSync(path, source); return path;
-  });
-  const jar = join(output, 'kotlin-format.jar');
-  run('kotlinc', [...declarations, join(logger, 'android/src/main/java/com/margelo/nitro/nativelogger/OneKeyLog.kt'),
-    join(__dirname, 'logger/Format.kt'), '-nowarn', '-include-runtime', '-d', jar]);
-  console.log(run('java', ['-jar', jar, jniMessages]));
+  const args = process.argv.slice(2);
+  const mode = args[0] === '--swift' || args[0] === '--kotlin' ? args.shift() : undefined;
+  if (args.length !== (mode ? 1 : 2) || args.some((arg) => !arg)) {
+    throw new Error('Actual JNI and bridge captures are required');
+  }
+  const jniMessages = mode === '--swift' ? undefined : args[0];
+  const iosMessages = mode === '--kotlin' ? undefined : args[mode ? 0 : 1];
+  if (mode !== '--kotlin') {
+    run('xcrun', ['swiftc', '-emit-library', '-emit-module', '-module-name', 'CocoaLumberjack',
+      join(__dirname, 'logger/CocoaLumberjack.swift'), '-o', join(output, 'libCocoaLumberjack.dylib'),
+      '-emit-module-path', join(output, 'CocoaLumberjack.swiftmodule')]);
+    // Private Swift access is appended to a temporary full copy; no production
+    // function body is extracted, rewritten or duplicated, and configured is not called.
+    const swift = join(output, 'main.swift');
+    writeFileSync(swift, readFileSync(join(logger, 'ios/OneKeyLog.swift'), 'utf8') + readFileSync(join(__dirname, 'logger/Format.swift'), 'utf8'));
+    run('xcrun', ['swiftc', '-I', output, '-L', output, '-lCocoaLumberjack', '-Xlinker', '-rpath', '-Xlinker', output,
+      swift, '-o', join(output, 'swift-format')]);
+    console.log(run(join(output, 'swift-format'), [iosMessages]));
+  }
+  if (mode !== '--swift') {
+    const declarations = Object.entries(stubs).map(([name, source]) => {
+      const path = join(output, `${name}.kt`); writeFileSync(path, source); return path;
+    });
+    const jar = join(output, 'kotlin-format.jar');
+    run('kotlinc', [...declarations, join(logger, 'android/src/main/java/com/margelo/nitro/nativelogger/OneKeyLog.kt'),
+      join(__dirname, 'logger/Format.kt'), '-nowarn', '-include-runtime', '-d', jar]);
+    console.log(run('java', ['-jar', jar, jniMessages]));
+  }
 } finally {
   rmSync(output, { recursive: true, force: true });
 }
