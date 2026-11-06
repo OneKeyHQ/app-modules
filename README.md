@@ -80,9 +80,14 @@ counter. Isolated `pr-145` previews also check that tag. Merging development wor
 into `main` promotes the code through a newly numbered stable release.
 
 CI prepares synchronized versions and refreshes the Yarn lockfile for all-package
-runs; generated versions are not committed back to the branch. Single-workspace
-recovery publishes the checked-out version exactly, so it must already match the
-requested channel. Manual `latest` runs are restricted to `main`; alpha runs require
+runs; generated versions are not committed back to the branch. For single-workspace
+recovery, provide `only_workspace`, `recovery_version` and the full `recovery_commit`
+from the failed release's summary. CI checks out that exact source commit, verifies
+it belongs to the selected branch and matches any packages already published at
+that version, and prepares the same synchronized version without incrementing it.
+It publishes only the selected package, safely skipping an existing version or
+restoring its dist-tag. Recovery refuses to move newer tags backwards.
+Manual `latest` runs are restricted to `main`; alpha runs require
 a development branch. Releases finish after npm registry verification, allowing
 10 minutes for versions and dist-tags to become visible. Consumer dependency
 updates are managed separately. Source PR approval is also stable release approval.

@@ -247,3 +247,54 @@ test("preserves internal wildcards through preview and numeric releases", async 
     assert.deepEqual(JSON.parse(await readFile(examplePath, "utf8")), example);
   }
 });
+
+
+test("invalid recovery inputs, source conflicts and newer tags fail before manifest changes", async (t) => {
+  const sourceCommit = "a".repeat(40);
+  for (const [recoveryVersion, commit, publishedSource, latest, error] of [
+    [
+      "6.7.0-alpha.27",
+      sourceCommit,
+      sourceCommit,
+      "6.7.0-26",
+      /numeric revisions require latest/,
+    ],
+    ["6.7.1-1", sourceCommit, sourceCommit, "6.7.0-26", /source App baseline/],
+    ["6.7.0-27", "", sourceCommit, "6.7.0-26", /full source commit/],
+    [
+      "6.7.0-27",
+      sourceCommit,
+      "b".repeat(40),
+      "6.7.0-27",
+      /Recovery source does not match/,
+    ],
+    ["6.7.0-27", sourceCommit, sourceCommit, "6.7.0-28", /backwards/],
+  ]) {
+    const root = await previewRepo(t, "6.7.0-26");
+    t.mock.method(
+      globalThis,
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            versions: { "6.7.0-27": { gitHead: publishedSource } },
+            "dist-tags": { latest },
+          })
+        )
+    );
+    await assert.rejects(
+      preparePreview(root, "500", "latest", {
+        recoveryVersion,
+        sourceCommit: commit,
+      }),
+      error
+    );
+    for (const name of ["module-a", "module-b"]) {
+      const manifest = JSON.parse(
+        await readFile(join(root, "packages", name, "package.json"), "utf8")
+      );
+      assert.equal(manifest.version, "6.7.0-26");
+      assert.equal(manifest.peerDependencies["module-a"], "6.7.0-26");
+    }
+  }
+});

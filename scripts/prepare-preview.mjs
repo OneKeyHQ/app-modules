@@ -113,7 +113,8 @@ export async function setWorkspaceVersions(repoRoot, previewVersion) {
 export async function preparePreview(
   repoRoot,
   previewNumber,
-  distTag = "next"
+  distTag = "next",
+  { recoveryVersion = "", sourceCommit = "" } = {}
 ) {
   if (!["latest", "next", "pr-145"].includes(distTag)) {
     throw new Error(`Unsupported npm dist-tag: ${distTag}`);
@@ -123,7 +124,24 @@ export async function preparePreview(
     parseReleaseVersion(workspaces[0]?.version).channel,
     workspaces
   );
-  if (distTag !== "latest") {
+  if (recoveryVersion) {
+    validateNpmDistTag(
+      distTag,
+      workspaces.map((workspace) => ({
+        ...workspace,
+        version: recoveryVersion,
+      }))
+    );
+    if (!/^[0-9a-f]{40}$/.test(sourceCommit)) {
+      throw new Error("Recovery requires the full source commit");
+    }
+    if (
+      parseReleaseVersion(recoveryVersion).appVersion !==
+      parseReleaseVersion(workspaces[0].version).appVersion
+    ) {
+      throw new Error("Recovery version must match the source App baseline");
+    }
+  } else if (distTag !== "latest") {
     makePreviewVersion(workspaces[0].version, previewNumber);
   }
   const tagLists = await mapConcurrent(workspaces, async ({ name }) => {
@@ -137,6 +155,18 @@ export async function preparePreview(
       throw new Error(`Registry returned HTTP ${response.status} for ${name}`);
     }
     const document = await response.json();
+    const recovered = recoveryVersion && document?.versions?.[recoveryVersion];
+    if (recovered && recovered.gitHead !== sourceCommit) {
+      throw new Error(
+        `Recovery source does not match ${name}@${recoveryVersion}`
+      );
+    }
+    const tagged = recoveryVersion && document?.["dist-tags"]?.[distTag];
+    if (tagged && compareReleaseVersions(tagged, recoveryVersion) > 0) {
+      throw new Error(
+        `Refusing to move ${name} ${distTag} backwards from ${tagged} to ${recoveryVersion}`
+      );
+    }
     const versions = [];
     for (const tag of new Set(
       distTag === "latest" ? ["latest"] : ["next", distTag]
@@ -150,21 +180,32 @@ export async function preparePreview(
   });
   const publishedVersions = tagLists.flat();
   const publishVersion =
-    distTag === "latest"
+    recoveryVersion ||
+    (distTag === "latest"
       ? makeStableVersion(workspaces[0].version, publishedVersions)
       : makePreviewVersion(
           workspaces[0].version,
           previewNumber,
           publishedVersions
-        );
+        ));
   const count = await setWorkspaceVersions(repoRoot, publishVersion);
   console.error(`Prepared ${count} ${distTag} workspaces at ${publishVersion}`);
   return publishVersion;
 }
 
 async function main() {
-  const [previewNumber, distTag = "next"] = process.argv.slice(2);
-  const previewVersion = await preparePreview(repoRoot, previewNumber, distTag);
+  const [
+    previewNumber,
+    distTag = "next",
+    recoveryVersion = "",
+    sourceCommit = "",
+  ] = process.argv.slice(2);
+  const previewVersion = await preparePreview(
+    repoRoot,
+    previewNumber,
+    distTag,
+    { recoveryVersion, sourceCommit }
+  );
   console.log(previewVersion);
 }
 

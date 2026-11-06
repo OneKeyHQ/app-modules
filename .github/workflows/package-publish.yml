@@ -20,6 +20,16 @@ on:
         required: false
         default: ""
         type: string
+      recovery_version:
+        description: "Exact version from the failed release summary; required with only_workspace."
+        required: false
+        default: ""
+        type: string
+      recovery_commit:
+        description: "Full source commit from the failed release summary; required with only_workspace."
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -54,11 +64,28 @@ jobs:
     env:
       ONLY_WORKSPACE: ${{ inputs.only_workspace || '' }}
     steps:
+      - name: Validate recovery inputs
+        env:
+          RECOVERY_VERSION: ${{ inputs.recovery_version || '' }}
+          RECOVERY_COMMIT: ${{ inputs.recovery_commit || '' }}
+        run: |
+          if test -n "$ONLY_WORKSPACE"; then
+            test -n "$RECOVERY_VERSION" || { echo 'Single-workspace recovery requires recovery_version'; exit 1; }
+            [[ "$RECOVERY_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Single-workspace recovery requires the full recovery_commit'; exit 1; }
+          elif test -n "$RECOVERY_VERSION" || test -n "$RECOVERY_COMMIT"; then
+            echo 'Recovery inputs require only_workspace'
+            exit 1
+          fi
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.sha }}
+          ref: ${{ inputs.recovery_commit || (github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.sha) }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify recovery source belongs to the selected branch
+        if: inputs.only_workspace != ''
+        env:
+          RELEASE_BRANCH_SHA: ${{ github.sha }}
+        run: git merge-base --is-ancestor HEAD "$RELEASE_BRANCH_SHA"
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
@@ -80,12 +107,13 @@ jobs:
           yarn install --immutable
           node --test scripts/*.test.mjs
       - name: Prepare synchronized publish version
-        if: inputs.only_workspace == ''
         env:
           PREVIEW_NUMBER: ${{ github.run_number }}
+          RECOVERY_VERSION: ${{ inputs.recovery_version || '' }}
+          RECOVERY_COMMIT: ${{ inputs.recovery_commit || '' }}
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: |
-          publish_version=$(node scripts/prepare-preview.mjs "$PREVIEW_NUMBER" "$NPM_DIST_TAG")
+          publish_version=$(node scripts/prepare-preview.mjs "$PREVIEW_NUMBER" "$NPM_DIST_TAG" "$RECOVERY_VERSION" "$RECOVERY_COMMIT")
           YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
           node scripts/validate-npm-dist-tag.mjs "${{ steps.channel.outputs.dist_tag }}"
           git diff --check
@@ -96,6 +124,7 @@ jobs:
           version=$(node -p "require('./native-views/react-native-native-list/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Published version: $version" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate release version and dist-tag
         env:
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
@@ -120,7 +149,7 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
-        run: yarn workspace "$ONLY_WORKSPACE" release --tag "$NPM_DIST_TAG"
+        run: node scripts/publish-missing.mjs "$NPM_DIST_TAG" "$ONLY_WORKSPACE"
       - name: Verify the published versions are on the registry
         env:
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
