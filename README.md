@@ -1,5 +1,11 @@
 # app-modules
 
+[![Stable version](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-native-list/latest?label=stable)](https://www.npmjs.com/package/@onekeyfe/react-native-native-list?activeTab=versions)
+[![Test version](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-native-list/next?label=test)](https://www.npmjs.com/package/@onekeyfe/react-native-native-list?activeTab=versions)
+
+The badges track the npm `latest` (stable) and `next` (test) dist-tags of
+`@onekeyfe/react-native-native-list`, which shares the synchronized package version.
+
 ## Create new package
 
 Native package work must follow the
@@ -68,23 +74,19 @@ previews also check that tag. Registry errors abort before manifests are changed
 missing packages (HTTP 404) have no published counter.
 Manual all-package `next` runs also generate previews. Single-workspace recovery
 publishes the checked-out version exactly, so it must already match the requested
-channel. After registry verification, both preview and latest releases open an
-app-monorepo PR against `x` for the mobile, components, core, kit, playground, root dependency pins, and
-lockfile updates. Source PR approval is therefore also release approval.
+channel. Releases finish after npm registry verification. Consumer dependency
+updates are managed separately. Source PR approval is therefore also release
+approval.
 
 Both formats are prereleases to npm/SemVer, even though numeric revisions are
 official releases by this repository's convention. SemVer sorts `6.7.0-alpha.N`
-above `6.7.0-1`; app-monorepo must keep exact dependency pins. The sync script
-compares App baselines first and counters within the same channel, while allowing
-explicit numeric/alpha channel changes on the same baseline. Existing plain
+above `6.7.0-1`; app-monorepo must keep exact dependency pins. Existing plain
 versions are accepted only when comparing old registry tags or consumer pins
 during migration, never as new release targets.
 
 Merged fork PRs are intentionally skipped with a workflow summary notice; run `package-publish` manually when ready. The manual action remains available for `next`, `latest`, and single-workspace recovery.
 
-Before enabling the workflow, install a GitHub App on `app-monorepo` with repository Contents (write) and Pull requests (write) permissions. Set repository variable `APP_RELEASE_APP_ID` and secret `APP_RELEASE_PRIVATE_KEY` in `app-modules`, and retain the existing `NPM_TOKEN` secret for npm publishing. The app-monorepo PR is never merged automatically.
-
-The app-monorepo job checks the existing module-ID registry but does not regenerate it: `module-id:update` requires a fresh Union Build module-ID map, which is unavailable in a clean dependency-update job. If a release adds native runtime modules, generate that map and update the registry during app-monorepo PR validation before merging it.
+Retain the existing `NPM_TOKEN` secret for npm publishing.
 
 ## Chain runtimes
 

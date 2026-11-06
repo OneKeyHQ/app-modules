@@ -109,7 +109,7 @@ test("returns nothing missing once every package is visible", async () => {
   }
 });
 
-test("checks a missing package at most ten times", async () => {
+test("checks a missing package at most 41 times", async () => {
   const originalFetch = globalThis.fetch;
   let checks = 0;
   let waits = 0;
@@ -127,9 +127,45 @@ test("checks a missing package at most ten times", async () => {
         if (message.includes("waiting")) waits += 1;
       },
     });
-    assert.equal(checks, 10);
-    assert.equal(waits, 9);
+    assert.equal(checks, 41);
+    assert.equal(waits, 40);
     assert.deepEqual(missing.map(({ name }) => name), [workspaces[0].name]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("accepts a package that becomes visible after ten minutes", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const originalFetch = globalThis.fetch;
+  let checks = 0;
+  globalThis.fetch = async () => {
+    checks += 1;
+    return {
+      ok: true,
+      json: async () =>
+        checks < 41
+          ? { versions: {}, "dist-tags": {} }
+          : {
+              versions: { "3.0.1": {} },
+              "dist-tags": { latest: "3.0.1" },
+            },
+    };
+  };
+  try {
+    const verification = verifyPublished([workspaces[0]], "latest", {
+      log: () => {},
+    });
+    for (let interval = 0; interval < 40; interval += 1) {
+      await new Promise(setImmediate);
+      assert.equal(checks, interval + 1);
+      t.mock.timers.tick(14_999);
+      await new Promise(setImmediate);
+      assert.equal(checks, interval + 1);
+      t.mock.timers.tick(1);
+    }
+    assert.deepEqual(await verification, []);
+    assert.equal(checks, 41);
   } finally {
     globalThis.fetch = originalFetch;
   }

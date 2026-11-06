@@ -14,7 +14,8 @@ const REGISTRY = "https://registry.npmjs.org";
 // ("409 Cannot publish over previously staged version"), so the number was
 // burned and the whole set had to move to 3.0.138. This check exists so that a
 // release like that fails loudly in the run that produced it.
-const DEFAULT_MAX_ATTEMPTS = 10;
+// Check immediately, then wait 40 intervals of 15 seconds (10 minutes).
+const DEFAULT_MAX_ATTEMPTS = 41;
 const POLL_INTERVAL_MS = 15 * 1000;
 const REGISTRY_CONCURRENCY = 8;
 
@@ -186,7 +187,7 @@ async function main() {
         missing
           .map(({ name, version, reason }) => `  - ${name}@${version}: ${reason}`)
           .join("\n") +
-        "\n\nThe versions were not visible after 10 checks. They may still be " +
+        `\n\nThe versions were not visible after ${DEFAULT_MAX_ATTEMPTS} checks. They may still be ` +
         "propagating; retry verification before considering a new release. " +
         "If npm rejects republishing with 409, the staged version may be burned."
     );
