@@ -43,6 +43,10 @@ object OneKeySVG {
     val xml = when {
       data.size >= 2 && ((data[0] == 0xff.toByte() && data[1] == 0xfe.toByte()) ||
         (data[0] == 0xfe.toByte() && data[1] == 0xff.toByte())) -> String(data, Charsets.UTF_16)
+      data.size >= 4 && data[0] == '<'.code.toByte() && data[1] == 0.toByte() &&
+        data[2] != 0.toByte() && data[3] == 0.toByte() -> String(data, Charsets.UTF_16LE)
+      data.size >= 4 && data[0] == 0.toByte() && data[1] == '<'.code.toByte() &&
+        data[2] == 0.toByte() && data[3] != 0.toByte() -> String(data, Charsets.UTF_16BE)
       else -> String(data, Charsets.UTF_8)
     }
     if (!xml.contains("foreignObject")) return data

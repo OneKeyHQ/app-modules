@@ -35,6 +35,25 @@ class OneKeySVGForeignObjectTest {
   }
 
   @Test
+  fun utf16ForeignObjectsCannotBypassConversionOrEntityRejection() {
+    val expected = OneKeySVG.normalize(document(foreign(image))) { _, _ -> null }
+    for (charset in listOf(Charsets.UTF_16LE, Charsets.UTF_16BE)) {
+      for (bom in listOf("", "\uFEFF")) {
+        val declaration = "<?xml version='1.0' encoding='${charset.name()}'?>"
+        val source = (bom + declaration + document(foreign(image)).toString(Charsets.UTF_8)).toByteArray(charset)
+        var decoded = 0
+        val actual = OneKeySVG.normalize(source) { _, _ -> decoded++; null }
+        assertTrue(decoded == 1)
+        assertArrayEquals(expected, actual)
+        val ordinary = (bom + declaration + document("<rect width='24' height='24'/>").toString(Charsets.UTF_8)).toByteArray(charset)
+        assertArrayEquals(ordinary, OneKeySVG.normalize(ordinary) { _, _ -> throw AssertionError("Ordinary SVG must not decode PNGs") })
+        val entity = (bom + declaration + "<!DOCTYPE svg [<!ENTITY image 'test'>]>" + document(foreign(image)).toString(Charsets.UTF_8)).toByteArray(charset)
+        assertThrows(IOException::class.java) { OneKeySVG.normalize(entity) { _, _ -> null } }
+      }
+    }
+  }
+
+  @Test
   fun imageRenderingUsesDocumentOrderAndKeepsSmoothImagesSmooth() {
     for ((css, expected) in listOf(
       "" to "optimizeQuality",

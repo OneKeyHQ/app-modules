@@ -193,6 +193,48 @@ final class OneKeySVGForeignObjectTests: XCTestCase {
     }
   }
 
+  func testUTF16ForeignObjectsMatchUTF8AndRejectEntities() throws {
+    for css in ["", "<style>img { image-rendering:pixelated; }</style>"] {
+      let source = String(decoding: document(foreign(pixelImage()) + css), as: UTF8.self)
+      let expected = try pixels(Data(source.utf8), size: 32)
+      for (encoding, name, bom) in [
+        (String.Encoding.utf16LittleEndian, "UTF-16LE", Data([0xff, 0xfe])),
+        (String.Encoding.utf16BigEndian, "UTF-16BE", Data([0xfe, 0xff])),
+      ] {
+        let declaration = "<?xml version='1.0' encoding='\(name)'?>"
+        for prefix in [Data(), bom] {
+          let encoded = try XCTUnwrap((declaration + source).data(using: encoding))
+          XCTAssertEqual(try pixels(prefix + encoded, size: 32), expected)
+          let entity = try XCTUnwrap((declaration + "<!DOCTYPE svg [<!ENTITY image 'test'>]>" + source).data(using: encoding))
+          XCTAssertNil(OneKeyImageCoderBridge.decodeSVG(prefix + entity, pixelSize: CGSize(width: 32, height: 32)))
+        }
+      }
+    }
+  }
+
+  func testDeeplyNestedLargeSmoothPNGMatchesShallowRendering() throws {
+    let side = 512
+    var bytes = [UInt8](repeating: 255, count: side * side * 4)
+    var seed: UInt64 = 51059
+    for index in bytes.indices where index % 4 != 3 {
+      seed ^= seed << 13
+      seed ^= seed >> 7
+      seed ^= seed << 17
+      bytes[index] = UInt8(truncatingIfNeeded: seed >> 24)
+    }
+    let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+    let image = try XCTUnwrap(CGImage(width: side, height: side, bitsPerComponent: 8,
+      bitsPerPixel: 32, bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+      provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent))
+    let png = try XCTUnwrap(UIImage(cgImage: image).pngData())
+    XCTAssertGreaterThan(png.count, 512 * 1024)
+    let content = foreign("<img xmlns=\"http://www.w3.org/1999/xhtml\" src=\"data:image/png;base64,\(png.base64EncodedString())\"/>")
+    let expected = try pixels(document(content), size: 64)
+    let nested = String(repeating: "<g>", count: 60) + content + String(repeating: "</g>", count: 60)
+    XCTAssertEqual(try pixels(document(nested), size: 64), expected)
+  }
+
   func testConvertedThumbnailsBoundOutputCanvas() throws {
     let image = try XCTUnwrap(OneKeyImageCoderBridge.decodeSVG(
       document(foreign(embeddedImage())), pixelSize: CGSize(width: 4096, height: 4096)))

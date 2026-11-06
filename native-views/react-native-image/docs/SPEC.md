@@ -245,6 +245,16 @@ and height and recognized image-rendering declarations. Unsupported
 foreign-object documents return the ordinary image-error/fallback result.
 Ordinary SVGs without foreign objects keep their existing decoder path.
 
+The foreign-object preflight recognizes UTF-8 and UTF-16 LE/BE byte signatures,
+with or without a UTF-16 BOM, before searching for XML markers. The existing XML
+parser remains authoritative for declared encodings and malformed input; UTF-16
+must not bypass conversion or DTD/entity rejection because of interleaved NULs.
+iOS serializes a converted document into one shared output buffer, appending
+each node directly instead of retaining a complete subtree string per ancestor.
+Serialization order and escaping remain unchanged; nesting must not multiply
+the retained serialized PNG payload. The existing byte, depth and raster budgets
+remain in force.
+
 Flat SVG rules for the bare element selectors `rect`, `circle`, `ellipse`,
 `line`, `polyline`, `polygon`, `text`, `tspan` and `stop` (including comma-separated
 lists of these selectors) retain their original stylesheet text for the native

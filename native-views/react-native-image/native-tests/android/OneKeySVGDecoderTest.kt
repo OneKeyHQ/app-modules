@@ -9,6 +9,7 @@ import android.util.Base64
 import android.widget.ImageView
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.nio.charset.Charset
 
 @Suppress("DEPRECATION")
 class OneKeySVGDecoderTest : InstrumentationTestCase() {
@@ -29,9 +30,9 @@ class OneKeySVGDecoderTest : InstrumentationTestCase() {
       "src='data:image/png;base64,$source'/></foreignObject>$css</svg>"
   }
 
-  private fun displayed(source: String, decodeSize: Int, displaySize: Int): Bitmap {
+  private fun displayed(source: String, decodeSize: Int, displaySize: Int, charset: Charset = Charsets.UTF_8): Bitmap {
     // This is the same SVG -> PictureDrawable -> ImageView chain used by Glide.
-    val svg = OneKeySVG.parse(source.byteInputStream())
+    val svg = OneKeySVG.parse(source.byteInputStream(charset))
     svg.setDocumentWidth(decodeSize.toFloat())
     svg.setDocumentHeight(decodeSize.toFloat())
     val drawable = PictureDrawable(svg.renderToPicture())
@@ -116,6 +117,23 @@ class OneKeySVGDecoderTest : InstrumentationTestCase() {
           assertTrue(Color.red(edge) in 1..254)
         } else assertEquals(Color.RED, edge)
       } finally { output.recycle() }
+    }
+  }
+
+  fun testUTF16ForeignObjectsMatchUTF8Pixels() {
+    for (css in listOf("", "<style>img { image-rendering:pixelated; }</style>")) {
+      val source = document(css)
+      val expected = displayed(source, 192, 32)
+      try {
+        for (charset in listOf(Charsets.UTF_16LE, Charsets.UTF_16BE)) {
+          for (bom in listOf("", "\uFEFF")) {
+            val encoded = bom + "<?xml version='1.0' encoding='${charset.name()}'?>" + source
+            val actual = displayed(encoded, 192, 32, charset)
+            try { assertTrue(actual.sameAs(expected)) }
+            finally { actual.recycle() }
+          }
+        }
+      } finally { expected.recycle() }
     }
   }
 

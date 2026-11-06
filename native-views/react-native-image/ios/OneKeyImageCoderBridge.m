@@ -41,21 +41,29 @@ static NSString *OneKeySVGEscape(NSString *value) {
     stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
 }
 
-static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
-  NSMutableString *xml = [NSMutableString stringWithFormat:@"<%@", node.name];
+static void OneKeySVGSerialize(OneKeySVGNode *node, NSMutableString *xml) {
+  [xml appendFormat:@"<%@", node.name];
   for (NSString *key in [node.attributes.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
     [xml appendFormat:@" %@=\"%@\"", key, OneKeySVGEscape(node.attributes[key])];
   }
   [xml appendString:@">"];
   for (id child in node.children) {
-    [xml appendString:[child isKindOfClass:NSString.class] ? OneKeySVGEscape(child) : OneKeySVGSerialize(child)];
+    if ([child isKindOfClass:NSString.class]) [xml appendString:OneKeySVGEscape(child)];
+    else OneKeySVGSerialize(child, xml);
   }
   [xml appendFormat:@"</%@>", node.name];
-  return xml;
 }
 
 + (NSData *)normalize:(NSData *)data {
-  NSString *xml = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+  const unsigned char *bytes = data.bytes;
+  NSStringEncoding encoding = NSUTF8StringEncoding;
+  if (data.length >= 2 && ((bytes[0] == 0xff && bytes[1] == 0xfe) ||
+      (bytes[0] == 0xfe && bytes[1] == 0xff))) encoding = NSUTF16StringEncoding;
+  else if (data.length >= 4 && bytes[0] == '<' && bytes[1] == 0 && bytes[2] != 0 && bytes[3] == 0)
+    encoding = NSUTF16LittleEndianStringEncoding;
+  else if (data.length >= 4 && bytes[0] == 0 && bytes[1] == '<' && bytes[2] == 0 && bytes[3] != 0)
+    encoding = NSUTF16BigEndianStringEncoding;
+  NSString *xml = [[NSString alloc] initWithData:data encoding:encoding];
   if (!xml) xml = [[NSString alloc] initWithData:data encoding:NSUTF16StringEncoding];
   if (!xml) return nil;
   if (![xml containsString:@"foreignObject"]) return data;
@@ -71,7 +79,9 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
       ![OneKeySVGLocalName(normalizer.root.name) isEqualToString:@"svg"]) return nil;
   if (!normalizer.hasForeignObject) return data;
   if (![normalizer collectStyles:normalizer.root] || ![normalizer convert:normalizer.root]) return nil;
-  return [OneKeySVGSerialize(normalizer.root) dataUsingEncoding:NSUTF8StringEncoding];
+  NSMutableString *output = [NSMutableString new];
+  OneKeySVGSerialize(normalizer.root, output);
+  return [output dataUsingEncoding:NSUTF8StringEncoding];
 }
 
 - (void)parser:(NSXMLParser *)parser didStartElement:(NSString *)elementName
