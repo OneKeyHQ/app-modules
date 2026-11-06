@@ -114,6 +114,7 @@ export interface CollapsiblePagerViewProps
     | "children"
     | "headerHeight"
     | "stickyHeaderHeight"
+    | "stickyHeaderHeights"
     | "topScrollEdgeEffect"
     | "topOverlayHeight"
     | "externalTopOverlayTag"
@@ -150,6 +151,8 @@ export interface CollapsiblePagerViewProps
   headerHeight: number;
   /** Measured sticky bar height. */
   stickyHeaderHeight: number;
+  /** iOS only. Sticky heights in child order, applied before each page is displayed. */
+  stickyHeaderHeights?: readonly number[];
   /** Fixed content above the collapsible header on iOS 26 and newer. */
   topOverlay?: React.ReactNode;
   /** Known overlay height to reserve until its first layout measurement. */
@@ -577,6 +580,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       stickyHeader,
       headerHeight,
       stickyHeaderHeight,
+      stickyHeaderHeights,
       topOverlay,
       topOverlayHeightHint,
       externalTopOverlayTag,
@@ -665,6 +669,15 @@ export class CollapsiblePagerView extends React.PureComponent<
         offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
         headerHeight={Math.max(0, Math.round(headerHeight))}
         stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
+        stickyHeaderHeights={
+          Platform.OS === "ios" && stickyHeaderHeights
+            ? JSON.stringify(
+                stickyHeaderHeights.slice(0, pages.length).map((height) =>
+                  Number.isFinite(height) && height >= 0 ? Math.round(height) : null
+                )
+              )
+            : undefined
+        }
         topScrollEdgeEffect={scrollEdgeEnabled ? topScrollEdgeEffect : "none"}
         topOverlayColorScheme={
           scrollEdgeEnabled ? topOverlayColorScheme : undefined

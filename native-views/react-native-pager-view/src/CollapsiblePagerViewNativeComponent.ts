@@ -58,6 +58,7 @@ export interface NativeProps extends ViewProps {
   nativeSmoothHeaderScrollEnabled?: CodegenTypes.WithDefault<boolean, false>;
   headerHeight?: CodegenTypes.Int32;
   stickyHeaderHeight?: CodegenTypes.Int32;
+  stickyHeaderHeights?: string;
   topScrollEdgeEffect?: CodegenTypes.WithDefault<"none" | "hard" | "soft", "none">;
   topOverlayColorScheme?: string;
   topOverlayHeight?: CodegenTypes.WithDefault<CodegenTypes.Double, 0>;

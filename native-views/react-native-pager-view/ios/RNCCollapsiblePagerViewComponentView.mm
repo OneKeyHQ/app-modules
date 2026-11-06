@@ -2207,6 +2207,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)attachSharedHeadersToScrollView:(UIScrollView *)scrollView;
 - (void)liftSharedHeadersForPagerTransition:(NSString *)reason;
 - (void)restoreSharedHeadersToContainer;
+- (NSInteger)currentStickyHeaderHeight;
 - (void)layoutSharedHeaders;
 - (void)bringReservedStickyControlToFront;
 - (void)restorePinnedStickyHeader;
@@ -2290,6 +2291,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   NSInteger _pendingInitialPage;
   NSInteger _headerHeight;
   NSInteger _stickyHeaderHeight;
+  NSArray *_stickyHeaderHeights;
   CGFloat _topOverlayHeight;
   NSInteger _externalTopOverlayTag;
   __weak UIView *_externalTopOverlayView;
@@ -2637,7 +2639,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self updateHeaderSettledStateForceBusy:NO];
   [self logHomeVisualGeometry:@"window" scrollView:_observedScrollView];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
-    [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : _stickyHeaderHeight + self.effectiveTopOverlayHeight];
+    [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : self.currentStickyHeaderHeight + self.effectiveTopOverlayHeight];
   }
   if (externalHeightChanged) [self reapplyInsetsToObservedScrollView];
   // OneKey patch: removing a decelerating page from its window can suppress
@@ -2981,7 +2983,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
         (long)self.tag, (unsigned long)_generation, (long)_currentIndex,
         opacity, collapse, (CGFloat)_headerHeight, overlayBottom,
         CGRectGetMinY(headerWindow), overlayBottom + _headerHeight +
-          _stickyHeaderHeight - collapse, _topEdgeInteraction.scrollView == scrollView,
+          self.currentStickyHeaderHeight - collapse, _topEdgeInteraction.scrollView == scrollView,
         red, green, blue, alpha]);
     }
 #endif
@@ -3645,10 +3647,22 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     reason ?: @"unknown"]);
 }
 
+- (NSInteger)stickyHeaderHeightForPageIndex:(NSInteger)index
+{
+  if (index < 0 || index >= (NSInteger)_stickyHeaderHeights.count) return _stickyHeaderHeight;
+  id value = _stickyHeaderHeights[index];
+  return [value isKindOfClass:NSNumber.class] ? MAX(0, [value integerValue]) : _stickyHeaderHeight;
+}
+
+- (NSInteger)currentStickyHeaderHeight
+{
+  return [self stickyHeaderHeightForPageIndex:_currentIndex];
+}
+
 - (void)layoutSharedHeaders
 {
   CGFloat width = CGRectGetWidth(self.bounds);
-  CGFloat totalHeight = _headerHeight + _stickyHeaderHeight;
+  CGFloat totalHeight = _headerHeight + self.currentStickyHeaderHeight;
   BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
     _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
 
@@ -3673,12 +3687,12 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
                                fromView:_containerView]
     : CGPointMake(0, self.effectiveTopOverlayHeight);
   _pinnedStickyHostView.frame = CGRectMake(
-    pinnedOrigin.x, pinnedOrigin.y, width, _stickyHeaderHeight);
+    pinnedOrigin.x, pinnedOrigin.y, width, self.currentStickyHeaderHeight);
   CGFloat stickyChildY = _stickyHeaderIsPinned ? 0 : stickyY;
-  _stickyHeaderView.frame = CGRectMake(0, stickyChildY, width, _stickyHeaderHeight);
+  _stickyHeaderView.frame = CGRectMake(0, stickyChildY, width, self.currentStickyHeaderHeight);
   CGFloat nativeTabBarVisibleHeight = _nativeTabBarView.hidden
     ? 0
-    : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+    : MIN(self.currentStickyHeaderHeight, _nativeTabBarHeight);
   CGFloat tabReservedWidth = MIN(width, MAX(0, _nativeTabBarTrailingReservedWidth));
   _nativeTabBarView.frame = CGRectMake(
     self.isLtrLayout ? 0 : tabReservedWidth,
@@ -3691,7 +3705,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     stickyChildY + nativeTabBarVisibleHeight,
     width,
     MIN(
-      MAX(0, _stickyHeaderHeight - nativeTabBarVisibleHeight),
+      MAX(0, self.currentStickyHeaderHeight - nativeTabBarVisibleHeight),
       _nativeSubHeaderHeight
     )
   );
@@ -3744,7 +3758,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       CGPoint origin = [scrollView convertPoint:CGPointMake(0, self.effectiveTopOverlayHeight)
         fromView:_containerView];
       _pinnedStickyHostView.frame = CGRectMake(origin.x, origin.y,
-        CGRectGetWidth(self.bounds), _stickyHeaderHeight);
+        CGRectGetWidth(self.bounds), self.currentStickyHeaderHeight);
     }
     return;
   }
@@ -3762,13 +3776,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [host addSubview:_nativeSubHeaderView];
   CGFloat childY = shouldPin ? 0 : _headerHeight;
   CGFloat width = CGRectGetWidth(self.bounds);
-  CGFloat tabHeight = _nativeTabBarView.hidden ? 0 : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  CGFloat tabHeight = _nativeTabBarView.hidden ? 0 : MIN(self.currentStickyHeaderHeight, _nativeTabBarHeight);
   CGFloat tabReservedWidth = MIN(width, MAX(0, _nativeTabBarTrailingReservedWidth));
-  _stickyHeaderView.frame = CGRectMake(0, childY, width, _stickyHeaderHeight);
+  _stickyHeaderView.frame = CGRectMake(0, childY, width, self.currentStickyHeaderHeight);
   _nativeTabBarView.frame = CGRectMake(self.isLtrLayout ? 0 : tabReservedWidth,
     childY, width - tabReservedWidth, tabHeight);
   _nativeSubHeaderView.frame = CGRectMake(0, childY + tabHeight, width,
-    MIN(MAX(0, _stickyHeaderHeight - tabHeight), _nativeSubHeaderHeight));
+    MIN(MAX(0, self.currentStickyHeaderHeight - tabHeight), _nativeSubHeaderHeight));
   _pinnedStickyHostView.hidden = !shouldPin;
   if ([_pagerScrollView isKindOfClass:RNCCollapsiblePagerDirectScrollView.class]) {
     ((RNCCollapsiblePagerDirectScrollView *)_pagerScrollView).excludedHeaderView =
@@ -3779,7 +3793,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     _pinnedStickyHostView.layer.zPosition = 1000;
     CGPoint origin = [scrollView convertPoint:CGPointMake(0, self.effectiveTopOverlayHeight)
       fromView:_containerView];
-    _pinnedStickyHostView.frame = CGRectMake(origin.x, origin.y, width, _stickyHeaderHeight);
+    _pinnedStickyHostView.frame = CGRectMake(origin.x, origin.y, width, self.currentStickyHeaderHeight);
   } else {
     _pinnedStickyHostView.layer.zPosition = 0;
     [_containerView addSubview:_pinnedStickyHostView];
@@ -4478,6 +4492,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   _pendingInitialPage = 0;
   _headerHeight = 0;
   _stickyHeaderHeight = 0;
+  _stickyHeaderHeights = nil;
   _topOverlayHeight = 0;
   _externalTopOverlayTag = 0;
   _externalTopOverlayView = nil;
@@ -4590,6 +4605,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   }
   if (_needsPropsReapply || oldViewProps.stickyHeaderHeight != newViewProps.stickyHeaderHeight) {
     _stickyHeaderHeight = MAX(0, newViewProps.stickyHeaderHeight);
+    insetsChanged = YES;
+  }
+  if (_needsPropsReapply || oldViewProps.stickyHeaderHeights != newViewProps.stickyHeaderHeights) {
+    NSString *json = RCTNSStringFromString(newViewProps.stickyHeaderHeights);
+    NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
+    id parsed = data.length == 0 ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    _stickyHeaderHeights = [parsed isKindOfClass:NSArray.class] ? parsed : nil;
     insetsChanged = YES;
   }
   if (_needsPropsReapply || oldViewProps.topScrollEdgeEffect != newViewProps.topScrollEdgeEffect) {
@@ -5412,7 +5434,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     [_managedRefreshControls removeObjectForKey:scrollView];
     if (current != nil) [_managedRefreshControls setObject:current forKey:scrollView];
   }
-  [RNCRefreshControlOffsetState setOffset:_headerHeight + _stickyHeaderHeight
+  [RNCRefreshControlOffsetState setOffset:_headerHeight + self.currentStickyHeaderHeight
                              forControl:current owner:self];
   if (previous != current) [self logHomeVisualGeometry:@"refresh-bind" scrollView:scrollView];
 }
@@ -5442,7 +5464,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   NSString *signature = [NSString stringWithFormat:
     @"%.1f:%ld:%ld:%.1f:%d:%.1f:%.1f:%.1f:%d:%d",
     self.effectiveTopOverlayHeight, (long)_headerHeight,
-    (long)_stickyHeaderHeight, scrollView.contentInset.top, control != nil,
+    (long)self.currentStickyHeaderHeight, scrollView.contentInset.top, control != nil,
     CGRectGetMinY(maskWindow), CGRectGetHeight(maskWindow), _pageMaskBoundary,
     _stickyHeaderIsPinned, _topScrollEdgeEnabled];
   if (layoutPhase && now - _homeVisualStartMono >= 2.0 &&
@@ -5467,7 +5489,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     @"[IOS-HOME-VISUAL] epochMs=%.0f monoMs=%.0f phase=%@ pagerTag=%ld generation=%lu pageIndex=%ld window=%d edge=%d overlay=%.1f header=%ld sticky=%ld collapse=%.1f scrollY=%.1f insetTop=%.1f overscroll=%.1f refresh=%d refreshing=%d controlY=%.1f controlH=%.1f sublayerY=%.1f visualYEstimate=%.1f overlayY=%.1f overlayBottom=%.1f stickyY=%.1f stickyBottom=%.1f maskY=%.1f maskH=%.1f pageMaskWindowY=%.1f",
     epochMs, monoMs, phase, (long)self.tag, (unsigned long)_generation,
     (long)_currentIndex, self.window != nil, _topScrollEdgeEnabled,
-    self.effectiveTopOverlayHeight, (long)_headerHeight, (long)_stickyHeaderHeight,
+    self.effectiveTopOverlayHeight, (long)_headerHeight, (long)self.currentStickyHeaderHeight,
     _headerOffset, scrollView.contentOffset.y, scrollView.contentInset.top,
     overscroll, control != nil, control.isRefreshing,
     CGRectGetMinY(controlWindow), CGRectGetHeight(controlWindow),
@@ -5702,7 +5724,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   // suppress its later vertical movement while the pager is still pending.
   scrollView.directionalLockEnabled = _nativeSmoothHeaderScrollEnabled
     ? NO : [_originalDirectionalLockEnabled objectForKey:scrollView].boolValue;
-  [self updateNativeScrollerViewport:scrollView stickyHeight:_stickyHeaderHeight + self.effectiveTopOverlayHeight];
+  CGFloat stickyHeight = [self stickyHeaderHeightForPageIndex:pageIndex];
+  [self updateNativeScrollerViewport:scrollView stickyHeight:stickyHeight + self.effectiveTopOverlayHeight];
   [self updateRefreshControlForScrollView:scrollView];
   CGFloat previousTopInset = scrollView.contentInset.top;
   CGFloat previousLogicalOffset = scrollView.contentOffset.y + previousTopInset;
@@ -5713,13 +5736,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   CGFloat refreshInset = appliedTop != nil && scrollView.refreshControl != nil
     ? MAX(0, previousTopInset - appliedTop.doubleValue) : 0;
   UIEdgeInsets next = original;
-  next.top += self.effectiveTopOverlayHeight + _headerHeight + _stickyHeaderHeight;
+  next.top += self.effectiveTopOverlayHeight + _headerHeight + stickyHeight;
   CGFloat pagerTopInset = next.top;
   next.top += refreshInset;
   [_appliedTopInsets setObject:@(pagerTopInset) forKey:scrollView];
   // Short pages still need enough range to collapse the header; long pages
   // must end at the last row rather than leave a header-sized blank footer.
-  next.bottom += MAX(0, scrollView.bounds.size.height - _stickyHeaderHeight - self.effectiveTopOverlayHeight
+  next.bottom += MAX(0, scrollView.bounds.size.height - stickyHeight - self.effectiveTopOverlayHeight
     - original.top - original.bottom - scrollView.contentSize.height);
   if (UIEdgeInsetsEqualToEdgeInsets(scrollView.contentInset, next) && !restore) {
     // UICollectionView may report contentSize during a bounce without changing
@@ -6659,7 +6682,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   UIEdgeInsets adjustedInset = owner.adjustedContentInset;
   NSString *geometry = [NSString stringWithFormat:
     @"%.4f:%ld:%ld:%@:%@:%@:%@:%@:%@:%@",
-    _headerOffset, (long)_headerHeight, (long)_stickyHeaderHeight,
+    _headerOffset, (long)_headerHeight, (long)self.currentStickyHeaderHeight,
     NSStringFromCGPoint(owner.contentOffset), NSStringFromCGSize(owner.contentSize),
     NSStringFromCGRect(owner.bounds), NSStringFromUIEdgeInsets(inset),
     NSStringFromUIEdgeInsets(adjustedInset), NSStringFromCGRect(headerRect), NSStringFromCGRect(ownerRect)];
