@@ -80,7 +80,7 @@ class NativeOverlayPageHostView(context: Context) : ViewGroup(context), ReactPoi
   }
 
   private var layoutScheduled = false
-  private val layoutRunnable = Runnable {
+  private val layoutRunnable: Runnable? = Runnable {
     layoutScheduled = false
     layoutEntries()
   }
@@ -92,14 +92,25 @@ class NativeOverlayPageHostView(context: Context) : ViewGroup(context), ReactPoi
    */
   override fun requestLayout() {
     super.requestLayout()
+    // View construction can request layout before this callback is initialized.
+    val runnable = layoutRunnable ?: return
     if (!layoutScheduled) {
       layoutScheduled = true
-      post(layoutRunnable)
+      post(runnable)
     }
   }
 
   private fun layoutEntries() {
-    onLayout(false, left, top, right, bottom)
+    if (width <= 0 || height <= 0) return
+    // Run the host's layout lifecycle to clear FORCE_LAYOUT, so later child
+    // requests can reach this host through a Fabric-managed parent.
+    // Force another pass even when attach() reuses an existing child.
+    forceLayout()
+    measure(
+      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+    )
+    layout(left, top, right, bottom)
   }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {

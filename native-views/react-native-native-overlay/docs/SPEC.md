@@ -670,6 +670,10 @@ Automated (P0):
   old-parent transition completion after the move, and reopen during exit.
   It also covers Fabric removal of staged content and replacement of presented
   content during a transition, including layout-listener cleanup.
+- `NativeOverlayPageHostLayoutTest` places the Android page host below an
+  actual `ReactViewGroup` and checks a sheet at 200, 600 and 320 px after
+  attachment. Height changes MUST relayout and bottom-pin the sheet without
+  a Fabric host-size update, and leave no pending host layout flag.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed.
@@ -740,6 +744,15 @@ P3 page scope notes:
 - iOS page sheets are drawn by the entry (bottom-pinned content view, pan to
   close) because UIKit sheets always cover the window. Android and Web reuse
   their global sheet implementation inside the page host.
+- Android page hosts MUST complete their own measure/layout lifecycle after
+  native child layout requests. This clears the pending host layout flag so
+  later descendant requests can reach the host through Fabric-managed parents.
+  Scheduling MUST remain available when View construction requests layout
+  before the callback is initialized. Fitted sheets follow settled content
+  height changes in both directions. Runtime verified in app-monorepo 6.7.0
+  with a locally rebuilt shell on a Pixel 10 Pro API 37 emulator: the referral
+  form and Apply button remain visible after loading, error text grows the
+  sheet, and clearing the error restores its height.
 - Android back also resolves page entries: global overlays first, then the
   topmost visible page overlay.
 - A declarative page overlay waits for a resolvable host and owner; it never
