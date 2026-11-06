@@ -52,89 +52,34 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
       - name: Select and verify Xcode 26.6
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           xcodebuild -version | grep -F 'Xcode 26.6'
-      - name: Read pinned Kotlin compiler identity
-        id: kotlin-pin
-        run: node scripts/install-kotlin.mjs pin >> "$GITHUB_OUTPUT"
-      - name: Restore Kotlin compiler archive
-        id: kotlin-cache
+      - name: Restore Yarn download cache
+        id: yarn-cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/kotlin-download/kotlin-compiler-${{ steps.kotlin-pin.outputs.version }}.zip
-          key: kotlin-compiler-${{ steps.kotlin-pin.outputs.version }}-${{ steps.kotlin-pin.outputs.sha256 }}-${{ runner.os }}-${{ runner.arch }}
-      - name: Install and verify pinned Kotlin compiler
-        run: |
-          node scripts/install-kotlin.mjs "$RUNNER_TEMP/kotlin-download" "$RUNNER_TEMP/kotlin-compiler"
-          echo "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin" >> "$GITHUB_PATH"
-          swift --version
-      - name: Save verified Kotlin compiler archive
-        if: steps.kotlin-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/kotlin-download/kotlin-compiler-${{ steps.kotlin-pin.outputs.version }}.zip
-          key: ${{ steps.kotlin-cache.outputs.cache-primary-key }}
+          path: .yarn/cache
+          key: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', '.yarn/patches/**') }}
+          restore-keys: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-
       - name: Install dependencies and generate DeviceUtils bindings
         run: |
           corepack enable
           yarn install --immutable
           yarn workspace @onekeyfe/react-native-device-utils nitrogen
-      - name: Run production Swift and Kotlin store regressions
+      - name: Save Yarn download cache
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .yarn/cache
+          key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
+      - name: Run production Swift store regressions
         working-directory: native-modules/react-native-device-utils
         env:
           TMPDIR: ${{ runner.temp }}
-        run: node tests/in-memory-store.cjs
-      - name: Run bundle-update Kotlin policy tests
-        working-directory: native-modules/react-native-bundle-update
-        run: |
-          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
-            android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleStorageSchemaPolicy.kt \
-            tests/kotlin/BundleStorageSchemaPolicyTest.kt \
-            -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
-          java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
-          grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
-      - name: Run pager weak-padding snapshot regression
-        working-directory: native-views/react-native-pager-view
-        shell: bash
-        run: |
-          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
-            tests/kotlin/WeakPaddingSnapshotTest.kt \
-            -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
-          java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
-          grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
-      - name: Run picker error privacy regression
-        working-directory: native-modules/react-native-image-crop-picker
-        shell: bash
-        run: |
-          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
-            android/src/main/java/com/margelo/nitro/reactnativeimagecroppicker/ImageCropPickerException.kt \
-            tests/kotlin/ImageCropPickerExceptionTest.kt \
-            -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
-          java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
-          grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
-      - name: Run Lite Card Android session ownership regressions
-        working-directory: native-modules/react-native-lite-card
-        shell: bash
-        run: |
-          node tests/android-session.cjs | tee "$RUNNER_TEMP/lite-card-session-tests.log"
-          grep -Eq '^CardSession: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-session-tests.log"
-      - name: Run Lite Card SDK C++ and JNI native regressions
-        working-directory: native-modules/react-native-lite-card/sdk
-        shell: bash
-        env:
-          ONEKEY_LITE_JNI_LOG_TEST_OUTPUT: ${{ runner.temp }}/lite-card-jni-build-messages.txt
-        run: |
-          cmake -S . -B "$RUNNER_TEMP/lite-card-sdk-build" -DBUILD_TESTING=ON -DGPCHANNEL_HOST_JNI=ON
-          cmake --build "$RUNNER_TEMP/lite-card-sdk-build" --parallel
-          ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
-          grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
+        run: node tests/in-memory-store.cjs --swift
       - name: Run Lite Card iOS manager input regressions
         working-directory: native-modules/react-native-lite-card
         shell: bash
@@ -199,6 +144,32 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Restore Yarn download cache
+        id: yarn-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .yarn/cache
+          key: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', '.yarn/patches/**') }}
+          restore-keys: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-
+      - name: Read pinned Kotlin compiler identity
+        id: kotlin-pin
+        run: node scripts/install-kotlin.mjs pin >> "$GITHUB_OUTPUT"
+      - name: Restore Kotlin compiler archive
+        id: kotlin-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/kotlin-download/kotlin-compiler-${{ steps.kotlin-pin.outputs.version }}.zip
+          key: kotlin-compiler-${{ steps.kotlin-pin.outputs.version }}-${{ steps.kotlin-pin.outputs.sha256 }}-${{ runner.os }}-${{ runner.arch }}
+      - name: Install and verify pinned Kotlin compiler
+        run: |
+          node scripts/install-kotlin.mjs "$RUNNER_TEMP/kotlin-download" "$RUNNER_TEMP/kotlin-compiler"
+          echo "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Save verified Kotlin compiler archive
+        if: steps.kotlin-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/kotlin-download/kotlin-compiler-${{ steps.kotlin-pin.outputs.version }}.zip
+          key: ${{ steps.kotlin-cache.outputs.cache-primary-key }}
       - name: Install and generate native bindings
         run: |
           corepack enable
@@ -206,10 +177,63 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
+      - name: Save Yarn download cache
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .yarn/cache
+          key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
+      - name: Run production Kotlin store regressions
+        working-directory: native-modules/react-native-device-utils
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node tests/in-memory-store.cjs --kotlin
+      - name: Run bundle-update Kotlin policy tests
+        working-directory: native-modules/react-native-bundle-update
+        run: |
+          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleStorageSchemaPolicy.kt \
+            tests/kotlin/BundleStorageSchemaPolicyTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
+          java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
+          grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
+      - name: Run picker error privacy regression
+        working-directory: native-modules/react-native-image-crop-picker
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativeimagecroppicker/ImageCropPickerException.kt \
+            tests/kotlin/ImageCropPickerExceptionTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
+          java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
+          grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
+      - name: Run Lite Card Android session ownership regressions
+        working-directory: native-modules/react-native-lite-card
+        shell: bash
+        run: |
+          node tests/android-session.cjs | tee "$RUNNER_TEMP/lite-card-session-tests.log"
+          grep -Eq '^CardSession: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-session-tests.log"
+      - name: Run Lite Card SDK C++ and JNI native regressions
+        working-directory: native-modules/react-native-lite-card/sdk
+        shell: bash
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/lite-card-sdk-build" -DBUILD_TESTING=ON -DGPCHANNEL_HOST_JNI=ON
+          cmake --build "$RUNNER_TEMP/lite-card-sdk-build" --parallel
+          ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
+          grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
       - name: Run twelve Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
+          cat > "$RUNNER_TEMP/rerun-native-tests.gradle" <<'GRADLE'
+          allprojects {
+            tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+              outputs.upToDateWhen { false }
+              outputs.cacheIf { false }
+            }
+          }
+          GRADLE
           ./gradlew --continue --no-daemon --parallel --max-workers=4 --console=plain \
+            --build-cache --init-script "$RUNNER_TEMP/rerun-native-tests.gradle" \
             :onekeyfe_react-native-app-update:testDebugUnitTest \
             :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
             :onekeyfe_react-native-jpush:testDebugUnitTest \
@@ -281,12 +305,6 @@ jobs:
   ios-native:
     runs-on: macos-26
     timeout-minutes: 50
-    strategy:
-      fail-fast: false
-      matrix:
-        group: [lite, ui, modules]
-    env:
-      IOS_NATIVE_GROUP: ${{ matrix.group }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -302,7 +320,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .yarn/cache
-          key: ios-yarn-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+          key: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', '.yarn/patches/**') }}
+          restore-keys: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-
       - name: Restore CocoaPods and React Native download caches
         id: pod-cache
         uses: actions/cache/restore@v4
@@ -312,19 +331,19 @@ jobs:
             ~/Library/Caches/ReactNative/*.tar.gz
           key: ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}
           restore-keys: |
-            ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}-
+            ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Select and verify Xcode and test simulator
+        id: xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version | grep -F 'Xcode 26.6'
-          if [[ "$IOS_NATIVE_GROUP" != lite ]]; then
-            xcrun simctl list devices available | grep -F 'iOS 26.5'
-            sim_line=$(xcrun simctl list devices available | grep -F 'iPhone 17 Pro (' | head -n 1)
-            echo "$sim_line"
-            sim_udid=$(echo "$sim_line" | grep -Eo '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
-            test -n "$sim_udid"
-            echo "SIMULATOR_UDID=$sim_udid" >> "$GITHUB_ENV"
-          fi
+          echo "version-hash=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep -F 'iOS 26.5'
+          sim_line=$(xcrun simctl list devices available | grep -F 'iPhone 17 Pro (' | head -n 1)
+          echo "$sim_line"
+          sim_udid=$(echo "$sim_line" | grep -Eo '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          test -n "$sim_udid"
+          echo "SIMULATOR_UDID=$sim_udid" >> "$GITHUB_ENV"
           df -h .
       - name: Install and generate native bindings
         id: install-bindings
@@ -336,11 +355,17 @@ jobs:
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
       - name: Save Yarn download cache
-        if: matrix.group == 'ui' && steps.yarn-cache.outputs.cache-hit != 'true'
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .yarn/cache
-          key: ios-yarn-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+          key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
+      - name: Restore installed CocoaPods
+        id: installed-pods-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: example/react-native/ios/Pods
+          key: ios-installed-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version-hash }}-${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', '.yarn/patches/**', 'example/react-native/package.json', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile', 'example/react-native/ios/Podfile.lock', 'native-modules/**/package.json', 'native-views/**/package.json', 'native-modules/**/*.podspec', 'native-views/**/*.podspec', 'native-modules/**/nitro.json', 'native-views/**/nitro.json', 'native-modules/**/*.nitro.ts', 'native-views/**/*.nitro.ts') }}
       - name: Install CocoaPods test specs and verify lockfile
         timeout-minutes: 10
         working-directory: example/react-native/ios
@@ -387,6 +412,12 @@ jobs:
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
+      - name: Save installed CocoaPods before modifying the Pods project
+        if: steps.installed-pods-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: example/react-native/ios/Pods
+          key: ${{ steps.installed-pods-cache.outputs.cache-primary-key }}
       - name: Keep only complete React Native downloads
         id: validate-rn-cache
         if: always() && steps.install-bindings.outcome == 'success'
@@ -399,21 +430,21 @@ jobs:
             done < <(find "$cache" -type f -name '*.tar.gz' -print0)
           fi
       - name: Save CocoaPods and React Native download caches
-        if: always() && matrix.group == 'ui' && steps.validate-rn-cache.outcome == 'success' && steps.pod-cache.outputs.cache-hit != 'true'
+        if: always() && steps.validate-rn-cache.outcome == 'success' && steps.pod-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/Library/Caches/CocoaPods/Pods
             ~/Library/Caches/ReactNative/*.tar.gz
           key: ${{ steps.pod-cache.outputs.cache-primary-key }}
-      - name: Build Lite Card pod or run assigned XCTest suites
+      - name: Build Lite Card and NativeOverlay pods and run all XCTest suites
         shell: bash
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          node scripts/ios-native-plan.mjs "$IOS_NATIVE_GROUP" > "$RUNNER_TEMP/ios-native-plan.json"
+          node scripts/ios-native-plan.mjs > "$RUNNER_TEMP/ios-native-plan.json"
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "$RUNNER_TEMP/ios-native-plan.json" <<'RUBY'
           require 'json'
           require 'xcodeproj'
@@ -429,7 +460,7 @@ jobs:
               identity_phase = target.shell_script_build_phases.find { |phase| phase.name == '[CP-User] Generate Lite native source identity' }
               abort 'Lite source identity phase must hide environment variables' unless identity_phase&.show_env_vars_in_log == '0'
             end
-            scheme.add_build_target(target, plan.fetch('action') == 'build')
+            scheme.add_build_target(target, true)
           end
           plan.fetch('testSchemes').each do |name|
             target = project.targets.find { |candidate| candidate.name == name }
@@ -467,24 +498,20 @@ jobs:
             DEBUG_INFORMATION_FORMAT=dwarf IPHONEOS_DEPLOYMENT_TARGET=16.4
             'OTHER_LDFLAGS=$(inherited) -lc++'
           )
-          if [[ "$IOS_NATIVE_GROUP" == lite ]]; then
-            xcodebuild build "${xcode_args[@]}" -destination 'generic/platform=iOS Simulator' \
-              2>&1 | tee artifacts/ios/AppModulesNativeTests.log
-            archive="$RUNNER_TEMP/native-tests-derived-data/Build/Products/Debug-iphonesimulator/ReactNativeLiteCard/libReactNativeLiteCard.a"
-            test -s "$archive"
-            nm -g "$archive" > artifacts/ios/LiteCard.symbols.txt
-            grep -Eq '[[:space:]][DRS][[:space:]]_GPChannelSDKCoreVersionString$' artifacts/ios/LiteCard.symbols.txt
-          else
-            xcodebuild test "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
-              -parallel-testing-enabled NO 2>&1 | tee artifacts/ios/AppModulesNativeTests.log
-            xcrun xcresulttool get test-results summary \
-              --path artifacts/ios/AppModulesNativeTests.xcresult \
-              > artifacts/ios/summary.json
-            jq -e '.totalTestCount > 0' artifacts/ios/summary.json
-            xcrun xcresulttool get test-results tests \
-              --path artifacts/ios/AppModulesNativeTests.xcresult \
-              > artifacts/ios/tests.json
-            python3 - "$RUNNER_TEMP/ios-native-plan.json" <<'PYTEST'
+          xcodebuild test "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -parallel-testing-enabled NO 2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          archive="$RUNNER_TEMP/native-tests-derived-data/Build/Products/Debug-iphonesimulator/ReactNativeLiteCard/libReactNativeLiteCard.a"
+          test -s "$archive"
+          nm -g "$archive" > artifacts/ios/LiteCard.symbols.txt
+          grep -Eq '[[:space:]][DRS][[:space:]]_GPChannelSDKCoreVersionString$' artifacts/ios/LiteCard.symbols.txt
+          xcrun xcresulttool get test-results summary \
+            --path artifacts/ios/AppModulesNativeTests.xcresult \
+            > artifacts/ios/summary.json
+          jq -e '.totalTestCount > 0' artifacts/ios/summary.json
+          xcrun xcresulttool get test-results tests \
+            --path artifacts/ios/AppModulesNativeTests.xcresult \
+            > artifacts/ios/tests.json
+          python3 - "$RUNNER_TEMP/ios-native-plan.json" <<'PYTEST'
           import json
           import sys
           from pathlib import Path
@@ -511,13 +538,12 @@ jobs:
               if count == 0:
                   raise SystemExit(f'No executed tests for {name}')
           PYTEST
-          fi
           df -h .
       - name: Upload iOS result bundles and logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-native-${{ matrix.group }}-results
+          name: ios-native-results
           path: artifacts/ios/
           if-no-files-found: warn
 
@@ -531,7 +557,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
-      - name: Require every iOS native matrix outcome to succeed
+      - name: Require iOS native tests to succeed
         id: gate
         env:
           IOS_NATIVE_RESULT: ${{ needs.ios-native.result }}
