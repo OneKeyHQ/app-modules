@@ -635,6 +635,11 @@ the list's general section mechanism.
 | Reorder preview | no | — | — | r12, shadow `0 4px 24px` |
 | Reorder count badge | no | 24 h, r12, 12 semibold | dp(24), r dp(12), sp(12) semibold | 24px, r12, 12/22/600 |
 
+Pinned section headers draw no separator or shadow on any platform. The pinned
+overlay paints the header's own row background, which is what hides the rows
+scrolling underneath it; a list that wants a visible boundary supplies it through
+the header row's style, not through container chrome.
+
 The section index rail is three separate constant sets for one control; Android's
 `sectionIndexDp()` deliberately never follows the source-scale switch.
 
