@@ -129,7 +129,7 @@ static void checkInput(NSString *input, BOOL v2, BOOL overwrite, BOOL valid, BOO
     }
 }
 
-int main() {
+int main(int argc, const char *argv[]) {
     @autoreleasepool {
         messages = [NSMutableArray array];
         NSString *nul = [NSString stringWithCharacters:(unichar[]){'1', 0} length:2];
@@ -155,6 +155,9 @@ int main() {
 
         NSString *sourceId = [NSString stringWithUTF8String:(const char *)GPChannelSDKCoreVersionString];
         expect([sourceId rangeOfString:@"^source-v1:[0-9a-f]{64}$" options:NSRegularExpressionSearch].location != NSNotFound, @"Build identity comes from linked native core symbol");
+        NSMutableString *displayedSourceId = [sourceId mutableCopy];
+        for (NSUInteger offset = 66; offset > 10; offset -= 8) [displayedSourceId insertString:@"-" atIndex:offset];
+        NSMutableArray<NSString *> *capturedBuilds = [NSMutableArray arrayWithObject:sourceId];
         NSString *backup = @"12345678901234567890123456789012345678900000001";
         NSArray *cases = @[@[@NO, backup, @0], @[@NO, @"PRIVATE-KEY-SEED\n/path/user@host", @3], @[@YES, backup, @6]];
         for (NSArray *test in cases) {
@@ -163,12 +166,17 @@ int main() {
             NFCISO7816APDU *apdu = [OKNFCBridge buildAPDUWith_cla:0x80 ins:0x3b p1:0 p2:0 data:test[1] encrypt:safe];
             NSInteger code = [test[2] integerValue];
             expect((apdu != nil) == (code == 0), @"Actual SDK build result is preserved");
-            NSString *expected = [NSString stringWithFormat:@"stage=command_build nativeSourceId=%@ safe=%d sdkReturnCode=%ld outputPresent=%d", sourceId, safe, (long)code, code == 0];
+            NSString *expected = [NSString stringWithFormat:@"stage=command_build nativeSourceId=%@ safe=%d sdkReturnCode=%ld outputPresent=%d", displayedSourceId, safe, (long)code, code == 0];
             expect([messages isEqualToArray:@[expected]], @"Actual bridge/LCLogger path contains only exact build metadata");
+            [capturedBuilds addObjectsFromArray:messages];
             loggerThrows = YES;
             apdu = [OKNFCBridge buildAPDUWith_cla:0x80 ins:0x3b p1:0 p2:0 data:test[1] encrypt:safe];
             expect((apdu != nil) == (code == 0), @"Logger exception must preserve actual SDK result");
             loggerThrows = NO;
+        }
+        if (argc == 2) {
+            NSString *path = [NSString stringWithUTF8String:argv[1]];
+            expect([[capturedBuilds componentsJoinedByString:@"\n"] writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL], @"Captured bridge metadata reaches the real logger regression");
         }
         printf("ManagerInput: %lu assertions passed\n", (unsigned long)assertions);
     }

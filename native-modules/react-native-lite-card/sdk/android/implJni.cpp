@@ -8,6 +8,17 @@
 
 namespace {
 std::atomic<int> errorCode{0};
+std::string sourceIdForLog() {
+    const std::string source(reinterpret_cast<const char*>(GPChannelSDKCoreVersionString));
+    if (source.size() != 74 || source.compare(0, 10, "source-v1:") != 0 ||
+        source.find_first_not_of("0123456789abcdef", 10) != std::string::npos) return "unavailable";
+    std::string display = "source-v1:";
+    for (size_t offset = 10; offset < source.size(); offset += 8) {
+        if (offset != 10) display += '-';
+        display.append(source, offset, 8);
+    }
+    return display;
+}
 void logBuild(JNIEnv* env, bool safe, JUB_RV code, bool outputPresent) {
     // Preserve caller exceptions; only diagnostics-owned lookup/call failures may be cleared.
     if (env->ExceptionCheck()) return;
@@ -17,7 +28,7 @@ void logBuild(JNIEnv* env, bool safe, JUB_RV code, bool outputPresent) {
             jmethodID info = env->GetStaticMethodID(logger, "info", "(Ljava/lang/String;Ljava/lang/String;)V");
             if (info) {
                 const std::string message = std::string("stage=command_build nativeSourceId=") +
-                    reinterpret_cast<const char*>(GPChannelSDKCoreVersionString) +
+                    sourceIdForLog() +
                     " safe=" + (safe ? "true" : "false") +
                     " sdkReturnCode=" + std::to_string(code) +
                     " outputPresent=" + (outputPresent ? "true" : "false");
