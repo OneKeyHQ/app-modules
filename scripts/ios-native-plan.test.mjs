@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { getIosNativePlan, iosNativeGroups } from "./ios-native-plan.mjs";
+import { getIosNativePlan } from "./ios-native-plan.mjs";
 import { checkIosNativeResults, requiredIosJobs } from "./check-ios-native-results.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -22,32 +22,32 @@ const originalSchemes = [
   "ReactNativePhotoLibrary-Unit-Tests", "ReactNativeJpush-Unit-Tests",
 ];
 
-test("actual workflow matrix matches production plans and preserves every original suite once", () => {
-  assert.deepEqual(native.strategy.matrix.group, iosNativeGroups);
-  assert.equal(native.strategy["fail-fast"], false);
+test("two macOS jobs preserve every original iOS suite and both pod builds", () => {
+  assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job["runs-on"] === "macos-26").map(([name]) => name).sort(), ["device-utils-store", "ios-native"]);
+  assert.equal(native.strategy, undefined);
   assert.equal(native["timeout-minutes"], 50);
-  const schemes = iosNativeGroups.flatMap((group) => getIosNativePlan(group).testSchemes);
+  const plan = getIosNativePlan();
+  const schemes = plan.testSchemes;
   assert.deepEqual([...schemes].sort(), [...originalSchemes].sort());
   assert.equal(new Set(schemes).size, schemes.length);
-  assert.deepEqual(getIosNativePlan("lite"), { action: "build", buildTargets: ["ReactNativeLiteCard"], testSchemes: [] });
-  assert.deepEqual(getIosNativePlan("ui").buildTargets, ["NativeOverlay"]);
-  assert.deepEqual(getIosNativePlan("modules").buildTargets, []);
-  const build = native.steps.find((step) => step.name === "Build Lite Card pod or run assigned XCTest suites");
-  assert.equal(build["timeout-minutes"], 20);
+  assert.deepEqual(plan.buildTargets, ["ReactNativeLiteCard", "NativeOverlay"]);
+  const build = native.steps.find((step) => step.name === "Build Lite Card and NativeOverlay pods and run all XCTest suites");
+  assert.equal(build["timeout-minutes"], 30);
+  assert.match(build.run, /No executed tests for \{name\}/);
+  assert.match(build.run, /_GPChannelSDKCoreVersionString/);
+  assert.match(build.run, /identity_phase.*show_env_vars_in_log/);
 });
 
-test("production plan CLI rejects unknown groups without echoing untrusted input", () => {
+test("production plan CLI rejects unexpected arguments without echoing untrusted input", () => {
   const result = spawnSync(process.execPath, ["scripts/ios-native-plan.mjs", "PRIVATE-CI-INPUT"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 1);
-  assert.equal(result.stderr.trim(), "invalid_ios_native_group");
-  for (const group of iosNativeGroups) {
-    const actual = spawnSync(process.execPath, ["scripts/ios-native-plan.mjs", group], { cwd: root, encoding: "utf8" });
-    assert.equal(actual.status, 0, actual.stderr);
-    assert.deepEqual(JSON.parse(actual.stdout), getIosNativePlan(group));
-  }
+  assert.equal(result.stderr.trim(), "invalid_ios_native_arguments");
+  const actual = spawnSync(process.execPath, ["scripts/ios-native-plan.mjs"], { cwd: root, encoding: "utf8" });
+  assert.equal(actual.status, 0, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout), getIosNativePlan());
 });
 
-test("existing required gate runs after every matrix outcome and only depends on required jobs", () => {
+test("existing required gate runs after iOS native job and only depends on required jobs", () => {
   assert.deepEqual(gate.needs, requiredIosJobs);
   assert.equal(gate.if, "${{ always() }}");
   assert.equal(gateStep.env.IOS_NATIVE_RESULT, "${{ needs.ios-native.result }}");

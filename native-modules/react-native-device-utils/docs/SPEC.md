@@ -121,7 +121,9 @@ runtime loss, eviction, or later processing errors.
 The Kotlin runner supplies only a marker annotation for the generated shrinker
 metadata; it does not substitute the union or storage implementation.
 The `device-utils-store` job in `.github/workflows/native-tests.yml` generates
-DeviceUtils bindings and runs this runner with Swift, Kotlin 2.3.21, and Java 17.
+DeviceUtils bindings and runs the Swift store regression. The `android-unit` job
+generates the same bindings and runs the Kotlin store regression with Kotlin
+2.3.21 and Java 17.
 
 Standalone store tests cannot establish Nitro host integration or real JS
 reload behavior. Remaining device acceptance on both Android and iOS: rebuild
