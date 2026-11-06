@@ -165,8 +165,11 @@ static void logBackupPreflight(NSString *input, BOOL overwrite, NSString *reason
             }
         } break;
         case OKNFCLiteSessionTypeChangePin: {
-            self.expectedSerial = nil;
-            ChangePinCallback callback = [self takeCompletionForKey:kChangePinBlock];
+            ChangePinCallback callback;
+            @synchronized (self) {
+                self.expectedSerial = nil;
+                callback = [self takeCompletionForKey:kChangePinBlock];
+            }
             if (callback) {
                 callback(self.lite, asCancel ? OKNFCLiteChangePinStatusCancel : OKNFCLiteChangePinStatusError);
             }
@@ -399,28 +402,32 @@ static void logBackupPreflight(NSString *input, BOOL overwrite, NSString *reason
 }
 
 - (void)_changePin {
-    NSString *oldPin = self.pin;
-    NSString *newPin = self.neoPin;
-    NSString *expectedSerial = self.expectedSerial;
-    // Clear sensitive data from properties immediately
-    self.pin = nil;
-    self.neoPin = nil;
-    self.expectedSerial = nil;
+    NSString *oldPin;
+    NSString *newPin;
+    NSString *expectedSerial;
+    ChangePinCallback callback;
+    @synchronized (self) {
+        // Claim the request and its guard together so cancellation cannot
+        // turn a late connection into an unguarded PIN change.
+        callback = [self takeCompletionForKey:kChangePinBlock];
+        if (!callback) return;
+        oldPin = self.pin;
+        newPin = self.neoPin;
+        expectedSerial = self.expectedSerial;
+        self.pin = nil;
+        self.neoPin = nil;
+        self.expectedSerial = nil;
+    }
     if (expectedSerial != nil) {
         BOOL infoValid = [self.lite syncLiteInfo];
         if (!infoValid || !self.lite.SN.length || ![expectedSerial isEqualToString:self.lite.SN]) {
-            ChangePinCallback callback = [self takeCompletionForKey:kChangePinBlock];
             [self endNFCSessionWithError:YES];
-            if (callback) callback(self.lite, infoValid ? OKNFCLiteChangePinStatusSNNotMatch : OKNFCLiteChangePinStatusError);
+            callback(self.lite, infoValid ? OKNFCLiteChangePinStatusSNNotMatch : OKNFCLiteChangePinStatusError);
             return;
         }
     }
-    __weak typeof(self) weakSelf = self;
     [self.lite changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
-        ChangePinCallback callback = [weakSelf takeCompletionForKey:kChangePinBlock];
-        if (callback) {
-            callback(lite, status);
-        }
+        callback(lite, status);
     }];
 }
 

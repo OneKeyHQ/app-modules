@@ -116,7 +116,7 @@ static void checkPinIdentity(BOOL v2, NSString *expectedSerial, NSString *actual
         ++completions; result = status;
     }];
     if (cancel) [manager finishPendingRequestAsCancel:YES sessionError:nil];
-    else [manager nfcSessionComplete:nil];
+    [manager nfcSessionComplete:nil];
     BOOL guarded = expectedSerial != nil;
     BOOL allowed = !cancel && (!guarded || (!failRead && actualSerial.length && [expectedSerial isEqualToString:actualSerial]));
     OKNFCLiteChangePinStatus expected = cancel ? OKNFCLiteChangePinStatusCancel : allowed ? OKNFCLiteChangePinStatusSuccess : failRead ? OKNFCLiteChangePinStatusError : OKNFCLiteChangePinStatusSNNotMatch;

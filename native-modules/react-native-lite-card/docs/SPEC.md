@@ -137,7 +137,10 @@ operation-owned card state. A different or unavailable serial returns existing
 DeviceMismatch (2003); a failed card read retains the existing connection/read
 error. Neither case dispatches the PIN change or retries without the guard.
 The expectation is cleared after dispatch or cancellation and is never logged
-or persisted. Omitting it retains the existing unguarded API behavior. This
+or persisted. iOS claims the pending completion and identity snapshot together;
+a connection arriving after cancellation cannot dispatch a PIN change, while
+an already claimed operation owns its terminal result. Omitting the expectation
+retains the existing unguarded API behavior. This
 also changes the TurboModule ABI and requires native rebuilds. Host regressions
 exercise production operation code with fake card/transport adapters; real NFC
 and physical-card acceptance remain open.
