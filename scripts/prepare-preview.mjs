@@ -38,6 +38,29 @@ export function makePreviewVersion(
   return previewVersion;
 }
 
+export function makeStableVersion(currentVersion, publishedVersions = []) {
+  const current = parseReleaseVersion(currentVersion);
+  const { appVersion } = current;
+  let counter = current.channel === "latest" ? current.number : 0;
+  for (const version of publishedVersions) {
+    const published = parseReleaseVersion(version, { allowLegacy: true });
+    if (published.appVersion !== appVersion) {
+      if (compareReleaseVersions(version, currentVersion) > 0) {
+        throw new Error(
+          `Refusing to publish the older App baseline ${appVersion} after ${published.appVersion}`
+        );
+      }
+      continue;
+    }
+    if (published.channel === "latest") {
+      counter = Math.max(counter, published.number);
+    }
+  }
+  const stableVersion = `${appVersion}-${counter + 1}`;
+  parseReleaseVersion(stableVersion);
+  return stableVersion;
+}
+
 export function updatePreviewManifest(
   manifest,
   { currentVersion, previewVersion, workspaceNames }
@@ -92,15 +115,17 @@ export async function preparePreview(
   previewNumber,
   distTag = "next"
 ) {
-  if (distTag !== "next" && distTag !== "pr-145") {
-    throw new Error(`Unsupported preview dist-tag: ${distTag}`);
+  if (!["latest", "next", "pr-145"].includes(distTag)) {
+    throw new Error(`Unsupported npm dist-tag: ${distTag}`);
   }
   const workspaces = await loadReleaseWorkspaces(repoRoot);
   validateNpmDistTag(
     parseReleaseVersion(workspaces[0]?.version).channel,
     workspaces
   );
-  makePreviewVersion(workspaces[0].version, previewNumber);
+  if (distTag !== "latest") {
+    makePreviewVersion(workspaces[0].version, previewNumber);
+  }
   const tagLists = await mapConcurrent(workspaces, async ({ name }) => {
     const response = await fetch(packumentUrl(name), {
       headers: { accept: "application/json" },
@@ -113,7 +138,9 @@ export async function preparePreview(
     }
     const document = await response.json();
     const versions = [];
-    for (const tag of new Set(["next", distTag])) {
+    for (const tag of new Set(
+      distTag === "latest" ? ["latest"] : ["next", distTag]
+    )) {
       const version = document?.["dist-tags"]?.[tag];
       if (version) {
         versions.push(version);
@@ -122,14 +149,17 @@ export async function preparePreview(
     return versions;
   });
   const publishedVersions = tagLists.flat();
-  const previewVersion = makePreviewVersion(
-    workspaces[0].version,
-    previewNumber,
-    publishedVersions
-  );
-  const count = await setWorkspaceVersions(repoRoot, previewVersion);
-  console.error(`Prepared ${count} preview workspaces at ${previewVersion}`);
-  return previewVersion;
+  const publishVersion =
+    distTag === "latest"
+      ? makeStableVersion(workspaces[0].version, publishedVersions)
+      : makePreviewVersion(
+          workspaces[0].version,
+          previewNumber,
+          publishedVersions
+        );
+  const count = await setWorkspaceVersions(repoRoot, publishVersion);
+  console.error(`Prepared ${count} ${distTag} workspaces at ${publishVersion}`);
+  return publishVersion;
 }
 
 async function main() {

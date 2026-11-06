@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   makePreviewVersion,
+  makeStableVersion,
   preparePreview,
   setWorkspaceVersions,
   updatePreviewManifest,
@@ -34,6 +35,28 @@ test("automatic counters exceed committed and published alphas on the same basel
   );
   assert.throws(
     () => makePreviewVersion("6.7.0-alpha.9007199254740991", "100"),
+    /Expected <app-version>/
+  );
+});
+
+test("stable revisions increment the source and every published latest counter without using alpha counters", () => {
+  assert.equal(makeStableVersion("6.7.0-26", ["6.7.0-26"]), "6.7.0-27");
+  assert.equal(
+    makeStableVersion("6.7.0-26", ["6.7.0-27", "6.7.0-28"]),
+    "6.7.0-29"
+  );
+  assert.equal(makeStableVersion("6.7.0-alpha.900", ["6.7.0-26"]), "6.7.0-27");
+  assert.equal(makeStableVersion("6.7.0-alpha.900"), "6.7.0-1");
+  assert.equal(
+    makeStableVersion("6.7.1-alpha.1", ["6.7.0-26", "3.0.178"]),
+    "6.7.1-1"
+  );
+  assert.throws(
+    () => makeStableVersion("6.7.0-26", ["6.7.1-1"]),
+    /older App baseline/
+  );
+  assert.throws(
+    () => makeStableVersion("6.7.0-9007199254740991"),
     /Expected <app-version>/
   );
 });
@@ -84,6 +107,41 @@ test("prepares one synchronized preview above every published next and isolated 
   }
 });
 
+test("prepares one synchronized stable version above a partially published release", async (t) => {
+  const root = await previewRepo(t, "6.7.0-alpha.900");
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (url) =>
+      new Response(
+        JSON.stringify({
+          "dist-tags": {
+            latest: url.includes("module-a") ? "6.7.0-26" : "6.7.0-27",
+            next: "6.7.0-alpha.999",
+          },
+        })
+      )
+  );
+  assert.equal(await preparePreview(root, "500", "latest"), "6.7.0-28");
+  for (const name of ["module-a", "module-b"]) {
+    const manifest = JSON.parse(
+      await readFile(join(root, "packages", name, "package.json"), "utf8")
+    );
+    assert.equal(manifest.version, "6.7.0-28");
+    assert.equal(manifest.peerDependencies["module-a"], manifest.version);
+  }
+});
+
+test("prepares stable versions when registry packages are new", async (t) => {
+  const root = await previewRepo(t, "6.7.0-alpha.1");
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () => new Response(null, { status: 404 })
+  );
+  assert.equal(await preparePreview(root, "500", "latest"), "6.7.0-1");
+});
+
 test("new packages without registry documents can still get a preview", async (t) => {
   const root = await previewRepo(t, "6.7.0-1");
   t.mock.method(
@@ -103,10 +161,12 @@ test("registry failure aborts before changing any manifest", async (t) => {
         )
       : new Response(null, { status: 503 })
   );
-  await assert.rejects(
-    preparePreview(root, "100"),
-    /Registry returned HTTP 503/
-  );
+  for (const distTag of ["next", "latest"]) {
+    await assert.rejects(
+      preparePreview(root, "100", distTag),
+      /Registry returned HTTP 503/
+    );
+  }
   for (const name of ["module-a", "module-b"]) {
     const manifest = JSON.parse(
       await readFile(join(root, "packages", name, "package.json"), "utf8")

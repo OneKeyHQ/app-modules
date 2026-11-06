@@ -1,79 +1,48 @@
-import { execFileSync } from "node:child_process";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  loadReleaseWorkspaces,
-  parseReleaseVersion,
-  validateNpmDistTag,
-} from "./validate-npm-dist-tag.mjs";
-
-const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-
-export function detectReleaseChannel(before, after) {
-  const sourceChannel = parseReleaseVersion(after[0]?.version).channel;
-  validateNpmDistTag(sourceChannel, after);
-  const beforeVersions = new Map(
-    before.map(({ name, version }) => [name, version])
-  );
-  return after.some(({ name, version }) => {
-    const previousVersion = beforeVersions.get(name);
-    return previousVersion !== undefined && previousVersion !== version;
-  })
-    ? sourceChannel
-    : "next";
-}
-
-function readVersion(ref, manifestPath) {
-  try {
-    const manifest = execFileSync("git", ["show", `${ref}:${manifestPath}`], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-    return JSON.parse(manifest).version;
-  } catch {
-    return undefined;
+export function detectReleaseChannel({
+  eventName,
+  baseRef,
+  ref,
+  manualDistTag,
+}) {
+  if (eventName === "pull_request" && baseRef === "main") {
+    return "latest";
   }
-}
-
-async function main() {
-  const [baseRef, headRef] = process.argv.slice(2);
-  if (!baseRef || !headRef) {
+  if (eventName !== "workflow_dispatch") {
+    throw new Error("Automatic releases require a merged PR targeting main");
+  }
+  if (!["next", "latest", "pr-145"].includes(manualDistTag)) {
+    throw new Error(`Unsupported npm dist-tag: ${manualDistTag}`);
+  }
+  if (!ref?.startsWith("refs/heads/")) {
+    throw new Error("Manual releases require a branch ref");
+  }
+  if (ref === "refs/heads/main" && manualDistTag !== "latest") {
     throw new Error(
-      "Usage: node scripts/detect-release-channel.mjs <base-ref> <head-ref>"
+      "main publishes stable releases; select latest or use a development branch for alpha previews"
     );
   }
-  const workspaces = await loadReleaseWorkspaces(repoRoot);
-  const mergeBase = execFileSync("git", ["merge-base", baseRef, headRef], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  }).trim();
-  const before = workspaces.map(({ name, manifestPath }) => ({
-    name,
-    version: readVersion(mergeBase, manifestPath),
-  }));
-  const after = workspaces.map(({ name, manifestPath }) => ({
-    name,
-    version: readVersion(headRef, manifestPath),
-  }));
-  const channel = detectReleaseChannel(before, after);
-  const changed = after
-    .filter(
-      ({ name, version }) =>
-        before.find((workspace) => workspace.name === name)?.version !== version
-    )
-    .map(({ name }) => name);
-  console.error(
-    changed.length > 0
-      ? `Version changes found in ${changed.length} publishable workspace(s); using ${channel}`
-      : "No publishable workspace version changes found; using next preview"
-  );
-  console.log(channel);
+  if (ref !== "refs/heads/main" && manualDistTag === "latest") {
+    throw new Error(
+      "Development branches publish alpha previews; merge into main for a stable release"
+    );
+  }
+  return manualDistTag;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  try {
+    console.log(
+      detectReleaseChannel({
+        eventName: process.env.EVENT_NAME,
+        baseRef: process.env.PR_BASE_REF,
+        ref: process.env.RELEASE_REF,
+        manualDistTag: process.env.MANUAL_DIST_TAG,
+      })
+    );
+  } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
-  });
+  }
 }

@@ -3,69 +3,70 @@ import test from "node:test";
 
 import { detectReleaseChannel } from "./detect-release-channel.mjs";
 
-const release = [
-  { name: "@onekeyfe/module-a", version: "6.7.0-2" },
-  { name: "@onekeyfe/module-b", version: "6.7.0-2" },
-];
-
-test("uses next when the change does not update package versions", () => {
-  assert.equal(detectReleaseChannel(release, release), "next");
-});
-
-test("uses latest when a package version changes", () => {
+test("main PR merges always select stable without inspecting version changes or PR heads", () => {
   assert.equal(
-    detectReleaseChannel(release, [
-      { name: "@onekeyfe/module-a", version: "6.7.0-3" },
-      { ...release[1], version: "6.7.0-3" },
-    ]),
+    detectReleaseChannel({ eventName: "pull_request", baseRef: "main" }),
     "latest"
   );
 });
 
-test("uses latest when an existing package version changes alongside an added package", () => {
+test("development branches manually select alpha channels", () => {
+  for (const manualDistTag of ["next", "pr-145"]) {
+    assert.equal(
+      detectReleaseChannel({
+        eventName: "workflow_dispatch",
+        ref: "refs/heads/codex/feature",
+        manualDistTag,
+      }),
+      manualDistTag
+    );
+  }
+});
+
+test("main permits manual stable publication for recovery", () => {
   assert.equal(
-    detectReleaseChannel(release, [
-      ...release.map((workspace) => ({ ...workspace, version: "6.7.0-3" })),
-      { name: "@onekeyfe/module-c", version: "6.7.0-3" },
-    ]),
+    detectReleaseChannel({
+      eventName: "workflow_dispatch",
+      ref: "refs/heads/main",
+      manualDistTag: "latest",
+    }),
     "latest"
   );
 });
 
-test("uses next when only a publishable package is added at the current version", () => {
-  assert.equal(
-    detectReleaseChannel(release, [
-      ...release,
-      { name: "@onekeyfe/module-c", version: "6.7.0-2" },
-    ]),
-    "next"
-  );
+test("rejects stable publication from development branches and alpha publication from main", () => {
+  for (const [ref, manualDistTag] of [
+    ["refs/heads/codex/feature", "latest"],
+    ["refs/heads/main", "next"],
+    ["refs/heads/main", "pr-145"],
+  ]) {
+    assert.throws(
+      () =>
+        detectReleaseChannel({
+          eventName: "workflow_dispatch",
+          ref,
+          manualDistTag,
+        }),
+      /Development branches publish alpha|main publishes stable/
+    );
+  }
 });
 
-test("uses next when a newly added package has no version at the base ref", () => {
-  assert.equal(
-    detectReleaseChannel(
-      [...release, { name: "@onekeyfe/module-c", version: undefined }],
-      [...release, { name: "@onekeyfe/module-c", version: "6.7.0-2" }]
-    ),
-    "next"
-  );
-});
-
-test("uses next for explicit alpha version changes and rejects mixed versions", () => {
-  assert.equal(
-    detectReleaseChannel(
-      release,
-      release.map((workspace) => ({ ...workspace, version: "6.7.0-alpha.12" }))
-    ),
-    "next"
-  );
-  assert.throws(
-    () =>
-      detectReleaseChannel(release, [
-        release[0],
-        { ...release[1], version: "6.7.0-3" },
-      ]),
-    /versions must match/
-  );
+test("rejects unsupported events, non-main targets, tags and invalid channels", () => {
+  for (const options of [
+    { eventName: "push", baseRef: "main" },
+    { eventName: "pull_request", baseRef: "dev" },
+    {
+      eventName: "workflow_dispatch",
+      ref: "refs/tags/v1",
+      manualDistTag: "next",
+    },
+    {
+      eventName: "workflow_dispatch",
+      ref: "refs/heads/codex/feature",
+      manualDistTag: "beta",
+    },
+  ]) {
+    assert.throws(() => detectReleaseChannel(options));
+  }
 });
