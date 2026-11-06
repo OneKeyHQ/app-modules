@@ -202,11 +202,12 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
   }
 
   @ReactProp(name = "stickyHeaderHeight", defaultInt = 0)
-  override fun setStickyHeaderHeights(view: CollapsiblePagerHost?, value: String?) = Unit
-
   override fun setStickyHeaderHeight(view: CollapsiblePagerHost?, value: Int) {
     view?.stickyHeaderHeightPx = PixelUtil.toPixelFromDIP(value.toDouble()).roundToInt()
   }
+
+  @ReactProp(name = "stickyHeaderHeights")
+  override fun setStickyHeaderHeights(view: CollapsiblePagerHost?, value: String?) = Unit
 
   // The scroll-edge effect and external overlay are UIKit-only.
   @ReactProp(name = "topScrollEdgeEffect")
