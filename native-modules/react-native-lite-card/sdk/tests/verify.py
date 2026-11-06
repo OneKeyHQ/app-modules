@@ -50,8 +50,11 @@ class SDK:
         return value
 
     def build(self, name, data, header=(0x80, 0x20, 0, 0)):
+        return self.build_hex(name, data.hex(), header)
+
+    def build_hex(self, name, text, header=(0x80, 0x20, 0, 0)):
         output = c.c_void_p()
-        result = getattr(self.lib, "JUB_GPC_" + name)(*header, data.hex().encode(), c.byref(output))
+        result = getattr(self.lib, "JUB_GPC_" + name)(*header, text.encode(), c.byref(output))
         return result, self.take(output)
 
     def parse(self, name, data):
@@ -147,6 +150,15 @@ def verify(recovered, reference=None):
         for sdk in peers:
             assert sdk.build("BuildAPDU", data, header) == (0, expected), "Plain APDU bytes"
             checks += 1
+    for text in ("1", "123", "AbC", "12345678901234567890123456789012345678900000001",
+                 "0" * 131069, "0" * 131070):
+        data = bytes.fromhex(("0" if len(text) % 2 else "") + text)
+        size = len(data)
+        length = bytes([size]) if size <= 255 else b"\x00" + size.to_bytes(2, "big")
+        expected = (bytes.fromhex("803b0000") + length + data).hex().encode()
+        for sdk in peers:
+            assert sdk.build_hex("BuildAPDU", text, (0x80, 0x3b, 0, 0)) == (0, expected), "Raw odd command compatibility"
+            checks += 1
     for size in (0, 1, 5, 6, 7, 16, 255, 1024, 1025):
         for word in (b"\x90\x00", b"\x63\xc2", b"\x6a\x80"):
             data = rng.randbytes(size)
@@ -176,8 +188,13 @@ def verify(recovered, reference=None):
         if sdk is recovered:
             assert sdk.parse("ParseSafeAPDUResponse", bytes(8) + bytes.fromhex("63c2"))[0] == 3, "Reject missing encrypted response block"
             checks += 1
-        for size in (0, 1, 15, 16, 17, 127, 128, 239, 240, 255, 256, 1024) + (1,) * 250:
-            data = rng.randbytes(size)
+        command_inputs = [rng.randbytes(size).hex() for size in
+                          (0, 1, 15, 16, 17, 127, 128, 239, 240, 255, 256, 1024)]
+        command_inputs += ["12345678901234567890123456789012345678900000001", "AbC", "1", "12"]
+        command_inputs += [rng.randbytes(1).hex() for _ in range(250)]
+        for text in command_inputs:
+            data = bytes.fromhex(("0" if len(text) % 2 else "") + text)
+            size = len(data)
             counter_bytes = counter.to_bytes(4, "big") if getattr(sdk, "wide_counter", False) else bytes([counter & 255])
             iv = aes(enc, bytes(16), counter_bytes.rjust(16, b"\0"))
             encrypted = aes(enc, iv, pad(data))
@@ -186,7 +203,7 @@ def verify(recovered, reference=None):
             chain = mac(cmac_key, chain + header + bytes([length & 255]) + encrypted)
             length_bytes = bytes([length]) if length <= 255 else b"\x00" + length.to_bytes(2, "big")
             expected = (header + length_bytes + encrypted + chain[:8]).hex().encode()
-            assert sdk.build("BuildSafeAPDU", data) == (0, expected), "Encrypted APDU and chained CMAC"
+            assert sdk.build_hex("BuildSafeAPDU", text) == (0, expected), "Raw command encrypted APDU and chained CMAC"
             checks += 1
             reply = rng.randbytes(min(size, 1008))
             counter += 1

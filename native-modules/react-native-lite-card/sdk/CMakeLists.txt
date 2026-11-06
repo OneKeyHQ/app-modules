@@ -4,6 +4,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+include(source-id.cmake)
 
 # Restore the original source dependencies without linking a vendor binary.
 set(TREZOR_FILES
@@ -66,12 +67,12 @@ set(TREZOR_FILES
   deps/trezor-crypto/src/cmac.c
 )
 add_library(gpchannel_core STATIC
-  src/GPChannelSDK.cpp src/ApduBuilder.cpp src/random.c
+  src/GPChannelSDK.cpp src/ApduBuilder.cpp src/random.c src/version.c
   gpc/src/scp03.cpp gpc/src/scp11.cpp gpc/src/scp11c.cpp gpc/src/tlv.cpp
   ${TREZOR_FILES})
 target_include_directories(gpchannel_core PUBLIC include
-  PRIVATE gpc/include deps/trezor-crypto/include deps/trezor-crypto/src)
-add_library(GPChannelSDKCore SHARED src/version.c
+  PRIVATE gpc/include deps/trezor-crypto/include deps/trezor-crypto/src "${GPCHANNEL_GENERATED_INCLUDE}")
+add_library(GPChannelSDKCore SHARED
   include/GPChannelSDK.h include/GPChannelSDKCore.h)
 target_include_directories(GPChannelSDKCore PUBLIC include)
 set_target_properties(GPChannelSDKCore PROPERTIES LINKER_LANGUAGE CXX)

@@ -17,7 +17,7 @@ const stubs = {
   Activity: 'package android.app\nopen class Activity',
   IsoDep: `package android.nfc.tech
 class IsoDep(val label: String, val serial: String = label, val newCard: Boolean = true,
-             val backedUp: Boolean = false, val failStage: String? = null) {
+             val backedUp: Boolean = false, val failStage: String? = null, val v2: Boolean = true) {
   var isConnected = false
 }`,
   Lifecycle: `package androidx.lifecycle
@@ -29,7 +29,12 @@ class Lifecycle {
 class FragmentActivity : android.app.Activity() { val lifecycle = androidx.lifecycle.Lifecycle() }`,
   OneKeyLog: `package com.margelo.nitro.nativelogger
 object OneKeyLog {
-  fun info(tag: String, message: String) {}
+  val messages = java.util.concurrent.CopyOnWriteArrayList<String>()
+  var throwPreflight = false
+  fun info(tag: String, message: String) {
+    if (message.contains("stage=input_preflight") && throwPreflight) throw IllegalStateException("PRIVATE-LOGGER-EXCEPTION")
+    messages.add(message)
+  }
   fun error(tag: String, message: String) {}
 }`,
   Gson: 'package com.google.gson\nclass Gson',

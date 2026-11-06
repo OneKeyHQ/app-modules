@@ -74,8 +74,11 @@ class AndroidSDK:
         return c.string_at(self.buffers.pop(pointer.value)) if pointer.value else None
 
     def build(self, name, data, header=(0x80, 0x20, 0, 0)):
+        return self.build_hex(name, data.hex(), header)
+
+    def build_hex(self, name, text, header=(0x80, 0x20, 0, 0)):
         result = self.request("safe" if name == "BuildSafeAPDU" else "build",
-                              data=data.hex(), **dict(zip(("cla", "ins", "p1", "p2"), header)))
+                              data=text, **dict(zip(("cla", "ins", "p1", "p2"), header)))
         return result["code"], result["output"].encode() if result["output"] is not None else None
 
     def parse(self, name, data):

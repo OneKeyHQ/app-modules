@@ -53,7 +53,7 @@ class Connection(val isoDep: IsoDep, generator: CommandGenerator) {
         return CardState(isoDep.backedUp, isoDep.newCard, isoDep.serial, 10)
     }
 
-    fun getCardType() = AppleCardType.V2
+    fun getCardType() = if (isoDep.v2) AppleCardType.V2 else AppleCardType.V1
     fun setupNewPin(pin: String): Boolean { Probe.record(this, "setup"); return true }
     fun startVerifyPin(pin: String): Int { Probe.record(this, "verify"); return NfcConstant.VERIFY_SUCCESS }
     fun backupData(data: String): Boolean { Probe.record(this, "backup"); return true }

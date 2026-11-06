@@ -105,6 +105,15 @@ The API has per-call locking; it does not support concurrent independent session
 There is no persistent cache. Returned allocations remain caller-owned across
 finalization and must be freed separately.
 
+The existing native `GPChannelSDKCoreVersionString` reports
+`source-v1:<SHA256>` for the package source/configuration manifest in
+`source-id-manifest.txt`. CMake regenerates its private header when those inputs
+change; CocoaPods runs the equivalent Ruby generator before compilation. The
+identity is independent of checkout location, keys, user data and build
+environment. It identifies the selected source snapshot, not the binary hash or
+external toolchains. Command-build diagnostics read that compiled native symbol
+and the actual call's return code without logging command data.
+
 ## Preserved platform differences
 
 These were observed against the installed binaries and retained explicitly:
@@ -165,6 +174,12 @@ On Linux use the `.so` filename. Omit `--reference` for oracle-only verification
 The Python dependency is a test tool, not an application/SDK dependency.
 `tests/safety.cpp` exercises 5000 malformed inputs and allocation/lifecycle checks;
 run it with AddressSanitizer/UBSan compiler and linker flags when supported.
+With host JNI enabled it also captures the actual JNI logger calls, checks the
+metadata allowlist and synthetic sensitive-data absence, and verifies logger
+failure does not change build results. From the package root,
+`node tests/ios-input.cjs` covers the production manager/bridge/LCLogger path and
+`node tests/source-id.cjs` checks source identity generation and incremental
+native rebuilding. These checks do not prove physical NFC or minified app logs.
 
 `tests/android/GPChannelProxy.java` and `tests/android_verify.py` run the same oracle
 against real Android ART/JNI and a separately loaded original `.so` in an isolated
