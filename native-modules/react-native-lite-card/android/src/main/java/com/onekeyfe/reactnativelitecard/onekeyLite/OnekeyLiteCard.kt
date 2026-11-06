@@ -246,8 +246,13 @@ object OneKeyLiteCard {
     }
 
     @Throws(NFCExceptions::class)
-    internal fun changPin(session: CardSession, oldPwd: String, newPwd: String): Boolean {
+    internal fun changPin(session: CardSession, oldPwd: String, newPwd: String, expectedSerial: String? = null): Boolean {
         val cardState = session.cardState
+        val serial = cardState.serialNum
+        if (expectedSerial != null && (serial.isEmpty() ||
+            serial == NfcConstant.NOT_MATCH_DEVICE || expectedSerial != serial)) {
+            throw NFCExceptions.DeviceMismatchException()
+        }
 
         if (cardState.isNewCard || !cardState.hasBackup) {
             throw NFCExceptions.NotInitializedException()

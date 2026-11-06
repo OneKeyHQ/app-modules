@@ -91,6 +91,34 @@ fun main() = runBlocking {
         println("PASS identity guards and existing write modes")
 
         for (v2 in listOf(false, true)) {
+            for ((expected, serial) in listOf(
+                "verified-card" to "other-card", "" to "verified-card",
+                "" to "", "verified-card" to "",
+                NfcConstant.NOT_MATCH_DEVICE to NfcConstant.NOT_MATCH_DEVICE
+            )) {
+                Probe.reset()
+                val tag = IsoDep("pin-mismatch", serial, newCard = false, backedUp = true, v2 = v2)
+                val result = runCatching {
+                    OneKeyLiteCard.withCardSession(tag) {
+                        OneKeyLiteCard.changPin(it, "synthetic-old-pin", "synthetic-new-pin", expected)
+                    }
+                }
+                expect((result.exceptionOrNull() as? NFCExceptions)?.code == 2003, "PIN identity mismatch returns DeviceMismatch")
+                expect(phases(tag) == listOf("construct", "info", "finalize"), "Mismatching card executes no PIN command")
+                expect(Probe.finalized.get() == 1, "Rejected PIN change releases its session once")
+            }
+            for (expected in listOf("verified-card", null)) {
+                Probe.reset()
+                val tag = IsoDep("pin-success", "verified-card", newCard = false, backedUp = true, v2 = v2)
+                expect(OneKeyLiteCard.withCardSession(tag) {
+                    OneKeyLiteCard.changPin(it, "synthetic-old-pin", "synthetic-new-pin", expected)
+                }, "Matching or omitted PIN identity retains successful mutation")
+                expect(phases(tag) == listOf("construct", "info", "change", "finalize"), "PIN change uses the identity-checked connection")
+            }
+        }
+        println("PASS PIN change identity before mutation on V1/V2")
+
+        for (v2 in listOf(false, true)) {
             val maxDigits = (if (v2) 65511 else 65535) * 2
             for (overwrite in listOf(false, true)) {
                 for (input in listOf(null, "", "g", "12g", " 1", "0x1", "1\u0000", "１２", "a".repeat(maxDigits + 1))) {

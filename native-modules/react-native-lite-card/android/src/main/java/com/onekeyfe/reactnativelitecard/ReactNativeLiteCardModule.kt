@@ -347,13 +347,14 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
   override fun changePin(
     oldPin: String,
     newPin: String,
+    expectedSerial: String?,
     callback: Callback?
   ) {
     launch {
       OneKeyLog.debug("LiteCard","changePin")
       handleOperation(callback, "changePin") { session ->
         OneKeyLog.debug("LiteCard","changePin Obtain the device")
-        OneKeyLiteCard.changPin(session, oldPin, newPin)
+        OneKeyLiteCard.changPin(session, oldPin, newPin, expectedSerial)
       }
     }
   }

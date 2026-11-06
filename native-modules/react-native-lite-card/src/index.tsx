@@ -62,9 +62,14 @@ class OnekeyLite {
     });
   }
 
-  changePin(oldPin: string, newPin: string) {
+  changePin(oldPin: string, newPin: string, expectedSerial?: string) {
     return new Promise<PromiseResult<boolean>>((resolve) => {
-      OKLiteManager.changePin(oldPin, newPin, this.convertToPromise(resolve));
+      OKLiteManager.changePin(
+        oldPin,
+        newPin,
+        expectedSerial ?? null,
+        this.convertToPromise(resolve)
+      );
     });
   }
 

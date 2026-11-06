@@ -129,6 +129,19 @@ The native method adds nullable expectedSerial before callback. This changes the
 TurboModule ABI and requires generated bindings and rebuilt iOS/Android apps to
 ship with the wrapper. It cannot be delivered through JS-only OTA.
 
+PIN changes expose `changePin(oldPin, newPin, expectedSerial?: string)` with the
+same optional identity contract. The wrapper forwards omitted values as native
+null and preserves supplied empty strings. Before any PIN verification or
+mutation, iOS refreshes card information and Android checks its acquired
+operation-owned card state. A different or unavailable serial returns existing
+DeviceMismatch (2003); a failed card read retains the existing connection/read
+error. Neither case dispatches the PIN change or retries without the guard.
+The expectation is cleared after dispatch or cancellation and is never logged
+or persisted. Omitting it retains the existing unguarded API behavior. This
+also changes the TurboModule ABI and requires native rebuilds. Host regressions
+exercise production operation code with fake card/transport adapters; real NFC
+and physical-card acceptance remain open.
+
 ## Native diagnostic logging
 
 Status: Implemented in source; native build and physical-card acceptance are

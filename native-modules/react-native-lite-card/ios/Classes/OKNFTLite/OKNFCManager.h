@@ -34,7 +34,7 @@
 
 - (void)getMnemonicWithPin:(NSString *)pin complete:(GetMnemonicCallback)complete;
 
-- (void)changePin:(NSString *)oldPin to:(NSString *)newPin complete:(ChangePinCallback)complete;
+- (void)changePin:(NSString *)oldPin to:(NSString *)newPin expectedSerial:(NSString * _Nullable)expectedSerial complete:(ChangePinCallback)complete;
 
 
 @end
