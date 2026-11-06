@@ -90,6 +90,7 @@ export interface Spec extends TurboModule {
   changePin(
     oldPin: string,
     newPin: string,
+    expectedSerial: string | null,
     callback: (
       error: CallbackError | null,
       data: boolean | null,

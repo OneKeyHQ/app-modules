@@ -165,7 +165,11 @@ static void logBackupPreflight(NSString *input, BOOL overwrite, NSString *reason
             }
         } break;
         case OKNFCLiteSessionTypeChangePin: {
-            ChangePinCallback callback = [self takeCompletionForKey:kChangePinBlock];
+            ChangePinCallback callback;
+            @synchronized (self) {
+                self.expectedSerial = nil;
+                callback = [self takeCompletionForKey:kChangePinBlock];
+            }
             if (callback) {
                 callback(self.lite, asCancel ? OKNFCLiteChangePinStatusCancel : OKNFCLiteChangePinStatusError);
             }
@@ -388,26 +392,42 @@ static void logBackupPreflight(NSString *input, BOOL overwrite, NSString *reason
 
 #pragma mark - changePin
 
-- (void)changePin:(NSString *)oldPin to:(NSString *)newPin complete:(ChangePinCallback)complete {
+- (void)changePin:(NSString *)oldPin to:(NSString *)newPin expectedSerial:(NSString *)expectedSerial complete:(ChangePinCallback)complete {
     self.pin = oldPin;
     self.neoPin = newPin;
+    self.expectedSerial = expectedSerial;
     self.sessionType = OKNFCLiteSessionTypeChangePin;
     [self.completionBlocks setObject:complete forKey:kChangePinBlock];
     [self beginNewNFCSession];
 }
 
 - (void)_changePin {
-    NSString *oldPin = self.pin;
-    NSString *newPin = self.neoPin;
-    // Clear sensitive data from properties immediately
-    self.pin = nil;
-    self.neoPin = nil;
-    __weak typeof(self) weakSelf = self;
-    [self.lite changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
-        ChangePinCallback callback = [weakSelf takeCompletionForKey:kChangePinBlock];
-        if (callback) {
-            callback(lite, status);
+    NSString *oldPin;
+    NSString *newPin;
+    NSString *expectedSerial;
+    ChangePinCallback callback;
+    @synchronized (self) {
+        // Claim the request and its guard together so cancellation cannot
+        // turn a late connection into an unguarded PIN change.
+        callback = [self takeCompletionForKey:kChangePinBlock];
+        if (!callback) return;
+        oldPin = self.pin;
+        newPin = self.neoPin;
+        expectedSerial = self.expectedSerial;
+        self.pin = nil;
+        self.neoPin = nil;
+        self.expectedSerial = nil;
+    }
+    if (expectedSerial != nil) {
+        BOOL infoValid = [self.lite syncLiteInfo];
+        if (!infoValid || !self.lite.SN.length || ![expectedSerial isEqualToString:self.lite.SN]) {
+            [self endNFCSessionWithError:YES];
+            callback(self.lite, infoValid ? OKNFCLiteChangePinStatusSNNotMatch : OKNFCLiteChangePinStatusError);
+            return;
         }
+    }
+    [self.lite changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
+        callback(lite, status);
     }];
 }
 

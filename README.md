@@ -36,11 +36,19 @@ yarn version:set 6.7.0-1  # Set the target App baseline and official revision
 yarn version:patch        # 6.7.0-1 -> 6.7.0-2; does not increment the App patch
 yarn version:set 6.7.1-1  # Switch to the next App baseline
 node scripts/validate-npm-dist-tag.mjs  # Check synchronized versions and channel
-yarn install             # Refresh the lockfile after changing versions
-(cd example/react-native/ios && bundle exec pod install) # Refresh pod versions/checksums
 ```
 
-The version scripts update package versions; they do not publish. References
+Run the version commands on macOS with Xcode and the Ruby version in
+`example/react-native/.ruby-version`; install the project's gems with
+`(cd example/react-native && bundle install)` first. Both commands check native
+prerequisites before changing versions, then update package versions, run Yarn
+install and Nitro codegen, and run `bundle exec pod install` to synchronize
+`yarn.lock` and `example/react-native/ios/Podfile.lock`. Commit the generated
+lockfiles with the package versions. They report success only after every step
+passes; if synchronization fails, fix the error and rerun `yarn version:set`
+with the same target version to finish without incrementing again.
+
+The version scripts do not publish. References
 between publishable `@onekeyfe/*` workspaces use `*` in dependency, peer, optional
 and development sections, and version changes preserve those wildcards. Private
 example `workspace:*` links stay local. App consumers keep exact dependency pins. A numeric release must be chosen explicitly after a preview.

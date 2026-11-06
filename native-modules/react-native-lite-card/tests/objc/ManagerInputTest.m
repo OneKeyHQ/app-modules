@@ -63,19 +63,31 @@ static void expect(BOOL value, NSString *scenario) {
 @property (nonatomic, assign) NSUInteger reads;
 @property (nonatomic, assign) NSUInteger writes;
 @property (nonatomic, copy) NSString *received;
+@property (nonatomic, assign) BOOL failRead;
+@property (nonatomic, copy) NSString *readSerial;
 @end
 @implementation FakeCard
-- (BOOL)syncLiteInfo { ++self.reads; return YES; }
+- (BOOL)syncLiteInfo {
+    ++self.reads;
+    if (self.readSerial) self.SN = self.readSerial;
+    return !self.failRead;
+}
 - (void)setMnemonic:(NSString *)input withPin:(NSString *)pin overwrite:(BOOL)overwrite complete:(SetMnemonicCallback)complete {
     ++self.writes;
     self.received = input;
     complete(self, OKNFCLiteSetMncStatusSuccess);
+}
+- (void)changePin:(NSString *)oldPin to:(NSString *)newPin complete:(ChangePinCallback)complete {
+    ++self.writes;
+    expect([oldPin isEqualToString:@"synthetic-old-pin"] && [newPin isEqualToString:@"synthetic-new-pin"], @"PINs reach only the guarded operation");
+    complete(self, OKNFCLiteChangePinStatusSuccess);
 }
 @end
 
 @interface OKNFCManager (TestEntryPoints)
 - (void)nfcSessionComplete:(NFCTagReaderSession *)session;
 - (void)beginNewNFCSession;
+- (void)finishPendingRequestAsCancel:(BOOL)asCancel sessionError:(NSError *)sessionError;
 @end
 @interface TestManager : OKNFCManager
 @property (nonatomic, strong) FakeCard *card;
@@ -87,6 +99,32 @@ static void expect(BOOL value, NSString *scenario) {
 - (BOOL)checkLiteVersion { [self setValue:self.card forKey:@"lite"]; return YES; }
 - (void)endNFCSessionWithError:(BOOL)isError { ++self.ends; }
 @end
+
+static void checkPinIdentity(BOOL v2, NSString *expectedSerial, NSString *actualSerial, BOOL failRead, BOOL cancel) {
+    TestManager *manager = [TestManager new];
+    FakeCard *card = [FakeCard new];
+    card.version = v2 ? OKNFCLiteVersionV2 : OKNFCLiteVersionV1;
+    card.status = OKNFCLiteStatusActivated;
+    card.SN = @"verified-card";
+    card.readSerial = actualSerial;
+    card.failRead = failRead;
+    manager.card = card;
+    __block NSUInteger completions = 0;
+    __block OKNFCLiteChangePinStatus result = OKNFCLiteChangePinStatusError;
+    [manager changePin:@"synthetic-old-pin" to:@"synthetic-new-pin" expectedSerial:expectedSerial
+             complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
+        ++completions; result = status;
+    }];
+    if (cancel) [manager finishPendingRequestAsCancel:YES sessionError:nil];
+    [manager nfcSessionComplete:nil];
+    BOOL guarded = expectedSerial != nil;
+    BOOL allowed = !cancel && (!guarded || (!failRead && actualSerial.length && [expectedSerial isEqualToString:actualSerial]));
+    OKNFCLiteChangePinStatus expected = cancel ? OKNFCLiteChangePinStatusCancel : allowed ? OKNFCLiteChangePinStatusSuccess : failRead ? OKNFCLiteChangePinStatusError : OKNFCLiteChangePinStatusSNNotMatch;
+    expect(result == expected && completions == 1, @"PIN identity returns the expected status exactly once");
+    expect(card.reads == (!cancel && guarded ? 1 : 0), @"Guard refreshes identity before PIN dispatch");
+    expect(card.writes == (allowed ? 1 : 0), @"A mismatching, unreadable or cancelled card is never mutated");
+    expect([manager valueForKey:@"expectedSerial"] == nil, @"PIN identity is cleared after dispatch or cancellation");
+}
 
 static void checkInput(NSString *input, BOOL v2, BOOL overwrite, BOOL valid, BOOL starts) {
     [messages removeAllObjects];
@@ -132,6 +170,16 @@ static void checkInput(NSString *input, BOOL v2, BOOL overwrite, BOOL valid, BOO
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         messages = [NSMutableArray array];
+        for (NSNumber *v2 in @[@NO, @YES]) {
+            checkPinIdentity(v2.boolValue, @"verified-card", @"verified-card", NO, NO);
+            checkPinIdentity(v2.boolValue, @"verified-card", @"other-card", NO, NO);
+            checkPinIdentity(v2.boolValue, @"verified-card", @"", NO, NO);
+            checkPinIdentity(v2.boolValue, @"", @"", NO, NO);
+            checkPinIdentity(v2.boolValue, @"", @"verified-card", NO, NO);
+            checkPinIdentity(v2.boolValue, @"verified-card", @"verified-card", YES, NO);
+            checkPinIdentity(v2.boolValue, nil, @"other-card", NO, NO);
+            checkPinIdentity(v2.boolValue, @"verified-card", @"verified-card", NO, YES);
+        }
         NSString *nul = [NSString stringWithCharacters:(unichar[]){'1', 0} length:2];
         for (NSNumber *v2 in @[@NO, @YES]) {
             NSUInteger maxDigits = (v2.boolValue ? 65511 : 65535) * 2;

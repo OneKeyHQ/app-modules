@@ -175,16 +175,19 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(NSString *operation, RCTRespons
   }
 }
 
-- (void)changePin:(NSString *)oldPin newPin:(NSString *)newPin callback:(RCTResponseSenderBlock)callBack
+- (void)changePin:(NSString *)oldPin newPin:(NSString *)newPin expectedSerial:(NSString * _Nullable)expectedSerial callback:(RCTResponseSenderBlock)callBack
 {
   callBack = OKLiteCallbackOnce(@"changePin", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
-    [liteManager changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
+    [liteManager changePin:oldPin to:newPin expectedSerial:expectedSerial complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
       NSDictionary *cardInfo = [lite cardInfo];
       switch (status) {
         case OKNFCLiteChangePinStatusSuccess: {
           callBack(@[[NSNull null],@(true),cardInfo]);
+        } break;
+        case OKNFCLiteChangePinStatusSNNotMatch: {
+          callBack(@[@{@"code":@(NFCLiteExceptionsDeviceMismatch),@"message":@""},[NSNull null],[NSNull null]]);
         } break;
         case OKNFCLiteChangePinStatusWiped: {
           callBack(@[@{@"code":@(NFCLiteExceptionsAutoReset),@"message":@""},[NSNull null],[NSNull null]]);

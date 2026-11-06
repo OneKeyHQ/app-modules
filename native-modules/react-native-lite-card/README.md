@@ -41,7 +41,9 @@ if (result.error) {
   state, new-card status and remaining PIN retries.
 - `setMnemonic(mnemonic, pwd, overwrite)` and `getMnemonicWithPin(pwd)` manage
   the backup; `overwrite` defaults to `false`.
-- `changePin(oldPin, newPin)` and `reset()` alter the card's state.
+- `changePin(oldPin, newPin, expectedSerial?)` checks a supplied card serial before
+  changing the PIN; `reset()` resets the card's state. The identity guard requires
+  a native rebuild on iOS and Android.
 - `addConnectListener(listener)` subscribes to NFC UI events and returns the
   native subscription. Keep it and call `remove()` when the owner finishes.
 - `cancel()` invokes native cancellation on Android; `intoSetting()` opens
