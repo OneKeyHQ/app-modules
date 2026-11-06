@@ -7,7 +7,11 @@ import {
   compareReleaseVersions,
   validateNpmDistTag,
 } from "./validate-npm-dist-tag.mjs";
-import { mapConcurrent, packumentUrl } from "./verify-published.mjs";
+import {
+  mapConcurrent,
+  packumentUrl,
+  selectWorkspaces,
+} from "./verify-published.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const nativeListName = "@onekeyfe/react-native-native-list";
@@ -76,9 +80,10 @@ function runNpm(args) {
 }
 
 async function main() {
-  const [distTag] = process.argv.slice(2);
-  const workspaces = await loadReleaseWorkspaces(repoRoot);
-  validateNpmDistTag(distTag, workspaces);
+  const [distTag, onlyWorkspace = ""] = process.argv.slice(2);
+  const releaseWorkspaces = await loadReleaseWorkspaces(repoRoot);
+  validateNpmDistTag(distTag, releaseWorkspaces);
+  const workspaces = selectWorkspaces(releaseWorkspaces, onlyWorkspace);
   if (
     workspaces.length === 0 ||
     new Set(workspaces.map(({ version }) => version)).size !== 1
