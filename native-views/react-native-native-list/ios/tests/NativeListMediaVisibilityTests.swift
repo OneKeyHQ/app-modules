@@ -57,7 +57,7 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
 
     var loaded: Bool?
     slot.bind(["uri": url.absoluteString], key: "video", probeOrder: ["video"]) { loaded = $0 }
-    XCTAssertTrue(slot.hasLivePlayer, "A visible tile starts one paused player")
+    // The cache lookup precedes player creation and can complete asynchronously.
     let deadline = Date().addingTimeInterval(10)
     while slot.capturedFrame == nil, Date() < deadline {
       RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -75,6 +75,26 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     XCTAssertNotNil(slot.capturedFrame)
     slot.recycle()
     XCTAssertNil(slot.capturedFrame)
+    let coldPlayers = slot.createdPlayerCount
+    slot.bind(["uri": url.absoluteString], key: "different-row", probeOrder: ["video"])
+    let warmDeadline = Date().addingTimeInterval(3)
+    while slot.capturedFrame == nil, Date() < warmDeadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+    XCTAssertNotNil(slot.capturedFrame)
+    XCTAssertEqual(slot.createdPlayerCount, coldPlayers, "Recycled row reuses the cached still")
+    let second = NativeListMediaPreviewSlot()
+    second.view.frame = CGRect(x: 120, y: 0, width: 120, height: 120)
+    window.rootViewController?.view.addSubview(second.view)
+    second.view.layoutIfNeeded()
+    second.bind(["uri": url.absoluteString], key: "another-cell", probeOrder: ["video"])
+    let crossCellDeadline = Date().addingTimeInterval(3)
+    while second.capturedFrame == nil, Date() < crossCellDeadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+    XCTAssertNotNil(second.capturedFrame)
+    XCTAssertEqual(second.createdPlayerCount, 0, "A different cell uses shared cached pixels")
+    second.recycle(); slot.recycle()
   }
 
   /// A 64×48, ten-frame H.264 MP4 (generated with AVAssetWriter on macOS); the simulator

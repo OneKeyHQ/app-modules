@@ -95,6 +95,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
     withContext(Dispatchers.Main) {
+      OneKeyMediaPreviewCache.get(context).clearMemory()
       Glide.get(context).clearMemory()
       OneKeyImageMemoryVariantRegistry.clear()
     }
@@ -103,6 +104,11 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
   override fun clearDisk(): Promise<Unit> = Promise.async {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
+    kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+      android.os.Handler(android.os.Looper.getMainLooper()).post {
+        OneKeyMediaPreviewCache.get(context).clearDisk { continuation.resumeWith(Result.success(Unit)) }
+      }
+    }
     Glide.get(context).clearDiskCache()
   }
 
@@ -110,8 +116,14 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
     withContext(Dispatchers.Main) {
+      OneKeyMediaPreviewCache.get(context).clearMemory()
       Glide.get(context).clearMemory()
       OneKeyImageMemoryVariantRegistry.clear()
+    }
+    kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+      android.os.Handler(android.os.Looper.getMainLooper()).post {
+        OneKeyMediaPreviewCache.get(context).clearDisk { continuation.resumeWith(Result.success(Unit)) }
+      }
     }
     Glide.get(context).clearDiskCache()
   }

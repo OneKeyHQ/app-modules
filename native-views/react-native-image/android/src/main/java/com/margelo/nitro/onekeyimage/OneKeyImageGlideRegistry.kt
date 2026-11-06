@@ -81,6 +81,11 @@ internal object OneKeyImageGlideRegistry {
         OneKeyImageRemoteModelLoaderFactory(imageHttpClient),
       )
       registry.append(
+        ByteBuffer::class.java,
+        SVG::class.java,
+        OneKeyByteBufferSvgDecoder(),
+      )
+      registry.append(
         InputStream::class.java,
         SVG::class.java,
         OneKeySvgDecoder(),
@@ -252,6 +257,19 @@ private class OneKeyDataUriFetcher(private val dataUri: String) : DataFetcher<By
     } catch (error: Exception) {
       callback.onLoadFailed(error)
     }
+  }
+}
+
+private class OneKeyByteBufferSvgDecoder : ResourceDecoder<ByteBuffer, SVG> {
+  private val delegate = OneKeySvgDecoder()
+
+  override fun handles(source: ByteBuffer, options: Options): Boolean = true
+
+  override fun decode(source: ByteBuffer, width: Int, height: Int, options: Options): Resource<SVG> {
+    val copy = source.asReadOnlyBuffer()
+    copy.position(0)
+    OneKeyImageSafety.requireEncodedLength(copy.remaining().toLong(), OneKeyImageSafety.MAX_ENCODED_BYTES)
+    return delegate.decode(com.bumptech.glide.util.ByteBufferUtil.toStream(copy), width, height, options)
   }
 }
 
