@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cstdarg>
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <random>
 #include <string>
@@ -624,8 +625,10 @@ int main() {
         const std::string sourceId(reinterpret_cast<const char*>(GPChannelSDKCoreVersionString));
         require(sourceId.size() == 74 && sourceId.substr(0, 10) == "source-v1:" &&
                 sourceId.find_first_not_of("0123456789abcdef", 10) == std::string::npos, "Compiled native source identity format");
+        std::string displayedSourceId = sourceId;
+        for (size_t offset = 66; offset > 10; offset -= 8) displayedSourceId.insert(offset, "-");
         auto expectedBuildLog = [&](bool safe, int code, bool present) {
-            return "stage=command_build nativeSourceId=" + sourceId + " safe=" + (safe ? "true" : "false") +
+            return "stage=command_build nativeSourceId=" + displayedSourceId + " safe=" + (safe ? "true" : "false") +
                    " sdkReturnCode=" + std::to_string(code) + " outputPresent=" + (present ? "true" : "false");
         };
         const std::string privateBackup = "12345678901234567890123456789012345678900000001";
@@ -705,8 +708,15 @@ int main() {
             require(line == expectedBuildLog(false, 0, true) || line == expectedBuildLog(true, 0, true) ||
                     line == expectedBuildLog(false, 3, false) || line == expectedBuildLog(true, 6, false),
                     "Every emitted field is allowlisted; no extra diagnostic content");
-            for (const auto& secret : {privateBackup, privateInvalid, privateApdu, validOcePriv, validCert, jniMaResp})
+            for (const auto& secret : {privateBackup, privateInvalid, privateApdu, validOcePriv, validCert, jniMaResp, sourceId})
                 require(line.find(secret) == std::string::npos, "Diagnostic must not contain synthetic sensitive input or output");
+        }
+        if (const char* path = std::getenv("ONEKEY_LITE_JNI_LOG_TEST_OUTPUT")) {
+            std::ofstream captured(path);
+            captured << sourceId << '\n';
+            for (const auto& line : jni.logs) captured << line << '\n';
+            captured.flush();
+            require(captured.good(), "Captured JNI metadata must be available to the real logger regression");
         }
 
         // Unauthenticated "9000" safe response through JNI must return nullptr and set errorCode

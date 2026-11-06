@@ -160,6 +160,13 @@ records its known session version. It never hashes or logs the input, a prefix,
 PIN length or backup metadata values. Actual command build logs use the native source
 ID, safe/plain boolean, the return code from that same build call and output
 presence. They do not reconstruct a command or consult a stale global error.
+The log-only source ID display is `source-v1:` followed by eight groups of eight
+lowercase hex digits separated by `-`, so the complete digest survives the
+logger's generic 64-hex redaction. Only private zero-argument formatters reading
+the compiled native symbol may produce this display; an unexpected symbol shape
+logs fixed `unavailable`. The symbol retains its canonical 64-hex value and ABI.
+Global logger sanitization remains unchanged: raw canonical IDs and unrelated
+key, mnemonic and token canaries must still be redacted.
 Logging is best effort: logger failures must not change SDK results or clear a
 previously pending JNI exception. Only exceptions raised by logger lookup/calls
 may be cleared by diagnostics.
@@ -252,6 +259,15 @@ Command compatibility/preflight regressions:
   harness captures the actual preflight call; the C++ JNI harness captures the
   production JNI logger call, including unavailable/throwing loggers and pending
   exception preservation. These are adapter tests, not device log-file evidence.
+- `node tests/native-log-sanitization.cjs <jni-capture> <bridge-capture>` sends
+  those actual build messages through the complete unchanged production
+  OneKeyLog Swift/Kotlin formatting and sanitization code. Only external types
+  are stubbed. A temporary same-file Swift test entry and Kotlin reflection
+  access private formatting without logger configuration or file IO. The full
+  grouped digest must survive and restore the canonical compiled value; raw
+  canonical IDs, unrelated 64-hex keys, 12-word text and Bearer/token canaries
+  must remain redacted independently and on the same line as a grouped ID.
+  This does not prove device file output, deduplication or rate limiting.
 - `node tests/source-id.cjs` executes both generators and the real podspec phase
   using declaration adapters, compiles its generated version symbol, checks
   directory/environment/ignored-file independence, and verifies a source edit
