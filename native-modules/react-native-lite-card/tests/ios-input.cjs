@@ -29,7 +29,8 @@ try {
     join(__dirname, 'objc/ManagerInputTest.m'),
     '-L', sdkBuild, '-lGPChannelSDKCore', '-Wl,-rpath,' + sdkBuild,
     '-o', join(output, 'input-tests')]);
-  run(join(output, 'input-tests'), []);
+  run(join(output, 'input-tests'), process.env.ONEKEY_LITE_IOS_LOG_TEST_OUTPUT
+    ? [process.env.ONEKEY_LITE_IOS_LOG_TEST_OUTPUT] : []);
 } finally {
   rmSync(output, { recursive: true, force: true });
 }
