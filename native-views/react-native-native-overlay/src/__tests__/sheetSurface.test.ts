@@ -17,17 +17,20 @@ jest.mock('react-native', () => ({
   }: {
     children?: ReactNode;
     style?: object | object[];
-  }) =>
-    jest.requireActual<typeof import('react')>('react').createElement(
+  }) => {
+    const resolvedStyle = Object.assign(
+      {},
+      ...(Array.isArray(style) ? style : [style])
+    );
+    return jest.requireActual<typeof import('react')>('react').createElement(
       'div',
       {
-        'data-background': Object.assign(
-          {},
-          ...(Array.isArray(style) ? style : [style])
-        ).backgroundColor,
+        'data-background': resolvedStyle.backgroundColor,
+        'data-margin-top': resolvedStyle.marginTop,
       },
       children
-    ),
+    );
+  },
   Pressable: () => null,
   StatusBar: () => null,
 }));
@@ -95,3 +98,31 @@ it.each([
     }
   }
 );
+
+it('overlaps the sheet surface tail behind the content surface', async () => {
+  Platform.OS = 'ios';
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(OverlayView, {
+          visible: true,
+          presentation: 'sheet',
+          sheet: { height: 200, maxWidth: 540, backgroundColor: '#fff' },
+        })
+      )
+    );
+    const margins = [...container.querySelectorAll('[data-margin-top]')].map(
+      (node) => node.getAttribute('data-margin-top')
+    );
+    // Only the safe-area tail overlaps the content surface: the fitted height
+    // is fractional, so the boundary must stay behind a painted pixel.
+    expect(margins).toEqual(['-2']);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

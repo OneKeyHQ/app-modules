@@ -464,6 +464,11 @@ Max-width sheet (`sheet.maxWidth`, default 540):
   background.
 - In compact windows the sheet is never wider than `maxWidth`, so the
   max-width sheet and the full-width sheet are identical there.
+- The drawn surface continues below the fitted content with a safe-area tail.
+  The tail renders behind the content surface and overlaps it by a small
+  amount, so the fractional boundary between the two views cannot antialias
+  into a hairline on scaled renders (Simulator windows, screenshots, screen
+  recordings).
 
 Width changes while open (rotation, folding, window resize):
 

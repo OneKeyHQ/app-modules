@@ -29,6 +29,13 @@ const DEFAULT_SHEET_MAX_RATIO = 0.92;
 const DEFAULT_SHEET_CORNER_RADIUS = 24;
 // Taller than any bottom safe area; the sheet clips the rest.
 const SHEET_SURFACE_TAIL_HEIGHT = 120;
+// The tail is a second drawn view under the content surface. Both edges sit on
+// the fitted sheet's fractional height, so each edge antialiases against the
+// transparent platform sheet and their coverages do not add up to one; the
+// seam shows as a hairline once the frame is scaled (Simulator window,
+// screenshots, screen recordings). Pull the tail up behind the opaque surface
+// (it renders first) so the boundary always lands on a painted pixel.
+const SHEET_SURFACE_TAIL_OVERLAP = 2;
 
 const REQUEST_REASONS: Record<string, IOverlayRequestDismissReason> = {
   back: 'back',
@@ -52,10 +59,13 @@ const styles = StyleSheet.create({
   sheetSurface: { borderCurve: 'continuous', overflow: 'hidden', flexGrow: 1 },
   // The platform sheet extends below the content (home indicator area); the
   // drawn surface continues into it so no backdrop shows under the content.
+  // It starts slightly above the surface bottom so the fractional boundary
+  // between the two views can never leave an unpainted row.
   sheetSurfaceTail: {
     position: 'absolute',
     top: '100%',
     height: SHEET_SURFACE_TAIL_HEIGHT,
+    marginTop: -SHEET_SURFACE_TAIL_OVERLAP,
   },
 });
 
