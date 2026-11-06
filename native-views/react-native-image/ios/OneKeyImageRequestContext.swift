@@ -706,7 +706,7 @@ enum OneKeyImageDecodeSizing {
 }
 
 enum OneKeyImageRequestContext {
-  static let safetyCacheGeneration = "onekey-image-safety-v2"
+  static let safetyCacheGeneration = "onekey-image-safety-v4"
   static let renderOptions: SDWebImage.SDWebImageOptions = [.retryFailed]
   static let preloadOptions: SDWebImage.SDWebImageOptions = [
     .retryFailed, .lowPriority,

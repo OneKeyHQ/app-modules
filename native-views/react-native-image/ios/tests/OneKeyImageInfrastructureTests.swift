@@ -234,7 +234,7 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     let url = try XCTUnwrap(URL(string: "https://example.com/image.png"))
     XCTAssertEqual(
       OneKeyImageRequestContext.filteredCacheKey(for: url),
-      "https://example.com/image.png|onekey-image-safety-v2"
+      "https://example.com/image.png|onekey-image-safety-v4"
     )
     let thumbnailOptions = OneKeyImageRequestContext.thumbnailOptions(pixelSize: size)
     XCTAssertEqual(
@@ -250,11 +250,11 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
       String(describing: type(of: $0))
     }
     XCTAssertTrue(names.contains("SDImageWebPCoder"))
-    XCTAssertTrue(names.contains("SDImageSVGCoder"))
+    XCTAssertTrue(names.contains("OneKeySVGCoder"))
     XCTAssertFalse(names.contains { $0.localizedCaseInsensitiveContains("AVIF") })
     XCTAssertTrue(
       (OneKeyImageCoderRegistry.coder.coders ?? []).contains {
-        ($0 as AnyObject) === SDImageSVGCoder.shared
+        $0 is SDImageSVGCoder && ($0 as AnyObject) !== SDImageSVGCoder.shared
       })
     XCTAssertTrue(
       (SDImageCodersManager.shared.coders ?? []).contains {

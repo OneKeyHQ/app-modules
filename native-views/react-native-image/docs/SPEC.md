@@ -211,6 +211,124 @@ Rendered and preloaded requests must use equivalent logical-size, pixel-ratio,
 overscan, headers, cache policy, and optimization inputs when the caller expects
 an exact decoded-memory hit.
 
+### 7.1 Embedded PNGs in SVG foreign objects — Implemented
+
+The native image decoder, including preload and reusable native-list hosts,
+recognizes SVG content independently of URL extensions. A `foreignObject`
+containing exactly one XHTML `img` with a base64 PNG source may be converted
+to an SVG `image` or bounded pixel geometry. The image must fill the explicitly
+sized foreign-object viewport; its geometry, transform, opacity, mask and clip
+remain in the SVG.
+Eight-digit hexadecimal paint attributes are translated to RGBA for both
+backends so the retained background and its alpha do not become black.
+Converted iOS thumbnails compensate for SVGCoder's screen-scale rasterization:
+requested physical pixels are not multiplied by display density again. Their
+output canvas is capped at 4,194,304 pixels, matching the 16 MiB decode target.
+This is a static image subset, not an HTML renderer. Other HTML, external
+sources, unsupported attributes/layout/CSS, malformed XML, DTDs and entities
+fail decoding instead of reporting a partially rendered image as successful.
+
+Normalization runs in the existing native decode job, never in a synchronous
+UI memory probe or a JS runtime. Existing request generations, cancellation,
+thumbnail sizing and native caches retain ownership. No WebView or additional
+network request is created. The native cache generation changes so earlier
+partially decoded SVGs cannot bypass the new decoder after an upgrade.
+
+Documents requiring conversion are limited to 8 MiB, 10,000 XML elements,
+64 levels and 16 foreign objects. Embedded PNGs share an aggregate 8 MiB encoded
+and 4,194,304-pixel budget, have sides at most 8,192, and must be static.
+The bounded PNG must also pass the platform raster decoder before conversion;
+a valid metadata header alone is insufficient to claim successful rendering.
+Only full-viewport `img` dimensions (omitted or `100%`) are supported. The
+supported HTML stylesheet is an `img` rule containing only full-viewport width
+and height and recognized image-rendering declarations. Unsupported
+foreign-object documents return the ordinary image-error/fallback result.
+Ordinary SVGs without foreign objects keep their existing decoder path.
+
+The foreign-object preflight recognizes UTF-8 and UTF-16 LE/BE byte signatures,
+with or without a UTF-16 BOM, before searching for XML markers. The existing XML
+parser remains authoritative for declared encodings and malformed input; UTF-16
+must not bypass conversion or DTD/entity rejection because of interleaved NULs.
+iOS serializes a converted document into one shared output buffer, appending
+each node directly instead of retaining a complete subtree string per ancestor.
+Serialization order and escaping remain unchanged; nesting must not multiply
+the retained serialized PNG payload. The existing byte, depth and raster budgets
+remain in force.
+
+Flat SVG rules for the bare element selectors `rect`, `circle`, `ellipse`,
+`line`, `polyline`, `polygon`, `text`, `tspan` and `stop` (including comma-separated
+lists of these selectors) retain their original stylesheet text for the native
+SVG backend. They may share a stylesheet with supported `img` rules and do not
+select converted image containers or generated pixel paths. Only `img` rules
+participate in embedded-image sampling. Selectors that could affect converted
+content, class/ID/compound selectors, at-rules and nested rules remain outside
+this subset and fail decoding. This is not a general CSS cascade implementation.
+Styles retain the backend's existing rendering semantics. In the current iOS
+CoreSVG backend, SVG rules must precede the artwork they style, and explicit
+presentation attributes take precedence over these rules. Later rules do not
+restyle preceding SVG elements. Embedded `img` sampling still resolves the whole
+document before conversion on both platforms.
+
+Acceptance requires the real On-Chain All-Stars #1982 document, a standard SVG,
+an unsupported HTML subtree, malformed and over-budget embedded PNGs, cached
+reloads and recycled hosts on both platforms. Source completion alone does not
+establish runtime or full-wallet acceptance.
+
+Focused regression coverage is in `OneKeySVGForeignObjectTests.swift` and
+`OneKeySVGForeignObjectTest.kt`; cache-identity expectations remain in the
+existing infrastructure/safety suites. The real #1982 source has been rendered
+with the production iOS coder on iOS Simulator and the production Android SVG
+decoder in an Android emulator Activity. Both reject unsupported HTML. This
+records decoder-level runtime evidence. The iOS wallet also displays the
+all-networks NFT list in light/dark themes and an On-Chain All-Stars detail.
+Thirty downward swipe gestures and a return to cached rows completed without
+an app restart, but the current list reached its end early; this does not
+establish thirty distinct screens or physical-device crash acceptance.
+Android full-wallet acceptance remains open.
+
+#### Pixel-art sampling — Implemented; focused runtime verified
+
+Supported `img` stylesheets are resolved in document/declaration order before
+conversion. The last recognized `image-rendering` value selects pixelated or
+smooth sampling; `auto`, `smooth` and `optimizeQuality` select smooth sampling.
+Without a declaration the HTML image keeps smooth sampling. Legacy nearest
+declarations are supported; `-ms-interpolation-mode` is a fallback only when no
+`image-rendering` declaration is present. This does not add general CSS support.
+
+CoreSVG ignores the embedded image's sampling hints. AndroidSVG 1.4 constructs
+`Paint(0)` for nearest sampling, which still enables filtering on Android Q+.
+For explicitly pixelated PNGs, both platforms convert equal-color horizontal
+pixel runs into filled SVG paths in a nested SVG viewport. Geometry, alpha,
+surrounding SVG layers and clipping are retained; other images keep the raster
+path. Integer-aligned enlargement
+must not introduce interpolated colors. Fractional/transformed vector edges
+may cover one output pixel; this is not an exact browser CSS pixel-grid match.
+Generated pixel paths explicitly disable inherited stroke. Root/group stroke
+continues to apply to original SVG siblings, but MUST NOT outline PNG pixel runs.
+Generated geometry shares a document-wide 16,384-run and 512-KiB path-data
+budget and the existing 10,000-element budget; exceeding it fails through the
+ordinary image fallback. PNG decoding retains the existing aggregate 4MP
+limit. A temporary pixel buffer may add at most 16 MiB during conversion and is
+released with the decode job; no JS heap copies or UI-thread pixel work is added.
+
+Smooth images retain native SVG bitmap drawing. Android acceptance must
+exercise `renderToPicture` and the wallet's `PictureDrawable` path, rather than
+only `renderToCanvas`. Both
+platforms invalidate older decoded cache entries. Pixel tests must cover
+integer/fractional sizes, alpha/background, stylesheet order, smooth images,
+ordinary SVGs and generated-geometry limits; wallet list/detail verification
+and physical-device acceptance are recorded separately.
+
+The production iOS coder passes ten focused XCTest cases. Android passes
+23 SVG/safety JVM tests and four emulator instrumentation cases through
+`PictureDrawable` and `ImageView`, including fractional display sizes and
+geometry-budget rejection. The real #1982 document renders at 192, 197 and
+480 pixels through both backends: integer sizes have exactly the source's
+22 composited colors, and pixels away from fractional edges match the source
+with zero channel error. The rebuilt iOS wallet displays sharp NFT list and
+detail images in dark mode. These checks do not establish physical-device,
+full Android wallet or the original thirty-distinct-screen stress acceptance.
+
 ## 8. Safety and resource limits
 
 Both platforms reject oversized or malformed encoded data before allowing an

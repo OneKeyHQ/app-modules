@@ -237,7 +237,7 @@ class OneKeyImageSafetyTest {
 
   @Test
   fun safetyVersionParticipatesInMemoryAndDiskCacheIdentity() {
-    assertEquals("onekey-image-safety-v2", OneKeyImageSafetyVersionedKey.CACHE_VERSION)
+    assertEquals("onekey-image-safety-v4", OneKeyImageSafetyVersionedKey.CACHE_VERSION)
     val original = ObjectKey("custom-cache-key")
     val first = OneKeyImageSafetyVersionedKey(original)
     val same = OneKeyImageSafetyVersionedKey(ObjectKey("custom-cache-key"))
