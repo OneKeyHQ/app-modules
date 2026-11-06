@@ -197,6 +197,31 @@ behavior. Vertical scrolling, refresh, snapping and repeated-current-tab behavio
 are unchanged. This state belongs to native UI instances, with no new React prop
 or per-frame JavaScript synchronization.
 
+## Per-page sticky header geometry
+
+Status: implemented in source. iOS 26.5 simulator recordings cover Market
+home taps and swipes and stock detail taps, including expanded and collapsed
+headers with empty destinations. Swipe cancellation and filled positions
+remain outside that runtime evidence.
+
+On iOS, an optional `stickyHeaderHeights` array supplies the sticky height in
+points for each child, in the same order as the children. The shared
+`stickyHeaderHeight` is the default for any missing or invalid value. The
+JavaScript wrapper sends at most one nonnegative integer per child. Android
+and Web continue to use the shared height.
+
+The native pager applies the destination's inset when preparing it for
+display. During a horizontal transition, each page keeps its own inset and
+the shared sticky slot uses the current page's height. Selection switches the
+slot to the destination's height without changing the shared collapse
+distance or the remembered body position. Cancelling a swipe restores the
+source geometry. Updating the height array refreshes owned insets. Recycling
+clears the array along with page identity.
+
+Acceptance covers adjacent and distant taps, horizontal swipe completion and
+cancellation, different heights at the top and after collapse, and a return
+to the prior page without vertical drift.
+
 ## Current-page top commands
 
 `scrollToPageTop(options?: Readonly<{ animated?: boolean }>)` restores the current

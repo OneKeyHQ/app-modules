@@ -41,6 +41,27 @@ using namespace facebook::react;
 
 @implementation RNCCollapsiblePagerFirstFrameTests
 
+- (void)testInactivePagesPrepareTheirOwnStickyInsetsBeforeSelection
+{
+  RNCCollapsiblePagerViewComponentView *pager = [RNCCollapsiblePagerViewComponentView new];
+  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+  props->headerHeight = 64;
+  props->stickyHeaderHeight = 44;
+  props->stickyHeaderHeights = "[44,132]";
+  [pager updateProps:props oldProps:nullptr];
+  UIScrollView *source = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  UIScrollView *destination = [[UIScrollView alloc] initWithFrame:source.frame];
+  source.contentSize = CGSizeMake(320, 900);
+  destination.contentSize = source.contentSize;
+
+  [pager applyInsetsToScrollView:source pageIndex:0 restore:NO];
+  [pager applyInsetsToScrollView:destination pageIndex:1 restore:NO];
+  XCTAssertEqualWithAccuracy(source.contentInset.top, 108, 0.01);
+  XCTAssertEqualWithAccuracy(destination.contentInset.top, 196, 0.01);
+  XCTAssertEqualWithAccuracy(destination.contentOffset.y, -196, 0.01);
+  XCTAssertEqualWithAccuracy(source.contentOffset.y, -108, 0.01);
+}
+
 - (void)testPendingLocalOverlayReservesManagedScrollerInsetBeforeSlotRebuild
 {
   RNCCollapsiblePagerViewComponentView *pager =
