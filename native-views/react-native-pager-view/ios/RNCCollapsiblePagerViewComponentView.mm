@@ -6788,6 +6788,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
 }
 
+// The header offset is stored apart from the body, so a collapsed header can sit
+// above a body that is already at its top.
+- (BOOL)isAwayFromPageTop
+{
+  return _headerOffset > 0.5;
+}
+
 - (void)scrollHeaderBy:(double)delta
 {
   if (!std::isfinite(delta)) return;

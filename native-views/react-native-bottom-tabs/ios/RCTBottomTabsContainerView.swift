@@ -1121,7 +1121,7 @@ class RCTBottomTabsContainerView: UIView {
           pagers: &nestedPagers
         )
       }
-      if !pagerScrollViews.isEmpty || !nestedPagers.isEmpty {
+      if !pagerScrollViews.isEmpty || !nestedPagers.isEmpty || isPagerAwayFromTop(view) {
         pagers.append(view)
       }
       return
@@ -1135,6 +1135,14 @@ class RCTBottomTabsContainerView: UIView {
     for subview in view.subviews {
       collectScrolledViews(in: subview, window: window, scrollViews: &scrollViews, pagers: &pagers)
     }
+  }
+
+  private func isPagerAwayFromTop(_ pager: UIView) -> Bool {
+    let selector = NSSelectorFromString("isAwayFromPageTop")
+    guard pager.responds(to: selector) else { return false }
+    typealias IsAwayFromPageTop = @convention(c) (AnyObject, Selector) -> Bool
+    let isAwayFromPageTop = unsafeBitCast(pager.method(for: selector), to: IsAwayFromPageTop.self)
+    return isAwayFromPageTop(pager, selector)
   }
 
   private func scrollPagerToTop(_ pager: UIView) {

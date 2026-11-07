@@ -1228,7 +1228,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       (view as ViewGroup).forEach { child ->
         collectScrolledViews(child, pagerScrollers, nestedPagers)
       }
-      if (pagerScrollers.isNotEmpty() || nestedPagers.isNotEmpty()) {
+      if (pagerScrollers.isNotEmpty() || nestedPagers.isNotEmpty() || isPagerAwayFromTop(view)) {
         pagers.add(view)
       }
       return
@@ -1243,6 +1243,11 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       view.forEach { child -> collectScrolledViews(child, scrollers, pagers) }
     }
   }
+
+  private fun isPagerAwayFromTop(pager: View): Boolean =
+    runCatching { pager.javaClass.getMethod("isAwayFromPageTop").invoke(pager) as Boolean }
+      .onFailure { Log.w("BottomTabs", "Unable to read the collapsible pager top state", it) }
+      .getOrDefault(false)
 
   private fun scrollPagerToTop(pager: View) {
     runCatching {

@@ -324,7 +324,7 @@ open class BottomBlurTest : InstrumentationTestCase() {
       var pressed: String? = null
       var doublePressed: String? = null
       tabs.onTabSelectedListener = { pressed = it }
-      tabs.onTabDoublePressedListener = { doublePressed = it }
+      tabs.onTabDoublePressedListener = { key, _ -> doublePressed = key }
       assertTrue(navigationBar().findViewById<View>(0).performClick())
       assertEquals("home", pressed)
       assertTrue(navigationBar().findViewById<View>(0).performClick())

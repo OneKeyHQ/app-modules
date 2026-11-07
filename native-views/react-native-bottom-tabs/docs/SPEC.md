@@ -198,7 +198,8 @@ when at least one of them was away from its top, false when all were already
 there, so the host can decide what a double press at the top means. Scrollers
 inside a `CollapsiblePagerView` are never moved directly because the pager owns
 their header state; the module calls the pager's own `scrollToTop` by name, as
-it has no package dependency on the pager. Only visible scrollers count: hidden
+it has no package dependency on the pager. A pager also counts as away from its
+top when its `isAwayFromPageTop` reports a collapsed header over a body at top. Only visible scrollers count: hidden
 tabs and off-screen pager pages are skipped. On iOS a scroller must have content
 taller than its viewport. Runtime verification: iOS 27 simulator (collapsible
 pagers, pushed list pages, and a double press that also switches tabs); Android

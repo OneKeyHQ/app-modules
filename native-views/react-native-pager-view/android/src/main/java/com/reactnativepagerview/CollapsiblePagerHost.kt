@@ -1138,6 +1138,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     scrollHeaderToOffset(if (target == 1) headerHeightPx else 0, animated)
   }
 
+  // The header offset is stored apart from the body, so a collapsed header can sit
+  // above a body that is already at its top.
+  @androidx.annotation.Keep
+  fun isAwayFromPageTop(): Boolean = headerOffsetPx > 0
+
   internal fun scrollHeaderBy(delta: Double) {
     if (!delta.isFinite()) return
     val density = resources.displayMetrics.density.toDouble()
