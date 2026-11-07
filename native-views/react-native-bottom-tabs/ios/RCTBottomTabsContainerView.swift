@@ -131,6 +131,10 @@ class RCTBottomTabsContainerView: UIView {
   // Double press is derived from consecutive selection requests so no extra
   // recognizer competes with the system tab bar gestures (iOS 26 drag-to-switch).
   private static let doublePressInterval: CFTimeInterval = 0.3
+  private static let scrollTopTolerance: CGFloat = 1
+  // Looked up by name: the pager lives in a package this one does not depend on.
+  private static let collapsiblePagerClass: AnyClass? =
+    NSClassFromString("RNCCollapsiblePagerViewComponentView")
   private var lastPressedTabKey: String?
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
@@ -1058,11 +1062,87 @@ class RCTBottomTabsContainerView: UIView {
     let now = CACurrentMediaTime()
     if lastPressedTabKey == key && now - lastPressedTabTime <= Self.doublePressInterval {
       lastPressedTabKey = nil
-      onTabDoublePress?(["key": key])
+      onTabDoublePress?(["key": key, "didScrollToTop": scrollSelectedTabToTop()])
       return
     }
     lastPressedTabKey = key
     lastPressedTabTime = now
+  }
+
+  /// Animates every visible vertical scroller of the selected tab back to its
+  /// top. Returns false when all of them were already there, which tells JS the
+  /// double press may leave the page instead.
+  private func scrollSelectedTabToTop() -> Bool {
+    guard let rootView = tabBarController?.selectedViewController?.view,
+          let window = rootView.window else {
+      return false
+    }
+    var scrollViews: [UIScrollView] = []
+    var pagers: [UIView] = []
+    collectScrolledViews(in: rootView, window: window, scrollViews: &scrollViews, pagers: &pagers)
+    for scrollView in scrollViews {
+      let topOffset = -scrollView.adjustedContentInset.top
+      scrollView.setContentOffset(
+        CGPoint(x: scrollView.contentOffset.x, y: topOffset),
+        animated: true
+      )
+    }
+    pagers.forEach(scrollPagerToTop)
+    return !scrollViews.isEmpty || !pagers.isEmpty
+  }
+
+  // Only content taller than its viewport can be scrolled back to the top.
+  private func isVerticallyScrollable(_ scrollView: UIScrollView) -> Bool {
+    let inset = scrollView.adjustedContentInset
+    let viewportHeight = scrollView.bounds.height - inset.top - inset.bottom
+    return scrollView.contentSize.height > viewportHeight + Self.scrollTopTolerance
+  }
+
+  private func collectScrolledViews(
+    in view: UIView,
+    window: UIWindow,
+    scrollViews: inout [UIScrollView],
+    pagers: inout [UIView]
+  ) {
+    guard !view.isHidden, view.alpha > 0.01 else { return }
+    // Pager siblings stay in the hierarchy off screen.
+    let frameInWindow = view.convert(view.bounds, to: window)
+    guard frameInWindow.intersects(window.bounds) else { return }
+    if let pagerClass = Self.collapsiblePagerClass, view.isKind(of: pagerClass) {
+      // The pager keeps header state for its pages, so moving one of its
+      // scrollers directly leaves the header out of sync. It scrolls itself.
+      var pagerScrollViews: [UIScrollView] = []
+      var nestedPagers: [UIView] = []
+      for subview in view.subviews {
+        collectScrolledViews(
+          in: subview,
+          window: window,
+          scrollViews: &pagerScrollViews,
+          pagers: &nestedPagers
+        )
+      }
+      if !pagerScrollViews.isEmpty || !nestedPagers.isEmpty {
+        pagers.append(view)
+      }
+      return
+    }
+    if let scrollView = view as? UIScrollView,
+       scrollView.isScrollEnabled,
+       isVerticallyScrollable(scrollView),
+       scrollView.contentOffset.y + scrollView.adjustedContentInset.top > Self.scrollTopTolerance {
+      scrollViews.append(scrollView)
+    }
+    for subview in view.subviews {
+      collectScrolledViews(in: subview, window: window, scrollViews: &scrollViews, pagers: &pagers)
+    }
+  }
+
+  private func scrollPagerToTop(_ pager: UIView) {
+    let selector = NSSelectorFromString("scrollToTop:animated:")
+    guard pager.responds(to: selector) else { return }
+    typealias ScrollToTop = @convention(c) (AnyObject, Selector, Int, Bool) -> Void
+    let scrollToTop = unsafeBitCast(pager.method(for: selector), to: ScrollToTop.self)
+    scrollToTop(pager, selector, 0, true)
   }
 
   // MARK: - Bottom accessory placement

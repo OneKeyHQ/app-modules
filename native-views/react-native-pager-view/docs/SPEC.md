@@ -264,6 +264,11 @@ intent. Real vertical consumption, a newer valid command, or owner detachment
 releases the target. Existing NativeList and NativeScroller public coordinates
 are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
 
+On Android, `CollapsiblePagerHost.scrollToTop(target, animated)` is public and
+kept from minification because `react-native-bottom-tabs` calls it by name on a
+tab double press, as neither package depends on the other. iOS exposes the same
+`scrollToTop:animated:` selector. Renaming either breaks that caller silently.
+
 ## Current-page partial header command
 
 `scrollHeaderBy(delta: number)` moves the current page's shared collapsible
