@@ -35,6 +35,28 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertFalse(secondKey.contains("session=second"))
   }
 
+  func testSharedDiskBudgetIsConfiguredForIsolatedManagerFirst() {
+    let shared = SDImageCache.shared
+    let age = shared.config.maxDiskAge
+    let memoryCost = shared.config.maxMemoryCost
+    let memoryCount = shared.config.maxMemoryCount
+    let defaultDiskSize = SDImageCacheConfig.default.maxDiskSize
+    let independentConfig = SDImageCacheConfig()
+    independentConfig.maxDiskSize = 7 * 1024 * 1024
+    let independent = SDImageCache(namespace: "independent-budget-\(UUID().uuidString)",
+      diskCacheDirectory: nil, config: independentConfig)
+
+    let isolated = OneKeyImagePipeline.makeIsolatedManager()
+    XCTAssertTrue((isolated.imageCache as AnyObject) === shared)
+    XCTAssertEqual(shared.config.maxDiskSize, 250 * 1024 * 1024)
+    XCTAssertTrue((OneKeyImagePipeline.manager.imageCache as AnyObject) === shared)
+    XCTAssertEqual(shared.config.maxDiskAge, age)
+    XCTAssertEqual(shared.config.maxMemoryCost, memoryCost)
+    XCTAssertEqual(shared.config.maxMemoryCount, memoryCount)
+    XCTAssertEqual(SDImageCacheConfig.default.maxDiskSize, defaultDiskSize)
+    XCTAssertEqual(independent.config.maxDiskSize, 7 * 1024 * 1024)
+  }
+
   func testOneKeyUsesDedicatedManagerAndDownloader() {
     XCTAssertFalse(OneKeyImagePipeline.manager === SDWebImageManager.shared)
     XCTAssertFalse(OneKeyImagePipeline.downloader === SDWebImageDownloader.shared)

@@ -135,6 +135,38 @@ library-level divergence rather than a different public success result.
 
 ## 6. Cache identity and synchronous memory probe
 
+**Process disk budgets — Implemented; focused pipeline runtime verified.**
+The iOS Image pipeline MUST configure the existing `SDImageCache.shared` instance
+with a 250 MiB disk-size budget before creating either its ordinary manager or
+an isolated request manager. Both manager paths retain that same cache object;
+configuration occurs once per process and does not change the global default
+configuration used by independent namespaces. Existing memory settings, access-
+date expiry and normal cleanup scheduling remain unchanged. Previously written
+entries are not synchronously purged at initialization; library cleanup may
+leave actual usage temporarily above the configured size.
+
+The component-owned disk budgets are:
+
+| Cache | iOS | Android |
+| --- | --- | --- |
+| Ordinary images | 250 MiB shared SDImageCache | 250 MiB default shared Glide cache |
+| Local blockie avatars | 32 MiB separate namespace | Included in the ordinary Glide cache |
+| Video preview frames | 128 MiB separate namespace | 128 MiB separate directory |
+| Combined configured budget | 410 MiB | 378 MiB |
+
+These totals describe the Image component's native caches, not a strict App-wide
+storage quota or measured usage. Preload and rendering share the ordinary cache;
+the existing Image clear APIs continue to clear ordinary, avatar and video
+preview caches. Native instances are process-shared and are not duplicated for
+separate main/background JavaScript heaps. React Native's other image pipelines,
+HTTP/URLCache, WebView storage, bundled assets and other App targets are outside
+these totals. This change introduces no JavaScript configuration API or new
+aggregate cache manager and does not change memory/bitmap-pool/animation budgets.
+A fresh-process iOS Simulator test using the exact pipeline implementation and
+new formal test method fails against the previous zero-budget implementation
+and passes with 250 MiB, including the isolated-manager-first path. This focused
+validation does not substitute for whole-module compilation and the full suite.
+
 ### 6.1 Exact identity
 
 Cache identity includes the effective request URL, canonical request headers,
