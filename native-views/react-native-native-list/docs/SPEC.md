@@ -1313,6 +1313,16 @@ bounded pixel tier, schema and capture fit. Recycle drops cell state, not the
 shared cached frame. Fit, orientation, black/transparent platform letterbox and
 row-owned tap behavior match a newly captured frame.
 
+Cookie isolation revision (Implemented and scoped-native-tested on Android;
+iOS unresolved): Android
+slots preserve existing player cookie semantics while honoring Image SPEC
+section 6.3 private-flight eligibility and transport cookie taint. Android
+requests with authenticated or unknown ambient-cookie state must not consume or
+produce reusable frames, including shared in-flight results. iOS cookie isolation
+is unresolved and is not covered by this Android guarantee.
+Detaching an iOS view with no window MUST preserve its last pixel tier and captured
+still; only a real attached-window scale/layout change can invalidate that tier.
+
 Slots subscribe only while visible, attached and foreground eligible. They
 cancel on invisibility, detach, background, recycle or identity/size change and
 release any owned player immediately. A same-key visible peer may take over;

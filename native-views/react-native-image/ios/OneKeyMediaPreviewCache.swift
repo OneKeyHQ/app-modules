@@ -30,6 +30,7 @@ public final class OneKeyMediaPreviewCache {
     let diskGeneration: Int
     var subscribers: [Subscription] = []
     var lease: UUID?
+    var lookupWorkItem: DispatchWorkItem?
     var timeout: DispatchWorkItem?
     var ready = false
     init(key: String, storageKey: String, policy: String, memory: Int, disk: Int) {
@@ -79,8 +80,8 @@ public final class OneKeyMediaPreviewCache {
     if permitsMemory(policy), let image = cache.imageFromMemoryCache(forKey: storageKey) {
       DispatchQueue.main.async { [weak self] in self?.finish(flight, image: image) }; return subscriber
     }
-    io.async { [weak self] in
-      guard let self else { return }
+    let lookup = DispatchWorkItem { [weak self, weak flight] in
+      guard let self, let flight, flight.lookupWorkItem?.isCancelled == false else { return }
       var image: UIImage?
       if self.permitsDisk(policy), let path = self.cache.cachePath(forKey: storageKey),
         let file = FileHandle(forReadingAtPath: path) {
@@ -106,6 +107,8 @@ public final class OneKeyMediaPreviewCache {
         } else { flight.ready = true; self.queue.append(key); self.pump() }
       }
     }
+    flight.lookupWorkItem = lookup
+    io.async(execute: lookup)
     return subscriber
   }
   public func cancel(_ subscription: Subscription?) {
@@ -120,6 +123,7 @@ public final class OneKeyMediaPreviewCache {
       flight.timeout?.cancel(); flight.timeout = nil; flight.lease = nil; active -= 1; subscription.revoked()
     }
     if flight.subscribers.isEmpty {
+      flight.lookupWorkItem?.cancel()
       flights.removeValue(forKey: flight.key); queue.removeAll { $0 == flight.key }
     } else if owned { queue.insert(flight.key, at: 0) }
     pump()
@@ -186,6 +190,7 @@ public final class OneKeyMediaPreviewCache {
   }
   private func finish(_ flight: Flight, image: UIImage?) {
     guard flights[flight.key] === flight else { return }
+    flight.lookupWorkItem?.cancel()
     flights.removeValue(forKey: flight.key); queue.removeAll { $0 == flight.key }
     if flight.lease != nil { active -= 1; flight.subscribers.first?.revoked() }
     flight.timeout?.cancel(); flight.lease = nil

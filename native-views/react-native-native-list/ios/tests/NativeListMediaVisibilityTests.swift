@@ -68,9 +68,14 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     XCTAssertFalse(slot.hasLivePlayer)
 
     // Leaving and re-entering the viewport keeps the still without rebuilding a player.
+    let playersBeforeDetach = slot.createdPlayerCount
     slot.view.removeFromSuperview()
+    XCTAssertTrue(slot.capturedFrame === frame, "Detaching has no replacement screen scale")
+    XCTAssertEqual(slot.createdPlayerCount, playersBeforeDetach)
     window.rootViewController?.view.addSubview(slot.view)
     slot.bind(["uri": url.absoluteString], key: "video", probeOrder: ["video"])
+    XCTAssertTrue(slot.capturedFrame === frame, "The same window retains the same tier")
+    XCTAssertEqual(slot.createdPlayerCount, playersBeforeDetach)
     XCTAssertFalse(slot.hasLivePlayer)
     XCTAssertNotNil(slot.capturedFrame)
     slot.recycle()

@@ -264,8 +264,8 @@ final class NativeListMediaPreviewSlot {
   }
 
   private func updateVisibility() {
-    if let requestedEdge, !video.bounds.isEmpty {
-      let edge = OneKeyMediaPreviewCache.targetEdge(max(video.bounds.width, video.bounds.height) * (video.window?.screen.scale ?? 1))
+    if let requestedEdge, let window = video.window, !video.bounds.isEmpty {
+      let edge = OneKeyMediaPreviewCache.targetEdge(max(video.bounds.width, video.bounds.height) * window.screen.scale)
       if edge != requestedEdge {
         cancelPreview(); self.requestedEdge = nil
         frameView.image = nil; frameView.isHidden = true; result = nil
