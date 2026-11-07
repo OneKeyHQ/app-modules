@@ -101,7 +101,11 @@ export function resolveOverlayAnimation(
   const enterInput = animation?.enter ?? defaults.enter;
   const fallbackMotion = defaults.enter.motion ?? 'quick';
   const enter = resolveTransition(enterInput, fallbackMotion, presets);
-  const exitInput = animation?.exit ?? defaults.exit ?? enterInput;
+  // A caller-supplied enter keeps mirroring when its exit is omitted; the
+  // presentation default exit only applies when neither transition was
+  // customized.
+  const exitInput =
+    animation?.exit ?? animation?.enter ?? defaults.exit ?? enterInput;
   // A presentation default exit keeps its own fallback motion instead of
   // inheriting the enter's.
   const exitFallbackMotion = defaults.exit?.motion ?? fallbackMotion;

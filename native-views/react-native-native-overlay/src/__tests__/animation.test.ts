@@ -165,6 +165,17 @@ describe('resolveOverlayAnimation', () => {
     expect(resolved.backdrop.motion).toEqual(resolved.exit.motion);
   });
 
+  it('mirrors a caller-supplied center enter when its exit is omitted', () => {
+    const resolved = resolveOverlayAnimation(
+      'center',
+      { enter: { type: 'slide', edge: 'bottom', motion: 'fast' } },
+      NATIVE_MOTION_PRESETS
+    );
+    expect(resolved.exit).toEqual(resolved.enter);
+    expect(resolved.exit).toMatchObject({ type: 'slide', edge: 'bottom' });
+    expect(resolved.exit.motion).toEqual(NATIVE_MOTION_PRESETS.fast);
+  });
+
   it('mirrors the enter when a presentation has no default exit', () => {
     const resolved = resolveOverlayAnimation(
       'sheet',

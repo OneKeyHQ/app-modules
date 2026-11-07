@@ -176,8 +176,10 @@ visible)`, `removePage(ownerKey)`.
 
 - `animation.enter` and `animation.exit` are each
   `{ type: none|fade|slide|scale, edge, distance, scale, offsetY, fade, origin: center|anchor, motion }`.
-- `exit` defaults to the presentation's own default exit when it defines one
-  (currently only `center`, see below); otherwise it mirrors `enter`.
+- `exit` resolution order: a caller-supplied `animation.exit`, otherwise a
+  mirror of a caller-supplied `animation.enter` (so custom enters keep their
+  old reverse exit), otherwise the presentation's own default exit (currently
+  only `center`, see below), otherwise the default `enter`.
 - `motion` is a preset name or a concrete `{ type: 'spring', spring: { mass, stiffness, damping, overshootClamping } }`
   or `{ type: 'timing', timing: { durationMs, easing: cubicBezier } }`.
 - Presets are resolved per platform:
