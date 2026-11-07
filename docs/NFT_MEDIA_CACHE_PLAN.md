@@ -246,57 +246,49 @@ player 创建/提取。完整 App 集成、Android 视频预览 runtime、真机
 升级均未完成，也未将这些状态写成通过。
 
 
-## PR #228 新一轮独立审计（2026-11-07，修复验收中）
+## PR #228 独立审计与最终范围（2026-11-07）
 
-初审 HEAD f881a072 的 native CI 确认两项本 PR 回归：Android data URI 策略
-已改 DATA 而既有测试仍断言 AUTOMATIC；iOS detach 时 window=nil 被按 scale1
-计算 tier，误清有效 still。ios-xctest 红灯只是 ios-native 失败的汇总 gate，
-没有第三个独立构建根因。两处均按生产合同修复并保留/加强既有断言，不能跳过测试。
+用户明确本功能当前没有 Cookie 会话管理需求，不提供通过 Cookie 管理媒体
+缓存的能力。已复核 Image Nitro props/preload/cache API、List ImageSource 与
+App NativeNFTList 调用：接口没有 Cookie/session 管理字段；现有 NFT 调用只传
+metadata.image URI、160×160 尺寸提示和 probeOrder。此结论仅针对本功能调用
+边界，不是对整个 App 所有 Cookie 用途的调查。
 
-另确认唯一人工 inline 的 Cookie 身份问题覆盖 memory、disk 和 shared flight。
-Android 安全合同：任意 ambient cookie 或读取状态失败时，使用唯一私有 flight、
-不读写首帧缓存；不改变现有 cookie 联网语义。无 cookie 的匿名 HTTP 保留缓存。
-App 中不相关 cookie 也可能使公共视频回到原逐 cell 提取，这是保守资格判断的性能代价。
-Android 包装原 cookie jar 记录 redirect/range 实际读写污点，lookup 交付、grant、
-complete、落盘前都检查资格/代际。实际传输污点不因初始 URI 为 file 而豁免。
-iOS 原通知代际方案已被下述真实测试否决，行为调整仍待用户明确范围选择；
-不能用初始 URL cookie 摘要或异步通知声称覆盖所有动态状态。
-key schema 升 v2，物理目录保持受现有 clear 管理，防 logout 后匿名读取 v1 私有帧。
+最终身份合同为 schema + 原始 URI + 调用方显式 headers + 实际尺寸 tier + fit；
+policy 控制 memory/disk 读写域并区分进行中 flight。环境 Cookie 不进入 key，
+不提供 Cookie 会话分区或 Cookie 变化自动失效。依赖环境 Cookie 改变身份或
+授权的媒体不在首帧缓存支持范围内。显式 headers 仍作为不透明值参与摘要。
+Android 原 RN CookieJar 与 iOS AVFoundation 默认联网行为保持，不据此宣称
+底层请求不携带 Cookie，也不宣称完成了跨 Cookie 会话安全隔离。
 
-完整审计报告与评分保存在外部 tests/PrAudit20261107/audit-report.md；最终验收
-须绑定修复后的 commit 与当前 HEAD CI。前轮 App 像素/完整 Home 未验收、性能
-测量已取消的边界保持，不以前轮局部通过替代本轮失败检查。
+据此撤回本轮 Android Cookie tracker、全局资格检查、private-flight/auth
+admission 与 key v2，恢复原服务合同和 key schema。Cookie 专属测试随功能撤回；
+独立的 queued lookup 取消测试迁回已有 cache 测试文件。此前等待的 iOS HTTP
+降级/transport 选择已取消，Cookie 范围不再作为本 PR 阻塞。完整审计历史保留
+在外部 tests/PrAudit20261107/audit-report.md，不能用历史 Cookie 测试成绩
+代表最终撤回后的实现通过。
 
-补充设计证伪：真实 iOS shared CookieStore 的 set/delete A→B→A 在立即检查时
-store 已回空但 queue:nil 通知仍为零，0.2 秒 RunLoop 后才收到通知。因此上面的
-iOS 通知代际提案已否决，不能用等待通知后再 complete 的回归冒充闭合屏障。
-iOS Cookie 行为等待用户选择 HTTP(S) 全私有提取或更大的 transport 调整；未答复
-不实施依赖该选择的行为。Android 按实际 CookieJar 读写污点合同继续独立修复；
-iOS detach 与 Android DATA 断言两处明确 CI 修复不受影响。
+继续保留三项独立修复：
 
+- iOS detach 只有真实 window 存在才比较 pixel tier，保留同一 still，避免以
+  scale1 误清帧；仍允许真实尺寸变化重新请求。
+- Android data URI 策略对应单测改为 DATA，并覆盖 PNG/SVG；HTTP 与 avatar
+  原断言保留。
+- 两端排队 disk lookup 持有取消句柄；最后订阅取消后未开始的读取/解码不再
+  执行，已有 peer 则保留；运行中的单个 I/O 可结束但旧结果不得投递。
 
-### 本轮局部验收通过（整 PR 仍被 iOS Cookie 问题阻塞）
+这三项已有修复前后/聚焦证据：Android 原第49行失败后 JUnit15通过；iOS 原
+f881 slot 真实 MP4 detach 失败后13检查通过；iOS cache38与queued取消4检查
+分别通过。Android 最终回退后正常 Gradle SDK APK 与 List Kotlin 构建52秒
+通过，专属 emulator-5586 上既有cache/SVG/迁移取消三项 instrumentation 全过
+（0.207秒）。首次增量构建出现 NativeList 内部符号解析失败，保留原失败日志；
+源码不变，仅本次命令加 -Pkotlin.incremental=false 后通过，没有修改构建配置
+或依赖，也不将过程描述为干净缓存命中。独立复核最终 source receipt 全部匹配，
+Cookie 专属测试文件确已删除，保留的取消测试实测通过。最终提交的托管 CI
+仍需绑定新 HEAD，不能复用已撤回 Cookie 版本的11项成绩或较早 App APK作为
+新版本完整验收。
 
-Astra 独立读取最终源码、日志与 audit-implementation-receipt.json，复算其中十项
-文件摘要均一致。Android 正常 Gradle 构建 37 秒通过，实际 instrumentation
-11/11、0.43 秒（9 项 Cookie/admission/cancel + 原 Cache/SVG 两项）。匿名旧
-snapshot 之后加入 private subscriber 的受控竞态得到不同 lease/像素；排队
-lookup 首个订阅取消保留任务、最后订阅取消移除任务且不回调；HTTP 130 满队列
-同 key 仍可 join、140 同 key burst 只提取一次。v1 文件拒绝、unknown 状态绕过
-已有 memory/disk、private 不共享等均已运行。redirect/range 用生产 jar wrapper
-配合可控 delegate，不能称真实 HTTP 跳转或 Media3 认证播放端到端验收。
-
-iOS 取消补丁重新编译并通过原 cache38；另一个真实 simulator gate 使用生产
-service/SDWebImage，以 Mirror 取得 worker/work item，四项检查确认首 cancel
-保留 shared lookup、末 cancel 取消、释放 worker 后无迟到回调。未增加生产 API。
-既有 cache38 本身不证明该取消细节，两类证据分开保留。
-
-两项原 CI 回归也有 before/after：Android 第49行本地原失败，修后正式 JUnit
-15/15；iOS before slot 与 f881 字节一致，真实 MP4 detach 失败，修后13检查
-通过（同UIImage、无新增player、真实resize）。这些已授权局部修复可提交到
-原 PR 让新 HEAD CI 验证。iOS HTTP Cookie 行为未改，安全阻塞仍未关闭；新 HEAD
-托管 CI 尚待验收，不能写整 PR 已通过或解决 Cookie 线程。
-
-运行时范围：slot 属 main UI，Image 服务为进程共享 native 单例；清理协调状态
-回主线程。本次没有 JS 帧对象或新增逐 runtime 反序列化副本，main/bg 双堆不等于
-Bitmap 复制两份；没有验证 bg 调用 clear 的完整跨运行时路径。
+运行时范围：slot 属 main UI，Image 服务为进程共享 native 单例，清理协调状态
+回主线程。没有 JS 帧对象或新增逐 runtime 反序列化副本，main/bg 双堆不等于
+Bitmap 各复制一份；未验证 bg 调用 clear 的完整跨运行时路径。App 图片像素、
+完整 Home NFT 路由以及已取消的滚动/帧率/内存测量边界维持，不扩大验证范围。

@@ -202,48 +202,22 @@ and sorted with unambiguous encoding; values participate in identity. Neither
 headers nor source/query text may appear in cache filenames, persisted metadata
 or logs. Row keys and presentation text do not affect resource identity.
 
-Cookie isolation revision (Implemented on Android; scoped native runtime verified;
-iOS unresolved): Android
-HTTP(S) requests with any ambient cookies, or an unreadable cookie state, MUST
-use a unique private flight and MUST NOT read or write either cache domain.
-This includes flight sharing under policy none. Native network cookie behavior
-stays unchanged. The WebView cookie store is checked globally, not only for the
-initial URL. This is intentionally conservative: unrelated cookies can disable
-public-video reuse. Cookie-free anonymous Android requests retain caching.
-Cookie values MUST NOT appear in logs, filenames or persisted metadata.
+Supported identity is the caller-provided URI and explicit request headers,
+plus schema, target pixel tier and capture fit. Cache policy constrains the
+read/write domains and distinguishes flights; it is not a cookie/session API.
+This feature does not manage cookie stores or provide cookie-session cache
+partitioning or automatic invalidation. Media whose identity or authorization
+changes through ambient cookies is outside this preview-cache support contract.
 
-Android eligibility and its generation MUST be checked at lookup delivery,
-extraction grant, completion and before persistence. The existing cookie jar is
-preserved while tracking actual nonempty cookie reads/writes across redirects
-and range requests. Actual transport taint applies even when the initial URI is
-local but references remote media; an initial non-HTTP scheme is not an exemption.
-Pending eligibility checks for the same resource/policy share a bounded admission
-group; duplicate subscribers do not consume additional flight capacity. A new
-subscriber invalidates an older asynchronous eligibility snapshot before delivery.
-Once tainted, a flight cannot persist or fan out an
-authenticated frame; waiting subscribers receive isolated extraction instead.
-Losing reuse eligibility is not a media failure: still-visible subscribers MUST
-retry in unique private flights without advancing image/video candidates.
-Private results are delivered only to their owner; cancellation and generation
-checks apply to deferred retries. Cache key schema advances to v2 so legacy v1
-frames cannot become anonymous hits after logout. Physical cache directories
-remain under existing clear operations so old entries can still be removed.
+Existing platform-player networking remains unchanged and may use its existing
+cookie handling. This is not a guarantee that network requests contain no cookies.
+Explicit header values remain opaque identity inputs; no cookie-specific key,
+tracker, private-flight rule or global-cookie eligibility check is introduced.
 
-iOS cookie isolation remains unresolved. Real shared-store changes can precede
-cookie-change notifications, so notification epochs cannot provide the required
-synchronous barrier. AVURLAssetHTTPCookiesKey supplements default cookies rather
-than proving they are disabled or frozen. The existing iOS HTTP cache behavior
-is unchanged pending an explicit scope choice; no iOS cookie-isolation acceptance
-is claimed. This does not prevent the independent detach/tier or queued-lookup
-cancellation corrections.
-
-The Android cookie/coordinator revision passed nine focused instrumentation tests,
-including real CookieManager presence, unknown-state cache bypass, private flights,
-v1 disk rejection, HTTP admission capacity, stale admission snapshots and queued
-lookup cancellation. Together with the existing cache and SVG tests, the normal
-AndroidTest APK passed 11 tests. Redirect/range taint tests invoke the production
-CookieJar wrapper with a controlled delegate; they do not establish a real
-HTTP redirect or Media3 authenticated-playback end-to-end result.
+The final scoped Android implementation passed a normal Gradle SDK/test-APK build
+and three instrumentation tests: same-key memory/disk reuse, real embedded-SVG
+pixels/cache sources, and queued-lookup cancellation with a surviving peer.
+This does not verify cookie-authenticated media or complete App NFT rendering.
 
 Target tiers are 128, 256, 512 and 1024 pixels on the longest edge. Frames retain
 aspect ratio and normalized orientation, with at most 1,048,576 pixels. Empty
@@ -303,15 +277,15 @@ does not cancel a current view's valid extraction or an already obtained memory
 result: it may still display without refilling that domain. An outstanding disk
 lookup must recheck the disk generation before returning or promoting its result.
 
-The shared cache implementation has scoped runtime evidence, with iOS cookie
-isolation still unresolved as stated above. The production iOS cache service
+The shared cache implementation has scoped runtime evidence within the URI and
+explicit-header contract above. The production iOS cache service
 passed 38 simulator checks and a separate-process disk reload; its queued-lookup
 cancellation revision reran the 38 checks and passed four focused queued-lookup
 cancellation checks with the production service. The production video slot previously
 passed 14 checks using a real H.264 MP4, and the detach/tier correction passed a
 focused 13-check replay. Android cache/coordinator and SVG evidence is described
-above; Android video-player runtime, full-app NFT integration and physical-device
-performance remain pending. The complete scoped plan and
+in the acceptance record; Android video-player runtime, full-app NFT integration
+and physical-device performance remain pending. The complete scoped plan and
 acceptance matrix are in ../../../docs/NFT_MEDIA_CACHE_PLAN.md. Required native
 tests cover real disk I/O, cold/warm/restart hits, same-key deduplication, owner
 cancellation, FIFO/bounds/timeouts, headers/size/fit isolation, clear races, corrupt

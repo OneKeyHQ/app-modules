@@ -1313,13 +1313,12 @@ bounded pixel tier, schema and capture fit. Recycle drops cell state, not the
 shared cached frame. Fit, orientation, black/transparent platform letterbox and
 row-owned tap behavior match a newly captured frame.
 
-Cookie isolation revision (Implemented and scoped-native-tested on Android;
-iOS unresolved): Android
-slots preserve existing player cookie semantics while honoring Image SPEC
-section 6.3 private-flight eligibility and transport cookie taint. Android
-requests with authenticated or unknown ambient-cookie state must not consume or
-produce reusable frames, including shared in-flight results. iOS cookie isolation
-is unresolved and is not covered by this Android guarantee.
+The media descriptor exposes URI, explicit headers, dimensions, fit and cache
+policy, with no cookie/session management API. Preview identity does not track
+ambient cookie sessions or automatically invalidate on cookie changes; media
+that requires that behavior is outside the supported preview-cache contract.
+Existing AVPlayer/Media3 networking and cookie handling remain unchanged. The
+cache does not promise that underlying network requests are cookie-free.
 Detaching an iOS view with no window MUST preserve its last pixel tier and captured
 still; only a real attached-window scale/layout change can invalidate that tier.
 

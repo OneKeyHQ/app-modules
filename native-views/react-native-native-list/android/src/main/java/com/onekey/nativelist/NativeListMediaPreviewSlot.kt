@@ -174,7 +174,7 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
       val generation = playerGeneration
       try {
         val client = OkHttpClientProvider.getOkHttpClient().newBuilder()
-          .cookieJar(previewCache.trackCookies(lease, JavaNetCookieJar(ForwardingCookieHandler(context)))).build()
+          .cookieJar(JavaNetCookieJar(ForwardingCookieHandler(context))).build()
         val http = OkHttpDataSource.Factory(client).setDefaultRequestProperties(headers)
         if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) http.setUserAgent(Util.getUserAgent(context, context.packageName))
         val sources = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))

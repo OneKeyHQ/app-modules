@@ -16,6 +16,7 @@ import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @Suppress("DEPRECATION")
 class OneKeyMediaPreviewCacheTest : InstrumentationTestCase() {
@@ -90,5 +91,26 @@ class OneKeyMediaPreviewCacheTest : InstrumentationTestCase() {
     assertEquals(DataSource.MEMORY_CACHE, load(false))
     main { Glide.get(context).clearMemory() }
     assertEquals(DataSource.DATA_DISK_CACHE, load(true))
+  }
+
+  fun testLastCancellationRemovesQueuedDiskLookupButKeepsSharedWaiter() {
+    val directory = File(instrumentation.targetContext.cacheDir, "queued-preview-${UUID.randomUUID()}")
+    val cache = OneKeyMediaPreviewCache.isolated(instrumentation.targetContext, directory)
+    val ioField = cache.javaClass.getDeclaredField("io").apply { isAccessible = true }
+    val io = ioField.get(cache) as java.util.concurrent.ThreadPoolExecutor
+    val entered = CountDownLatch(1); val release = CountDownLatch(1); val drained = CountDownLatch(1)
+    val callbacks = AtomicInteger()
+    io.execute { entered.countDown(); release.await(5, TimeUnit.SECONDS) }; await(entered)
+    main {
+      fun request() = cache.request("test://cancel-before-lookup", emptyMap(), 128, "contain", "disk",
+        onImage = { callbacks.incrementAndGet() }, onExtract = { callbacks.incrementAndGet() },
+        onRevoked = {}, onFailure = { callbacks.incrementAndGet() })
+      val first = request(); val second = request()
+      assertEquals(1, io.queue.size)
+      cache.cancel(first); assertEquals(1, io.queue.size)
+      cache.cancel(second); assertEquals(0, io.queue.size)
+      cache.clearDisk { drained.countDown() }
+    }
+    release.countDown(); await(drained); assertEquals(0, callbacks.get())
   }
 }
