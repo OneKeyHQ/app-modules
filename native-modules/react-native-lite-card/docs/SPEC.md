@@ -86,6 +86,22 @@ data in that iOS error path. These existing differences must remain explicit.
 
 ## Write identity and state reads
 
+Card information crosses the React Native boundary with `isNewCard` as a
+JavaScript boolean on both platforms: `true` for a new card and `false` for an
+activated card. iOS must box this field as `BOOL`, not an integer comparison
+result (`0`/`1`), so callers can validate its type before requesting a PIN.
+The host iOS regression checks the production V1/V2 card-info payloads for both
+states using the same NSNumber boolean-class distinction as React Native.
+Physical-card and end-to-end React Native acceptance remain open.
+
+`CardInfo.hasBackup` is `boolean | null`: Android reports its known backup
+state, while iOS returns `null` for unknown state. Callers must preserve this
+distinction instead of interpreting unknown as confirmed absence of a backup.
+NFC event `code` fields are numbers, matching the existing Android event payloads
+and the public connection listener. These declarations describe existing native
+values; they do not change native event payloads or operation ordering. Wrapper
+tests cover nullable/boolean backup states and numeric connection event codes.
+
 Status: Implemented in source; native runtime and physical-card acceptance remain
 open. State reads distinguish a failed or empty read from a confirmed empty/new
 card and return existing read errors on failure. Android V1 infers backup from
@@ -193,8 +209,9 @@ reviewed; a minified Android application logging run remains unverified.
 ### API, lifecycle, and compatibility
 
 Except for command input compatibility/preflight, the identity guard, fail-closed
-state reads and Android operation ownership above, card commands, callback
-payloads, validation, operation ordering, cancellation, retry and timeout behavior
+state reads, card-info boolean correction and Android operation ownership above,
+card commands, callback payloads, validation, operation ordering, cancellation,
+retry and timeout behavior
 remain unchanged. No server logs, new
 dependencies, or cross-layer correlation parameters are added.
 
@@ -261,8 +278,8 @@ Command compatibility/preflight regressions:
 - `node tests/android-session.cjs` executes production `setMnemonic` validation
   for V1/V2, both write modes, invalid syntax and byte limits before fake PIN,
   verify/reset and backup phases. Valid odd/even inputs retain the write sequence.
-- `node tests/ios-input.cjs` compiles the production iOS manager on macOS with
-  fake CoreNFC/card adapters. It covers syntax rejection before session creation,
+- `node tests/ios-input.cjs` compiles the production iOS manager and V1/V2 card
+  classes on macOS with fake CoreNFC/card adapters. It covers syntax rejection before session creation,
   detected-version byte limits before identity/card-operation dispatch, one
   existing generic-error callback, cleared input properties and unchanged valid
   input forwarding for V1/V2 and both write modes. It does not execute a real
