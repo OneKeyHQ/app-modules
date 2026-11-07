@@ -94,6 +94,14 @@ The host iOS regression checks the production V1/V2 card-info payloads for both
 states using the same NSNumber boolean-class distinction as React Native.
 Physical-card and end-to-end React Native acceptance remain open.
 
+`CardInfo.hasBackup` is `boolean | null`: Android reports its known backup
+state, while iOS returns `null` for unknown state. Callers must preserve this
+distinction instead of interpreting unknown as confirmed absence of a backup.
+NFC event `code` fields are numbers, matching the existing Android event payloads
+and the public connection listener. These declarations describe existing native
+values; they do not change native event payloads or operation ordering. Wrapper
+tests cover nullable/boolean backup states and numeric connection event codes.
+
 Status: Implemented in source; native runtime and physical-card acceptance remain
 open. State reads distinguish a failed or empty read from a confirmed empty/new
 card and return existing read errors on failure. Android V1 infers backup from
