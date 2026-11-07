@@ -73,6 +73,7 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
 
   func clearMemory() throws -> Promise<Void> {
     Promise.async {
+      await MainActor.run { OneKeyMediaPreviewCache.shared.clearMemory() }
       SDImageCache.shared.clearMemory()
       // OneKey patch: Clear the dedicated local-avatar cache with public cache operations.
       OneKeyAvatarImageLoader.cache.clearMemory()
@@ -83,6 +84,11 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
   func clearDisk() throws -> Promise<Void> {
     Promise.async {
       await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+          OneKeyMediaPreviewCache.shared.clearDisk { continuation.resume() }
+        }
+      }
+      await withCheckedContinuation { continuation in
         SDImageCache.shared.clearDisk { continuation.resume() }
       }
       await withCheckedContinuation { continuation in
@@ -92,11 +98,23 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
   }
 
   func clearAll() throws -> Promise<Void> {
-    SDImageCache.shared.clearMemory()
-    // OneKey patch: The avatar cache is shared by render and preload requests.
-    OneKeyAvatarImageLoader.cache.clearMemory()
-    OneKeyImageMemoryVariantRegistry.shared.clear()
-    return try clearDisk()
+    Promise.async {
+      await MainActor.run { OneKeyMediaPreviewCache.shared.clearMemory() }
+      SDImageCache.shared.clearMemory()
+      OneKeyAvatarImageLoader.cache.clearMemory()
+      OneKeyImageMemoryVariantRegistry.shared.clear()
+      await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+          OneKeyMediaPreviewCache.shared.clearDisk { continuation.resume() }
+        }
+      }
+      await withCheckedContinuation { continuation in
+        SDImageCache.shared.clearDisk { continuation.resume() }
+      }
+      await withCheckedContinuation { continuation in
+        OneKeyAvatarImageLoader.cache.clearDisk { continuation.resume() }
+      }
+    }
   }
 
   private static func preload(

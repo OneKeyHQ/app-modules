@@ -26,6 +26,8 @@ import com.facebook.react.modules.network.OkHttpClientProvider
 import com.facebook.react.uimanager.ThemedReactContext
 import okhttp3.JavaNetCookieJar
 import org.json.JSONObject
+import com.margelo.nitro.onekeyimage.OneKeyMediaPreviewCache
+import java.util.UUID
 
 /**
  * Uses Media3 like native Video, but never starts playback or requests audio focus. A player
@@ -35,9 +37,10 @@ import org.json.JSONObject
 internal class NativeListMediaPreviewSlot(private val context: ThemedReactContext) {
   val view: FrameLayout = object : FrameLayout(context) {
     override fun onAttachedToWindow() { super.onAttachedToWindow(); observeViewport(); updateVisibility() }
-    override fun onDetachedFromWindow() { stopObservingViewport(); releasePlayer(); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { stopObservingViewport(); cancelPreview(); super.onDetachedFromWindow() }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); updateVisibility() }
     override fun onWindowVisibilityChanged(visibility: Int) { super.onWindowVisibilityChanged(visibility); updateVisibility() }
-    override fun onVisibilityAggregated(isVisible: Boolean) { super.onVisibilityAggregated(isVisible); if (isVisible) updateVisibility() else releasePlayer() }
+    override fun onVisibilityAggregated(isVisible: Boolean) { super.onVisibilityAggregated(isVisible); if (isVisible) updateVisibility() else cancelPreview() }
   }
   private val image = NativeListImageSlot(context)
   private val video = AspectRatioFrameLayout(context)
@@ -51,6 +54,10 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
   private var completion: ((Boolean) -> Unit)? = null
   private var pendingCompletion: Runnable? = null
   private var player: ExoPlayer? = null
+  private var subscription: OneKeyMediaPreviewCache.Subscription? = null
+  private var extractionLease: UUID? = null
+  private var requestedEdge: Int? = null
+  private val previewCache by lazy { OneKeyMediaPreviewCache.get(context) }
   private var resumeVideo: (() -> Unit)? = null
   private var viewportObserver: ViewTreeObserver? = null
   private val visibleRect = Rect()
@@ -99,7 +106,7 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     val candidate = candidateGeneration
     resumeVideo = null
     stopObservingViewport()
-    releasePlayer()
+    cancelPreview()
     if (attempt >= order.size) {
       result = false
       completion?.invoke(false)
@@ -133,8 +140,36 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     val uri = source.optString("uri")
     if (uri.isBlank()) { finished(false); return }
     val headers = source.optJSONObject("headers")?.let { values -> values.keys().asSequence().associateWith { values.optString(it) } } ?: emptyMap()
+    val fitKey = if ((fit ?: source.optString("contentFit")) == "cover") "cover" else "contain"
     resumeVideo = start@{
-      if (epoch != token || candidateGeneration != candidate || player != null) return@start
+      if (epoch != token || candidateGeneration != candidate || subscription != null || frame.drawable != null ||
+          video.width <= 0 || video.height <= 0) return@start
+      val edge = OneKeyMediaPreviewCache.targetEdge(maxOf(view.width, view.height))
+      requestedEdge = edge
+      subscription = previewCache.request(uri, headers, edge, fitKey, source.optString("cachePolicy", "memory-disk"),
+        onImage = { still ->
+          if (epoch == token && candidateGeneration == candidate) {
+            subscription = null
+            video.setAspectRatio(still.width.toFloat() / still.height)
+            frame.setImageBitmap(still); frame.visibility = View.VISIBLE
+            stopObservingViewport(); finished(true)
+          }
+        }, onExtract = { lease ->
+          if (epoch == token && candidateGeneration == candidate) {
+            extractionLease = lease
+            updateVisibility()
+            if (extractionLease == lease && requestedEdge == edge) startPlayer(uri, headers, token, candidate, edge, lease)
+          }
+        }, onRevoked = { extractionLease = null; releasePlayer() },
+        onFailure = {
+          if (epoch == token && candidateGeneration == candidate) { subscription = null; finished(false) }
+        })
+    }
+    observeViewport()
+    updateVisibility()
+  }
+
+  private fun startPlayer(uri: String, headers: Map<String, String>, token: Int, candidate: Int, edge: Int, lease: UUID) {
       playerGeneration++
       val generation = playerGeneration
       try {
@@ -158,10 +193,11 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
         next.addListener(object : Player.Listener {
           override fun onRenderedFirstFrame() {
             if (playerGeneration != generation) return
-            finished(true, generation)
-            captureFirstFrame(token, candidate, generation, FIRST_FRAME_CAPTURE_ATTEMPTS)
+            captureFirstFrame(token, candidate, generation, FIRST_FRAME_CAPTURE_ATTEMPTS, edge, lease)
           }
-          override fun onPlayerError(error: PlaybackException) { if (playerGeneration == generation) finished(false, generation) }
+          override fun onPlayerError(error: PlaybackException) {
+            view.post { if (playerGeneration == generation) previewCache.fail(lease) }
+          }
           override fun onVideoSizeChanged(size: VideoSize) {
             if (playerGeneration == generation && size.height > 0) video.setAspectRatio(size.width * size.pixelWidthHeightRatio / size.height)
           }
@@ -170,39 +206,26 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
         next.prepare()
         next.pause()
       } catch (_: Exception) {
-        releasePlayer()
-        finished(false)
+        previewCache.fail(lease)
       }
-    }
-    observeViewport()
-    updateVisibility()
   }
 
-  /**
-   * The rendered frame reaches the TextureView asynchronously, so a transparent copy is
-   * retried on later frames. If no frame can be copied the paused player stays attached.
-   */
-  private fun captureFirstFrame(token: Int, candidate: Int, generation: Int, attemptsLeft: Int) {
+  /** TextureView requires UI access; request bounded pixels before background encoding. */
+  private fun captureFirstFrame(token: Int, candidate: Int, generation: Int, attemptsLeft: Int, edge: Int, lease: UUID) {
     view.postOnAnimation {
       if (epoch != token || candidateGeneration != candidate || playerGeneration != generation) return@postOnAnimation
-      // Releasing first would make the queued success completion drop itself as stale.
-      if (result != true) {
-        captureFirstFrame(token, candidate, generation, attemptsLeft)
-        return@postOnAnimation
-      }
       val still = if (texture.isAvailable && texture.width > 0 && texture.height > 0) {
-        runCatching { texture.getBitmap(texture.width, texture.height) }.getOrNull()
+        val scale = minOf(1.0, edge.toDouble() / maxOf(texture.width, texture.height))
+        runCatching { texture.getBitmap(maxOf(1, (texture.width * scale).toInt()), maxOf(1, (texture.height * scale).toInt())) }.getOrNull()
       } else null
       if (still == null || !hasVisiblePixels(still)) {
         still?.recycle()
-        if (attemptsLeft > 1) captureFirstFrame(token, candidate, generation, attemptsLeft - 1)
+        if (attemptsLeft > 1) captureFirstFrame(token, candidate, generation, attemptsLeft - 1, edge, lease)
+        else previewCache.fail(lease)
         return@postOnAnimation
       }
-      frame.setImageBitmap(still)
-      frame.visibility = View.VISIBLE
-      resumeVideo = null
-      stopObservingViewport()
       releasePlayer()
+      previewCache.complete(lease, still)
     }
   }
 
@@ -213,7 +236,7 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
   }
 
   private fun observeViewport() {
-    if (viewportObserver != null || resumeVideo == null || !view.isAttachedToWindow) return
+    if (viewportObserver != null || resumeVideo == null || frame.drawable != null || !view.isAttachedToWindow) return
     view.viewTreeObserver.takeIf { it.isAlive }?.let {
       it.addOnScrollChangedListener(scrollListener)
       it.addOnGlobalLayoutListener(layoutListener)
@@ -230,6 +253,13 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     viewportObserver = null
   }
   private fun updateVisibility() {
+    requestedEdge?.let { previous ->
+      if (video.width > 0 && video.height > 0 && OneKeyMediaPreviewCache.targetEdge(maxOf(view.width, view.height)) != previous) {
+        cancelPreview(); requestedEdge = null
+        frame.setImageDrawable(null); frame.visibility = View.GONE; result = null
+        observeViewport()
+      }
+    }
     var ancestor: View? = view
     var opaque = true
     while (ancestor != null) {
@@ -238,7 +268,11 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     }
     if (opaque && view.isAttachedToWindow && view.windowVisibility == View.VISIBLE && view.isShown &&
         view.getGlobalVisibleRect(visibleRect) && !visibleRect.isEmpty) resumeVideo?.invoke()
-    else releasePlayer()
+    else cancelPreview()
+  }
+  private fun cancelPreview() {
+    val previous = subscription; subscription = null
+    previewCache.cancel(previous); extractionLease = null; releasePlayer()
   }
   private fun releasePlayer() {
     playerGeneration++
@@ -251,11 +285,12 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     pendingCompletion = null
     resumeVideo = null
     stopObservingViewport()
-    releasePlayer()
+    cancelPreview()
     image.recycle()
     image.view.visibility = View.VISIBLE
     video.visibility = View.GONE
     video.setAspectRatio(0f)
+    requestedEdge = null
     frame.setImageDrawable(null)
     frame.visibility = View.GONE
     identity = null; result = null; completion = null

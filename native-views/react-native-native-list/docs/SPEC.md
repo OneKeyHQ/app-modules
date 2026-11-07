@@ -1296,6 +1296,76 @@ disposal. Unit checks prove transition semantics, not rendered behavior.
 
 ## Native media preview probing
 
+### Persistent first-frame revision — Source implemented; scoped iOS validation
+
+This revision supersedes the cell-only frame retention, unbounded visible-player
+count and copy-failure retained-player behavior described in the baseline below.
+Image owns the native-only preview cache and extraction coordinator defined in
+its SPEC §6.3; NativeList retains the paused/muted player and view lifecycle.
+No public descriptor, JavaScript API or Web renderer behavior changes.
+
+On reaching the video candidate, a visible slot queries permitted decoded memory
+and then disk before requesting extraction. A hit displays the still frame and
+creates no AVPlayer/ExoPlayer. Normal image candidates retain their original
+precedence and image cache; a video-cache hit MUST NOT bypass an earlier image
+candidate. Cache identity excludes row key and includes URI, canonical headers,
+bounded pixel tier, schema and capture fit. Recycle drops cell state, not the
+shared cached frame. Fit, orientation, black/transparent platform letterbox and
+row-owned tap behavior match a newly captured frame.
+
+The media descriptor exposes URI, explicit headers, dimensions, fit and cache
+policy, with no cookie/session management API. Preview identity does not track
+ambient cookie sessions or automatically invalidate on cookie changes; media
+that requires that behavior is outside the supported preview-cache contract.
+Existing AVPlayer/Media3 networking and cookie handling remain unchanged. The
+cache does not promise that underlying network requests are cookie-free.
+Detaching an iOS view with no window MUST preserve its last pixel tier and captured
+still; only a real attached-window scale/layout change can invalidate that tier.
+
+Slots subscribe only while visible, attached and foreground eligible. They
+cancel on invisibility, detach, background, recycle or identity/size change and
+release any owned player immediately. A same-key visible peer may take over;
+old owner, binding, candidate and player generations cannot attach a frame or
+complete a newer request. At most two flights extract concurrently, bounded by
+Image's queue and 10-second grant deadline. The existing six short copy attempts
+may run, but exhaustion now releases the player and advances/fails the candidate
+instead of retaining a paused player indefinitely. Success is emitted after a
+valid still exists, not solely when the player reports its first rendered frame.
+No failed extraction is cached. Disk-write failure still permits a successful
+still to display. A cached or newly copied still releases player and viewport
+observers, and ordinary text-only rebinding retains the current presentation.
+
+The cache dimensions use actual view pixel size, capped to a 1024-pixel long edge
+and 1,048,576 pixels with source aspect ratio preserved. Empty layout defers work.
+iOS retains the CVPixelBuffer for bounded background CI conversion rather than
+building a full-resolution UIImage on the UI thread. Android performs a bounded
+TextureView copy on the UI thread and background encoding; its cached presentation
+must restore the aspect-ratio container after reuse. Source headers and URL/query
+text are not written into cache filenames, metadata or logs.
+
+The production iOS video slot passed 14 simulator checks with a real H.264 MP4,
+including cold capture/player release, cross-cell/recycled memory reuse, disk
+reuse after memory clear and a layout-tier resize. Its harness substitutes only
+the unused image-candidate host; image-to-video fallback and full-app integration
+were not exercised. Android runtime and physical-device performance remain
+pending. The complete acceptance matrix adds warm cross-cell/recycled hits with
+zero new players, disk hits after memory clear and process restart, same-source
+deduplication, owner cancellation/transfer, concurrency and timeout bounds,
+clear-generation races, corrupt entry repair and all existing probing/lifecycle
+cases. Native tests and simulator evidence cannot establish device FPS or memory
+improvement; those require workload-specific measurements on target devices.
+
+The final Android slot, including deferred Media3 error release, compiled in the
+consumer's normal native build and final incremental APK. Matching SDK/consumer
+source hashes and APK provenance were checked, and the App visibly started on
+the isolated emulator. This is build/startup acceptance, not Android video-frame
+or complete Home NFT route acceptance. A temporary Home probe lacked account
+context; a later diagnostic Dialog had an unexplained black capture. Neither is
+recorded as a passing NFT visual case. Further scrolling, frame-cache and
+memory/performance measurements are outside this PR's recorded acceptance scope.
+
+### Baseline before the persistent first-frame revision
+
 Status: Source implemented; native runtime acceptance pending. `mediaTile.media`
 is an opt-in native-only preview descriptor: `{ source: ImageSource, probeOrder:
 ('image' | 'video')[] }`. The order contains one or two distinct candidates.

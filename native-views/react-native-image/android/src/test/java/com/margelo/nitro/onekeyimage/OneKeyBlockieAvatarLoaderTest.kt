@@ -46,7 +46,8 @@ class OneKeyBlockieAvatarLoaderTest {
     assertFalse(strategy.isDataCacheable(DataSource.DATA_DISK_CACHE))
     assertFalse(DiskCacheStrategy.ALL.isDataCacheable(DataSource.LOCAL))
     assertEquals(DiskCacheStrategy.AUTOMATIC, oneKeyImageMemoryDiskStrategy("https://example.com/image.png"))
-    assertEquals(DiskCacheStrategy.AUTOMATIC, oneKeyImageMemoryDiskStrategy("data:image/png;base64,AA=="))
+    assertEquals(DiskCacheStrategy.DATA, oneKeyImageMemoryDiskStrategy("data:image/png;base64,AA=="))
+    assertEquals(DiskCacheStrategy.DATA, oneKeyImageMemoryDiskStrategy("data:image/svg+xml;base64,PHN2Zy8+"))
     assertFalse(DiskCacheStrategy.AUTOMATIC.isDataCacheable(DataSource.LOCAL))
   }
 

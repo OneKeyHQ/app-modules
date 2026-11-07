@@ -188,6 +188,117 @@ The registry is bounded to 1,024 families and eight variants per family. Family
 access is recency-ordered; new variants evict the oldest retained hints. A cache
 miss removes the stale variant immediately.
 
+### 6.3 Native video-preview cache — Source implemented; scoped iOS validation
+
+Image owns a native-only OneKeyMediaPreviewCache used by NativeList; it adds no
+JavaScript prop, method, schema or player dependency. The service is shared by
+native callers in one process, independently of the app's separate main/bg JS
+heaps. NativeList retains player/view ownership and supplies extraction callbacks.
+
+A video-preview namespace separates derived frames from ordinary image sources.
+Its opaque SHA-256 identity includes a schema version, full source URI, canonical
+request headers, target pixel tier and capture fit. Header names are case-folded
+and sorted with unambiguous encoding; values participate in identity. Neither
+headers nor source/query text may appear in cache filenames, persisted metadata
+or logs. Row keys and presentation text do not affect resource identity.
+
+Supported identity is the caller-provided URI and explicit request headers,
+plus schema, target pixel tier and capture fit. Cache policy constrains the
+read/write domains and distinguishes flights; it is not a cookie/session API.
+This feature does not manage cookie stores or provide cookie-session cache
+partitioning or automatic invalidation. Media whose identity or authorization
+changes through ambient cookies is outside this preview-cache support contract.
+
+Existing platform-player networking remains unchanged and may use its existing
+cookie handling. This is not a guarantee that network requests contain no cookies.
+Explicit header values remain opaque identity inputs; no cookie-specific key,
+tracker, private-flight rule or global-cookie eligibility check is introduced.
+
+The final scoped Android implementation passed a normal Gradle SDK/test-APK build
+and three instrumentation tests: same-key memory/disk reuse, real embedded-SVG
+pixels/cache sources, and queued-lookup cancellation with a surviving peer.
+This does not verify cookie-authenticated media or complete App NFT rendering.
+
+Target tiers are 128, 256, 512 and 1024 pixels on the longest edge. Frames retain
+aspect ratio and normalized orientation, with at most 1,048,576 pixels. Empty
+layout waits for a valid visible size. Decoded cache retention is configured for
+16 MiB and 64 entries; disk retention uses a 64 MiB capacity budget and each
+encoded entry is at most 8 MiB. Displayed frames, temporary pixel buffers and
+platform player/decoder resources are additional to these cache budgets.
+iOS NSCache cost/count and SDImageCache disk-size settings are library eviction
+targets, not strict instantaneous memory/disk bounds; Android LruCache trims by
+measured bitmap cost and DiskLruCacheWrapper owns disk eviction.
+Pending persistence separately retains at most 16 MiB of frame pixel cost.
+When this queue budget is exhausted, a new disk write is skipped without
+discarding the displayed frame or its permitted decoded-memory entry. Encoding
+and encoded buffers are temporary additional storage, bounded by the single
+persistence worker and the 8 MiB encoded-entry limit.
+
+iOS uses a dedicated SDImageCache namespace; Android uses a separate
+DiskLruCacheWrapper directory from the existing Glide dependency plus a bounded
+LruCache. Android MUST NOT reuse Glide's default disk directory or journal.
+iOS additionally configures SDImageCache's 30-day disk age; Android uses its
+capacity-based LRU without a TTL. This is an intentional library-policy
+difference, not a shared expiry guarantee.
+These adapters remain part of the existing Image clear API. clearMemory retains
+disk entries; clearDisk retains memory entries; clearAll clears both. Each
+cleared domain advances a generation and serializes clear with outstanding
+writes. The returned promise MUST NOT resolve while an earlier task can still
+repopulate that domain. Already displayed frames may remain visible. New requests
+after the barrier may cache normally. Corrupt/over-budget entries are misses and
+are removed/rebuilt without deleting a concurrent newer valid replacement.
+
+Cache policies constrain reads and writes: memory-disk uses both, memory and disk
+use only their named domain, and none uses neither. Requests with differing policy
+must not share a flight in a way that bypasses these restrictions. Cache I/O,
+decode, scaling and encoding run on bounded background workers; UI probes may
+only access decoded memory. iOS pixel conversion must not allocate a full-size
+UIImage before reducing it. Android's UI-only TextureView copy requests bounded
+dimensions; subsequent processing is off the UI thread.
+
+The service coalesces same-key/policy subscriptions across cells and grants at
+most two concurrent extraction permits. At most 130 total flights may be live,
+including cache lookup, FIFO waiting and active extraction; excess requests fail
+through the existing candidate fallback. Only
+visible subscriptions may own or wait for extraction. Cancelling one subscriber
+does not cancel another's demand. Cancelling the owner revokes its completion
+token and permits another visible subscriber to resume; no subscribers cancels
+the work. Queued disk lookups also carry cancellable work handles: when their
+last subscriber leaves, pending reads/decodes must not start merely to discard
+their result later. One already-running serial lookup may finish, but stale
+identity and clear-generation guards still prevent delivery or cache promotion.
+Cancelling one subscriber must not cancel a lookup still needed by a peer.
+A grant expires after 10 seconds. Successful extraction means a valid
+bounded still frame, not merely a rendered-player notification. Failure releases
+the permit; no failures are persisted. Storage failure does not discard a valid
+displayable frame. Stale binding or owner generations cannot deliver results;
+stale clear generations cannot repopulate the cleared cache domain. Cache clear
+does not cancel a current view's valid extraction or an already obtained memory
+result: it may still display without refilling that domain. An outstanding disk
+lookup must recheck the disk generation before returning or promoting its result.
+
+The shared cache implementation has scoped runtime evidence within the URI and
+explicit-header contract above. The production iOS cache service
+passed 38 simulator checks and a separate-process disk reload; its queued-lookup
+cancellation revision reran the 38 checks and passed four focused queued-lookup
+cancellation checks with the production service. The production video slot previously
+passed 14 checks using a real H.264 MP4, and the detach/tier correction passed a
+focused 13-check replay. Android cache/coordinator and SVG evidence is described
+in the acceptance record; Android video-player runtime, full-app NFT integration
+and physical-device performance remain pending. Required native
+tests cover real disk I/O, cold/warm/restart hits, same-key deduplication, owner
+cancellation, FIFO/bounds/timeouts, headers/size/fit isolation, clear races, corrupt
+entries and policy domains. Slot rendering/player and full-app performance remain
+separate acceptance layers.
+
+Disk reads MUST enforce the 8 MiB byte limit and inspect image metadata before
+allocating decoded pixels. An entry with a side above 1024, more than 1,048,576
+pixels, unsupported/malformed metadata or invalid format is a miss. A generic
+cache API that fully decodes before this check is insufficient; use a bounded
+data lookup with metadata validation or an equivalent allocation-bounded decode.
+Cached images never bypass the frame dimensions simply because this process
+normally writes the files itself.
+
 ## 7. TOS rendition and decode contract
 
 Eligible hosts are limited to OneKey's declared asset domains. Optimization is
@@ -210,6 +321,40 @@ clamped to 1–3.
 Rendered and preloaded requests must use equivalent logical-size, pixel-ratio,
 overscan, headers, cache policy, and optimization inputs when the caller expects
 an exact decoded-memory hit.
+
+### Embedded SVG data URI cache revision — Implemented; scoped Android runtime verified
+
+Android base64 data URIs MUST reach the existing SVG decoder from the data
+loader's ByteBuffer path as well as from InputStream sources. Both paths retain
+the existing OneKeySVG normalization and safety budgets. The memory-disk policy
+uses Glide DATA caching for data URI source bytes in render and preload; decoded
+resources remain in Glide memory. A source-data disk hit still performs SVG
+parsing/rendering and MUST NOT be described as a decoded-memory hit. Existing
+memory/disk/none policy restrictions and clear operations remain authoritative.
+No HTML support or additional input normalization is introduced.
+
+iOS retains its existing SDWebImage data URI/coder/cache path. The existing
+6.7.0-26 consumer was observed loading an embedded SVG, then reporting a disk
+hit after memory clearing and remounting; this is baseline runtime evidence,
+not acceptance of the Android change. Android acceptance requires a
+real Glide data-SVG load, memory reuse and disk-only reload after memory clear,
+alongside unsafe/over-budget SVG regression coverage.
+
+The normal SDK Gradle AndroidTest build passed with the lockfile's RN 0.88
+dependencies. On an isolated API 35 arm64 emulator, the checked-in
+testRealGlideEmbeddedSVGMemoryAndDataDiskHit passed using the production Glide
+registry: an embedded-PNG foreignObject produced the expected red pixel and
+reported LOCAL, MEMORY_CACHE, then DATA_DISK_CACHE after memory clearing.
+This verifies the embedded-SVG cache path, not the Android video-preview player,
+full-app NFT interaction, the complete SVG safety matrix or device performance.
+
+The consuming Android App also completed a normal local native build and a final
+incremental build with matching SDK/consumer source hashes; the resulting APK
+started and visibly rendered onboarding. A separate in-App QA-image probe
+reported onLoad/onDisplay, but its diagnostic Dialog screenshot was black without
+FLAG_SECURE. That probe is not pixel-validation evidence and does not replace the
+successful instrumentation pixel test. No Modal/provider repair or performance
+claim is included in this change.
 
 ### 7.1 Embedded PNGs in SVG foreign objects — Implemented
 
