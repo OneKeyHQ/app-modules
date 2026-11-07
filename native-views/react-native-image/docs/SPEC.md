@@ -285,8 +285,7 @@ cancellation checks with the production service. The production video slot previ
 passed 14 checks using a real H.264 MP4, and the detach/tier correction passed a
 focused 13-check replay. Android cache/coordinator and SVG evidence is described
 in the acceptance record; Android video-player runtime, full-app NFT integration
-and physical-device performance remain pending. The complete scoped plan and
-acceptance matrix are in ../../../docs/NFT_MEDIA_CACHE_PLAN.md. Required native
+and physical-device performance remain pending. Required native
 tests cover real disk I/O, cold/warm/restart hits, same-key deduplication, owner
 cancellation, FIFO/bounds/timeouts, headers/size/fit isolation, clear races, corrupt
 entries and policy domains. Slot rendering/player and full-app performance remain

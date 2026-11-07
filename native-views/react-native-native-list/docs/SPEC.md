@@ -1353,7 +1353,7 @@ zero new players, disk hits after memory clear and process restart, same-source
 deduplication, owner cancellation/transfer, concurrency and timeout bounds,
 clear-generation races, corrupt entry repair and all existing probing/lifecycle
 cases. Native tests and simulator evidence cannot establish device FPS or memory
-improvement; those require the workload in docs/NFT_MEDIA_CACHE_PLAN.md.
+improvement; those require workload-specific measurements on target devices.
 
 The final Android slot, including deferred Media3 error release, compiled in the
 consumer's normal native build and final incremental APK. Matching SDK/consumer
