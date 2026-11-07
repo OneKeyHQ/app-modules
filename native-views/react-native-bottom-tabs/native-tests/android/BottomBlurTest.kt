@@ -297,6 +297,67 @@ open class BottomBlurTest : InstrumentationTestCase() {
     }
   }
 
+  fun testDoublePressOnlyScrollsThePressedScene() {
+    lateinit var otherScroll: ScrollView
+    val events = mutableListOf<Pair<String, Boolean>>()
+    onMain {
+      otherScroll = ScrollView(activity).apply {
+        addView(Stripes(activity), FrameLayout.LayoutParams(-1, dp(4000)))
+      }
+      tabs.addView(otherScroll, 1, FrameLayout.LayoutParams(-1, -1))
+      tabs.updateItems(mutableListOf(
+        TabInfo("home", "Home"),
+        TabInfo("other", "Other", preventsDefault = true),
+      ))
+      tabs.onTabDoublePressedListener = { key, didScrollToTop ->
+        events.add(key to didScrollToTop)
+      }
+      scroll.scrollTo(0, dp(300))
+    }
+    settle()
+    var homeOffset = 0
+    onMain {
+      homeOffset = scroll.scrollY
+      assertTrue("Home must start away from top", homeOffset > 0)
+      repeat(2) { assertTrue(navigationBar().findViewById<View>(1).performClick()) }
+      assertEquals(listOf("other" to false), events)
+      assertEquals(0, navigationBar().selectedItemId)
+    }
+    repeat(3) { settle() }
+    onMain {
+      assertEquals("Prevented tab must not scroll Home", homeOffset, scroll.scrollY)
+      tabs.setSelectedItem("other")
+    }
+    settle()
+    onMain {
+      otherScroll.scrollTo(0, dp(300))
+      assertTrue(otherScroll.scrollY > 0)
+      // preventsDefault must not suppress scrolling when this scene is selected.
+      repeat(2) { assertTrue(navigationBar().findViewById<View>(1).performClick()) }
+      assertEquals(listOf("other" to false, "other" to true), events)
+    }
+    repeat(3) { settle() }
+    onMain {
+      assertEquals(0, otherScroll.scrollY)
+      assertEquals(homeOffset, scroll.scrollY)
+      tabs.setSelectedItem("home")
+      tabs.updateItems(mutableListOf(TabInfo("home", "Home"), TabInfo("other", "Other")))
+    }
+    settle()
+    onMain { otherScroll.scrollTo(0, dp(300)) }
+    onMain {
+      // An ordinary first press switches scenes; the second scrolls that scene.
+      repeat(2) { assertTrue(navigationBar().findViewById<View>(1).performClick()) }
+      assertEquals(listOf("other" to false, "other" to true, "other" to true), events)
+      assertEquals(1, navigationBar().selectedItemId)
+    }
+    repeat(3) { settle() }
+    onMain {
+      assertEquals(0, otherScroll.scrollY)
+      assertEquals(homeOffset, scroll.scrollY)
+    }
+  }
+
   fun testTabSwitchConfigurationAndTintRestoration() {
     if (Build.VERSION.SDK_INT < 31) return
     var firstBar: View? = null
@@ -324,7 +385,7 @@ open class BottomBlurTest : InstrumentationTestCase() {
       var pressed: String? = null
       var doublePressed: String? = null
       tabs.onTabSelectedListener = { pressed = it }
-      tabs.onTabDoublePressedListener = { doublePressed = it }
+      tabs.onTabDoublePressedListener = { key, _ -> doublePressed = key }
       assertTrue(navigationBar().findViewById<View>(0).performClick())
       assertEquals("home", pressed)
       assertTrue(navigationBar().findViewById<View>(0).performClick())

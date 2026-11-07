@@ -87,6 +87,8 @@ internal class CollapsiblePagerAdapter : RecyclerView.Adapter<ViewPagerViewHolde
  */
 // OneKey patch: Match the standard pager's nested horizontal gesture host.
 // Original: class CollapsiblePagerHost(context: Context) : FrameLayout(context), NestedScrollingParent3 {
+// Kept for react-native-bottom-tabs, which calls `scrollToTop` by name on a tab double press.
+@androidx.annotation.Keep
 class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), NestedScrollingParent3 {
   private enum class HeaderGestureOwner {
     NONE,
@@ -1130,10 +1132,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     cancelPagerTop()
   }
 
-  internal fun scrollToTop(target: Int, animated: Boolean) {
+  @androidx.annotation.Keep
+  fun scrollToTop(target: Int, animated: Boolean) {
     if (target !in 0..1) return
     scrollHeaderToOffset(if (target == 1) headerHeightPx else 0, animated)
   }
+
+  // The header offset is stored apart from the body, so a collapsed header can sit
+  // above a body that is already at its top.
+  @androidx.annotation.Keep
+  fun isAwayFromPageTop(): Boolean = headerOffsetPx > 0
 
   internal fun scrollHeaderBy(delta: Double) {
     if (!delta.isFinite()) return

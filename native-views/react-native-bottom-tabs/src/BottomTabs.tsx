@@ -187,8 +187,10 @@ interface Props<Route extends BaseRoute> {
    * Callback which is called when the same tab is pressed twice within the
    * platform double-tap timeout, receives the index of the tab as argument.
    * Each press still goes through `onIndexChange` / reselection first.
+   * The visible scrollers of the tab are already scrolling to the top when this
+   * runs; `didScrollToTop` is false when they were all at the top already.
    */
-  onTabDoublePress?: (index: number) => void;
+  onTabDoublePress?: (index: number, didScrollToTop: boolean) => void;
   /**
    * Get lazy for the current screen. Uses true by default.
    */
@@ -529,11 +531,13 @@ const BottomTabs = <Route extends BaseRoute>({
   });
 
   const handleTabDoublePress = React.useCallback(
-    (event: NativeSyntheticEvent<{ key: string }>) => {
-      const { key } = event.nativeEvent;
+    (
+      event: NativeSyntheticEvent<{ key: string; didScrollToTop: boolean }>
+    ) => {
+      const { key, didScrollToTop } = event.nativeEvent;
       const index = trimmedRoutes.findIndex((route) => route.key === key);
       if (index !== -1) {
-        onTabDoublePress?.(index);
+        onTabDoublePress?.(index, didScrollToTop);
       }
     },
     [trimmedRoutes, onTabDoublePress]
