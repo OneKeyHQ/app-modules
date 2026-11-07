@@ -79,7 +79,49 @@ describe('resolveOverlayAnimation', () => {
       fade: true,
     });
     expect(resolved.enter.motion).toEqual(NATIVE_MOTION_PRESETS.quick);
+    // OK-66647: the card must stay opaque while it shrinks on close, otherwise
+    // the opaque content behind it shows through the surface as a ghost.
+    expect(resolved.exit).toMatchObject({
+      type: 'scale',
+      scale: 0.96,
+      fade: false,
+    });
+    expect(resolved.exit.motion).toEqual(NATIVE_MOTION_PRESETS.quick);
+  });
+
+  it('keeps the centered exit on the web quick curve without a fade', () => {
+    const resolved = resolveOverlayAnimation(
+      'center',
+      undefined,
+      WEB_MOTION_PRESETS
+    );
+    expect(resolved.exit.fade).toBe(false);
+    expect(resolved.exit.motion).toEqual({
+      type: 'timing',
+      timing: { durationMs: 150, easing: [0.25, 0.1, 0.25, 1] },
+    });
+    // The backdrop still fades on the same clock.
+    expect(resolved.backdrop.motion).toEqual(resolved.exit.motion);
+  });
+
+  it('mirrors the enter when a presentation has no default exit', () => {
+    const resolved = resolveOverlayAnimation(
+      'sheet',
+      undefined,
+      NATIVE_MOTION_PRESETS
+    );
     expect(resolved.exit).toEqual(resolved.enter);
+  });
+
+  it('lets a caller override the centered default exit', () => {
+    const resolved = resolveOverlayAnimation(
+      'center',
+      { exit: { type: 'fade', motion: 'fast' } },
+      NATIVE_MOTION_PRESETS
+    );
+    expect(resolved.enter).toMatchObject({ type: 'scale', fade: true });
+    expect(resolved.exit).toMatchObject({ type: 'fade' });
+    expect(resolved.exit.motion).toEqual(NATIVE_MOTION_PRESETS.fast);
   });
 
   it('uses short web curves for the same preset names', () => {

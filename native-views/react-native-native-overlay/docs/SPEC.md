@@ -176,7 +176,8 @@ visible)`, `removePage(ownerKey)`.
 
 - `animation.enter` and `animation.exit` are each
   `{ type: none|fade|slide|scale, edge, distance, scale, offsetY, fade, origin: center|anchor, motion }`.
-- `exit` defaults to `enter`.
+- `exit` defaults to the presentation's own default exit when it defines one
+  (currently only `center`, see below); otherwise it mirrors `enter`.
 - `motion` is a preset name or a concrete `{ type: 'spring', spring: { mass, stiffness, damping, overshootClamping } }`
   or `{ type: 'timing', timing: { durationMs, easing: cubicBezier } }`.
 - Presets are resolved per platform:
@@ -199,14 +200,27 @@ visible)`, `removePage(ownerKey)`.
     it would slow web overlays down 4–9×.
 - Presentation defaults (`DEFAULT_OVERLAY_ANIMATIONS`):
 
-| Presentation | Enter / exit                                                                     | Backdrop      |
-| ------------ | -------------------------------------------------------------------------------- | ------------- |
-| sheet        | slide from bottom, `quick`                                                       | fade, `quick` |
-| center       | scale 0.85 + fade, `quick`                                                       | fade, `quick` |
-| toast        | slide from top + fade, `toastSlide` (native 300 ms quad in-out, web 400 ms ease) | none          |
-| fullscreen   | fade, `quick`                                                                    | none          |
-| anchored     | scale 0.95 + fade from the resolved anchor placement, `popoverQuick`             | fade          |
+| Presentation | Enter                                                                              | Exit                                                            | Backdrop      |
+| ------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------- |
+| sheet        | slide from bottom, `quick`                                                         | same as enter                                                   | fade, `quick` |
+| center       | scale 0.85 + fade, `quick`                                                         | scale 0.96 without fade, `quick`                                | fade, `quick` |
+| toast        | slide from top + fade, `toastSlide` (native 300 ms quad in-out, web 400 ms ease)   | same as enter                                                   | none          |
+| fullscreen   | fade, `quick`                                                                      | same as enter                                                   | none          |
+| anchored     | scale 0.95 + fade from the resolved anchor placement, `popoverQuick`               | same as enter                                                   | fade          |
 
+- **Centered card keeps its surface opaque on exit (Implemented; consumer Web
+  runtime evidence pending):** a centered Dialog is a solid card over the page
+  or over another overlay. Fading the card out made any opaque content behind
+  it — a text-heavy page, the account list inside the account selector —
+  readable through the card for the whole transition, which consumers reported
+  as a doubled render right after closing a dialog (OK-66647, desktop, 120 fps
+  recording: the card reached ~20–30 % opacity while the list rows behind
+  stayed opaque). The default exit therefore shrinks the card from scale 1 to
+  0.96 with `fade: false`; the host unmounts it when the exit completes.
+  `fade: false` is honoured by all three renderers (`hidesOpacity` on iOS and
+  Android, `hiddenKeyframe` on Web), so no native code change is required, and
+  the backdrop still fades on the same clock. Reduce Motion still degrades the
+  exit to a fade on every platform, so this protection does not apply there.
 - **Android sheet transform ownership (Implemented; Android 16 consumer-shell runtime verified):**
   the overlay's enter/exit transform belongs to the sheet's CoordinatorLayout
   parent. Material's IME insets callback owns the child sheet's `translationY`,
@@ -698,7 +712,8 @@ Automated (P0):
   - the spring response in all damping regimes, overshoot clamping and settle
     time;
   - Android `SpringForce` conversion and CSS `linear()` sampling;
-  - presentation defaults and per-platform preset resolution.
+  - presentation defaults and per-platform preset resolution, including the
+    centered fade-free exit and a caller-supplied exit override.
 
 Runtime matrix, required per platform before migrating callers (P1–P3):
 
