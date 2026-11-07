@@ -237,9 +237,28 @@ persistence worker and the 8 MiB encoded-entry limit.
 iOS uses a dedicated SDImageCache namespace; Android uses a separate
 DiskLruCacheWrapper directory from the existing Glide dependency plus a bounded
 LruCache. Android MUST NOT reuse Glide's default disk directory or journal.
-iOS additionally configures SDImageCache's 30-day disk age; Android uses its
-capacity-based LRU without a TTL. This is an intentional library-policy
+iOS configures a 30-day disk age measured from the file's last access date,
+matching SDImageCache's access-date cleanup policy; Android uses its
+capacity-based LRU without a TTL. This is an intentional platform-policy
 difference, not a shared expiry guarantee.
+
+**iOS disk-read expiry gate — Implemented; focused simulator runtime verified.**
+Before opening or reading a preview file, the serial IO worker MUST inspect its
+last access date. A date at or before the 30-day cutoff, or an unavailable date,
+is a disk miss: remove that disk entry and continue through normal extraction,
+without delivering its pixels or treating expiry as a media failure. A valid,
+bounded, successfully decoded disk hit MUST refresh its access date, as the
+ordinary SDWebImage disk reader does. Reads retain the existing byte/decode
+limits and cancellation/generation checks. This is a disk-read freshness rule;
+it does not expire an already displayed frame or add a memory-cache TTL.
+SDWebImage's periodic cleanup alone does not enforce freshness at lookup time.
+Focused coverage MUST distinguish stale access from recent modification, and
+recent access from stale modification; the former misses and the latter hits.
+A refreshed disk entry must remain reusable without another extraction.
+The two expiry tests fail against the preceding implementation and pass with
+this gate; all six cache XCTest cases pass in the focused iOS Simulator runner
+using the production service and real SDWebImage. This is not a full module/App
+build or a new hosted-CI result.
 These adapters remain part of the existing Image clear API. clearMemory retains
 disk entries; clearDisk retains memory entries; clearAll clears both. Each
 cleared domain advances a generation and serializes clear with outstanding
