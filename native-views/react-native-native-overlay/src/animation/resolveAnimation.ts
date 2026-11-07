@@ -19,13 +19,22 @@ export interface IResolvedOverlayAnimation {
 }
 
 /**
- * Defaults match today's visuals: Dialog center (scale 0.85 + fade, quick),
- * Tamagui Sheet (slide from bottom, quick), message toasts (slide from top,
- * 300ms quad), Popover floating content (scale 0.95 + fade, popoverQuick).
+ * Defaults match today's visuals: Dialog center (scale 0.85 + fade in, then a
+ * fade-free scale 0.96 out), Tamagui Sheet (slide from bottom, quick), message
+ * toasts (slide from top, 300ms quad), Popover floating content (scale 0.95 +
+ * fade, popoverQuick).
+ *
+ * `exit` defaults to the presentation's own exit below; presentations without
+ * one mirror `enter`.
  */
 export const DEFAULT_OVERLAY_ANIMATIONS: Record<
   IOverlayPresentation,
-  { enter: IOverlayTransition; backdrop: IOverlayMotionPreset }
+  {
+    enter: IOverlayTransition;
+    /** Mirrors `enter` when omitted. */
+    exit?: IOverlayTransition;
+    backdrop: IOverlayMotionPreset;
+  }
 > = {
   sheet: {
     enter: { type: 'slide', edge: 'bottom', motion: 'quick' },
@@ -33,6 +42,12 @@ export const DEFAULT_OVERLAY_ANIMATIONS: Record<
   },
   center: {
     enter: { type: 'scale', scale: 0.85, fade: true, motion: 'quick' },
+    // OK-66647: the centered card is a solid surface. Fading it out lets any
+    // opaque content behind it (a text-heavy page, a list inside another
+    // overlay) show through the card for the whole transition, which reads as
+    // a doubled/ghosted render. Keep the card opaque while it shrinks and let
+    // the host unmount it at the end of the exit.
+    exit: { type: 'scale', scale: 0.96, fade: false, motion: 'quick' },
     backdrop: 'quick',
   },
   toast: {
@@ -86,9 +101,15 @@ export function resolveOverlayAnimation(
   const enterInput = animation?.enter ?? defaults.enter;
   const fallbackMotion = defaults.enter.motion ?? 'quick';
   const enter = resolveTransition(enterInput, fallbackMotion, presets);
-  const exit = animation?.exit
-    ? resolveTransition(animation.exit, fallbackMotion, presets)
-    : enter;
+  // A caller-supplied enter keeps mirroring when its exit is omitted; the
+  // presentation default exit only applies when neither transition was
+  // customized.
+  const exitInput =
+    animation?.exit ?? animation?.enter ?? defaults.exit ?? enterInput;
+  // A presentation default exit keeps its own fallback motion instead of
+  // inheriting the enter's.
+  const exitFallbackMotion = defaults.exit?.motion ?? fallbackMotion;
+  const exit = resolveTransition(exitInput, exitFallbackMotion, presets);
   return {
     enter,
     exit,

@@ -91,6 +91,45 @@ const VISIBLE_KEYFRAME: Keyframe = {
   transform: 'translate3d(0, 0, 0) scale(1)',
 };
 
+export interface ITransitionKeyframeInput {
+  transition: IResolvedOverlayTransition;
+  extent: IContentExtent;
+  direction: 'in' | 'out';
+  /** Rendered frames of an interrupted run; the new run starts from them. */
+  sampled?: Keyframe;
+}
+
+/**
+ * Keyframes for one enter/exit run. Pure so the interruption rules can be
+ * tested without a DOM.
+ */
+export function buildTransitionKeyframes({
+  transition,
+  extent,
+  direction,
+  sampled,
+}: ITransitionKeyframeInput): [Keyframe, Keyframe] {
+  const hidden = hiddenKeyframe(transition, extent);
+  const visible: Keyframe = {};
+  Object.keys(hidden).forEach((key) => {
+    visible[key] = VISIBLE_KEYFRAME[key];
+  });
+  const initial = direction === 'in' ? hidden : visible;
+  const start: Keyframe = {};
+  Object.keys(initial).forEach((key) => {
+    start[key] = sampled?.[key] ?? initial[key];
+  });
+  const end: Keyframe = direction === 'in' ? visible : hidden;
+  // A fade-free exit does not animate opacity. Drop a partly transparent frame
+  // left by an interrupted fade-in so the card stays opaque while it scales out
+  // (OK-66647).
+  if (direction === 'out' && hidden.opacity === undefined) {
+    start.opacity = 1;
+    end.opacity = 1;
+  }
+  return [start, end];
+}
+
 /**
  * Runs an enter (`direction: 'in'`) or exit transition on `element`. The
  * slide distance and scale origin come from the children of `contentRoot`,
@@ -123,18 +162,12 @@ export function animateTransition(
   target.style.transformOrigin = `${
     (extent.left + extent.right) / 2 - (targetRect?.left ?? 0)
   }px ${(extent.top + extent.bottom) / 2 - (targetRect?.top ?? 0)}px`;
-  const hidden = hiddenKeyframe(effective, extent);
-  const visible: Keyframe = {};
-  Object.keys(hidden).forEach((key) => {
-    visible[key] = VISIBLE_KEYFRAME[key];
+  const keyframes = buildTransitionKeyframes({
+    transition: effective,
+    extent,
+    direction,
+    sampled: interruptedFrames?.get(target),
   });
-  const sampled = interruptedFrames?.get(target);
-  const initial = direction === 'in' ? hidden : visible;
-  const start: Keyframe = {};
-  Object.keys(initial).forEach((key) => {
-    start[key] = sampled?.[key] ?? initial[key];
-  });
-  const keyframes = [start, direction === 'in' ? visible : hidden];
   return target.animate(keyframes, {
     ...toTiming(effective.motion),
     fill: 'forwards',

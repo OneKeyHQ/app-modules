@@ -470,6 +470,12 @@ final class NativeOverlayEntryView: UIView {
       contentExtent: entry.contentExtent(),
       bounds: entry.bounds
     )
+    // A fade-free exit does not animate alpha. If the fade-in was interrupted,
+    // the card would otherwise stay partly transparent and show the content
+    // behind it for the whole scale-out (OK-66647).
+    if !transition.hidesOpacity {
+      entry.contentView.alpha = 1
+    }
     let contentAnimator = transition.motion.makeAnimator()
     contentAnimator.addAnimations {
       if transition.hidesOpacity {
