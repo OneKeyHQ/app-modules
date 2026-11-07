@@ -49,7 +49,7 @@ public final class OneKeyMediaPreviewCache {
   init(namespace: String = "onekey-media-preview-v1") {
     let config = SDImageCacheConfig()
     config.maxMemoryCost = 16 * 1024 * 1024; config.maxMemoryCount = 64
-    config.maxDiskSize = 64 * 1024 * 1024; config.maxDiskAge = 30 * 24 * 60 * 60
+    config.maxDiskSize = 128 * 1024 * 1024; config.maxDiskAge = 30 * 24 * 60 * 60
     config.diskCacheExpireType = .accessDate
     cache = SDImageCache(namespace: namespace, diskCacheDirectory: nil, config: config)
   }

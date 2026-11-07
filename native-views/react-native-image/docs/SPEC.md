@@ -222,7 +222,7 @@ This does not verify cookie-authenticated media or complete App NFT rendering.
 Target tiers are 128, 256, 512 and 1024 pixels on the longest edge. Frames retain
 aspect ratio and normalized orientation, with at most 1,048,576 pixels. Empty
 layout waits for a valid visible size. Decoded cache retention is configured for
-16 MiB and 64 entries; disk retention uses a 64 MiB capacity budget and each
+16 MiB and 64 entries; disk retention uses a 128 MiB capacity budget and each
 encoded entry is at most 8 MiB. Displayed frames, temporary pixel buffers and
 platform player/decoder resources are additional to these cache budgets.
 iOS NSCache cost/count and SDImageCache disk-size settings are library eviction
