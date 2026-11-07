@@ -1062,7 +1062,7 @@ class RCTBottomTabsContainerView: UIView {
     let now = CACurrentMediaTime()
     if lastPressedTabKey == key && now - lastPressedTabTime <= Self.doublePressInterval {
       lastPressedTabKey = nil
-      onTabDoublePress?(["key": key, "didScrollToTop": scrollSelectedTabToTop()])
+      onTabDoublePress?(["key": key, "didScrollToTop": scrollSelectedTabToTop(pressedKey: key)])
       return
     }
     lastPressedTabKey = key
@@ -1072,8 +1072,10 @@ class RCTBottomTabsContainerView: UIView {
   /// Animates every visible vertical scroller of the selected tab back to its
   /// top. Returns false when all of them were already there, which tells JS the
   /// double press may leave the page instead.
-  private func scrollSelectedTabToTop() -> Bool {
-    guard let rootView = tabBarController?.selectedViewController?.view,
+  private func scrollSelectedTabToTop(pressedKey: String) -> Bool {
+    guard let tabBarController,
+          filteredItems[safe: tabBarController.selectedIndex]?.key == pressedKey,
+          let rootView = tabBarController.selectedViewController?.view,
           let window = rootView.window else {
       return false
     }

@@ -193,8 +193,12 @@ extra gesture recognizer is attached and single-press latency is unchanged.
 JS-driven `selectedPage` changes do not count as presses.
 
 Before `onTabDoublePress` is emitted, the selected tab's visible vertical
-scrollers animate back to their top. The event carries `didScrollToTop`: true
-when at least one of them was away from its top, false when all were already
+scrollers animate back to their top only when the pressed key matches the
+selected scene. If `preventsDefault` leaves another tab selected, its scene
+MUST remain untouched and `didScrollToTop` MUST be false. A prevented tab that
+is already selected retains normal scroll-to-top behavior.
+The event carries `didScrollToTop`: true when at least one of them was away
+from its top, false when all were already
 there, so the host can decide what a double press at the top means. Scrollers
 inside a `CollapsiblePagerView` are never moved directly because the pager owns
 their header state; the module calls the pager's own `scrollToTop` by name, as
@@ -202,9 +206,10 @@ it has no package dependency on the pager. A pager also counts as away from its
 top when its `isAwayFromPageTop` reports a collapsed header over a body at top. Only visible scrollers count: hidden
 tabs and off-screen pager pages are skipped. On iOS a scroller must have content
 taller than its viewport. Runtime verification: iOS 27 simulator (collapsible
-pagers, pushed list pages, and a double press that also switches tabs); Android
-compiles but has not been run. The Android pager lookup is reflective, so a
-minified release build still needs a run.
+pagers, pushed list pages, and a double press that also switches tabs). The
+Android pressed-scene isolation regression passed on an API 36 emulator for
+docked and floating bars; Android pager integration has not been run. The
+Android pager lookup is reflective, so a minified release build still needs a run.
 
 Tab long press is not supported. The former `onTabLongPress` prop/event and the
 native long-press recognizers were removed.
@@ -396,6 +401,13 @@ non-selected tab lifts the lens there; drag crossing tab centers does not change
 pages; release selects the nearest tab once; cancel restores; hidden bar, dark
 mode, and 3-button navigation insets lay out correctly. Source compilation is
 recorded separately from runtime acceptance.
+
+`native-tests/android/BottomBlurTest.kt` includes
+`testDoublePressOnlyScrollsThePressedScene`, inherited by the floating-style
+suite. It covers a prevented press on another scene (no scroll, false), a
+prevented press on the selected scene (scroll, true), and normal tab switching
+followed by scroll-to-top, while preserving the other scene's offset. The same
+cases remain required on iOS.
 
 Vertical tab bar: `RCTBottomTabsContainerView.swift` (`currentTabBarPlacement`,
 `updateTabBarPlacementAndSideAccessory`, `verticalTabBarPlatterFrame`).

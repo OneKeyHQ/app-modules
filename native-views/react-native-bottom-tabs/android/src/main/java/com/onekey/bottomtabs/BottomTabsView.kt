@@ -1186,7 +1186,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       now - lastPressedTime <= ViewConfiguration.getDoubleTapTimeout()
     ) {
       lastPressedItemId = View.NO_ID
-      onTabDoublePressedListener?.invoke(key, scrollSelectedTabToTop())
+      onTabDoublePressedListener?.invoke(key, scrollSelectedTabToTop(key))
       return
     }
     lastPressedItemId = itemId
@@ -1198,7 +1198,8 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
    * top. Returns false when all of them were already there, which tells JS the
    * double press may leave the page instead.
    */
-  private fun scrollSelectedTabToTop(): Boolean {
+  private fun scrollSelectedTabToTop(pressedKey: String): Boolean {
+    if (pressedKey != selectedItem) return false
     val scrollers = mutableListOf<View>()
     val pagers = mutableListOf<View>()
     collectScrolledViews(layoutHolder, scrollers, pagers)
