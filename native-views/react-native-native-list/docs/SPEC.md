@@ -238,7 +238,9 @@ titleSegments?: readonly {
   `style.title` and the configured fonts. `tone` picks the primary or secondary
   text color and defaults to the title color; `fontWeight` picks the weight and
   defaults to the title weight.
-- The runs share one line. `titleLines` and `style.title.lines` do not apply.
+- The runs share one line. `titleLines` and `style.title.lines` do not apply
+  to them; a row that draws `title` instead (it has `titleMatch`, or is a wallet
+  sidebar row) keeps them for drawing and for measurement.
 - Layout. The runs take the whole width the title line leaves after the
   leading title icon and the title accessories (title icon, title image,
   suffixes, badges), so those accessories sit at the line's end rather than
@@ -287,11 +289,12 @@ Conformance: `src/validation.ts` (`assertTitleSegments`,
 `assertTitleLeadingIcon`, production sanitizing) with `validation.test.ts`;
 `src/web/templates/IdentityRowRenderer.ts` with `IdentityTitleRunsWeb.test.ts`
 (run styles, flex behavior, accessibility, rebind);
-`ios/NativeListTitleSegmentLayout.swift` with the SwiftPM
-`NativeListTitleSegmentLayoutTests`; the iOS leading glyph beside a long plain
-title with the XCTest `NativeListIdentityTitleIconLayoutTests`;
-`NativeListTitleSegmentLayout.kt` with the
-JVM `NativeListTitleSegmentLayoutTest`. iOS, Android and Web runtime acceptance is pending: recipient rows
+`ios/NativeListTitleSegmentLayout.swift` (run widths, and when the runs and the
+glyph show) with the SwiftPM `NativeListTitleSegmentLayoutTests`; the iOS
+leading glyph beside a long plain title, wallet sidebar rows and the measured
+height of a highlighted title with the XCTest
+`NativeListIdentityTitleIconLayoutTests`; `NativeListTitleSegmentLayout.kt`
+with the JVM `NativeListTitleSegmentLayoutTest`. iOS, Android and Web runtime acceptance is pending: recipient rows
 with long wallet and account names in both truncation directions, narrow rows,
 dark mode, dynamic type and configured fonts, and recycling between rows with
 and without runs or a leading icon. Source and build success alone are not

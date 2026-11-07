@@ -49,6 +49,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
       stack.spacing = 10
     }
   }
+  private class func showsTitleRuns(_ item: NativeListItem) -> Bool {
+    nativeListShowsTitleRuns(
+      presentation: item.data.string("presentation"),
+      runCount: item.data.dictionaries("titleSegments").count,
+      matchCount: item.data.dictionaries("titleMatch").count)
+  }
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
     fonts: NativeListFontFamilies
@@ -81,8 +87,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let title = NativeListResolvedText(
         item.data.string("title"), style: style.dictionary("title"), size: 16,
         weight: .medium, color: .black, lineHeight: 24,
-        lines: item.data.dictionaries("titleSegments").isEmpty
-          ? item.data.int("titleLines", default: 1) : 1, fonts: fonts)
+        lines: showsTitleRuns(item) ? 1 : item.data.int("titleLines", default: 1), fonts: fonts)
       let subtitle = NativeListResolvedText(
         item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 14,
         color: .black, lineHeight: 20,
@@ -702,16 +707,16 @@ final class NativeListIdentityCell: NativeListRendererCell {
     show(titleLabel, item.data.string("title"), lines: item.data.int("titleLines", default: 1))
     // Runs replace the drawn title except where `title` itself is highlighted;
     // their content is bound once the title style is final.
-    if !item.data.dictionaries("titleSegments").isEmpty,
-      item.data.dictionaries("titleMatch").isEmpty
-    {
+    if Self.showsTitleRuns(item) {
       titleLabel.isHidden = true
       titleSegmentsLabel.isHidden = false
       // The runs fill what the title row leaves, so a ratio is a share of it.
       titleRowFiller.isHidden = true
       titleSegmentsLabel.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
     }
-    if let icon = item.data.dictionary("titleLeadingIcon") {
+    if nativeListAllowsTitleDecorations(presentation: item.data.string("presentation")),
+      let icon = item.data.dictionary("titleLeadingIcon")
+    {
       titleLeadingIconView.bindIcon(icon.string("name"))
       titleLeadingIconView.tintColor = UIColor(
         nativeListHex: icon.string("tintColor",

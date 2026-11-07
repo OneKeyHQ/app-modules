@@ -110,4 +110,67 @@ final class NativeListIdentityTitleIconLayoutTests: XCTestCase {
       "the title truncates instead of the glyph")
     XCTAssertLessThanOrEqual(labelFrame.maxX, cell.bounds.width)
   }
+
+  // A wallet sidebar row keeps the plain title even when a production row
+  // carries runs and a leading glyph, also after the cell drew both for a
+  // recipient row.
+  func testWalletSidebarRowIgnoresTitleRunsAndLeadingIcon() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 320, height: 68))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    window.addSubview(cell)
+    let titleLabel = try child(cell, "titleLabel", as: UILabel.self)
+    let runs = try child(cell, "titleSegmentsLabel", as: UIView.self)
+    let leadingIcon = try child(cell, "titleLeadingIconView", as: UIImageView.self)
+    let decorations: [String: Any] = [
+      "titleSegments": [
+        ["text": "Main", "shrink": true],
+        ["text": " / ", "tone": "secondary"],
+        ["text": "Account 1"],
+      ],
+      "titleLeadingIcon": ["name": "BookOpenOutline"],
+    ]
+    func bind(_ data: [String: Any]) throws {
+      var row: [String: Any] = [
+        "key": "wallet", "type": "identity", "title": "Main / Account 1", "height": 68,
+      ]
+      data.forEach { row[$0.key] = $0.value }
+      cell.bind(item: try NativeListItem(data: row), theme: nil, layout: "linear",
+        selected: false, checkboxState: { _, _, fallback in fallback },
+        fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+
+    try bind(decorations)
+    XCTAssertFalse(runs.isHidden)
+    XCTAssertFalse(leadingIcon.isHidden)
+
+    try bind(decorations.merging(["presentation": "walletSidebar"]) { $1 })
+    XCTAssertTrue(runs.isHidden, "wallet sidebar rows draw no runs")
+    XCTAssertTrue(leadingIcon.isHidden, "wallet sidebar rows draw no leading glyph")
+    XCTAssertFalse(titleLabel.isHidden)
+    XCTAssertEqual(titleLabel.text, "Main / Account 1")
+  }
+
+  // `titleMatch` keeps the plain highlighted title on screen, so an
+  // auto-height row is measured for that title and its `titleLines`, not for
+  // one line of runs.
+  func testHighlightedTitleIsMeasuredWithItsOwnLines() throws {
+    func height(_ data: [String: Any]) throws -> CGFloat {
+      var row: [String: Any] = [
+        "key": "match", "type": "identity", "contentHeight": "auto",
+        "title": "A very long recipient name that needs a second line to show",
+        "titleLines": 2, "titleMatch": [["start": 0, "end": 6]],
+        "subtitle": "0x1234...abcd",
+      ]
+      data.forEach { row[$0.key] = $0.value }
+      return try XCTUnwrap(NativeListIdentityCell.measure(
+        try NativeListItem(data: row), width: 240, theme: nil, layout: "linear",
+        fonts: NativeListFontFamilies()))
+    }
+    let runs: [[String: Any]] = [["text": "A very long", "shrink": true], ["text": " recipient"]]
+
+    let plain = try height([:])
+    XCTAssertEqual(try height(["titleSegments": runs]), plain, accuracy: 0.5)
+    XCTAssertGreaterThan(plain, try height(["titleLines": 1]))
+  }
 }

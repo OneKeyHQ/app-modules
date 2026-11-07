@@ -45,4 +45,16 @@ final class NativeListTitleSegmentLayoutTests: XCTestCase {
     XCTAssertEqual(walletFirst(80, 90, line: 0), [0, 0, 0])
     XCTAssertEqual(walletFirst(80, 90, line: -10), [0, 0, 0])
   }
+
+  // Runs replace `title` except where `title` is highlighted; wallet sidebar
+  // rows keep the plain title without runs or a leading glyph.
+  func testTitleDecorationsFollowTheRowContract() {
+    XCTAssertTrue(nativeListShowsTitleRuns(presentation: "", runCount: 2, matchCount: 0))
+    XCTAssertTrue(nativeListShowsTitleRuns(presentation: "accountSelector", runCount: 2, matchCount: 0))
+    XCTAssertFalse(nativeListShowsTitleRuns(presentation: "", runCount: 0, matchCount: 0))
+    XCTAssertFalse(nativeListShowsTitleRuns(presentation: "", runCount: 2, matchCount: 1))
+    XCTAssertFalse(nativeListShowsTitleRuns(presentation: "walletSidebar", runCount: 2, matchCount: 0))
+    XCTAssertTrue(nativeListAllowsTitleDecorations(presentation: ""))
+    XCTAssertFalse(nativeListAllowsTitleDecorations(presentation: "walletSidebar"))
+  }
 }

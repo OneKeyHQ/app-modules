@@ -810,14 +810,19 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
     // Runs replace the drawn title except where `title` itself is highlighted;
     // their content is bound once the title style is final.
-    if ((item.json.optJSONArray("titleSegments")?.length() ?: 0) > 0 &&
-      (item.json.optJSONArray("titleMatch")?.length() ?: 0) == 0
+    if (nativeListShowsTitleRuns(
+        item.json.optString("presentation"),
+        item.json.optJSONArray("titleSegments")?.length() ?: 0,
+        item.json.optJSONArray("titleMatch")?.length() ?: 0,
+      )
     ) {
       title.visibility = GONE
       titleSegments.visibility = VISIBLE
       titleLine.titleChild = titleSegments
     }
-    item.json.optJSONObject("titleLeadingIcon")?.let { icon ->
+    val leadingIcon = item.json.optJSONObject("titleLeadingIcon")
+      ?.takeIf { nativeListAllowsTitleDecorations(item.json.optString("presentation")) }
+    leadingIcon?.let { icon ->
       titleLeadingIcon.iconName = icon.optString("name")
       titleLeadingIcon.glyphSizeDp = 16
       titleLeadingIcon.useSourceScale = sourceScale

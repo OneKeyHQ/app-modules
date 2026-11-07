@@ -30,3 +30,16 @@ func nativeListTitleSegmentWidths(
   }
   return widths
 }
+
+/// Wallet sidebar rows keep the plain title: no runs and no leading glyph
+/// (docs/SPEC.md).
+func nativeListAllowsTitleDecorations(presentation: String) -> Bool {
+  presentation != "walletSidebar"
+}
+
+/// Whether the runs replace `title`: not where `title` itself is highlighted
+/// (`titleMatch` indexes it), and never on a wallet sidebar row. Measurement
+/// and binding share this, so a row is sized for the title it draws.
+func nativeListShowsTitleRuns(presentation: String, runCount: Int, matchCount: Int) -> Bool {
+  runCount > 0 && matchCount == 0 && nativeListAllowsTitleDecorations(presentation: presentation)
+}

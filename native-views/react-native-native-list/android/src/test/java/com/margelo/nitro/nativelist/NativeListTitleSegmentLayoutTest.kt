@@ -1,6 +1,8 @@
 package com.margelo.nitro.nativelist
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeListTitleSegmentLayoutTest {
@@ -61,5 +63,18 @@ class NativeListTitleSegmentLayoutTest {
   fun aNonPositiveLineLeavesNothing() {
     assertWidths(listOf(0f, 0f, 0f), walletFirst(80f, 90f, 0f))
     assertWidths(listOf(0f, 0f, 0f), walletFirst(80f, 90f, -10f))
+  }
+
+  // Runs replace `title` except where `title` is highlighted; wallet sidebar
+  // rows keep the plain title without runs or a leading glyph.
+  @Test
+  fun titleDecorationsFollowTheRowContract() {
+    assertTrue(nativeListShowsTitleRuns("", 2, 0))
+    assertTrue(nativeListShowsTitleRuns("accountSelector", 2, 0))
+    assertFalse(nativeListShowsTitleRuns("", 0, 0))
+    assertFalse(nativeListShowsTitleRuns("", 2, 1))
+    assertFalse(nativeListShowsTitleRuns("walletSidebar", 2, 0))
+    assertTrue(nativeListAllowsTitleDecorations(""))
+    assertFalse(nativeListAllowsTitleDecorations("walletSidebar"))
   }
 }
