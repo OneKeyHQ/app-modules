@@ -9,7 +9,7 @@ final class OneKeyAvatarImageLoader: NSObject, SDImageLoader {
   static let cache: SDImageCache = {
     let config = SDImageCacheConfig()
     config.maxDiskAge = 30 * 24 * 60 * 60
-    config.maxDiskSize = 32 * 1024 * 1024
+    config.maxDiskSize = 128 * 1024 * 1024
     config.maxMemoryCost = 8 * 1024 * 1024
     // OneKey patch: Keep several large-account wallets resident while the byte
     // budget remains the hard memory bound.

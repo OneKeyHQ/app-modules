@@ -53,7 +53,7 @@ class OneKeyMediaPreviewCache private constructor(context: Context, directory: F
   private val io = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue()) { task ->
     Thread(task, "onekey-media-preview-io").apply { isDaemon = true }
   }
-  private val disk = DiskLruCacheWrapper.create(directory, 64L * 1024 * 1024)
+  private val disk = DiskLruCacheWrapper.create(directory, 128L * 1024 * 1024)
   private val memory = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
   }

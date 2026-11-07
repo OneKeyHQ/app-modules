@@ -135,6 +135,60 @@ library-level divergence rather than a different public success result.
 
 ## 6. Cache identity and synchronous memory probe
 
+**Process disk budgets — Implemented; Android native and focused iOS runtime verified.**
+The iOS Image pipeline MUST configure the existing `SDImageCache.shared` instance
+with a 320 MiB disk-size budget before creating either its ordinary manager or
+an isolated request manager. Both manager paths retain that same cache object;
+configuration occurs once per process and does not change the global default
+configuration used by independent namespaces. Existing memory settings, access-
+date expiry and normal cleanup scheduling remain unchanged. Previously written
+entries are not synchronously purged at initialization; library cleanup may
+leave actual usage temporarily above the configured size.
+
+The component-owned disk budgets are:
+
+| Cache | iOS | Android |
+| --- | --- | --- |
+| Ordinary images | 320 MiB shared SDImageCache | 320 MiB shared Glide cache under the module conditions below |
+| Local blockie avatars | 128 MiB separate namespace | Included in the ordinary Glide cache |
+| Video preview frames | 128 MiB separate namespace | 128 MiB separate directory |
+| Combined configured budget | 576 MiB | 448 MiB |
+
+On Android, the SDK provides the 320 MiB default through Glide 5.0.5's existing
+manifest `GlideModule` discovery, before the first Glide instance is constructed.
+The module sets only `InternalCacheDiskCacheFactory`'s capacity and retains the
+ordinary cache directory. It does not declare an `AppGlideModule`, call
+`Glide.init`, use production reflection, change memory settings or replace the
+existing explicit decoder registrations. It adds no dependency or JS API.
+Glide's existing consumer rules must retain the manifest-discovered class.
+
+This is Glide's supported but deprecated legacy discovery path: it applies only
+when the host permits manifest parsing and does not exclude the module. A host's
+modern `AppGlideModule.applyOptions` runs afterwards and may override this default.
+Such hosts own their final budget; the 448 MiB total assumes the 320 MiB ordinary
+budget applies. The current OneKey App has manifest parsing enabled and no
+conflicting host options. SDK packaging validation MUST verify real merged
+metadata discovery and a fresh Glide instance's effective 320 MiB disk budget,
+not only call the module directly or assert its constant.
+
+These totals describe the Image component's native caches, not a strict App-wide
+storage quota or measured usage. Preload and rendering share the ordinary cache;
+the existing Image clear APIs continue to clear ordinary, avatar and video
+preview caches. Native instances are process-shared and are not duplicated for
+separate main/background JavaScript heaps. React Native's other image pipelines,
+HTTP/URLCache, WebView storage, bundled assets and other App targets are outside
+these totals. This change introduces no JavaScript configuration API or new
+aggregate cache manager and does not change memory/bitmap-pool/animation budgets.
+Focused iOS validation MUST exercise an isolated-manager-first request in a
+fresh process and confirm the shared 320 MiB budget without changing memory,
+age or independent-cache settings. Focused configuration checks do not substitute
+for whole-module compilation and the formal regression suite.
+The Android test APK discovers the production manifest module and its first
+Glide instance uses a 320 MiB cache in the unchanged ordinary directory; all
+four cache instrumentation cases pass. The isolated-manager-first iOS test
+fails with the preceding 250 MiB configuration and passes at 320 MiB. These
+checks do not establish consumer App deployment or new-head hosted CI results.
+
 ### 6.1 Exact identity
 
 Cache identity includes the effective request URL, canonical request headers,
@@ -222,7 +276,7 @@ This does not verify cookie-authenticated media or complete App NFT rendering.
 Target tiers are 128, 256, 512 and 1024 pixels on the longest edge. Frames retain
 aspect ratio and normalized orientation, with at most 1,048,576 pixels. Empty
 layout waits for a valid visible size. Decoded cache retention is configured for
-16 MiB and 64 entries; disk retention uses a 64 MiB capacity budget and each
+16 MiB and 64 entries; disk retention uses a 128 MiB capacity budget and each
 encoded entry is at most 8 MiB. Displayed frames, temporary pixel buffers and
 platform player/decoder resources are additional to these cache budgets.
 iOS NSCache cost/count and SDImageCache disk-size settings are library eviction
@@ -237,9 +291,28 @@ persistence worker and the 8 MiB encoded-entry limit.
 iOS uses a dedicated SDImageCache namespace; Android uses a separate
 DiskLruCacheWrapper directory from the existing Glide dependency plus a bounded
 LruCache. Android MUST NOT reuse Glide's default disk directory or journal.
-iOS additionally configures SDImageCache's 30-day disk age; Android uses its
-capacity-based LRU without a TTL. This is an intentional library-policy
+iOS configures a 30-day disk age measured from the file's last access date,
+matching SDImageCache's access-date cleanup policy; Android uses its
+capacity-based LRU without a TTL. This is an intentional platform-policy
 difference, not a shared expiry guarantee.
+
+**iOS disk-read expiry gate — Implemented; focused simulator runtime verified.**
+Before opening or reading a preview file, the serial IO worker MUST inspect its
+last access date. A date at or before the 30-day cutoff, or an unavailable date,
+is a disk miss: remove that disk entry and continue through normal extraction,
+without delivering its pixels or treating expiry as a media failure. A valid,
+bounded, successfully decoded disk hit MUST refresh its access date, as the
+ordinary SDWebImage disk reader does. Reads retain the existing byte/decode
+limits and cancellation/generation checks. This is a disk-read freshness rule;
+it does not expire an already displayed frame or add a memory-cache TTL.
+SDWebImage's periodic cleanup alone does not enforce freshness at lookup time.
+Focused coverage MUST distinguish stale access from recent modification, and
+recent access from stale modification; the former misses and the latter hits.
+A refreshed disk entry must remain reusable without another extraction.
+The two expiry tests fail against the preceding implementation and pass with
+this gate; all six cache XCTest cases pass in the focused iOS Simulator runner
+using the production service and real SDWebImage. This is not a full module/App
+build or a new hosted-CI result.
 These adapters remain part of the existing Image clear API. clearMemory retains
 disk entries; clearDisk retains memory entries; clearAll clears both. Each
 cleared domain advances a generation and serializes clear with outstanding
