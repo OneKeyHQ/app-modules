@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Features
+- **native-list**: Add `titleSegments` and `titleLeadingIcon` to Identity rows. Runs draw the title in up to four parts with their own tone and weight on one line; one run may shrink while the others keep their width under an optional `maxWidthRatio` cap, and `title` stays the spoken label. A 16-point glyph can precede the title. Development validation rejects malformed runs and icons; production drops them and shows `title`. Implemented on iOS, Android and Web; runtime acceptance is pending. See `native-views/react-native-native-list/docs/SPEC.md`.
 - **sni-connect**: Add `uploadFile()`, which sends a binary file from app-owned storage over the pinned-IP/SNI transport (POST/PUT, up to 20 MiB). `request()` bodies are UTF-8 strings capped at 1 MiB, so binary payloads such as log archives could not use the SNI path. Older native binaries lack the method, so callers must feature-detect it. See `native-modules/react-native-sni-connect/SPEC.md` §3.1a.
 - **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
 - **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
