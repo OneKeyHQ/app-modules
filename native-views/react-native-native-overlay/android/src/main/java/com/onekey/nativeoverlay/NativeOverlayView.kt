@@ -235,6 +235,12 @@ class NativeOverlayView(
     notifyHostEntriesChanged()
     val transition = config.exit.reduceMotionAdjusted(isReduceMotionEnabled())
     if (transition.kind == "none") return finishDismiss("programmatic")
+    // A fade-free exit does not animate alpha. If the fade-in was interrupted,
+    // the card would otherwise stay partly transparent and show the content
+    // behind it for the whole scale-out (OK-66647).
+    if (!transition.hidesOpacity) {
+      target.animatedView.alpha = 1f
+    }
     animate(target, hiddenState(target, transition), 0f, transition.motion) {
       if (phase == Phase.EXITING) finishDismiss("programmatic")
     }

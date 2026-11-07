@@ -218,9 +218,16 @@ visible)`, `removePage(ownerKey)`.
   stayed opaque). The default exit therefore shrinks the card from scale 1 to
   0.96 with `fade: false`; the host unmounts it when the exit completes.
   `fade: false` is honoured by all three renderers (`hidesOpacity` on iOS and
-  Android, `hiddenKeyframe` on Web), so no native code change is required, and
-  the backdrop still fades on the same clock. Reduce Motion still degrades the
-  exit to a fade on every platform, so this protection does not apply there.
+  Android, `hiddenKeyframe` on Web), and the backdrop still fades on the same
+  clock. A fade-free exit also starts from full opacity: when it interrupts a
+  still-running fade-in, the partly transparent surface is snapped back to
+  alpha 1 before the scale-out begins, so a rapid close cannot show the
+  content behind the card either. That interruption is covered by
+  `NativeOverlayMotionTest` on Android and by `buildTransitionKeyframes` on
+  Web; the iOS dismiss path lives in `NativeOverlayContainerView`, which the
+  iOS test app does not compile, so its snap is source-reviewed only. Reduce
+  Motion still degrades the exit to a fade on every platform, so this
+  protection does not apply there.
 - **Android sheet transform ownership (Implemented; Android 16 consumer-shell runtime verified):**
   the overlay's enter/exit transform belongs to the sheet's CoordinatorLayout
   parent. Material's IME insets callback owns the child sheet's `translationY`,
@@ -683,7 +690,9 @@ Automated (P0):
   reparenting in both directions, including the exit-completion staging path,
   old-parent transition completion after the move, and reopen during exit.
   It also covers Fabric removal of staged content and replacement of presented
-  content during a transition, including layout-listener cleanup.
+  content during a transition, including layout-listener cleanup, and the
+  fade-free centered exit snapping an interrupted fade-in to full opacity
+  before the scale-out.
 - `NativeOverlayPageHostLayoutTest` places the Android page host below an
   actual `ReactViewGroup` and checks a sheet at 200, 600 and 320 px after
   attachment. Height changes MUST relayout and bottom-pin the sheet without
@@ -713,7 +722,10 @@ Automated (P0):
     time;
   - Android `SpringForce` conversion and CSS `linear()` sampling;
   - presentation defaults and per-platform preset resolution, including the
-    centered fade-free exit and a caller-supplied exit override.
+    centered fade-free exit and a caller-supplied exit override;
+  - Web enter/exit keyframes: a fade-free exit keeps opacity 1 when it
+    interrupts a partial fade-in, a fading exit starts from the interrupted
+    opacity, and the interrupted enter transform is retargeted.
 
 Runtime matrix, required per platform before migrating callers (P1–P3):
 

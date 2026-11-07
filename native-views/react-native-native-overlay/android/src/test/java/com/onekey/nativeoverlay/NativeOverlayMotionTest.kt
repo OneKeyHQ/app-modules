@@ -115,6 +115,46 @@ class NativeOverlayMotionTest {
   }
 
   @Test
+  fun fadeFreeExitSnapsAnInterruptedFadeInToFullOpacity() {
+    val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible().get()
+    val reactContext = BridgeReactContext(activity)
+    reactContext.onHostResume(activity)
+    val context = ThemedReactContext(reactContext, activity, "OverlayMotionTest", 1)
+    val quick = """{"type":"spring","spring":{"mass":0.1,"stiffness":100,"damping":20}}"""
+    val overlay = NativeOverlayView(context).apply {
+      presentation = "center"
+      animationConfig = """
+        {"enter":{"type":"scale","scale":0.85,"fade":true,"motion":$quick},
+         "exit":{"type":"scale","scale":0.96,"fade":false,"motion":$quick},
+         "backdrop":{"motion":$quick}}
+      """.trimIndent()
+      addReactChild(View(context))
+    }
+    activity.setContentView(overlay)
+    overlay.visible = true
+    overlay.commitConfiguration()
+
+    val entryField = NativeOverlayView::class.java.getDeclaredField("entry").apply { isAccessible = true }
+    val entry = entryField.get(overlay) as NativeOverlayEntryRootView
+    // Close while the fade-in is still running, so the card is partly transparent.
+    Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
+    val interruptedAlpha = entry.animatedView.alpha
+    assertTrue(interruptedAlpha > 0f && interruptedAlpha < 1f)
+
+    overlay.visible = false
+    overlay.commitConfiguration()
+
+    // A fade-free exit must not start from the interrupted alpha: the card stays
+    // fully opaque while it scales out so the content behind it cannot show through.
+    assertEquals(1f, entry.animatedView.alpha, 0.001f)
+    val animatorField = NativeOverlayView::class.java.getDeclaredField("contentAnimator").apply { isAccessible = true }
+    val exitAnimator = animatorField.get(overlay) as ValueAnimator
+    assertEquals(292L, exitAnimator.duration)
+    exitAnimator.currentPlayTime = exitAnimator.duration / 3
+    assertEquals(1f, entry.animatedView.alpha, 0.001f)
+  }
+
+  @Test
   fun finishingExitMovesTransitioningContentBackToStagingView() {
     val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible().get()
     val reactContext = BridgeReactContext(activity)
