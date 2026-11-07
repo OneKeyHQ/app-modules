@@ -488,7 +488,7 @@ enum OneKeyImagePipeline {
   static let downloader = SDWebImageDownloader(config: nil)
   static let cache: SDImageCache = {
     let cache = SDImageCache.shared
-    cache.config.maxDiskSize = 250 * 1024 * 1024
+    cache.config.maxDiskSize = 320 * 1024 * 1024
     return cache
   }()
   static let manager = SDWebImageManager(cache: cache, loader: downloader)

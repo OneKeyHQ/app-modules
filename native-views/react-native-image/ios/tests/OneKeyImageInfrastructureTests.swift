@@ -48,7 +48,7 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
 
     let isolated = OneKeyImagePipeline.makeIsolatedManager()
     XCTAssertTrue((isolated.imageCache as AnyObject) === shared)
-    XCTAssertEqual(shared.config.maxDiskSize, 250 * 1024 * 1024)
+    XCTAssertEqual(shared.config.maxDiskSize, 320 * 1024 * 1024)
     XCTAssertTrue((OneKeyImagePipeline.manager.imageCache as AnyObject) === shared)
     XCTAssertEqual(shared.config.maxDiskAge, age)
     XCTAssertEqual(shared.config.maxMemoryCost, memoryCost)

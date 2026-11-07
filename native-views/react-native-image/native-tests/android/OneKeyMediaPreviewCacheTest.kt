@@ -1,5 +1,6 @@
 package com.margelo.nitro.onekeyimage
 
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Canvas
@@ -7,6 +8,7 @@ import android.graphics.drawable.Drawable
 import android.test.InstrumentationTestCase
 import android.util.Base64
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.cache.DiskCache
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
@@ -23,6 +25,22 @@ class OneKeyMediaPreviewCacheTest : InstrumentationTestCase() {
   private fun main(action: () -> Unit) = instrumentation.runOnMainSync(action)
   private fun await(latch: CountDownLatch) { assertTrue("Timed out", latch.await(5, TimeUnit.SECONDS)) }
   private fun still(): Bitmap = Bitmap.createBitmap(32, 16, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+
+  fun testConfiguredOrdinaryDiskBudgetIsDiscoveredFromMergedManifest() {
+    val context = instrumentation.targetContext
+    val info = context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
+    assertEquals("GlideModule", info.metaData.getString("com.margelo.nitro.onekeyimage.OneKeyImageGlideModule"))
+    fun field(owner: Any, name: String): Any = owner.javaClass.getDeclaredField(name).apply {
+      isAccessible = true
+    }.get(owner)!!
+    val glide = Glide.get(context)
+    val provider = field(field(glide, "engine"), "diskCacheProvider")
+    val disk = provider.javaClass.getDeclaredMethod("getDiskCache").apply {
+      isAccessible = true
+    }.invoke(provider)!!
+    assertEquals(320L * 1024 * 1024, field(disk, "maxSize"))
+    assertEquals(File(context.cacheDir, DiskCache.Factory.DEFAULT_DISK_CACHE_DIR), field(disk, "directory"))
+  }
 
   fun testSameKeyDedupMemoryAndDiskReuse() {
     val directory = File(instrumentation.targetContext.cacheDir, "media-test-${UUID.randomUUID()}")

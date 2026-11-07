@@ -135,9 +135,9 @@ library-level divergence rather than a different public success result.
 
 ## 6. Cache identity and synchronous memory probe
 
-**Process disk budgets — Implemented; focused pipeline runtime verified.**
+**Process disk budgets — Implemented; Android native and focused iOS runtime verified.**
 The iOS Image pipeline MUST configure the existing `SDImageCache.shared` instance
-with a 250 MiB disk-size budget before creating either its ordinary manager or
+with a 320 MiB disk-size budget before creating either its ordinary manager or
 an isolated request manager. Both manager paths retain that same cache object;
 configuration occurs once per process and does not change the global default
 configuration used by independent namespaces. Existing memory settings, access-
@@ -149,10 +149,27 @@ The component-owned disk budgets are:
 
 | Cache | iOS | Android |
 | --- | --- | --- |
-| Ordinary images | 250 MiB shared SDImageCache | 250 MiB default shared Glide cache |
-| Local blockie avatars | 32 MiB separate namespace | Included in the ordinary Glide cache |
+| Ordinary images | 320 MiB shared SDImageCache | 320 MiB shared Glide cache under the module conditions below |
+| Local blockie avatars | 128 MiB separate namespace | Included in the ordinary Glide cache |
 | Video preview frames | 128 MiB separate namespace | 128 MiB separate directory |
-| Combined configured budget | 410 MiB | 378 MiB |
+| Combined configured budget | 576 MiB | 448 MiB |
+
+On Android, the SDK provides the 320 MiB default through Glide 5.0.5's existing
+manifest `GlideModule` discovery, before the first Glide instance is constructed.
+The module sets only `InternalCacheDiskCacheFactory`'s capacity and retains the
+ordinary cache directory. It does not declare an `AppGlideModule`, call
+`Glide.init`, use production reflection, change memory settings or replace the
+existing explicit decoder registrations. It adds no dependency or JS API.
+Glide's existing consumer rules must retain the manifest-discovered class.
+
+This is Glide's supported but deprecated legacy discovery path: it applies only
+when the host permits manifest parsing and does not exclude the module. A host's
+modern `AppGlideModule.applyOptions` runs afterwards and may override this default.
+Such hosts own their final budget; the 448 MiB total assumes the 320 MiB ordinary
+budget applies. The current OneKey App has manifest parsing enabled and no
+conflicting host options. SDK packaging validation MUST verify real merged
+metadata discovery and a fresh Glide instance's effective 320 MiB disk budget,
+not only call the module directly or assert its constant.
 
 These totals describe the Image component's native caches, not a strict App-wide
 storage quota or measured usage. Preload and rendering share the ordinary cache;
@@ -162,10 +179,15 @@ separate main/background JavaScript heaps. React Native's other image pipelines,
 HTTP/URLCache, WebView storage, bundled assets and other App targets are outside
 these totals. This change introduces no JavaScript configuration API or new
 aggregate cache manager and does not change memory/bitmap-pool/animation budgets.
-A fresh-process iOS Simulator test using the exact pipeline implementation and
-new formal test method fails against the previous zero-budget implementation
-and passes with 250 MiB, including the isolated-manager-first path. This focused
-validation does not substitute for whole-module compilation and the full suite.
+Focused iOS validation MUST exercise an isolated-manager-first request in a
+fresh process and confirm the shared 320 MiB budget without changing memory,
+age or independent-cache settings. Focused configuration checks do not substitute
+for whole-module compilation and the formal regression suite.
+The Android test APK discovers the production manifest module and its first
+Glide instance uses a 320 MiB cache in the unchanged ordinary directory; all
+four cache instrumentation cases pass. The isolated-manager-first iOS test
+fails with the preceding 250 MiB configuration and passes at 320 MiB. These
+checks do not establish consumer App deployment or new-head hosted CI results.
 
 ### 6.1 Exact identity
 
