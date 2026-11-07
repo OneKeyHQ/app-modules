@@ -136,8 +136,11 @@ class NativeOverlayMotionTest {
 
     val entryField = NativeOverlayView::class.java.getDeclaredField("entry").apply { isAccessible = true }
     val entry = entryField.get(overlay) as NativeOverlayEntryRootView
-    // Close while the fade-in is still running, so the card is partly transparent.
-    Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
+    val animatorField = NativeOverlayView::class.java.getDeclaredField("contentAnimator").apply { isAccessible = true }
+    val enterAnimator = animatorField.get(overlay) as ValueAnimator
+    // Freeze a frame of the running fade-in: closing now starts the exit from a
+    // partly transparent surface.
+    enterAnimator.currentPlayTime = enterAnimator.duration / 3
     val interruptedAlpha = entry.animatedView.alpha
     assertTrue(interruptedAlpha > 0f && interruptedAlpha < 1f)
 
@@ -147,7 +150,6 @@ class NativeOverlayMotionTest {
     // A fade-free exit must not start from the interrupted alpha: the card stays
     // fully opaque while it scales out so the content behind it cannot show through.
     assertEquals(1f, entry.animatedView.alpha, 0.001f)
-    val animatorField = NativeOverlayView::class.java.getDeclaredField("contentAnimator").apply { isAccessible = true }
     val exitAnimator = animatorField.get(overlay) as ValueAnimator
     assertEquals(292L, exitAnimator.duration)
     exitAnimator.currentPlayTime = exitAnimator.duration / 3
