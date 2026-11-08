@@ -189,6 +189,7 @@ interface Props<Route extends BaseRoute> {
    * Each press still goes through `onIndexChange` / reselection first.
    * The visible scrollers of the tab are already scrolling to the top when this
    * runs; `didScrollToTop` is false when they were all at the top already.
+   * A rejected pager request with no accepted scroll skips this callback.
    */
   onTabDoublePress?: (index: number, didScrollToTop: boolean) => void;
   /**

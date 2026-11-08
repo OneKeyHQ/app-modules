@@ -187,7 +187,9 @@ reselection never changes the selected page. A tab with `preventsDefault` emits
 tab within the platform double-tap timeout (iOS 0.3 s; Android
 `ViewConfiguration.getDoubleTapTimeout()`, 300 ms by default). Both presses still
 emit `onPageSelected` first; the double press is an additional event, emitted
-after the second press. After it fires, tracking resets, so a third quick press
+after the second press. A rejected pager top request with no accepted scroll
+suppresses this additional event; both `onPageSelected` events still fire.
+After the pair is handled, tracking resets, so a third quick press
 starts a new pair. Double press is derived from accepted selections only: no
 extra gesture recognizer is attached and single-press latency is unchanged.
 JS-driven `selectedPage` changes do not count as presses.
@@ -197,19 +199,25 @@ scrollers animate back to their top only when the pressed key matches the
 selected scene. If `preventsDefault` leaves another tab selected, its scene
 MUST remain untouched and `didScrollToTop` MUST be false. A prevented tab that
 is already selected retains normal scroll-to-top behavior.
-The event carries `didScrollToTop`: true when at least one of them was away
-from its top, false when all were already
-there, so the host can decide what a double press at the top means. Scrollers
-inside a `CollapsiblePagerView` are never moved directly because the pager owns
-their header state; the module calls the pager's own `scrollToTop` by name, as
+The event carries `didScrollToTop`: true only when at least one scroller was
+away from its top and accepted the top request, false when all were already
+there, so the host can decide what a double press at the top means. Rejection
+MUST NOT be reported as success or as proof that the page is already at top.
+Scrollers inside a `CollapsiblePagerView` are never moved directly because the pager owns
+their header state; the module calls the pager's own `tryScrollToTop` by name, as
 it has no package dependency on the pager. A pager also counts as away from its
 top when its `isAwayFromPageTop` reports a collapsed header over a body at top. Only visible scrollers count: hidden
-tabs and off-screen pager pages are skipped. On iOS a scroller must have content
+tabs and off-screen pager pages are skipped. On iOS visibility is intersected
+with the window and every clipping ancestor; a retained page fully clipped by
+its pager MUST NOT count. On iOS a scroller must have content
 taller than its viewport. Runtime verification: iOS 27 simulator (collapsible
 pagers, pushed list pages, and a double press that also switches tabs). The
 Android pressed-scene isolation regression passed on an API 36 emulator for
 docked and floating bars; Android pager integration has not been run. The
 Android pager lookup is reflective, so a minified release build still needs a run.
+BottomTabs and Pager native sources must ship together for the acceptance-returning
+entry point. Clipping-ancestor visibility and rejected-command event handling
+are implemented in source; runtime acceptance for these cases remains pending.
 
 Tab long press is not supported. The former `onTabLongPress` prop/event and the
 native long-press recognizers were removed.

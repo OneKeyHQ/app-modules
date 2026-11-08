@@ -1062,7 +1062,10 @@ class RCTBottomTabsContainerView: UIView {
     let now = CACurrentMediaTime()
     if lastPressedTabKey == key && now - lastPressedTabTime <= Self.doublePressInterval {
       lastPressedTabKey = nil
-      onTabDoublePress?(["key": key, "didScrollToTop": scrollSelectedTabToTop(pressedKey: key)])
+      if let onTabDoublePress,
+         let didScrollToTop = scrollSelectedTabToTop(pressedKey: key) {
+        onTabDoublePress(["key": key, "didScrollToTop": didScrollToTop])
+      }
       return
     }
     lastPressedTabKey = key
@@ -1071,8 +1074,9 @@ class RCTBottomTabsContainerView: UIView {
 
   /// Animates every visible vertical scroller of the selected tab back to its
   /// top. Returns false when all of them were already there, which tells JS the
-  /// double press may leave the page instead.
-  private func scrollSelectedTabToTop(pressedKey: String) -> Bool {
+  /// double press may leave the page instead. A rejected pager request with no
+  /// accepted scroll returns nil, so JS cannot mistake it for an already-top page.
+  private func scrollSelectedTabToTop(pressedKey: String) -> Bool? {
     guard let tabBarController,
           filteredItems[safe: tabBarController.selectedIndex]?.key == pressedKey,
           let rootView = tabBarController.selectedViewController?.view,
@@ -1089,8 +1093,16 @@ class RCTBottomTabsContainerView: UIView {
         animated: true
       )
     }
-    pagers.forEach(scrollPagerToTop)
-    return !scrollViews.isEmpty || !pagers.isEmpty
+    var didScrollToTop = !scrollViews.isEmpty
+    var rejectedPagerRequest = false
+    for pager in pagers {
+      if scrollPagerToTop(pager) {
+        didScrollToTop = true
+      } else {
+        rejectedPagerRequest = true
+      }
+    }
+    return didScrollToTop ? true : (rejectedPagerRequest ? nil : false)
   }
 
   // Only content taller than its viewport can be scrolled back to the top.
@@ -1108,8 +1120,15 @@ class RCTBottomTabsContainerView: UIView {
   ) {
     guard !view.isHidden, view.alpha > 0.01 else { return }
     // Pager siblings stay in the hierarchy off screen.
-    let frameInWindow = view.convert(view.bounds, to: window)
-    guard frameInWindow.intersects(window.bounds) else { return }
+    var visibleRect = view.convert(view.bounds, to: window).intersection(window.bounds)
+    var ancestor = view.superview
+    while let clippingView = ancestor {
+      if clippingView.clipsToBounds {
+        visibleRect = visibleRect.intersection(clippingView.convert(clippingView.bounds, to: window))
+      }
+      ancestor = clippingView.superview
+    }
+    guard !visibleRect.isEmpty else { return }
     if let pagerClass = Self.collapsiblePagerClass, view.isKind(of: pagerClass) {
       // The pager keeps header state for its pages, so moving one of its
       // scrollers directly leaves the header out of sync. It scrolls itself.
@@ -1147,12 +1166,12 @@ class RCTBottomTabsContainerView: UIView {
     return isAwayFromPageTop(pager, selector)
   }
 
-  private func scrollPagerToTop(_ pager: UIView) {
-    let selector = NSSelectorFromString("scrollToTop:animated:")
-    guard pager.responds(to: selector) else { return }
-    typealias ScrollToTop = @convention(c) (AnyObject, Selector, Int, Bool) -> Void
+  private func scrollPagerToTop(_ pager: UIView) -> Bool {
+    let selector = NSSelectorFromString("tryScrollToTop:animated:")
+    guard pager.responds(to: selector) else { return false }
+    typealias ScrollToTop = @convention(c) (AnyObject, Selector, Int, Bool) -> Bool
     let scrollToTop = unsafeBitCast(pager.method(for: selector), to: ScrollToTop.self)
-    scrollToTop(pager, selector, 0, true)
+    return scrollToTop(pager, selector, 0, true)
   }
 
   // MARK: - Bottom accessory placement

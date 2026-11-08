@@ -1186,7 +1186,9 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       now - lastPressedTime <= ViewConfiguration.getDoubleTapTimeout()
     ) {
       lastPressedItemId = View.NO_ID
-      onTabDoublePressedListener?.invoke(key, scrollSelectedTabToTop(key))
+      val listener = onTabDoublePressedListener ?: return
+      val didScrollToTop = scrollSelectedTabToTop(key) ?: return
+      listener(key, didScrollToTop)
       return
     }
     lastPressedItemId = itemId
@@ -1196,9 +1198,10 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   /**
    * Animates every visible vertical scroller of the selected tab back to its
    * top. Returns false when all of them were already there, which tells JS the
-   * double press may leave the page instead.
+   * double press may leave the page instead. A rejected pager request with no
+   * accepted scroll returns null instead of implying that the page is at top.
    */
-  private fun scrollSelectedTabToTop(pressedKey: String): Boolean {
+  private fun scrollSelectedTabToTop(pressedKey: String): Boolean? {
     if (pressedKey != selectedItem) return false
     val scrollers = mutableListOf<View>()
     val pagers = mutableListOf<View>()
@@ -1210,8 +1213,17 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
         is ScrollView -> view.smoothScrollTo(view.scrollX, 0)
       }
     }
-    pagers.forEach(::scrollPagerToTop)
-    return scrollers.isNotEmpty() || pagers.isNotEmpty()
+    var didScrollToTop = scrollers.isNotEmpty()
+    var rejectedPagerRequest = false
+    pagers.forEach { pager ->
+      if (scrollPagerToTop(pager)) didScrollToTop = true
+      else rejectedPagerRequest = true
+    }
+    return when {
+      didScrollToTop -> true
+      rejectedPagerRequest -> null
+      else -> false
+    }
   }
 
   private fun collectScrolledViews(
@@ -1250,13 +1262,13 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       .onFailure { Log.w("BottomTabs", "Unable to read the collapsible pager top state", it) }
       .getOrDefault(false)
 
-  private fun scrollPagerToTop(pager: View) {
+  private fun scrollPagerToTop(pager: View): Boolean =
     runCatching {
       pager.javaClass
-        .getMethod("scrollToTop", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
-        .invoke(pager, 0, true)
+        .getMethod("tryScrollToTop", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+        .invoke(pager, 0, true) as Boolean
     }.onFailure { Log.w("BottomTabs", "Unable to scroll the collapsible pager to top", it) }
-  }
+      .getOrDefault(false)
 
   fun setIgnoreBottomInsets(ignore: Boolean) {
     ignoreBottomInsets = ignore
