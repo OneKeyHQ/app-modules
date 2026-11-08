@@ -6784,8 +6784,20 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)scrollToTop:(NSInteger)target animated:(BOOL)animated
 {
-  if (target != 0 && target != 1) return;
-  [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
+  [self tryScrollToTop:target animated:animated];
+}
+
+- (BOOL)tryScrollToTop:(NSInteger)target animated:(BOOL)animated
+{
+  if (target != 0 && target != 1) return NO;
+  return [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
+}
+
+// The header offset is stored apart from the body, so a collapsed header can sit
+// above a body that is already at its top.
+- (BOOL)isAwayFromPageTop
+{
+  return _headerOffset > 0.5;
 }
 
 - (void)scrollHeaderBy:(double)delta
@@ -6800,7 +6812,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self scrollHeaderToOffset:MIN(MAX(offset, 0), _headerHeight) animated:NO];
 }
 
-- (void)scrollHeaderToOffset:(CGFloat)logicalTarget animated:(BOOL)animated
+- (BOOL)scrollHeaderToOffset:(CGFloat)logicalTarget animated:(BOOL)animated
 {
   [self cancelTopInsetReboundCheck];
   UIScrollView *scrollView = _observedScrollView;
@@ -6808,7 +6820,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   if (_isBeingRecycled || _transitioning || _isPagerDragging ||
       _transitionPageOffsets != nil || _syntheticPageRestore || scrollView == nil || scrollView.window == nil ||
       key == nil || ![key isEqualToString:self.currentPageKey] || _observedPageIndex != _currentIndex ||
-      _observedPageGeneration != _generation || self.window == nil) return;
+      _observedPageGeneration != _generation || self.window == nil) return NO;
   [self cancelPagerTop];
   // Old List phase2 notifications must run before the new target owns this page.
   [NSNotificationCenter.defaultCenter postNotificationName:@"OneKeyNativeListCancelScrollCommand" object:scrollView];
@@ -6838,6 +6850,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, physicalTarget) animated:animated];
   _dispatchingPagerTop = NO;
   [self finishPagerTopIfReached];
+  return YES;
 }
 
 - (void)setPage:(NSInteger)index

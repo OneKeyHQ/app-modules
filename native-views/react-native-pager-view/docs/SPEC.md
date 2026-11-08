@@ -264,6 +264,22 @@ intent. Real vertical consumption, a newer valid command, or owner detachment
 releases the target. Existing NativeList and NativeScroller public coordinates
 are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
 
+On Android, `CollapsiblePagerHost.tryScrollToTop(target, animated)` and
+`isAwayFromPageTop()` are public and kept from minification because
+`react-native-bottom-tabs` calls them by name on a tab double press, as neither
+package depends on the other. `tryScrollToTop` returns true only after the
+existing page-top command accepts a stable, attached current owner; invalid
+targets, horizontal transitions, restoration and missing/stale owners return
+false without queueing a command. Acceptance does not mean animation completion.
+`isAwayFromPageTop` is true while the header offset is above zero, whatever the
+body offset. iOS exposes the same `tryScrollToTop:animated:` Boolean result and
+`isAwayFromPageTop` selector. Renaming either breaks that caller silently.
+The existing Fabric `scrollToTop` command remains void on both platforms and
+uses the same acceptance path; JavaScript commands and public refs are unchanged.
+BottomTabs and Pager native sources must ship together for this entry point.
+The acceptance-returning entry point is implemented in source; runtime
+acceptance during horizontal transitions and owner loss remains pending.
+
 ## Current-page partial header command
 
 `scrollHeaderBy(delta: number)` moves the current page's shared collapsible

@@ -35,8 +35,8 @@ class BottomTabsViewManager(context: ReactApplicationContext) :
       eventDispatcher?.dispatchEvent(PageSelectedEvent(surfaceId, view.id, key))
     }
 
-    view.onTabDoublePressedListener = { key ->
-      eventDispatcher?.dispatchEvent(TabDoublePressEvent(surfaceId, view.id, key))
+    view.onTabDoublePressedListener = { key, didScrollToTop ->
+      eventDispatcher?.dispatchEvent(TabDoublePressEvent(surfaceId, view.id, key, didScrollToTop))
     }
 
     view.onNativeLayoutListener = { width, height ->

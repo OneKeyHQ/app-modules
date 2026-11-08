@@ -1653,6 +1653,7 @@ final class NativeListView: UIView {
     requestScroll(.index(index, animated, alignment, viewPosition, viewOffset))
   }
 
+  @objc(onekeyScrollToOffset:animated:)
   func scrollToOffset(_ offset: Double, animated: Bool) {
     requestScroll(.offset(offset, animated))
   }

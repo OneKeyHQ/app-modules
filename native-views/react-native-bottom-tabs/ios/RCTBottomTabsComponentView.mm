@@ -144,7 +144,10 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNBottomTa
       if (!strongSelf) return;
       auto emitter = std::static_pointer_cast<const RNBottomTabsViewEventEmitter>(strongSelf->_eventEmitter);
       if (emitter) {
-        emitter->onTabDoublePress({.key = std::string([[body objectForKey:@"key"] UTF8String] ?: "")});
+        emitter->onTabDoublePress({
+          .key = std::string([[body objectForKey:@"key"] UTF8String] ?: ""),
+          .didScrollToTop = [[body objectForKey:@"didScrollToTop"] boolValue],
+        });
       }
     };
     [_containerView setValue:onTabDoublePress forKey:@"onTabDoublePress"];

@@ -2559,8 +2559,10 @@ final class NativeListLifecycleTests: XCTestCase {
     view.setContainerSlotHeightsJson("[0,0,60,0]")
     let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
     list.contentInsetAdjustmentBehavior = .never
-    view.applySnapshotJson(try structuralRowsSnapshot(count: 1000, generation: 1,
-      uniformHeight: 1))
+    // Six retained rows plus 129 retiring rows still exceed the 128-host limit
+    // inside three viewports, without materializing hundreds of 1-point cells.
+    view.applySnapshotJson(try structuralRowsSnapshot(count: 135, generation: 1,
+      uniformHeight: 10))
     view.layoutIfNeeded()
     list.layoutIfNeeded()
     drainMainQueue()
@@ -2573,7 +2575,7 @@ final class NativeListLifecycleTests: XCTestCase {
     }
     defer { NotificationCenter.default.removeObserver(observer) }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 2,
-      transitionID: "tail-host-limit", durationMs: 400, uniformHeight: 1))
+      transitionID: "tail-host-limit", durationMs: 400, uniformHeight: 10))
     list.layoutIfNeeded()
     let source = try XCTUnwrap(list.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
     let flow = try XCTUnwrap(list.collectionViewLayout as? NativeListFlowLayout)
@@ -2610,22 +2612,41 @@ final class NativeListLifecycleTests: XCTestCase {
     list.layoutIfNeeded()
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
       transitionID: "tail-6-to-50", durationMs: 400))
-    waitForStructuralFrames(0.16)
     list.layoutIfNeeded()
     let source = try XCTUnwrap(list.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
     let flow = try XCTUnwrap(list.collectionViewLayout as? NativeListFlowLayout)
     XCTAssertEqual(source.snapshot().itemIdentifiers, (0..<50).map { "row-\($0)" })
-    XCTAssertGreaterThan(try XCTUnwrap(flow.tailClip).endY, 360)
-    XCTAssertLessThan(try XCTUnwrap(flow.tailClip).endY, 3000)
-    let suffixCells = list.visibleCells.filter {
-      (list.indexPath(for: $0)?.item ?? -1) >= 6
+    var checkedActiveTail = false
+    func checkActiveTail() {
+      guard let clip = flow.tailClip else { return }
+      checkedActiveTail = true
+      list.layoutIfNeeded()
+      XCTAssertGreaterThanOrEqual(clip.endY, 360)
+      XCTAssertLessThanOrEqual(clip.endY, 3000)
+      let suffixCells = list.visibleCells.filter {
+        (list.indexPath(for: $0)?.item ?? -1) >= 6
+      }
+      if clip.endY > list.contentOffset.y + 60 {
+        XCTAssertFalse(suffixCells.isEmpty)
+      }
+      XCTAssertTrue(suffixCells.allSatisfy {
+        !$0.isUserInteractionEnabled && $0.accessibilityElementsHidden
+      })
+      XCTAssertEqual(list.contentOffset.y, 1000, accuracy: 1)
     }
-    XCTAssertFalse(suffixCells.isEmpty)
-    XCTAssertTrue(suffixCells.allSatisfy {
-      !$0.isUserInteractionEnabled && $0.accessibilityElementsHidden
-    })
-    XCTAssertEqual(list.contentOffset.y, 1000, accuracy: 1)
-    waitForStructuralFrames(0.3)
+    // Inspect actual active frames instead of assuming a delayed callback lands
+    // inside a 400 ms animation on a busy CI runner.
+    checkActiveTail()
+    let probe = Timer(timeInterval: 1.0 / 60, repeats: true) { _ in checkActiveTail() }
+    RunLoop.main.add(probe, forMode: .common)
+    defer { probe.invalidate() }
+    let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      flow.tailClip == nil &&
+        Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink == nil
+    }, object: nil)
+    wait(for: [finished], timeout: 5)
+    probe.invalidate()
+    XCTAssertTrue(checkedActiveTail)
     list.layoutIfNeeded()
     XCTAssertEqual(source.snapshot().itemIdentifiers, (0..<50).map { "row-\($0)" })
     XCTAssertEqual(list.contentSize.height, 3060, accuracy: 1)

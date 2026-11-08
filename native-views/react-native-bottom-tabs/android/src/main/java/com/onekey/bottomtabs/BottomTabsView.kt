@@ -9,6 +9,7 @@ import androidx.appcompat.view.ContextThemeWrapper
 import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.Outline
+import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -31,12 +32,16 @@ import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.animation.doOnEnd
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.forEach
 import androidx.core.view.forEachIndexed
+import androidx.core.widget.NestedScrollView
+import androidx.recyclerview.widget.RecyclerView
 import coil3.ImageLoader
 import coil3.asDrawable
 import coil3.request.ImageRequest
@@ -177,7 +182,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingIndicatorDrawable = GradientDrawable()
 
   var onTabSelectedListener: ((key: String) -> Unit)? = null
-  var onTabDoublePressedListener: ((key: String) -> Unit)? = null
+  var onTabDoublePressedListener: ((key: String, didScrollToTop: Boolean) -> Unit)? = null
   var onNativeLayoutListener: ((width: Double, height: Double) -> Unit)? = null
   var onTabBarMeasuredListener: ((height: Int) -> Unit)? = null
   var disablePageAnimations = false
@@ -242,6 +247,10 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingBarLocationOnScreen = IntArray(2)
   private var lastPressedItemId = View.NO_ID
   private var lastPressedTime = 0L
+  // Looked up by name: the pager lives in a package this one does not depend on.
+  private val collapsiblePagerClass: Class<*>? by lazy {
+    runCatching { Class.forName("com.reactnativepagerview.CollapsiblePagerHost") }.getOrNull()
+  }
   private var defaultLabelTextSizes: Pair<Float, Float>? = null
   private var barTintColor: Int? = null
   private var activeIndicatorColor: ColorStateList? = null
@@ -1177,12 +1186,89 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       now - lastPressedTime <= ViewConfiguration.getDoubleTapTimeout()
     ) {
       lastPressedItemId = View.NO_ID
-      onTabDoublePressedListener?.invoke(key)
+      val listener = onTabDoublePressedListener ?: return
+      val didScrollToTop = scrollSelectedTabToTop(key) ?: return
+      listener(key, didScrollToTop)
       return
     }
     lastPressedItemId = itemId
     lastPressedTime = now
   }
+
+  /**
+   * Animates every visible vertical scroller of the selected tab back to its
+   * top. Returns false when all of them were already there, which tells JS the
+   * double press may leave the page instead. A rejected pager request with no
+   * accepted scroll returns null instead of implying that the page is at top.
+   */
+  private fun scrollSelectedTabToTop(pressedKey: String): Boolean? {
+    if (pressedKey != selectedItem) return false
+    val scrollers = mutableListOf<View>()
+    val pagers = mutableListOf<View>()
+    collectScrolledViews(layoutHolder, scrollers, pagers)
+    scrollers.forEach { view ->
+      when (view) {
+        is RecyclerView -> view.smoothScrollToPosition(0)
+        is NestedScrollView -> view.smoothScrollTo(view.scrollX, 0)
+        is ScrollView -> view.smoothScrollTo(view.scrollX, 0)
+      }
+    }
+    var didScrollToTop = scrollers.isNotEmpty()
+    var rejectedPagerRequest = false
+    pagers.forEach { pager ->
+      if (scrollPagerToTop(pager)) didScrollToTop = true
+      else rejectedPagerRequest = true
+    }
+    return when {
+      didScrollToTop -> true
+      rejectedPagerRequest -> null
+      else -> false
+    }
+  }
+
+  private fun collectScrolledViews(
+    view: View,
+    scrollers: MutableList<View>,
+    pagers: MutableList<View>,
+  ) {
+    // Hidden tabs and pager siblings stay attached without being on screen.
+    if (!view.isShown || !view.getGlobalVisibleRect(Rect())) return
+    if (collapsiblePagerClass?.isInstance(view) == true) {
+      // The pager keeps header state for its pages, so moving one of its
+      // scrollers directly leaves the header out of sync. It scrolls itself.
+      val pagerScrollers = mutableListOf<View>()
+      val nestedPagers = mutableListOf<View>()
+      (view as ViewGroup).forEach { child ->
+        collectScrolledViews(child, pagerScrollers, nestedPagers)
+      }
+      if (pagerScrollers.isNotEmpty() || nestedPagers.isNotEmpty() || isPagerAwayFromTop(view)) {
+        pagers.add(view)
+      }
+      return
+    }
+    if (
+      (view is RecyclerView || view is NestedScrollView || view is ScrollView) &&
+      view.canScrollVertically(-1)
+    ) {
+      scrollers.add(view)
+    }
+    if (view is ViewGroup) {
+      view.forEach { child -> collectScrolledViews(child, scrollers, pagers) }
+    }
+  }
+
+  private fun isPagerAwayFromTop(pager: View): Boolean =
+    runCatching { pager.javaClass.getMethod("isAwayFromPageTop").invoke(pager) as Boolean }
+      .onFailure { Log.w("BottomTabs", "Unable to read the collapsible pager top state", it) }
+      .getOrDefault(false)
+
+  private fun scrollPagerToTop(pager: View): Boolean =
+    runCatching {
+      pager.javaClass
+        .getMethod("tryScrollToTop", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+        .invoke(pager, 0, true) as Boolean
+    }.onFailure { Log.w("BottomTabs", "Unable to scroll the collapsible pager to top", it) }
+      .getOrDefault(false)
 
   fun setIgnoreBottomInsets(ignore: Boolean) {
     ignoreBottomInsets = ignore

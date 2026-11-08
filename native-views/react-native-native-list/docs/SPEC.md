@@ -632,6 +632,16 @@ An unrelated layout request MUST NOT indefinitely postpone command completion.
 Replacement, actual drag, detach and disposal invalidate old callbacks; a stale
 callback MUST NOT move the view or clear a newer command's barriers.
 
+On iOS, the existing `scrollToOffset` implementation is also exposed to native
+callers as `onekeyScrollToOffset:animated:`. BottomTabs discovers this selector
+on the collection view's direct NativeList owner and requests offset zero for
+standalone-list double-press scrolling. The call uses `requestScroll`, including
+its explicit-scroll revision, structural-tail interruption, command notifications
+and pending-layout ownership; external callers MUST NOT bypass it by writing
+the internal collection view's offset. This adds no JavaScript/Nitro API.
+BottomTabs and NativeList native sources must ship together. The native handoff
+is source implemented; structural-transition runtime acceptance remains pending.
+
 A valid command can privately notify the owning Pager before execution, including
 a same-position no-op; this does not add a public NativeList API. A Pager-owned
 page-top or sticky-top command can privately cancel only its owned list's old
