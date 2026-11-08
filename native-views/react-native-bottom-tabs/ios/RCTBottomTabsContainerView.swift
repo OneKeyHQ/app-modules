@@ -1086,7 +1086,15 @@ class RCTBottomTabsContainerView: UIView {
     var scrollViews: [UIScrollView] = []
     var pagers: [UIView] = []
     collectScrolledViews(in: rootView, window: window, scrollViews: &scrollViews, pagers: &pagers)
+    let nativeListScrollSelector = NSSelectorFromString("onekeyScrollToOffset:animated:")
     for scrollView in scrollViews {
+      if let owner = scrollView.superview, owner.responds(to: nativeListScrollSelector) {
+        // NativeList must release structural-tail offset writes before scrolling.
+        typealias ScrollToOffset = @convention(c) (AnyObject, Selector, Double, Bool) -> Void
+        let scrollToOffset = unsafeBitCast(owner.method(for: nativeListScrollSelector), to: ScrollToOffset.self)
+        scrollToOffset(owner, nativeListScrollSelector, 0, true)
+        continue
+      }
       let topOffset = -scrollView.adjustedContentInset.top
       scrollView.setContentOffset(
         CGPoint(x: scrollView.contentOffset.x, y: topOffset),

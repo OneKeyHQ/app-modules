@@ -203,6 +203,12 @@ The event carries `didScrollToTop`: true only when at least one scroller was
 away from its top and accepted the top request, false when all were already
 there, so the host can decide what a double press at the top means. Rejection
 MUST NOT be reported as success or as proof that the page is already at top.
+On iOS, a standalone NativeList collection view delegates back to its direct
+owner's `onekeyScrollToOffset:animated:` selector with offset zero and animation
+enabled. This uses NativeList's existing explicit-command path to end an active
+structural tail, invalidate stale scroll completions and own pending layout
+before scrolling; BottomTabs MUST NOT also write that collection view's offset.
+BottomTabs and NativeList native sources must ship together for this selector.
 Scrollers inside a `CollapsiblePagerView` are never moved directly because the pager owns
 their header state; the module calls the pager's own `tryScrollToTop` by name, as
 it has no package dependency on the pager. A pager also counts as away from its
