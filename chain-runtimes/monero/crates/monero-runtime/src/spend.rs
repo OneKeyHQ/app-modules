@@ -383,26 +383,28 @@ async fn ring_for<R: RngCore + CryptoRng + Send + Sync>(
     output_id: i64,
     chain_tip: u64,
 ) -> Result<(OutputWithDecoys, Option<u64>)> {
+    let select_error = |e: monero_wallet::interface::TransactionsError| {
+        RuntimeError::with(
+            ErrorCode::NetworkError,
+            json!({ "operation": "selectDecoys", "outputId": output_id }),
+        )
+        .detail(format!("{e:?}"))
+    };
     let output = query::load_output(db, output_id)?;
     let global_index = output.index_on_blockchain();
-    // A saved ring that cannot be read or checked never blocks a send: a new one is picked instead.
+    // An unreadable saved ring counts as none. An unanswered check keeps the ring, as wallet2
+    // does: rotating it on a node's silence would let that node intersect two rings.
     if let Ok(Some(saved)) = query::load_ring(db, identity_id, global_index) {
         if saved_ring_stands(decoy_source, &saved, &output)
             .await
-            .unwrap_or(false)
+            .map_err(select_error)?
         {
             return Ok((saved, None));
         }
     }
     let ring = OutputWithDecoys::new(rng, decoy_source, RING_LEN, chain_tip as usize, output)
         .await
-        .map_err(|e| {
-            RuntimeError::with(
-                ErrorCode::NetworkError,
-                json!({ "operation": "selectDecoys", "outputId": output_id }),
-            )
-            .detail(format!("{e:?}"))
-        })?;
+        .map_err(select_error)?;
     Ok((ring, Some(global_index)))
 }
 
@@ -1206,17 +1208,35 @@ mod tests {
         }
     }
 
-    // A node behind the one the ring was picked from must not block the send.
+    // A node that does not answer must not get a second ring to intersect with the first.
     #[test]
-    fn a_saved_ring_the_node_cannot_serve_is_replaced_instead_of_failing() {
+    fn an_unanswered_check_fails_and_keeps_the_saved_ring() {
         let (db, id, output_id, output) = db_with_one_output();
         let chain = FakeChain::new(&output);
         let first = pick_ring(&db, &chain, id, output_id, 1);
         chain.missing.lock().unwrap().push(a_decoy(&first));
 
-        let second = pick_ring(&db, &chain, id, output_id, 2);
-        assert_eq!(distributions(&chain), 2, "a new ring was picked");
-        assert_ne!(first.decoys().positions(), second.decoys().positions());
+        let mut rng = test_support::SeededRng::new(2);
+        let mut cache = HashMap::new();
+        let error = futures_lite::future::block_on(rings_for(
+            &db,
+            &chain,
+            &mut rng,
+            id,
+            &[output_id],
+            FakeChain::TIP,
+            &mut cache,
+        ))
+        .unwrap_err();
+        assert!(matches!(error.code, ErrorCode::NetworkError));
+        assert_eq!(distributions(&chain), 1, "no new ring was picked");
+        let saved = query::load_ring(&db, id, 7).unwrap().unwrap();
+        assert_eq!(saved.decoys().positions(), first.decoys().positions());
+
+        // Once the node answers again, the same ring is used.
+        chain.missing.lock().unwrap().clear();
+        let later = pick_ring(&db, &chain, id, output_id, 3);
+        assert_eq!(later.decoys().positions(), first.decoys().positions());
     }
 
     // Saved rings hold the output's keys, so they go with the account.
