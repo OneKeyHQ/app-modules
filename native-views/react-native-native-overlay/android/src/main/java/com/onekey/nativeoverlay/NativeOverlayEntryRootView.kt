@@ -103,6 +103,9 @@ internal class NativeOverlayEntryRootView(
   private var imeBottom = 0
   private var safeTop = 0
   private var sheetBottomPadding = 0
+  /** Paints the platform sheet's navigation-bar inset strip. */
+  internal var sheetBottomInsetPaintView: View? = null
+    private set
   private var keyboardAnimating = false
 
   /** `sheet` presentation: the draggable surface; otherwise null. */
@@ -156,6 +159,8 @@ internal class NativeOverlayEntryRootView(
     backgroundColor: Int,
     showHandle: Boolean,
     draggable: Boolean,
+    bottomInsetColor: Int? = null,
+    bottomInsetHorizontalPx: Float = 0f,
   ) {
     val sheet = sheetView ?: createSheet()
     (sheet.background as? GradientDrawable)?.apply {
@@ -177,6 +182,60 @@ internal class NativeOverlayEntryRootView(
     if (params.height != targetHeight) {
       params.height = targetHeight
       sheet.layoutParams = params
+    }
+    updateSheetBottomInsetPaint(sheetBottomPadding, bottomInsetColor, bottomInsetHorizontalPx)
+  }
+
+  /**
+   * `sheet` presentation: the sheet pads its content by the navigation-bar
+   * inset so the content sits above the system bar. When JS draws the surface
+   * the platform sheet stays transparent, and the JS safe-area tail cannot
+   * paint this strip on Android: it hangs below the React content root, which
+   * Android does not composite outside its bounds. Paint the strip natively
+   * with the drawn surface color instead. A null color keeps it transparent
+   * for platform-painted sheets.
+   */
+  internal fun updateSheetBottomInsetPaint(
+    insetPx: Int,
+    color: Int?,
+    horizontalInsetPx: Float,
+  ) {
+    val sheet = sheetView ?: return
+    if (color == null || insetPx <= 0) {
+      sheetBottomInsetPaintView?.let { paint ->
+        sheet.removeView(paint)
+        sheetBottomInsetPaintView = null
+      }
+      return
+    }
+    val paint = sheetBottomInsetPaintView ?: View(reactContext).apply {
+      isClickable = false
+      isFocusable = false
+      importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+      // Index 0 keeps the strip behind the sheet content.
+      sheet.addView(
+        this,
+        0,
+        LayoutParams(LayoutParams.MATCH_PARENT, 0).apply { gravity = Gravity.BOTTOM },
+      )
+      sheetBottomInsetPaintView = this
+    }
+    paint.setBackgroundColor(color)
+    // The content height can be fractional; overlap it by a couple of points so
+    // rounding cannot leave an unpainted row above the strip. Both views share
+    // the same surface color, so the overlap is invisible.
+    val height = insetPx + (2 * resources.displayMetrics.density).toInt()
+    val horizontal = horizontalInsetPx.toInt().coerceAtLeast(0)
+    val params = paint.layoutParams as LayoutParams
+    if (
+      params.height != height ||
+      params.leftMargin != horizontal ||
+      params.rightMargin != horizontal
+    ) {
+      params.height = height
+      params.leftMargin = horizontal
+      params.rightMargin = horizontal
+      paint.layoutParams = params
     }
   }
 
@@ -242,6 +301,7 @@ internal class NativeOverlayEntryRootView(
     sheetAnimationView = coordinator
     sheetBehavior = behavior
     handleView = handle
+    sheetBottomInsetPaintView = null
     return sheet
   }
 

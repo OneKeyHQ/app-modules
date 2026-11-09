@@ -25,6 +25,7 @@ import androidx.window.layout.WindowLayoutInfo
 import androidx.window.java.layout.WindowInfoTrackerCallbackAdapter
 import androidx.appcompat.app.AppCompatDelegate
 import com.facebook.proguard.annotations.DoNotStrip
+import com.facebook.react.ReactRootView
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.NitroModules
@@ -965,9 +966,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
           // the platform bar transparent and draw the requested color only
           // behind three-button navigation.
           window.navigationBarColor = Color.TRANSPARENT
-          installNavigationBarProtection(decorView, appearance.color)
+          installNavigationBarProtection(activity, appearance.color)
         } else {
-          removeNavigationBarProtection(decorView)
+          removeNavigationBarProtection(activity)
           window.navigationBarColor = appearance.color
         }
       } catch (e: Exception) {
@@ -979,27 +980,40 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
   }
 
-  private fun installNavigationBarProtection(decorView: View, color: Int) {
-    val decorContainer = decorView as? ViewGroup ?: return
-    val protectionView = findNavigationBarProtection(decorContainer) ?: View(
-      decorContainer.context
-    ).also { view ->
-      view.tag = NAVIGATION_BAR_PROTECTION_VIEW_TAG
-      view.isClickable = false
-      view.isFocusable = false
-      view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-      decorContainer.addView(
-        view,
-        FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          0,
-          Gravity.BOTTOM,
-        ),
-      )
-    }
+  private fun installNavigationBarProtection(activity: Activity, color: Int) {
+    val decorView = activity.window?.decorView as? ViewGroup ?: return
+    val contentView = activity.findViewById<ViewGroup>(android.R.id.content)
+    val reactRootIndex = contentView?.let(::findReactRootIndex)
+    // Overlay hosts are content-view children added after the React root, and a
+    // dimmed overlay must cover this bar together with the rest of the screen,
+    // so the protection belongs directly above the React root and below them.
+    // While the React root does not exist yet, fall back to the decor view; the
+    // next call moves it into place.
+    val container =
+      if (contentView != null && reactRootIndex != null) contentView else decorView
+    val targetIndex =
+      if (container === contentView && reactRootIndex != null) {
+        reactRootIndex + 1
+      } else {
+        container.childCount
+      }
+    // A detached React root falls back to the decor view while an earlier
+    // protection may still live in the content view. Reuse it (moving it to the
+    // fallback container) and drop any duplicate, so one activity never ends up
+    // with a second protection stacked above later overlays.
+    val protectionView =
+      findNavigationBarProtection(contentView ?: decorView)
+        ?: findNavigationBarProtection(decorView)
+        ?: View(container.context).also { view ->
+          view.tag = NAVIGATION_BAR_PROTECTION_VIEW_TAG
+          view.isClickable = false
+          view.isFocusable = false
+          view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+    removeDuplicateNavigationBarProtections(contentView, decorView, protectionView)
+    placeNavigationBarProtection(container, protectionView, targetIndex)
 
     protectionView.visibility = View.VISIBLE
-    protectionView.bringToFront()
     ViewCompat.setOnApplyWindowInsetsListener(protectionView) { view, windowInsets ->
       val navigationBarInsets = windowInsets.getInsets(
         WindowInsetsCompat.Type.navigationBars()
@@ -1060,9 +1074,57 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     ViewCompat.requestApplyInsets(protectionView)
   }
 
-  private fun findNavigationBarProtection(decorContainer: ViewGroup): View? {
-    for (index in 0 until decorContainer.childCount) {
-      val child = decorContainer.getChildAt(index)
+  /** Removes extra protection views left by an earlier fallback. */
+  private fun removeDuplicateNavigationBarProtections(
+    contentView: ViewGroup?,
+    decorView: ViewGroup,
+    keep: View,
+  ) {
+    for (container in listOfNotNull(contentView, decorView)) {
+      for (index in container.childCount - 1 downTo 0) {
+        val child = container.getChildAt(index)
+        if (child !== keep && child.tag == NAVIGATION_BAR_PROTECTION_VIEW_TAG) {
+          ViewCompat.setOnApplyWindowInsetsListener(child, null)
+          container.removeView(child)
+        }
+      }
+    }
+  }
+
+  /** Index of the React root child, or null before the root view exists. */
+  private fun findReactRootIndex(container: ViewGroup): Int? {
+    for (index in 0 until container.childCount) {
+      if (container.getChildAt(index) is ReactRootView) {
+        return index
+      }
+    }
+    return null
+  }
+
+  private fun placeNavigationBarProtection(
+    container: ViewGroup,
+    protectionView: View,
+    index: Int,
+  ) {
+    val parent = protectionView.parent as? ViewGroup
+    if (parent === container && container.indexOfChild(protectionView) == index) {
+      return
+    }
+    parent?.removeView(protectionView)
+    container.addView(
+      protectionView,
+      index.coerceIn(0, container.childCount),
+      FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        0,
+        Gravity.BOTTOM,
+      ),
+    )
+  }
+
+  private fun findNavigationBarProtection(container: ViewGroup): View? {
+    for (index in 0 until container.childCount) {
+      val child = container.getChildAt(index)
       if (child.tag == NAVIGATION_BAR_PROTECTION_VIEW_TAG) {
         return child
       }
@@ -1070,11 +1132,15 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     return null
   }
 
-  private fun removeNavigationBarProtection(decorView: View) {
-    val decorContainer = decorView as? ViewGroup ?: return
-    val protectionView = findNavigationBarProtection(decorContainer) ?: return
-    ViewCompat.setOnApplyWindowInsetsListener(protectionView, null)
-    decorContainer.removeView(protectionView)
+  private fun removeNavigationBarProtection(activity: Activity?) {
+    if (activity == null) return
+    val decorView = activity.window?.decorView as? ViewGroup
+    val contentView = activity.findViewById<ViewGroup>(android.R.id.content)
+    for (container in listOfNotNull(contentView, decorView)) {
+      val protectionView = findNavigationBarProtection(container) ?: continue
+      ViewCompat.setOnApplyWindowInsetsListener(protectionView, null)
+      container.removeView(protectionView)
+    }
   }
 
     override fun onHostResume() {

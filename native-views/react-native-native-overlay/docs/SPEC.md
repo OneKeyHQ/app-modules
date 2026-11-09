@@ -492,6 +492,11 @@ Max-width sheet (`sheet.maxWidth`, default 540):
   amount, so the fractional boundary between the two views cannot antialias
   into a hairline on scaled renders (Simulator windows, screenshots, screen
   recordings).
+- Android hosts the sheet inside the activity content view and pads the sheet
+  by the navigation-bar inset, so the JS tail below the React content root is
+  not composited there. Native paints that inset strip with the drawn surface
+  color (`sheetBottomInsetColor`, limited by `sheetBottomInsetHorizontal`)
+  instead; the JS tail still covers the iOS home-indicator area.
 
 Width changes while open (rotation, folding, window resize):
 
@@ -699,6 +704,13 @@ Automated (P0):
   actual `ReactViewGroup` and checks a sheet at 200, 600 and 320 px after
   attachment. Height changes MUST relayout and bottom-pin the sheet without
   a Fabric host-size update, and leave no pending host layout flag.
+- `NativeOverlaySheetInsetTest` exercises the production Android sheet inset
+  painter: the navigation-bar strip sits behind the content, follows the drawn
+  surface width, carries the surface color and is removed when the platform
+  sheet paints its own background. `src/__tests__/sheetSurface.test.ts` checks
+  that the drawn surface color and horizontal inset reach native only while
+  the JS surface is active. Source and Robolectric verified; physical-device
+  verification pending.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed.
@@ -844,7 +856,9 @@ P4b dialog loading notes:
   it. Its 50 ms delays and the iOS remount key are gone; text updates in
   place.
 - Android sheets pad their content by the navigation-bar inset, matching the
-  UIKit sheet's home-indicator inset.
+  UIKit sheet's home-indicator inset, and paint that inset strip natively with
+  the drawn surface color (the JS tail is not composited below the React
+  content root on Android).
 
 P1 implementation map:
 
