@@ -314,6 +314,12 @@ Floating interaction (single finger; motion splitting is disabled):
    the old tab for cancelled or `preventsDefault` presses.
 
 JS-driven selection changes slide the pill with a spring and velocity stretch.
+When `tabBarHidden` changes dynamically while attached and laid out in `floating`
+style, `BottomTabsView` animates `floatingBar.translationY` across its visible
+bottom clearance (`DecelerateInterpolator`), preserving in-flight translation on
+rapid reversals, keeping the live blur backdrop active while the bar slides off
+screen, immediately reporting the updated measured height (`0` when hidden), and
+setting `floatingBar.visibility = GONE` upon hide completion.
 Switching style at runtime rebuilds the bar and restores Material's label sizes,
 icon size, ripple, padding, and gravity when returning to `default`.
 

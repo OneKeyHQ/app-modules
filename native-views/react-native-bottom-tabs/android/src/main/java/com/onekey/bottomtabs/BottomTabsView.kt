@@ -162,12 +162,13 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingRoot = object : FrameLayout(context) {
     override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
       if (child === floatingBar && usesBottomBlur) {
+        val translationY = floatingBar.translationY.roundToInt()
         drawBlurBackdrop(
           canvas,
           floatingBar.left,
-          floatingBar.top,
+          floatingBar.top + translationY,
           floatingBar.right,
-          floatingBar.bottom,
+          floatingBar.bottom + translationY,
           floatingBar.height / 2f,
         ) { recording ->
           super.drawChild(recording, layoutHolder, drawingTime)
@@ -232,6 +233,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private var floatingStretch = 0f
   private var floatingLiftAnimator: ValueAnimator? = null
   private var floatingSlideAnimator: ValueAnimator? = null
+  private var floatingVisibilityCallback: Choreographer.FrameCallback? = null
   private var floatingTouchView: View? = null
   private var floatingTouchItemId = View.NO_ID
   private var floatingCandidateItemId = View.NO_ID
@@ -288,7 +290,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
   private val usesBottomBlur: Boolean
     get() = androidBottomBlurEnabled && Build.VERSION.SDK_INT >= 31 &&
-      isHardwareAccelerated && !isTabBarHidden
+      isHardwareAccelerated && (!isTabBarHidden || floatingVisibilityCallback != null)
 
   init {
     orientation = VERTICAL
@@ -342,7 +344,70 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     (view.parent as? ViewGroup)?.removeView(view)
   }
 
+  private fun cancelFloatingVisibilityAnimation() {
+    val callback = floatingVisibilityCallback ?: return
+    floatingVisibilityCallback = null
+    Choreographer.getInstance().removeFrameCallback(callback)
+  }
+
+  private fun getFloatingBarSlideOffset(): Float {
+    val params = floatingBar.layoutParams as? FrameLayout.LayoutParams
+    val barHeightPx = floatingBar.height.takeIf { it > 0 } ?: dp(FloatingTabBarMetrics.BAR_HEIGHT)
+    val bottomMarginPx = params?.bottomMargin
+      ?: (maxOf(floatingBottomInset, dp(FloatingTabBarMetrics.BAR_MIN_BOTTOM_GAP)) +
+        dp(FloatingTabBarMetrics.BAR_BOTTOM_EXTRA))
+    return (barHeightPx + minOf(bottomMarginPx, dp(24f)) + dp(4f)).toFloat()
+  }
+
+  private fun animateFloatingVisibility(fromY: Float, toY: Float, hiding: Boolean) {
+    cancelFloatingVisibilityAnimation()
+    if (!ValueAnimator.areAnimatorsEnabled()) {
+      floatingBar.translationY = 0f
+      floatingBar.visibility = if (hiding) GONE else VISIBLE
+      updateBlurAppearance()
+      floatingRoot.invalidate()
+      return
+    }
+    val durationMs = 140f
+    val maxFrameStepMs = 24f
+    val interpolator = DecelerateInterpolator(if (hiding) 1.2f else 1.4f)
+    var elapsedMs = 0f
+    var lastFrameTimeNanos = -1L
+    val callback = object : Choreographer.FrameCallback {
+      override fun doFrame(frameTimeNanos: Long) {
+        if (floatingVisibilityCallback !== this) return
+        val deltaMs = if (lastFrameTimeNanos < 0L) {
+          16f
+        } else {
+          ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000f).coerceIn(1f, maxFrameStepMs)
+        }
+        lastFrameTimeNanos = frameTimeNanos
+        elapsedMs = (elapsedMs + deltaMs).coerceAtMost(durationMs)
+        val fraction = interpolator.getInterpolation((elapsedMs / durationMs).coerceIn(0f, 1f))
+        floatingBar.translationY = fromY + (toY - fromY) * fraction
+        floatingRoot.invalidate()
+        if (elapsedMs < durationMs) {
+          Choreographer.getInstance().postFrameCallback(this)
+        } else {
+          floatingVisibilityCallback = null
+          if (hiding && isTabBarHidden) {
+            floatingBar.translationY = 0f
+            floatingBar.visibility = GONE
+            updateBlurAppearance()
+          } else if (!hiding && !isTabBarHidden) {
+            floatingBar.translationY = 0f
+          }
+          floatingRoot.invalidate()
+        }
+      }
+    }
+    floatingVisibilityCallback = callback
+    Choreographer.getInstance().postFrameCallback(callback)
+  }
+
   private fun detachTabBarViews() {
+    cancelFloatingVisibilityAnimation()
+    floatingBar.translationY = 0f
     releaseBottomBlur()
     removeFromParent(layoutHolder)
     removeFromParent(bottomNavigation)
@@ -1051,6 +1116,11 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   override fun onDetachedFromWindow() {
+    cancelFloatingVisibilityAnimation()
+    floatingBar.translationY = 0f
+    if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
+      floatingBar.visibility = if (isTabBarHidden) GONE else VISIBLE
+    }
     releaseBottomBlur()
     super.onDetachedFromWindow()
   }
@@ -1310,23 +1380,61 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   fun setTabBarHidden(isHidden: Boolean) {
+    if (isTabBarHidden == isHidden) {
+      return
+    }
     isTabBarHidden = isHidden
     if (isHidden) {
       resetFloatingGesture()
     }
-    if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
-      floatingBar.visibility = if (isHidden) GONE else VISIBLE
-      bottomNavigation.visibility = VISIBLE
-    } else {
-      bottomNavigation.visibility = if (isHidden) GONE else VISIBLE
+    val shouldAnimateFloating =
+      androidTabBarStyle == AndroidTabBarStyle.FLOATING &&
+        isAttachedToWindow &&
+        width > 0 &&
+        height > 0
+
+    cancelFloatingVisibilityAnimation()
+
+    if (!shouldAnimateFloating) {
+      floatingBar.translationY = 0f
+      if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
+        floatingBar.visibility = if (isHidden) GONE else VISIBLE
+        bottomNavigation.visibility = VISIBLE
+      } else {
+        bottomNavigation.visibility = if (isHidden) GONE else VISIBLE
+      }
+      updateBlurAppearance()
+      requestLayout()
+      floatingRoot.invalidate()
+      invalidate()
+      if (!isHidden) post { updateFloatingIndicator(animate = false) }
+      return
     }
 
+    val slideOffset = getFloatingBarSlideOffset()
+    bottomNavigation.visibility = VISIBLE
+    if (isHidden) {
+      val startY = if (floatingBar.visibility == VISIBLE) floatingBar.translationY else slideOffset
+      floatingBar.visibility = VISIBLE
+      floatingBar.translationY = startY
+      animateFloatingVisibility(startY, slideOffset, hiding = true)
+      updateBlurAppearance()
+      requestLayout()
+      floatingRoot.invalidate()
+      invalidate()
+      return
+    }
+
+    val wasGone = floatingBar.visibility != VISIBLE
+    val startY = if (wasGone) slideOffset else floatingBar.translationY
+    floatingBar.visibility = VISIBLE
+    floatingBar.translationY = startY
+    animateFloatingVisibility(startY, 0f, hiding = false)
     updateBlurAppearance()
     requestLayout()
     floatingRoot.invalidate()
     invalidate()
-    if (!isHidden) post { updateFloatingIndicator(animate = false) }
-
+    post { updateFloatingIndicator(animate = false) }
   }
 
   fun updateItems(items: MutableList<TabInfo>) {
@@ -1366,7 +1474,9 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
         val itemView = bottomNavigation.findViewById<View>(menuItem.itemId)
         itemView?.let { view ->
           view.setOnClickListener {
-            onTabSelected(menuItem)
+            if (!isTabBarHidden) {
+              onTabSelected(menuItem)
+            }
           }
           view.setOnTouchListener { touchedView, event ->
             handleFloatingTabTouch(touchedView, menuItem, event)
