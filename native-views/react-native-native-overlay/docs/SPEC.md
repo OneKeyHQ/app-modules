@@ -590,7 +590,7 @@ Known divergences:
 | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | iOS global sheet (system physics) vs. iOS page sheet (custom physics)                                    | Accepted (decision A). Revisit after on-device comparison. |
 | RN `Modal` and third-party dialogs on Android are windows above every layer                              | Accepted, mitigated by the lock policy (§5.7).             |
-| Web anchored origin follows the resolved placement after flip; today's code uses the requested placement | Intentional fix.                                           |
+| Web anchored origin follows the resolved placement after flip; the Tamagui Popover used the requested placement | Intentional fix, implemented (`getAnchoredTransformOrigin`). |
 
 ## 5.7 Failure, fallback, and safety
 
@@ -964,6 +964,13 @@ P5b web popover notes:
   untransformed, so Floating UI uses the same coordinate space during and after
   the animation. Completion positioning must not correct coordinates distorted
   by the enter scale. Multi-child roots retain their shared full-window motion.
+- The anchored content's transform origin is the side and corner facing the
+  anchor, read from its `data-placement` (Floating UI notation, after flip):
+  `bottom-end` scales from `right top`, `top-start` from `left bottom`, and so
+  on. Without a placement it falls back to the content center. The caller
+  sets `data-placement` once Floating UI resolves; because the enter run can
+  start before that, the caller also writes the same origin
+  (`getAnchoredTransformOrigin`) onto the running content.
 - Press-triggered anchored panels close on a backdrop press without activating
   the page underneath. Presses on the panel or inside an overlay ranked above
   it do not close it, so a nested Select or a Dialog opened from the panel

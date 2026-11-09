@@ -35,6 +35,7 @@ export {
   springToAndroidSpringForce,
   springToCssLinear,
 } from './animation/spring';
+export { getAnchoredTransformOrigin } from './animation/anchoredOrigin';
 export { OverlayView } from './OverlayView';
 export {
   useEnclosingOverlayLevel,

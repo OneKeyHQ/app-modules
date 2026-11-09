@@ -1,3 +1,4 @@
+import { getAnchoredTransformOrigin } from '../animation/anchoredOrigin';
 import { springToCssLinear } from '../animation/spring';
 
 import type { IResolvedOverlayTransition } from '../animation/resolveAnimation';
@@ -159,9 +160,15 @@ export function animateTransition(
     anchoredContent instanceof HTMLElement ? anchoredContent : element;
   const targetRect =
     target === element ? undefined : target.getBoundingClientRect();
-  target.style.transformOrigin = `${
-    (extent.left + extent.right) / 2 - (targetRect?.left ?? 0)
-  }px ${(extent.top + extent.bottom) / 2 - (targetRect?.top ?? 0)}px`;
+  const anchorOrigin =
+    target === element
+      ? undefined
+      : getAnchoredTransformOrigin(target.dataset.placement);
+  target.style.transformOrigin =
+    anchorOrigin ??
+    `${(extent.left + extent.right) / 2 - (targetRect?.left ?? 0)}px ${
+      (extent.top + extent.bottom) / 2 - (targetRect?.top ?? 0)
+    }px`;
   const keyframes = buildTransitionKeyframes({
     transition: effective,
     extent,
