@@ -151,8 +151,11 @@ class RCTBottomTabsContainerView: UIView {
   private var selectedIconRequestTokens: [Int: NSObject] = [:]
   private var sideAccessoryRequestToken = NSObject()
   private var isSideAccessoryLayoutScheduled = false
+  private var tabBarVisibilityAnimationGeneration = 0
   private static let sideAccessorySize: CGFloat = 48
   private static let sideAccessorySpacing: CGFloat = 12
+  private static let tabBarSlideAnimationDuration: TimeInterval = 0.28
+  private static let tabBarSlideClearance: CGFloat = 12
 
   // MARK: - Props (set by Fabric ComponentView via KVC)
 
@@ -193,7 +196,10 @@ class RCTBottomTabsContainerView: UIView {
   }
 
   @objc var tabBarHidden: Bool = false {
-    didSet { updateTabBarHidden() }
+    didSet {
+      guard tabBarHidden != oldValue else { return }
+      updateTabBarHidden(animated: window != nil)
+    }
   }
 
   @objc var translucent: NSNumber? {
@@ -284,6 +290,13 @@ class RCTBottomTabsContainerView: UIView {
     }
   }
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil, tabBarController != nil {
+      updateTabBarHidden(animated: false)
+    }
+  }
+
   // MARK: - Layout
 
   override func layoutSubviews() {
@@ -347,10 +360,13 @@ class RCTBottomTabsContainerView: UIView {
     let placement = currentTabBarPlacement()
     if placement != reportedTabBarPlacement {
       reportedTabBarPlacement = placement
+      if placement != "bottom" && tbc.tabBar.transform != .identity {
+        updateTabBarHidden(animated: false)
+      }
       onTabBarPlacementChange?(["placement": placement])
       // The bar's frame follows its placement, so the height reported for the
       // previous placement is stale.
-      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
+      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.bounds.size.height)])
     }
 
     guard placement != "bottom",
@@ -527,13 +543,13 @@ class RCTBottomTabsContainerView: UIView {
     rebuildViewControllers()
     updateTabBarAppearance()
     updateTintColors()
-    updateTabBarHidden()
+    updateTabBarHidden(animated: false)
     updateSidebarAdaptable()
     updateMinimizeBehavior()
 
     DispatchQueue.main.async { [weak self] in
       guard let self, let tbc = self.tabBarController else { return }
-      self.onTabBarMeasured?(["height": self.tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
+      self.onTabBarMeasured?(["height": self.tabBarHidden ? 0 : Double(tbc.tabBar.bounds.size.height)])
     }
   }
 
@@ -793,22 +809,110 @@ class RCTBottomTabsContainerView: UIView {
     }
   }
 
-  private func updateTabBarHidden() {
-    guard let tbc = tabBarController else { return }
+  private func isSystemTabBarHidden(on tbc: UITabBarController) -> Bool {
+    #if compiler(>=6.0)
+    if #available(iOS 18.0, *) {
+      return tbc.isTabBarHidden || tbc.tabBar.isHidden || tbc.tabBar.alpha == 0
+    }
+    #endif
+    return tbc.tabBar.isHidden || tbc.tabBar.alpha == 0
+  }
+
+  private func applySystemTabBarHidden(_ hidden: Bool, on tbc: UITabBarController) {
     // Keep UIKit's tab bar visibility state in sync on iOS 18+.
     #if compiler(>=6.0)
     if #available(iOS 18.0, *) {
-      tbc.setTabBarHidden(tabBarHidden, animated: false)
+      tbc.setTabBarHidden(hidden, animated: false)
     } else {
-      tbc.tabBar.isHidden = tabBarHidden
+      tbc.tabBar.isHidden = hidden
     }
     #else
-    tbc.tabBar.isHidden = tabBarHidden
+    tbc.tabBar.isHidden = hidden
     #endif
+    if !hidden {
+      tbc.tabBar.isHidden = false
+      tbc.tabBar.alpha = 1.0
+    }
+  }
+
+  private func tabBarSlideOffset(for tbc: UITabBarController) -> CGFloat {
+    max(tbc.tabBar.bounds.size.height, 62) + Self.tabBarSlideClearance
+  }
+
+  private func updateTabBarHidden(animated: Bool = false) {
+    guard let tbc = tabBarController else { return }
+    tabBarVisibilityAnimationGeneration += 1
+    let generation = tabBarVisibilityAnimationGeneration
     tbc.tabBar.isUserInteractionEnabled = !tabBarHidden
 
-    onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
+    let shouldAnimate =
+      animated &&
+      currentTabBarPlacement() == "bottom" &&
+      bounds.width > 0 &&
+      bounds.height > 0
+
+    if !shouldAnimate {
+      UIView.performWithoutAnimation {
+        tbc.tabBar.layer.removeAllAnimations()
+        tbc.tabBar.transform = .identity
+        applySystemTabBarHidden(tabBarHidden, on: tbc)
+        tbc.view.layoutIfNeeded()
+      }
+      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.bounds.size.height)])
+      scheduleSideAccessoryLayout()
+      return
+    }
+
+    if tabBarHidden {
+      // Keep UIKit's system visibility active while sliding down so layout passes
+      // triggered by concurrent navigation pushes do not snap tabBar.alpha to 0.
+      let slideOffset = tabBarSlideOffset(for: tbc)
+      onTabBarMeasured?(["height": 0.0])
+      scheduleSideAccessoryLayout()
+      UIView.animate(
+        withDuration: Self.tabBarSlideAnimationDuration,
+        delay: 0,
+        usingSpringWithDamping: 1.0,
+        initialSpringVelocity: 0,
+        options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction],
+        animations: {
+          tbc.tabBar.transform = CGAffineTransform(translationX: 0, y: slideOffset)
+        },
+        completion: { [weak self, weak tbc] _ in
+          guard let self,
+                let tbc,
+                self.tabBarVisibilityAnimationGeneration == generation,
+                self.tabBarHidden else { return }
+          UIView.performWithoutAnimation {
+            tbc.tabBar.transform = .identity
+            self.applySystemTabBarHidden(true, on: tbc)
+          }
+        }
+      )
+      return
+    }
+
+    let wasSystemHidden = isSystemTabBarHidden(on: tbc)
+    UIView.performWithoutAnimation {
+      applySystemTabBarHidden(false, on: tbc)
+      tbc.view.layoutIfNeeded()
+      if wasSystemHidden {
+        let slideOffset = tabBarSlideOffset(for: tbc)
+        tbc.tabBar.transform = CGAffineTransform(translationX: 0, y: slideOffset)
+      }
+    }
+    onTabBarMeasured?(["height": Double(tbc.tabBar.bounds.size.height)])
     scheduleSideAccessoryLayout()
+    UIView.animate(
+      withDuration: Self.tabBarSlideAnimationDuration,
+      delay: 0,
+      usingSpringWithDamping: 1.0,
+      initialSpringVelocity: 0,
+      options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction],
+      animations: {
+        tbc.tabBar.transform = .identity
+      }
+    )
   }
 
   private func updateSidebarAdaptable() {
