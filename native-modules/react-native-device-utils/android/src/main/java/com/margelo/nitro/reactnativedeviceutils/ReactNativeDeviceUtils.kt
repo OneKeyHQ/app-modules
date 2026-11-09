@@ -997,14 +997,20 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       } else {
         container.childCount
       }
-    val protectionView = findNavigationBarProtection(container)
-      ?: findNavigationBarProtection(decorView)
-      ?: View(container.context).also { view ->
-        view.tag = NAVIGATION_BAR_PROTECTION_VIEW_TAG
-        view.isClickable = false
-        view.isFocusable = false
-        view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-      }
+    // A detached React root falls back to the decor view while an earlier
+    // protection may still live in the content view. Reuse it (moving it to the
+    // fallback container) and drop any duplicate, so one activity never ends up
+    // with a second protection stacked above later overlays.
+    val protectionView =
+      findNavigationBarProtection(contentView ?: decorView)
+        ?: findNavigationBarProtection(decorView)
+        ?: View(container.context).also { view ->
+          view.tag = NAVIGATION_BAR_PROTECTION_VIEW_TAG
+          view.isClickable = false
+          view.isFocusable = false
+          view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+    removeDuplicateNavigationBarProtections(contentView, decorView, protectionView)
     placeNavigationBarProtection(container, protectionView, targetIndex)
 
     protectionView.visibility = View.VISIBLE
@@ -1066,6 +1072,23 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       windowInsets
     }
     ViewCompat.requestApplyInsets(protectionView)
+  }
+
+  /** Removes extra protection views left by an earlier fallback. */
+  private fun removeDuplicateNavigationBarProtections(
+    contentView: ViewGroup?,
+    decorView: ViewGroup,
+    keep: View,
+  ) {
+    for (container in listOfNotNull(contentView, decorView)) {
+      for (index in container.childCount - 1 downTo 0) {
+        val child = container.getChildAt(index)
+        if (child !== keep && child.tag == NAVIGATION_BAR_PROTECTION_VIEW_TAG) {
+          ViewCompat.setOnApplyWindowInsetsListener(child, null)
+          container.removeView(child)
+        }
+      }
+    }
   }
 
   /** Index of the React root child, or null before the root view exists. */
