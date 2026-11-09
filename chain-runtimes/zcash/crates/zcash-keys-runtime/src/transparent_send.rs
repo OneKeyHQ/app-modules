@@ -10,7 +10,7 @@ use sapling::bundle::Authorized as SaplingAuthorized;
 use serde::{Deserialize, Serialize};
 use transparent::{
     address::TransparentAddress,
-    builder::{TransparentBuilder, TransparentSigningSet},
+    builder::TransparentBuilder,
     bundle::{OutPoint, TxOut},
     keys::{AccountPrivKey, AccountPubKey, NonHardenedChildIndex, TransparentKeyScope},
 };
@@ -572,11 +572,12 @@ fn build_transaction(
     let quote = plan.quote();
     let branch = BranchId::for_height(&MAIN_NETWORK, plan.target_height);
     let mut builder = TransparentBuilder::empty();
-    let mut signing_set = TransparentSigningSet::new();
+    let account_pubkey = account_key.to_account_pubkey();
+    let mut coins = Vec::with_capacity(plan.inputs.len());
+    let mut pubkeys = Vec::with_capacity(plan.inputs.len());
 
     for input in &plan.inputs {
-        let secret_key = derive_secret_key(account_key, input.path)?;
-        let pubkey = signing_set.add_key(secret_key);
+        let pubkey = derive_public_key(&account_pubkey, input.path)?;
         let derived_address = TransparentAddress::from_pubkey(&pubkey);
         let expected_script = derived_address.script().to_bytes();
         if input.script_pub_key != expected_script {
@@ -585,13 +586,16 @@ fn build_transaction(
                 serde_json::json!({ "txid": input.txid.to_string(), "vout": input.request.vout }),
             ));
         }
+        let coin = TxOut::new(input.value, derived_address.script().into());
         builder
             .add_p2pkh_input(
                 pubkey,
                 OutPoint::new(*input.txid.as_ref(), input.request.vout),
-                TxOut::new(input.value, derived_address.script().into()),
+                coin.clone(),
             )
             .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))?;
+        coins.push(coin);
+        pubkeys.push(pubkey);
     }
 
     for output in &plan.recipients {
@@ -600,8 +604,7 @@ fn build_transaction(
             .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))?;
     }
     if let Some((change_request, output, path)) = &plan.change {
-        let secret_key = derive_secret_key(account_key, *path)?;
-        let pubkey = signing_set.add_key(secret_key);
+        let pubkey = derive_public_key(&account_pubkey, *path)?;
         let derived_address = TransparentAddress::from_pubkey(&pubkey);
         if derived_address != require_transparent(output.address)? {
             return Err(KeysError::with(
@@ -639,19 +642,49 @@ fn build_transaction(
         None,
     );
     let txid_parts = unsigned_tx.digest(TxIdDigester);
-    let authorized_bundle = transparent_bundle
-        .apply_signatures(
-            |input| {
-                *signature_hash(
-                    &unsigned_tx,
-                    &SignableInput::Transparent(input),
-                    &txid_parts,
-                )
-                .as_ref()
-            },
-            &signing_set,
+
+    // Each key signs its own input and is erased right away. Upstream's `TransparentSigningSet`
+    // would hold every key until the end and free its list without wiping it.
+    let signer = secp256k1::Secp256k1::signing_only();
+    let mut vin = Vec::with_capacity(plan.inputs.len());
+    for (index, ((input, unsigned_input), (coin, pubkey))) in plan
+        .inputs
+        .iter()
+        .zip(&transparent_bundle.vin)
+        .zip(coins.iter().zip(&pubkeys))
+        .enumerate()
+    {
+        // The fields upstream `apply_signatures` signs: SIGHASH_ALL, and for P2PKH a script code
+        // equal to the coin's script.
+        let signable = transparent::sighash::SignableInput::from_parts(
+            &transparent_bundle,
+            transparent::sighash::SighashType::ALL,
+            index,
+            coin.script_pubkey(),
+            coin.script_pubkey(),
+            input.value,
         )
         .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))?;
+        let sighash = signature_hash(
+            &unsigned_tx,
+            &SignableInput::Transparent(signable),
+            &txid_parts,
+        );
+        let message = secp256k1::Message::from_digest(*sighash.as_ref());
+        let mut secret_key = derive_secret_key(account_key, input.path)?;
+        let signature = signer.sign_ecdsa(&message, &secret_key);
+        secret_key.non_secure_erase();
+        vin.push(transparent::bundle::TxIn::from_parts(
+            unsigned_input.prevout().clone(),
+            p2pkh_script_sig(&signature, pubkey)?,
+            unsigned_input.sequence(),
+        ));
+    }
+    let authorized_bundle = transparent::bundle::Bundle {
+        vin,
+        vout: transparent_bundle.vout.clone(),
+        authorization: transparent::bundle::Authorized,
+    };
     let transaction = TransactionData::<Authorized>::from_parts_v6(
         branch,
         0,
@@ -675,6 +708,24 @@ fn build_transaction(
         expiry_height: quote.expiry_height,
         spent_outpoints: quote.spent_outpoints,
     })
+}
+
+/// The P2PKH spend script as upstream's private `construct_script_sig` builds it: the DER
+/// signature followed by SIGHASH_ALL, then the compressed public key.
+fn p2pkh_script_sig(
+    signature: &secp256k1::ecdsa::Signature,
+    pubkey: &secp256k1::PublicKey,
+) -> Result<transparent::address::Script> {
+    let mut signature_bytes = signature.serialize_der().to_vec();
+    signature_bytes.push(transparent::sighash::SIGHASH_ALL);
+    let push = |bytes: &[u8]| {
+        zcash_script::pv::push_value(bytes)
+            .ok_or_else(|| KeysError::new(ErrorCode::TransactionBuildFailed))
+    };
+    Ok(
+        zcash_script::script::Component(vec![push(&signature_bytes)?, push(&pubkey.serialize())?])
+            .into(),
+    )
 }
 
 fn calculate_fee(
@@ -932,8 +983,8 @@ mod tests {
 
     fn address_and_script(seed: &[u8], account: u32, scope: u32, index: u32) -> (String, String) {
         let key = account_key(seed, account);
-        let secret = derive_secret_key(
-            &key,
+        let public = derive_public_key(
+            &key.to_account_pubkey(),
             DerivationPath {
                 account,
                 scope,
@@ -941,8 +992,6 @@ mod tests {
             },
         )
         .unwrap();
-        let mut signing_set = TransparentSigningSet::new();
-        let public = signing_set.add_key(secret);
         let address = TransparentAddress::from_pubkey(&public);
         (
             address.to_zcash_address(NetworkType::Main).to_string(),
@@ -992,6 +1041,86 @@ mod tests {
             }) },
         })
         .to_string()
+    }
+
+    /// The previous signing path: every key in upstream's `TransparentSigningSet`, then
+    /// `apply_signatures`. Kept only to prove the new path signs the same bytes.
+    fn build_with_signing_set(plan: TransactionPlan, account_key: &AccountPrivKey) -> String {
+        use transparent::builder::TransparentSigningSet;
+        let branch = BranchId::for_height(&MAIN_NETWORK, plan.target_height);
+        let mut builder = TransparentBuilder::empty();
+        let mut signing_set = TransparentSigningSet::new();
+        for input in &plan.inputs {
+            let pubkey = signing_set.add_key(derive_secret_key(account_key, input.path).unwrap());
+            let script = TransparentAddress::from_pubkey(&pubkey).script();
+            builder
+                .add_p2pkh_input(
+                    pubkey,
+                    OutPoint::new(*input.txid.as_ref(), input.request.vout),
+                    TxOut::new(input.value, script.into()),
+                )
+                .unwrap();
+        }
+        let change = plan.change.as_ref().map(|(_, output, _)| output);
+        for output in plan.recipients.iter().chain(change) {
+            builder
+                .add_output(&require_transparent(output.address).unwrap(), output.value)
+                .unwrap();
+        }
+        let bundle = builder.build().unwrap();
+        let unsigned = TransactionData::<TransparentUnauthorized>::from_parts_v6(
+            branch,
+            0,
+            plan.expiry_height,
+            Some(bundle.clone()),
+            None,
+            None,
+            None,
+        );
+        let txid_parts = unsigned.digest(TxIdDigester);
+        let signed = bundle
+            .apply_signatures(
+                |input| {
+                    *signature_hash(&unsigned, &SignableInput::Transparent(input), &txid_parts)
+                        .as_ref()
+                },
+                &signing_set,
+            )
+            .unwrap();
+        let tx = TransactionData::<Authorized>::from_parts_v6(
+            branch,
+            0,
+            plan.expiry_height,
+            Some(signed),
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap();
+        let mut raw = Vec::new();
+        tx.write(&mut raw).unwrap();
+        hex::encode(raw)
+    }
+
+    // Signing input by input must produce exactly what upstream's signing set produced, including
+    // several inputs, two inputs at one address, change, and send-max.
+    #[test]
+    fn signs_the_same_bytes_as_the_upstream_signing_set() {
+        let mut shared: serde_json::Value =
+            serde_json::from_str(&request_json(&[100_000, 100_000, 100_000], false)).unwrap();
+        shared["utxos"][1]["derivationPath"] = shared["utxos"][0]["derivationPath"].clone();
+        shared["utxos"][1]["scriptPubKey"] = shared["utxos"][0]["scriptPubKey"].clone();
+        let key = account_key(&seed(), 0);
+        for request in [
+            request_json(&[100_000, 200_000, 300_000, 400_000], false),
+            request_json(&[100_000, 200_000, 300_000], true),
+            shared.to_string(),
+        ] {
+            let plan = || plan_transaction(parse_request(&request).unwrap()).unwrap();
+            let built = build_transaction(plan(), &key).unwrap();
+            assert_eq!(built.raw_tx, build_with_signing_set(plan(), &key));
+        }
     }
 
     fn shielding_request(send_max: bool) -> String {
