@@ -4706,7 +4706,11 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
       ? sanitizeMarketMetrics(normalized)
       : sanitizeDecoration(normalized, field);
     if (canonical !== undefined) changes[field] = canonical;
-    else if (field === 'titleImage') changes[field] = null;
+    // A rejected title decoration clears the old one instead of leaving it drawn.
+    else if (
+      ['titleImage', 'titleSegments', 'titleLeadingIcon'].includes(field)
+    )
+      changes[field] = null;
   }
   if (
     patch.type === 'market' &&

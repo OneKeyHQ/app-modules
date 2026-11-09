@@ -276,7 +276,9 @@ rejects unknown keys, a blank name, a malformed color and
 `presentation: 'walletSidebar'`; production drops an invalid icon.
 
 Both fields are identity patch fields. Omission in a full snapshot removes
-them; omission in a patch keeps the current value. Rebind and recycle remove the
+them; omission in a patch keeps the current value. A production patch that
+supplies an invalid replacement clears the current value, as `null` does, so
+the row shows `title` instead of stale runs or a stale glyph. Rebind and recycle remove the
 previous runs and glyph, so a row without them never shows another row's.
 
 | Platform | Title runs | Leading icon |

@@ -428,6 +428,62 @@ describe.each([true, false])(
       });
     });
 
+    it('clears a decoration whose patch replacement is invalid in production', () => {
+      inMode(() => {
+        const initial = ownValidatedNativeSnapshot(
+          validateSnapshot(snapshot([recipient(), row('untouched')]))
+        );
+        const invalidChanges: Record<string, unknown>[] = [
+          { titleSegments: [] },
+          { titleSegments: [{ text: '   ' }] },
+          {
+            title: 'Wallet / Account #2',
+            titleSegments: [{ text: 'Account #2', tone: 'info' }],
+          },
+          { titleLeadingIcon: { name: '' } },
+          { titleLeadingIcon: { name: 'BookOpenOutline', tintColor: 'gray' } },
+        ];
+        for (const changes of invalidChanges) {
+          const patches = [
+            { type: 'identity', key: 'recipient', changes },
+          ] as unknown as readonly RowPatch[];
+          if (development) {
+            expect(() => applyOwnedNativePatches(initial, patches)).toThrow();
+            continue;
+          }
+          const expected = [
+            {
+              type: 'identity',
+              key: 'recipient',
+              changes: Object.fromEntries(
+                Object.entries(changes).map(([field, value]) => [
+                  field,
+                  field === 'title' ? value : null,
+                ])
+              ),
+            },
+          ];
+          expect(validatePatches(patches)).toEqual(expected);
+          const accepted = applyOwnedNativePatches(initial, patches);
+          expect(JSON.parse(accepted.json)).toEqual(expected);
+          const patched = accepted.snapshot.rows[0] as IdentityRow;
+          expect(patched.title).toBe(changes.title ?? 'Wallet / Account #1');
+          for (const [field, value] of [
+            ['titleSegments', titleSegments],
+            ['titleLeadingIcon', titleLeadingIcon],
+          ] as const) {
+            if (field in changes) expect(patched).not.toHaveProperty(field);
+            else expect(patched[field]).toEqual(value);
+          }
+          expect(accepted.snapshot.rows[1]).toBe(initial.rows[1]);
+          expect(initial.rows[0]).toMatchObject({
+            titleSegments,
+            titleLeadingIcon,
+          });
+        }
+      });
+    });
+
     it('rejects runs with title highlights or the wallet sidebar in development', () => {
       inMode(() => {
         const invalid: IdentityRow[] = [
