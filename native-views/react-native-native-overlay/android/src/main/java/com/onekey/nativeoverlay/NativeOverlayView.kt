@@ -69,6 +69,10 @@ class NativeOverlayView(
   var sheetCornerRadius = 24.0
   var showHandle = false
   var sheetBackgroundColor: Int? = null
+  /** Paints the platform sheet's bottom inset with the drawn surface color. */
+  var sheetBottomInsetColor: Int? = null
+  /** Horizontal inset of the drawn surface inside the sheet, in points. */
+  var sheetBottomInsetHorizontal = 0.0
   var dismissOnPanDown = true
   var animationConfig: String? = null
   var onPresented: ((Int) -> Unit)? = null
@@ -398,6 +402,8 @@ class NativeOverlayView(
         backgroundColor = sheetBackgroundColor ?: defaultSheetBackgroundColor(),
         showHandle = showHandle,
         draggable = dismissOnPanDown,
+        bottomInsetColor = sheetBottomInsetColor,
+        bottomInsetHorizontalPx = (sheetBottomInsetHorizontal * density).toFloat(),
       )
     }
   }

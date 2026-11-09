@@ -39,17 +39,23 @@ jest.mock('../NativeOverlayNativeComponent', () => ({
   default: ({
     children,
     sheetBackgroundColor,
+    sheetBottomInsetColor,
+    sheetBottomInsetHorizontal,
   }: {
     children?: ReactNode;
     sheetBackgroundColor?: string;
+    sheetBottomInsetColor?: string;
+    sheetBottomInsetHorizontal?: number;
   }) =>
-    jest
-      .requireActual<typeof import('react')>('react')
-      .createElement(
-        'div',
-        { 'data-native-background': sheetBackgroundColor },
-        children
-      ),
+    jest.requireActual<typeof import('react')>('react').createElement(
+      'div',
+      {
+        'data-native-background': sheetBackgroundColor,
+        'data-native-inset-color': sheetBottomInsetColor,
+        'data-native-inset-horizontal': sheetBottomInsetHorizontal,
+      },
+      children
+    ),
 }));
 jest.mock('../useOverlayController', () => ({
   useOverlayController: () => ({
@@ -124,5 +130,62 @@ it('overlaps the sheet surface tail behind the content surface', async () => {
     expect(margins).toEqual(['-2']);
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+const renderSheet = async (sheet: {
+  height: number;
+  maxWidth?: number;
+  backgroundColor?: string;
+}) => {
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(OverlayView, {
+        visible: true,
+        presentation: 'sheet',
+        sheet,
+      })
+    )
+  );
+  const native = container.querySelector('[data-native-background]')!;
+  return {
+    nativeBackground: native.getAttribute('data-native-background'),
+    insetColor: native.getAttribute('data-native-inset-color'),
+    insetHorizontal: native.getAttribute('data-native-inset-horizontal'),
+    unmount: () => act(async () => root.unmount()),
+  };
+};
+
+it('paints the platform sheet bottom inset with the drawn surface color', async () => {
+  Platform.OS = 'android';
+  const { nativeBackground, insetColor, insetHorizontal, unmount } =
+    await renderSheet({ height: 200, maxWidth: 540, backgroundColor: '#fff' });
+  try {
+    // The platform sheet stays transparent; native paints the navigation-bar
+    // strip with the drawn surface color and the surface's horizontal inset.
+    expect(nativeBackground).toBe('transparent');
+    expect(insetColor).toBe('#fff');
+    // Window 951 minus a 540 surface, split evenly on both sides.
+    expect(insetHorizontal).toBe('205.5');
+  } finally {
+    await unmount();
+  }
+});
+
+it('lets the platform sheet paint everything without a drawn surface', async () => {
+  Platform.OS = 'android';
+  const { nativeBackground, insetColor, insetHorizontal, unmount } =
+    await renderSheet({ height: 200, backgroundColor: '#fff' });
+  try {
+    expect(nativeBackground).toBe('#fff');
+    expect(insetColor).toBeNull();
+    expect(insetHorizontal).toBe('0');
+  } finally {
+    await unmount();
   }
 });
