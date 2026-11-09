@@ -492,6 +492,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   CGFloat _contentPaddingVertical;
   BOOL _segmented;
   BOOL _textVariant;
+  BOOL _pillVariant;
   NSDictionary *_config;
   RNCPagerToolbarButton *_toolbarButton;
   NSString *_toolbarKey;
@@ -677,6 +678,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   BOOL wasSegmented = _segmented;
   _segmented = [variant isEqualToString:@"segmented"];
   _textVariant = [variant isEqualToString:@"text"];
+  _pillVariant = [variant isEqualToString:@"pill"];
   _contentPaddingHorizontal = MAX(0, contentPaddingHorizontal);
   _contentPaddingVertical = MAX(0, contentPaddingVertical);
   _itemSpacing = MAX(0, itemSpacing);
@@ -749,15 +751,39 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   RNCLogNativeTabScrollBoundary(@"primary", @"end", scrollView, _scrollStartOffsetX);
 }
 
+- (CGFloat)itemPaddingHorizontal
+{
+  id value = _config[@"itemPaddingHorizontal"];
+  if ([value isKindOfClass:NSNumber.class] && std::isfinite([value doubleValue]) && [value doubleValue] >= 0) {
+    return [value doubleValue];
+  }
+  return _textVariant ? 10 : (_pillVariant ? 14 : 8);
+}
+
+// The tab row and toolbar share a centered band no wider than contentMaxWidth;
+// the bar background still covers the full width.
+- (CGRect)contentRowFrame
+{
+  CGFloat width = CGRectGetWidth(self.bounds);
+  id value = _config[@"contentMaxWidth"];
+  if ([value isKindOfClass:NSNumber.class] && std::isfinite([value doubleValue]) && [value doubleValue] > 0 &&
+      [value doubleValue] < width) {
+    CGFloat rowWidth = [value doubleValue];
+    return CGRectMake(floor((width - rowWidth) / 2), 0, rowWidth, CGRectGetHeight(self.bounds));
+  }
+  return self.bounds;
+}
+
 - (void)layoutSubviews
 {
   [super layoutSubviews];
   CGFloat reserved = _toolbarReservedWidth;
+  CGRect row = [self contentRowFrame];
   [self bringSubviewToFront:_toolbarButton];
-  _scrollView.frame = CGRectMake(_leftToRight ? 0 : reserved, 0,
-    MAX(0, CGRectGetWidth(self.bounds) - reserved), CGRectGetHeight(self.bounds));
+  _scrollView.frame = CGRectMake(CGRectGetMinX(row) + (_leftToRight ? 0 : reserved), 0,
+    MAX(0, CGRectGetWidth(row) - reserved), CGRectGetHeight(self.bounds));
   CGFloat inset = _toolbarTrailingInset - (_toolbarSize - _toolbarContentWidth) / 2;
-  _toolbarButton.frame = CGRectMake(_leftToRight ? CGRectGetWidth(self.bounds) - inset - _toolbarSize : inset,
+  _toolbarButton.frame = CGRectMake(_leftToRight ? CGRectGetMaxX(row) - inset - _toolbarSize : CGRectGetMinX(row) + inset,
     (CGRectGetHeight(self.bounds) - _toolbarSize) / 2, _toolbarSize, _toolbarSize);
   if (_segmented) {
     CGFloat width = CGRectGetWidth(_scrollView.bounds);
@@ -796,7 +822,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       UIFont *activeFont = self.activeTabFont;
       textWidth = MAX(textWidth, ceil([title sizeWithAttributes:@{NSFontAttributeName: activeFont}].width));
     }
-    CGFloat buttonWidth = MAX(44, textWidth + (_textVariant ? 20 : 16));
+    CGFloat buttonWidth = MAX(44, textWidth + 2 * self.itemPaddingHorizontal);
     [widths addObject:@(buttonWidth)];
     itemsWidth += buttonWidth;
   }
@@ -812,6 +838,14 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
     CGFloat buttonWidth = widths[index].doubleValue;
     if (!self->_leftToRight) x -= buttonWidth;
+    if (self->_pillVariant) {
+      CGFloat insetY = MIN(self->_contentPaddingVertical, self->_barHeight / 2);
+      button.frame = CGRectMake(x, insetY, buttonWidth, MAX(0, self->_barHeight - 2 * insetY));
+      [self->_indicatorFrames addObject:[NSValue valueWithCGRect:button.frame]];
+      if (self->_leftToRight) x += buttonWidth + self->_itemSpacing;
+      else x -= self->_itemSpacing;
+      return;
+    }
     button.frame = CGRectMake(x, 0, buttonWidth, self->_barHeight);
     NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
     CGFloat textWidth = ceil([title sizeWithAttributes:@{NSFontAttributeName: font}].width);
@@ -887,7 +921,14 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self updateToolbarForKey:key];
   [self setNeedsLayout];
 }
-- (BOOL)usesControlledTextProgress { return _textVariant && [_config[@"controlled"] boolValue]; }
+- (BOOL)pillAnimationDisabled
+{
+  id value = _config[@"indicatorAnimationEnabled"];
+  return _pillVariant && [value isKindOfClass:NSNumber.class] && ![value boolValue];
+}
+- (BOOL)usesControlledTextProgress {
+  return (_textVariant || (_pillVariant && !self.pillAnimationDisabled)) && [_config[@"controlled"] boolValue];
+}
 - (void)setLegacyToolbarVisible:(BOOL)visible {
   _toolbarButton.enabled = visible;
   _toolbarButton.userInteractionEnabled = visible;
@@ -1323,6 +1364,16 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   NSInteger count = _buttons.count;
   if (count == 0 || _indicatorFrames.count != count) return;
   CGFloat progress = RNCClamp(_progress, 0, count - 1);
+  BOOL snapToSelection = self.pillAnimationDisabled;
+  if (snapToSelection) {
+    // The pill and label colors jump to the selection instead of following progress.
+    NSInteger snapped = (NSInteger)round(progress);
+    if ([_config[@"controlled"] boolValue]) {
+      NSUInteger selected = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:self->_config[@"selectedKey"]]; }];
+      if (selected != NSNotFound) snapped = (NSInteger)selected;
+    }
+    progress = RNCClamp(snapped, 0, count - 1);
+  }
   NSInteger lower = (NSInteger)floor(progress);
   NSInteger upper = MIN(lower + 1, count - 1);
   CGFloat fraction = progress - lower;
@@ -1334,6 +1385,16 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     CGRectGetWidth(fromFrame) + (CGRectGetWidth(toFrame) - CGRectGetWidth(fromFrame)) * fraction,
     _segmented ? CGRectGetHeight(fromFrame) : _indicatorHeight
   );
+  if (_pillVariant) {
+    // Leading edge leads and trailing edge lags while moving between tabs.
+    CGFloat leading = 1 - (1 - fraction) * (1 - fraction);
+    CGFloat trailing = fraction * fraction;
+    BOOL forward = CGRectGetMinX(toFrame) >= CGRectGetMinX(fromFrame);
+    CGFloat left = CGRectGetMinX(fromFrame) + (CGRectGetMinX(toFrame) - CGRectGetMinX(fromFrame)) * (forward ? trailing : leading);
+    CGFloat right = CGRectGetMaxX(fromFrame) + (CGRectGetMaxX(toFrame) - CGRectGetMaxX(fromFrame)) * (forward ? leading : trailing);
+    indicatorFrame = CGRectMake(left, CGRectGetMinY(fromFrame), MAX(0, right - left), CGRectGetHeight(fromFrame));
+    _indicatorView.layer.cornerRadius = CGRectGetHeight(indicatorFrame) / 2;
+  }
   _indicatorView.frame = indicatorFrame;
   _indicatorView.hidden = _textVariant || CGRectGetHeight(indicatorFrame) <= 0;
 
@@ -1347,7 +1408,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self updateToolbarForKey:key];
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
     CGFloat emphasis = 1 - MIN(1, fabs(progress - index));
-    if ([self->_config[@"controlled"] boolValue]) {
+    if ([self->_config[@"controlled"] boolValue] && !snapToSelection) {
       emphasis = index == self->_progressSource ? 1 - self->_progressFraction : 0;
       if (index == self->_progressDestination) emphasis += self->_progressFraction;
     }

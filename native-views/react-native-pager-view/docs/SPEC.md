@@ -1499,3 +1499,47 @@ commit checks passed 9/9; unrelated postinstall noble patch and Web notification
 external-image warnings remain separately recorded. Alpha.445 failed Pod
 integration and was not reused. SDK iOS CI ran on iOS 26.5: iOS-27-only incoming
 lifecycle cases remained skipped; no local SDK UIKit execution is claimed.
+
+## Pill tabs and centered content band
+
+`nativeTabBar.style.variant` also accepts `"pill"` on iOS, Android and Web. It
+lets wide/desktop consumers replace a JS pill tab bar with the native one, so
+every platform draws Home tabs from the same config.
+
+- Items keep intrinsic-width labels (medium face, `fontSize` default 16) with
+  `itemPaddingHorizontal` on each side (default 14; text keeps 10, underline and
+  segmented keep 8). Each item is `height - 2 * contentPaddingVertical` tall and
+  vertically inset by `contentPaddingVertical`.
+- One rounded background (`indicatorColor`, radius = half its height) sits
+  behind the selected item and follows pager progress. Between two items, the
+  leading edge eases out and the trailing edge eases in, so the pill stretches
+  toward the target before it contracts. Label colors blend from
+  `inactiveTextColor` to `activeTextColor` with the same progress rules as the
+  text variant. With `controlled: true`, programmatic page changes drive the same
+  progress animation as the text variant does.
+- Pill geometry is always taken from the current item frames (iOS and Android
+  layout passes; Web reads live button boxes on every sync and observes item and
+  list resizes). No size is cached per index, so items that only move when the
+  item list changes still get their own offset and width.
+- Web only: unselected items use `itemHoverBackgroundColor` and
+  `itemPressedBackgroundColor` for hover / pressed feedback. When the pill
+  changes target without pager progress (Web pages switch instantly), it moves
+  with a 220 ms CSS transition; it does not animate on first placement.
+  Native items have no hover or pressed fill.
+
+`style.contentMaxWidth` (all variants, all three platforms) caps the width of the
+tab row together with the toolbar slot and centers that band in the bar. The bar
+background still covers the full width. Values that are missing, not positive,
+or at least the bar width leave the existing full-width layout unchanged.
+
+`style.indicatorAnimationEnabled` (pill only, default true) turns the motion
+off. When false, the pill sits on the selected item (controlled `selectedKey`,
+otherwise the rounded pager position) on every update, label colors switch
+between active and inactive without blending, the Web CSS transition is
+skipped, and programmatic page changes no longer drive progress frames for the
+tab bar. Swiping the pages still moves the pages; only the tab bar snaps.
+
+`itemPaddingHorizontal`, `itemHoverBackgroundColor`, `itemPressedBackgroundColor`,
+`contentMaxWidth` and `indicatorAnimationEnabled` travel to native code inside the existing
+`nativeTabBarConfig` JSON (colors through `processColor`), so the codegen props
+and native component schema stay the same. Existing variants keep their defaults.

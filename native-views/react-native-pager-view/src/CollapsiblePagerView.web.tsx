@@ -200,6 +200,9 @@ export class CollapsiblePagerView extends React.PureComponent<
   private tabProgressFrame: number | null = null;
   private tabProgressGeneration = 0;
   private tabButtons = new Map<string, HTMLButtonElement>();
+  private tabList: HTMLElement | null = null;
+  private tabButtonRefs = new Map<string, (button: HTMLButtonElement | null) => void>();
+  private tabPill: HTMLElement | null = null;
   private headerSlot: HTMLElement | null = null;
   private stickySlot: HTMLElement | null = null;
   private cssTimelineSupported = false;
@@ -435,6 +438,8 @@ export class CollapsiblePagerView extends React.PureComponent<
     if (this.root) this.chromeObserver.observe(this.root);
     if (this.headerContent) this.chromeObserver.observe(this.headerContent);
     if (this.stickyContent) this.chromeObserver.observe(this.stickyContent);
+    if (this.tabList) this.chromeObserver.observe(this.tabList);
+    for (const button of this.tabButtons.values()) this.chromeObserver.observe(button);
     this.scheduleChromeMeasurement();
   }
 
@@ -855,7 +860,10 @@ export class CollapsiblePagerView extends React.PureComponent<
 
   private tabColorWeights() {
     const config = this.props.nativeTabBar;
-    if (!config?.controlled || config.style?.variant !== "text" || this.tabProgress === null) return null;
+    const variant = config?.style?.variant;
+    if (!config?.controlled || (variant !== "text" && variant !== "pill") || this.tabProgress === null) return null;
+    // A pill that does not animate also snaps label colors to the selection.
+    if (variant === "pill" && config.style?.indicatorAnimationEnabled === false) return null;
     const keys: string[] = [];
     React.Children.forEach(this.props.children, child => {
       if (child !== null && child !== undefined && typeof child !== "boolean") keys.push(pageKey(child, keys.length));
@@ -910,6 +918,83 @@ export class CollapsiblePagerView extends React.PureComponent<
         if (label) label.style.fontFamily = fontFamily;
       } else button.style.fontFamily = fontFamily;
     }
+    this.syncTabPill(weights, selectedKey);
+  }
+
+  // Positions the pill from the live button boxes on every sync. Nothing is
+  // cached per index, so a tab that only moved (same size, new position) still
+  // gets its own width and offset.
+  private syncTabPill(weights: Map<string, number> | null, selectedKey: string | undefined) {
+    const pill = this.tabPill;
+    if (!pill) return;
+    let fromKey = selectedKey;
+    let toKey = selectedKey;
+    let fraction = 0;
+    if (weights && this.tabProgress !== null) {
+      const keys = Array.from(weights.keys());
+      const progress = Math.min(Math.max(0, this.tabProgress), keys.length - 1);
+      const source = Math.floor(progress);
+      fromKey = keys[source];
+      toKey = keys[Math.min(source + 1, keys.length - 1)];
+      fraction = progress - source;
+    }
+    const from = fromKey === undefined ? undefined : this.tabButtons.get(fromKey);
+    const to = toKey === undefined ? undefined : this.tabButtons.get(toKey);
+    if (!from || !to || !from.isConnected || !to.isConnected || from.offsetWidth <= 0) {
+      pill.style.visibility = "hidden";
+      pill.removeAttribute("data-placed");
+      return;
+    }
+    // Leading edge leads, trailing edge lags, like the JS pill this replaces.
+    const leading = 1 - (1 - fraction) * (1 - fraction);
+    const trailing = fraction * fraction;
+    const forward = to.offsetLeft >= from.offsetLeft;
+    const leftFraction = forward ? trailing : leading;
+    const rightFraction = forward ? leading : trailing;
+    const fromRight = from.offsetLeft + from.offsetWidth;
+    const toRight = to.offsetLeft + to.offsetWidth;
+    const left = from.offsetLeft + (to.offsetLeft - from.offsetLeft) * leftFraction;
+    const right = fromRight + (toRight - fromRight) * rightFraction;
+    const animationEnabled = this.props.nativeTabBar?.style?.indicatorAnimationEnabled !== false;
+    const animate = animationEnabled && pill.hasAttribute("data-placed") && this.tabProgressFrame === null && fraction === 0;
+    pill.style.transition = animate ? "transform 220ms cubic-bezier(0.2, 0, 0, 1), width 220ms cubic-bezier(0.2, 0, 0, 1)" : "none";
+    pill.style.top = `${from.offsetTop}px`;
+    pill.style.height = `${from.offsetHeight}px`;
+    pill.style.width = `${Math.max(0, right - left)}px`;
+    pill.style.transform = `translateX(${left}px)`;
+    pill.style.visibility = "visible";
+    pill.setAttribute("data-placed", "");
+  }
+
+  private setTabList = (node: HTMLDivElement | null) => {
+    if (node === this.tabList) return;
+    if (this.tabList) this.chromeObserver?.unobserve(this.tabList);
+    this.tabList = node;
+    if (node) this.chromeObserver?.observe(node);
+  };
+
+  private setTabPill = (node: HTMLDivElement | null) => {
+    this.tabPill = node;
+    if (node) this.syncTabColors();
+  };
+
+  private tabButtonRef(key: string) {
+    let ref = this.tabButtonRefs.get(key);
+    if (!ref) {
+      ref = (button: HTMLButtonElement | null) => this.setTabButton(key, button);
+      this.tabButtonRefs.set(key, ref);
+    }
+    return ref;
+  }
+
+  private setTabButton(key: string, button: HTMLButtonElement | null) {
+    const previous = this.tabButtons.get(key);
+    if (previous === button) return;
+    if (previous) this.chromeObserver?.unobserve(previous);
+    if (button) {
+      this.tabButtons.set(key, button);
+      this.chromeObserver?.observe(button);
+    } else this.tabButtons.delete(key);
   }
 
   private pageScrollElement(index: number) {
@@ -1743,26 +1828,41 @@ export class CollapsiblePagerView extends React.PureComponent<
       return Math.min(size, Math.max(0, entry.contentWidth ?? 24)) + Math.min(128, Math.max(0, entry.trailingInset ?? 20));
     }));
     const segmented = variant === "segmented";
+    const pill = variant === "pill";
     const reserveTextFaces = config.controlled && variant === "text";
+    const itemPadding = style?.itemPaddingHorizontal ?? (variant === "text" ? 10 : pill ? 14 : 8);
+    const cssColor = (value: ReactNative.ColorValue | undefined) => value === undefined ? "transparent" : String(value);
+    for (const key of this.tabButtonRefs.keys()) {
+      if (!config.items.some(item => item.key === key)) this.tabButtonRefs.delete(key);
+    }
     const colorWeights = this.tabColorWeights();
     const fontOwnerKey = this.tabFontOwnerKey(colorWeights);
     return React.createElement("div", {
       className: "ok-pager-tab-bar",
       dir: this.props.layoutDirection === "rtl" || ((this.props.layoutDirection ?? "locale") === "locale" && I18nManager.isRTL) ? "rtl" : "ltr",
+      "data-variant": variant,
       style: { display: "flex", alignItems: "center", position: "relative", height: style?.height ?? 44,
-        backgroundColor: String(style?.backgroundColor ?? "transparent"), minWidth: 0 },
+        backgroundColor: String(style?.backgroundColor ?? "transparent"), minWidth: 0,
+        ["--pager-tab-hover" as string]: cssColor(style?.itemHoverBackgroundColor),
+        ["--pager-tab-pressed" as string]: cssColor(style?.itemPressedBackgroundColor) },
     },
-      React.createElement("style", null, `.ok-pager-tab{box-sizing:border-box;appearance:none;border:0;background:transparent;cursor:default;white-space:nowrap;flex-shrink:0;line-height:normal}.ok-pager-toolbar{box-sizing:border-box;appearance:none;border:1px solid transparent;cursor:default;display:flex;align-items:center;justify-content:center;background:var(--pager-toolbar-base)}.ok-pager-toolbar:hover:enabled{background:var(--pager-toolbar-hover)}.ok-pager-toolbar:active:enabled{background:var(--pager-toolbar-pressed)}`),
-      React.createElement("div", { role: "tablist", style: { display: "flex", overflowX: segmented ? "hidden" : "auto", flex: 1,
+      React.createElement("style", null, `.ok-pager-tab{box-sizing:border-box;appearance:none;border:0;background:transparent;cursor:default;white-space:nowrap;flex-shrink:0;line-height:normal}.ok-pager-tab-bar[data-variant=pill] .ok-pager-tab{position:relative;z-index:1;border-radius:999px}.ok-pager-tab-bar[data-variant=pill] .ok-pager-tab[aria-selected=false]:hover{background:var(--pager-tab-hover)}.ok-pager-tab-bar[data-variant=pill] .ok-pager-tab[aria-selected=false]:active{background:var(--pager-tab-pressed)}.ok-pager-tablist{scrollbar-width:none}.ok-pager-tablist::-webkit-scrollbar{display:none}.ok-pager-toolbar{box-sizing:border-box;appearance:none;border:1px solid transparent;cursor:default;display:flex;align-items:center;justify-content:center;background:var(--pager-toolbar-base)}.ok-pager-toolbar:hover:enabled{background:var(--pager-toolbar-hover)}.ok-pager-toolbar:active:enabled{background:var(--pager-toolbar-pressed)}`),
+      React.createElement("div", { className: "ok-pager-tab-row", style: { display: "flex", alignItems: "center", height: "100%", flex: 1, minWidth: 0,
+        maxWidth: style?.contentMaxWidth, margin: style?.contentMaxWidth === undefined ? undefined : "0 auto" } },
+      React.createElement("div", { role: "tablist", className: "ok-pager-tablist", ref: this.setTabList, style: { display: "flex", overflowX: segmented ? "hidden" : "auto", flex: 1,
+        position: "relative", alignItems: "center",
         padding: `${style?.contentPaddingVertical ?? 0}px ${style?.contentPaddingHorizontal ?? 20}px`, gap: style?.itemSpacing ?? 8 } },
+        pill ? React.createElement("div", { key: "ok-pager-tab-pill", ref: this.setTabPill, className: "ok-pager-tab-pill", "aria-hidden": true,
+          style: { position: "absolute", left: 0, top: 0, width: 0, height: 0, borderRadius: 999, pointerEvents: "none", visibility: "hidden",
+            backgroundColor: String(style?.indicatorColor ?? "#000000"), willChange: "transform, width" } }) : null,
         ...config.items.map((item, position) => {
           const selected = item.key === selectedKey;
           const fontSelected = item.key === fontOwnerKey;
           return React.createElement("button", {
             key: item.key, role: "tab", type: "button", className: "ok-pager-tab", "aria-selected": selected,
-            ref: (button: HTMLButtonElement | null) => { if (button) this.tabButtons.set(item.key, button); else this.tabButtons.delete(item.key); },
+            ref: this.tabButtonRef(item.key),
             "aria-label": item.accessibilityLabel ?? item.title, "data-testid": item.testID,
-            style: { padding: variant === "text" ? "6px 10px" : "6px 8px", minWidth: 44, height: (style?.height ?? 44) - 2 * (style?.contentPaddingVertical ?? 0),
+            style: { padding: `6px ${itemPadding}px`, minWidth: 44, height: (style?.height ?? 44) - 2 * (style?.contentPaddingVertical ?? 0),
               fontSize: style?.fontSize ?? (variant === "text" ? 18 : 16),
               fontWeight: variant === "text" && fontSelected ? 600 : 500,
               fontFamily: reserveTextFaces ? style?.fontFamily : fontSelected ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily,
@@ -1770,8 +1870,9 @@ export class CollapsiblePagerView extends React.PureComponent<
               gridTemplateAreas: reserveTextFaces ? '"label"' : undefined,
               alignItems: reserveTextFaces ? "center" : undefined,
               color: this.tabColor(selected, colorWeights ? colorWeights.get(item.key) ?? 0 : undefined),
-              flex: segmented ? 1 : undefined, borderRadius: segmented ? 999 : 0,
-              backgroundColor: segmented && selected ? String(style?.indicatorColor ?? "transparent") : "transparent",
+              flex: segmented ? 1 : undefined, borderRadius: segmented || pill ? 999 : 0,
+              // Pill items leave the background to CSS so hover / pressed apply.
+              backgroundColor: pill ? undefined : segmented && selected ? String(style?.indicatorColor ?? "transparent") : "transparent",
               borderBottom: variant === "underline" && selected ? `${style?.indicatorHeight ?? 2}px solid ${String(style?.indicatorColor ?? "#000000")}` : undefined },
             onClick: () => {
               if (!config.controlled) {
@@ -1792,7 +1893,7 @@ export class CollapsiblePagerView extends React.PureComponent<
             }, item.title)),
           ] : item.title);
         })),
-      config.toolbar !== undefined ? React.createElement("div", { ref: this.setToolbarSlot, className: "ok-pager-toolbar-slot", style: { flexShrink: 0, width: reservedWidth, height: "100%", position: "relative" } }) : null);
+      config.toolbar !== undefined ? React.createElement("div", { ref: this.setToolbarSlot, className: "ok-pager-toolbar-slot", style: { flexShrink: 0, width: reservedWidth, height: "100%", position: "relative" } }) : null));
   }
 
   render() {
