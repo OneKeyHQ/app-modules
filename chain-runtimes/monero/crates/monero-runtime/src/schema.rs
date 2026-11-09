@@ -8,7 +8,9 @@ use rusqlite::Connection;
 use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 
 /// Current schema version. Once released, any schema change must add a migration
-/// and bump this; before that, V1 is edited in place.
+/// and bump this; before that, V1 is edited in place. A new table that older
+/// runtimes can ignore is the exception: it is created on every open without a
+/// bump, so a downgrade still opens the database.
 pub const SCHEMA_VERSION: i64 = 1;
 
 /// Reorg safety window: `blocks` keeps hashes only for this many blocks below the tip (about a day).
@@ -35,11 +37,29 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     if version < 1 {
         tx.execute_batch(V1).map_err(|e| db_err("migrateV1", e))?;
     }
+    // Additive and idempotent, so it runs on every open without a version bump: an older runtime
+    // still opens the database and simply ignores the table.
+    tx.execute_batch(RINGS)
+        .map_err(|e| db_err("migrateRings", e))?;
 
     tx.execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"), [])
         .map_err(|e| db_err("setUserVersion", e))?;
     tx.commit().map_err(|e| db_err("commitMigrate", e))
 }
+
+/// The ring picked when a send first used an output, reused by every later attempt as wallet2's
+/// ringdb does: fresh decoys each time would let a node intersect them down to the real spend.
+/// Keyed by the output's global index, so a rescan that re-creates the output row keeps its ring;
+/// removing the account removes its rings, which hold the output's keys.
+const RINGS: &str = r#"
+CREATE TABLE IF NOT EXISTS rings (
+    identity_id  INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+    global_index INTEGER NOT NULL,
+    -- monero-oxide `OutputWithDecoys` serialization
+    blob         BLOB    NOT NULL,
+    PRIMARY KEY (identity_id, global_index)
+);
+"#;
 
 /// Version 1.
 ///
@@ -327,6 +347,27 @@ mod tests {
         assert_eq!(v, SCHEMA_VERSION);
     }
 
+    // A database written before the rings table existed keeps its version and gains the table.
+    #[test]
+    fn an_existing_database_gains_the_rings_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(V1).unwrap();
+        conn.execute_batch("PRAGMA user_version = 1").unwrap();
+        migrate(&conn).unwrap();
+        let rings: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='rings'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rings, 1);
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 1);
+    }
+
     #[test]
     fn refuses_to_open_a_newer_database() {
         let conn = Connection::open_in_memory().unwrap();
@@ -347,6 +388,7 @@ mod tests {
             "outputs",
             "transactions",
             "possible_spends",
+            "rings",
         ] {
             let n: i64 = conn
                 .query_row(

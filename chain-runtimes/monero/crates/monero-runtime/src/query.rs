@@ -3,7 +3,7 @@
 //! Paging and aggregation run as indexed SQLite queries.
 
 use monero_wallet::address::Network;
-use monero_wallet::WalletOutput;
+use monero_wallet::{OutputWithDecoys, WalletOutput};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
@@ -295,6 +295,44 @@ pub fn load_output(db: &Db, output_id: i64) -> Result<WalletOutput> {
             format!("cannot read blob of output {output_id}: {e}"),
         )
     })
+}
+
+/// The ring saved for the identity's output at `global_index`, if any. A blob that no longer
+/// parses counts as none, so a newly picked ring replaces it.
+pub fn load_ring(db: &Db, identity_id: i64, global_index: u64) -> Result<Option<OutputWithDecoys>> {
+    let Ok(index) = i64::try_from(global_index) else {
+        return Ok(None);
+    };
+    let blob: Option<Vec<u8>> = db
+        .conn()
+        .query_row(
+            "SELECT blob FROM rings WHERE identity_id = ?1 AND global_index = ?2",
+            params![identity_id, index],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| db_err("loadRing", e))?;
+    Ok(blob.and_then(|blob| OutputWithDecoys::read(&mut blob.as_slice()).ok()))
+}
+
+/// Saves newly picked rings in one commit; a first max send can pick one per spendable output.
+pub fn save_rings(db: &Db, identity_id: i64, rings: &[(u64, OutputWithDecoys)]) -> Result<()> {
+    if rings.is_empty() {
+        return Ok(());
+    }
+    let tx = db
+        .conn()
+        .unchecked_transaction()
+        .map_err(|e| db_err("beginSaveRings", e))?;
+    for (global_index, ring) in rings {
+        let index = i64::try_from(*global_index).map_err(|e| db_err("saveRing", e))?;
+        tx.execute(
+            "INSERT OR REPLACE INTO rings (identity_id, global_index, blob) VALUES (?1, ?2, ?3)",
+            params![identity_id, index, ring.serialize()],
+        )
+        .map_err(|e| db_err("saveRing", e))?;
+    }
+    tx.commit().map_err(|e| db_err("commitSaveRings", e))
 }
 
 /// Transaction history, paged, newest height first.
