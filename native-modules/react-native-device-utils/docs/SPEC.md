@@ -173,10 +173,21 @@ ground that hides scrolled content.
 A later call replaces the color; window inset changes re-measure the side and
 size.
 
+The protection view is inserted directly above the React root inside
+`android.R.id.content`, below every overlay host that is added later. A dimmed
+native overlay therefore covers the bar together with the rest of the screen
+instead of leaving the transparent third of the ramp visible over the dim
+(OK-66103), and an overlay sheet that paints to the screen edge keeps its own
+surface color there. While the React root does not exist yet, the view falls back
+to the decor view and is moved into place on the next call. This layering is
+Implemented in source and build-verified; rendered-pixel re-acceptance with a
+dimmed overlay and an edge-painted sheet is pending on device.
+
 ## Conformance and acceptance
 
 - Android: `ReactNativeDeviceUtils.kt` (`applyNavigationBarAppearance`,
-  `installNavigationBarProtection`).
+  `installNavigationBarProtection`, `placeNavigationBarProtection`,
+  `findReactRootIndex`).
 - Acceptance is rendered-pixel inspection in the OneKey app with
   `edgeToEdgeEnabled`; see Status for the covered cases. Android 15+ without a
   navigation bar could not be produced on stock emulators.
