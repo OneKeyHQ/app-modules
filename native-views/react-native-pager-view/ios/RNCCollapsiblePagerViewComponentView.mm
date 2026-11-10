@@ -2299,7 +2299,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay;
 - (RNCCollapsiblePagerTransitionEdgeOwner *)borrowedPinnedStickyOwner;
 - (void)releaseProgrammaticScrollEdge:(UIScrollView *)scrollView;
-- (void)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex;
+- (BOOL)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex;
 - (void)releaseProgrammaticScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner;
 - (void)clearProgrammaticScrollEdges;
 - (void)finishProgrammaticScrollEdges;
@@ -3157,8 +3157,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
         [scrollView convertPoint:CGPointZero toView:_containerView].y <=
           [_pageControllers[pageIndex].view convertPoint:CGPointZero toView:_containerView].y + 0.5 &&
         scrollView.contentOffset.y + scrollView.adjustedContentInset.top > 0.5;
-      if (!coversBars && pageIndex != _currentIndex) {
-        [self beginStandInScrollEdgeForPageAtIndex:pageIndex];
+      // The stand-in applies only while the sticky header is pinned; otherwise
+      // keep the temporary interaction on the page's own list.
+      if (!coversBars && pageIndex != _currentIndex &&
+          [self beginStandInScrollEdgeForPageAtIndex:pageIndex]) {
         continue;
       }
       if (scrollView == nil || scrollView.window != self.window) continue;
@@ -3353,7 +3355,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   });
 }
 
-- (void)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex
+- (BOOL)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex
 {
   // OneKey patch: a page whose list is not mounted yet has no scroll view to
   // own an edge effect, so its masked top shows the bare background. An empty
@@ -3361,21 +3363,21 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   // material (the settled header is masked out under the overlay as well).
   if (@available(iOS 27.0, *)) {
     if (pageIndex == _currentIndex || pageIndex < 0 ||
-        pageIndex >= (NSInteger)_pageControllers.count) return;
+        pageIndex >= (NSInteger)_pageControllers.count) return NO;
     UIView *page = _pageControllers[pageIndex].view;
     UIView *container = page.superview;
     if (page.window != self.window || container == nil ||
         _stickyHeaderView == nil || _headerHeight <= 0 ||
-        _headerOffset < _headerHeight - 0.5) return;
+        _headerOffset < _headerHeight - 0.5) return NO;
     for (RNCCollapsiblePagerTransitionEdgeOwner *existing in _programmaticScrollEdgeOwners) {
-      if (existing.page == page) return;
+      if (existing.page == page) return YES;
     }
     CGFloat overlayBottom = self.effectiveTopOverlayHeight;
     CGFloat boundary = overlayBottom + self.currentStickyHeaderHeight;
     CGFloat pageTop = [page convertPoint:CGPointZero toView:_containerView].y;
     CGFloat width = CGRectGetWidth(page.bounds);
     CGFloat height = boundary - pageTop;
-    if (height <= 0 || width <= 0) return;
+    if (height <= 0 || width <= 0) return NO;
     CGPoint origin = [page convertPoint:CGPointZero toView:container];
     UIScrollView *standIn = [[UIScrollView alloc] initWithFrame:
       CGRectMake(origin.x, origin.y, width, height)];
@@ -3433,7 +3435,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     }
     [_programmaticScrollEdges setObject:owner forKey:standIn];
     [_programmaticScrollEdgeOwners addObject:owner];
+    return YES;
   }
+  return NO;
 }
 
 - (BOOL)hasProgrammaticScrollEdgeForPage:(UIView *)page
