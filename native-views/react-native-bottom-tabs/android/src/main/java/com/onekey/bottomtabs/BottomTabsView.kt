@@ -356,12 +356,12 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     val bottomMarginPx = params?.bottomMargin
       ?: (maxOf(floatingBottomInset, dp(FloatingTabBarMetrics.BAR_MIN_BOTTOM_GAP)) +
         dp(FloatingTabBarMetrics.BAR_BOTTOM_EXTRA))
-    return (barHeightPx + minOf(bottomMarginPx, dp(24f)) + dp(4f)).toFloat()
+    return (barHeightPx + bottomMarginPx + dp(4f)).toFloat()
   }
 
   private fun animateFloatingVisibility(fromY: Float, toY: Float, hiding: Boolean) {
     cancelFloatingVisibilityAnimation()
-    if (!ValueAnimator.areAnimatorsEnabled()) {
+    if (Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()) {
       floatingBar.translationY = 0f
       floatingBar.visibility = if (hiding) GONE else VISIBLE
       updateBlurAppearance()
