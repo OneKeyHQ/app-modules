@@ -44,7 +44,8 @@ private const val TAG = "SniConnect"
 /**
  * Classifies a request-phase failure for the JS-facing error code. The result
  * is not yet replay-safe: callers MUST pass it through
- * [gateReplaySensitiveFailureCode] with the logical request's write evidence.
+ * [gateReplaySensitiveFailureCode] with the logical request's transmission
+ * evidence.
  */
 internal fun classifySniFailureCode(error: Throwable): String {
   if (hasCause(error, SSLPeerUnverifiedException::class.java) ||
@@ -74,15 +75,16 @@ internal fun classifySniFailureCode(error: Throwable): String {
 
 /**
  * OkHttp can recover and retry inside one logical request. A final connect
- * failure only proves no bytes were written when no attempt ever started
- * writing the body; after a processed attempt the outcome is ambiguous, so the
- * pre-write code must not authorize a caller replay.
+ * failure only proves no request was transmitted when no attempt ever started
+ * sending request headers; after a started attempt the outcome is ambiguous, so
+ * the pre-write code must not authorize a caller replay. Bodyless methods (for
+ * example `DELETE`) are covered by the same request-level evidence.
  */
 internal fun gateReplaySensitiveFailureCode(
   code: String,
-  requestBodyWriteStarted: Boolean,
+  requestTransmissionStarted: Boolean,
 ): String =
-  if (code == "SNI_CONNECTION_REFUSED" && requestBodyWriteStarted) {
+  if (code == "SNI_CONNECTION_REFUSED" && requestTransmissionStarted) {
     "SNI_REQUEST_FAILED"
   } else {
     code
@@ -332,13 +334,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private fun performRequest(config: RequestConfig, promise: Promise) {
     val startedAtMs = android.os.SystemClock.elapsedRealtime()
     val startedAtNanos = System.nanoTime()
-    // Shared by every OkHttp attempt of this logical request; once any attempt
-    // starts sending its body the outcome can no longer be called pre-write.
-    val requestBodyWriteStarted = AtomicBoolean(false)
+    // Shared by every OkHttp attempt of this logical request. The client's
+    // EventListener marks it once any attempt starts sending request headers.
+    val requestTransmission = SniRequestTransmissionState()
     var registeredRequest: ManagedRequest? = null
     try {
       val client = getOrCreateClient(config)
-      val request = buildRequest(config, requestBodyWriteStarted)
+      val request = buildRequest(config, requestTransmission)
       val call = client.newCall(request)
       val settled = AtomicBoolean(false)
       lateinit var managedRequest: ManagedRequest
@@ -369,7 +371,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           } else {
             val code = gateReplaySensitiveFailureCode(
               classifySniFailureCode(e),
-              requestBodyWriteStarted.get(),
+              requestTransmission.hasRequestTransmissionStarted(),
             )
             SniConnectLogger.error(
               SniConnectLogger.event(
@@ -629,10 +631,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
    */
   private fun buildRequest(
     config: RequestConfig,
-    requestBodyWriteStarted: AtomicBoolean,
+    requestTransmission: SniRequestTransmissionState,
   ): Request {
     val url = "https://${config.hostname}${config.path}"
     val builder = Request.Builder().url(url)
+    // The transport's EventListener reads this tag on every OkHttp attempt,
+    // including bodyless methods that never write a request body.
+    builder.tag(SniRequestTransmissionState::class.java, requestTransmission)
 
     config.headers.forEach { (key, value) ->
       builder.addHeader(key, value)
@@ -646,9 +651,8 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       ?.value
       ?.toMediaTypeOrNull()
     // Enforce the body bound when OkHttp consumes the file, after admission.
-    val body = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
+    val requestBody = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
       ?: config.body?.toRequestBody(mediaType)
-    val requestBody = body?.let { SniWriteTrackingRequestBody(it, requestBodyWriteStarted) }
 
     when (method) {
       "GET" -> builder.get()

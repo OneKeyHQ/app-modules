@@ -2,12 +2,13 @@ package com.sniconnect
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
-import okhttp3.MediaType
-import okhttp3.RequestBody
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okio.Buffer
-import okio.BufferedSink
 import okio.ForwardingSink
 import okio.buffer
 import org.junit.Rule
@@ -22,7 +23,6 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
 
@@ -399,7 +399,7 @@ class SniConnectValidationTest {
   }
 
   @Test
-  fun gatesReplaySensitiveCodesOnBodyWriteEvidence() {
+  fun gatesReplaySensitiveCodesOnRequestTransmissionEvidence() {
     assertEquals(
       "SNI_CONNECTION_REFUSED",
       gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", false),
@@ -417,71 +417,64 @@ class SniConnectValidationTest {
   }
 
   @Test
-  fun trackingRequestBodyRecordsTheFirstWriteAttempt() {
-    val requestBodyWriteStarted = AtomicBoolean(false)
-    val requestBody = SniWriteTrackingRequestBody(
-      object : RequestBody() {
-        override fun contentType(): MediaType? = null
+  fun requestHeadersStartMarksTheLogicalRequestAsTransmitted() {
+    val state = SniRequestTransmissionState()
+    val call = newOkHttpCall(state)
+    assertFalse(state.hasRequestTransmissionStarted())
 
-        override fun contentLength(): Long = 3
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
 
-        override fun writeTo(sink: BufferedSink) {
-          sink.writeUtf8("abc")
-        }
-      },
-      requestBodyWriteStarted,
-    )
-
-    assertFalse(requestBodyWriteStarted.get())
-    val sink = Buffer()
-    requestBody.writeTo(sink)
-    assertTrue(requestBodyWriteStarted.get())
-    assertEquals("abc", sink.readUtf8())
+    assertTrue(state.hasRequestTransmissionStarted())
   }
 
   @Test
-  fun trackingRequestBodyRecordsAPartialWriteThatThrows() {
-    val requestBodyWriteStarted = AtomicBoolean(false)
-    val requestBody = SniWriteTrackingRequestBody(
-      object : RequestBody() {
-        override fun contentType(): MediaType? = null
-
-        override fun contentLength(): Long = 5
-
-        override fun writeTo(sink: BufferedSink) {
-          sink.writeUtf8("a")
-          throw IOException("connection lost mid-body")
-        }
-      },
-      requestBodyWriteStarted,
+  fun untaggedCallDoesNotFailOnRequestHeadersStart() {
+    val call = OkHttpClient().newCall(
+      Request.Builder().url("https://example.com/").build(),
     )
 
-    assertThrows(IOException::class.java) { requestBody.writeTo(Buffer()) }
-    assertTrue(requestBodyWriteStarted.get())
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    assertNull(call.request().tag(SniRequestTransmissionState::class.java))
   }
 
   @Test
-  fun trackingRequestBodyForwardsBodyMetadata() {
-    val requestBody = SniWriteTrackingRequestBody(
-      object : RequestBody() {
-        override fun contentType(): MediaType? = null
+  fun processedBodylessRequestFollowedByRefusedRecoveryStaysAmbiguous() {
+    // A bodyless DELETE can be processed by the server without writing a body;
+    // only the request-headers event can prove that it was transmitted.
+    val state = SniRequestTransmissionState()
+    val call = newOkHttpCall(state, bodylessDelete = true)
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
 
-        override fun contentLength(): Long = 1
-
-        override fun isOneShot(): Boolean = true
-
-        override fun isDuplex(): Boolean = true
-
-        override fun writeTo(sink: BufferedSink) {
-          sink.writeUtf8("x")
-        }
-      },
-      AtomicBoolean(false),
+    val code = gateReplaySensitiveFailureCode(
+      classifySniFailureCode(ConnectException("Connection refused")),
+      state.hasRequestTransmissionStarted(),
     )
 
-    assertTrue(requestBody.isOneShot())
-    assertTrue(requestBody.isDuplex())
-    assertEquals(1L, requestBody.contentLength())
+    assertEquals("SNI_REQUEST_FAILED", code)
+  }
+
+  @Test
+  fun refusedConnectionBeforeAnyTransmissionKeepsPreWriteCode() {
+    val state = SniRequestTransmissionState()
+    val code = gateReplaySensitiveFailureCode(
+      classifySniFailureCode(ConnectException("Connection refused")),
+      state.hasRequestTransmissionStarted(),
+    )
+
+    assertEquals("SNI_CONNECTION_REFUSED", code)
+  }
+
+  private fun newOkHttpCall(
+    state: SniRequestTransmissionState,
+    bodylessDelete: Boolean = false,
+  ): Call {
+    val builder = Request.Builder()
+      .url("https://example.com/")
+      .tag(SniRequestTransmissionState::class.java, state)
+    return OkHttpClient().newCall(
+      (if (bodylessDelete) builder.delete() else builder.get()).build(),
+    )
   }
 
   private fun assertValidationFails(block: () -> Unit) {

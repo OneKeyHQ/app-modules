@@ -8,9 +8,11 @@ import java.net.UnknownHostException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import okhttp3.Call
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Dns
+import okhttp3.EventListener
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -46,6 +48,7 @@ object SniPinnedTransport {
         HttpsURLConnection.getDefaultHostnameVerifier().verify(normalizedHostname, session)
       }
       .dns(createPinnedDns(ip, normalizedHostname))
+      .eventListenerFactory(SniRequestTransmissionEventListenerFactory)
       .build()
   }
 
@@ -74,24 +77,36 @@ internal class SniPinnedDestinationViolationException(
   message: String,
 ) : UnknownHostException(message)
 
-/** Records that at least one attempt of a logical request started transmitting its body. */
-internal class SniWriteTrackingRequestBody(
-  private val delegate: RequestBody,
-  private val requestBodyWriteStarted: AtomicBoolean,
-) : RequestBody() {
-  override fun contentType(): MediaType? = delegate.contentType()
+/**
+ * Per-logical-request record of whether any OkHttp attempt began transmitting
+ * the request. A bodyless request (for example `DELETE`) can be processed by the
+ * server without ever writing a request body, so body tracking alone cannot
+ * prove that no attempt was sent.
+ */
+internal class SniRequestTransmissionState {
+  private val started = AtomicBoolean(false)
 
-  override fun contentLength(): Long = delegate.contentLength()
-
-  override fun isOneShot(): Boolean = delegate.isOneShot()
-
-  override fun isDuplex(): Boolean = delegate.isDuplex()
-
-  override fun writeTo(sink: BufferedSink) {
-    // Set before the first byte so a partial write still counts as ambiguous.
-    requestBodyWriteStarted.set(true)
-    delegate.writeTo(sink)
+  fun markRequestTransmissionStarted() {
+    started.set(true)
   }
+
+  fun hasRequestTransmissionStarted(): Boolean = started.get()
+}
+
+/**
+ * Marks the tagged [SniRequestTransmissionState] as soon as an attempt starts
+ * writing request headers. This runs after connect/TLS, so a refused connection
+ * before any attempt reached this point is still provably unsent, while a
+ * successful attempt followed by a refused recovery is ambiguous.
+ */
+internal object SniRequestTransmissionEventListenerFactory : EventListener.Factory {
+  override fun create(call: Call): EventListener =
+    object : EventListener() {
+      override fun requestHeadersStart(call: Call) {
+        call.request().tag(SniRequestTransmissionState::class.java)
+          ?.markRequestTransmissionStarted()
+      }
+    }
 }
 
 /** Reads from disk only during transmission, with a fixed, bounded body length. */
