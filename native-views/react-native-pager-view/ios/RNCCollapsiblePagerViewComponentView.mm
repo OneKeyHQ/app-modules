@@ -201,6 +201,7 @@ struct RNCScrollCandidateResolution {
 @property (nonatomic, assign) BOOL ownsTransitionHosts;
 @property (nonatomic, strong) UIView *ownedTopHost;
 @property (nonatomic, strong) UIView *ownedStickyHost;
+@property (nonatomic, strong) UIScrollView *standInScrollView;
 @end
 
 @implementation RNCCollapsiblePagerTransitionEdgeOwner
@@ -2298,6 +2299,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay;
 - (RNCCollapsiblePagerTransitionEdgeOwner *)borrowedPinnedStickyOwner;
 - (void)releaseProgrammaticScrollEdge:(UIScrollView *)scrollView;
+- (void)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex;
 - (void)releaseProgrammaticScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner;
 - (void)clearProgrammaticScrollEdges;
 - (void)finishProgrammaticScrollEdges;
@@ -3149,6 +3151,16 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     for (NSInteger pageIndex = first; pageIndex <= last; pageIndex++) {
       [self preparePageForHorizontalTransitionAtIndex:pageIndex];
       UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:pageIndex];
+      // A list that is not mounted yet, not laid out under the bars, or not
+      // scrolled past its top cannot render the edge effect behind the bars.
+      BOOL coversBars = scrollView != nil && scrollView.window == self.window &&
+        [scrollView convertPoint:CGPointZero toView:_containerView].y <=
+          [_pageControllers[pageIndex].view convertPoint:CGPointZero toView:_containerView].y + 0.5 &&
+        scrollView.contentOffset.y + scrollView.adjustedContentInset.top > 0.5;
+      if (!coversBars && pageIndex != _currentIndex) {
+        [self beginStandInScrollEdgeForPageAtIndex:pageIndex];
+        continue;
+      }
       if (scrollView == nil || scrollView.window != self.window) continue;
       if ([_programmaticScrollEdges objectForKey:scrollView] != nil) continue;
       RNCCollapsiblePagerTransitionEdgeOwner *owner = [RNCCollapsiblePagerTransitionEdgeOwner new];
@@ -3229,6 +3241,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     owner.stickyInteraction.scrollView = nil;
     [owner.topMarker removeFromSuperview];
     [owner.stickyMarker removeFromSuperview];
+    [owner.standInScrollView removeFromSuperview];
+    owner.standInScrollView = nil;
     if (owner.ownsTransitionHosts) {
       [owner.ownedTopHost removeFromSuperview];
       [owner.ownedStickyHost removeFromSuperview];
@@ -3260,15 +3274,174 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)finishProgrammaticScrollEdges
 {
   if (_programmaticScrollEdgeOwners.count == 0) return;
+  // OneKey patch: keep the destination's transitional edge alive until the
+  // settled interaction exists, so UIKit does not fade the edge effect back in.
+  UIScrollView *settled = _observedScrollView;
+  RNCCollapsiblePagerTransitionEdgeOwner *handoff =
+    settled != nil ? [_programmaticScrollEdges objectForKey:settled] : nil;
+  if (handoff != nil) {
+    [_programmaticScrollEdges removeObjectForKey:settled];
+    [_programmaticScrollEdgeOwners removeObjectIdenticalTo:handoff];
+  }
   [self clearProgrammaticScrollEdges];
-  [self updateTopScrollEdgeForScrollView:_observedScrollView];
+  if (@available(iOS 26.0, *)) {
+    // A cancelled drag settles on the page whose settled edge was adopted.
+    // Return that interaction as-is: a second container interaction for the
+    // same scroll view and host would be torn down together with the old one.
+    if (handoff != nil && !handoff.ownsTransitionHosts && _topEdgeInteraction == nil &&
+        handoff.topHost == _topOverlayHostView &&
+        handoff.topInteraction.scrollView == settled) {
+      _topEdgeInteraction = handoff.topInteraction;
+      _topEdgeInteractionHost = handoff.topHost;
+      _topEdgeMarker = handoff.topMarker;
+      _topEdgeScrollView = settled;
+      _originalTopEdgeStyle = handoff.originalStyle;
+      if (handoff.stickyInteraction != nil && handoff.stickyHost != nil &&
+          handoff.stickyInteraction.scrollView == settled) {
+        _stickyEdgeInteraction = handoff.stickyInteraction;
+        _stickyEdgeInteractionHost = handoff.stickyHost;
+        _stickyEdgeMarker = handoff.stickyMarker;
+      } else {
+        [handoff.stickyHost removeInteraction:handoff.stickyInteraction];
+        handoff.stickyInteraction.scrollView = nil;
+        [handoff.stickyMarker removeFromSuperview];
+      }
+      if (handoff.borrowsPinnedStickyHost && !_stickyHeaderIsPinned &&
+          (_pinnedStickyHostView.superview == settled ||
+           _pinnedStickyHostView.superview == nil)) {
+        _pinnedStickyHostView.hidden = YES;
+        _pinnedStickyHostView.layer.zPosition = 0;
+        [_containerView addSubview:_pinnedStickyHostView];
+      }
+      [self updateTopScrollEdgeForScrollView:settled];
+      return;
+    }
+  }
+  [self updateTopScrollEdgeForScrollView:settled];
+  if (handoff == nil) return;
+  if (_topEdgeScrollView == settled && settled != nil) {
+    _originalTopEdgeStyle = handoff.originalStyle;
+    handoff.originalStyle = settled.topEdgeEffect.style;
+  }
+  if (handoff.borrowsPinnedStickyHost && !_stickyHeaderIsPinned &&
+      (_pinnedStickyHostView.superview == settled ||
+       _pinnedStickyHostView.superview == nil)) {
+    _pinnedStickyHostView.hidden = YES;
+    _pinnedStickyHostView.layer.zPosition = 0;
+    [_containerView addSubview:_pinnedStickyHostView];
+  }
+  handoff.borrowsPinnedStickyHost = NO;
+  // The caller reattaches the shared header in this run loop turn; drop the
+  // transitional resources on the next one, after the header is rendered.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (@available(iOS 26.0, *)) {
+      [handoff.topHost removeInteraction:handoff.topInteraction];
+      [handoff.stickyHost removeInteraction:handoff.stickyInteraction];
+      if (handoff.topInteraction.scrollView == handoff.scrollView) {
+        handoff.topInteraction.scrollView = nil;
+      }
+      if (handoff.stickyInteraction.scrollView == handoff.scrollView) {
+        handoff.stickyInteraction.scrollView = nil;
+      }
+    }
+    [handoff.topMarker removeFromSuperview];
+    [handoff.stickyMarker removeFromSuperview];
+    if (handoff.ownsTransitionHosts) {
+      [handoff.ownedTopHost removeFromSuperview];
+      [handoff.ownedStickyHost removeFromSuperview];
+    }
+  });
+}
+
+- (void)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex
+{
+  // OneKey patch: a page whose list is not mounted yet has no scroll view to
+  // own an edge effect, so its masked top shows the bare background. An empty
+  // stand-in scroll view resting past its top edge renders the same Hard
+  // material (the settled header is masked out under the overlay as well).
+  if (@available(iOS 27.0, *)) {
+    if (pageIndex == _currentIndex || pageIndex < 0 ||
+        pageIndex >= (NSInteger)_pageControllers.count) return;
+    UIView *page = _pageControllers[pageIndex].view;
+    UIView *container = page.superview;
+    if (page.window != self.window || container == nil ||
+        _stickyHeaderView == nil || _headerHeight <= 0 ||
+        _headerOffset < _headerHeight - 0.5) return;
+    for (RNCCollapsiblePagerTransitionEdgeOwner *existing in _programmaticScrollEdgeOwners) {
+      if (existing.page == page) return;
+    }
+    CGFloat overlayBottom = self.effectiveTopOverlayHeight;
+    CGFloat boundary = overlayBottom + self.currentStickyHeaderHeight;
+    CGFloat pageTop = [page convertPoint:CGPointZero toView:_containerView].y;
+    CGFloat width = CGRectGetWidth(page.bounds);
+    CGFloat height = boundary - pageTop;
+    if (height <= 0 || width <= 0) return;
+    CGPoint origin = [page convertPoint:CGPointZero toView:container];
+    UIScrollView *standIn = [[UIScrollView alloc] initWithFrame:
+      CGRectMake(origin.x, origin.y, width, height)];
+    standIn.userInteractionEnabled = NO;
+    standIn.scrollsToTop = NO;
+    standIn.showsVerticalScrollIndicator = NO;
+    standIn.showsHorizontalScrollIndicator = NO;
+    standIn.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    standIn.backgroundColor = UIColor.clearColor;
+    standIn.accessibilityElementsHidden = YES;
+    CGFloat scrolled = _headerHeight;
+    standIn.contentSize = CGSizeMake(width, scrolled + height + 1);
+    standIn.contentOffset = CGPointMake(0, scrolled);
+    standIn.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
+    [container insertSubview:standIn aboveSubview:page];
+
+    RNCCollapsiblePagerTransitionEdgeOwner *owner = [RNCCollapsiblePagerTransitionEdgeOwner new];
+    owner.scrollView = standIn;
+    owner.page = page;
+    owner.standInScrollView = standIn;
+    owner.originalStyle = UIScrollEdgeEffectStyle.hardStyle;
+    owner.ownsTransitionHosts = YES;
+    UIView *(^host)(UIView *) = ^UIView *(UIView *reference) {
+      CGRect frame = [reference convertRect:reference.bounds toView:container];
+      frame.origin.x = origin.x;
+      UIView *view = [[UIView alloc] initWithFrame:frame];
+      view.userInteractionEnabled = NO;
+      view.accessibilityElementsHidden = YES;
+      [container insertSubview:view aboveSubview:standIn];
+      UILabel *marker = [UILabel new];
+      marker.frame = view.bounds;
+      marker.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      marker.text = @" ";
+      marker.textColor = UIColor.clearColor;
+      marker.backgroundColor = UIColor.clearColor;
+      marker.isAccessibilityElement = NO;
+      [view addSubview:marker];
+      return view;
+    };
+    owner.ownedTopHost = host(_topOverlayHostView);
+    owner.topHost = owner.ownedTopHost;
+    owner.topInteraction = [UIScrollEdgeElementContainerInteraction new];
+    owner.topInteraction.edge = UIRectEdgeTop;
+    owner.topInteraction.scrollView = standIn;
+    [owner.topHost addInteraction:owner.topInteraction];
+    owner.ownedStickyHost = host(_stickyHeaderView);
+    owner.stickyHost = owner.ownedStickyHost;
+    owner.stickyInteraction = [UIScrollEdgeElementContainerInteraction new];
+    owner.stickyInteraction.edge = UIRectEdgeTop;
+    owner.stickyInteraction.scrollView = standIn;
+    [owner.stickyHost addInteraction:owner.stickyInteraction];
+    if (_programmaticScrollEdges == nil) {
+      _programmaticScrollEdges = [NSMapTable weakToStrongObjectsMapTable];
+      _programmaticScrollEdgeOwners = [NSMutableArray new];
+    }
+    [_programmaticScrollEdges setObject:owner forKey:standIn];
+    [_programmaticScrollEdgeOwners addObject:owner];
+  }
 }
 
 - (BOOL)hasProgrammaticScrollEdgeForPage:(UIView *)page
 {
   if (@available(iOS 26.0, *)) {
     for (RNCCollapsiblePagerTransitionEdgeOwner *owner in _programmaticScrollEdges.objectEnumerator) {
-      if (owner.page == page && owner.scrollView.window == self.window &&
+      if (owner.page == page && owner.standInScrollView == nil &&
+          owner.scrollView.window == self.window &&
           owner.topInteraction.scrollView == owner.scrollView) return YES;
     }
   }
@@ -3381,10 +3554,22 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)updateHardEdgeSeparatorCovers
 {
+  // OneKey patch: transitional edge owners draw the same Hard hairline while
+  // the settled interaction is detached, so keep the covers during transitions.
+  BOOL transitional = _programmaticScrollEdgeOwners.count > 0;
   BOOL enabled = _topScrollEdgeEnabled &&
     _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard &&
-    _topEdgeScrollView != nil && self.window != nil && !_isBeingRecycled;
+    (_topEdgeScrollView != nil || transitional) && self.window != nil && !_isBeingRecycled;
   if (!enabled && _topEdgeSeparatorCover == nil && _stickyEdgeSeparatorCover == nil) return;
+  BOOL transitionalSticky = NO;
+  if (transitional && _topEdgeScrollView == nil) {
+    for (RNCCollapsiblePagerTransitionEdgeOwner *owner in _programmaticScrollEdgeOwners) {
+      if (owner.stickyInteraction != nil) {
+        transitionalSticky = YES;
+        break;
+      }
+    }
+  }
   UIColor *color = nil;
   for (UIView *view = self; view != nil; view = view.superview) {
     UIColor *candidate = [view.backgroundColor resolvedColorWithTraitCollection:
@@ -3398,7 +3583,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     _topOverlayHostView.traitCollection];
   CGFloat scale = self.window.screen.scale ?: self.traitCollection.displayScale;
   CGFloat pixel = 1.0 / MAX(1, scale);
-  UIView *hosts[] = {_topEdgeInteractionHost, _stickyEdgeInteractionHost};
+  UIView *topHost = _topEdgeInteractionHost;
+  UIView *stickyHost = _stickyEdgeInteractionHost;
+  if (_topEdgeScrollView == nil && transitional) {
+    topHost = _topOverlayHostView;
+    stickyHost = transitionalSticky ? _stickyHeaderView : nil;
+  }
+  UIView *hosts[] = {topHost, stickyHost};
   CALayer *covers[] = {_topEdgeSeparatorCover, _stickyEdgeSeparatorCover};
   for (NSInteger index = 0; index < 2; index++) {
     UIView *host = hosts[index];
@@ -3421,7 +3612,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
         CGRectGetWidth(_containerView.bounds), pixel);
       cover.contentsScale = scale;
       cover.backgroundColor = color.CGColor;
-      cover.hidden = index == 0 && _stickyHeaderIsPinned;
+      cover.hidden = index == 0 && (_stickyHeaderIsPinned || transitionalSticky);
     }
     if (index == 0) _topEdgeSeparatorCover = cover;
     else _stickyEdgeSeparatorCover = cover;

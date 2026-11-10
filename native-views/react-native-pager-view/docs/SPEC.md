@@ -164,6 +164,36 @@ diagnostic compilation and strict-input installation are separate build evidence
 Market's equal-height secondary display-owner change is an independent consumer
 companion, not a new SDK public guarantee or JS/native same-frame contract.
 
+### iOS 27 pinned stand-in transition edges
+
+Status: Implemented; iOS 27 simulator runtime verified for Wallet Home Spot ↔ History.
+
+While a local smooth Hard pager's sticky header is pinned (`headerOffset >= headerHeight`),
+every page participating in a horizontal transition keeps the Hard material behind the
+fixed overlay and sticky header. An incoming page whose vertical list cannot render that
+material itself — not mounted yet, not in the pager's window, laid out below the bars, or
+resting at its top edge — receives a stand-in: an empty, noninteractive `UIScrollView`
+placed at the page's origin in the container, sized to the overlay + sticky boundary and
+offset past its top edge, with owned transparent top/sticky element hosts bound to it.
+The stand-in draws only UIKit's Hard material; it carries no snapshot of header or page
+content, and the page itself stays masked above the boundary. A page whose own list is
+scrolled past its top and covers the bars keeps using its own temporary interactions.
+When the header is not pinned no stand-in is created. Release, completion and recycle
+remove the stand-in with its owned hosts.
+
+The fixed boundary separator covers stay in place for the whole transition, falling back to
+the shared overlay and sticky hosts while no settled owner exists, so the Hard dividing line
+does not flash between detach and reattach. On completion the settled page's normal owner is
+attached before the previous transition owner's interactions are removed on the next run
+loop. When a drag returns to its source and the source's adopted interaction still targets
+the settled list on the shared overlay host, that interaction becomes the settled owner
+again instead of being replaced, so the source keeps its material after cancellation.
+
+Verified on an iOS 27 simulator: repeated half-drag cancellations followed by a full
+Spot → History → Spot swipe, with frame-by-frame checks showing no black band, no hairline
+flash and no header content above the boundary. Perps/DeFi/NFT pages and non-pinned
+horizontal drags were not exercised at runtime.
+
 ### iOS 27 external-overlay interactive ownership
 
 Status: Implemented in iOS source; runtime acceptance is reported separately.
