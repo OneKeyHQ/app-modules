@@ -2300,6 +2300,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (RNCCollapsiblePagerTransitionEdgeOwner *)borrowedPinnedStickyOwner;
 - (void)releaseProgrammaticScrollEdge:(UIScrollView *)scrollView;
 - (BOOL)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex;
+- (BOOL)layoutStandInScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner;
+- (void)layoutStandInScrollEdges;
 - (void)releaseProgrammaticScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner;
 - (void)clearProgrammaticScrollEdges;
 - (void)finishProgrammaticScrollEdges;
@@ -2871,6 +2873,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)updateScrollEdgeContentMasks
 {
+  [self layoutStandInScrollEdges];
   [self updateHardEdgeSeparatorCovers];
   BOOL enabled = _topScrollEdgeEnabled &&
     (self.hasFixedTopOverlay || _stickyHeaderView != nil) &&
@@ -3321,9 +3324,11 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   }
   [self updateTopScrollEdgeForScrollView:settled];
   if (handoff == nil) return;
-  if (_topEdgeScrollView == settled && settled != nil) {
-    _originalTopEdgeStyle = handoff.originalStyle;
-    handoff.originalStyle = settled.topEdgeEffect.style;
+  if (@available(iOS 26.0, *)) {
+    if (_topEdgeScrollView == settled && settled != nil) {
+      _originalTopEdgeStyle = handoff.originalStyle;
+      handoff.originalStyle = settled.topEdgeEffect.style;
+    }
   }
   if (handoff.borrowsPinnedStickyHost && !_stickyHeaderIsPinned &&
       (_pinnedStickyHostView.superview == settled ||
@@ -3372,15 +3377,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     for (RNCCollapsiblePagerTransitionEdgeOwner *existing in _programmaticScrollEdgeOwners) {
       if (existing.page == page) return YES;
     }
-    CGFloat overlayBottom = self.effectiveTopOverlayHeight;
-    CGFloat boundary = overlayBottom + self.currentStickyHeaderHeight;
+    CGFloat boundary = self.effectiveTopOverlayHeight + self.currentStickyHeaderHeight;
     CGFloat pageTop = [page convertPoint:CGPointZero toView:_containerView].y;
-    CGFloat width = CGRectGetWidth(page.bounds);
-    CGFloat height = boundary - pageTop;
-    if (height <= 0 || width <= 0) return NO;
-    CGPoint origin = [page convertPoint:CGPointZero toView:container];
-    UIScrollView *standIn = [[UIScrollView alloc] initWithFrame:
-      CGRectMake(origin.x, origin.y, width, height)];
+    if (boundary - pageTop <= 0 || CGRectGetWidth(page.bounds) <= 0) return NO;
+    UIScrollView *standIn = [UIScrollView new];
     standIn.userInteractionEnabled = NO;
     standIn.scrollsToTop = NO;
     standIn.showsVerticalScrollIndicator = NO;
@@ -3388,9 +3388,6 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     standIn.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     standIn.backgroundColor = UIColor.clearColor;
     standIn.accessibilityElementsHidden = YES;
-    CGFloat scrolled = _headerHeight;
-    standIn.contentSize = CGSizeMake(width, scrolled + height + 1);
-    standIn.contentOffset = CGPointMake(0, scrolled);
     standIn.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
     [container insertSubview:standIn aboveSubview:page];
 
@@ -3400,10 +3397,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     owner.standInScrollView = standIn;
     owner.originalStyle = UIScrollEdgeEffectStyle.hardStyle;
     owner.ownsTransitionHosts = YES;
-    UIView *(^host)(UIView *) = ^UIView *(UIView *reference) {
-      CGRect frame = [reference convertRect:reference.bounds toView:container];
-      frame.origin.x = origin.x;
-      UIView *view = [[UIView alloc] initWithFrame:frame];
+    UIView *(^host)(void) = ^UIView *(void) {
+      UIView *view = [UIView new];
       view.userInteractionEnabled = NO;
       view.accessibilityElementsHidden = YES;
       [container insertSubview:view aboveSubview:standIn];
@@ -3417,13 +3412,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       [view addSubview:marker];
       return view;
     };
-    owner.ownedTopHost = host(_topOverlayHostView);
+    owner.ownedTopHost = host();
     owner.topHost = owner.ownedTopHost;
     owner.topInteraction = [UIScrollEdgeElementContainerInteraction new];
     owner.topInteraction.edge = UIRectEdgeTop;
     owner.topInteraction.scrollView = standIn;
     [owner.topHost addInteraction:owner.topInteraction];
-    owner.ownedStickyHost = host(_stickyHeaderView);
+    owner.ownedStickyHost = host();
     owner.stickyHost = owner.ownedStickyHost;
     owner.stickyInteraction = [UIScrollEdgeElementContainerInteraction new];
     owner.stickyInteraction.edge = UIRectEdgeTop;
@@ -3433,11 +3428,62 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       _programmaticScrollEdges = [NSMapTable weakToStrongObjectsMapTable];
       _programmaticScrollEdgeOwners = [NSMutableArray new];
     }
+    [self layoutStandInScrollEdgeOwner:owner];
     [_programmaticScrollEdges setObject:owner forKey:standIn];
     [_programmaticScrollEdgeOwners addObject:owner];
     return YES;
   }
   return NO;
+}
+
+// Stand-ins live in the pager container rather than inside their page, so they
+// do not follow page or header geometry on their own. Recompute them from the
+// current page origin and overlay + sticky boundary on every layout pass.
+- (BOOL)layoutStandInScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner
+{
+  UIScrollView *standIn = owner.standInScrollView;
+  UIView *page = owner.page;
+  UIView *container = standIn.superview;
+  BOOL valid = standIn != nil && page != nil && container != nil &&
+    page.superview == container && _containerView != nil;
+  CGFloat width = valid ? CGRectGetWidth(page.bounds) : 0;
+  CGFloat height = 0;
+  CGPoint origin = CGPointZero;
+  if (valid) {
+    CGFloat boundary = self.effectiveTopOverlayHeight + self.currentStickyHeaderHeight;
+    height = boundary - [page convertPoint:CGPointZero toView:_containerView].y;
+    origin = [page convertPoint:CGPointZero toView:container];
+    valid = width > 0 && height > 0;
+  }
+  standIn.hidden = !valid;
+  owner.ownedTopHost.hidden = !valid;
+  owner.ownedStickyHost.hidden = !valid;
+  if (!valid) return NO;
+  CGRect frame = CGRectMake(origin.x, origin.y, width, height);
+  if (!CGRectEqualToRect(standIn.frame, frame)) standIn.frame = frame;
+  // Rest past the top edge so UIKit draws the edge material.
+  CGFloat scrolled = MAX(_headerHeight, 1);
+  CGSize contentSize = CGSizeMake(width, scrolled + height + 1);
+  if (!CGSizeEqualToSize(standIn.contentSize, contentSize)) standIn.contentSize = contentSize;
+  if (standIn.contentOffset.y != scrolled) standIn.contentOffset = CGPointMake(0, scrolled);
+  void (^place)(UIView *, UIView *) = ^(UIView *host, UIView *reference) {
+    if (host == nil) return;
+    CGRect hostFrame = reference != nil
+      ? [reference convertRect:reference.bounds toView:container] : CGRectZero;
+    hostFrame.origin.x = origin.x;
+    hostFrame.size.width = width;
+    if (!CGRectEqualToRect(host.frame, hostFrame)) host.frame = hostFrame;
+  };
+  place(owner.ownedTopHost, _topOverlayHostView);
+  place(owner.ownedStickyHost, _stickyHeaderView);
+  return YES;
+}
+
+- (void)layoutStandInScrollEdges
+{
+  for (RNCCollapsiblePagerTransitionEdgeOwner *owner in _programmaticScrollEdgeOwners) {
+    if (owner.standInScrollView != nil) [self layoutStandInScrollEdgeOwner:owner];
+  }
 }
 
 - (BOOL)hasProgrammaticScrollEdgeForPage:(UIView *)page

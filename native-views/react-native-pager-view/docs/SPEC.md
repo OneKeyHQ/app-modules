@@ -178,7 +178,11 @@ offset past its top edge, with owned transparent top/sticky element hosts bound 
 The stand-in draws only UIKit's Hard material; it carries no snapshot of header or page
 content, and the page itself stays masked above the boundary. A page whose own list is
 scrolled past its top and covers the bars keeps using its own temporary interactions.
-When the header is not pinned no stand-in is created. Release, completion and recycle
+When the header is not pinned no stand-in is created and the page keeps the previous
+temporary interaction on its own list. The stand-in and its hosts live in the pager
+container, so every scroll-edge mask update recomputes their frames from the current page
+origin, page width and overlay + sticky boundary; they are hidden while that geometry is
+empty. Release, completion and recycle
 remove the stand-in with its owned hosts.
 
 The fixed boundary separator covers stay in place for the whole transition, falling back to
