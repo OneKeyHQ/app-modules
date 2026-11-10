@@ -291,8 +291,10 @@ stacked (phone)                     table (wide)
   supplies one or two distinct `image`/`video` candidates. It takes precedence
   over `image`; explicit `imageState: empty | error` still suppresses loading.
   A video candidate uses a muted paused native player, with no playback/controls or
-  touch target. Detail playback remains caller-owned. Failure advances once to
-  the next candidate, then displays the standard error placeholder. The same
+  touch target. Detail playback remains caller-owned. While loading the slot
+  shows a synchronized sheen placeholder; failure advances once to the next
+  candidate, then shows the hatched failed placeholder (SPEC: Media loading
+  and failure placeholders). The same
   media box and caption diagram apply; this adds no new layout region.
   Web keeps the existing `image` field and does not execute media probing.
 - **Native lifetime:** request identity includes row key, full source, fit,

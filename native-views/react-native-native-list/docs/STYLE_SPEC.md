@@ -535,6 +535,9 @@ defaults applied when `style` is absent.
 | image radius | 10 | 10 | dp(10) | 10px **=** |
 | tile radius | 16 | 16 | 16 | 16px **=** |
 | network badge | 14 | 14×14, r7 | dp(14), circle | 14px, r50% **=** |
+| placeholder glyph | 28% of width, max 44 | CAShapeLayer | Canvas path | inline SVG **=** |
+| loading sheen | 60% wide, -12°, 1.6s | CAKeyframeAnimation | `postInvalidateOnAnimation` | CSS keyframes **=** |
+| failed hatch | 1 / 7, 135°, 4.5% | CAShapeLayer + radial mask | `saveLayer` + `DST_IN` | repeating gradient + mask **=** |
 
 ### metricCard
 
