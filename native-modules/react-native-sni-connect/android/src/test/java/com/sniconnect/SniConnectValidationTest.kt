@@ -4,7 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
+import okhttp3.MediaType
+import okhttp3.RequestBody
 import okio.Buffer
+import okio.BufferedSink
 import okio.ForwardingSink
 import okio.buffer
 import org.junit.Rule
@@ -15,9 +18,11 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.io.InterruptedIOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
 
@@ -337,7 +342,15 @@ class SniConnectValidationTest {
     )
     assertEquals(
       "SNI_SECURITY_POLICY_FAILED",
-      classifySniFailureCode(UnknownHostException("Unexpected host for pinned SNI request")),
+      classifySniFailureCode(
+        SniPinnedDestinationViolationException("Unexpected host for pinned SNI request"),
+      ),
+    )
+    assertEquals(
+      "SNI_SECURITY_POLICY_FAILED",
+      classifySniFailureCode(IOException("wrapped").apply {
+        initCause(SniPinnedDestinationViolationException("Unexpected host for pinned SNI request"))
+      }),
     )
     assertEquals(
       "SNI_REQUEST_TIMEOUT",
@@ -365,6 +378,110 @@ class SniConnectValidationTest {
       "SNI_RESPONSE_FAILED",
       classifySniResponseFailureCode(IOException("bad body"), false),
     )
+  }
+
+  @Test
+  fun classifiesDnsAndPreWriteConnectionFailuresForSafeFallback() {
+    assertEquals(
+      "SNI_DNS_FAILED",
+      classifySniFailureCode(UnknownHostException("api.example.com")),
+    )
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      classifySniFailureCode(ConnectException("Connection refused")),
+    )
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      classifySniFailureCode(IOException("connect failed").apply {
+        initCause(ConnectException("Connection refused"))
+      }),
+    )
+  }
+
+  @Test
+  fun gatesReplaySensitiveCodesOnBodyWriteEvidence() {
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", false),
+    )
+    assertEquals(
+      "SNI_REQUEST_FAILED",
+      gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", true),
+    )
+    // Only the pre-write connection code is gated; other codes pass through.
+    assertEquals("SNI_TLS_FAILED", gateReplaySensitiveFailureCode("SNI_TLS_FAILED", true))
+    assertEquals(
+      "SNI_SECURITY_POLICY_FAILED",
+      gateReplaySensitiveFailureCode("SNI_SECURITY_POLICY_FAILED", true),
+    )
+  }
+
+  @Test
+  fun trackingRequestBodyRecordsTheFirstWriteAttempt() {
+    val requestBodyWriteStarted = AtomicBoolean(false)
+    val requestBody = SniWriteTrackingRequestBody(
+      object : RequestBody() {
+        override fun contentType(): MediaType? = null
+
+        override fun contentLength(): Long = 3
+
+        override fun writeTo(sink: BufferedSink) {
+          sink.writeUtf8("abc")
+        }
+      },
+      requestBodyWriteStarted,
+    )
+
+    assertFalse(requestBodyWriteStarted.get())
+    val sink = Buffer()
+    requestBody.writeTo(sink)
+    assertTrue(requestBodyWriteStarted.get())
+    assertEquals("abc", sink.readUtf8())
+  }
+
+  @Test
+  fun trackingRequestBodyRecordsAPartialWriteThatThrows() {
+    val requestBodyWriteStarted = AtomicBoolean(false)
+    val requestBody = SniWriteTrackingRequestBody(
+      object : RequestBody() {
+        override fun contentType(): MediaType? = null
+
+        override fun contentLength(): Long = 5
+
+        override fun writeTo(sink: BufferedSink) {
+          sink.writeUtf8("a")
+          throw IOException("connection lost mid-body")
+        }
+      },
+      requestBodyWriteStarted,
+    )
+
+    assertThrows(IOException::class.java) { requestBody.writeTo(Buffer()) }
+    assertTrue(requestBodyWriteStarted.get())
+  }
+
+  @Test
+  fun trackingRequestBodyForwardsBodyMetadata() {
+    val requestBody = SniWriteTrackingRequestBody(
+      object : RequestBody() {
+        override fun contentType(): MediaType? = null
+
+        override fun contentLength(): Long = 1
+
+        override fun isOneShot(): Boolean = true
+
+        override fun isDuplex(): Boolean = true
+
+        override fun writeTo(sink: BufferedSink) {
+          sink.writeUtf8("x")
+        }
+      },
+      AtomicBoolean(false),
+    )
+
+    assertTrue(requestBody.isOneShot())
+    assertTrue(requestBody.isDuplex())
+    assertEquals(1L, requestBody.contentLength())
   }
 
   private fun assertValidationFails(block: () -> Unit) {

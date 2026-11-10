@@ -7,6 +7,7 @@ import java.net.Proxy
 import java.net.UnknownHostException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Dns
@@ -57,11 +58,40 @@ object SniPinnedTransport {
         if (requestedHost.lowercase(Locale.US) == hostname) {
           return listOf(pinnedAddress)
         }
-        throw UnknownHostException(
+        throw SniPinnedDestinationViolationException(
           "Unexpected host for pinned SNI request: $requestedHost"
         )
       }
     }
+}
+
+/**
+ * The pinned resolver never consults system DNS, so an unknown host here can
+ * only be an attempt to escape the caller-selected destination. It is a
+ * security-policy failure, not a transient DNS failure, and must fail closed.
+ */
+internal class SniPinnedDestinationViolationException(
+  message: String,
+) : UnknownHostException(message)
+
+/** Records that at least one attempt of a logical request started transmitting its body. */
+internal class SniWriteTrackingRequestBody(
+  private val delegate: RequestBody,
+  private val requestBodyWriteStarted: AtomicBoolean,
+) : RequestBody() {
+  override fun contentType(): MediaType? = delegate.contentType()
+
+  override fun contentLength(): Long = delegate.contentLength()
+
+  override fun isOneShot(): Boolean = delegate.isOneShot()
+
+  override fun isDuplex(): Boolean = delegate.isDuplex()
+
+  override fun writeTo(sink: BufferedSink) {
+    // Set before the first byte so a partial write still counts as ambiguous.
+    requestBodyWriteStarted.set(true)
+    delegate.writeTo(sink)
+  }
 }
 
 /** Reads from disk only during transmission, with a fixed, bounded body length. */

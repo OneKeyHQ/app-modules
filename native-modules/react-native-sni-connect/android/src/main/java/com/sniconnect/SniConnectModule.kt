@@ -24,6 +24,7 @@ import okio.Buffer
 import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.net.ConnectException
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.URI
@@ -40,14 +41,27 @@ import javax.net.ssl.SSLPeerUnverifiedException
 
 private const val TAG = "SniConnect"
 
+/**
+ * Classifies a request-phase failure for the JS-facing error code. The result
+ * is not yet replay-safe: callers MUST pass it through
+ * [gateReplaySensitiveFailureCode] with the logical request's write evidence.
+ */
 internal fun classifySniFailureCode(error: Throwable): String {
   if (hasCause(error, SSLPeerUnverifiedException::class.java) ||
     hasCause(error, CertificateException::class.java)
   ) {
     return "SNI_CERT_FAILED"
   }
-  if (hasCause(error, UnknownHostException::class.java)) {
+  // The pinned resolver never performs system DNS, so this is a destination
+  // escape and stays fail-closed instead of becoming a transient DNS failure.
+  if (hasCause(error, SniPinnedDestinationViolationException::class.java)) {
     return "SNI_SECURITY_POLICY_FAILED"
+  }
+  if (hasCause(error, UnknownHostException::class.java)) {
+    return "SNI_DNS_FAILED"
+  }
+  if (hasCause(error, ConnectException::class.java)) {
+    return "SNI_CONNECTION_REFUSED"
   }
   if (hasCause(error, InterruptedIOException::class.java)) {
     return "SNI_REQUEST_TIMEOUT"
@@ -57,6 +71,22 @@ internal fun classifySniFailureCode(error: Throwable): String {
   }
   return "SNI_REQUEST_FAILED"
 }
+
+/**
+ * OkHttp can recover and retry inside one logical request. A final connect
+ * failure only proves no bytes were written when no attempt ever started
+ * writing the body; after a processed attempt the outcome is ambiguous, so the
+ * pre-write code must not authorize a caller replay.
+ */
+internal fun gateReplaySensitiveFailureCode(
+  code: String,
+  requestBodyWriteStarted: Boolean,
+): String =
+  if (code == "SNI_CONNECTION_REFUSED" && requestBodyWriteStarted) {
+    "SNI_REQUEST_FAILED"
+  } else {
+    code
+  }
 
 internal fun classifySniResponseFailureCode(
   error: Throwable,
@@ -302,10 +332,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private fun performRequest(config: RequestConfig, promise: Promise) {
     val startedAtMs = android.os.SystemClock.elapsedRealtime()
     val startedAtNanos = System.nanoTime()
+    // Shared by every OkHttp attempt of this logical request; once any attempt
+    // starts sending its body the outcome can no longer be called pre-write.
+    val requestBodyWriteStarted = AtomicBoolean(false)
     var registeredRequest: ManagedRequest? = null
     try {
       val client = getOrCreateClient(config)
-      val request = buildRequest(config)
+      val request = buildRequest(config, requestBodyWriteStarted)
       val call = client.newCall(request)
       val settled = AtomicBoolean(false)
       lateinit var managedRequest: ManagedRequest
@@ -334,7 +367,10 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           if (managedRequest.wasExplicitlyCancelled()) {
             promise.reject("SNI_CANCELLED", "Request cancelled", null)
           } else {
-            val code = classifySniFailureCode(e)
+            val code = gateReplaySensitiveFailureCode(
+              classifySniFailureCode(e),
+              requestBodyWriteStarted.get(),
+            )
             SniConnectLogger.error(
               SniConnectLogger.event(
                 "sni_request_result",
@@ -591,7 +627,10 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
    * Build the request. Always `https://<hostname><path>` on the implicit port 443 —
    * `path` has been validated as relative, so scheme/host/port cannot be overridden.
    */
-  private fun buildRequest(config: RequestConfig): Request {
+  private fun buildRequest(
+    config: RequestConfig,
+    requestBodyWriteStarted: AtomicBoolean,
+  ): Request {
     val url = "https://${config.hostname}${config.path}"
     val builder = Request.Builder().url(url)
 
@@ -607,8 +646,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       ?.value
       ?.toMediaTypeOrNull()
     // Enforce the body bound when OkHttp consumes the file, after admission.
-    val requestBody = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
+    val body = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
       ?: config.body?.toRequestBody(mediaType)
+    val requestBody = body?.let { SniWriteTrackingRequestBody(it, requestBodyWriteStarted) }
 
     when (method) {
       "GET" -> builder.get()
