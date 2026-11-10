@@ -1047,6 +1047,12 @@ export type NativeListSnapshot = Readonly<{
   }>;
   capabilities?: Readonly<{
     reorderable?: boolean;
+    /**
+     * `row` (default) starts a reorder from a long press anywhere on a
+     * reorderable row. `handle` starts it only from a long press on the
+     * row's trailing `drag` accessory.
+     */
+    reorderActivation?: 'row' | 'handle';
     pullToRefresh?: boolean;
     refreshing?: boolean;
     refreshTriggerDistance?: number;

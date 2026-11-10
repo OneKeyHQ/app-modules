@@ -4,4 +4,5 @@
     <item name="onekey_native_scroll_coordinator_refresh_inset" type="id" />
     <item name="onekey_native_scroll_coordinator_command_listener" type="id" />
     <item name="onekey_native_scroll_coordinator_command_cancel_listener" type="id" />
+    <item name="onekey_native_list_reorder_handle" type="id" />
 </resources>

@@ -104,6 +104,8 @@ struct NativeListConfig {
   let rowPressToggles: Bool
   var selectedKeys: Set<String>
   let reorderable: Bool
+  /// `handle` starts a reorder only from a long press on a trailing `drag` accessory.
+  let reorderFromHandleOnly: Bool
   let pullToRefresh: Bool
   let refreshTriggerDistance: CGFloat?
   var refreshing: Bool
@@ -196,6 +198,7 @@ struct NativeListConfig {
       rowPressToggles: selection?["rowPressToggles"] as? Bool ?? false,
       selectedKeys: selectedKeys,
       reorderable: capabilities?["reorderable"] as? Bool ?? false,
+      reorderFromHandleOnly: capabilities?["reorderActivation"] as? String == "handle",
       pullToRefresh: capabilities?["pullToRefresh"] as? Bool ?? false,
       refreshTriggerDistance: (capabilities?["refreshTriggerDistance"] as? Double)
         .flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil },

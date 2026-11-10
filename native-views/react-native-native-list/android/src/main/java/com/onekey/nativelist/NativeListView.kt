@@ -2799,6 +2799,7 @@ class NativeListView(
       previous.selectionMode != next.selectionMode ||
       previous.rowPressToggles != next.rowPressToggles ||
       previous.reorderable != next.reorderable ||
+      previous.reorderFromHandleOnly != next.reorderFromHandleOnly ||
       previous.pullToRefresh != next.pullToRefresh ||
       previous.refreshTriggerDistance != next.refreshTriggerDistance ||
       previous.refreshing != next.refreshing ||
@@ -4583,7 +4584,9 @@ class NativeListView(
                   item.isReorderable &&
                     (holder as? NativeListViewHolder)?.rowView?.canStartWalletGroupReorder(
                       event.y - holder.itemView.top,
-                    ) != false
+                    ) != false &&
+                    (config?.reorderFromHandleOnly != true ||
+                      isOnReorderHandle(holder.itemView, event.rawX, event.rawY))
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
@@ -4599,6 +4602,24 @@ class NativeListView(
       }
 
     }.also(recyclerView::addOnItemTouchListener)
+  }
+
+  /** Whether a screen point falls on a visible trailing `drag` handle inside [root]. */
+  private fun isOnReorderHandle(root: View, rawX: Float, rawY: Float): Boolean {
+    if (root.visibility != View.VISIBLE) return false
+    if (root.getTag(R.id.onekey_native_list_reorder_handle) == true) {
+      val location = IntArray(2)
+      root.getLocationOnScreen(location)
+      // The glyph slot is 24dp; accept the surrounding press target as well.
+      val slop = dp(REORDER_HANDLE_SLOP_DP)
+      return rawX >= location[0] - slop && rawX <= location[0] + root.width + slop &&
+        rawY >= location[1] - slop && rawY <= location[1] + root.height + slop
+    }
+    if (root !is ViewGroup) return false
+    for (index in 0 until root.childCount) {
+      if (isOnReorderHandle(root.getChildAt(index), rawX, rawY)) return true
+    }
+    return false
   }
 
   private fun prepareDisplacedReorderAnimation(view: View, helper: ItemTouchHelper) {
@@ -4847,6 +4868,7 @@ class NativeListView(
     private const val SECTION_INDEX_PREVIEW_HEIGHT_DP = 50
     private const val SECTION_INDEX_PREVIEW_END_MARGIN_DP = 40
     private const val REORDER_LONG_PRESS_MS = 200L
+    private const val REORDER_HANDLE_SLOP_DP = 7
     private const val REORDER_ALLOWABLE_MOVEMENT_DP = 10
     private const val REORDER_PLACEHOLDER_INSET_DP = 8
     private const val REORDER_PLACEHOLDER_RADIUS_DP = 12

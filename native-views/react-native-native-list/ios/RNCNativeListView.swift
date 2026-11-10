@@ -715,6 +715,8 @@ final class NativeListView: UIView {
   private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
   private let reorderMoveFeedback = UISelectionFeedbackGenerator()
   private var interactiveReorderFeedbackIndex: Int?
+  /// Ancestor pans (for example a sheet's dismiss pan) paused while a reorder is active.
+  private var reorderSuspendedAncestorPans: [UIGestureRecognizer] = []
   private var interactiveMovementKeys: [String]?
   private var actionAnchor: ActionAnchorRecord?
   private let actionAnchorInstanceID = UUID().uuidString
@@ -1989,6 +1991,7 @@ final class NativeListView: UIView {
         interactiveMovementKeys = dataSource.snapshot().itemIdentifiers
       }
       interactiveReorderFeedbackIndex = indexPath.item
+      suspendAncestorPansForReorder()
       reorderStartFeedback.impactOccurred(intensity: 0.7)
       reorderStartFeedback.prepare()
       reorderMoveFeedback.prepare()
@@ -2028,6 +2031,27 @@ final class NativeListView: UIView {
     default:
       break
     }
+  }
+
+  /// A reorder that has started owns the drag: an enclosing sheet or pager must
+  /// not also pan (and dismiss or page) with the same finger.
+  private func suspendAncestorPansForReorder() {
+    resumeAncestorPansAfterReorder()
+    var view = collectionView.superview
+    while let current = view {
+      for recognizer in current.gestureRecognizers ?? []
+      where recognizer is UIPanGestureRecognizer && recognizer.isEnabled
+        && recognizer.delegate !== self {
+        recognizer.isEnabled = false
+        reorderSuspendedAncestorPans.append(recognizer)
+      }
+      view = current.superview
+    }
+  }
+
+  private func resumeAncestorPansAfterReorder() {
+    reorderSuspendedAncestorPans.forEach { $0.isEnabled = true }
+    reorderSuspendedAncestorPans.removeAll()
   }
 
   private func nearestReorderIndexPath(to point: CGPoint) -> IndexPath? {
@@ -2087,6 +2111,7 @@ final class NativeListView: UIView {
   }
 
   private func finishInteractiveReorder(cancelled: Bool) {
+    resumeAncestorPansAfterReorder()
     interactiveReorderLockedCrossAxisPosition = nil
     if interactiveReorderUsesAtomicTargeting {
       finishAtomicInteractiveReorder(cancelled: cancelled)
@@ -2131,6 +2156,7 @@ final class NativeListView: UIView {
 
   private func cancelInteractiveReorderForStructuralUpdate() {
     guard interactiveReorderSource != nil else { return }
+    resumeAncestorPansAfterReorder()
     interactiveReorderAnimator?.stopAnimation(true)
     interactiveReorderAnimator = nil
     interactiveMovementKeys = nil
@@ -3071,6 +3097,7 @@ final class NativeListView: UIView {
     keyboardDragRecognizer.delegate = nil
     listBodyGestureGuard.delegate = nil
     reorderLongPress.delegate = nil
+    resumeAncestorPansAfterReorder()
     marketLongPress.delegate = nil
 
     for case let cell as NativeListRowHost in collectionView.visibleCells {
@@ -3293,6 +3320,15 @@ extension NativeListView: UIGestureRecognizerDelegate {
       }
     }
     if gestureRecognizer === listBodyGestureGuard { return true }
+    if gestureRecognizer === reorderLongPress, config?.reorderFromHandleOnly == true {
+      // Handle-only reorder: accept just the touches that begin on a drag handle.
+      var view = touch.view
+      while let current = view, current !== footerCell {
+        if (current as? NativeListAccessoryButton)?.isReorderHandle == true { return true }
+        view = current.superview
+      }
+      return false
+    }
     var view = touch.view
     while let current = view, current !== footerCell {
       if current is UIControl { return false }

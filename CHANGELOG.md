@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Features
+- **native-list**: Add `capabilities.reorderActivation: 'handle'`, which starts a reorder only from a long press on the row's trailing `drag` accessory; elsewhere on the row a long press stays an ordinary press. The default `row` keeps row-wide activation. A `PencilOutline` icon followed by a `drag` accessory lays out side by side on iOS and Android. Web now resolves icon names missing from its registry through the host icon catalog, as iOS and Android already do, and draws the `drag` accessory with `DragOutline` artwork; only names the host also lacks keep the text glyph. See `native-views/react-native-native-list/docs/SPEC.md`.
 - **sni-connect**: Add `uploadFile()`, which sends a binary file from app-owned storage over the pinned-IP/SNI transport (POST/PUT, up to 20 MiB). `request()` bodies are UTF-8 strings capped at 1 MiB, so binary payloads such as log archives could not use the SNI path. Older native binaries lack the method, so callers must feature-detect it. See `native-modules/react-native-sni-connect/SPEC.md` §3.1a.
 - **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
 - **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
