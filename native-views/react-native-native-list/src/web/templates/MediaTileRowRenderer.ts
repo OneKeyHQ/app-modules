@@ -1,4 +1,3 @@
-import { createNamedIcon } from '@onekeyfe/react-native-image/icon/dom';
 import type { MediaTileRow, NativeListTextStyle } from '../../models';
 import type { RowPrimitives } from './RowVisual';
 
@@ -192,6 +191,78 @@ type GalleryViews = {
   leave: () => void;
 };
 const galleries = new WeakMap<HTMLElement, GalleryViews>();
+type MediaPlaceholderState = 'loading' | 'failed';
+type MediaPlaceholderPhase = MediaPlaceholderState | 'loaded';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+let glyphMaskId = 0;
+
+/**
+ * Placeholder glyphs share one 24pt geometry with the iOS and Android renderers:
+ * a rounded frame with a sun and a ridge; the failed glyph adds a slash and cuts
+ * a gap into the frame around it.
+ */
+function createMediaGlyph(document: Document, state: MediaPlaceholderState) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.5');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  const shape = (tag: string, attributes: Record<string, string>) => {
+    const node = document.createElementNS(SVG_NS, tag);
+    Object.entries(attributes).forEach(([key, value]) =>
+      node.setAttribute(key, value)
+    );
+    return node;
+  };
+  const picture = shape('g', {});
+  picture.append(
+    shape('rect', { x: '3', y: '3', width: '18', height: '18', rx: '4' }),
+    shape('circle', { cx: '9', cy: '9', r: '1.6' }),
+    shape('path', { d: 'M5 20.5L14.5 11L21 17.5' })
+  );
+  if (state === 'failed') {
+    glyphMaskId += 1;
+    const id = `ok-native-list-media-cut-${glyphMaskId}`;
+    const mask = shape('mask', { id, maskUnits: 'userSpaceOnUse' });
+    mask.append(
+      shape('rect', {
+        x: '0',
+        y: '0',
+        width: '24',
+        height: '24',
+        fill: '#fff',
+        stroke: 'none',
+      }),
+      shape('path', {
+        d: 'M2.6 -0.6L24.6 21.4L21.4 24.6L-0.6 2.6Z',
+        fill: '#000',
+        stroke: 'none',
+      })
+    );
+    picture.setAttribute('mask', `url(#${id})`);
+    svg.append(mask, picture, shape('path', { d: 'M3 3L21 21' }));
+  } else svg.append(picture);
+  const wrap = document.createElement('div');
+  wrap.className = 'ok-native-list-media-glyph';
+  wrap.dataset.glyph = state;
+  wrap.append(svg);
+  return wrap;
+}
+
+const SWEEP_PERIOD_MS = 1600;
+
+function setPlaceholderState(v: GalleryViews, state: MediaPlaceholderPhase) {
+  v.fallback.dataset.state = state;
+  if (state === 'loading')
+    // Keep every loading tile on one sweep phase, including recycled rows.
+    v.fallback.style.setProperty(
+      '--nl-media-sweep-delay',
+      `-${Math.round(performance.now() % SWEEP_PERIOD_MS)}ms`
+    );
+}
 const isGalleryMedia = (row: MediaTileRow) =>
   row.variant === 'gallery' && (!row.image || (!!row.media && !row.imageState));
 
@@ -221,18 +292,12 @@ function initGallery(body: HTMLElement, primitives: RowPrimitives) {
   };
   const frame = element('ok-native-list-media-image');
   const fallback = element('ok-native-list-media-fallback');
-  const svg = createNamedIcon(document, 'ImageSquareWavesOutline');
-  fallback.append(svg);
-  Object.assign(fallback.style, {
-    position: 'absolute',
-    inset: '0',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--nl-disabled)',
-    borderRadius: '10px',
-    background: 'var(--nl-strong)',
-  });
+  fallback.append(
+    element('ok-native-list-media-hatch'),
+    element('ok-native-list-media-sheen'),
+    createMediaGlyph(document, 'loading'),
+    createMediaGlyph(document, 'failed')
+  );
   const metadata = element('ok-native-list-media-meta');
   const subtitleLine = element('ok-native-list-media-subtitle-row');
   const subtitle = element('ok-native-list-media-subtitle');
@@ -320,10 +385,17 @@ function bindGallery(
     v.fallback.style.visibility = 'visible';
     const epoch = v.epoch;
     const source = row.imageState ? undefined : row.media?.source;
+    setPlaceholderState(
+      v,
+      source?.uri && row.media?.probeOrder.length ? 'loading' : 'failed'
+    );
     const probe = (attempt: number) => {
       if (v.epoch !== epoch) return;
       const kind = row.media?.probeOrder[attempt];
-      if (!source?.uri || !kind) return;
+      if (!source?.uri || !kind) {
+        setPlaceholderState(v, 'failed');
+        return;
+      }
       const media = body.ownerDocument.createElement(
         kind === 'video' ? 'video' : 'img'
       );
@@ -369,8 +441,11 @@ function bindGallery(
         probe(attempt + 1);
       };
       const ready = () => {
-        if (v.epoch === epoch && v.media === media)
+        if (v.epoch === epoch && v.media === media) {
           v.fallback.style.visibility = 'hidden';
+          // Stops the sweep animation behind the picture.
+          setPlaceholderState(v, 'loaded');
+        }
       };
       if (media.tagName === 'VIDEO') media.onloadeddata = ready;
       else media.onload = ready;

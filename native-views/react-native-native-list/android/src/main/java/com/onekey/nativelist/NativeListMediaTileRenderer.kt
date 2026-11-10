@@ -16,7 +16,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: Na
     private val picture = FrameLayout(context)
     private val image = NativeListMediaPreviewSlot(context)
     private val network = NativeListImageSlot(context)
-    private val errorIcon = OneKeyIconView(context)
+    private val placeholderView = NativeListMediaPlaceholderView(context)
     private val title = NativeListTextView(context)
     private val subtitle = NativeListTextView(context)
     private val badge = NativeListTextView(context)
@@ -43,7 +43,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: Na
     init {
         orientation = VERTICAL
         picture.addView(image.view, FrameLayout.LayoutParams(-1, -1))
-        picture.addView(errorIcon)
+        picture.addView(placeholderView, FrameLayout.LayoutParams(-1, -1))
         picture.addView(badge)
         subtitleLine.addView(subtitle, LayoutParams(0, -2, 1f))
         subtitleLine.addView(network.view)
@@ -136,17 +136,20 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: Na
         metadata.layoutParams = LayoutParams(-1, -2).apply { topMargin = size("leadingGap", 8) }
         (subtitle.layoutParams as LayoutParams).marginEnd = dp(8)
         val state = item.json.optString("imageState")
-        errorIcon.visibility = if (state == "error") VISIBLE else GONE
-        errorIcon.iconName = "ImageSquareWavesOutline"
-        errorIcon.tintColor = tint("disabledText", "#8C8C8C")
-        errorIcon.useSourceScale = sourceScale
-        errorIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
+        placeholderView.applyTheme(theme)
+        placeholderView.cornerRadius =
+            if (imageStyle.optString("shape") == "circle" && !imageStyle.has("cornerRadius")) 10_000f
+            else if (imageStyle.has("cornerRadius")) stylePx(imageStyle.optDouble("cornerRadius")).toFloat()
+            else if (imageStyle.optString("shape") == "square") 0f
+            else dp(10).toFloat()
         val media = item.json.optJSONObject("media")
         val source = media?.optJSONObject("source") ?: item.json.optJSONObject("image")
         val order = media?.optJSONArray("probeOrder")?.let { values ->
             (0 until values.length()).map { values.optString(it) }
         } ?: listOf("image")
-        if (state != "empty" && state != "error" && source != null)
+        if (state != "empty" && state != "error" && source != null) {
+            // Set before binding: a cached result completes synchronously inside bind.
+            showPlaceholder(NativeListMediaPlaceholderView.State.Loading)
             image.bind(
                 source,
                 "${item.key}:media",
@@ -156,17 +159,26 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: Na
                         ?: "#0000000F",
                 probeOrder = order,
             ) { loaded ->
-                errorIcon.visibility = if (loaded) GONE else VISIBLE
+                showPlaceholder(
+                    if (loaded) NativeListMediaPlaceholderView.State.Hidden
+                    else NativeListMediaPlaceholderView.State.Failed
+                )
                 if (!loaded) image.view.setBackgroundColor(tint("strongBackground", "#0000000F"))
             }
-        else image.recycle()
+        } else {
+            image.recycle()
+            showPlaceholder(
+                if (state == "error") NativeListMediaPlaceholderView.State.Failed
+                else NativeListMediaPlaceholderView.State.Hidden
+            )
+        }
         // Legacy: only the empty/error states paint a slot fill; loaded images show
         // their own placeholder without a white backing.
         image.view.background =
             when (state) {
                 "error" -> GradientDrawable().apply { setColor(tint("strongBackground", "#0000000F")) }
                 "empty" -> GradientDrawable().apply { setColor(Color.WHITE) }
-                else -> if (errorIcon.visibility == VISIBLE) GradientDrawable().apply { setColor(tint("strongBackground", "#0000000F")) } else null
+                else -> if (placeholderView.state == NativeListMediaPlaceholderView.State.Failed) GradientDrawable().apply { setColor(tint("strongBackground", "#0000000F")) } else null
             }
         image.view.outlineProvider =
             object : ViewOutlineProvider() {
@@ -229,8 +241,17 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: Na
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
+    private fun showPlaceholder(state: NativeListMediaPlaceholderView.State) {
+        placeholderView.setState(state)
+        // OneKeyImage may paint its own terminal symbol once a probe fails; the failed
+        // placeholder replaces the slot entirely instead of drawing over it.
+        image.view.visibility =
+            if (state == NativeListMediaPlaceholderView.State.Failed) INVISIBLE else VISIBLE
+    }
+
     override fun recycleContent() {
         image.recycle()
+        showPlaceholder(NativeListMediaPlaceholderView.State.Hidden)
         network.recycle()
         closeKey = ""
         picture.alpha = 1f

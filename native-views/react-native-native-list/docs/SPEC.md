@@ -71,15 +71,44 @@ prevention; there is no automatic fitting or shrinking pass.
 
 ## Public API and defaults
 
-### Media failure placeholder — Implemented
+### Media loading and failure placeholders — Implemented
 
-Native media-tile failures use the current theme's `disabledText` color for the
-existing local `ImageSquareWavesOutline` icon, including explicit `imageState:
-'error'` and exhausted media probes. A theme rebind updates that tint. Image
-content and SVG decoding remain owned by OneKeyImage; no per-cell WebView or
-fallback network source is added.
-Full-wallet dark/light placeholder acceptance remains a runtime check; source
-completion does not establish that visual result.
+Gallery media tiles draw one placeholder layer over the media slot on iOS
+(`NativeListMediaPlaceholderView.swift`), Android
+(`NativeListMediaPlaceholderView.kt`) and Web (`MediaTileRowRenderer.ts`). All
+three share one geometry so the states read the same everywhere:
+
+- **Loading** — from bind until the first candidate loads or every candidate
+  fails. Fill: `strongBackground`. A sheen band 60% of the tile wide, skewed
+  -12°, sweeps left to right over 1.6s (70% travel with `cubic-bezier(0.4, 0,
+  0.2, 1)`, 30% rest). Every tile derives its phase from one shared clock
+  (`CACurrentMediaTime` / `SystemClock.uptimeMillis` / `performance.now`), so a
+  grid sweeps in step, recycled cells included. The sheen is white at 75% on a
+  light `rowBackground` (Web: `background`) and 7% on a dark one. Reduced
+  motion (iOS Reduce Motion, Android animator scale 0, Web
+  `prefers-reduced-motion`) holds the band still at 60% strength.
+- **Failed** — explicit `imageState: 'error'` or exhausted probes. Fill:
+  `strongBackground`, plus 1pt `primaryText` lines at 4.5% alpha along 135°,
+  7pt apart, masked by a radial gradient that is clear inside 22% of the
+  half-diagonal and opaque from 70%. No text is shown, so there is no copy to
+  localize.
+- **Loaded / empty** — the placeholder is hidden; `imageState: 'empty'`
+  without a source keeps the slot transparent as before.
+
+Both visible states draw a 24-unit glyph at 28% of the tile width, capped at
+44pt, stroked 1.5 units in `disabledText` at 70% of its alpha: a rounded frame
+(3,3,18,18, r4), a sun (9,9 r1.6) and a ridge (5,20.5 → 14.5,11 → 21,17.5).
+The failed glyph adds a slash (3,3 → 21,21) and cuts a 1.6-unit gap into the
+frame on both sides of it. A 1px `separator` hairline at 60% of its alpha
+outlines the slot in both states.
+
+The placeholder owns the slot fill while visible. On Android the media view
+is made invisible in the failed state, because OneKeyImage may paint its own
+terminal state symbol after a probe advances. Image content and SVG decoding
+remain owned by OneKeyImage; no per-cell WebView or fallback network source is
+added. A theme rebind updates every color. Runtime acceptance (2026-11-10):
+iOS dark and Android light on a watch-only wallet NFT grid, Web light/dark in
+the standalone engine harness.
 
 ### Recipient identity and inline warning rows
 
@@ -1392,8 +1421,8 @@ There are no controls or video touch targets; the row owns press interaction.
 Android preserves a black letterbox and iOS a transparent one, matching the
 existing native Video views. No code calls play or requests audio focus.
 
-A failed candidate advances once; exhaustion displays the existing error
-placeholder. New source/row identity resets probing; binding, candidate and
+A failed candidate advances once; exhaustion displays the failed media
+placeholder (see Media loading and failure placeholders). New source/row identity resets probing; binding, candidate and
 player generations reject stale callbacks, including A→B→A. Text-only updates
 preserve the current request. On Android, terminal image/player completion is
 posted to the next UI queue turn before advancing probes or notifying the row;
@@ -2002,8 +2031,9 @@ imageState explicitly selects that state.
 
 Web gallery media preserves the consuming NFT card presentation: healthy image
 and exhausted fallback surfaces have a10px radius, while a healthy video surface
-has square corners. The image/video frame uses the list page background; only
-the exhausted fallback surface uses the strong background. Rebinding the same
+has square corners. The image/video frame uses the list page background; the
+loading and exhausted fallback surfaces use the strong background and the
+shared media placeholders. Rebinding the same
 video key retains square corners, and failed-video fallback to an image restores
 the image radius. This is Web renderer behavior; native media presentation and
 probe-order contracts are unchanged.

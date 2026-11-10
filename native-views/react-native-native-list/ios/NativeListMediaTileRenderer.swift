@@ -11,7 +11,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
   private let picture = UIView()
   private let image = NativeListMediaPreviewSlot()
   private let network = NativeListImageSlot()
-  private let errorIcon = NativeListIconImageView()
+  private let placeholderView = NativeListMediaPlaceholderView()
   private let title = NativeListTextLabel()
   private let subtitle = NativeListTextLabel()
   private let badge = NativeListTextLabel()
@@ -50,7 +50,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     closeStack.addArrangedSubview(close)
     [picture, metadata, closeStack].forEach(root.addArrangedSubview)
     picture.translatesAutoresizingMaskIntoConstraints = false
-    [image.view, errorIcon, badge].forEach {
+    [image.view, placeholderView, badge].forEach {
       picture.addSubview($0)
       $0.translatesAutoresizingMaskIntoConstraints = false
     }
@@ -60,17 +60,16 @@ final class NativeListMediaTileCell: NativeListRendererCell {
       image.view.leadingAnchor.constraint(equalTo: picture.leadingAnchor),
       image.view.topAnchor.constraint(equalTo: picture.topAnchor),
       image.view.heightAnchor.constraint(equalTo: picture.heightAnchor), imageWidth, imageHeight,
-      errorIcon.centerXAnchor.constraint(equalTo: image.view.centerXAnchor),
-      errorIcon.centerYAnchor.constraint(equalTo: image.view.centerYAnchor),
-      errorIcon.widthAnchor.constraint(equalToConstant: 24),
-      errorIcon.heightAnchor.constraint(equalToConstant: 24),
+      placeholderView.leadingAnchor.constraint(equalTo: image.view.leadingAnchor),
+      placeholderView.trailingAnchor.constraint(equalTo: image.view.trailingAnchor),
+      placeholderView.topAnchor.constraint(equalTo: image.view.topAnchor),
+      placeholderView.bottomAnchor.constraint(equalTo: image.view.bottomAnchor),
       badge.trailingAnchor.constraint(equalTo: image.view.trailingAnchor),
       badge.bottomAnchor.constraint(equalTo: image.view.bottomAnchor),
       badge.heightAnchor.constraint(equalToConstant: 24),
       network.view.widthAnchor.constraint(equalToConstant: 14),
       network.view.heightAnchor.constraint(equalToConstant: 14),
     ])
-    errorIcon.contentMode = .scaleAspectFit
     badge.textAlignment = .center
     badge.layer.cornerRadius = 10
     badge.layer.borderWidth = 2
@@ -87,8 +86,6 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
-    let iconUpdate = NativeListIconUpdate(self)
-    defer { iconUpdate.finish() }
 
     let style = item.data.dictionary("style") ?? [:]
     imageStyle = style.dictionary("image") ?? [:]
@@ -124,9 +121,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     badge.layer.borderColor = nativeListColor(theme, "rowBackground", "#FFFFFF").cgColor
     let state = item.data.string("imageState")
     let placeholder = theme?.string("strongBackground", default: "#0000000F") ?? "#0000000F"
-    errorIcon.isHidden = state != "error"
-    errorIcon.bindIcon("ImageSquareWavesOutline")
-    errorIcon.tintColor = nativeListColor(theme, "disabledText", "#8C8C8C")
+    placeholderView.applyTheme(theme)
     let media = item.data.dictionary("media")
     if state != "empty", state != "error", let source = media?.dictionary("source") ?? item.data.dictionary("image") {
       // Legacy source-backed media had a transparent container. Clear only a fill this
@@ -135,11 +130,13 @@ final class NativeListMediaTileCell: NativeListRendererCell {
         image.view.backgroundColor = .clear
         ownsImageFill = false
       }
+      // Set before binding: a cached result completes synchronously inside bind.
+      placeholderView.setState(.loading)
       image.bind(
         source, key: "\(item.key):media", fit: imageStyle["contentFit"] as? String,
         placeholder: placeholder, probeOrder: media?["probeOrder"] as? [String] ?? ["image"]
       ) { [weak self] loaded in
-        self?.errorIcon.isHidden = loaded
+        self?.placeholderView.setState(loaded ? .hidden : .failed)
         self?.ownsImageFill = !loaded
         self?.image.view.backgroundColor = loaded ? .clear : UIColor(nativeListHex: placeholder, fallback: .lightGray)
       }
@@ -147,6 +144,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
       image.recycle()
       image.view.backgroundColor =
         state == "error" ? nativeListColor(theme, "strongBackground", "#0000000F") : .clear
+      placeholderView.setState(state == "error" ? .failed : .hidden)
       ownsImageFill = true
     }
     if let source = item.data.dictionary("networkImage") {
@@ -184,6 +182,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
         default: shape == "circle"
           ? Double(min(width, imageHeight.constant) / 2) : shape == "square" ? 0 : 10))
     image.view.clipsToBounds = true
+    placeholderView.layer.cornerRadius = image.view.layer.cornerRadius
     super.layoutSubviews()
   }
   @objc private func closePressed() {
@@ -191,6 +190,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
   }
   override func recycleContent() {
     image.recycle()
+    placeholderView.setState(.hidden)
     network.recycle()
     closeKey = ""
     picture.alpha = 1
