@@ -239,6 +239,36 @@ that delay, cancel, or require failure of the system tab bar gestures.
 The previous drag-cancellation guard (which refused selection for any touch that
 moved more than 10 points) was removed because it disabled drag-to-switch.
 
+## iOS bottom tab bar hide and show transition
+
+Status: implemented in module source and verified on iOS 27.0 Simulator XCTest.
+
+When `tabBarHidden` changes dynamically while the container view is attached to a
+window, laid out with nonzero bounds, and in `bottom` placement, `RCTBottomTabsContainerView`
+animates `UITabBar.transform` vertically with a critically damped 0.28 s spring
+(`usingSpringWithDamping: 1.0`, `.beginFromCurrentState`, `.curveEaseOut`,
+`.allowUserInteraction`) by `max(tabBar.bounds.height, 62) + 12` points so the
+floating Liquid Glass capsule slides smoothly off and back onto the bottom edge.
+
+- **Immediate state & measurement:** `tabBar.isUserInteractionEnabled` and
+  `onTabBarMeasured` (`0` when hiding, `tabBar.bounds.height` when showing)
+  update immediately when `tabBarHidden` changes, without waiting for animation
+  completion.
+- **Hide transition:** UIKit's system visibility (`setTabBarHidden(false, animated: false)`)
+  stays active while the bar slides down so layout passes triggered by concurrent
+  child navigation pushes do not snap `tabBar.alpha` to zero. When the slide-out
+  completes (and no newer `tabBarHidden` transition has superseded it), the view
+  resets `tabBar.transform = .identity` and applies `setTabBarHidden(true, animated: false)`
+  inside `UIView.performWithoutAnimation`.
+- **Show transition & reversal:** showing unhides the system bar without animation,
+  seeds `tabBar.transform` at the downward offset when transitioning from a
+  settled hidden state (or preserves the in-flight transform on mid-transition
+  reversal), and animates back to `.identity`.
+- **Non-animated cases:** initial setup, detached views (`window == nil`), zero-sized
+  containers, and `leading`/`trailing` vertical placements apply visibility
+  immediately without animation, strip active layer animations, and reset
+  `tabBar.transform` to `.identity`.
+
 ## Android tab bar style
 
 `androidTabBarStyle` selects the Android presentation; iOS ignores it.
@@ -284,6 +314,12 @@ Floating interaction (single finger; motion splitting is disabled):
    the old tab for cancelled or `preventsDefault` presses.
 
 JS-driven selection changes slide the pill with a spring and velocity stretch.
+When `tabBarHidden` changes dynamically while attached and laid out in `floating`
+style, `BottomTabsView` animates `floatingBar.translationY` across its visible
+bottom clearance (`DecelerateInterpolator`), preserving in-flight translation on
+rapid reversals, keeping the live blur backdrop active while the bar slides off
+screen, immediately reporting the updated measured height (`0` when hidden), and
+setting `floatingBar.visibility = GONE` upon hide completion.
 Switching style at runtime rebuilds the bar and restores Material's label sizes,
 icon size, ripple, padding, and gravity when returning to `default`.
 
