@@ -57,6 +57,30 @@ using namespace facebook::react;
 
 @implementation RNCCollapsiblePagerFirstFrameTests
 
+- (void)testFreshZeroGeometryAlignsOffsetBeforePendingRestoreCompletes
+{
+  RNCCollapsiblePagerViewComponentView *pager = [RNCCollapsiblePagerViewComponentView new];
+  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+  props->nativeSmoothHeaderScrollEnabled = true;
+  props->headerHeight = 120;
+  props->stickyHeaderHeight = 44;
+  props->pageKeys = "[\"fresh\"]";
+  [pager updateProps:props oldProps:nullptr];
+  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero];
+  [pager applyInsetsToScrollView:scroll pageIndex:0 restore:YES];
+  XCTAssertEqualWithAccuracy(scroll.contentInset.top, 164, 0.01);
+  XCTAssertEqualWithAccuracy(scroll.contentOffset.y, -164, 0.01);
+  XCTAssertEqualWithAccuracy(scroll.contentOffset.y + scroll.contentInset.top, 0, 0.01);
+  XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"fresh"]);
+
+  scroll.frame = CGRectMake(0, 0, 320, 600);
+  scroll.contentSize = CGSizeMake(320, 900);
+  [pager applyInsetsToScrollView:scroll pageIndex:0 restore:YES];
+  XCTAssertEqualWithAccuracy(scroll.contentOffset.y, -164, 0.01);
+  XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"fresh"]);
+  [pager prepareForRecycle];
+}
+
 - (void)testInactivePagesPrepareTheirOwnStickyInsetsBeforeSelection
 {
   RNCCollapsiblePagerViewComponentView *pager = [RNCCollapsiblePagerViewComponentView new];

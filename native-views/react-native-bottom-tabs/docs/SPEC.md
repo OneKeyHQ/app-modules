@@ -52,6 +52,18 @@ the routes array or supplying a new resolver recomputes both arrays. On Android,
 and swaps each `MenuItem`'s icon synchronously on the UI thread when selection
 changes.
 
+## iOS icon completion updates
+
+When normal or selected artwork arrives, update the existing `UITabBarItem`
+images without rebuilding controllers or replacing items. Coalesce completed
+indices into one main-queue update; use the current source/token ownership and
+current tints, including SF Symbol and normal-image fallbacks. Item identity,
+selection, labels, badges and accessibility identifiers remain intact. Structural
+item changes retain the existing rebuild path. Android is unchanged.
+
+Consumer simulator evidence covers cold launch, tab switching and light/dark
+icon tint. Physical-device and rapid source/reorder acceptance remain pending.
+
 ## Native left drawer
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric

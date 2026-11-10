@@ -227,6 +227,13 @@ When C = D, selection restores the destination's saved B. When C < D, effectiveB
 is zero while the previous saved B remains suspended. Horizontal selection by
 tap, swipe or an existing programmatic command MUST preserve C throughout.
 
+On iOS, a fresh page with no saved body offset and fully expanded shared header
+aligns its raw offset to the newly applied negative top inset even while viewport
+or content size is zero. The full restore remains pending until geometry is ready.
+Deferred identity release and pages with retained body/header offsets keep their
+existing restoration path. This prevents painting a new list at raw offset zero
+before its first content measurement; it does not gate business-data insertion.
+
 Alignment, prefetch, replacement, inset changes and pending restoration MUST NOT
 commit new B. Actual consumed vertical scrolling takes over the visible body
 position; reaching full collapse during that gesture MUST NOT resurrect the old

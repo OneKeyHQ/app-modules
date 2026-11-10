@@ -1,4 +1,5 @@
 import UIKit
+import SDWebImage
 import XCTest
 
 @testable import OneKeyImage
@@ -61,6 +62,39 @@ final class OneKeyIconTests: XCTestCase {
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
     return bytes
+  }
+
+  func testDiskRasterSurvivesDecodedMemoryEviction() throws {
+    let name = "DotVerSolid"
+    let color = "rgba(0,0,0,1)"
+    let scale: CGFloat = 1.375
+    let ownerBundle = Bundle(for: HybridOneKeyIcon.self)
+    let bundleURL = try XCTUnwrap(ownerBundle.url(forResource: "OneKeyIcons", withExtension: "bundle")
+      ?? Bundle.main.url(forResource: "OneKeyIcons", withExtension: "bundle"))
+    let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+    let manifestURL = try XCTUnwrap(bundle.url(forResource: "manifest", withExtension: "json"))
+    let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: [String: Any]])
+    let entry = try XCTUnwrap(manifest[name])
+    let digest = try XCTUnwrap(entry["digest"] as? String)
+    let mode = entry["recolorMode"] as? String ?? "raster"
+    let colorKey = mode == "raster" ? color : mode == "multiple" ? "1.0" : ""
+    let key = "\(name)|\(digest)|37|29|\(scale)|\(mode)|\(colorKey)"
+    let disk = SDImageCache(namespace: "onekey-named-svg-raster-v1")
+    let original = try XCTUnwrap(resolve(name, color: color, width: 37, height: 29, scale: scale))
+    eventually("Worker output is persisted as a PNG") { disk.diskImageData(forKey: key) != nil }
+    let persisted = try XCTUnwrap(disk.imageFromDiskCache(forKey: key))
+    XCTAssertEqual(persisted.cgImage?.width, 37)
+    XCTAssertEqual(persisted.cgImage?.height, 29)
+    XCTAssertEqual(try pixels(persisted), try pixels(original))
+
+    // Exhaust the real decoded LRU; the next request must leave its memory fast path.
+    for width in 122...250 {
+      XCTAssertNotNil(resolve(name, color: color, width: width, height: 25, scale: scale))
+    }
+    XCTAssertNil(OneKeyNamedSVG.shared.cachedRender(name: name, color: color,
+      width: 37, height: 29, scale: scale))
+    let restored = try XCTUnwrap(resolve(name, color: color, width: 37, height: 29, scale: scale))
+    XCTAssertEqual(try pixels(restored), try pixels(original))
   }
 
   func testNamedColorEndpointsRetainCSSAlpha() throws {

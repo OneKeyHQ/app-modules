@@ -242,6 +242,11 @@ The registry is bounded to 1,024 families and eight variants per family. Family
 access is recency-ordered; new variants evict the oldest retained hints. A cache
 miss removes the stale variant immediately.
 
+On iOS, an attached image host with positive layout bounds starts its asynchronous
+request during the completed layout callback rather than deferring another main
+queue turn. Existing request signatures and generations still suppress duplicate
+loads and stale completions. No synchronous disk/network work is introduced.
+
 ### 6.3 Native video-preview cache — Source implemented; scoped iOS validation
 
 Image owns a native-only OneKeyMediaPreviewCache used by NativeList; it adds no
@@ -699,7 +704,7 @@ icons do not acquire their internal resource name as an accessible label.
 Unknown/empty names, invalid native color, invalid/non-finite/zero layout or a decoder
 failure clear the current image while retaining the view's layout. They MUST NOT
 display the previous icon or silently substitute another artwork. There is no
-network request or disk image-cache write.
+network request; invalid requests do not write the named-icon disk cache.
 
 ### 12.3 Lifecycle, threading and resource limits
 
@@ -730,6 +735,18 @@ over-limit targets fail without allocating a raster. Concurrent decode buffers
 and currently displayed images are additional memory; the cache limit is not a
 total process-memory guarantee. Resources and cache entries are native shared
 data, not copies serialized into each JavaScript heap.
+
+On iOS, a separate `onekey-named-svg-raster-v1` disk namespace retains PNG
+rasters with a configured 128 MiB capacity and no age-based expiration. OS cache
+purging and SDWebImage size-based cleanup may evict entries. This namespace is
+independent of the URI image cache API and its budget. Source digest, pixel size,
+scale, recolor mode and relevant color/alpha inputs invalidate changed artwork.
+Only named-icon workers read/decode disk entries; a hit skips SVG parsing and
+rasterization but still delivers asynchronously to the UI thread. Invalid-size
+entries are misses. Writes and PNG encoding run on a serial utility queue; only
+results within the existing 8 MiB per-raster admission limit are persisted.
+Android retains its existing decoded-memory-only named-icon cache in this change.
+This disk layer does not make a cold-process main-thread memory probe synchronous.
 
 iOS reuses the already declared SDImageSVGCoder decoder. Android reuses the
 already declared AndroidSVG decoder. Native color substitution is restricted to

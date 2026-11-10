@@ -1,4 +1,5 @@
 import Foundation
+import SDWebImage
 import UIKit
 
 private final class OneKeyIconBundleToken: NSObject {}
@@ -91,6 +92,17 @@ public final class OneKeyNamedSVG {
     let finalColor: Bool
     let complete: (RenderResult?) -> Void
   }
+  private static let rasterDiskCache: SDImageCache = {
+    let config = SDImageCacheConfig()
+    config.shouldCacheImagesInMemory = false
+    config.shouldUseWeakMemoryCache = false
+    // Source digests invalidate changed assets; retain only size-based eviction.
+    config.maxDiskAge = -1
+    config.maxDiskSize = 128 * 1024 * 1024
+    return SDImageCache(namespace: "onekey-named-svg-raster-v1", diskCacheDirectory: nil, config: config)
+  }()
+  private static let diskWriter = DispatchQueue(label: "onekey.svg.raster-disk", qos: .utility)
+
   private let lock = NSLock()
   private let metadataLock = NSLock()
   private var pending: [ObjectIdentifier: Request] = [:]
@@ -245,6 +257,15 @@ public final class OneKeyNamedSVG {
       lock.unlock(); return image
     }
     lock.unlock()
+    // Only workers access disk. The source digest and all raster inputs are in the key.
+    let diskCache = Self.rasterDiskCache
+    let diskImage = diskCache.imageFromDiskCache(forKey: key)
+    if let image = diskImage,
+       image.cgImage?.width == request.width, image.cgImage?.height == request.height {
+      let result = RenderResult(image: image, mode: mode, sourceIdentity: sourceIdentity, maskAlpha: maskAlpha)
+      remember(result, key: key)
+      return result
+    }
     guard let source = try? String(contentsOf: url, encoding: .utf8),
           let pattern = try? NSRegularExpression(pattern: #"((?:fill|stroke)\s*=\s*["'])currentColor(["'])"#) else { return nil }
     // CoreSVG interprets integer rgba alpha as an 8-bit channel; decimals retain CSS endpoints.
@@ -265,10 +286,22 @@ public final class OneKeyNamedSVG {
                            width: fitted.width, height: fitted.height))
     }
     let result = RenderResult(image: output, mode: mode, sourceIdentity: sourceIdentity, maskAlpha: maskAlpha)
-    let cost = (output.cgImage?.bytesPerRow ?? request.width * 4) * request.height
+    remember(result, key: key)
+    if (output.cgImage?.bytesPerRow ?? request.width * 4) * request.height <= 8_388_608 {
+      Self.diskWriter.async {
+        if let data = output.pngData() {
+          Self.rasterDiskCache.storeImageData(toDisk: data, forKey: key)
+        }
+      }
+    }
+    return result
+  }
+
+  private func remember(_ result: RenderResult, key: String) {
+    let cost = (result.image.cgImage?.bytesPerRow ?? Int(result.image.size.width) * 4) * (result.image.cgImage?.height ?? Int(result.image.size.height))
     if cost <= 8_388_608 {
       lock.lock(); defer { lock.unlock() }
-      if let previous = cache[key] { bytes -= (previous.image.cgImage?.bytesPerRow ?? request.width * 4) * request.height }
+      if let previous = cache[key] { bytes -= (previous.image.cgImage?.bytesPerRow ?? 0) * (previous.image.cgImage?.height ?? 0) }
       cache[key] = result
       recency.removeAll { $0 == key }; recency.append(key)
       bytes += cost
@@ -277,6 +310,5 @@ public final class OneKeyNamedSVG {
         if let image = cache.removeValue(forKey: oldest) { bytes -= (image.image.cgImage?.bytesPerRow ?? 0) * (image.image.cgImage?.height ?? 0) }
       }
     }
-    return result
   }
 }
