@@ -105,120 +105,130 @@ describe('tab icon source resolution', () => {
   });
 });
 
-describe('iOS tab icon array identity', () => {
-  const originalOS = Platform.OS;
-  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
-  const routes: BaseRoute[] = [
-    {
-      key: 'home',
-      unfocusedIcon: 'WalletOutline',
-      focusedIcon: 'Wallet4Solid',
-    },
-    { key: 'search', focusedIcon: 'PlusLargeOutline' },
-  ];
-  const renderScene = () => <View />;
-  const onIndexChange = () => {};
-  const tabs = (
-    index = 0,
-    labeled = true,
-    nextRoutes = routes,
-    getIcon?: React.ComponentProps<typeof BottomTabs>['getIcon'],
-  ) => (
-    <BottomTabs
-      navigationState={{ index, routes: nextRoutes }}
-      renderScene={renderScene}
-      onIndexChange={onIndexChange}
-      labeled={labeled}
-      getIcon={getIcon}
-    />
-  );
-  const nativeProps = () =>
-    renderer!.root.findByType('NativeBottomTabs' as any).props;
-
-  beforeEach(() => {
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
-  });
-
-  afterEach(async () => {
-    await act(() => renderer?.unmount());
-    renderer = undefined;
-    Object.defineProperty(Platform, 'OS', {
-      configurable: true,
-      value: originalOS,
-    });
-  });
-
-  it('retains default icon arrays on selection and unrelated renders', async () => {
-    await act(() => {
-      renderer = ReactTestRenderer.create(tabs());
-    });
-    const { icons, selectedIcons } = nativeProps();
-    expect(icons.map((icon: { uri: string }) => icon.uri)).toEqual([
-      'onekey-icon://WalletOutline',
-      'onekey-icon://PlusLargeOutline',
-    ]);
-    expect(selectedIcons.map((icon: { uri: string }) => icon.uri)).toEqual([
-      'onekey-icon://Wallet4Solid',
-      'onekey-icon://PlusLargeOutline',
-    ]);
-    await act(() => {
-      renderer!.update(tabs(1));
-    });
-    expect(nativeProps().selectedPage).toBe('search');
-    expect(nativeProps().icons).toBe(icons);
-    expect(nativeProps().selectedIcons).toBe(selectedIcons);
-    await act(() => {
-      renderer!.update(tabs(1, false));
-    });
-    expect(nativeProps().labeled).toBe(false);
-    expect(nativeProps().icons).toBe(icons);
-    expect(nativeProps().selectedIcons).toBe(selectedIcons);
-  });
-
-  it('refreshes default arrays when routes change', async () => {
-    await act(() => {
-      renderer = ReactTestRenderer.create(tabs());
-    });
-    const { icons, selectedIcons } = nativeProps();
-    const changed = [
+describe.each(['ios', 'android'] as const)(
+  '%s tab icon and items array identity',
+  platformOS => {
+    const originalOS = Platform.OS;
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    const routes: BaseRoute[] = [
       {
-        ...routes[0],
-        unfocusedIcon: 'CoinsOutline',
-        focusedIcon: 'AppleBrand',
+        key: 'home',
+        unfocusedIcon: 'WalletOutline',
+        focusedIcon: 'Wallet4Solid',
       },
-      routes[1],
+      { key: 'search', focusedIcon: 'PlusLargeOutline' },
     ];
-    await act(() => {
-      renderer!.update(tabs(0, true, changed));
-    });
-    expect(nativeProps().icons).not.toBe(icons);
-    expect(nativeProps().selectedIcons).not.toBe(selectedIcons);
-    expect(nativeProps().icons[0].uri).toBe('onekey-icon://CoinsOutline');
-    expect(nativeProps().selectedIcons[0].uri).toBe('onekey-icon://AppleBrand');
-  });
-
-  it('retains custom resolver arrays until the resolver changes', async () => {
-    const first = ({ focused }: { focused: boolean }) =>
-      focused ? 'AppleBrand' : 'CoinsOutline';
-    const second = ({ focused }: { focused: boolean }) =>
-      focused ? 'Wallet4Solid' : 'WalletOutline';
-    await act(() => {
-      renderer = ReactTestRenderer.create(tabs(0, true, routes, first));
-    });
-    const { icons, selectedIcons } = nativeProps();
-    await act(() => {
-      renderer!.update(tabs(1, false, routes, first));
-    });
-    expect(nativeProps().icons).toBe(icons);
-    expect(nativeProps().selectedIcons).toBe(selectedIcons);
-    await act(() => {
-      renderer!.update(tabs(1, false, routes, second));
-    });
-    expect(nativeProps().icons).not.toBe(icons);
-    expect(nativeProps().selectedIcons).not.toBe(selectedIcons);
-    expect(nativeProps().icons[0].uri).toBe('onekey-icon://WalletOutline');
-    expect(nativeProps().selectedIcons[0].uri).toBe(
-      'onekey-icon://Wallet4Solid',
+    const renderScene = () => <View />;
+    const onIndexChange = () => {};
+    const tabs = (
+      index = 0,
+      labeled = true,
+      nextRoutes = routes,
+      getIcon?: React.ComponentProps<typeof BottomTabs>['getIcon'],
+    ) => (
+      <BottomTabs
+        navigationState={{ index, routes: nextRoutes }}
+        renderScene={renderScene}
+        onIndexChange={onIndexChange}
+        labeled={labeled}
+        getIcon={getIcon}
+      />
     );
-  });
-});
+    const nativeProps = () =>
+      renderer!.root.findByType('NativeBottomTabs' as any).props;
+
+    beforeEach(() => {
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: platformOS,
+      });
+    });
+
+    afterEach(async () => {
+      await act(() => renderer?.unmount());
+      renderer = undefined;
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: originalOS,
+      });
+    });
+
+    it('retains default icon and items arrays on selection and unrelated renders', async () => {
+      await act(() => {
+        renderer = ReactTestRenderer.create(tabs());
+      });
+      const { icons, selectedIcons, items } = nativeProps();
+      expect(icons.map((icon: { uri: string }) => icon.uri)).toEqual([
+        'onekey-icon://WalletOutline',
+        'onekey-icon://PlusLargeOutline',
+      ]);
+      expect(selectedIcons.map((icon: { uri: string }) => icon.uri)).toEqual([
+        'onekey-icon://Wallet4Solid',
+        'onekey-icon://PlusLargeOutline',
+      ]);
+      await act(() => {
+        renderer!.update(tabs(1));
+      });
+      expect(nativeProps().selectedPage).toBe('search');
+      expect(nativeProps().icons).toBe(icons);
+      expect(nativeProps().selectedIcons).toBe(selectedIcons);
+      expect(nativeProps().items).toBe(items);
+      await act(() => {
+        renderer!.update(tabs(1, false));
+      });
+      expect(nativeProps().labeled).toBe(false);
+      expect(nativeProps().icons).toBe(icons);
+      expect(nativeProps().selectedIcons).toBe(selectedIcons);
+      expect(nativeProps().items).toBe(items);
+    });
+
+    it('refreshes default arrays when routes change', async () => {
+      await act(() => {
+        renderer = ReactTestRenderer.create(tabs());
+      });
+      const { icons, selectedIcons } = nativeProps();
+      const changed = [
+        {
+          ...routes[0],
+          unfocusedIcon: 'CoinsOutline',
+          focusedIcon: 'AppleBrand',
+        },
+        routes[1],
+      ];
+      await act(() => {
+        renderer!.update(tabs(0, true, changed));
+      });
+      expect(nativeProps().icons).not.toBe(icons);
+      expect(nativeProps().selectedIcons).not.toBe(selectedIcons);
+      expect(nativeProps().icons[0].uri).toBe('onekey-icon://CoinsOutline');
+      expect(nativeProps().selectedIcons[0].uri).toBe(
+        'onekey-icon://AppleBrand',
+      );
+    });
+
+    it('retains custom resolver arrays until the resolver changes', async () => {
+      const first = ({ focused }: { focused: boolean }) =>
+        focused ? 'AppleBrand' : 'CoinsOutline';
+      const second = ({ focused }: { focused: boolean }) =>
+        focused ? 'Wallet4Solid' : 'WalletOutline';
+      await act(() => {
+        renderer = ReactTestRenderer.create(tabs(0, true, routes, first));
+      });
+      const { icons, selectedIcons } = nativeProps();
+      await act(() => {
+        renderer!.update(tabs(1, false, routes, first));
+      });
+      expect(nativeProps().icons).toBe(icons);
+      expect(nativeProps().selectedIcons).toBe(selectedIcons);
+      await act(() => {
+        renderer!.update(tabs(1, false, routes, second));
+      });
+      expect(nativeProps().icons).not.toBe(icons);
+      expect(nativeProps().selectedIcons).not.toBe(selectedIcons);
+      expect(nativeProps().icons[0].uri).toBe('onekey-icon://WalletOutline');
+      expect(nativeProps().selectedIcons[0].uri).toBe(
+        'onekey-icon://Wallet4Solid',
+      );
+    });
+  },
+);

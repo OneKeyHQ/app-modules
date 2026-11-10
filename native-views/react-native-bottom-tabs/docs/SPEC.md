@@ -44,9 +44,13 @@ and SF Symbols retain their existing resolution. The shared resolver is used for
 focused/unfocused icons and the iOS side-accessory icon.
 
 The default `getIcon` resolver has a stable identity. With the same routes array
-and resolver, iOS retains both normal and selected icon-source arrays across tab
-selection and unrelated renders. Replacing the routes array or supplying a new
-resolver recomputes both arrays. Android keeps its focus-dependent icon choice.
+and resolver, both iOS and Android retain normal (`icons`) and selected
+(`selectedIcons`) icon-source arrays across tab selection and unrelated renders,
+and `items` does not recompute solely because `selectedPage` changes. Replacing
+the routes array or supplying a new resolver recomputes both arrays. On Android,
+`BottomTabsView` pre-loads both `icons` and `selectedIcons` into `drawableCache`
+and swaps each `MenuItem`'s icon synchronously on the UI thread when selection
+changes.
 
 ## Native left drawer
 
@@ -311,9 +315,17 @@ Floating interaction (single finger; motion splitting is disabled):
    Release after a drag selects the candidate once, only if it differs from the
    current tab. Cancel selects nothing.
 4. The lens then settles back into the pill on the selected tab, which stays on
-   the old tab for cancelled or `preventsDefault` presses.
+   the old tab for cancelled or `preventsDefault` presses. When a stationary tap
+   releases while the indicator slide is still in flight, the lifted lens holds
+   briefly (proportional to the remaining slide fraction) before settling into
+   the resting pill as it arrives at the target tab.
 
-JS-driven selection changes slide the pill with a spring and velocity stretch.
+Both press-initiated and JS-driven selection changes slide the pill with a
+520 ms underdamped spring (`dampingRatio = 0.82`, `angularFrequency = 7.5`) and
+frame-rate-normalized velocity stretch (16 ms reference step). An in-flight
+slide animator already targeting the selected tab's X position is preserved
+across touch release and subsequent JS `selectedPage` or `items` syncs instead
+of being restarted or snapped.
 When `tabBarHidden` changes dynamically while attached and laid out in `floating`
 style, `BottomTabsView` animates `floatingBar.translationY` across its visible
 bottom clearance (`DecelerateInterpolator`), preserving in-flight translation on
