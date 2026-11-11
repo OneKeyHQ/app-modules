@@ -303,7 +303,7 @@ vertically centered. The reported tab bar height is the bar height plus its
 bottom gap, or 0 while hidden.
 
 Floating appearance with background blur disabled: the bar surface is `barTintColor` (or the theme background)
-at 95% opacity (lightened slightly for dark colors), with
+at full opacity (lightened slightly for dark colors), with
 a hairline rim and an outline shadow. When background blur is enabled (see below), the live blur and translucent
 surface tint are confined and clipped to the capsule bounds; the region above,
 beside, and beneath the capsule remains unblurred. The existing capsule keeps its rim/shadow and uses a 4 percent

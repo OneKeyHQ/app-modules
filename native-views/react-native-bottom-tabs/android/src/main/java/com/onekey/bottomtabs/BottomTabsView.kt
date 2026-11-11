@@ -630,7 +630,11 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       // With the live backdrop the tint already reaches 0.75 alpha inside the
       // renderer, so the capsule keeps only a trace of its own surface instead
       // of stacking a second opaque layer (which is what flattened the glass).
-      setColor(withAlpha(surfaceColor, if (usesBottomBlur) 0.04f else 0.95f))
+      // Without the live backdrop the surface is the only layer: at 95% opacity
+      // the scene behind bled through enough to ghost page text behind the
+      // icons, so the fallback surface is opaque. Only the glass path (live
+      // backdrop) keeps the scene visible through the capsule.
+      setColor(withAlpha(surfaceColor, if (usesBottomBlur) 0.04f else 1f))
       // X rims its glass with a 1 dp stroke at 0.15 alpha.
       setStroke(dp(1f), withAlpha(contrastColor, 0.15f))
     }
