@@ -185,10 +185,21 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     }
     const expandedEpoch = disclosureSlotMounts.current.expandedEpoch;
     const toggleEpoch = disclosureSlotMounts.current.toggleEpoch;
+    const iosHeaderPresent = Platform.OS === 'ios' && listHeader != null;
     const [slotMeasurements, setSlotMeasurements] = useState({
       heights: [0, 0, 0, 0, 0, 0],
       readyEpochs: [-1, -1, -1, -1, -1, -1],
+      iosHeaderPresent,
+      headerEpoch: 0,
     });
+    if (slotMeasurements.iosHeaderPresent !== iosHeaderPresent) {
+      setSlotMeasurements({
+        ...slotMeasurements,
+        iosHeaderPresent,
+        headerEpoch: slotMeasurements.headerEpoch + 1,
+      });
+    }
+    const headerEpoch = slotMeasurements.headerEpoch;
     const hasSidecar = listSidecar !== undefined;
     const sidecarWidth = sidecarLayout?.width;
     const sidecarGap = sidecarLayout?.gap;
@@ -321,7 +332,12 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       parseInt(String(Platform.Version), 10) >= 26 &&
       (topScrollEdgeEffect === 'hard' || topScrollEdgeEffect === 'soft') &&
       topOverlay != null;
-    const containerSlotHeightsJson = JSON.stringify(slotHeights);
+    const containerSlotHeightsJson = JSON.stringify(
+      Platform.OS === 'ios' &&
+        (!iosHeaderPresent || slotMeasurements.readyEpochs[0] !== headerEpoch)
+        ? [iosHeaderPresent ? null : 0, ...slotHeights.slice(1)]
+        : slotHeights
+    );
     const defaultSlotInset =
       snapshot.layout.contentPaddingHorizontal ??
       snapshot.layout.contentPadding ??
@@ -351,6 +367,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         return;
       }
       setSlotMeasurements((previous) => {
+        if (index === 0 && epoch !== previous.headerEpoch) return previous;
         if (
           previous.heights[index] === height &&
           previous.readyEpochs[index] === epoch
@@ -361,7 +378,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         const readyEpochs = [...previous.readyEpochs];
         heights[index] = height;
         readyEpochs[index] = epoch;
-        return { heights, readyEpochs };
+        return { ...previous, heights, readyEpochs };
       });
     };
     const sidecarLayoutJson = sidecarLayout
@@ -835,7 +852,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       >
         {slotContents.map((content, index) => (
           <View
-            key={index}
+            key={
+              index === 0 && Platform.OS === 'ios'
+                ? `header-${headerEpoch}`
+                : index
+            }
             collapsable={false}
             style={{
               position: 'absolute',
@@ -849,7 +870,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
                 recordSlotLayout(
                   index,
                   Math.ceil(event.nativeEvent.layout.height),
-                  0
+                  index === 0 ? headerEpoch : 0
                 );
               }
             }}

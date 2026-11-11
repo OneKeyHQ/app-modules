@@ -31,6 +31,8 @@ final class NativeListView: UIView {
   private var refreshEmittedForDrag = false
   private var minimumDragOffset: CGFloat = 0
   private var containerSlotHeights: [CGFloat] = [0, 0, 0, 0, 0, 0]
+  private var containerHeaderHeightIsAuthoritative = false
+  private weak var currentHeaderRoot: UIView?
   private var disclosureCVisibleHeight: CGFloat = 0
   private var disclosureInset: CGFloat = 0
   private var disclosureStartCHeight: CGFloat = 0
@@ -295,6 +297,10 @@ final class NativeListView: UIView {
     host.addSubview(view)
     reactContainerSlots.insert((view, host), at: min(index, reactContainerSlots.count))
     collectionView.addSubview(host)
+    if index == 0 {
+      currentHeaderRoot = view
+      if !containerHeaderHeightIsAuthoritative { updatePendingHeaderHeight() }
+    }
     layoutContainerSlots()
     setNeedsLayout()
   }
@@ -306,11 +312,16 @@ final class NativeListView: UIView {
       updateTopScrollEdge()
       return
     }
+    let removedCurrentHeader = currentHeaderRoot === view
+    if removedCurrentHeader { currentHeaderRoot = nil }
     reactContainerSlots.removeAll { slot in
       guard slot.content === view else { return false }
       view.removeFromSuperview()
       slot.host.removeFromSuperview()
       return true
+    }
+    if removedCurrentHeader && !containerHeaderHeightIsAuthoritative {
+      updatePendingHeaderHeight()
     }
   }
 
@@ -376,12 +387,37 @@ final class NativeListView: UIView {
 
   func setContainerSlotHeightsJson(_ json: String, followedBySnapshot: Bool = false) {
     guard let data = json.data(using: .utf8),
-          let heights = try? JSONSerialization.jsonObject(with: data) as? [Double],
-          (heights.count == 4 || heights.count == 6),
+          var values = try? JSONSerialization.jsonObject(with: data) as? [Any],
+          (values.count == 4 || values.count == 6) else { return }
+    let headerPending = values[0] is NSNull
+    if headerPending { values[0] = 0.0 }
+    guard let heights = values as? [Double],
           heights.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return }
+    containerHeaderHeightIsAuthoritative = !headerPending
+    var next = heights.map { CGFloat($0) } + (heights.count == 4 ? [0, 0] : [])
+    if headerPending { next[0] = pendingHeaderHeight() }
+    applyContainerSlotHeights(next, followedBySnapshot: followedBySnapshot)
+  }
+
+  private func pendingHeaderHeight() -> CGFloat {
+    guard let bounds = currentHeaderRoot?.bounds,
+          bounds.width.isFinite, bounds.width > 0,
+          bounds.height.isFinite, bounds.height >= 0 else { return 0 }
+    return ceil(bounds.height)
+  }
+
+  private func updatePendingHeaderHeight() {
+    let height = pendingHeaderHeight()
+    guard height != containerSlotHeights[0] else { return }
+    var next = containerSlotHeights
+    next[0] = height
+    applyContainerSlotHeights(next)
+  }
+
+  private func applyContainerSlotHeights(_ heights: [CGFloat], followedBySnapshot: Bool = false) {
     let previousHeights = containerSlotHeights
-    let footerDelta = containerSlotHeights[2] - CGFloat(heights[2])
-    containerSlotHeights = heights.map { CGFloat($0) } + (heights.count == 4 ? [0, 0] : [])
+    let footerDelta = containerSlotHeights[2] - heights[2]
+    containerSlotHeights = heights
     let contentHeightChanged = previousHeights[4] != containerSlotHeights[4]
     let toggleHeightChanged = previousHeights[5] != containerSlotHeights[5]
     let disclosureGeometryInvalid = structuralTail != nil && config?.disclosure != nil
@@ -3085,6 +3121,9 @@ final class NativeListView: UIView {
     dataSource = nil
 
     config = nil
+    currentHeaderRoot = nil
+    containerHeaderHeightIsAuthoritative = false
+    containerSlotHeights[0] = 0
     acceptedRowIndex = nil
     pagerStickyHeights.removeAllObjects()
     for slot in reactContainerSlots { slot.host.layer.mask = nil }

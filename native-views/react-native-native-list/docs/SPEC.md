@@ -1550,15 +1550,37 @@ width React lays it out at. Android's narrow-screen row scale and section-index 
 apply to data rows only. Slot React trees own their internal layout and
 business actions; NativeList owns their scroll placement and lifecycle.
 
-The wrapper mounts four non-collapsible slot roots and reports measured
-heights through `containerSlotHeightsJson` in header/empty/footer/sidecar order.
-The sidecar root has zero reserved height when absent. Native validates four
-finite, non-negative heights. Slot updates MUST NOT alter data-row
-keys or public row indices. No per-scroll-frame JS position updates are used.
+The wrapper mounts six non-collapsible slot roots and reports measured heights
+through `containerSlotHeightsJson` in header/empty/footer/sidecar/expanded/toggle
+order. The sidecar root has zero reserved height when absent. Native validates
+six finite, non-negative heights and still accepts legacy four-number arrays,
+except for the iOS pending-header state described below. Slot updates MUST NOT
+alter data-row keys or public row indices. No per-scroll-frame JS position updates are used.
 iOS mounts each slot root inside a list-owned host view in UICollectionView and
 reserves native layout space. The host owns the slot's vertical position and clips to
 the reported height, so React frame updates cannot move a slot out of place and a slot
 whose height has not been reported yet (or has just grown) never draws over rows.
+
+iOS header first-frame measurement: when `listHeader` is present but
+its first layout has not arrived, the matching wrapper sends `null` for slot 0
+instead of an authoritative zero. The other five slot values remain finite,
+non-negative numbers; Android serialization stays unchanged. On iOS, an absent
+header always reports numeric zero. Each absent/present boundary replaces only
+the header slot root and starts a new measurement epoch; a layout callback from
+an earlier epoch MUST NOT make the current header ready. Replacing header content
+while it remains present does not start another epoch. A newly present header stays pending
+until its own layout reports a number, including zero.
+Before that measurement, the iOS host may reserve the current mounted header
+root's finite, non-negative `ceil(bounds.height)` when its bounds width is finite
+and positive. It applies that height to both clipping and row placement in the
+same native update, regardless of whether the root or pending heights arrive
+first. Without a valid current root, pending height is zero. Unmounting or
+recycling the root discards its provisional height; another root cannot inherit
+it. The first numeric measurement, including a genuine zero, is authoritative
+and retains ordinary dynamic growth and shrink behavior. Legacy four- and
+six-number arrays remain accepted. Only header slot 0 may be null, and the
+wrapper and native binary must match for this pending-header protocol.
+
 Android uses ConcatAdapter with three single-item slot adapters around the existing
 data adapter; adapter binding indices stay local while layout-manager positions
 are explicitly translated. Slots span all grid columns, do not select/reorder,
