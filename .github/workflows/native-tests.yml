@@ -198,6 +198,15 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
           grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
+      - name: Run bundle-update verification path tests
+        working-directory: native-modules/react-native-bundle-update
+        run: |
+          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleVerificationPath.kt \
+            tests/kotlin/BundleVerificationPathTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/bundle-verification-path-tests.jar"
+          java -jar "$RUNNER_TEMP/bundle-verification-path-tests.jar" | tee "$RUNNER_TEMP/bundle-verification-path-tests.log"
+          grep -Eq 'BundleVerificationPath: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/bundle-verification-path-tests.log"
       - name: Run pager weak-padding snapshot regression
         working-directory: native-views/react-native-pager-view
         shell: bash
@@ -240,7 +249,7 @@ jobs:
           test -s "$RUNNER_TEMP/lite-card-jni-build-messages.txt"
           node tests/native-log-sanitization.cjs --kotlin "$RUNNER_TEMP/lite-card-jni-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^KotlinLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
-      - name: Run twelve Android unit test suites and build capture protection and photo saving
+      - name: Run twelve Android unit test suites, compile bundle update, and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           cat > "$RUNNER_TEMP/rerun-native-tests.gradle" <<'GRADLE'
@@ -255,6 +264,7 @@ jobs:
             --build-cache --init-script "$RUNNER_TEMP/rerun-native-tests.gradle" \
             :onekeyfe_react-native-app-update:testDebugUnitTest \
             :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
+            :onekeyfe_react-native-bundle-update:compileDebugKotlin \
             :onekeyfe_react-native-jpush:testDebugUnitTest \
             :onekey-jpush-fcm:testDebugUnitTest \
             :onekeyfe_react-native-network-throttle:testDebugUnitTest \
