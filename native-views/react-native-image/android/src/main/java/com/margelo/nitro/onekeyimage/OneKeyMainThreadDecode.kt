@@ -47,6 +47,7 @@ internal object OneKeyMainThreadDecode {
   private var currentWindowRejected = 0
   private var frameBudgetNs = FRAME_BUDGET_NS
   private var frameWindowNs = FRAME_WINDOW_NS
+  private var totalDurationNs = 0L
   private val durationsNs = ArrayList<Long>(64)
   private var metrics = Metrics()
   private var metricsReportScheduled = false
@@ -72,8 +73,7 @@ internal object OneKeyMainThreadDecode {
     val snapshot = metrics.copy()
     if (durationsNs.isNotEmpty()) {
       val sorted = durationsNs.sorted()
-      val totalNs = sorted.sum()
-      snapshot.totalDurationMs = totalNs / 1_000_000.0
+      snapshot.totalDurationMs = totalDurationNs / 1_000_000.0
       snapshot.p50DurationMs = percentile(sorted, 0.50) / 1_000_000.0
       snapshot.p90DurationMs = percentile(sorted, 0.90) / 1_000_000.0
       snapshot.maxDurationMs = (sorted.lastOrNull() ?: 0L) / 1_000_000.0
@@ -89,6 +89,7 @@ internal object OneKeyMainThreadDecode {
       currentWindowRejected = 0
       frameBudgetNs = FRAME_BUDGET_NS
       frameWindowNs = FRAME_WINDOW_NS
+      totalDurationNs = 0L
       durationsNs.clear()
       metrics = Metrics()
       metricsReportScheduled = false
@@ -167,6 +168,7 @@ internal object OneKeyMainThreadDecode {
     val elapsed = (System.nanoTime() - start).coerceAtLeast(0L)
     synchronized(metricsLock) {
       spentNs += elapsed
+      totalDurationNs += elapsed
       if (durationsNs.size < 512) {
         durationsNs.add(elapsed)
       }

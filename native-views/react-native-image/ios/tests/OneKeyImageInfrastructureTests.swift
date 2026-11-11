@@ -986,6 +986,40 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
         XCTAssertEqual(current.first?.launch, 4)
       }
     }
+
+    // 5. clearDiskCache removes persisted startup JSON and resets in-memory launch history.
+    OneKeyImageStartupPrewarm.shared.clearDiskCache()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
+
+    // 6. Local file:// images > 32 KiB are seeded to disk and replayed by prewarm().
+    let localFileURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-local-large-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: localFileURL) }
+    var paddedPNG = pngData
+    if paddedPNG.count <= OneKeyMainThreadDecode.maximumEncodedBytes {
+      paddedPNG.append(Data(repeating: 0, count: OneKeyMainThreadDecode.maximumEncodedBytes + 4096 - paddedPNG.count))
+    }
+    try paddedPNG.write(to: localFileURL)
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: localFileURL,
+      rawURL: localFileURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: remoteURL,
+      rawURL: remoteURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: true)
+    SDImageCache.shared.clearMemory()
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.prewarm()
+    XCTAssertEqual(OneKeyImageStartupPrewarm.shared.metricsSnapshot().decodedCount, 2)
   }
 
   func testMainThreadDecodeLimitsBudgetAndMetrics() throws {

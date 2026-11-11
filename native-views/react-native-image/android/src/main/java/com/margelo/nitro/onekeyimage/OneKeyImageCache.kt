@@ -105,6 +105,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
   override fun clearDisk(): Promise<Unit> = Promise.async {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
+    OneKeyImageStartupPrewarm.clearDiskCache(context.cacheDir)
     kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
       android.os.Handler(android.os.Looper.getMainLooper()).post {
         OneKeyMediaPreviewCache.get(context).clearDisk { continuation.resumeWith(Result.success(Unit)) }
@@ -122,6 +123,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
       OneKeyImageMemoryVariantRegistry.clear()
       OneKeyImageStartupPrewarm.clearMemoryCache()
     }
+    OneKeyImageStartupPrewarm.clearDiskCache(context.cacheDir)
     kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
       android.os.Handler(android.os.Looper.getMainLooper()).post {
         OneKeyMediaPreviewCache.get(context).clearDisk { continuation.resumeWith(Result.success(Unit)) }

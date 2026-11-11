@@ -759,7 +759,7 @@ including native bottom tabs) record `(name, color, pixel size, scale)` up to
 (or `cacheDir/onekey-named-svg-startup-v1.json` on Android).
 On the main thread, `request` and `requestRender` also probe `cachedRender` and
 `diskRender` before queuing and invoke their completion synchronously on a hit.
-Persistence uses a 3-second quiet debounce after new entries and keeps recording
+Persistence uses a 6-second quiet debounce after new entries and keeps recording
 open across pre-home screens (such as App Lock) while fewer than 8 icons have
 been seen, up to 60 seconds from the first request. Each entry carries the launch
 sequence number (`launch`) in which it was last seen; current-launch entries lead
@@ -778,7 +778,7 @@ prewarmed.
 The same process-start hook starts an equivalent prewarm for `OneKeyImage` on iOS and Android. A
 rendered request that succeeds from either the active synchronous memory probe or
 the request pipeline is recorded (up to 48 distinct entries) in
-`onekey-image-startup-v1.json`, using the same 3-second quiet debounce
+`onekey-image-startup-v1.json`, using the same 6-second quiet debounce
 (keeping recording open while fewer than 2 images have been seen, up to 60 seconds
 from the first request) and 3-launch staleness eviction (`maxLaunchAge = 3`).
 Only `memory-disk` requests without custom headers are recorded, for `http(s)`,

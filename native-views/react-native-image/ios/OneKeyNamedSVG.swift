@@ -196,7 +196,7 @@ public final class OneKeyNamedSVG {
     var totalMs: Double = 0
   }
 
-  static let startupWindow: TimeInterval = 3
+  static let startupWindow: TimeInterval = 6
   static let startupMaxDuration: TimeInterval = 60
   static let startupMinimumSettledCount = 8
   static let startupLimit = 96
@@ -242,8 +242,10 @@ public final class OneKeyNamedSVG {
     }
     let highestLaunch = entries.map(\.launch).max() ?? 0
     startupLock.lock()
-    startupPrevious = entries
-    startupMaxLaunch = highestLaunch
+    if startupPrevious.isEmpty {
+      startupPrevious = entries
+      startupMaxLaunch = max(startupMaxLaunch, highestLaunch)
+    }
     startupLock.unlock()
     var decodedCount = 0
     let bounded = entries.prefix(Self.startupLimit)
@@ -304,6 +306,14 @@ public final class OneKeyNamedSVG {
       startupLock.unlock()
       return
     }
+    let file = activeStartupFileURL
+    if startupPrevious.isEmpty,
+       let file,
+       let data = try? Data(contentsOf: file),
+       let loaded = try? JSONDecoder().decode([StartupEntry].self, from: data) {
+      startupPrevious = loaded
+      startupMaxLaunch = max(startupMaxLaunch, loaded.map(\.launch).max() ?? 0)
+    }
     let elapsed = CACurrentMediaTime() - startupFirstRequestAt
     let shouldClose =
       forceClose
@@ -331,7 +341,6 @@ public final class OneKeyNamedSVG {
       !seenIdentities.contains(entry.identity) && (nextLaunch - entry.launch) < Self.startupMaxLaunchAge
     }
     let merged = Array((currentStamped + retainedPrevious).prefix(Self.startupLimit))
-    let file = activeStartupFileURL
 
     if shouldClose {
       startupRecording = false

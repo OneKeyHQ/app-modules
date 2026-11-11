@@ -142,7 +142,7 @@ final class OneKeyImageStartupPrewarm {
     var durationMs: Double = 0
   }
 
-  static let window: TimeInterval = 3
+  static let window: TimeInterval = 6
   static let maxWindowDuration: TimeInterval = 60
   static let minimumSettledCount = 2
   static let limit = 48
@@ -331,7 +331,7 @@ final class OneKeyImageStartupPrewarm {
       data = Data(base64Encoded: String(payload), options: .ignoreUnknownCharacters)
     case "file":
       guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int,
-            size > 0, size <= OneKeyMainThreadDecode.maximumEncodedBytes
+            size > 0, size <= OneKeyImageSafetyPolicy.maximumEncodedBytes
       else { return }
       data = try? Data(contentsOf: url)
     default:
@@ -343,11 +343,33 @@ final class OneKeyImageStartupPrewarm {
     cache.storeImageData(toDisk: data, forKey: originalKey)
   }
 
+  func clearDiskCache() {
+    lock.lock()
+    flushWorkItem?.cancel()
+    flushWorkItem = nil
+    seen = []
+    previous = []
+    maxLaunch = 0
+    let file = activeFileURL
+    lock.unlock()
+    if let file {
+      try? FileManager.default.removeItem(at: file)
+    }
+  }
+
   private func persist(forceClose: Bool) {
     lock.lock()
     guard recording == true else {
       lock.unlock()
       return
+    }
+    let file = activeFileURL
+    if previous.isEmpty,
+       let file,
+       let data = try? Data(contentsOf: file),
+       let loaded = try? JSONDecoder().decode([Entry].self, from: data) {
+      previous = loaded
+      maxLaunch = max(maxLaunch, loaded.map(\.launch).max() ?? 0)
     }
     let elapsed = CACurrentMediaTime() - firstRequestAt
     let shouldClose =
@@ -373,7 +395,6 @@ final class OneKeyImageStartupPrewarm {
       !seenIdentities.contains(entry.identity) && (nextLaunch - entry.launch) < Self.maxLaunchAge
     }
     let merged = Array((currentStamped + retainedPrevious).prefix(Self.limit))
-    let file = activeFileURL
 
     if shouldClose {
       recording = false
@@ -400,8 +421,10 @@ final class OneKeyImageStartupPrewarm {
           let entries = try? JSONDecoder().decode([Entry].self, from: data) else { return }
     let highestLaunch = entries.map(\.launch).max() ?? 0
     lock.lock()
-    previous = entries
-    maxLaunch = highestLaunch
+    if previous.isEmpty {
+      previous = entries
+      maxLaunch = max(maxLaunch, highestLaunch)
+    }
     lock.unlock()
 
     var decodedCount = 0

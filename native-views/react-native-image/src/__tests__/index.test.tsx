@@ -553,4 +553,43 @@ describe('OneKeyImage wrapper', () => {
       });
     }
   });
+
+  it('does not reset placeholder when headers have equivalent keys in different order or casing', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{
+            uri: 'https://example.com/private.png',
+            headers: { 'Authorization': 'Bearer token', 'X-Tenant': 'one' },
+          }}
+          placeholder="loading"
+          style={{ width: 40, height: 40 }}
+        />
+      );
+    });
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    await act(() => {
+      native.props.onDisplay.f();
+    });
+    expect(
+      renderer!.root.findAllByProps({ pointerEvents: 'none' })
+    ).toHaveLength(0);
+
+    await act(() => {
+      renderer!.update(
+        <OneKeyImage
+          source={{
+            uri: 'https://example.com/private.png',
+            headers: { 'x-tenant': 'one', 'authorization': 'Bearer token' },
+          }}
+          placeholder="loading"
+          style={{ width: 40, height: 40 }}
+        />
+      );
+    });
+    expect(
+      renderer!.root.findAllByProps({ pointerEvents: 'none' })
+    ).toHaveLength(0);
+  });
 });

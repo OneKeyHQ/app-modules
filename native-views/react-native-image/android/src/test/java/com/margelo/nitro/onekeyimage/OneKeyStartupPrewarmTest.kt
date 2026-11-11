@@ -265,6 +265,9 @@ class OneKeyStartupPrewarmTest {
     assertNotNull(OneKeyImageStartupPrewarm.cachedBitmap(remoteUrl, 120, 60, false))
 
     // 5. Launch-generation eviction: after 3 launches of only remoteUrl, secretAvatarUrl is evicted
+    val avatarDiskSafeKey = requireNotNull(OneKeyImageStartupPrewarm.glideDataSafeKey(secretAvatarUrl))
+    val avatarFallbackFile = File(File(tempDir, OneKeyImageStartupPrewarm.FALLBACK_DISK_CACHE_DIR), avatarDiskSafeKey)
+    assertTrue("Avatar fallback file should exist after Launch 1", avatarFallbackFile.isFile)
     for (expectedLaunch in 2..4) {
       OneKeyImageStartupPrewarm.resetForTesting(file = startupJsonFile, cacheDir = tempDir)
       OneKeyImageStartupPrewarm.note(
@@ -281,14 +284,21 @@ class OneKeyStartupPrewarmTest {
       val entries = OneKeyImageStartupPrewarm.readEntries(startupJsonFile)
       if (expectedLaunch < 4) {
         assertEquals(2, entries.size)
+        assertTrue(avatarFallbackFile.isFile)
       } else {
         assertEquals("Stale avatar must be evicted at launch 4 (age 3)", 1, entries.size)
         assertEquals(
           OneKeyImageStartupPrewarm.keyHash(remoteUrl, 120, 60, false),
           entries[0].keyHash,
         )
+        assertFalse("Evicted fallback file must be cleaned from disk", avatarFallbackFile.exists())
       }
     }
+
+    // 6. clearDiskCache removes startup JSON and fallback disk cache directory
+    OneKeyImageStartupPrewarm.clearDiskCache(tempDir)
+    assertFalse(startupJsonFile.exists())
+    assertFalse(File(tempDir, OneKeyImageStartupPrewarm.FALLBACK_DISK_CACHE_DIR).exists())
   }
 
   @Test
@@ -322,6 +332,7 @@ class OneKeyStartupPrewarmTest {
 
     // 3. Manifest lock contention makes diskRender return null without blocking and increments metric
     OneKeyNamedSVG.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
     val locked = CountDownLatch(1)
     val release = CountDownLatch(1)
     val holder = thread {
@@ -331,11 +342,17 @@ class OneKeyStartupPrewarmTest {
       OneKeyNamedSVG.unlockManifestAccessLockForTesting()
     }
     locked.await()
-    val contendedResult = OneKeyNamedSVG.diskRender(assets, "DotVerSolid", "rgba(0,0,0,1)", 48, 48, 2f)
+    val contendedResult = try {
+      OneKeyNamedSVG.diskRender(assets, "DotVerSolid", "rgba(0,0,0,1)", 48, 48, 2f)
+    } finally {
+      release.countDown()
+      holder.join()
+    }
     assertNull(contendedResult)
-    assertEquals(1, OneKeyMainThreadDecode.metricsSnapshot().lockContentionMisses)
-    release.countDown()
-    holder.join()
+    val contendedMetrics = OneKeyMainThreadDecode.metricsSnapshot()
+    assertEquals(1, contendedMetrics.lockContentionMisses)
+    assertEquals(1, contendedMetrics.attempts)
+    assertEquals(1, contendedMetrics.misses)
 
     // 4. Startup quiet window (< 8 icons stays open on non-forced flush) and 3-launch eviction
     OneKeyNamedSVG.resetStartupForTesting(file = startupJsonFile, cacheDir = tempDir)

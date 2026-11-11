@@ -143,6 +143,27 @@ function normalizeSource(
   return undefined;
 }
 
+function normalizeHeadersIdentity(
+  headers: Record<string, string> | undefined
+): string {
+  if (!headers) return '';
+  return JSON.stringify(
+    Object.entries(headers)
+      .map(([key, value]) => [key.toLowerCase(), String(value)] as const)
+      .sort(([aKey, aVal], [bKey, bVal]) =>
+        aKey < bKey
+          ? -1
+          : aKey > bKey
+          ? 1
+          : aVal < bVal
+          ? -1
+          : aVal > bVal
+          ? 1
+          : 0
+      )
+  );
+}
+
 export function OneKeyImage({
   source,
   placeholder,
@@ -173,8 +194,8 @@ export function OneKeyImage({
     cachePolicy ??
     normalized?.cachePolicy ??
     OneKeyImageCachePolicy.MEMORY_DISK;
-  const identity = `${normalized?.uri ?? ''}|${JSON.stringify(
-    normalized?.headers ?? {}
+  const identity = `${normalized?.uri ?? ''}|${normalizeHeadersIdentity(
+    normalized?.headers
   )}|${resolvedCachePolicy}|${recyclingKey ?? ''}|${contentFit}|${
     optimizeTos ? '1' : '0'
   }|${resizeWidth ?? ''}|${resizeHeight ?? ''}|${overscan}`;

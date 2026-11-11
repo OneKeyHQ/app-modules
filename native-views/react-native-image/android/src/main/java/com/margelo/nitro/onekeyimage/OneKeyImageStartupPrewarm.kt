@@ -10,6 +10,8 @@ import android.graphics.PorterDuffXfermode
 import android.util.Log
 import com.bumptech.glide.load.Key
 import com.bumptech.glide.signature.ObjectKey
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.security.MessageDigest
@@ -50,7 +52,7 @@ internal object OneKeyImageStartupPrewarm {
   )
 
   private const val MAX_ENTRIES = 48
-  private const val RECORD_DURATION_MS = 3_000L
+  private const val RECORD_DURATION_MS = 6_000L
   private const val MAX_DURATION_MS = 60_000L
   private const val MIN_SETTLED_COUNT = 2
   private const val MAX_DATA_URL_LENGTH = 65_536
@@ -185,6 +187,32 @@ internal object OneKeyImageStartupPrewarm {
     synchronized(memoryLock) {
       memoryCache.clear()
       memoryCacheBytes = 0L
+    }
+  }
+
+  fun clearDiskCache(cacheDir: File? = currentCacheDir()) {
+    val file: File?
+    val resolvedDir: File?
+    synchronized(stateLock) {
+      debounceFuture?.cancel(false)
+      debounceFuture = null
+      flushScheduled = false
+      recorded.clear()
+      recordedKeys.clear()
+      pendingFallbackSources.clear()
+      file = startupFile()
+      resolvedDir = cacheDir ?: baseCacheDir ?: file?.parentFile
+    }
+    try {
+      file?.delete()
+      File(file?.parentFile ?: return, "${file.name}.tmp").delete()
+    } catch (_: Exception) {
+    }
+    try {
+      if (resolvedDir != null) {
+        File(resolvedDir, FALLBACK_DISK_CACHE_DIR).deleteRecursively()
+      }
+    } catch (_: Exception) {
     }
   }
 
@@ -388,6 +416,19 @@ internal object OneKeyImageStartupPrewarm {
         tmp.copyTo(file, overwrite = true)
         tmp.delete()
       }
+      val fallbackDir = File(file.parentFile, FALLBACK_DISK_CACHE_DIR)
+      if (fallbackDir.isDirectory) {
+        val activeFiles = HashSet<String>(merged.size * 2)
+        for (entry in merged) {
+          activeFiles.add(entry.diskFile)
+          entry.rawDiskFile?.let { activeFiles.add(it) }
+        }
+        fallbackDir.listFiles()?.forEach { candidate ->
+          if (candidate.isFile && !activeFiles.contains(candidate.name)) {
+            candidate.delete()
+          }
+        }
+      }
     } catch (_: Exception) {
     }
   }
@@ -575,54 +616,38 @@ internal object OneKeyImageStartupPrewarm {
       .joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
 
   internal fun encodeEntriesJson(entries: List<StartupEntry>): String {
-    val sb = StringBuilder()
-    sb.append('[')
-    entries.forEachIndexed { index, entry ->
-      if (index > 0) sb.append(',')
-      sb.append('{')
-      sb.append("\"keyHash\":\"").append(escapeJson(entry.keyHash)).append("\",")
-      sb.append("\"diskFile\":\"").append(escapeJson(entry.diskFile)).append("\",")
+    val array = JSONArray()
+    for (entry in entries) {
+      val obj = JSONObject()
+        .put("keyHash", entry.keyHash)
+        .put("diskFile", entry.diskFile)
+        .put("width", entry.width)
+        .put("height", entry.height)
+        .put("round", entry.round)
+        .put("launch", entry.launch)
       if (!entry.rawDiskFile.isNullOrEmpty()) {
-        sb.append("\"rawDiskFile\":\"").append(escapeJson(entry.rawDiskFile)).append("\",")
+        obj.put("rawDiskFile", entry.rawDiskFile)
       }
-      sb.append("\"width\":").append(entry.width).append(',')
-      sb.append("\"height\":").append(entry.height).append(',')
-      sb.append("\"round\":").append(entry.round).append(',')
-      sb.append("\"launch\":").append(entry.launch)
-      sb.append('}')
+      array.put(obj)
     }
-    sb.append(']')
-    return sb.toString()
+    return array.toString()
   }
 
   internal fun decodeEntriesJson(text: String): List<StartupEntry> {
-    val result = ArrayList<StartupEntry>()
-    val objectPattern = Regex("\\{([^{}]*)\\}")
-    val stringFieldPattern = Regex("\"([A-Za-z0-9_]+)\"\\s*:\\s*\"([^\"]*)\"")
-    val numberFieldPattern = Regex("\"([A-Za-z0-9_]+)\"\\s*:\\s*(-?\\d+)")
-    val boolFieldPattern = Regex("\"([A-Za-z0-9_]+)\"\\s*:\\s*(true|false)")
-
-    for (match in objectPattern.findAll(text)) {
-      val body = match.groupValues[1]
-      val strings = HashMap<String, String>()
-      val numbers = HashMap<String, Int>()
-      val bools = HashMap<String, Boolean>()
-      for (sm in stringFieldPattern.findAll(body)) {
-        strings[sm.groupValues[1]] = sm.groupValues[2]
-      }
-      for (nm in numberFieldPattern.findAll(body)) {
-        nm.groupValues[2].toIntOrNull()?.let { numbers[nm.groupValues[1]] = it }
-      }
-      for (bm in boolFieldPattern.findAll(body)) {
-        bools[bm.groupValues[1]] = bm.groupValues[2] == "true"
-      }
-      val keyHash = strings["keyHash"] ?: continue
-      val diskFile = strings["diskFile"] ?: continue
-      val rawDiskFile = strings["rawDiskFile"]?.takeIf { it.isNotEmpty() }
-      val width = numbers["width"] ?: continue
-      val height = numbers["height"] ?: continue
-      val round = bools["round"] ?: false
-      val launch = numbers["launch"] ?: 0
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return emptyList()
+    val array = JSONArray(trimmed)
+    val result = ArrayList<StartupEntry>(array.length())
+    for (i in 0 until array.length()) {
+      val obj = array.optJSONObject(i) ?: continue
+      val keyHash = obj.optString("keyHash", "").takeIf { it.isNotEmpty() } ?: continue
+      val diskFile = obj.optString("diskFile", "").takeIf { it.isNotEmpty() } ?: continue
+      val rawDiskFile = obj.optString("rawDiskFile", "").takeIf { it.isNotEmpty() }
+      val width = obj.optInt("width", 0)
+      val height = obj.optInt("height", 0)
+      if (width <= 0 || height <= 0) continue
+      val round = obj.optBoolean("round", false)
+      val launch = obj.optInt("launch", 0)
       result.add(
         StartupEntry(
           keyHash = keyHash,
@@ -637,9 +662,6 @@ internal object OneKeyImageStartupPrewarm {
     }
     return result
   }
-
-  private fun escapeJson(value: String): String =
-    value.replace("\\", "\\\\").replace("\"", "\\\"")
 
   internal fun readEntries(file: File): List<StartupEntry> {
     if (!file.isFile) return emptyList()

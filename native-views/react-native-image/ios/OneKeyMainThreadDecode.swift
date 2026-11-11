@@ -165,6 +165,7 @@ enum OneKeyMainThreadDecode {
     currentWindowAllowed = 0
     currentWindowRejected = 0
     metrics = Metrics()
+    summaryScheduled = false
     lock.unlock()
   }
 

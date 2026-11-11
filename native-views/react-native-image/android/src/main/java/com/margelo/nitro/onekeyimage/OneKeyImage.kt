@@ -814,7 +814,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     if (hostView.width <= 0 || hostView.height <= 0) {
       cancelCurrent(invalidateGeneration = true, clearMemoryPreview = false)
       lastSignature = null
-      if (memoryPreviewTarget == null || hostView.drawable == null) {
+      if (memoryPreviewFamily == null || hostView.drawable == null) {
         showLoading(requestIsActive = false)
       }
       return
@@ -916,7 +916,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     }
     if (
       shouldProbeMemoryPreview(
-        hasTarget = memoryPreviewTarget != null,
+        hasTarget = memoryPreviewFamily != null,
         sameFamily = memoryPreviewFamily == memoryFamily,
         hasDrawable = hostView.drawable != null,
       )
@@ -963,13 +963,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         if (requestGeneration != generation || disposed) return
         showLoading(
           requestIsActive = true,
-          preserveDisplayedImage = memoryPreviewTarget != null && hostView.drawable != null,
+          preserveDisplayedImage = memoryPreviewFamily != null && hostView.drawable != null,
         )
       }
 
       override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
         if (requestGeneration != generation || disposed) return
-        val replacesMemoryPreview = memoryPreviewTarget != null && hostView.drawable != null
+        val replacesMemoryPreview = memoryPreviewFamily != null && hostView.drawable != null
         requestActive = false
         displayState = DisplayState.IMAGE
         hostView.skeletonRequested = false

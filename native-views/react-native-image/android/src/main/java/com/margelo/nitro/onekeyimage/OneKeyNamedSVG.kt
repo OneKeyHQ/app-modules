@@ -12,6 +12,7 @@ import android.graphics.PorterDuffColorFilter
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -84,7 +85,7 @@ object OneKeyNamedSVG {
   )
 
   private const val STARTUP_MAX_ENTRIES = 96
-  private const val STARTUP_RECORD_DURATION_MS = 3_000L
+  private const val STARTUP_RECORD_DURATION_MS = 6_000L
   private const val STARTUP_MAX_DURATION_MS = 60_000L
   private const val STARTUP_MIN_SETTLED_COUNT = 8
   private const val STARTUP_MAX_LAUNCH_AGE = 3
@@ -282,18 +283,17 @@ object OneKeyNamedSVG {
     ) {
       return null
     }
-    if (!manifestAccessLock.tryLock()) {
-      OneKeyMainThreadDecode.noteLockContention()
-      return null
-    }
-    val hasManifest = try {
-      manifest != null || manifestFallbackMap != null
-    } finally {
-      manifestAccessLock.unlock()
-    }
-    if (!hasManifest) return null
-
     return OneKeyMainThreadDecode.run {
+      if (!manifestAccessLock.tryLock()) {
+        OneKeyMainThreadDecode.noteLockContention()
+        return@run null
+      }
+      val hasManifest = try {
+        manifest != null || manifestFallbackMap != null
+      } finally {
+        manifestAccessLock.unlock()
+      }
+      if (!hasManifest) return@run null
       decode(Request(assets, name, color, width, height, scale, false) {}, diskOnly = true)
     }
   }
@@ -799,45 +799,35 @@ object OneKeyNamedSVG {
   }
 
   internal fun encodeStartupEntriesJson(entries: List<StartupEntry>): String {
-    val sb = StringBuilder()
-    sb.append('[')
-    entries.forEachIndexed { index, entry ->
-      if (index > 0) sb.append(',')
-      sb.append('{')
-      sb.append("\"name\":\"").append(escapeJson(entry.name)).append("\",")
-      sb.append("\"color\":\"").append(escapeJson(entry.color)).append("\",")
-      sb.append("\"width\":").append(entry.width).append(',')
-      sb.append("\"height\":").append(entry.height).append(',')
-      sb.append("\"scale\":").append(entry.scale).append(',')
-      sb.append("\"launch\":").append(entry.launch)
-      sb.append('}')
+    val array = JSONArray()
+    for (entry in entries) {
+      array.put(
+        JSONObject()
+          .put("name", entry.name)
+          .put("color", entry.color)
+          .put("width", entry.width)
+          .put("height", entry.height)
+          .put("scale", entry.scale.toDouble())
+          .put("launch", entry.launch),
+      )
     }
-    sb.append(']')
-    return sb.toString()
+    return array.toString()
   }
 
   internal fun decodeStartupEntriesJson(text: String): List<StartupEntry> {
-    val result = ArrayList<StartupEntry>()
-    val objectPattern = Regex("\\{([^{}]*)\\}")
-    val stringFieldPattern = Regex("\"([A-Za-z0-9_]+)\"\\s*:\\s*\"([^\"]*)\"")
-    val numberFieldPattern = Regex("\"([A-Za-z0-9_]+)\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)")
-
-    for (match in objectPattern.findAll(text)) {
-      val body = match.groupValues[1]
-      val strings = HashMap<String, String>()
-      val numbers = HashMap<String, String>()
-      for (sm in stringFieldPattern.findAll(body)) {
-        strings[sm.groupValues[1]] = sm.groupValues[2]
-      }
-      for (nm in numberFieldPattern.findAll(body)) {
-        numbers[nm.groupValues[1]] = nm.groupValues[2]
-      }
-      val name = strings["name"] ?: continue
-      val color = strings["color"] ?: continue
-      val width = numbers["width"]?.toIntOrNull() ?: continue
-      val height = numbers["height"]?.toIntOrNull() ?: continue
-      val scale = numbers["scale"]?.toFloatOrNull() ?: continue
-      val launch = numbers["launch"]?.toIntOrNull() ?: 0
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return emptyList()
+    val array = JSONArray(trimmed)
+    val result = ArrayList<StartupEntry>(array.length())
+    for (i in 0 until array.length()) {
+      val obj = array.optJSONObject(i) ?: continue
+      val name = obj.optString("name", "").takeIf { it.isNotEmpty() } ?: continue
+      val color = obj.optString("color", "").takeIf { it.isNotEmpty() } ?: continue
+      val width = obj.optInt("width", 0)
+      val height = obj.optInt("height", 0)
+      val scale = obj.optDouble("scale", Double.NaN).toFloat()
+      if (width <= 0 || height <= 0 || !scale.isFinite() || scale <= 0f) continue
+      val launch = obj.optInt("launch", 0)
       result.add(
         StartupEntry(
           name = name,
@@ -860,9 +850,6 @@ object OneKeyNamedSVG {
       emptyList()
     }
   }
-
-  private fun escapeJson(value: String): String =
-    value.replace("\\", "\\\\").replace("\"", "\\\"")
 
   private fun sha256Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256")
