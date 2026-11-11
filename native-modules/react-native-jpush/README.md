@@ -1,57 +1,158 @@
-# `@onekeyfe/react-native-jpush`
+<div align="center">
 
-Clean-room JPush (`6.0.0` iOS / `5.9.0` Android) and JCore (`5.2.0`) React Native Nitro module for OneKey.
+# @onekeyfe/react-native-jpush
 
-See the authoritative behavioral and wire-protocol specification in [`docs/SPEC.md`](./docs/SPEC.md).
+**A clean-room JPush and JCore implementation for React Native, readable end to end and API-compatible with `jpush-react-native`.**
+
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-jpush?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-jpush)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-jpush?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
+
+</div>
+
+A source-implemented JCore (5.2.0) and JPush (6.0.0 iOS / 5.9.0 Android) client:
+UDP SIS resolution, the asymmetric TCP framing, AES-256-CBC / SM4-CBC encryption,
+registration and login, tag/alias/properties, local notifications and the
+Android `:pushcore` IPC are all compiled from readable Objective-C/Swift and
+Java/Kotlin instead of shipped as `.a`/`.jar` blobs. The JavaScript surface
+mirrors `jpush-react-native` and `jcore-react-native` — default `JPush`, named
+`JCore` — dispatched through a Nitro HybridObject with a legacy bridge fallback.
+Supported on iOS (13.4+) and Android (minSdk 23); web and desktop are out of
+scope.
 
 ## Features
 
-- **Nitro JSI + React Native Bridge**: Implements `HybridReactNativeJpushSpec` (Nitro Modules) and exports `JPush` (default) + `JCore` (named) 100% compatible with `jpush-react-native` and `jcore-react-native` in `app-monorepo`.
-- **Clean-Room Native Source**: Full Objective-C/Swift (`ios/`) and Java/Kotlin (`android/`) source implementation with zero obfuscated `.a` or `.jar` binaries.
-- **Production Wire Protocol**: 10-byte UDP SIS (`'U','G'`), asymmetric 24-byte Client->Server and 20-byte Server->Client TCP framing, AES-256-CBC & SM4-CBC encryption, multi-IP waterfall failover, registered fast-login, exponential backoff auto-reconnect, HTTP `/v3/report` & iOS Badge report, and Android `:pushcore` AIDL IPC.
+- **Auditable native source** — no decompiled or obfuscated vendor binaries in
+  the build, and dynamic code loading is intentionally excluded.
+- **Drop-in JS API** — the `JPush` and `JCore` classes keep the methods and
+  callbacks that `jpush-react-native` / `jcore-react-native` consumers use.
+- **Shared native state** — main and background JS runtimes share one
+  process-owned SDK; policy changes invalidate stale native content instead of
+  replaying it.
+- **Bounded queues** — at most 128 pre-login requests and 65,536 decoded GZIP
+  bytes, with fixed error codes instead of unbounded buffering.
+- **Privacy-safe logging** — diagnostics go through
+  `@onekeyfe/react-native-native-logger` and redact notification content,
+  alias, tags, properties, mobile number and tokens.
+- **Optional Google transport** — an Android-only source library under
+  `android/fcm` replaces the opaque Jiguang FCM plugin.
 
-## Verification
+## Installation
 
 ```sh
-# TypeScript, ESLint, Jest, and Nitro codegen
-yarn workspace @onekeyfe/react-native-jpush nitrogen
-yarn workspace @onekeyfe/react-native-jpush typecheck
-yarn workspace @onekeyfe/react-native-jpush lint
-yarn workspace @onekeyfe/react-native-jpush test
-
-# Resolve JUnit dependencies and run the core/FCM module suites
-(cd example/react-native/android && ./gradlew :onekeyfe_react-native-jpush:testDebugUnitTest :onekey-jpush-fcm:testDebugUnitTest)
-
-# macOS: native host build/protocol regressions (loopback servers and isolated RN/Android shims)
-python3 native-modules/react-native-jpush/scripts/verify_clean_sdk.py
+yarn add @onekeyfe/react-native-jpush react-native-nitro-modules
 ```
 
-Java and Objective-C host fixtures live in `tests/android` and `tests/ios`; Python only builds, runs and checks artifacts. Android host tests use real JUnit 4.13.2 from the Gradle dependency cache. The FCM Gradle suite uses Robolectric and real Firebase message/task types, with mocked external token requests. These checks do not establish physical-device or cloud delivery.
+`@onekeyfe/react-native-native-logger` is a peer dependency. Install the
+application's iOS pods and rebuild the native binary; the module cannot run from
+a JavaScript-only update.
 
-The external Jiguang sandbox register/login test is explicitly skipped by default. Set `JPUSH_LIVE_TESTS=1` when running either Android test entry to enable it; then all network/protocol/assertion failures fail the test. CI runs both host suites plus Gradle FCM tests. A manual `native-tests` workflow can enable the same cloud check with `jpush_live_cloud`.
+### iOS
 
-## Android Google / FCM source transport
+Enable the Push Notifications capability and APNs entitlements in the app
+target. The host AppDelegate forwards the APNs device token to the native SDK
+(for example with `JPUSHService registerDeviceToken:`); the module installs its
+`UNUserNotificationCenter` delegate when the app has not set one.
 
-The optional Android source library in `android/fcm` replaces the opaque Jiguang FCM plugin. It delegates the Google transport to the official Firebase Messaging SDK and forwards tokens and messages into this package's JCore/JPush pipeline. Link it alongside the project's autolinked JPush module (the alias below matches app-monorepo):
+### Android
 
-```groovy
-// settings.gradle, after React Native autolinking
-include ':onekey-jpush-fcm'
-project(':onekey-jpush-fcm').projectDir = new File(project(':jpush-react-native').projectDir, 'fcm')
+The package manifest merges its permissions and components, including
+`POST_NOTIFICATIONS`, `INTERNET`, `ACCESS_NETWORK_STATE` and the vendor badge
+permissions. On Android 13+ call `JPush.requestPermission()` from a user action
+to obtain the runtime notification permission. Minimum SDK is 23.
 
-// app/build.gradle: replace cn.jiguang.sdk.plugin:fcm
-// Keep this dependency scoped to the Google distribution.
-googleImplementation project(':onekey-jpush-fcm')
+### Google / FCM distribution (optional)
+
+Google Play builds can link the source library in `android/fcm`, which replaces
+`cn.jiguang.sdk.plugin:fcm` and delegates transport to the official Firebase
+Messaging SDK. It is an Android Gradle project, not a second npm package; the
+host keeps its `google-services.json` and Google Services plugin. Integration
+steps, receive gates and acceptance status are in [`docs/SPEC.md`](docs/SPEC.md).
+
+## Usage
+
+```ts
+import JPush from '@onekeyfe/react-native-jpush';
+
+JPush.setLoggerEnable(__DEV__);
+JPush.init({
+  appKey: '<your-jpush-app-key>',
+  channel: 'developer-default',
+  production: false,
+});
+
+JPush.getRegistrationID(({ registerID }) => {
+  // Send registerID to your backend for targeted pushes.
+});
+
+JPush.addConnectEventListener(() => {
+  // Fires on connection state changes.
+});
 ```
 
-The host retains its existing `google-services.json` and Google Services Gradle plugin. Firebase auto-init stays disabled; JPush initialization requests the token after authorization. Granting authorization after a previously unauthorized init also requests registration without reconnecting. Cloud acceptance requires the matching Firebase credentials configured in the Jiguang sender.
+Register listeners after `init()` and remove them with `JPush.removeListener()`
+when their owner unmounts. Permission is a separate step: the user must grant
+notification authorization before Android or iOS can deliver.
 
-### Client enforcement of stopped/authorization controls
+## API
 
-Vendor payloads do not need to change. `FcmMessagingService.handleIntent` checks `stopPush()` and collection authorization before calling the pinned Firebase Messaging 25.0.1 receive handler. This covers Firebase's automatic background display of notification/combined payloads as well as data-only delivery. Authorized messages retain Firebase's normal dispatch and deduplication; callback-level guards remain. Blocked events are discarded and are not replayed on resume or authorization grant. Keep the receive-entry integration tests when upgrading Firebase because this override uses its internal public receive hook.
+| Export | Result | Platforms | Description |
+| --- | --- | :-: | --- |
+| `JPush.init({ appKey, channel, production })` | `void` | iOS, Android | Configures and starts the push client. |
+| `JPush.getRegistrationID(cb)` | `{ registerID }` | iOS, Android | Current registration ID. |
+| `JPush.addTags` / `updateTags` / `deleteTag(s)` / `queryTag(s)` | callbacks / events | iOS, Android | Tag operations, keyed by `sequence`. |
+| `JPush.setAlias` / `deleteAlias` / `queryAlias` | callbacks / events | iOS, Android | Alias operations. |
+| `JPush.setProperties` / `deleteProperties` / `cleanProperties` | callbacks / events | iOS, Android | User-property operations. |
+| `JPush.setBadge({ badge, appBadge })` | `void` | iOS, Android | App-icon badge count. |
+| `JPush.addLocalNotification` / `removeLocalNotification` / `clearAllNotifications` / `clearNotificationById` | `void` | iOS, Android | Local notification scheduling and cleanup. |
+| `JPush.stopPush` / `resumePush` / `isPushStopped(cb)` | `void` / `boolean` | iOS, Android | Client-side push enable/disable. |
+| `JPush.requestPermission()` | `void` | iOS, Android | Requests notification authorization. |
+| `JPush.add*Listener(cb)` / `removeListener(cb)` | `void` | iOS, Android | Connect, notification, local, custom-message, tag/alias, command and button events. |
+| `JCore.setAuth(auth)` and JCore compliance/diagnostics methods | `void` | iOS, Android | Collection authorization, country code, wakeup and local logs. |
 
-The optional Google module disables Firebase notification delegation and removes the unguarded fallback service. A private startup provider clears any existing Google Play services notification delegate on Android 10+ after an upgrade, without requesting a token or changing consent. Other delegates are preserved. The provider runs before JS initialization, including when push is stopped or consent is absent. Existing delegation is revoked when the updated app first starts; code in a never-started update cannot revoke an already-installed delegate. Direct-boot reception before user unlock is not enabled.
+The underlying `ReactNativeJpush` HybridObject in
+[`src/ReactNativeJpush.nitro.ts`](src/ReactNativeJpush.nitro.ts) exposes the same
+operations plus lower-level badge, geofence and channel setters. See
+[`docs/SPEC.md`](docs/SPEC.md) for the wire protocol, defaults and error codes.
 
-For vendor background notification/combined payloads, Firebase still owns display after the gate allows delivery. Their click action must remain `cn.jpush.android.intent.NOTIFICATION_OPENED` so the private JPush activity receives `JMessageExtra`. Data-only payloads continue through the native arrival/custom-message pipeline.
+## Platform support
 
-Device acceptance must cover background notification-only, combined and data-only payloads: normal authorized delivery, no display/callback after stop or authorization withdrawal, normal delivery after resume/regrant, and an upgrade from existing Play services delegation. Robolectric tests run Firebase's real Intent receive/display code with only its transport acknowledgement mocked; they do not establish vendor cloud or physical-device acceptance.
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Registration, login and reconnection | ✅ | ✅ | — |
+| Tags, alias, properties, mobile number | ✅ | ✅ | — |
+| Notifications, local notifications and badge | ✅ | ✅ | — |
+| Notification authorization request | ✅ | ✅ | — |
+| APNs device-token binding | ✅ | — | — |
+| Optional Google FCM source transport | — | ✅ | — |
+
+## Caveats
+
+> [!IMPORTANT]
+> The native SDK requires a rebuilt host binary. Web, desktop and extension
+> targets are unsupported — guard every call with a platform check, because the
+> wrapper returns without effect when no native module is registered.
+
+> [!WARNING]
+> Push stop and collection-authorization changes gate delivery immediately.
+> Content blocked while stopped or unauthorized is discarded and is never
+> replayed after resume or regrant, and notifications already displayed are not
+> retracted.
+
+> [!NOTE]
+> Local tests, loopback protocol suites and synthetic payloads do not prove APNs,
+> FCM or Jiguang cloud delivery. Configure real AppKey/APNs credentials and
+> validate delivery on a device before shipping.
+
+## References
+
+- [Package spec](docs/SPEC.md)
+- [JS wrapper](src/index.tsx)
+- [Example page](../../example/react-native/pages/JPushTestPage.tsx)
+- [Changelog](../../CHANGELOG.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).

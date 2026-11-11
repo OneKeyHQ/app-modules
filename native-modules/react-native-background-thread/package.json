@@ -86,6 +86,7 @@
   },
   "peerDependencies": {
     "@onekeyfe/react-native-bundle-update": "*",
+    "@onekeyfe/react-native-native-logger": "*",
     "react": "*",
     "react-native": "*"
   },

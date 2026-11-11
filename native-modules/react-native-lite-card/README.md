@@ -1,16 +1,39 @@
+<div align="center">
+
 # @onekeyfe/react-native-lite-card
 
-OneKey Lite NFC card operations for React Native on iOS and Android. The package
-wraps native callbacks in promises for card inspection, PIN changes, mnemonic
-backup/retrieval and reset. It also exposes native NFC connection UI events.
-The application owns the user flow and handling sensitive card data.
+**OneKey Lite NFC card operations — inspect, back up and restore, change the PIN — from React Native.**
 
-## Native SDK source recovery
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-lite-card?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-lite-card)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-lite-card?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![TurboModule](https://img.shields.io/badge/TurboModule-4D6BFE)
 
-The restored GPChannel source is in [sdk/](sdk/README.md). CocoaPods compiles it
-on iOS, and Android's CMake build produces the JNI library from the same source.
-No precompiled GPChannel framework or JNI library is included. See
-[docs/SPEC.md](docs/SPEC.md) for the native ownership and recovery contract.
+</div>
+
+A TurboModule that drives the OneKey Lite NFC card: card information, mnemonic
+backup and retrieval, PIN changes and reset. Native callbacks are wrapped in
+promises and every result carries the native error, data and card state instead
+of throwing on card-level failures. The recovered GPChannel core is compiled from
+source in [`sdk/`](sdk/README.md) — no precompiled framework or JNI library ships
+in the package. The application owns the user flow and the handling of mnemonic
+and PIN values.
+
+## Features
+
+- **Card inspection** — `getLiteInfo()` reports the serial, backup state, new-card
+  state and remaining PIN retries.
+- **Full backup lifecycle** — write a mnemonic with an overwrite choice, read it
+  back with the PIN, change the PIN and reset the card.
+- **Optional write identity guard** — pass `expectedSerial` to `setMnemonic` or
+  `changePin` and a mismatch with the freshly read card returns `DeviceMismatch`
+  before any PIN or write phase.
+- **Connection UI events** — `addConnectListener` streams the native NFC prompt
+  state and returns a subscription with `remove()`.
+- **Auditable native source** — the SDK, iOS bridge and Android JNI build from
+  checked-in C/C++/Objective-C/Kotlin, with debug logging disabled in recovered
+  builds.
 
 ## Installation
 
@@ -18,59 +41,117 @@ No precompiled GPChannel framework or JNI library is included. See
 yarn add @onekeyfe/react-native-lite-card
 ```
 
-Install the application's iOS pods and rebuild the native application. NFC
-hardware, platform permissions and host configuration are required; card
-operations cannot be validated through a JavaScript-only development session.
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
+The package ships native code and changes the TurboModule ABI, so install the
+application's iOS pods and rebuild the native binary; a JavaScript-only update
+cannot add it.
+
+### iOS
+
+Add `NFCReaderUsageDescription` to `Info.plist` and enable the Near Field
+Communication Tag Reading capability (the reader-session entitlement) for the
+app target. The package compiles its SDK sources through CocoaPods.
+
+### Android
+
+The host application declares `<uses-permission android:name="android.permission.NFC" />`
+and an NFC-capable device is required. The package builds its JNI library from
+the same recovered sources with CMake.
+
+NFC hardware, permissions and host configuration cannot be exercised from a
+JavaScript-only development session.
 
 ## Usage
 
 ```ts
 import onekeyLite from '@onekeyfe/react-native-lite-card';
 
-const result = await onekeyLite.checkNFCPermission();
-if (result.error) {
-  // Handle the native error code and message in the application's NFC flow.
-} else {
-  const permissionAvailable = result.data;
+const subscription = onekeyLite.addConnectListener(({ code, message }) => {
+  // Render the native NFC prompt state in the app's sheet.
+});
+
+const permission = await onekeyLite.checkNFCPermission();
+if (permission.error) {
+  // Compare permission.error.code against CardErrors.
+} else if (permission.data) {
+  const { error, data: cardInfo } = await onekeyLite.getLiteInfo();
+  if (!error && cardInfo) {
+    // cardInfo.serialNum / hasBackup / isNewCard / pinRetryCount
+  }
 }
+
+subscription.remove(); // when the owner finishes
 ```
+
+Never log mnemonics or PINs.
 
 ## API
 
-- `getLiteInfo()` returns card information including serial number, backup
-  state, new-card status and remaining PIN retries.
-- `setMnemonic(mnemonic, pwd, overwrite)` and `getMnemonicWithPin(pwd)` manage
-  the backup; `overwrite` defaults to `false`.
-- `changePin(oldPin, newPin, expectedSerial?)` checks a supplied card serial before
-  changing the PIN; `reset()` resets the card's state. The identity guard requires
-  a native rebuild on iOS and Android.
-- `addConnectListener(listener)` subscribes to NFC UI events and returns the
-  native subscription. Keep it and call `remove()` when the owner finishes.
-- `cancel()` invokes native cancellation on Android; `intoSetting()` opens
-  the platform settings path.
+| Method | Result | Platforms | Description |
+| --- | --- | :-: | --- |
+| `getLiteInfo()` | `Promise<PromiseResult<CardInfo>>` | iOS, Android | Reads serial, backup, new-card and PIN-retry state. |
+| `checkNFCPermission()` | `Promise<PromiseResult<boolean>>` | iOS, Android | Whether NFC is available and authorized. |
+| `setMnemonic(mnemonic, pwd, overwrite?, expectedSerial?)` | `Promise<PromiseResult<boolean>>` | iOS, Android | Writes the backup; `overwrite` defaults to `false`. |
+| `getMnemonicWithPin(pwd)` | `Promise<PromiseResult<string>>` | iOS, Android | Reads the backup with the card PIN. |
+| `changePin(oldPin, newPin, expectedSerial?)` | `Promise<PromiseResult<boolean>>` | iOS, Android | Changes the PIN, optionally guarded by card serial. |
+| `reset()` | `Promise<PromiseResult<boolean>>` | iOS, Android | Resets the card to its initial state. |
+| `addConnectListener(listener)` | subscription with `remove()` | iOS, Android | NFC connection UI events (`code`, `message`). |
+| `addAccordListener()` | subscription | iOS, Android | Native NFC active-connection event. |
+| `cancel()` | `void` | Android | Cancels the current native operation. |
+| `intoSetting()` | `void` | iOS, Android | Opens platform settings (Android native NFC settings, iOS app settings). |
+| `CardErrors` | enum | iOS, Android | Native error codes (`1000`–`4002`). |
 
-Operation promises resolve an object containing `error`, `data` and `cardInfo`.
-Check `error` before consuming data: a resolved promise does not imply a successful
-card operation. `CardErrors` provides the exported native error codes. PIN retry
-and destructive reset behavior belong in the application's explicit card flow.
+`PromiseResult<T>` is `{ error, data, cardInfo }`, each nullable. `CardInfo`
+carries `serialNum`, `isNewCard`, `pinRetryCount` and `hasBackup`
+(`boolean | null`; iOS returns `null` when the state is unknown). PIN and
+destructive-reset rules belong to the application's explicit card flow. See
+[`src/index.tsx`](src/index.tsx) and
+[`src/NativeReactNativeLiteCard.ts`](src/NativeReactNativeLiteCard.ts) for the
+wrapper and result types.
 
-See [src/index.tsx](src/index.tsx) and
-[src/NativeReactNativeLiteCard.ts](src/NativeReactNativeLiteCard.ts) for the wrapper
-and callback/result types.
+## Platform support
 
-## Result and subscription ownership
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Card info and NFC permission check | ✅ | ✅ | — |
+| Mnemonic backup / retrieval | ✅ | ✅ | — |
+| PIN change and card reset | ✅ | ✅ | — |
+| Write identity guard (`expectedSerial`) | ✅ | ✅ | — |
+| NFC connection events | ✅ | ✅ | — |
+| `cancel()` native operation | — | ✅ | — |
 
-`PromiseResult<T>` has nullable `error`, `data` and `cardInfo` fields. Inspect
-`error.code` against `CardErrors` before using `data`; a missing card-information
-field is not an empty successful card. The exported `CardInfo` includes
-`hasBackup`, `isNewCard`, `serialNum` and `pinRetryCount`.
+The package targets iOS and Android only; desktop and web consumers are
+unchanged and receive no native implementation.
 
-`addAccordListener()` also returns a native event subscription. Remove returned
-subscriptions explicitly: the current `removeConnectListeners()` wrapper is
-empty and is not a substitute for a subscription's `remove()` method.
-Keep mnemonic and PIN values out of diagnostic messages and event logs.
+## Caveats
+
+> [!IMPORTANT]
+> A resolved promise does not mean the card operation succeeded. Inspect
+> `result.error` against `CardErrors` before reading `data`, and treat a null
+> `cardInfo` as an unknown card rather than an empty one.
+
+> [!WARNING]
+> Serialize whole card operations. The native GPChannel library owns one
+> process-wide session and SCP03 counter, so interleaved operations across JS
+> runtimes are not safe even though each call is individually guarded.
+
+> [!NOTE]
+> `removeConnectListeners()` is an empty wrapper. Keep the subscription returned
+> by `addConnectListener()` and call its `remove()` when the owner finishes.
+
+## References
+
+- [Package spec](docs/SPEC.md)
+- [Recovered SDK notes](sdk/README.md)
+- [Example page](../../example/react-native/pages/LiteCardTestPage.tsx)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-The React Native wrapper is MIT licensed. Vendored SDK sources retain their
-upstream notices and are not relicensed by the wrapper.
+The React Native wrapper is MIT licensed. See [LICENSE](LICENSE). Vendored SDK
+sources retain their upstream notices and are not relicensed by the wrapper.

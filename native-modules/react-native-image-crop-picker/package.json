@@ -97,6 +97,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
+    "@onekeyfe/react-native-native-logger": "*",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

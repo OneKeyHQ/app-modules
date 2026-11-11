@@ -1,17 +1,40 @@
+<div align="center">
+
 # @onekeyfe/react-native-skeleton
 
-A native shimmer loading placeholder for OneKey React Native applications on
-iOS and Android. The Nitro view animates its own native rendering surface;
-the application decides when to display it and when loaded content replaces it.
+**Native shimmer placeholders for OneKey's iOS and Android surfaces.**
+
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-skeleton?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-skeleton)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-skeleton?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
+
+</div>
+
+A Nitro view that renders a shimmering placeholder while content loads. The
+native renderer owns the animation; the application owns the loading state and
+decides when the placeholder is mounted and removed.
+
+## Features
+
+- **Native animation** — the shimmer runs on the native rendering surface, not
+  in JavaScript frames.
+- **Per-instance styling** — speed and a two-color gradient are props, so one
+  package serves every loading surface.
+- **Pure placeholder** — no load/error events, no data fetching and no global
+  state to clean up.
+- **New architecture** — a Nitro view registered through Fabric.
 
 ## Installation
 
 ```sh
-yarn add @onekeyfe/react-native-skeleton react-native-nitro-modules
+yarn add @onekeyfe/react-native-skeleton
 ```
 
-Install the application's iOS pods and rebuild the native application after
-adding the package. A JavaScript-only install does not register the Nitro view.
+The package registers a native view, so install the app's iOS pods and rebuild
+the native binary; a JavaScript-only install does not register it. Android links
+through autolinking.
 
 ## Usage
 
@@ -25,38 +48,45 @@ import { SkeletonView } from '@onekeyfe/react-native-skeleton';
 />;
 ```
 
-Give the view a width and height through its layout style. The example uses the
-actual exported package name and supported shimmer props; there is no public
-`color` prop on this view.
+Give the view explicit layout dimensions, and reuse the loaded content's
+dimensions if a layout shift would be visible.
 
-## Props and lifecycle
+## API
 
-| Prop | Meaning |
-| --- | --- |
-| `shimmerSpeed` | Animation duration in seconds; defaults to 3 and is clamped to at least 0.1. |
-| `shimmerGradientColors` | Two gradient colors; native uses the first two entries and falls back to its defaults when fewer are provided. |
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `shimmerSpeed` | `number` | `3` | Animation duration in seconds; clamped to at least `0.1`. |
+| `shimmerGradientColors` | `string[]` | native defaults | Two gradient colors; only the first two entries are used. |
 
-Use six-digit hex colors for consistent iOS and Android input. The view's native
-renderer handles attachment and animation lifecycle; it does not track network
-requests or emit a loading-completion event. Consumers control whether the
-placeholder remains mounted and should verify the resulting layout with their
-actual content.
+The component accepts a standard React Native `style` for size, radius and
+placement. Use six-digit hex strings for the gradient so iOS and Android agree.
+See [`src/Skeleton.nitro.ts`](src/Skeleton.nitro.ts) for the native interface and
+[`src/index.tsx`](src/index.tsx) for the exported component.
 
-The current interface is in [src/Skeleton.nitro.ts](src/Skeleton.nitro.ts), and
-the public component is exported from [src/index.tsx](src/index.tsx).
+## Platform support
 
-## Loading-state ownership
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| `SkeletonView` | ✅ | ✅ | — |
+| Native shimmer | ✅ | ✅ | — |
+| `shimmerSpeed`, `shimmerGradientColors` | ✅ | ✅ | — |
 
-`SkeletonView` is the exported native host component. The package declares no
-`onLoad`, `onError` or network-request prop: the application removes or hides
-the placeholder when its own loading state changes.
+## Caveats
 
-`shimmerGradientColors` supplies a string array rather than React Native color
-objects, and `shimmerSpeed` is a duration rather than frames per second.
-Preserve layout dimensions when replacing the skeleton with loaded content if
-the consumer needs to avoid a layout shift. Native animation results remain
-separate from the application's data-loading completion.
+> [!NOTE]
+> The view tracks no loading state and emits no completion event. The
+> application removes the placeholder when its own loading state finishes.
+
+> [!IMPORTANT]
+> `shimmerGradientColors` is a string array, not React Native color objects, and
+> `shimmerSpeed` is a duration in seconds, not frames per second.
+
+## References
+
+- [Public interface](src/Skeleton.nitro.ts)
+- [npm package](https://www.npmjs.com/package/@onekeyfe/react-native-skeleton)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).

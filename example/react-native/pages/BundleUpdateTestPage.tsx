@@ -440,7 +440,6 @@ RNAOJKE=
     updateStep('verify', { status: 'active' });
     try {
       await ReactNativeBundleUpdate.verifyBundleASC({
-        downloadedFile: dr.downloadedFile,
         sha256: dr.sha256,
         latestVersion: dr.latestVersion,
         bundleVersion: dr.bundleVersion,
@@ -462,7 +461,6 @@ RNAOJKE=
     updateStep('install', { status: 'active' });
     try {
       await ReactNativeBundleUpdate.installBundle({
-        downloadedFile: dr.downloadedFile,
         latestVersion: dr.latestVersion,
         bundleVersion: dr.bundleVersion,
         signature: defaultParams.signature,
