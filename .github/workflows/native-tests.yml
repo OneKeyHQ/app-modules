@@ -249,7 +249,7 @@ jobs:
           test -s "$RUNNER_TEMP/lite-card-jni-build-messages.txt"
           node tests/native-log-sanitization.cjs --kotlin "$RUNNER_TEMP/lite-card-jni-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^KotlinLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
-      - name: Run twelve Android unit test suites, compile bundle update, and build capture protection and photo saving
+      - name: Run twelve Android unit test suites, compile bundle update and bottom tabs, and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           cat > "$RUNNER_TEMP/rerun-native-tests.gradle" <<'GRADLE'
@@ -275,6 +275,7 @@ jobs:
             :onekeyfe_react-native-native-list:testDebugUnitTest \
             :onekeyfe_react-native-native-overlay:testDebugUnitTest \
             :onekeyfe_react-native-text-input:testDebugUnitTest \
+            :onekeyfe_react-native-bottom-tabs:compileReleaseKotlin \
             :onekeyfe_react-native-capture-protection:assembleDebug \
             :onekeyfe_react-native-photo-library:assembleDebug
       - name: Run JPush Java host regressions with real JUnit
