@@ -6243,6 +6243,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   BOOL currentPageNeedsOwner = pageIndex == _currentIndex &&
     (_awaitingScrollOwnerForCurrentPage || _needsScrollObserverReattachAfterMount ||
      hasReleasedStateForPage ||
+     (_observedScrollView == nil &&
+      (_scrollReconcileScheduled || RNCIsMountedNativeListScrollView(scrollView))) ||
      (_observedScrollView != nil &&
       [_observedScrollView isKindOfClass:UICollectionView.class] &&
       !RNCIsMountedNativeListScrollView(_observedScrollView) &&

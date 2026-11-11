@@ -897,6 +897,52 @@ using namespace facebook::react;
   return component;
 }
 
+- (void)testUnmeasuredNativeListAttachesAndAlignsSynchronouslyOnFirstLayoutReadiness
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  [pager setValue:@293 forKey:@"headerHeight"];
+  [pager setValue:@52 forKey:@"stickyHeaderHeight"];
+  Class nativeListClass = NSClassFromString(@"HybridNativeListComponent");
+  XCTAssertNotNil(nativeListClass, @"The real NativeList test dependency must be linked");
+  RCTViewComponentView *component = [[nativeListClass alloc] init];
+  component.tag = 92003;
+  component.frame = CGRectZero;
+  component.contentView.frame = CGRectZero;
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+  [page.view addSubview:component];
+  [self addTeardownBlock:^{
+    [component prepareForRecycle];
+    [component removeFromSuperview];
+  }];
+
+  [pager setNeedsLayout];
+  [pager layoutIfNeeded];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertFalse([[pager valueForKey:@"awaitingScrollOwnerForCurrentPage"] boolValue]);
+  XCTAssertTrue([[pager valueForKey:@"scrollReconcileScheduled"] boolValue]);
+
+  UICollectionView *list = nil;
+  for (UIView *child in component.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      list = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, 0, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, 0, 0.01);
+
+  component.frame = CGRectMake(0, 0, 390, 697);
+  component.contentView.frame = component.bounds;
+  [component.contentView layoutIfNeeded];
+
+  UIView *header = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqual(header.superview, list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, 345, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, -345, 0.01);
+}
+
 - (void)testNativeListFooterScrollViewCannotReplacePageOwner
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];

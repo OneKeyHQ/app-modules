@@ -1007,11 +1007,11 @@ final class NativeListView: UIView {
       configureLayout(config)
       if lastLayoutDirection != direction { rebindRowsForLayoutDirection(config) }
     }
-    performPendingScrollIfNeeded()
-    layoutContainerSlots()
     if !hadUsableBounds && collectionView.bounds.width > 0 && collectionView.bounds.height > 0 {
       notifyPagerScrollViewReadyIfNeeded()
     }
+    performPendingScrollIfNeeded()
+    layoutContainerSlots()
   }
 
   // A layout-direction change may arrive without a layout pass (semantic attribute or trait).
