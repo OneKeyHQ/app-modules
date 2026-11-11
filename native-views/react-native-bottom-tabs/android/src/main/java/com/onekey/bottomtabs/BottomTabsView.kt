@@ -547,7 +547,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     drawableCache.clear()
     iconSources.forEach { (index, source) ->
       bottomNavigation.menu.findItem(index)?.let { menuItem ->
-        getDrawable(index, source) { menuItem.icon = it }
+        loadDrawable(index, source, isSelectedIcon = false) { menuItem.icon = it }
       }
     }
   }
