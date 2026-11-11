@@ -4,55 +4,158 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Features
-- **sni-connect**: Add `uploadFile()`, which sends a binary file from app-owned storage over the pinned-IP/SNI transport (POST/PUT, up to 20 MiB). `request()` bodies are UTF-8 strings capped at 1 MiB, so binary payloads such as log archives could not use the SNI path. Older native binaries lack the method, so callers must feature-detect it. See `native-modules/react-native-sni-connect/SPEC.md` §3.1a.
-- **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
-- **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
-- **capture-protection**: Migrate screenshot protection into a OneKey Nitro module with upstream acknowledgements and no broad media-read permission requirement.
-- **native-list**: Add `snapshot.listStyle` for list chrome: `separator.inset`, `separator.color`, and `groupCornerRadius`, applied on all three platforms. The surface carries only what every platform can honour — pull to refresh is a system control on both native platforms, the section index belongs to `capabilities.sectionIndex`, and the reorder preview is drawn with platform-specific primitives — and `validateSnapshot` rejects any other key rather than accepting one that some platform would ignore. Every value is absent by default and each platform keeps its own number as the fallback, so an untouched list renders exactly as before; on Web the inset separator keeps a transparent border for layout and paints the line with a logical-inset overlay, so row heights do not move.
-- **native-list**: Render every row through a closed renderer registry on iOS, Android and Web. Each of the 12 templates (Message, Rail, MediaTile, Action, System, Activity, DataRow, MetricCard, Market, Identity, SectionHeader and WalletGroup) owns its view tree, defaults, style mapping, binding and measurement; a shared host owns container appearance, events and binding invalidation. Renderer reuse is keyed by template family, so a same-key template change replaces an incompatible host, and every bind restores the current template's defaults without a preceding recycle. WalletGroup members are independent Identity renderers. The legacy native row monoliths, the global style-slot maps and the Web legacy pool are removed. See `native-views/react-native-native-list/docs/SPEC.md`.
-- **native-list**: Add a bounded per-template row style. `style` keys name the model field they modify rather than the view that carries it, and each template renderer maps the key to the view that renders that field. Typography can be given as a named step (`{ token: '$bodyLg' }`) which is resolved to numbers in JavaScript before serialization, so no native renderer learns the vocabulary; explicit values still override. Keys a template does not declare are rejected by `validateSnapshot` and `validatePatches` (see Breaking Changes), and styles carried by a patch are resolved the same way. Text slots, template-applicable image/padding/gap parameters and a shared `style.container` (explicit `height`, background, opacity, corner radius, border and content alignment) are implemented on Web, iOS and Android. Height precedence is `style.container.height` → `row.height` → template measurement, and selector presentations use their explicit-height geometry whichever field supplies the height; without an explicit height, measured templates may change height with their styled metrics. Automatic overflow fitting remains the integrator's responsibility.
-- **image**: New `resizeHeight` view prop, the pair of `resizeWidth`, so a non-square image can hand the pre-layout probe the same hints its preload used.
-- **bottom-tabs (Android)**: Add `androidTabBarStyle="floating"`, a capsule tab bar modeled on the iOS 26 tab bar: inset 62dp bar, selection pill, and a glass lens that lifts on press, follows drags and selects the nearest tab once on release. `default` keeps the docked Material bar.
-- **bottom-tabs**: Add `onTabDoublePress(index)`, fired when the same tab is pressed twice within the platform double-tap timeout, after both `onPageSelected` events.
-
-### Breaking Changes
-- **bottom-tabs**: Rename `@onekeyfe/react-native-tab-view` to `@onekeyfe/react-native-bottom-tabs`. The default export is now `BottomTabs`, the Fabric components are `RNBottomTabsView` and `RNBottomTabsAccessoryView`, the iOS pod is `react-native-bottom-tabs` (module `BottomTabsModule`) and the Android package is `com.onekey.bottomtabs`. Consumers must change the dependency and imports and rebuild native apps.
-- **bottom-tabs**: Remove tab long press (`onTabLongPress` prop/event and the native long-press recognizers).
-- **native-list**: Remove implicit row-key styling; callers now choose `variant`, `style` and `separator` explicitly. A `history-` prefix on a section header's row key or section key no longer selects history typography or the 16-unit header height (use `variant: 'history'`). Android no longer gives the `linear-tokens` and `action-tokens` section headers token-manager typography, padding and 30-unit height (declare them with `style`). Android no longer suppresses `separator: true` for `token-*`, `balance-token-*` and `linear-custom-token` rows. The app-monorepo callers audited in the package `docs/MIGRATION_BASELINE.md` already use the explicit fields.
-- **native-list**: Automatic (intrinsic) Message row heights change: measurement now uses the resolved text, spacing and image metrics of the rendered views instead of the old estimator-only defaults. Rows with `row.height` or `style.container.height` are unaffected.
-- **native-list**: Row style validation is strict. `validateSnapshot` and `validatePatches` throw for any `style` key a template does not declare, for unknown nested text/image/container keys, and for unknown Market badge style keys, where extra keys used to be ignored. Colors must be `#RRGGBB` or `#RRGGBBAA`, including `listStyle.separator.color`. Every key sent by the app-monorepo Market list builder (`marketNativeListRows.ts`) still validates.
+## [6.7.0-46] - 2026-11-11
 
 ### Bug Fixes
-- **bundle-update**: Derive extracted-file metadata keys from the directory actually walked. Android `verifyASC` extracted an OTA ZIP to `destinationDir.canonicalPath` while the file verifier rebuilt its relative-path root from `context.filesDir`; where `filesDir` is a symlinked path (`/data/user/0` reported, `/data/data` resolved), the prefix never matched, every file was looked up by an absolute path, and the update failed with `INTEGRITY_FAILED` at `verifyASC` even though the GPG signature, the ZIP SHA-256 and all 1071 file hashes were valid. The verifier now derives keys from the caller's directory, requires that directory to resolve to the managed bundle directory for the supplied identity, and fails closed with a path diagnostic when a file cannot be made bundle-relative; the web-embed verifier no longer rebuilds its prefix from a caller string either. See `native-modules/react-native-bundle-update/docs/SPEC.md`. Covered by `BundleVerificationPathTest`.
-- **overlay**: Keep the centered Dialog card opaque while it closes (OK-66647). The default `center` exit mirrored the enter animation (scale 0.85 + fade), so while the card faded the opaque content behind it — a text-heavy page, or the account list inside another overlay — stayed readable through the card for the whole transition; QA reported it as a doubled/ghosted render right after renaming an account in the desktop app. `center` now defines an explicit exit (`scale 0.96`, `fade: false`, `quick`) while the enter keeps scale 0.85 + fade, so the card stays fully opaque until the host unmounts it when the exit completes; the backdrop still fades on the same clock. All three renderers already honour `fade: false` (iOS/Android `hidesOpacity`, Web `hiddenKeyframe`), A fade-free exit also snaps an interrupted fade-in back to full opacity before it starts scaling out (iOS/Android dismiss paths and the Web keyframe builder; covered by `NativeOverlayMotionTest`), so a rapid close cannot leave the card partly see-through either. Reduce Motion still degrades the exit to a fade. See `native-views/react-native-native-overlay/docs/SPEC.md` §5.3.
-- **native-list (Web)**: Center an Identity title help glyph on a single-line title (OK-66402). With `titleIcon`, `secondaryTitleIcon` or `titleImage` the title line is a centered flex row, but the `title` slot tag stayed on that container, so a `lines: 1` style clamp rewrote it to `display: block` and the inline-flex glyph sat on the text baseline, raised above the symbol and stretching the line box; the extension popup Home list showed the gas icon at the top-right of `ETH`. The slot tag now travels with the title text span (as it already did for `titleSuffixes`), the clamp applies to the text, and the glyph stays vertically centered. Badge-carrying titles and DataRow columns already clamped the text span and are unchanged.
-- **native-list (Web)**: Remove the pinned section header's 1px bottom hairline. The sticky overlay carried `box-shadow: 0 1px 0 var(--nl-separator)`, so any list whose header was pinned mid-scroll drew a separator line under it that iOS and Android never draw — visible, for example, under the network selector's letter headers. The header background already separates the rows scrolling beneath it, so the overlay now draws no shadow.
-- **bottom-tabs (iOS)**: Restore iOS 26 Liquid Glass press-and-drag tab switching by removing the drag-cancellation recognizer that made the system tab bar gestures wait for it.
-- **native-list (iOS)**: Stop accessory buttons cross-fading their title on rebind (OK-64148). `NativeListAccessoryButton` is a `.system` UIButton, which animates every title change on its own, so a section header value such as the network selector's "$15.60" and its "Deselect all" action faded out and back in each time a checkbox toggle reconfigured the row. `setTitle`, `setAttributedTitle` and the button's own `layoutSubviews` (where UIKit applies a changed title) now run inside `UIView.performWithoutAnimation`; Android and Web text views never animated.
-- **native-list**: Review fixes for the renderer migration. Restore the legacy unstyled rendering of every template inside the new renderers (for example native linear DataRow single-label columns, pressed-row corners, Activity/Identity leading slots, and WalletGroup appearance and drag rules), without restoring key-based styling. Fix an Android sticky-header overlay crash and a leaked pre-draw listener on detached lists. On Web, keep loaded MetricCard images visible after rebinding, restore the legacy message-only retry row (no Web retry button for any presentation) and disabled WalletGroup member actions, include WalletGroup vertical padding in its height, and stop container alignment leaking into reused rows. On iOS, make `end` text alignment follow RTL layout and cache Message text measurement to cut its per-bind cost.
-- **native-list**: Second legacy-parity review round. Web: remove the Market retry button, keep hover title actions keyed on the member only, make WalletGroup `verticalPadding` replace the legacy border inset in measurement and rendering, and undo container writes before each renderer rebind. Android: switch DataRow off the legacy layout only for its text-style keys, apply selector source-scale typography to every row text while honouring an explicit `fontSize`/`lineHeight`, let `truncate` override the Market retry/noMatch ellipsis, and restore the legacy wallet leading-overlay metrics. iOS: exact `titleBadgeGap` inside legacy badge pills, type-aware theme/listStyle change detection, start/end alignment re-resolved on layout-direction change (including the footer), and WalletGroup ignores `row.height` as before.
-- **native-list**: Third review round. Keep Market subscripts at the legacy 60% of an explicit `fontSize` on all platforms. Web: lay out automatic-height System warnings at their rendered height again, and make clearing System/MetricCard text styles or a walletSidebar `leadingGap` match a fresh unstyled render. iOS/Android: selector geometry follows `style.container.height` as well as `row.height`; Android rebinds the fixed footer on a `listStyle`-only change; WalletGroup ignores row-level `backgroundColor` in the native full-width fill.
-- **native-list**: Align the configurable row-style contract across Web, iOS and Android. Apply non-Market image/spacing overrides; isolate primary and secondary data-column text in linear/table layouts; preserve styles through selection and summary updates; reuse the ordinary Android row renderer for pinned headers including values and checkboxes. Reject template-inapplicable box keys and nonportable text colors. Keep template structure, local styling and shared list capabilities distinct; overflow fitting remains caller-owned.
-- **native-list**: Apply Web selector styles after presentation defaults, isolate wallet-member styles, and target composite metric-card headings by their semantic role. Restore native text state on reuse while retaining unspecified iOS attributed-string properties. Propagate Android list chrome on initial snapshots and restrict custom group radius to actual grouped rows. Reject malformed nested text/image styles and unknown nested keys; developers integrating the list own overflow prevention.
-- **image (iOS)**: Show a memory-cached image on the mount frame instead of an icon skeleton (OK-63873). The memory probe skipped every image whose JS side left `cachePolicy` unset (Fabric hands Nitro a nil, which the request path already treats as memory-disk), and before layout it keyed the decode thumbnail from the empty bounds, so a freshly mounted image never matched what the prewarm or a previous mount had stored. The probe now coalesces a nil policy to memory-disk and, before layout, tries the decode-thumbnail keys the laid-out request (`resizeWidth`/`resizeHeight` hint + the view's `contentFit`) and a preload (hint + cover) would use. An image already on screen for the same identity is kept as the placeholder while a load for another key runs, instead of being blanked to a skeleton.
-- **image**: Clip the RN overlay container to the same circle as a `round` native image. `round` clips the native view to an oval on Android and to a `min(width, height) / 2` corner radius on iOS, but the wrapper that hosts a custom `placeholder` or `fallback` only ever clipped to the caller's own `borderRadius`, so those overlays were painted square over a round image — against the clipping contract the README states. The container and the drawn border overlay now take a percentage radius when `round` is set, overriding any per-corner radius from the caller's style.
-
-### Documentation
-- **native-list**: Audit the consolidated spec against template definitions, local layout responsibility and common container capabilities. Assign overflow handling to integrators and document existing structural headers, fixed/scrolling footers and pager header composition.
-- **native-list**: Consolidate the row-style spec on current main. Define all 12 row types with structural diagrams, local style/layout boundaries, and shared header/footer, section, scroll and indexed-bar ownership. Record implementation and example-coverage gaps separately from the contract.
-- **native-list**: Add `docs/STYLE_SPEC.md`, the shared style vocabulary for rows, section headers, fixed footers, and empty states. It records the design tokens (aliased to the application's own token names), the per-template style surface keyed by model field, list chrome, the template isolation rules, and a review checklist. Legacy row-height, typography and Android baseline scaling differences are documented separately from the unified configurable style contract.
+- **bottom-tabs (Android)**: Restore the module's Android Release build (#246). #240 renamed the private `getDrawable()` helper to `loadDrawable()` but left the call in `setNavigationIconSize()` (`BottomTabsView.kt:550`), so the published 6.7.0-44 and 6.7.0-45 tarballs failed `:onekeyfe_react-native-bottom-tabs:compileReleaseKotlin`. The size-dependent drawable cache is now cleared and the selection-aware loader refreshes the current menu artwork, and the Android CI job now also compiles the module's Release Kotlin.
 
 ### Chores
-- Add the "Native List Row Style" example page with plain/styled pairs for all 12 row types, plus list chrome and explicit-height examples. Dated per-stage runtime acceptance of the renderer migration on iOS, Android and Web is recorded in the package `docs/DESIGN.md`; it is not a pixel-parity or scrolling-performance signoff.
-- **native-list (Web)**: Remove dead duplicated rules from `WEB_LIST_CSS`. Four blocks (`.ok-native-list-footer`/`-sticky`/`-index-rail`/`-index-button`, `-refresh`, `-warning`, `-subtitle-segments`) were emitted twice and a `prefers-reduced-motion` block three times; every property of the earlier copies was redeclared by the later ones, so removing them changes no rendering.
-- Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
-- No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
+- Published all 45 publishable packages as 6.7.0-46.
+
+## [6.7.0-45] - 2026-11-11
+
+### Bug Fixes
+- **bundle-update**: Derive extracted-file metadata keys from the directory actually walked. Android `verifyASC` extracted an OTA ZIP to `destinationDir.canonicalPath` while the file verifier rebuilt its relative-path root from `context.filesDir`; where `filesDir` is a symlinked path (`/data/user/0` reported, `/data/data` resolved), the prefix never matched, every file was looked up by an absolute path, and the update failed with `INTEGRITY_FAILED` at `verifyASC` even though the GPG signature, the ZIP SHA-256 and all 1071 file hashes were valid. The verifier now derives keys from the caller's directory, requires that directory to resolve to the managed bundle directory for the supplied identity, and fails closed with a path diagnostic when a file cannot be made bundle-relative; the web-embed verifier no longer rebuilds its prefix from a caller string either. See `native-modules/react-native-bundle-update/docs/SPEC.md`. Covered by `BundleVerificationPathTest`. (#244)
+
+### Chores
+- Published all 45 publishable packages as 6.7.0-45.
+
+## [6.7.0-44] - 2026-11-11
+
+### Features
+- **image (iOS)**: Reduce cold-start image and icon mount work (#242). A named-SVG PNG disk cache (128 MiB, keyed by source digest and the raster inputs) avoids re-encoding icons, image loads start from an attached layout without another main-queue turn, tab icon updates coalesce on the existing `UITabBarItem`s instead of rebuilding the items, and a fresh expanded pager page aligns to its top inset.
+
+### Bug Fixes
+- **sni-connect (Android)**: Classify pre-write connection refusals (#243). `ConnectException` now maps to `SNI_CONNECTION_REFUSED` only while no attempt of the logical request has started transmitting (tracked through OkHttp's `requestHeadersStart` event), `UnknownHostException` maps to `SNI_DNS_FAILED`, and a failure after transmission started stays `SNI_REQUEST_FAILED` so the App never replays a possibly-processed request.
+
+### Chores
+- One-off manual release used after the automatic runs for #242 failed and #243 was cancelled. Revisions 6.7.0-42 and 6.7.0-43 were never published.
+
+## [6.7.0-41] - 2026-11-10
+
+### Bug Fixes
+- **bottom-tabs (Android)**: Align the floating tab bar switch animation with iOS (OK-65789, #240). The indicator spring and press-slide duration now match the iOS 26 timing, the JS `selectedPage`/`items` prop round-trip no longer cancels the slide in flight, and release no longer restarts a zero-velocity spring to the same target.
+
+## [6.7.0-40] - 2026-11-10
+
+### Features
+- **native-list**: Add loading and failed placeholders to media tiles (#239). Tiles show a designed loading state while the image loads and a clear "cannot preview" state when every candidate fails, replacing the flat `strongBackground` block and the Web `▧` character; the shared base keeps `strongBackground` and a separator hairline so only the image area changes.
+
+## [6.7.0-39] - 2026-11-10
+
+### Bug Fixes
+- **pager-view (iOS)**: Keep the Hard glass scroll edge on every page while pinned during iOS 26/27 tab transitions (#238). A local stand-in renders the edge behind an incoming page whose list is not mounted or laid out yet, and the divider-hairline flash, the masked-header bleed-through and the missing glass after a cancelled half-drag are fixed.
+
+## [6.7.0-38] - 2026-11-10
+
+### Features
+- **bottom-tabs**: Animate floating tab bar hide and show transitions on iOS and Android (#237). iOS slides the bar down (0.22 s, ease-in) and back (0.28 s, spring) while interaction is disabled immediately on hide; Android animates the bar card and blur on the frame clock with a clamped per-frame step so a heavy mount frame cannot skip the slide.
+
+## [6.7.0-37] - 2026-11-09
+
+### Features
+- **pager-view**: Add `nativeTabBar.style.variant: "pill"` on iOS, Android and Web, with one rounded indicator and label colors blended between the inactive and active colors (OK-66512, #236). Geometry comes from the current item frames instead of a per-index layout cache, which fixes the truncated Home pill on desktop.
+
+## [6.7.0-36] - 2026-11-09
+
+### Bug Fixes
+- **chain-runtimes**: Privacy follow-ups in the Zcash and Monero runtimes (#233). Zcash transparent inputs are signed with their own key and wiped afterwards, Monero reuses each output's ring across send attempts and keeps a saved ring when the node cannot verify it, and the runtimes are bumped to `0.1.0-alpha.16` (Zcash) and `0.1.0-alpha.14` (Monero).
+
+## [6.7.0-35] - 2026-11-09
+
+### Bug Fixes
+- **overlay (Web)**: Scale anchored panels from the side facing the trigger (#235). The transform origin is derived from the anchored panel's final Floating UI placement (`bottom-end` → `right top`, `top-start` → `left bottom`, `left` → `right center`), restoring the 6.6.4 corner origin; without a placement it falls back to the previous center origin.
+
+## [6.7.0-34] - 2026-11-09
+
+### Bug Fixes
+- **native-overlay / device-utils (Android)**: Paint the sheet bottom inset natively and keep the navigation-bar protection below overlays (OK-66103, #234). New `sheetBottomInsetColor` and `sheetBottomInsetHorizontal` props draw the strip behind the sheet content, and the device-utils protection view no longer renders above the overlay host, removing the shadow band over three-button navigation.
+
+## [6.7.0-33] - 2026-11-08
+
+### Features
+- **bottom-tabs**: Double-pressing the selected tab scrolls its visible vertical scrollers to the top and, when everything is already at the top, returns to the outer page (OK-65248, #230). `onTabDoublePress` now carries `didScrollToTop`, so the JS callback is `(index, didScrollToTop)`.
+
+## [6.7.0-32] - 2026-11-07
+
+### Bug Fixes
+- **overlay**: Keep the centered Dialog card opaque while it closes (OK-66647). The default `center` exit mirrored the enter animation (scale 0.85 + fade), so while the card faded the opaque content behind it — a text-heavy page, or the account list inside another overlay — stayed readable through the card for the whole transition; QA reported it as a doubled/ghosted render right after renaming an account in the desktop app. `center` now defines an explicit exit (`scale 0.96`, `fade: false`, `quick`) while the enter keeps scale 0.85 + fade, so the card stays fully opaque until the host unmounts it when the exit completes; the backdrop still fades on the same clock. All three renderers already honour `fade: false` (iOS/Android `hidesOpacity`, Web `hiddenKeyframe`), A fade-free exit also snaps an interrupted fade-in back to full opacity before it starts scaling out (iOS/Android dismiss paths and the Web keyframe builder; covered by `NativeOverlayMotionTest`), so a rapid close cannot leave the card partly see-through either. Reduce Motion still degrades the exit to a fade. See `native-views/react-native-native-overlay/docs/SPEC.md` §5.3. (#229)
+
+## [6.7.0-31] - 2026-11-07
+
+### Bug Fixes
+- **image**: Enforce preview-cache expiry and expand native disk budgets (#231). Ordinary image disk caching becomes 320 MiB on both platforms, the iOS blockie-avatar namespace becomes 128 MiB (576 MiB in total on iOS, 448 MiB on Android), and the iOS video-preview cache enforces its existing 30-day access-date policy before bounded raw reads.
+
+## [6.7.0-30] - 2026-11-07
+
+### Bug Fixes
+- **lite-card**: Align the bridge payload types with their native values (#232). `isNewCard` is boxed explicitly as `BOOL` so JavaScript sees `true`/`false`, `CardInfo.hasBackup` is declared as `boolean | null`, and the NFC event `code` is a number; consumer TypeScript must handle the nullable backup state.
+
+## [6.7.0-29] - 2026-11-07
+
+### Features
+- **image**: Cache native NFT video previews (#228). Bounded Image-owned memory and disk preview caches keep the still frame across recycle, deduplicate visible requests, limit extraction to two producers and cancel stale work on reuse, detach or backgrounding; Android also gains an SVG `ByteBuffer` decode route for embedded data URIs.
+
+### Bug Fixes
+- **native-overlay (Android)**: Relayout page sheets after content changes (OK-66611, #223). The page host now runs its measure/layout lifecycle and keeps scheduling available when view construction calls `requestLayout` before the callback is initialized, so a sheet no longer keeps its initial height after loading or inline errors change the content.
+
+## [6.7.0-28] - 2026-11-06
+
+### Bug Fixes
+- **native-list (Web)**: Remove the pinned section header's 1px bottom hairline. The sticky overlay carried `box-shadow: 0 1px 0 var(--nl-separator)`, so any list whose header was pinned mid-scroll drew a separator line under it that iOS and Android never draw — visible, for example, under the network selector's letter headers. The header background already separates the rows scrolling beneath it, so the overlay now draws no shadow. (#227)
+
+## [6.7.0-27] - 2026-11-06
+
+### Features
+- **pager-view (iOS)**: Add optional `stickyHeaderHeights`, so each page applies its scroll inset before it is displayed instead of sharing one sticky height (OK-63910, OK-65972, #221). Collapse progress and each page's saved scroll position are kept when switching between pages with different sticky header heights.
+
+### Bug Fixes
+- **native-list (Web)**: Keep the default cursor on pressable rows and trailing buttons (#222). Reorderable rows keep `grab`, while icon buttons, checkboxes and action buttons keep `pointer` because some of them have no hover background.
+- **overlay**: Remove the hairline seam above the sheet bottom inset (#225).
+
+### Chores
+- Restore automatic package publishing: fetch `refs/pull/<number>/head` when the original PR head is not reachable, wait up to 10 minutes for npm propagation, and show `latest`/`next` version badges in the README (#224).
+- Publish stable releases automatically from `main` and alpha previews manually from development branches (#226).
+- Synchronize all 45 publishable packages to 6.7.0-26 in the release branch merged here, and couple `version:set` / `version:patch` to Yarn install, Nitro bindings and CocoaPods lockfile generation (#219).
+
+## [6.7.0-26] - 2026-11-06
+
+### Chores
+- Release 6.7.0-26 after an npm staged-version conflict; no source changes on top of 6.7.0-25.
+
+## [6.7.0-25] - 2026-11-06
+
+### Bug Fixes
+- **lite-card**: Bind PIN changes to the verified card identity with `expectedSerial`, and release bridge and passive-discovery ownership on failure and cancellation (#219).
+- **lite-card**: Restore odd-length command input compatibility, since Lite can encode a leading zero nibble, and reject malformed or oversized backup inputs before PIN verification, setup, reset or backup writes on iOS and Android (#216).
+- **lite-card**: Preserve the compiled native source ID through the logger's 64-hex redaction by formatting it as eight hyphen-separated groups (#218).
+- **image**: Render SVG NFT pixel art without a black background or blurred pixels (OK-51059, #217). The bounded static XHTML `<img>` subset is converted into equal-color horizontal runs grouped into paths on iOS and Android, and the cache generation is bumped so older black or blurred decodes are not reused.
+
+## [6.7.0-24] - 2026-11-05
+
+### Features
+- **pager-view**: Stabilize pager text tabs and header transitions (#207). Native text tabs inherit the normal font family when the active family is omitted, iOS text-bar backgrounds paint once, and Web toolbar hover/pressed colors inherit the selected base unless explicitly overridden.
+
+### Bug Fixes
+- **native-list (Android)**: Preserve `android.resource://` images so bundled wallet avatars survive production sanitization (#212).
+- **jpush (Android/iOS)**: Correct native lifecycle and request ownership so an obsolete connection, request or runtime can no longer affect newer native state after stop/resume, consent changes or teardown (#213).
+- **lite-card**: Validate backup state before writes and add `expectedSerial` to `setMnemonic`, with one process-wide GPChannel gate shared by all module/runtime instances and passive NFC discovery (#214).
+- **overlay (iOS)**: Isolate iOS global overlay windows: every global entry gets its own scene-bound `UIWindow` and root presenter, so closing a lower sheet no longer dismisses the sheets above it (#215).
+
+## [6.7.0-23] - 2026-11-05
+
+### Bug Fixes
+- **bottom-tabs**: Report the tab bar height again on placement change, so a bar that moves between the side and the bottom on iPhone Duo no longer keeps the previous height (#209).
+- **native-list (Web)**: Stabilize recipient row sizing during modal animation (OK-66253, #211). Opt-in auto-height rows now use intrinsic body sizing, measure the untransformed layout height with `offsetHeight`, and wrap unspaced multiline subtitles instead of feeding transformed bounds back into layout.
+
+### Chores
+- Bump all 45 publishable packages to 6.7.0-23.
 
 ## [6.7.0-22] - 2026-11-03
 
 ### Bug Fixes
 - **pager-view (Web)**: Measure a collapsible pager page's owner synchronously when it is attached, instead of on the next animation frame. The page metrics start at width 0, so consumers that pin their content to the reported width painted one frame at 0 width; on desktop the aggregate token details modal flashed its fiat hero wrapped one character per line before the measurement landed (OK-66299). Resize and scroll re-measurements stay coalesced per frame.
+- **native-list (Web)**: Center an Identity title help glyph on a single-line title (OK-66402). With `titleIcon`, `secondaryTitleIcon` or `titleImage` the title line is a centered flex row, but the `title` slot tag stayed on that container, so a `lines: 1` style clamp rewrote it to `display: block` and the inline-flex glyph sat on the text baseline, raised above the symbol and stretching the line box; the extension popup Home list showed the gas icon at the top-right of `ETH`. The slot tag now travels with the title text span (as it already did for `titleSuffixes`), the clamp applies to the text, and the glyph stays vertically centered. Badge-carrying titles and DataRow columns already clamped the text span and are unchanged. (#203)
 
 ### Chores
 - Bump all 44 publishable packages to 6.7.0-22.
@@ -87,11 +190,67 @@ All notable changes to this project will be documented in this file.
 
 ## [6.7.0-13] - 2026-10-26
 
+### Features
+- **sni-connect**: Add `uploadFile()`, which sends a binary file from app-owned storage over the pinned-IP/SNI transport (POST/PUT, up to 20 MiB). `request()` bodies are UTF-8 strings capped at 1 MiB, so binary payloads such as log archives could not use the SNI path. Older native binaries lack the method, so callers must feature-detect it. See `native-modules/react-native-sni-connect/SPEC.md` §3.1a.
+
 ### Bug Fixes
 - **native-list (iOS, Android)**: Make a row's trailing value part of its hit area (OK-65494). iOS rendered every trailing text accessory as an enabled `UIButton`, and Android's `reset()` left the trailing `TextView` clickable after `setOnClickListener(null)`, so a tap on the balance column of the mobile network selector was swallowed and the network did not switch. Text accessories without an action (`value`, `valuePair`, `progress`) no longer own touches; radio and switch accessories with an action key still handle their own tap. Web already routed that click to the row. Verified on an iPhone 17 Pro Simulator (iOS 26.5) with the app's single-network selector: tapping the balance column selects the row, both for the already selected network (selector closes) and for another network (home switches to it); with the keyboard up, the first tap on either column only dismisses the keyboard, as before.
 
 ### Chores
 - Bump all 43 publishable packages to 6.7.0-13.
+
+## [6.7.0-8] - 2026-10-22
+
+### Features
+- **bottom-tabs (Android)**: Add `androidTabBarStyle="floating"`, a capsule tab bar modeled on the iOS 26 tab bar: inset 62dp bar, selection pill, and a glass lens that lifts on press, follows drags and selects the nearest tab once on release. `default` keeps the docked Material bar.
+- **bottom-tabs**: Add `onTabDoublePress(index)`, fired when the same tab is pressed twice within the platform double-tap timeout, after both `onPageSelected` events.
+
+### Breaking Changes
+- **bottom-tabs**: Rename `@onekeyfe/react-native-tab-view` to `@onekeyfe/react-native-bottom-tabs`. The default export is now `BottomTabs`, the Fabric components are `RNBottomTabsView` and `RNBottomTabsAccessoryView`, the iOS pod is `react-native-bottom-tabs` (module `BottomTabsModule`) and the Android package is `com.onekey.bottomtabs`. Consumers must change the dependency and imports and rebuild native apps.
+- **bottom-tabs**: Remove tab long press (`onTabLongPress` prop/event and the native long-press recognizers).
+
+### Bug Fixes
+- **bottom-tabs (iOS)**: Restore iOS 26 Liquid Glass press-and-drag tab switching by removing the drag-cancellation recognizer that made the system tab bar gestures wait for it.
+
+### Chores
+- Bump all 43 publishable packages to 6.7.0-8.
+
+## [6.7.0-1] - 2026-10-15
+
+### Features
+- **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
+- **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
+- **capture-protection**: Migrate screenshot protection into a OneKey Nitro module with upstream acknowledgements and no broad media-read permission requirement.
+- **native-list**: Add `snapshot.listStyle` for list chrome: `separator.inset`, `separator.color`, and `groupCornerRadius`, applied on all three platforms. The surface carries only what every platform can honour — pull to refresh is a system control on both native platforms, the section index belongs to `capabilities.sectionIndex`, and the reorder preview is drawn with platform-specific primitives — and `validateSnapshot` rejects any other key rather than accepting one that some platform would ignore. Every value is absent by default and each platform keeps its own number as the fallback, so an untouched list renders exactly as before; on Web the inset separator keeps a transparent border for layout and paints the line with a logical-inset overlay, so row heights do not move.
+- **native-list**: Render every row through a closed renderer registry on iOS, Android and Web. Each of the 12 templates (Message, Rail, MediaTile, Action, System, Activity, DataRow, MetricCard, Market, Identity, SectionHeader and WalletGroup) owns its view tree, defaults, style mapping, binding and measurement; a shared host owns container appearance, events and binding invalidation. Renderer reuse is keyed by template family, so a same-key template change replaces an incompatible host, and every bind restores the current template's defaults without a preceding recycle. WalletGroup members are independent Identity renderers. The legacy native row monoliths, the global style-slot maps and the Web legacy pool are removed. See `native-views/react-native-native-list/docs/SPEC.md`.
+- **native-list**: Add a bounded per-template row style. `style` keys name the model field they modify rather than the view that carries it, and each template renderer maps the key to the view that renders that field. Typography can be given as a named step (`{ token: '$bodyLg' }`) which is resolved to numbers in JavaScript before serialization, so no native renderer learns the vocabulary; explicit values still override. Keys a template does not declare are rejected by `validateSnapshot` and `validatePatches` (see Breaking Changes), and styles carried by a patch are resolved the same way. Text slots, template-applicable image/padding/gap parameters and a shared `style.container` (explicit `height`, background, opacity, corner radius, border and content alignment) are implemented on Web, iOS and Android. Height precedence is `style.container.height` → `row.height` → template measurement, and selector presentations use their explicit-height geometry whichever field supplies the height; without an explicit height, measured templates may change height with their styled metrics. Automatic overflow fitting remains the integrator's responsibility.
+- **image**: New `resizeHeight` view prop, the pair of `resizeWidth`, so a non-square image can hand the pre-layout probe the same hints its preload used.
+
+### Breaking Changes
+- **native-list**: Remove implicit row-key styling; callers now choose `variant`, `style` and `separator` explicitly. A `history-` prefix on a section header's row key or section key no longer selects history typography or the 16-unit header height (use `variant: 'history'`). Android no longer gives the `linear-tokens` and `action-tokens` section headers token-manager typography, padding and 30-unit height (declare them with `style`). Android no longer suppresses `separator: true` for `token-*`, `balance-token-*` and `linear-custom-token` rows. The app-monorepo callers audited in the package `docs/MIGRATION_BASELINE.md` already use the explicit fields.
+- **native-list**: Automatic (intrinsic) Message row heights change: measurement now uses the resolved text, spacing and image metrics of the rendered views instead of the old estimator-only defaults. Rows with `row.height` or `style.container.height` are unaffected.
+- **native-list**: Row style validation is strict. `validateSnapshot` and `validatePatches` throw for any `style` key a template does not declare, for unknown nested text/image/container keys, and for unknown Market badge style keys, where extra keys used to be ignored. Colors must be `#RRGGBB` or `#RRGGBBAA`, including `listStyle.separator.color`. Every key sent by the app-monorepo Market list builder (`marketNativeListRows.ts`) still validates.
+
+### Bug Fixes
+- **native-list (iOS)**: Stop accessory buttons cross-fading their title on rebind (OK-64148). `NativeListAccessoryButton` is a `.system` UIButton, which animates every title change on its own, so a section header value such as the network selector's "$15.60" and its "Deselect all" action faded out and back in each time a checkbox toggle reconfigured the row. `setTitle`, `setAttributedTitle` and the button's own `layoutSubviews` (where UIKit applies a changed title) now run inside `UIView.performWithoutAnimation`; Android and Web text views never animated.
+- **native-list**: Review fixes for the renderer migration. Restore the legacy unstyled rendering of every template inside the new renderers (for example native linear DataRow single-label columns, pressed-row corners, Activity/Identity leading slots, and WalletGroup appearance and drag rules), without restoring key-based styling. Fix an Android sticky-header overlay crash and a leaked pre-draw listener on detached lists. On Web, keep loaded MetricCard images visible after rebinding, restore the legacy message-only retry row (no Web retry button for any presentation) and disabled WalletGroup member actions, include WalletGroup vertical padding in its height, and stop container alignment leaking into reused rows. On iOS, make `end` text alignment follow RTL layout and cache Message text measurement to cut its per-bind cost.
+- **native-list**: Second legacy-parity review round. Web: remove the Market retry button, keep hover title actions keyed on the member only, make WalletGroup `verticalPadding` replace the legacy border inset in measurement and rendering, and undo container writes before each renderer rebind. Android: switch DataRow off the legacy layout only for its text-style keys, apply selector source-scale typography to every row text while honouring an explicit `fontSize`/`lineHeight`, let `truncate` override the Market retry/noMatch ellipsis, and restore the legacy wallet leading-overlay metrics. iOS: exact `titleBadgeGap` inside legacy badge pills, type-aware theme/listStyle change detection, start/end alignment re-resolved on layout-direction change (including the footer), and WalletGroup ignores `row.height` as before.
+- **native-list**: Third review round. Keep Market subscripts at the legacy 60% of an explicit `fontSize` on all platforms. Web: lay out automatic-height System warnings at their rendered height again, and make clearing System/MetricCard text styles or a walletSidebar `leadingGap` match a fresh unstyled render. iOS/Android: selector geometry follows `style.container.height` as well as `row.height`; Android rebinds the fixed footer on a `listStyle`-only change; WalletGroup ignores row-level `backgroundColor` in the native full-width fill.
+- **native-list**: Align the configurable row-style contract across Web, iOS and Android. Apply non-Market image/spacing overrides; isolate primary and secondary data-column text in linear/table layouts; preserve styles through selection and summary updates; reuse the ordinary Android row renderer for pinned headers including values and checkboxes. Reject template-inapplicable box keys and nonportable text colors. Keep template structure, local styling and shared list capabilities distinct; overflow fitting remains caller-owned.
+- **native-list**: Apply Web selector styles after presentation defaults, isolate wallet-member styles, and target composite metric-card headings by their semantic role. Restore native text state on reuse while retaining unspecified iOS attributed-string properties. Propagate Android list chrome on initial snapshots and restrict custom group radius to actual grouped rows. Reject malformed nested text/image styles and unknown nested keys; developers integrating the list own overflow prevention.
+- **image (iOS)**: Show a memory-cached image on the mount frame instead of an icon skeleton (OK-63873). The memory probe skipped every image whose JS side left `cachePolicy` unset (Fabric hands Nitro a nil, which the request path already treats as memory-disk), and before layout it keyed the decode thumbnail from the empty bounds, so a freshly mounted image never matched what the prewarm or a previous mount had stored. The probe now coalesces a nil policy to memory-disk and, before layout, tries the decode-thumbnail keys the laid-out request (`resizeWidth`/`resizeHeight` hint + the view's `contentFit`) and a preload (hint + cover) would use. An image already on screen for the same identity is kept as the placeholder while a load for another key runs, instead of being blanked to a skeleton.
+- **image**: Clip the RN overlay container to the same circle as a `round` native image. `round` clips the native view to an oval on Android and to a `min(width, height) / 2` corner radius on iOS, but the wrapper that hosts a custom `placeholder` or `fallback` only ever clipped to the caller's own `borderRadius`, so those overlays were painted square over a round image — against the clipping contract the README states. The container and the drawn border overlay now take a percentage radius when `round` is set, overriding any per-corner radius from the caller's style.
+
+### Documentation
+- **native-list**: Audit the consolidated spec against template definitions, local layout responsibility and common container capabilities. Assign overflow handling to integrators and document existing structural headers, fixed/scrolling footers and pager header composition.
+- **native-list**: Consolidate the row-style spec on current main. Define all 12 row types with structural diagrams, local style/layout boundaries, and shared header/footer, section, scroll and indexed-bar ownership. Record implementation and example-coverage gaps separately from the contract.
+- **native-list**: Add `docs/STYLE_SPEC.md`, the shared style vocabulary for rows, section headers, fixed footers, and empty states. It records the design tokens (aliased to the application's own token names), the per-template style surface keyed by model field, list chrome, the template isolation rules, and a review checklist. Legacy row-height, typography and Android baseline scaling differences are documented separately from the unified configurable style contract.
+
+### Chores
+- Add the "Native List Row Style" example page with plain/styled pairs for all 12 row types, plus list chrome and explicit-height examples. Dated per-stage runtime acceptance of the renderer migration on iOS, Android and Web is recorded in the package `docs/DESIGN.md`; it is not a pixel-parity or scrolling-performance signoff.
+- **native-list (Web)**: Remove dead duplicated rules from `WEB_LIST_CSS`. Four blocks (`.ok-native-list-footer`/`-sticky`/`-index-rail`/`-index-button`, `-refresh`, `-warning`, `-subtitle-segments`) were emitted twice and a `prefers-reduced-motion` block three times; every property of the earlier copies was redeclared by the later ones, so removing them changes no rendering.
+- Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
+- Roll these entries up in the first 6.7.0-baseline release, which aligns all 43 publishable packages to the 6.7.0 App version and switches the scheme to `<app-version>-N` (#153). The 3.0.157 preview published from the review branch before the fixes landed should not be used.
 
 ## [3.0.156] - 2026-09-21
 

@@ -37,6 +37,17 @@ app-monorepo version:
   versions, and incorrect dist-tags fail validation. The existing isolated
   `pr-145` tag remains available for alpha previews only.
 
+### Currently published
+
+The stable `latest` dist-tag currently points at **6.7.0-46** (published
+2026-11-11 for PR #246); all 45 publishable packages share that synchronized
+version. [CHANGELOG.md](CHANGELOG.md) records the notable changes in each
+documented 6.7.0 release, from 6.7.0-1 upwards.
+
+Revisions 6.7.0-42 and 6.7.0-43 were never published: the automatic release for
+#242 failed and #243's run was cancelled before publishing, and the next
+successful run (a one-off manual release) took 6.7.0-44.
+
 ```sh
 yarn version:set 6.7.0-1  # Set the target App baseline and official revision
 yarn version:patch        # 6.7.0-1 -> 6.7.0-2; does not increment the App patch
