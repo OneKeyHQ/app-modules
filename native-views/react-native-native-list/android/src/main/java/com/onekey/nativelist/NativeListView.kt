@@ -1963,7 +1963,10 @@ class NativeListView(
   private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal, fonts)
   private var footerRendererKey = NativeListRendererKey.ACTION
   private val sectionIndexView = NativeListSectionIndexView(context, fonts)
-  private val sectionIndexPreview = TextView(context)
+  // RN touch targeting still visits invisible native children with retained bounds.
+  private val sectionIndexPreview = object : TextView(context), ReactPointerEventsView {
+    override val pointerEvents: PointerEvents = PointerEvents.NONE
+  }
   private var config: NativeListConfig? = null
   private var usesSelectorSourceScale = false
   private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal, fonts)
@@ -2177,14 +2180,6 @@ class NativeListView(
     stickyHeaderHost.visibility = GONE
     stickyHeaderHost.addView(stickyHeaderView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
     contentContainer.addView(stickyHeaderHost, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
-    contentContainer.addView(
-      sectionIndexView,
-      FrameLayout.LayoutParams(
-        sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP),
-        FrameLayout.LayoutParams.MATCH_PARENT,
-        Gravity.END,
-      ),
-    )
     sectionIndexPreview.apply {
       gravity = Gravity.CENTER
       textSize = 30f
@@ -2194,16 +2189,13 @@ class NativeListView(
       alpha = 0f
       importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
-    contentContainer.addView(
-      sectionIndexPreview,
-      FrameLayout.LayoutParams(
-        sectionIndexDp(SECTION_INDEX_PREVIEW_WIDTH_DP),
-        sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP),
-        Gravity.CENTER_VERTICAL or Gravity.END,
-      ).apply {
-        marginEnd = sectionIndexDp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
-      },
-    )
+    sectionIndexPreview.layoutParams = FrameLayout.LayoutParams(
+      sectionIndexDp(SECTION_INDEX_PREVIEW_WIDTH_DP),
+      sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP),
+      Gravity.CENTER_VERTICAL or Gravity.END,
+    ).apply {
+      marginEnd = sectionIndexDp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
+    }
     addView(contentContainer, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
     footerView.visibility = GONE
     addView(footerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -3704,6 +3696,18 @@ class NativeListView(
   }
 
   private fun updateSectionIndexAttachment() {
+    if (sectionIndexEntries.isEmpty()) {
+      stopSectionIndexAttachmentTracking()
+      sectionIndexAttachmentHandler.removeCallbacks(sectionIndexListAttachmentRunnable)
+      sectionIndexListAttachmentScheduled = false
+      (sectionIndexView.parent as? ViewGroup)?.let { previous ->
+        previous.removeView(sectionIndexView)
+        previous.endViewTransition(sectionIndexView)
+      }
+      contentContainer.removeView(sectionIndexPreview)
+      return
+    }
+    if (sectionIndexPreview.parent == null) contentContainer.addView(sectionIndexPreview)
     val windowHost = rootView as? FrameLayout
     val canUseWindowHost = config?.sectionIndexCenteredInWindow == true &&
       sectionIndexEntries.isNotEmpty() &&
@@ -3757,6 +3761,7 @@ class NativeListView(
   }
 
   private fun scheduleSectionIndexAttachmentToList() {
+    if (sectionIndexEntries.isEmpty()) return
     if (sectionIndexView.parent === contentContainer) return
     if (sectionIndexListAttachmentScheduled) return
     sectionIndexListAttachmentScheduled = true
@@ -3764,6 +3769,7 @@ class NativeListView(
   }
 
   private fun attachSectionIndexToList() {
+    if (sectionIndexEntries.isEmpty()) return
     if (sectionIndexView.parent === contentContainer) return
     (sectionIndexView.parent as? ViewGroup)?.let { previous ->
       previous.removeView(sectionIndexView)
