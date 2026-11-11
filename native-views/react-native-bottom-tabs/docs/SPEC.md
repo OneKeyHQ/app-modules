@@ -306,7 +306,7 @@ Floating appearance with background blur disabled: the bar surface is `barTintCo
 at 95% opacity (lightened slightly for dark colors), with
 a hairline rim and an outline shadow. When background blur is enabled (see below), the live blur and translucent
 surface tint are confined and clipped to the capsule bounds; the region above,
-beside, and beneath the capsule remains unblurred. The existing capsule keeps its rim/shadow and uses a 12 percent
+beside, and beneath the capsule remains unblurred. The existing capsule keeps its rim/shadow and uses a 4 percent
 surface fill over the blurred capsule backdrop; its lens and navigation controls remain
 sharp. The selected tab sits on a capsule pill inset 4 dp
 (`activeIndicatorColor` when provided). The Material ripple is disabled; the
@@ -381,12 +381,12 @@ tab bar and its own output, and clip the blurred backdrop and tint to those
 bounds (including the capsule corner radius in `floating` style) with no blur
 or fade bleeding above or outside the bar. It MUST use hardware
 RenderNode/RenderEffect rendering of the bar bounds at one-quarter resolution
-in each dimension, with a 20 dp blur radius. It MUST NOT capture bitmaps, read
+in each dimension, with a 32 dp blur radius. It MUST NOT capture bitmaps, read
 pixels back to the CPU, emit scroll events to JS, or run a recurring frame
 callback for this effect. Rendering MUST follow the normal view invalidation
 cycle, using the scene's existing display lists. The translucent tint MUST
 follow `tabBarStyle.backgroundColor` when set, otherwise the docked Material
-surface color or floating theme background, with opacity capped at 78 percent.
+surface color or floating theme background, with opacity capped at 75 percent.
 
 Only one blur RenderNode and cached paints/paths MAY be retained per mounted
 tab view. Its offscreen dimensions MUST be bounded by one-quarter of the bar

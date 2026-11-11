@@ -16,7 +16,7 @@ internal object FloatingTabBarMetrics {
   const val INDICATOR_INSET = 4f
   const val ICON_SIZE = 26f
   const val LABEL_SIZE_SP = 10f
-  const val SHADOW_ELEVATION = 14f
+  const val SHADOW_ELEVATION = 12f
 
   // Lens growth while a tab is pressed or dragged.
   const val LENS_SCALE_X = 1.14f
