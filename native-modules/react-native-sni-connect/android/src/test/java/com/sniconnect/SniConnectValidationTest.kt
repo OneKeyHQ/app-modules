@@ -2,8 +2,12 @@ package com.sniconnect
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okio.Buffer
 import okio.ForwardingSink
 import okio.buffer
@@ -15,6 +19,7 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.io.InterruptedIOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
@@ -337,7 +342,15 @@ class SniConnectValidationTest {
     )
     assertEquals(
       "SNI_SECURITY_POLICY_FAILED",
-      classifySniFailureCode(UnknownHostException("Unexpected host for pinned SNI request")),
+      classifySniFailureCode(
+        SniPinnedDestinationViolationException("Unexpected host for pinned SNI request"),
+      ),
+    )
+    assertEquals(
+      "SNI_SECURITY_POLICY_FAILED",
+      classifySniFailureCode(IOException("wrapped").apply {
+        initCause(SniPinnedDestinationViolationException("Unexpected host for pinned SNI request"))
+      }),
     )
     assertEquals(
       "SNI_REQUEST_TIMEOUT",
@@ -364,6 +377,103 @@ class SniConnectValidationTest {
     assertEquals(
       "SNI_RESPONSE_FAILED",
       classifySniResponseFailureCode(IOException("bad body"), false),
+    )
+  }
+
+  @Test
+  fun classifiesDnsAndPreWriteConnectionFailuresForSafeFallback() {
+    assertEquals(
+      "SNI_DNS_FAILED",
+      classifySniFailureCode(UnknownHostException("api.example.com")),
+    )
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      classifySniFailureCode(ConnectException("Connection refused")),
+    )
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      classifySniFailureCode(IOException("connect failed").apply {
+        initCause(ConnectException("Connection refused"))
+      }),
+    )
+  }
+
+  @Test
+  fun gatesReplaySensitiveCodesOnRequestTransmissionEvidence() {
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", false),
+    )
+    assertEquals(
+      "SNI_REQUEST_FAILED",
+      gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", true),
+    )
+    // Only the pre-write connection code is gated; other codes pass through.
+    assertEquals("SNI_TLS_FAILED", gateReplaySensitiveFailureCode("SNI_TLS_FAILED", true))
+    assertEquals(
+      "SNI_SECURITY_POLICY_FAILED",
+      gateReplaySensitiveFailureCode("SNI_SECURITY_POLICY_FAILED", true),
+    )
+  }
+
+  @Test
+  fun requestHeadersStartMarksTheLogicalRequestAsTransmitted() {
+    val state = SniRequestTransmissionState()
+    val call = newOkHttpCall(state)
+    assertFalse(state.hasRequestTransmissionStarted())
+
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    assertTrue(state.hasRequestTransmissionStarted())
+  }
+
+  @Test
+  fun untaggedCallDoesNotFailOnRequestHeadersStart() {
+    val call = OkHttpClient().newCall(
+      Request.Builder().url("https://example.com/").build(),
+    )
+
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    assertNull(call.request().tag(SniRequestTransmissionState::class.java))
+  }
+
+  @Test
+  fun processedBodylessRequestFollowedByRefusedRecoveryStaysAmbiguous() {
+    // A bodyless DELETE can be processed by the server without writing a body;
+    // only the request-headers event can prove that it was transmitted.
+    val state = SniRequestTransmissionState()
+    val call = newOkHttpCall(state, bodylessDelete = true)
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    val code = gateReplaySensitiveFailureCode(
+      classifySniFailureCode(ConnectException("Connection refused")),
+      state.hasRequestTransmissionStarted(),
+    )
+
+    assertEquals("SNI_REQUEST_FAILED", code)
+  }
+
+  @Test
+  fun refusedConnectionBeforeAnyTransmissionKeepsPreWriteCode() {
+    val state = SniRequestTransmissionState()
+    val code = gateReplaySensitiveFailureCode(
+      classifySniFailureCode(ConnectException("Connection refused")),
+      state.hasRequestTransmissionStarted(),
+    )
+
+    assertEquals("SNI_CONNECTION_REFUSED", code)
+  }
+
+  private fun newOkHttpCall(
+    state: SniRequestTransmissionState,
+    bodylessDelete: Boolean = false,
+  ): Call {
+    val builder = Request.Builder()
+      .url("https://example.com/")
+      .tag(SniRequestTransmissionState::class.java, state)
+    return OkHttpClient().newCall(
+      (if (bodylessDelete) builder.delete() else builder.get()).build(),
     )
   }
 
