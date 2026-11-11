@@ -321,7 +321,13 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       parseInt(String(Platform.Version), 10) >= 26 &&
       (topScrollEdgeEffect === 'hard' || topScrollEdgeEffect === 'soft') &&
       topOverlay != null;
-    const containerSlotHeightsJson = JSON.stringify(slotHeights);
+    const containerSlotHeightsJson = JSON.stringify(
+      Platform.OS === 'ios' &&
+        listHeader != null &&
+        slotMeasurements.readyEpochs[0] < 0
+        ? [null, ...slotHeights.slice(1)]
+        : slotHeights
+    );
     const defaultSlotInset =
       snapshot.layout.contentPaddingHorizontal ??
       snapshot.layout.contentPadding ??

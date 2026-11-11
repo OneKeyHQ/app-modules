@@ -1,5 +1,6 @@
 import React, { createRef } from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import { Platform } from 'react-native';
 import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot, RowPatch } from '../models';
 import { configureNativeListFonts } from '../fonts';
@@ -160,6 +161,79 @@ describe('NativeList imperative ref', () => {
     mockDelayFirstNativeRef = false;
     mockDeliverFirstNativeRef = undefined;
   });
+
+  it.each([0, 44.2])(
+    'keeps the iOS header pending until its first layout reports %s',
+    async (height) => {
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const platform = jest.replaceProperty(Platform, 'OS', 'ios');
+      let renderer: TestRenderer.ReactTestRenderer | undefined;
+      const currentProps = () => mockFontRenders.mock.calls.at(-1)?.[0];
+      const measuredHeights = () =>
+        JSON.parse(currentProps()?.containerSlotHeightsJson);
+      const reportLayout = (index: number, measuredHeight: number) => {
+        const slots = React.Children.toArray(
+          currentProps()?.children
+        ) as React.ReactElement<{
+          onLayout: (event: {
+            nativeEvent: { layout: { height: number } };
+          }) => void;
+        }>[];
+        slots[index].props.onLayout({
+          nativeEvent: { layout: { height: measuredHeight } },
+        });
+      };
+      try {
+        await act(async () => {
+          renderer = TestRenderer.create(
+            <NativeList snapshot={snapshot} listHeader={<React.Fragment />} />
+          );
+        });
+        expect(measuredHeights()).toEqual([null, 0, 0, 0, 0, 0]);
+        await act(async () => reportLayout(2, 17.2));
+        expect(measuredHeights()).toEqual([null, 0, 18, 0, 0, 0]);
+        await act(async () => reportLayout(0, height));
+        expect(measuredHeights()).toEqual([Math.ceil(height), 0, 18, 0, 0, 0]);
+      } finally {
+        await act(async () => renderer?.unmount());
+        platform.restore();
+      }
+    }
+  );
+
+  it.each([
+    { platform: 'android' as const, header: true },
+    { platform: 'ios' as const, header: false },
+  ])(
+    'keeps numeric initial slot heights on $platform with header=$header',
+    async ({ platform: os, header }) => {
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const platform = jest.replaceProperty(Platform, 'OS', os);
+      let renderer: TestRenderer.ReactTestRenderer | undefined;
+      try {
+        await act(async () => {
+          renderer = TestRenderer.create(
+            <NativeList
+              snapshot={snapshot}
+              listHeader={header ? <React.Fragment /> : undefined}
+            />
+          );
+        });
+        expect(
+          JSON.parse(
+            mockFontRenders.mock.calls.at(-1)?.[0].containerSlotHeightsJson
+          )
+        ).toEqual([0, 0, 0, 0, 0, 0]);
+      } finally {
+        await act(async () => renderer?.unmount());
+        platform.restore();
+      }
+    }
+  );
 
   it('presents all accepted row values when the first host binds before a later single-row patch', async () => {
     const { NativeList } = jest.requireActual(

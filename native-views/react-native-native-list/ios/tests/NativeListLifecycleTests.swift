@@ -1228,7 +1228,9 @@ final class NativeListLifecycleTests: XCTestCase {
     list.layoutIfNeeded()
     let header = try XCTUnwrap(slots[0].superview)
     XCTAssertTrue(header.clipsToBounds)
-    XCTAssertEqual(header.bounds.height, 0, "An unmeasured header cannot draw over the first rows")
+    XCTAssertEqual(header.bounds.height, 44, "The mounted Fabric header reserves its first-frame height")
+    let firstRow = try XCTUnwrap(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0)))
+    XCTAssertEqual(firstRow.frame.minY, 44, accuracy: 0.5)
 
     view.setContainerSlotHeightsJson("[44,44,60,0]")
     view.layoutIfNeeded()
@@ -1243,6 +1245,99 @@ final class NativeListLifecycleTests: XCTestCase {
 
     view.unmountContainerSlot(slots[2])
     XCTAssertNil(slots[2].superview)
+  }
+
+  func testPendingHeaderReservesMountedGeometryInEitherPropertyOrder() throws {
+    for pendingBeforeMount in [true, false] {
+      let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+      view.applySnapshotJson(try scrollingSnapshot(count: 3))
+      let header = UIView(frame: CGRect(x: 16, y: 0, width: 288, height: 44.2))
+      if pendingBeforeMount { view.setContainerSlotHeightsJson("[null,0,0,0,0,0]") }
+      view.mountContainerSlot(header, atIndex: 0)
+      if !pendingBeforeMount { view.setContainerSlotHeightsJson("[null,0,0,0,0,0]") }
+      view.layoutIfNeeded()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      list.layoutIfNeeded()
+      let host = try XCTUnwrap(header.superview)
+      XCTAssertTrue(host.clipsToBounds)
+      XCTAssertEqual(host.bounds.height, 45, accuracy: 0.5)
+      let firstRow = try XCTUnwrap(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0)))
+      XCTAssertEqual(firstRow.frame.minY, 45, accuracy: 0.5)
+
+      view.setContainerSlotHeightsJson("[null,0,18,0,0,0]")
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      XCTAssertEqual(host.bounds.height, 45, accuracy: 0.5)
+      XCTAssertEqual(list.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, 45)
+
+      view.setContainerSlotHeightsJson("[18,0,0,0,0,0]")
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      XCTAssertEqual(host.bounds.height, 18, accuracy: 0.5)
+      XCTAssertEqual(list.collectionViewLayout.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, 18)
+      view.setContainerSlotHeightsJson("[0,0,0,0,0,0]")
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      XCTAssertEqual(host.bounds.height, 0)
+      XCTAssertEqual(list.collectionViewLayout.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, 0)
+      view.dispose()
+    }
+  }
+
+  func testNumericHeaderHeightIsAuthoritativeBeforeRootMounts() throws {
+    for height in [0, 24] {
+      let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+      view.setContainerSlotHeightsJson("[\(height),0,0,0]")
+      view.applySnapshotJson(try scrollingSnapshot(count: 3))
+      let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+      view.mountContainerSlot(header, atIndex: 0)
+      view.layoutIfNeeded()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      list.layoutIfNeeded()
+      XCTAssertEqual(header.superview?.bounds.height, CGFloat(height))
+      XCTAssertEqual(list.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, CGFloat(height))
+      view.dispose()
+    }
+  }
+
+  func testPendingHeaderDoesNotInheritAnUnmountedRootsHeight() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+    view.applySnapshotJson(try scrollingSnapshot(count: 3))
+    view.setContainerSlotHeightsJson("[null,0,0,0,0,0]")
+    let first = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+    view.mountContainerSlot(first, atIndex: 0)
+    XCTAssertEqual(first.superview?.bounds.height, 44)
+    view.unmountContainerSlot(first)
+    let empty = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 0))
+    view.mountContainerSlot(empty, atIndex: 0)
+    XCTAssertEqual(empty.superview?.bounds.height, 0)
+    view.unmountContainerSlot(empty)
+    let replacement = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 27))
+    view.mountContainerSlot(replacement, atIndex: 0)
+    XCTAssertEqual(replacement.superview?.bounds.height, 27)
+    view.setContainerSlotHeightsJson("[0,0,0,0,0,0]")
+    view.unmountContainerSlot(replacement)
+    let authoritativeZero = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+    view.mountContainerSlot(authoritativeZero, atIndex: 0)
+    XCTAssertEqual(authoritativeZero.superview?.bounds.height, 0)
+    view.dispose()
+  }
+
+  func testPendingHeaderOnlyAcceptsNullAtTheHeaderSlot() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+    view.setContainerSlotHeightsJson("[24,0,0,0,0,0]")
+    let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+    view.mountContainerSlot(header, atIndex: 0)
+    for invalid in ["[null,null,0,0,0,0]", "[\"invalid\",0,0,0,0,0]",
+                    "[null,0,0,0,-1,0]", "[null,0,0,0,0,null]"] {
+      view.setContainerSlotHeightsJson(invalid)
+      XCTAssertEqual(header.superview?.bounds.height, 24)
+    }
+    view.dispose()
   }
 
   func testSidecarCentersRowsWhenConfiguredBeforeFirstWidth() throws {
