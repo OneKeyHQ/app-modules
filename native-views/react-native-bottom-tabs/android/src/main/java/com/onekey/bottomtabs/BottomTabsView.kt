@@ -545,11 +545,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     bottomNavigation.itemIconSize = size
     // Icons are rasterized at the icon size, so reload them for the new size.
     drawableCache.clear()
-    iconSources.forEach { (index, source) ->
-      bottomNavigation.menu.findItem(index)?.let { menuItem ->
-        getDrawable(index, source) { menuItem.icon = it }
-      }
-    }
+    updateMenuItemIconsForSelection()
   }
 
   private fun updateFloatingBarLayout() {
