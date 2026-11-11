@@ -2284,6 +2284,17 @@ function assertSnapshotContract(
   ) {
     fail('snapshot.capabilities.endReachedThreshold', 'must be within 0...1');
   }
+  const reorderActivation = snapshot.capabilities?.reorderActivation;
+  if (
+    reorderActivation !== undefined &&
+    reorderActivation !== 'row' &&
+    reorderActivation !== 'handle'
+  ) {
+    fail(
+      'snapshot.capabilities.reorderActivation',
+      "must be 'row' or 'handle'"
+    );
+  }
   const sectionIndex = snapshot.capabilities?.sectionIndex;
   if (sectionIndex !== undefined) {
     if (typeof sectionIndex.enabled !== 'boolean') {

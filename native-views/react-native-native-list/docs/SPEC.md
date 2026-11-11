@@ -191,6 +191,15 @@ names through the same DOM helper; their previous coverage does not expand.
 Image preserves raw path order, fill rules, fixed colors, opacity and viewBoxes.
 NativeList retains its layout, button bounds, actions and snapshot interfaces.
 
+The registries are aliases and native geometry, not a whitelist. iOS and Android
+already resolve any other name through image's `OneKeyNamedSVG` catalog. Web now
+does the same: a name missing from the Web registry is passed to
+`createNamedIcon` unchanged, so every host-catalog icon (for example
+`DeleteOutline`, `MinusCircleSolid`) renders as artwork on all three platforms.
+Only a name the host catalog also lacks keeps the legacy text glyph. The
+trailing `drag` accessory renders the `DragOutline` artwork on Web instead of
+`≡` when the host provides it.
+
 Focused SDK fixture acceptance covers native attached lifecycle/rebinding,
 legacy iOS asset comparisons, shared alpha semantics and real Web/Electron
 source/lib consumers. This is not full App, balance, transaction or signed
@@ -200,7 +209,8 @@ Identity trailing accessories stack vertically, except for the pairs every
 platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
 `valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
 `valuePair` + `chevron`, a `RefreshCcwOutline` icon without an action key +
-`chevron`, and `PencilOutline` + `DragOutline` icons. iOS decides this in
+`chevron`, and a `PencilOutline` icon followed by a `DragOutline` icon or a
+`drag` accessory. iOS decides this in
 `configureTrailingStack`; Android in `nativeListIdentityTrailingIsHorizontal`
 (JVM test `NativeListIdentityTrailingAxisTest`). The `valuePair` + menu-icon
 pair is the Swap token selector's balance column and row menu; stacking it
@@ -590,6 +600,40 @@ and React Native's JSTouchDispatcher: vertical drag produces one touch-cancel
 and one native end, a tap produces touch-end, and cancellation/removal followed
 by reuse leaves the next tap functional. This proves native touch delivery, not
 execution of a JavaScript press handler or physical-device gesture feel.
+
+### Handle-only reorder activation
+
+`capabilities.reorderActivation` selects where a reorder may start. `row`
+(default, also when omitted) keeps the existing behavior: a long press anywhere
+on a reorderable row. `handle` restricts the start to the row's trailing `drag`
+accessory; a long press elsewhere on the row is an ordinary press or long press
+and never begins a reorder. Validation rejects any other value.
+
+- **Gesture:** iOS and Android keep their reorder long-press duration (200 ms)
+  and movement tolerance. Web keeps its touch long press and mouse drag
+  threshold; only the pointer-down target is narrowed.
+- **Hit area:** the visible `drag` accessory. Android accepts its 24dp glyph
+  slot plus 7dp on each side; iOS uses the accessory button's frame.
+- **Eligibility:** row reorder eligibility (`draggable`, a `drag` accessory,
+  `disabled`) is unchanged. A row without a `drag` accessory cannot start a
+  reorder in `handle` mode.
+- **Accessory:** the `drag` accessory has no action of its own (legacy). A
+  short tap on it is swallowed by its button on iOS and reaches the row on
+  Android and Web; callers that must not open the row in edit mode set
+  `pressDisabled`. Icons beside it keep their own actions.
+- **Web cursor:** in `handle` mode the row keeps the default cursor and the
+  handle shows `grab`.
+
+- **Enclosing pans (iOS):** once a reorder has started, the list disables the
+  enabled `UIPanGestureRecognizer`s of its ancestors (for example a sheet's
+  dismiss pan or a pager) and restores them when the reorder finishes, is
+  cancelled by a structural update, or the list is torn down. Before the long
+  press is recognized those pans behave as before, so a quick pull still drags
+  the sheet. This applies to both activation modes.
+
+Toggling `reorderActivation` replaces the reorder recognizer state like a
+`reorderable` change. Snapshot and patch payloads carry it as plain JSON; the
+Nitro ABI is unchanged.
 
 ### Android reorder cancellation
 

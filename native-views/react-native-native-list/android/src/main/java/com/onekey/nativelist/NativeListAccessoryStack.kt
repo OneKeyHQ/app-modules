@@ -259,6 +259,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     trailingIcons.forEach {
       it.visibility = GONE
       it.setOnClickListener(null)
+      it.setTag(R.id.onekey_native_list_reorder_handle, null)
       it.background = null
       it.useSourceScale = selectorUsesSourceScale
       it.glyphSizeDp = null
@@ -441,13 +442,16 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
             theme,
           )
         "menu" -> showTrailingMenu(textIndex++, accessory.optString("actionKey"))
-        "drag" ->
+        "drag" -> {
+          val handleIndex = textIndex++
           showTrailingIcon(
-            textIndex++,
+            handleIndex,
             item,
             JSONObject(accessory.toString()).apply { put("name", "DragOutline") },
             theme,
           )
+          trailingIcons.getOrNull(handleIndex)?.setTag(R.id.onekey_native_list_reorder_handle, true)
+        }
         "icon" -> showTrailingIcon(textIndex++, item, accessory, theme)
         "spinner" -> spinner.visibility = VISIBLE
         "progress" ->

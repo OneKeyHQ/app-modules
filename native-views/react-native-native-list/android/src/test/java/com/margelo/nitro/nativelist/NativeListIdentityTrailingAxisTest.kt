@@ -24,6 +24,8 @@ class NativeListIdentityTrailingAxisTest {
       listOf(d("icon", "RefreshCcwOutline"), d("chevron")) to true,
       listOf(d("icon", "RefreshCcwOutline", "refresh"), d("chevron")) to false,
       listOf(d("icon", "PencilOutline", "edit"), d("icon", "DragOutline")) to true,
+      listOf(d("icon", "PencilOutline", "edit"), d("drag")) to true,
+      listOf(d("icon", "InfoCircleOutline", "edit"), d("drag")) to false,
       listOf(d("value"), d("checkbox")) to true,
       listOf(d("valuePair"), d("icon", "DotVerSolid", "menu"), d("chevron")) to false,
     )

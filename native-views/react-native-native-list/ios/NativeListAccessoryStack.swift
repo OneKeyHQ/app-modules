@@ -7,6 +7,8 @@ final class NativeListAccessoryButton: NativeListIconButton {
   var fixedTextLineHeight: CGFloat?
   var rowTextOffsetY: CGFloat = 0
   var helpBindingGeneration = 0
+  /// Marks the trailing `drag` accessory that can start a handle-only reorder.
+  var isReorderHandle = false
   private var helpTrackingGeneration = 0
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
     helpTrackingGeneration = helpBindingGeneration
@@ -339,6 +341,7 @@ final class NativeListAccessoryStack: UIStackView {
       button.isHidden = true
       button.isEnabled = true
       button.isUserInteractionEnabled = true
+      button.isReorderHandle = false
       button.alpha = 1
       button.accessibilityIdentifier = nil
       button.accessibilityLabel = nil
@@ -444,6 +447,9 @@ final class NativeListAccessoryStack: UIStackView {
           icon["tintColor"] = theme?["iconSubdued"] as? String ?? "#8D8D8D"
         }
         showAccessoryIcon(textIndex, icon)
+        if accessoryButtons.indices.contains(textIndex) {
+          accessoryButtons[textIndex].isReorderHandle = true
+        }
         textIndex += 1
       case "icon":
         var icon = accessory

@@ -831,6 +831,8 @@ export const WEB_LIST_CSS = `
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
+.ok-native-list-item[data-native-list-reorder-activation="handle"]>.ok-native-list-row{cursor:default}
+.ok-native-list-item[data-native-list-reorderable="true"] [data-native-list-reorder-handle]{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
 .ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-pressed)}
@@ -1187,7 +1189,11 @@ function paintSelectorImageBackground(
 }
 
 function applySelectorIcon(element: HTMLElement, name: string) {
-  const canonical = selectorIcons[name];
+  // Registered names keep their legacy aliases; any other name resolves
+  // through the host icon catalog, matching the iOS/Android fallback.
+  const canonical = Object.prototype.hasOwnProperty.call(selectorIcons, name)
+    ? selectorIcons[name]
+    : name;
   if (!canonical) return;
   if (canonical === 'Circle') {
     const svg = element.ownerDocument.createElementNS(
@@ -1210,7 +1216,10 @@ function applySelectorIcon(element: HTMLElement, name: string) {
     element.replaceChildren(svg);
     return;
   }
-  element.replaceChildren(createNamedIcon(element.ownerDocument, canonical));
+  const svg = createNamedIcon(element.ownerDocument, canonical);
+  // Without host artwork the element keeps its text glyph.
+  if (!svg.firstChild) return;
+  element.replaceChildren(svg);
 }
 
 function iconGlyph(name: string): string {
@@ -1830,6 +1839,8 @@ function createAccessory(
       break;
     case 'drag':
       element.textContent = '≡';
+      applySelectorIcon(element, 'DragOutline');
+      setData(element, 'nativeListReorderHandle', true);
       break;
     case 'progress':
       element.textContent = String(Math.round(accessory.value * 100)) + '%';
@@ -3551,6 +3562,11 @@ export class NativeListWebEngine {
     setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
+      'nativeListReorderActivation',
+      this.snapshot.capabilities?.reorderActivation
+    );
+    setData(
+      element,
       'nativeListDragging',
       this.pointerReorder?.active && this.pointerReorder.sourceKey === row.key
     );
@@ -5068,6 +5084,11 @@ export class NativeListWebEngine {
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest('button,input,textarea,select,a')) return;
+    if (
+      this.snapshot.capabilities?.reorderActivation === 'handle' &&
+      !target.closest('[data-native-list-reorder-handle]')
+    )
+      return;
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-index]'
     );

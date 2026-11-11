@@ -40,8 +40,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     } else if descriptors.count == 2,
       descriptors[0].string("kind") == "icon",
       descriptors[0].string("name") == "PencilOutline",
-      descriptors[1].string("kind") == "icon",
-      descriptors[1].string("name") == "DragOutline"
+      (descriptors[1].string("kind") == "icon"
+        && descriptors[1].string("name") == "DragOutline")
+        || descriptors[1].string("kind") == "drag"
     {
       stack.axis = .horizontal
       stack.alignment = .center

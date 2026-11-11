@@ -33,6 +33,7 @@ import {
   webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
 import { applyTextStyleToSlot } from '../web/templates/RowText';
+import { validateSnapshot } from '../validation';
 
 jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
   jest.requireActual('../../../react-native-image/src/icon/dom')
@@ -7138,4 +7139,169 @@ test('commits valid production rows and renders null-cleared overlays in one pat
     environment.__DEV__ = previous;
     warning.mockRestore();
   }
+});
+
+describe('NativeList web handle reorder and host icons', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document } & Window;
+    };
+  };
+  const handleRows: readonly RowModel[] = ['a', 'b', 'c'].map((key) => ({
+    type: 'identity',
+    key,
+    leading: { kind: 'icon', name: 'GlobusOutline' },
+    title: `Site ${key}`,
+    subtitle: `https://${key}.example`,
+    trailing: [
+      { kind: 'icon', name: 'PencilOutline', actionKey: 'rename' },
+      { kind: 'drag' },
+    ],
+  }));
+
+  function mount(
+    reorderActivation?: 'row' | 'handle',
+    sourceRows: readonly RowModel[] = handleRows
+  ) {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const base = snapshot({ kind: 'linear' }, sourceRows);
+    const engine = new NativeListWebEngine(
+      host,
+      {
+        ...base,
+        selection: undefined,
+        capabilities: { reorderable: true, reorderActivation },
+      },
+      {},
+      false
+    );
+    const pointerDown = (target: Element) =>
+      target.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerdown', { bubbles: true }),
+          {
+            pointerId: 1,
+            pointerType: 'touch',
+            isPrimary: true,
+            button: 0,
+            clientX: 10,
+            clientY: 20,
+          }
+        )
+      );
+    const dragging = () =>
+      host.querySelector<HTMLElement>('.ok-native-list-root')!.dataset
+        .nativeListDragging === 'true';
+    return { document, host, engine, pointerDown, dragging };
+  }
+
+  function withElement<T>(document: Document, run: () => T): T {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    try {
+      return run();
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'Element', original);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  }
+
+  it('validates reorderActivation', () => {
+    expect(() =>
+      validateSnapshot({
+        ...snapshot({ kind: 'linear' }, handleRows),
+        capabilities: { reorderable: true, reorderActivation: 'handle' },
+      })
+    ).not.toThrow();
+    expect(() =>
+      validateSnapshot({
+        ...snapshot({ kind: 'linear' }, handleRows),
+        capabilities: {
+          reorderable: true,
+          reorderActivation: 'icon' as unknown as 'handle',
+        },
+      })
+    ).toThrow(/reorderActivation/);
+  });
+
+  it('starts a handle-mode reorder only from the drag accessory', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, pointerDown, dragging } = mount('handle');
+    try {
+      withElement(document, () => {
+        const handle = host.querySelector(
+          '[data-native-list-row-key="a"] [data-native-list-reorder-handle]'
+        )!;
+        expect(handle).not.toBeNull();
+        const title = host.querySelector(
+          '[data-native-list-row-key="a"] .ok-native-list-title'
+        )!;
+        pointerDown(title);
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(false);
+        pointerDown(handle);
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps row-wide reorder activation by default', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, pointerDown, dragging } = mount();
+    try {
+      withElement(document, () => {
+        pointerDown(
+          host.querySelector(
+            '[data-native-list-row-key="a"] .ok-native-list-title'
+          )!
+        );
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('resolves unregistered icon names through the host catalog', () => {
+    const { host, engine } = mount(undefined, [
+      {
+        type: 'identity',
+        key: 'icons',
+        leading: { kind: 'icon', name: 'GlobusOutline' },
+        leadingAction: {
+          kind: 'icon',
+          name: 'MinusCircleSolid',
+          actionKey: 'remove',
+        },
+        title: 'Icons',
+        trailing: [
+          { kind: 'icon', name: 'NotARealIconOutline', actionKey: 'x' },
+        ],
+      },
+    ]);
+    try {
+      const removeIcon = host.querySelector<HTMLElement>(
+        '[data-native-list-action="remove"] use'
+      );
+      expect(removeIcon?.getAttribute('href')).toContain('MinusCircleSolid');
+      const missing = host.querySelector<HTMLElement>(
+        '[data-native-list-action="x"]'
+      )!;
+      expect(missing.querySelector('svg')).toBeNull();
+      expect(missing.textContent).toBe('N');
+    } finally {
+      engine.destroy();
+    }
+  });
 });
