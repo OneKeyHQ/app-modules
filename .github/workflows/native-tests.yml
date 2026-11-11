@@ -262,6 +262,7 @@ jobs:
           GRADLE
           ./gradlew --continue --no-daemon --parallel --max-workers=4 --console=plain \
             --build-cache --init-script "$RUNNER_TEMP/rerun-native-tests.gradle" \
+            :onekeyfe_react-native-bottom-tabs:compileReleaseKotlin \
             :onekeyfe_react-native-app-update:testDebugUnitTest \
             :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
             :onekeyfe_react-native-bundle-update:compileDebugKotlin \
