@@ -383,3 +383,29 @@ static void OneKeySVGSerialize(OneKeySVGNode *node, NSMutableString *xml) {
 }
 
 @end
+
+// Starts the named-icon and image prewarms before main() so the decoded rasters
+// are in memory by the time the first screen mounts. Resolved dynamically because the
+// Swift side is not importable from this Objective-C unit.
+@interface OneKeyNamedSVGStartupLoader : NSObject
+@end
+
+@implementation OneKeyNamedSVGStartupLoader
+
++ (void)load
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    SEL selector = NSSelectorFromString(@"prewarmStartupSet");
+    for (NSString *name in @[@"OneKeyNamedSVGBridge", @"OneKeyImageStartupPrewarmBridge"]) {
+      Class bridge = NSClassFromString(name);
+      if ([bridge respondsToSelector:selector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [bridge performSelector:selector];
+#pragma clang diagnostic pop
+      }
+    }
+  });
+}
+
+@end

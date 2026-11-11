@@ -209,9 +209,10 @@ per family.
 
 For `memory` and `memory-disk` policies, a prop change may probe decoded memory
 synchronously on the UI thread before layout when size hints are available. No
-disk or network work is allowed in this probe. Android MUST disable Glide disk
+disk or network work is allowed in this probe (the bounded native exception for
+small local images is specified under the named-icon section). Android MUST disable Glide disk
 cache access for the probe and accept only a resource delivered synchronously
-from decoded memory.
+from decoded memory or the prewarmed/sync-decoded startup memory cache.
 
 The probe order is:
 
@@ -245,7 +246,8 @@ miss removes the stale variant immediately.
 On iOS, an attached image host with positive layout bounds starts its asynchronous
 request during the completed layout callback rather than deferring another main
 queue turn. Existing request signatures and generations still suppress duplicate
-loads and stale completions. No synchronous disk/network work is introduced.
+loads and stale completions. No synchronous network work is introduced; the
+only synchronous disk work is the bounded small-image path specified below.
 
 ### 6.3 Native video-preview cache — Source implemented; scoped iOS validation
 
@@ -745,8 +747,93 @@ Only named-icon workers read/decode disk entries; a hit skips SVG parsing and
 rasterization but still delivers asynchronously to the UI thread. Invalid-size
 entries are misses. Writes and PNG encoding run on a serial utility queue; only
 results within the existing 8 MiB per-raster admission limit are persisted.
-Android retains its existing decoded-memory-only named-icon cache in this change.
-This disk layer does not make a cold-process main-thread memory probe synchronous.
+Android also maintains a 64 MiB disk raster PNG cache under `cacheDir/onekey-named-svg-v1`
+using the same SHA-256 render-key naming and LRU pruning.
+This disk layer alone does not make a cold-process main-thread memory probe synchronous.
+
+On both iOS and Android, a startup prewarm closes that cold-process gap for the first screen. Named
+icon requests from both the view probe (`cachedRender`) and the callback bridge
+(`OneKeyNamedSVG.request` / `requestRender` / `OneKeyNamedSVGBridge.request`,
+including native bottom tabs) record `(name, color, pixel size, scale)` up to
+96 distinct entries and are written to `Caches/onekey-named-svg-startup-v1.json`
+(or `cacheDir/onekey-named-svg-startup-v1.json` on Android).
+On the main thread, `request` and `requestRender` also probe `cachedRender` and
+`diskRender` before queuing and invoke their completion synchronously on a hit.
+Persistence uses a 3-second quiet debounce after new entries and keeps recording
+open across pre-home screens (such as App Lock) while fewer than 8 icons have
+been seen, up to 60 seconds from the first request. Each entry carries the launch
+sequence number (`launch`) in which it was last seen; current-launch entries lead
+and earlier entries not seen for 3 launches (`startupMaxLaunchAge = 3`) are
+evicted. At the next process start an Objective-C `+load` hook on iOS and
+`OneKeyImageStartupProvider` (`ContentProvider`) on Android dispatch to a
+background queue/executor and decode that list into the decoded-raster LRU,
+normally from the raster disk namespace, before JavaScript mounts the first
+screen. The main thread never waits for it: a probe that arrives before its entry
+is ready, or while the manifest lock is held, misses and takes the asynchronous
+path as before. Stale entries are harmless because the key is rebuilt from the
+current manifest digest. The list holds icon names, colors, sizes and launch
+numbers only. The first launch after install or a purged Caches directory is not
+prewarmed.
+
+The same process-start hook starts an equivalent prewarm for `OneKeyImage` on iOS and Android. A
+rendered request that succeeds from either the active synchronous memory probe or
+the request pipeline is recorded (up to 48 distinct entries) in
+`onekey-image-startup-v1.json`, using the same 3-second quiet debounce
+(keeping recording open while fewer than 2 images have been seen, up to 60 seconds
+from the first request) and 3-launch staleness eviction (`maxLaunchAge = 3`).
+Only `memory-disk` requests without custom headers are recorded, for `http(s)`,
+`onekey-avatar`, `file` and inline `data:` sources (up to 65,536 characters,
+seeded to the disk cache on the background writer when needed). To avoid writing
+plaintext URLs, `onekey-avatar` wallet addresses, or duplicate inline base64
+payloads to disk, each persisted entry stores only the SHA-256 hash of the
+sized memory-cache key (`keyHash`), the disk cache filename (`diskFile` and
+optional `thumbDiskFile` / `rawDiskFile`), optional cache namespace (`avatar`) or
+shape flag (`round`), target pixel dimensions, and `launch`. Legacy plaintext entries are migrated
+on read and overwritten with hashed entries on the next flush. At the next
+process start each entry is read from the corresponding disk cache, validated
+through `OneKeyImageSafetyPolicy` / `OneKeyEncodedImageInspector`, decoded at the recorded target size, and
+stored in the memory cache under its prewarm hash key, which the view's
+synchronous memory probe claims and displays on first hit. The
+replay never touches the network. The view-side behavior is unchanged: a
+prewarmed image binds in the mount frame, anything else loads asynchronously as
+before.
+
+#### Main-thread decode of small local images (iOS and Android)
+
+This is the one exception to "UI probes may only access decoded memory" and
+"no synchronous disk work". On a memory miss the UI thread may finish the load
+itself, so the image binds in the mount frame, only when all of the following
+hold. Otherwise the request takes the asynchronous pipeline unchanged.
+
+- The bytes are already on this device: a bundled `file` source, an inline
+  `data:` source, or an entry of the disk cache (including `onekey-avatar` and
+  the named-icon raster namespace). The path never starts or waits for a
+  download; a source that is only on the network is always asynchronous.
+- `memory-disk` policy and no custom headers.
+- Encoded size at most 32 KiB, checked from file attributes before the bytes
+  are read; source dimensions at most 512 px per edge, read from the header
+  before decoding; static image; target thumbnail at most 256 px per edge.
+- Named icons: requested size at most 192 px per edge, the manifest already
+  loaded, its lock uncontended, and the raster present on disk. An icon that
+  still needs SVG parsing is asynchronous.
+- A shared budget of 4 ms per 1/60 s window. Each attempt, hit or miss, is
+  charged its wall time; once the window has spent the budget, later misses in
+  it are asynchronous. The filters above bound a single decode, the budget
+  bounds a frame. `OneKeyMainThreadDecode` records `os_signpost` / `Trace` intervals and
+  per-process metrics (attempts, hits, misses, budget rejections, lock
+  contention, disk misses, limit rejections, window counts, and latency
+  percentiles).
+
+The encoded and decoded safety checks of the pipeline run on this path too.
+The result is stored under the exact key of the view's memory probe, which is
+then repeated, so such a load reports `cacheType: memory`. The process-start
+hook loads the icon manifest even without a startup list, because every icon
+fast path needs it. Launching with `-OneKeyImageSyncDecodeDisabled YES`
+disables the path for comparison. The budget does not cover a whole first
+screen: with the startup lists removed, a cold start on the iOS simulator bound
+roughly a third to a half of the first-screen icons and images in the mount
+frame and left the rest to the next frames. The startup prewarm remains the
+primary mechanism and this path the fallback for what it misses.
 
 iOS reuses the already declared SDImageSVGCoder decoder. Android reuses the
 already declared AndroidSVG decoder. Native color substitution is restricted to

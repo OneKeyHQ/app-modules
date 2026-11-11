@@ -71,6 +71,12 @@ final class HybridOneKeyIcon: HybridOneKeyIconSpec, RecyclableView {
       apply(hit, color: color)
       return
     }
+    if let hit = OneKeyNamedSVG.shared.diskRender(name: name, color: color,
+      width: Int(width), height: Int(height), scale: scale) {
+      displayedGeometry = geometry
+      apply(hit, color: color)
+      return
+    }
     OneKeyNamedSVG.shared.requestRender(owner: owner, name: name, color: color,
       width: Int(width), height: Int(height), scale: scale) { [weak self] result in
       guard let self, self.generation == revision, self.host.window != nil else { return }

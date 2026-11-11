@@ -515,4 +515,124 @@ final class OneKeyIconTests: XCTestCase {
     try save(screenshot, name: "ios-production-gallery")
     gallery.forEach { $0.onDropView() }
   }
+
+  func testStartupPrewarmDiskRenderAndSynchronousBridgeRequest() throws {
+    let tempFile = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-icon-startup-test-\(UUID().uuidString).json")
+    defer {
+      OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: nil)
+      try? FileManager.default.removeItem(at: tempFile)
+    }
+    OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
+    OneKeyMainThreadDecode.resetForTesting()
+
+    // Warm one raster to disk so diskRender and prewarm can replay it.
+    let disk = SDImageCache(namespace: "onekey-named-svg-raster-v1")
+    _ = try XCTUnwrap(resolve("DotVerSolid", color: "rgba(0,0,0,1)", width: 48, height: 48, scale: 2))
+    eventually("Disk raster written for DotVerSolid 48x48") {
+      OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+      return OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      ) != nil
+    }
+    _ = disk
+
+    // 1. Synchronous callback on OneKeyNamedSVGBridge.request (BottomTabs path).
+    var syncCallbackFired = false
+    let owner = NSObject()
+    OneKeyNamedSVGBridge.request(
+      owner: owner,
+      name: "DotVerSolid",
+      color: "rgba(0,0,0,1)",
+      width: 48,
+      height: 48,
+      scale: 2
+    ) { image in
+      XCTAssertNotNil(image)
+      syncCallbackFired = true
+    }
+    XCTAssertTrue(syncCallbackFired, "Bridge request must invoke completion synchronously on main thread when cached")
+
+    // 2. diskRender size bound (>192px rejected) and metrics recording.
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    XCTAssertNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 200,
+        height: 200,
+        scale: 2
+      )
+    )
+    XCTAssertNotNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    let decodeMetrics = OneKeyMainThreadDecode.metricsSnapshot()
+    XCTAssertEqual(decodeMetrics.hits, 1)
+
+    // 3. App Lock multi-burst window + launch-generation eviction.
+    OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
+    _ = OneKeyNamedSVG.shared.cachedRender(
+      name: "DotVerSolid",
+      color: "rgba(0,0,0,1)",
+      width: 48,
+      height: 48,
+      scale: 2
+    )
+    // Simulate first 3s quiet flush while still on App Lock (< 8 icons): recording stays open.
+    OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: false)
+    _ = OneKeyNamedSVG.shared.cachedRender(
+      name: "BotIllus",
+      color: "rgba(0,0,0,1)",
+      width: 48,
+      height: 48,
+      scale: 2
+    )
+    OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: true)
+
+    let firstLaunchEntries = try JSONDecoder().decode(
+      [OneKeyNamedSVG.StartupEntry].self,
+      from: Data(contentsOf: tempFile)
+    )
+    XCTAssertEqual(firstLaunchEntries.map(\.name), ["DotVerSolid", "BotIllus"])
+    XCTAssertEqual(firstLaunchEntries.map(\.launch), [1, 1])
+
+    // Simulate prewarm on launch 2, then only "BotIllus" is seen for 3 launches.
+    for expectedLaunch in 2...4 {
+      OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+      OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
+      OneKeyNamedSVG.shared.prewarmStartupSet()
+      XCTAssertGreaterThanOrEqual(OneKeyNamedSVG.shared.startupMetricsSnapshot().entryCount, 1)
+      _ = OneKeyNamedSVG.shared.cachedRender(
+        name: "BotIllus",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+      OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: true)
+      let currentEntries = try JSONDecoder().decode(
+        [OneKeyNamedSVG.StartupEntry].self,
+        from: Data(contentsOf: tempFile)
+      )
+      if expectedLaunch < 4 {
+        XCTAssertEqual(currentEntries.map(\.name), ["BotIllus", "DotVerSolid"])
+      } else {
+        // Launch 4: DotVerSolid (launch 1) has age 4 - 1 == 3 >= startupMaxLaunchAge(3) and is evicted.
+        XCTAssertEqual(currentEntries.map(\.name), ["BotIllus"])
+        XCTAssertEqual(currentEntries.first?.launch, 4)
+      }
+    }
+  }
 }

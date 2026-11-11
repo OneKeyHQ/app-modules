@@ -98,6 +98,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
       OneKeyMediaPreviewCache.get(context).clearMemory()
       Glide.get(context).clearMemory()
       OneKeyImageMemoryVariantRegistry.clear()
+      OneKeyImageStartupPrewarm.clearMemoryCache()
     }
   }
 
@@ -119,6 +120,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
       OneKeyMediaPreviewCache.get(context).clearMemory()
       Glide.get(context).clearMemory()
       OneKeyImageMemoryVariantRegistry.clear()
+      OneKeyImageStartupPrewarm.clearMemoryCache()
     }
     kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
       android.os.Handler(android.os.Looper.getMainLooper()).post {

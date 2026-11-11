@@ -63,7 +63,11 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec(), Re
     if (displayedGeometry == geometry && ready != null && host.drawable != null) {
       if (ready.canTint(color)) { applyTint(ready, color); return }
     } else clearImage()
-    OneKeyNamedSVG.cachedRender(name, color, host.width, host.height, scale)?.let { hit ->
+    val appContext = host.context.applicationContext ?: host.context
+    OneKeyNamedSVG.setCacheDirIfNeeded(appContext.cacheDir)
+    val hit = OneKeyNamedSVG.cachedRender(name, color, host.width, host.height, scale)
+      ?: OneKeyNamedSVG.diskRender(appContext.assets, name, color, host.width, host.height, scale)
+    if (hit != null) {
       displayed = hit; displayedGeometry = geometry
       applyTint(hit, color)
       host.setImageBitmap(hit.bitmap)
