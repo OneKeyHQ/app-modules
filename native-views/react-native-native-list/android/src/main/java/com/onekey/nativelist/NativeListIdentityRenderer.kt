@@ -31,6 +31,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private val titleLine = PackedTitleLineLayout(context)
   private val title = NativeListTextView(context)
   private val titleIcon = OneKeyIconView(context)
+  private val titleLeadingIcon = OneKeyIconView(context)
+  private val titleSegments = NativeListTitleSegmentsView(context)
   private var titleImage: NativeListImageSlot? = null
   private val subtitle = NativeListTextView(context)
   private val tertiary = NativeListTextView(context)
@@ -109,8 +111,13 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     mainColumn.gravity = Gravity.CENTER_VERTICAL
     titleLine.orientation = HORIZONTAL
     titleLine.gravity = Gravity.CENTER_VERTICAL
+    titleLine.addView(titleLeadingIcon, LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(6) })
     titleLine.addView(title, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+    titleLine.addView(titleSegments, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
     titleLine.addView(titleIcon, LayoutParams(dp(20), dp(20)).apply { marginStart = dp(4) })
+    titleLine.titleChild = title
+    titleLeadingIcon.visibility = GONE
+    titleSegments.visibility = GONE
     titleLine.addView(badgeLine)
     trailingColumn.onAction = { key, view, slot, target ->
       emitAction(key, view, "trailingAccessory", slot, target, trailingColumn.anchorInset(view))
@@ -223,6 +230,12 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleIcon.visibility = GONE
     titleIcon.contentDescription = null
     titleIcon.setOnClickListener(null)
+    titleLeadingIcon.visibility = GONE
+    titleLeadingIcon.contentDescription = null
+    titleSegments.visibility = GONE
+    titleSegments.clearRuns()
+    titleSegments.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+    titleLine.titleChild = title
     for (view in listOf(title, subtitle, tertiary, badgeLine)) {
       view.text = ""
       view.visibility = GONE
@@ -343,6 +356,46 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     }
     // Legacy: overhanging selector icons/checkboxes must not be clipped by row padding.
     if (trailingColumn.parent === this && trailingColumn.requestsUnclippedHost) clipToPadding = false
+    if (titleSegments.visibility == VISIBLE) bindTitleRuns(item, theme)
+  }
+
+  // Runs take the title's final text appearance and color unless they set
+  // their own tone or weight.
+  private fun bindTitleRuns(item: NativeListItem, theme: JSONObject?) {
+    titleSegments.typeface = title.typeface
+    titleSegments.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, title.textSize)
+    titleSegments.includeFontPadding = title.includeFontPadding
+    titleSegments.letterSpacing = title.letterSpacing
+    titleSegments.opticalOffsetY = title.opticalOffsetY
+    titleSegments.maxLines = 1
+    titleSegments.ellipsize = TextUtils.TruncateAt.END
+    TextViewCompat.setLineHeight(titleSegments, title.lineHeight)
+    val baseColor = title.currentTextColor
+    titleSegments.setTextColor(baseColor)
+    val segments = item.json.optJSONArray("titleSegments") ?: return
+    val runs =
+      (0 until segments.length()).mapNotNull { index ->
+        val segment = segments.optJSONObject(index) ?: return@mapNotNull null
+        NativeListTitleSegmentsView.Run(
+          text = segment.optString("text"),
+          typeface =
+            when (segment.optString("fontWeight")) {
+              "medium" -> fonts.medium(context)
+              "regular" -> fonts.regular(context)
+              else -> null
+            },
+          color =
+            when (segment.optString("tone")) {
+              "secondary" -> color(theme, "secondaryText", "#0000009B")
+              "primary" -> color(theme, "primaryText", "#000000DF")
+              else -> baseColor
+            },
+          shrink = segment.optBoolean("shrink", false),
+          maxWidthRatio =
+            if (segment.has("maxWidthRatio")) segment.optDouble("maxWidthRatio").toFloat() else null,
+        )
+      }
+    titleSegments.setRuns(runs, item.json.optString("title"))
   }
 
   private fun styleGap(column: LinearLayout, gap: Int) {
@@ -476,7 +529,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
         val imageWidth = titleImage?.view?.takeIf { it.visibility == VISIBLE }?.let {
           it.layoutParams.width + dp(4)
         } ?: 0
-        val icon = (if (titleIcon.visibility == VISIBLE) dp(24) else 0) + imageWidth
+        val icon = (if (titleIcon.visibility == VISIBLE) dp(24) else 0) + imageWidth +
+          (if (titleLeadingIcon.visibility == VISIBLE) dp(22) else 0)
         (inner * ratio).roundToInt()
           .minus(leading.width + leading.marginEnd + icon)
           .coerceAtLeast(0)
@@ -487,9 +541,10 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     if (titleSuffixLabels.isNotEmpty()) {
       val fixedWidth =
-        (1 until titleLine.childCount).sumOf { index ->
+        (0 until titleLine.childCount).sumOf { index ->
           val view = titleLine.getChildAt(index)
-          if (view.visibility == GONE || titleSuffixLabels.any { it === view }) 0
+          if (view.visibility == GONE || view === titleLine.titleChild ||
+            titleSuffixLabels.any { it === view }) 0
           else {
             val margins = view.layoutParams as MarginLayoutParams
             view.measuredWidth + margins.leftMargin + margins.rightMargin
@@ -753,6 +808,35 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleLine.packsChildrenAtStart = true
     title.ellipsize = TextUtils.TruncateAt.END
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
+    // Runs replace the drawn title except where `title` itself is highlighted;
+    // their content is bound once the title style is final.
+    if (nativeListShowsTitleRuns(
+        item.json.optString("presentation"),
+        item.json.optJSONArray("titleSegments")?.length() ?: 0,
+        item.json.optJSONArray("titleMatch")?.length() ?: 0,
+      )
+    ) {
+      title.visibility = GONE
+      titleSegments.visibility = VISIBLE
+      titleLine.titleChild = titleSegments
+    }
+    val leadingIcon = item.json.optJSONObject("titleLeadingIcon")
+      ?.takeIf { nativeListAllowsTitleDecorations(item.json.optString("presentation")) }
+    leadingIcon?.let { icon ->
+      titleLeadingIcon.iconName = icon.optString("name")
+      titleLeadingIcon.glyphSizeDp = 16
+      titleLeadingIcon.useSourceScale = sourceScale
+      titleLeadingIcon.tintColor = safeColor(
+        icon.optString("tintColor").takeIf(String::isNotEmpty),
+        color(theme, "iconSubdued", "#00000072"),
+      )
+      titleLeadingIcon.contentDescription =
+        icon.optString("accessibilityLabel").takeIf(String::isNotEmpty)
+      titleLeadingIcon.importantForAccessibility =
+        if (titleLeadingIcon.contentDescription == null) View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        else View.IMPORTANT_FOR_ACCESSIBILITY_YES
+      titleLeadingIcon.visibility = VISIBLE
+    }
     item.json.optJSONArray("titleSuffixes")?.let { suffixes ->
       for (index in 0 until suffixes.length()) {
         val suffix = suffixes.optJSONObject(index) ?: continue

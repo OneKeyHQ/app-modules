@@ -54,7 +54,14 @@ separately from source implementation in STYLE_SPEC §9.
 
 - **Use:** an identifiable asset, account, wallet, network or setting.
 - **Required data:** `leading`, `title`; optional `subtitle`, `tertiary`, `badges`,
-  `trailing`, `leadingAction`, `titleIcon`, Web-only `secondaryTitleIcon`, match ranges and structured subtitle segments.
+  `trailing`, `leadingAction`, `titleIcon`, Web-only `secondaryTitleIcon`, `titleSegments`,
+  `titleLeadingIcon`, match ranges and structured subtitle segments.
+- **Title runs:** optional `titleSegments` draw 1...4 runs with their own tone and
+  weight in place of `title`, on one line. One run may shrink; the others keep
+  their width under an optional `maxWidthRatio` cap. `title` stays the spoken
+  text. See SPEC.md.
+- **Leading title icon:** optional `titleLeadingIcon` draws a 16-point glyph 6
+  points before the title; it is decorative unless labelled.
 - **Static title icon:** optional 20-point icon immediately after the title with
   a 4-point gap. It has no click action; an optional Web `hoverActionKey`
   emits an icon-anchored tooltip request on hover or touch. A trailing `button` is the fixed small

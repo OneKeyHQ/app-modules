@@ -316,6 +316,197 @@ describe.each([true, false])(
   }
 );
 
+describe.each([true, false])(
+  'identity title segments protocol in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const titleSegments: NonNullable<IdentityRow['titleSegments']> = [
+      {
+        text: 'Wallet',
+        tone: 'secondary',
+        fontWeight: 'regular',
+        shrink: true,
+      },
+      { text: ' / ', tone: 'secondary', fontWeight: 'regular' },
+      { text: 'Account #1', maxWidthRatio: 0.7 },
+    ];
+    const titleLeadingIcon = { name: 'BookOpenOutline', tintColor: '#8D8D8D' };
+    const recipient = (patch: Partial<IdentityRow> = {}): IdentityRow => ({
+      ...row('recipient'),
+      title: 'Wallet / Account #1',
+      titleSegments,
+      titleLeadingIcon,
+      ...patch,
+    });
+    const inMode = (run: () => void) => {
+      const original = environment.__DEV__;
+      environment.__DEV__ = development;
+      try {
+        run();
+      } finally {
+        environment.__DEV__ = original;
+      }
+    };
+
+    it('serializes runs and the leading icon and keeps them through other patches', () => {
+      inMode(() => {
+        const initial = snapshot([recipient()]);
+        const serialized = JSON.parse(serializeSnapshot(initial)).rows[0];
+        expect(serialized.titleSegments).toEqual(titleSegments);
+        expect(serialized.titleLeadingIcon).toEqual(titleLeadingIcon);
+        const unchanged = applyRowPatches(initial, [
+          {
+            type: 'identity',
+            key: 'recipient',
+            changes: { subtitle: '0x1234...5678' },
+          },
+        ]);
+        expect(unchanged.rows[0]).toMatchObject({
+          titleSegments,
+          titleLeadingIcon,
+        });
+        const replacement = [{ text: 'Account #2' }];
+        const patched = applyRowPatches(initial, [
+          {
+            type: 'identity',
+            key: 'recipient',
+            changes: { titleSegments: replacement },
+          },
+        ]);
+        expect((patched.rows[0] as IdentityRow).titleSegments).toEqual(
+          replacement
+        );
+      });
+    });
+
+    it('rejects malformed runs and icons in development and drops them in production', () => {
+      inMode(() => {
+        const invalidRuns: unknown[] = [
+          [],
+          [{ text: '' }],
+          [{ text: '   ' }],
+          [{ text: 'a', tone: 'info' }],
+          [{ text: 'a', fontWeight: 'bold' }],
+          [{ text: 'a', shrink: 'yes' }],
+          [{ text: 'a', maxWidthRatio: 0 }],
+          [{ text: 'a', maxWidthRatio: 1.5 }],
+          [
+            { text: 'a', shrink: true },
+            { text: 'b', shrink: true },
+          ],
+          [{ text: 'a', color: '#000000' }],
+          Array.from({ length: 5 }, (_, index) => ({ text: `${index}` })),
+        ];
+        for (const runs of invalidRuns) {
+          const value = runs as IdentityRow['titleSegments'];
+          const validate = () =>
+            validateSnapshot(snapshot([recipient({ titleSegments: value })]));
+          if (development) expect(validate).toThrow();
+          else
+            expect(
+              (validate().rows[0] as IdentityRow).titleSegments
+            ).toBeUndefined();
+        }
+        const invalidIcons: unknown[] = [
+          { name: '' },
+          { name: 'BookOpenOutline', tintColor: 'gray' },
+          { name: 'BookOpenOutline', accessibilityLabel: 3 },
+          { name: 'BookOpenOutline', size: 20 },
+        ];
+        for (const icon of invalidIcons) {
+          const value = icon as IdentityRow['titleLeadingIcon'];
+          const validate = () =>
+            validateSnapshot(
+              snapshot([recipient({ titleLeadingIcon: value })])
+            );
+          if (development) expect(validate).toThrow();
+          else
+            expect(
+              (validate().rows[0] as IdentityRow).titleLeadingIcon
+            ).toBeUndefined();
+        }
+      });
+    });
+
+    it('clears a decoration whose patch replacement is invalid in production', () => {
+      inMode(() => {
+        const initial = ownValidatedNativeSnapshot(
+          validateSnapshot(snapshot([recipient(), row('untouched')]))
+        );
+        const invalidChanges: Record<string, unknown>[] = [
+          { titleSegments: [] },
+          { titleSegments: [{ text: '   ' }] },
+          {
+            title: 'Wallet / Account #2',
+            titleSegments: [{ text: 'Account #2', tone: 'info' }],
+          },
+          { titleLeadingIcon: { name: '' } },
+          { titleLeadingIcon: { name: 'BookOpenOutline', tintColor: 'gray' } },
+        ];
+        for (const changes of invalidChanges) {
+          const patches = [
+            { type: 'identity', key: 'recipient', changes },
+          ] as unknown as readonly RowPatch[];
+          if (development) {
+            expect(() => applyOwnedNativePatches(initial, patches)).toThrow();
+            continue;
+          }
+          const expected = [
+            {
+              type: 'identity',
+              key: 'recipient',
+              changes: Object.fromEntries(
+                Object.entries(changes).map(([field, value]) => [
+                  field,
+                  field === 'title' ? value : null,
+                ])
+              ),
+            },
+          ];
+          expect(validatePatches(patches)).toEqual(expected);
+          const accepted = applyOwnedNativePatches(initial, patches);
+          expect(JSON.parse(accepted.json)).toEqual(expected);
+          const patched = accepted.snapshot.rows[0] as IdentityRow;
+          expect(patched.title).toBe(changes.title ?? 'Wallet / Account #1');
+          for (const [field, value] of [
+            ['titleSegments', titleSegments],
+            ['titleLeadingIcon', titleLeadingIcon],
+          ] as const) {
+            if (field in changes) expect(patched).not.toHaveProperty(field);
+            else expect(patched[field]).toEqual(value);
+          }
+          expect(accepted.snapshot.rows[1]).toBe(initial.rows[1]);
+          expect(initial.rows[0]).toMatchObject({
+            titleSegments,
+            titleLeadingIcon,
+          });
+        }
+      });
+    });
+
+    it('rejects runs with title highlights or the wallet sidebar in development', () => {
+      inMode(() => {
+        const invalid: IdentityRow[] = [
+          recipient({ titleMatch: [{ start: 0, end: 6 }] }),
+          recipient({
+            presentation: 'walletSidebar',
+            titleLeadingIcon: undefined,
+          }),
+          recipient({
+            presentation: 'walletSidebar',
+            titleSegments: undefined,
+          }),
+        ];
+        for (const identity of invalid) {
+          const validate = () => validateSnapshot(snapshot([identity]));
+          if (development) expect(validate).toThrow();
+          else expect(validate().rows).toHaveLength(1);
+        }
+      });
+    });
+  }
+);
+
 describe('public NativeList patch planner', () => {
   it('shares an empty batch for equal JSON values regardless of property order or omitted undefined', () => {
     const oldRow = row('btc');

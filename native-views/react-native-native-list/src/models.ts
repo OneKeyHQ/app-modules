@@ -513,6 +513,19 @@ export type RowBase = Readonly<{
   separator?: boolean;
 }>;
 
+/** One run of an identity title line; see docs/SPEC.md. */
+export type IdentityTitleSegment = Readonly<{
+  text: string;
+  /** Omitted: the title color. */
+  tone?: 'primary' | 'secondary';
+  /** Omitted: the title weight. */
+  fontWeight?: 'regular' | 'medium';
+  /** The one run that gives up width when the line is too narrow. */
+  shrink?: boolean;
+  /** Caps the run at this fraction of the title line, within (0, 1]. */
+  maxWidthRatio?: number;
+}>;
+
 export type IdentityRow = RowBase &
   Readonly<{
     type: 'identity';
@@ -544,6 +557,14 @@ export type IdentityRow = RowBase &
     }>;
     /** Web-only additional help icon after titleIcon. */
     secondaryTitleIcon?: IdentityRow['titleIcon'];
+    /** Runs drawn in place of `title`, which stays the spoken label. */
+    titleSegments?: readonly IdentityTitleSegment[];
+    /** 16-point glyph before the title; decorative unless labelled. */
+    titleLeadingIcon?: Readonly<{
+      name: string;
+      tintColor?: string;
+      accessibilityLabel?: string;
+    }>;
     /** Circular image after title icons; image dimensions must be square, 1...40. */
     titleImage?: Readonly<{
       image: ImageSource;
@@ -1093,6 +1114,8 @@ export type RowPatch =
         | 'titleIcon'
         | 'secondaryTitleIcon'
         | 'titleImage'
+        | 'titleSegments'
+        | 'titleLeadingIcon'
         | 'subtitle'
         | 'subtitleLines'
         | 'contentHeight'

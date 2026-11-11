@@ -49,6 +49,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
       stack.spacing = 10
     }
   }
+  private class func showsTitleRuns(_ item: NativeListItem) -> Bool {
+    nativeListShowsTitleRuns(
+      presentation: item.data.string("presentation"),
+      runCount: item.data.dictionaries("titleSegments").count,
+      matchCount: item.data.dictionaries("titleMatch").count)
+  }
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
     fonts: NativeListFontFamilies
@@ -81,7 +87,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let title = NativeListResolvedText(
         item.data.string("title"), style: style.dictionary("title"), size: 16,
         weight: .medium, color: .black, lineHeight: 24,
-        lines: item.data.int("titleLines", default: 1), fonts: fonts)
+        lines: showsTitleRuns(item) ? 1 : item.data.int("titleLines", default: 1), fonts: fonts)
       let subtitle = NativeListResolvedText(
         item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 14,
         color: .black, lineHeight: 20,
@@ -110,6 +116,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListTextLabel()
   private let titleIconView = NativeListIconImageView()
+  private let titleLeadingIconView = NativeListIconImageView()
+  private let titleSegmentsLabel = NativeListTitleSegmentsLabel()
+  // Runs, when shown, take the title's place in the title row.
+  private var visibleTitleView: UIView {
+    titleSegmentsLabel.isHidden ? titleLabel : titleSegmentsLabel
+  }
   private var titleImageSlot: NativeListImageSlot?
   private var titleImageConstraints: [NSLayoutConstraint] = []
   // Absorbs the title row's slack so the title keeps its intrinsic width and the
@@ -170,7 +182,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     mainStack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     titleRowStack.axis = .horizontal
     titleRowStack.alignment = .center
+    titleRowStack.addArrangedSubview(titleLeadingIconView)
     titleRowStack.addArrangedSubview(titleLabel)
+    titleRowStack.addArrangedSubview(titleSegmentsLabel)
     titleRowStack.addArrangedSubview(titleIconView)
     titleRowStack.addArrangedSubview(badgeLabel)
     titleRowStack.addArrangedSubview(titleRowFiller)
@@ -185,6 +199,18 @@ final class NativeListIdentityCell: NativeListRendererCell {
     ])
     titleIconView.contentMode = .scaleAspectFit
     titleIconView.setContentHuggingPriority(.required, for: .horizontal)
+    titleLeadingIconView.translatesAutoresizingMaskIntoConstraints = false
+    let leadingIconWidth = titleLeadingIconView.widthAnchor.constraint(equalToConstant: 16)
+    leadingIconWidth.priority = UILayoutPriority(999)
+    NSLayoutConstraint.activate([
+      leadingIconWidth,
+      titleLeadingIconView.heightAnchor.constraint(equalToConstant: 16),
+    ])
+    titleLeadingIconView.contentMode = .scaleAspectFit
+    titleLeadingIconView.setContentHuggingPriority(.required, for: .horizontal)
+    titleLeadingIconView.setContentCompressionResistancePriority(.required, for: .horizontal)
+    titleLeadingIconView.isHidden = true
+    titleSegmentsLabel.isHidden = true
     [titleRowStack, subtitleLabel, tertiaryLabel].forEach(mainStack.addArrangedSubview)
     visual.translatesAutoresizingMaskIntoConstraints = false
     leadingWidth = visual.widthAnchor.constraint(equalToConstant: 40)
@@ -249,6 +275,15 @@ final class NativeListIdentityCell: NativeListRendererCell {
     titleIconView.isHidden = true
     titleIconView.accessibilityLabel = nil
     titleIconView.isAccessibilityElement = false
+    titleLeadingIconView.image = nil
+    titleLeadingIconView.isHidden = true
+    titleLeadingIconView.accessibilityLabel = nil
+    titleLeadingIconView.isAccessibilityElement = false
+    titleSegmentsLabel.isHidden = true
+    titleSegmentsLabel.reset()
+    titleRowFiller.isHidden = false
+    titleSegmentsLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    titleSegmentsLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     titleImageSlot?.view.isHidden = true
     titleImageSlot?.view.accessibilityLabel = nil
     titleImageSlot?.view.isAccessibilityElement = false
@@ -310,7 +345,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let label = titleIcon.string("accessibilityLabel")
       titleIconView.accessibilityLabel = label.isEmpty ? nil : label
       titleIconView.isAccessibilityElement = !label.isEmpty
-      titleRowStack.setCustomSpacing(4, after: titleLabel)
+      titleRowStack.setCustomSpacing(4, after: visibleTitleView)
       // A long title truncates ahead of the 20pt glyph (Android caps the title
       // at row width minus accessories, Web shrinks the title first); with the
       // title at `.required` the icon's 999 width constraint collapsed to 0.
@@ -342,7 +377,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       ]
       titleImageConstraints.forEach { $0.priority = UILayoutPriority(999) }
       NSLayoutConstraint.activate(titleImageConstraints)
-      titleRowStack.setCustomSpacing(4, after: titleIconView.isHidden ? titleLabel : titleIconView)
+      titleRowStack.setCustomSpacing(4, after: titleIconView.isHidden ? visibleTitleView : titleIconView)
       titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
       slot.bind(image, key: "\(item.key):titleImage", placeholder: "#00000000")
     } else {
@@ -385,7 +420,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         titleRowStack.setCustomSpacing(
           CGFloat(style.double("titleBadgeGap")),
           after: titleImageSlot?.view.isHidden == false ? titleImageSlot!.view
-            : titleIconView.isHidden ? titleLabel : titleIconView)
+            : titleIconView.isHidden ? visibleTitleView : titleIconView)
       }
     }
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
@@ -399,6 +434,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         labels.forEach { NativeListTextStyles.applyStyledText($0, text, fonts: fonts) }
       }
     }
+    if !titleSegmentsLabel.isHidden { bindTitleRuns(item, theme: theme, style: style) }
     contentInsets = UIEdgeInsets(
       top: topInset, left: leftInset, bottom: -bottomInset, right: -rightInset)
     if root.axis == .horizontal {
@@ -464,6 +500,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
   }
   override func recycleContent() {
     visual.recycle()
+    titleSegmentsLabel.reset()
+    titleLeadingIconView.image = nil
     titleImageSlot?.recycle()
     titleImageSlot?.view.isHidden = true
     titleImageSlot?.view.accessibilityLabel = nil
@@ -511,6 +549,30 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     visual.bind(
       descriptor, style: image, key: key, theme: currentTheme, isUnread: false, fonts: fonts)
+  }
+  // Runs take the title's font, size and color unless they set their own tone
+  // or weight; the title label holds the final style by now.
+  private func bindTitleRuns(_ item: NativeListItem, theme: [String: Any]?, style: [String: Any]) {
+    let baseFont = titleLabel.font ?? nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
+    let baseColor = titleLabel.textColor ?? nativeListColor(theme, "primaryText", "#202020")
+    let runs = item.data.dictionaries("titleSegments").map { segment in
+      let weight = segment.string("fontWeight")
+      let tone = segment.string("tone")
+      return NativeListTitleSegmentsLabel.Run(
+        text: segment.string("text"),
+        font: weight.isEmpty
+          ? baseFont
+          : nativeListFont(
+            ofSize: baseFont.pointSize, weight: weight == "medium" ? .medium : .regular, fonts: fonts),
+        color: tone == "secondary"
+          ? nativeListColor(theme, "secondaryText", "#646464")
+          : tone == "primary" ? nativeListColor(theme, "primaryText", "#202020") : baseColor,
+        shrink: segment.bool("shrink"),
+        maxWidthRatio: (segment["maxWidthRatio"] as? NSNumber).map { CGFloat(truncating: $0) })
+    }
+    titleSegmentsLabel.lineHeight = CGFloat(
+      style.dictionary("title")?.double("lineHeight", default: 24) ?? 24)
+    titleSegmentsLabel.configure(runs, spokenText: item.data.string("title"))
   }
   private func bindIdentity(
     _ item: NativeListItem,
@@ -643,10 +705,36 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     root.addArrangedSubview(mainStack)
     show(titleLabel, item.data.string("title"), lines: item.data.int("titleLines", default: 1))
+    // Runs replace the drawn title except where `title` itself is highlighted;
+    // their content is bound once the title style is final.
+    if Self.showsTitleRuns(item) {
+      titleLabel.isHidden = true
+      titleSegmentsLabel.isHidden = false
+      // The runs fill what the title row leaves, so a ratio is a share of it.
+      titleRowFiller.isHidden = true
+      titleSegmentsLabel.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    }
+    if nativeListAllowsTitleDecorations(presentation: item.data.string("presentation")),
+      let icon = item.data.dictionary("titleLeadingIcon")
+    {
+      titleLeadingIconView.bindIcon(icon.string("name"))
+      titleLeadingIconView.tintColor = UIColor(
+        nativeListHex: icon.string("tintColor",
+          default: theme?["iconSubdued"] as? String ?? "#8D8D8D"),
+        fallback: .gray)
+      titleLeadingIconView.isHidden = false
+      let label = icon.string("accessibilityLabel")
+      titleLeadingIconView.accessibilityLabel = label.isEmpty ? nil : label
+      titleLeadingIconView.isAccessibilityElement = !label.isEmpty
+      titleRowStack.setCustomSpacing(6, after: titleLeadingIconView)
+      // As beside `titleIcon`: a plain title left at `.required` collapses the
+      // glyph's 999 width constraint instead of truncating.
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    }
     let titleSuffixes = item.data.dictionaries("titleSuffixes")
     if !titleSuffixes.isEmpty {
-      titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-      let minimumTitleWidth = titleLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 80)
+      visibleTitleView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+      let minimumTitleWidth = visibleTitleView.widthAnchor.constraint(greaterThanOrEqualToConstant: 80)
       minimumTitleWidth.priority = UILayoutPriority(751)
       minimumTitleWidth.isActive = true
       selectorConstraints.append(minimumTitleWidth)
