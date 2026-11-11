@@ -44,6 +44,14 @@ switch, including a pre-launch pending switch, recheck every extracted file
 against signed metadata immediately before changing the active bundle. Routine
 startup retains its entry-bundle-only hot-path check. Existing cancellation,
 resume, cleanup, and fallback ownership remain with the native module.
+Extracted-file verification derives each metadata key from the directory it
+actually walks and MUST NOT depend on the string form a caller used to name that
+directory: the same tree may be reachable through a symlinked and a resolved
+path, and Android `context.filesDir` can itself be symlinked, so mixing the two
+forms produced absolute-path keys and rejected every file on affected devices.
+The walked directory MUST resolve to the managed bundle directory for the
+supplied identity, and a file that cannot be expressed relative to it MUST fail
+closed with a local diagnostic rather than be looked up by an absolute path.
 `clearDownload` and `clearBundle` first cancel each active writer, wait for its
 entire download operation (including resume-data and final ZIP writes) to stop,
 then remove managed files. A failed or timed-out wait leaves those files intact

@@ -663,16 +663,29 @@ object BundleUpdateStoreAndroid {
         val dir = File(dirPath)
         if (!dir.exists() || !dir.isDirectory) return false
 
-        val parentBundleDir = getBundleDir(context)
-        val folderName = "$appVersion-$bundleVersion"
-        val jsBundleDir = File(parentBundleDir, folderName).absolutePath + "/"
+        // The walked directory must be the managed extraction root for this
+        // identity. Callers legitimately pass either the absolute or the
+        // canonical form of it (verifyBundleASC extracts to the canonical
+        // path), so compare resolved paths instead of trusting the string.
+        val expectedDir = File(getBundleDir(context), "$appVersion-$bundleVersion")
+        if (!isSameDirectory(dir, expectedDir)) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "[bundle-verify] unexpected bundle directory: ${dir.absolutePath}",
+            )
+            return false
+        }
+
         val fileEntries = getFileMetadataEntries(metadata)
 
-        if (!validateFilesRecursive(dir, fileEntries, jsBundleDir)) return false
+        // Derive every metadata key from the directory actually walked. Never
+        // rebuild the root from Context here: on devices where filesDir is a
+        // symlinked path the two string forms differ and no file would match.
+        if (!validateFilesRecursive(dir, fileEntries, dir)) return false
 
         // Verify completeness
         for (entry in fileEntries.entries) {
-            val expectedFile = File(jsBundleDir + entry.key)
+            val expectedFile = File(dir, entry.key)
             if (!expectedFile.exists()) {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: ${entry.key}")
                 return false
@@ -681,7 +694,7 @@ object BundleUpdateStoreAndroid {
         return true
     }
 
-    private fun validateFilesRecursive(dir: File, metadata: Map<String, String>, jsBundleDir: String): Boolean {
+    private fun validateFilesRecursive(dir: File, metadata: Map<String, String>, rootDir: File): Boolean {
         val files = dir.listFiles()
         if (files == null) {
             // listFiles() returns null on I/O error or unreadable directory.
@@ -696,10 +709,18 @@ object BundleUpdateStoreAndroid {
         }
         for (file in files) {
             if (file.isDirectory) {
-                if (!validateFilesRecursive(file, metadata, jsBundleDir)) return false
+                if (!validateFilesRecursive(file, metadata, rootDir)) return false
             } else {
                 if (file.name == "metadata.json" || file.name == ".DS_Store") continue
-                val relativePath = file.absolutePath.removePrefix(jsBundleDir)
+                val relativePath = bundleRelativePath(rootDir, file)
+                if (relativePath == null) {
+                    OneKeyLog.error(
+                        "BundleUpdate",
+                        "[bundle-verify] file outside the walked bundle directory: " +
+                            "${file.absolutePath} (root=${rootDir.absolutePath})",
+                    )
+                    return false
+                }
                 val expectedSHA256 = metadata[relativePath]
                 if (expectedSHA256 == null) {
                     OneKeyLog.error("BundleUpdate", "[bundle-verify] File on disk not found in metadata: $relativePath")
@@ -1086,12 +1107,12 @@ object BundleUpdateStoreAndroid {
             return true
         }
 
-        val bundleDirWithSlash = if (bundleDir.endsWith("/")) bundleDir else "$bundleDir/"
-        if (!validateWebEmbedRecursive(webEmbedRoot, webEmbedEntries, bundleDirWithSlash)) {
+        val bundleDirRoot = File(bundleDir)
+        if (!validateWebEmbedRecursive(webEmbedRoot, webEmbedEntries, bundleDirRoot)) {
             return false
         }
         for ((key, _) in webEmbedEntries) {
-            val expectedFile = File(bundleDirWithSlash + key)
+            val expectedFile = File(bundleDirRoot, key)
             if (!expectedFile.exists()) {
                 OneKeyLog.error(
                     "BundleUpdate",
@@ -1106,7 +1127,7 @@ object BundleUpdateStoreAndroid {
     private fun validateWebEmbedRecursive(
         dir: File,
         webEmbedEntries: Map<String, String>,
-        bundleDirWithSlash: String,
+        rootDir: File,
     ): Boolean {
         val files = dir.listFiles()
         if (files == null) {
@@ -1122,11 +1143,19 @@ object BundleUpdateStoreAndroid {
         }
         for (file in files) {
             if (file.isDirectory) {
-                if (!validateWebEmbedRecursive(file, webEmbedEntries, bundleDirWithSlash)) return false
+                if (!validateWebEmbedRecursive(file, webEmbedEntries, rootDir)) return false
                 continue
             }
             if (file.name == ".DS_Store") continue
-            val relativePath = file.absolutePath.removePrefix(bundleDirWithSlash)
+            val relativePath = bundleRelativePath(rootDir, file)
+            if (relativePath == null) {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "[web-embed-verify] file outside the walked bundle directory: " +
+                        "${file.absolutePath} (root=${rootDir.absolutePath})",
+                )
+                return false
+            }
             val expected = webEmbedEntries[relativePath]
             if (expected.isNullOrEmpty()) {
                 OneKeyLog.error(
