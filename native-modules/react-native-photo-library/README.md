@@ -1,21 +1,61 @@
+<div align="center">
+
 # @onekeyfe/react-native-photo-library
 
-Minimal add-only image saving. [Contract and acceptance](docs/SPEC.md).
+**Add-only photo saving for OneKey apps, without whole-library read access.**
 
-## Installation and application configuration
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-photo-library?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-photo-library)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-photo-library?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
+
+</div>
+
+Saves a local image into the system photo library through a minimal, add-only
+surface. iOS requests Photos `.addOnly` authorization, Android 10+ saves through
+MediaStore, and the legacy write permission is capped at API 28 for Android 8–9.
+The package does not read back assets, request whole-library access, or provide
+picking, cropping or deletion.
+
+## Features
+
+- **Add-only by design** — no `NSPhotoLibraryUsageDescription` and no asset
+  read-back; the module cannot browse the library.
+- **Explicit permission flow** — check without prompting, request from a user
+  action, then save; each step is a separate call.
+- **Bounded input** — local images only, up to 64 MiB, kept in caller ownership
+  until the save settles.
+- **Typed failures** — `PhotoLibraryError` with stable codes for permission,
+  input, activity and save failures.
+- **Lazy native object** — importing the wrapper performs no permission request
+  and no file I/O.
+
+## Installation
 
 ```sh
-yarn add @onekeyfe/react-native-photo-library react-native-nitro-modules@0.37.0
+yarn add @onekeyfe/react-native-photo-library
 ```
 
-Install iOS pods and rebuild the native application. This package has no Web
-implementation. It registers its native object lazily on the first API call;
-importing the JavaScript wrapper performs no permission request or file I/O.
+Install the native peer packages this package links as well:
 
-On iOS, supply an application-specific `NSPhotoLibraryAddUsageDescription` in
-Info.plist. This module uses `.addOnly` authorization, so its save operation does
-not require `NSPhotoLibraryUsageDescription` or whole-library read authorization.
-For Android 8–9 only, the application declares:
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
+Install the app's iOS pods and rebuild the native application. The package has no
+Web implementation.
+
+### iOS
+
+Add an application-specific `NSPhotoLibraryAddUsageDescription` to `Info.plist`.
+Saving uses `.addOnly` authorization, so `NSPhotoLibraryUsageDescription` is not
+required.
+
+### Android
+
+Android 10+ saves with MediaStore and needs no storage permission. For Android 8–9
+only, the application declares:
 
 ```xml
 <uses-permission
@@ -23,10 +63,9 @@ For Android 8–9 only, the application declares:
   android:maxSdkVersion="28" />
 ```
 
-Android 10+ saves with MediaStore and does not require this legacy permission.
 The application owns these declarations and the user-facing explanation.
 
-## Save after an explicit user action
+## Usage
 
 ```ts
 import PhotoLibrary from '@onekeyfe/react-native-photo-library';
@@ -38,35 +77,19 @@ if (permission.status === 'granted') {
 }
 ```
 
-`getSavePermission()` checks without prompting. `saveToLibrary()` never requests
-permission, reads back assets, or removes its source. Inputs must be local images
-of at most 64 MiB. Keep the source until completion. General file IO remains in
-RNFS; use the separate OneKey picker for user selection and cropping.
+Pass an absolute local path or `file://` URI and keep the source file in place
+until the promise settles. Saving runs serially on a native background queue.
 
-iOS uses Photos `.addOnly`; keep `NSPhotoLibraryAddUsageDescription` in the App.
-Android 10+ uses MediaStore with no storage permission. Android 8-9 requires App
-`WRITE_EXTERNAL_STORAGE` capped at `maxSdkVersion=28`; request it only on Save.
-iOS and Android 10+ do not request whole-library read authorization. On Android
-8-9, granting the legacy write permission also implicitly grants storage read
-access, and the system prompt describes access to photos, media and files.
-Permanent denial is returned as `{status: 'denied', canAskAgain: false}`.
-`PhotoLibraryError.code` identifies permission, missing input,
-activity/concurrency and save failures.
+## API
 
-## API and failure handling
+| Method | Result | Platforms | Description |
+| --- | --- | :-: | --- |
+| `getSavePermission()` | `Promise<PhotoSavePermission>` | iOS, Android | Checks authorization without prompting. |
+| `requestSavePermission()` | `Promise<PhotoSavePermission>` | iOS, Android | Requests authorization; call from a foreground user action. |
+| `saveToLibrary(path)` | `Promise<void>` | iOS, Android | Saves the local image; never requests permission or deletes the source. |
 
-The default export and named exports expose the same three methods:
-
-| Method | Result and ownership |
-| --- | --- |
-| `getSavePermission()` | `Promise<PhotoSavePermission>`; checks without a prompt. |
-| `requestSavePermission()` | `Promise<PhotoSavePermission>`; request from a foreground user action. |
-| `saveToLibrary(path)` | `Promise<void>`; resolves after the OS save completes. |
-
-`PhotoSavePermission` contains `status` (`granted`, `denied`, or `undetermined`)
-and `canAskAgain`. Handle denial in the application's existing settings flow;
-do not retry a permanently denied request in a loop. Overlapping Android
-permission requests reject rather than sharing an activity result.
+`PhotoSavePermission` contains `status` (`granted`, `denied`, `undetermined`) and
+`canAskAgain`. Failures reject with `PhotoLibraryError`:
 
 | `PhotoLibraryError.code` | Meaning |
 | --- | --- |
@@ -77,23 +100,37 @@ permission requests reject rather than sharing an activity result.
 | `E_ACTIVITY_DOES_NOT_EXIST` | No usable activity, or its lifecycle ended. |
 | `E_UNKNOWN` | A failure without a recognized native error code. |
 
-Catch operation failures using the exported `PhotoLibraryError` class and its
-`code`. The wrapper removes unrecognized native error details; do not infer a
-successful save from a permission result alone.
+The default export and the named exports expose the same methods. See
+[`docs/SPEC.md`](docs/SPEC.md) for the full contract, ownership boundaries and
+acceptance evidence.
 
-## Source-file and runtime boundaries
+## Platform support
 
-Pass an absolute local path or `file://` URI, not a remote URL or an Android
-content URI. Keep the image unchanged until the promise settles. Saving runs
-serially on a native background queue and leaves the source in caller ownership.
-The module does not queue retries, create an application image cache, or provide
-asset selection/deletion APIs. UI/background JS objects initialize independently;
-the application's foreground runtime owns permission actions.
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Save a local image | ✅ `.addOnly` | ✅ MediaStore | — |
+| Check/request permission | ✅ | ✅ | — |
+| Read library assets | — | — | — |
+| Legacy write permission | — | ✅ API ≤ 28 only | — |
 
-The [specification](docs/SPEC.md) records source and automated evidence separately
-from App/device acceptance. Confirm the actual permission prompt, saved asset,
-and failure cleanup on the target OS versions before shipping a new integration.
+## Caveats
+
+> [!IMPORTANT]
+> `saveToLibrary()` never requests permission. Run `requestSavePermission()` from
+> an explicit user action first, and do not infer a successful save from a
+> permission result alone.
+
+> [!NOTE]
+> On Android 8–9 the legacy write permission also implies storage read access,
+> and the system prompt describes access to photos, media and files. On Android
+> 10+ and iOS this package never asks for whole-library read authorization.
+
+## References
+
+- [Package spec](docs/SPEC.md)
+- [npm package](https://www.npmjs.com/package/@onekeyfe/react-native-photo-library)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

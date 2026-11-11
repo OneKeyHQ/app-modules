@@ -79,6 +79,44 @@ extraction; Android counts entries during extraction. The extracted-path
 constraints remain in force. Failure rejects the Promise; neither platform
 falls back to a caller-provided path.
 
+## OTA storage-schema guard
+
+Status: implemented on iOS and Android. The policy unit suites
+(`BundleStorageSchemaPolicyTests`, `BundleStorageSchemaPolicyTest`) run the
+shipping decision logic with an in-memory ledger reader; they do not execute a
+native runtime reload or a signed-OTA install.
+
+An OTA bundle may declare the reserved optional metadata key
+`storageSchemaVersion` in `metadata.json`. The key is reserved: it is never
+treated as a file entry. It prevents an old JavaScript bundle from returning to
+retained AsyncStorage data once the host app has started migrating AppStorage or
+Jotai to MMKV.
+
+The guard reads the host app's native migration ledger: the
+`onekey_native_storage_migration` shared preferences on Android, and the
+`UserDefaults` keys prefixed `onekey_native_storage_migration_` on iOS, for the
+`app-storage-v1` and `jotai-storage-v1` entries. The decision is:
+
+| `storageSchemaVersion` | Migration ledger | Result |
+| --- | --- | --- |
+| Missing or empty (legacy bundle) | Both entries empty | Accept |
+| Missing or empty | Any entry non-empty, including migrating or reset | Reject |
+| `mmkv-v1` | Either state | Accept |
+| Any other non-empty value | Either state | Reject |
+
+The guard runs when the current bundle is validated at startup and when an
+extracted or installed bundle is validated. Cached validated-bundle metadata is
+re-evaluated after a JS runtime reload, even when entry-bundle hashes are cached,
+because the host migration state can change while the native bundle cache
+survives. A rejected bundle is reported as an `INCOMPATIBLE` update failure on
+the step that raises the typed error; at startup the validated-bundle cache is
+invalidated so no incompatible OTA bundle path is returned.
+
+The guard only reads the host ledger. It never opens MMKV or AsyncStorage,
+deletes or migrates storage data, or emits an `update/error` event of its own. An
+old native binary that predates the guard cannot enforce it, so MMKV-migration
+OTA bundles must still target a host binary that contains this guard.
+
 ## Update failure contract
 
 Status: Implemented in source; Android arm64 AAR/Nitro C++ and iOS wrapper host builds plus native wire/normalizer checks passed. Device lifecycle and install acceptance remain pending.
