@@ -183,7 +183,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       guard let self else { return }
       self.skeletonIndicator.updateFrame(self.hostView.bounds)
       self.layoutFallbackLayer()
-      self.scheduleLoad()
+      if self.attached && !self.hostView.bounds.isEmpty {
+        // Layout completes the prop batch, so start asynchronous work now.
+        self.loadWorkItem?.cancel()
+        self.loadWorkItem = nil
+        self.startLoad(force: false)
+      } else {
+        self.scheduleLoad()
+      }
     }
     hostView.onWindowChanged = { [weak self] attached in
       guard let self else { return }

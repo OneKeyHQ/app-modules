@@ -6078,6 +6078,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       restoredLogicalOffset = _headerOffset + (_headerOffset >= _headerHeight ? body : 0);
       if (_transitionPageOffsets != nil) [_transitionCompensatedPages addIndex:pageIndex];
       if (deferredReleasedIdentity || scrollView.bounds.size.height <= 0 || scrollView.contentSize.height <= 0) {
+        // Align a fresh page before content measurement while retaining its pending restore.
+        if (!deferredReleasedIdentity && saved == nil && _headerOffset == 0) {
+          [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, -next.top) animated:NO];
+        }
         [_pendingPageRestoreKeys addObject:pageKey];
         _syntheticPageRestore = previousSyntheticRestore;
         return;
