@@ -1,56 +1,77 @@
+<div align="center">
+
 # @onekeyfe/react-native-webview-cleaner
 
-React Native WebView website data cleaner for iOS and Android. The package exposes
-one method, `clearAll()`, which requests deletion through the platform's website
-data APIs. It uses the existing React Native bridge module `RNWebViewCleaner`.
+**Clear the app's WebView website data with one fire-and-forget call.**
 
-The [behavioral contract](docs/SPEC.md) is the authoritative reference for platform
-behavior, completion limits, and migration details.
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-webview-cleaner?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-webview-cleaner)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-webview-cleaner?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![NativeModule](https://img.shields.io/badge/NativeModule-4D6BFE)
+
+</div>
+
+Exposes a single `clearAll()` method that requests deletion of app-wide WebView
+website data through the platform stores. iOS removes every `WKWebsiteDataStore`
+data type modified since the Unix epoch from the default data store; Android
+removes all cookies, flushes them, and deletes all `WebStorage` data. The call is
+fire-and-forget — it returns `undefined`, takes no filters, and reports no
+completion. There is no Web implementation.
+
+## Features
+
+- **One call** — `clearAll()` clears the app's default WebView stores without
+  arguments, keys or per-origin bookkeeping.
+- **Covers both stores** — WebKit website data types on iOS; cookies plus
+  `WebStorage` on Android.
+- **No retained state** — the wrapper performs one bridge call and keeps no
+  JavaScript cache, queue or request state.
+- **Legacy-compatible entry point** — the default export and the
+  `RNWebViewCleaner` native module name are unchanged, so existing consumers and
+  dependency aliases keep working.
+- **No new native runtime** — the package is a classic React Native bridge
+  module; it does not add a Nitro dependency.
 
 ## Installation
-
-Install the package in your React Native application using one package manager:
 
 ```sh
 yarn add @onekeyfe/react-native-webview-cleaner
 ```
 
-Or with npm:
+Install the app's iOS pods and rebuild the native binary; Android links through
+autolinking and also requires a native rebuild. The package has no Nitro or
+other native peer dependency.
 
-```sh
-npm install @onekeyfe/react-native-webview-cleaner
-```
-
-For iOS, install the application's CocoaPods dependencies from its `ios` directory
-and rebuild the native app:
-
-```sh
-cd ios
-pod install
-```
-
-Android also requires a native rebuild after installation. React Native autolinking
-uses the installed npm package; this package does not require Nitro Modules.
-Standalone CocoaPods installation from the podspec's source repository is outside
-the verified installation scope; the podspec retains a historical source placeholder.
-
-The package declares `react` and `react-native` as peer dependencies and Node.js
-18 or newer as its package engine. The wildcard peer ranges do not establish
-compatibility with every React Native version or architecture. See the verification
-status below for the current limits of acceptance evidence.
+If an application installs the package under the legacy
+`react-native-webview-cleaner` dependency alias, the alias import below still
+resolves to the same module.
 
 ## Usage
 
 ```ts
 import WebViewCleaner from '@onekeyfe/react-native-webview-cleaner';
 
-// Request deletion of app-wide WebView website data.
+// Requests deletion of app-wide WebView website data.
 WebViewCleaner.clearAll();
-// Execution continues without waiting for native deletion to finish.
+// This returns immediately; native deletion is not awaited.
 ```
 
-Existing OneKey consumers that install the scoped package under the
-`react-native-webview-cleaner` dependency alias can retain their existing import:
+The application owns any coordination around clearing — for example deciding
+when to run it relative to logout or the next WebView load.
+
+## API
+
+| Export | Signature | Platforms | Description |
+| --- | --- | :-: | --- |
+| default `clearAll` | `() => void` | iOS, Android | Requests deletion of the app's default WebView website data. |
+
+`clearAll()` has no caller-visible completion callback, result or event. The
+wrapper calls `NativeModules.RNWebViewCleaner.clearAll()` and discards the native
+result, including the iOS promise. See [`src/index.ts`](src/index.ts) for the
+wrapper and [`docs/SPEC.md`](docs/SPEC.md) for the full behavioral contract.
+
+If the installed dependency uses the legacy alias, import it the same way:
 
 ```ts
 import WebViewCleaner from 'react-native-webview-cleaner';
@@ -58,79 +79,39 @@ import WebViewCleaner from 'react-native-webview-cleaner';
 WebViewCleaner.clearAll();
 ```
 
-Use the import that matches the dependency name in your application's manifest.
+## Platform support
 
-## API
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Remove website data | ✅ all WebKit types since epoch | ✅ cookies + `WebStorage` | — |
+| Filter by account, origin or data type | — | — | — |
+| Completion callback or result | — | — | — |
+| Await deletion completion | — | — | — |
 
-The default export exposes one method:
+## Caveats
 
-```ts
-clearAll(): void;
-```
+> [!IMPORTANT]
+> `clearAll()` returns `undefined`; `await` does not wait for deletion to finish.
+> Do not treat the call as a completion barrier for logout, account switching or
+> the next WebView load.
 
-`clearAll()` takes no arguments and applies no account, tab, origin, URL, or data-type
-filter. It makes one call to `NativeModules.RNWebViewCleaner.clearAll()` and returns
-`undefined`. There is no caller-visible completion callback, result, or event.
+> [!WARNING]
+> The native stores are app-wide. Clearing removes cookies and website storage
+> used by every WebView in the same app, with no per-wallet, per-account or
+> per-tab partition, and repeated calls can overlap.
 
-**`await WebViewCleaner.clearAll()` does not wait for deletion to complete.** The
-JavaScript wrapper discards the native return value, including the native promise
-on iOS. A subsequent WebView operation can run while deletion is still pending.
+> [!NOTE]
+> Android's operation does not guarantee removal of every WebView disk cache, and
+> cookie removal may still be pending when the method returns. Native failures are
+> not reported through the public API; an unavailable native module can throw
+> synchronously.
 
-## Platform behavior
+## References
 
-| Platform | Requested operation | Completion behavior |
-| --- | --- | --- |
-| iOS | Dispatch to the main queue and remove all WebKit website data types from `WKWebsiteDataStore.defaultDataStore` modified since the Unix epoch. | WebKit invokes a native completion handler and the native promise resolves with `nil`; the JavaScript wrapper discards that promise. |
-| Android | Call `CookieManager.removeAllCookies(null)`, then `CookieManager.flush()`, then `WebStorage.deleteAllData()`. | The native method returns `void`. Cookie removal may still be pending. |
-| Web | Unsupported. | No Web implementation or fallback is provided. |
+- [Package spec](docs/SPEC.md)
+- [npm package](https://www.npmjs.com/package/@onekeyfe/react-native-webview-cleaner)
+- [Changelog](../../CHANGELOG.md)
 
-The Android operation does not guarantee removal of every WebView disk cache.
-The two platforms retain their existing platform-specific deletion behavior.
+## License
 
-## Shared data and concurrent calls
-
-The native website data stores are app-wide resources. Clearing them can remove
-cookies and website storage used by other WebViews in the same app and can affect
-their signed-in website sessions. There is no per-wallet, per-account, or per-tab
-partition in this API.
-
-The app's `main` and `bg` JavaScript runtimes have independent heaps but can operate
-on the same native website data stores. Calls from either runtime can affect the
-same data. The package provides no cross-runtime queue, cancellation, or
-serialization; repeated calls can overlap.
-
-Consumers own any application-level coordination around clearing. Do not treat
-the return from `clearAll()` as a completion barrier for logout, account switching,
-or the next WebView load. Workflows requiring confirmed completion need an API
-that explicitly reports it.
-
-## Failures and resource limits
-
-- An unavailable `NativeModules.RNWebViewCleaner` can cause a synchronous
-  JavaScript failure. Check native installation, autolinking, and the rebuilt app
-  when the module is unavailable.
-- Native asynchronous failures are not reported through the public `clearAll()`
-  method. A JavaScript `try`/`catch` cannot confirm the outcome of deletion.
-- The package provides no retries, fallback, progress reporting, or timeout.
-- Platform APIs control deletion duration and data volume. There is no guaranteed
-  latency, byte count, or package-defined numeric limit.
-- The wrapper retains no JavaScript cache or request state. Native deletion can
-  involve system I/O, and platform permissions and security checks still apply.
-
-## Compatibility and verification status
-
-This package preserves the published legacy bridge API, native module name,
-consumer alias, and autolinking paths. It ships CommonJS, ESM, TypeScript
-declarations, and a React Native source entry point.
-
-The current contract records source and local package checks as passed. Consumer
-Release runtime checks remain pending, including full Android Release APK/R8 and
-iOS archive/runtime acceptance with the published version installed and locked.
-These checks are distinct from source conformance; consult the
-[SPEC](docs/SPEC.md) for acceptance requirements and known migration limitations.
-
-## License and support
-
-Licensed under the [MIT License](LICENSE). Report package issues in the
-[app-modules issue tracker](https://github.com/OneKeyHQ/app-modules/issues), including
-the package version, platform, React Native version, and reproduction steps.
+MIT. See [LICENSE](LICENSE).

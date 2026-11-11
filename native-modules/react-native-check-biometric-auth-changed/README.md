@@ -1,9 +1,38 @@
+<div align="center">
+
 # @onekeyfe/react-native-check-biometric-auth-changed
 
-Detect changes to the stored biometric authentication domain state on iOS.
-OneKey uses this native signal to decide whether previously accepted biometric
-state needs to be reconsidered. The package reports a change; the application
-owns any authentication prompt and its subsequent security policy.
+**Detect changes to the stored iOS biometric authentication state before trusting an existing biometric setting.**
+
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-check-biometric-auth-changed?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-check-biometric-auth-changed)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-check-biometric-auth-changed?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
+
+</div>
+
+Compares the current iOS LocalAuthentication domain state with a persisted
+Keychain baseline and resolves whether it changed. OneKey uses the signal to
+decide whether a previously accepted biometric setting needs to be reconsidered.
+The package never authenticates a user, prompts for biometrics or authorizes a
+password operation — the application owns the authentication challenge and the
+policy applied to the result. This is an iOS-only signal; Android is a stub and
+Web is unsupported.
+
+## Features
+
+- **One boolean signal** — `checkBiometricAuthChanged()` answers whether the
+  stored biometric domain state differs from the saved baseline.
+- **Keychain-backed baseline** — the baseline is persisted in the Keychain and
+  shared process-wide, including across independent JavaScript runtimes.
+- **Consumptive comparison** — a successful check always advances the baseline,
+  so the same changed state reports `false` on the next check.
+- **Fail-closed errors** — missing domain state or Keychain read/write failures
+  reject instead of silently resolving `false`.
+- **Serialized transaction** — one process-wide lock covers read, compare and
+  persist, and the work runs off the UI thread.
+- **Legacy-safe migration** — a legacy `UserDefaults` baseline participates in
+  comparison and is removed only after the new baseline is saved.
 
 ## Installation
 
@@ -11,75 +40,76 @@ owns any authentication prompt and its subsequent security policy.
 yarn add @onekeyfe/react-native-check-biometric-auth-changed react-native-nitro-modules
 ```
 
-Install the application's iOS pods and rebuild the native application after
-adding the package. The exported function requires its Nitro native module.
+Install the application's iOS pods and rebuild the native application; this is a
+Nitro module, so a JavaScript-only install does not register it. On iOS the pod
+also depends on `ReactNativeNativeLogger`, so include
+`@onekeyfe/react-native-native-logger` in the application's pods. No permission or
+`Info.plist` usage-description key is required because the package never prompts
+for biometrics.
 
 ## Usage
 
 ```ts
 import { checkBiometricAuthChanged } from '@onekeyfe/react-native-check-biometric-auth-changed';
 
-const changed = await checkBiometricAuthChanged();
-if (changed) {
-  // Apply the application's existing biometric re-enrollment policy.
+try {
+  const changed = await checkBiometricAuthChanged();
+  if (changed) {
+    // Apply the application's existing biometric re-enrollment policy.
+  }
+} catch {
+  // The check is unavailable; keep password authentication available and do not
+  // treat this as "unchanged".
 }
 ```
 
-## Platform behavior
+Persist an application checkpoint before checking, and resolve a changed or
+unavailable result with password/passcode verification.
 
-- iOS reads LocalAuthentication's evaluated policy domain state and compares it
-  with the previous value stored in Keychain. A check with available state
-  successfully saves that state as the baseline before resolving the current call.
-- The first available state establishes a baseline unless legacy stored state
-  exists. Missing current domain state or failed Keychain reads/writes reject.
-  Only `errSecItemNotFound` means an absent stored baseline; legacy state is
-  deleted only after the new baseline has been saved successfully.
-- Android currently returns `false` from a stub implementation. It does not
-  detect enrollment changes.
+## API
 
-A `false` result is not proof that biometrics are available or that the user has
-authenticated: on iOS it can also mean a first baseline was established. This API does not
-replace an authentication challenge, and has no Web implementation.
+| Export | Signature | Platforms | Description |
+| --- | --- | :-: | --- |
+| `checkBiometricAuthChanged()` | `() => Promise<boolean>` | iOS | Resolves `true` when the domain state differs from the stored baseline, `false` when it matches or a first baseline was established; rejects on missing state or Keychain failure. |
 
-The wrapper is in [src/index.tsx](src/index.tsx); its native interface is
-[src/ReactNativeCheckBiometricAuthChanged.nitro.ts](src/ReactNativeCheckBiometricAuthChanged.nitro.ts).
-Review the platform sources when integrating this signal into an authentication
-workflow.
+There is no enrollment count, credential, event subscription or configuration
+option. The native interface is in
+[`src/ReactNativeCheckBiometricAuthChanged.nitro.ts`](src/ReactNativeCheckBiometricAuthChanged.nitro.ts)
+and [`docs/SPEC.md`](docs/SPEC.md) defines the full failure and transaction
+contract.
 
-## Interpreting repeated checks
+## Platform support
 
-`checkBiometricAuthChanged()` returns only a boolean: there is no enrollment
-count, authentication credential or event subscription in this API. On iOS the
-check persists an available comparison baseline before resolving. A process-wide
-synchronous transaction lock serializes checks on the native background queue;
-callers still own authentication and UI policy.
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Detect biometric domain-state change | ✅ | — | — |
+| Persisted Keychain baseline | ✅ | — | — |
+| Authenticate or prompt the user | — | — | — |
 
-A changed result is consumed by that baseline update. Persist a checkpoint before
-checking, and retain it if the application cannot finish disabling biometrics.
-After an interrupted check, require password/passcode recovery rather than
-trusting a fresh `false`; see the transaction requirements in the contract.
+## Caveats
 
-Handle native-operation rejection separately from a resolved `false`. Neither
-an Android stub result nor an iOS rejection establishes that enrollment
-has remained unchanged. Applications must handle rejection as unavailable, rather
-than substituting `false`. See [the contract](docs/SPEC.md) for error and migration
-boundaries. These iOS changes require a new SDK release and an application rebuild. The package exports the Nitro interface as a type for
-adapters; the public JavaScript call remains `checkBiometricAuthChanged()`.
+> [!IMPORTANT]
+> `false` is not proof that biometrics are available or that the user
+> authenticated — on iOS it can also mean a first baseline was just established.
+> A rejection means the check is unavailable; never substitute `false` for it.
+
+> [!WARNING]
+> The comparison is consumptive: a `true` result advances the baseline, so the
+> change is reported once. A security-sensitive caller must durably checkpoint
+> that a check is in progress and require password/passcode recovery after an
+> interrupted check; JavaScript component state alone is not sufficient.
+
+> [!NOTE]
+> Android ships a stub that always resolves `false` and detects no enrollment
+> changes, and there is no Web implementation. The package only reports a state
+> change; it does not disable biometrics or change the application's switch.
+
+## References
+
+- [Package spec](docs/SPEC.md)
+- [Example page](../../example/react-native/pages/BiometricAuthTestPage.tsx)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT.
-
-## Focused state tests
-
-From this package directory in a repository source checkout on macOS with the
-Xcode command-line tools, run the actual state transaction core
-with deterministic provider failures (without accessing a real Keychain):
-
-```sh
-xcrun swiftc ios/BiometricAuthStateStore.swift tests/BiometricAuthStateStoreTests.swift -o /tmp/biometric-state-tests
-/tmp/biometric-state-tests
-```
-
-The runner checks eleven scenarios, including concurrent transactions. It does not
-replace device enrollment, locked-Keychain or native bridge acceptance tests.
+MIT. See [LICENSE](LICENSE).
