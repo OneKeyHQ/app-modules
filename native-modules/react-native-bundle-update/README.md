@@ -40,6 +40,12 @@ ZIP, extracted bundle, signature sidecar and cleanup — callers never choose a 
 yarn add @onekeyfe/react-native-bundle-update react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-bundle-crypto @onekeyfe/react-native-native-logger @onekeyfe/react-native-range-downloader
+```
+
 Install the application's iOS pods and rebuild the native application; this is a
 Nitro module, so a JavaScript-only install cannot change the bundle the host app
 loads. The iOS pod uses Foundation and Gopenpgp, Android uses Java files and

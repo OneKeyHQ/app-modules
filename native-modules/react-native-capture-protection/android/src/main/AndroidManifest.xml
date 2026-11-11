@@ -1,3 +1,4 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" android:minSdkVersion="34" />
+  <!-- The permission only exists on API 34+; older platforms ignore an unknown permission. -->
+  <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
 </manifest>

@@ -41,6 +41,12 @@ protocol, symbol routing and data fetching belong to the application.
 yarn add @onekeyfe/react-native-chart-webview react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 `react-native-nitro-modules` is a required peer dependency at the version pinned
 by the package. Install the app's iOS pods and rebuild the native application
 after adding the package; Android links through autolinking. There is no Web

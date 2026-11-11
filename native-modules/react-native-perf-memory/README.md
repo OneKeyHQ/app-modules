@@ -37,6 +37,12 @@ the caller owns frequency, aggregation and presentation.
 yarn add @onekeyfe/react-native-perf-memory react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 The measurement is native, so install the application's iOS pods and rebuild the
 native binary; a JavaScript-only update does not register the module. No platform
 permission is required.

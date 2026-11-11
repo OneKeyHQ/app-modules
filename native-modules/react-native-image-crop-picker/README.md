@@ -43,6 +43,12 @@ equivalent on the web. Photo saving and its authorization belong to
 yarn add @onekeyfe/react-native-image-crop-picker react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 To keep existing `react-native-image-crop-picker` imports working, install it
 under an npm alias: `react-native-image-crop-picker@npm:@onekeyfe/react-native-image-crop-picker`.
 Install the application's iOS pods and rebuild the native binary; the web entry

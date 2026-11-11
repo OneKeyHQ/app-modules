@@ -22,7 +22,9 @@ no `docs/SPEC.md`).
    the platform shape, and the main boundary or limitation.
 3. **Features** — three to six bullets, each naming the benefit first.
 4. **Installation** — the `yarn add` command and the native rebuild steps,
-   required peer dependencies, permissions/Info.plist entries when needed.
+   required peer dependencies (including every `@onekeyfe/*` native package the
+   podspec or Gradle file links at build time), permissions/Info.plist entries
+   when needed.
 5. **Usage** — one small, real example (use the package's tests or example app
    code rather than inventing one); one or two sentences about ownership.
 6. **API** — a table of the public exports, signatures and platform support.

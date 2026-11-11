@@ -38,6 +38,12 @@ only want base64-encoded random bytes.
 yarn add @onekeyfe/react-native-get-random-values react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 `expo-crypto` and `fast-base64-decode` are installed as runtime dependencies of
 this package. The wrapper expects Expo modules: a bare React Native app must
 [install and configure Expo modules](https://docs.expo.dev/bare/installing-expo-modules/)

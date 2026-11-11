@@ -41,6 +41,12 @@ process-scoped and never persisted.
 yarn add @onekeyfe/react-native-device-utils react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 This package ships native code. Install the app's iOS pods and rebuild the
 native binary; a JavaScript-only update does not register the module. Push
 tokens and launch options additionally depend on the host application's native

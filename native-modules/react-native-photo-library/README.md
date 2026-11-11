@@ -37,6 +37,12 @@ picking, cropping or deletion.
 yarn add @onekeyfe/react-native-photo-library
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 Install the app's iOS pods and rebuild the native application. The package has no
 Web implementation.
 

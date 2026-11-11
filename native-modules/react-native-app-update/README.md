@@ -40,6 +40,12 @@ both platforms but only Android performs real work.
 yarn add @onekeyfe/react-native-app-update react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-bundle-crypto @onekeyfe/react-native-native-logger @onekeyfe/react-native-range-downloader
+```
+
 Install the application's iOS pods and rebuild the native application; the
 JavaScript package alone does not register the Nitro hybrid object. The package
 manifest merges Android's `REQUEST_INSTALL_PACKAGES` permission and a

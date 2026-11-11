@@ -37,6 +37,12 @@ value serialization and removal policy belong to the application.
 yarn add @onekeyfe/react-native-keychain-module react-native-nitro-modules
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 This is an iOS-native package. Install the application's iOS pods and rebuild
 the native binary; a JavaScript-only update does not register the module.
 

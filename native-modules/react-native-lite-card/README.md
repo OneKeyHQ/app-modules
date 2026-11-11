@@ -41,6 +41,12 @@ and PIN values.
 yarn add @onekeyfe/react-native-lite-card
 ```
 
+Install the native peer packages this package links as well:
+
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
 The package ships native code and changes the TurboModule ABI, so install the
 application's iOS pods and rebuild the native binary; a JavaScript-only update
 cannot add it.
