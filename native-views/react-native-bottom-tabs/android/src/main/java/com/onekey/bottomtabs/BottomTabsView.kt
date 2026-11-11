@@ -543,11 +543,16 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       return
     }
     bottomNavigation.itemIconSize = size
-    // Icons are rasterized at the icon size, so reload them for the new size.
+    // Icons are rasterized at the icon size: drop cached and in-flight requests,
+    // then reload each item's currently active source at the new size.
     drawableCache.clear()
-    iconSources.forEach { (index, source) ->
+    iconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+    iconRequestTokens.clear()
+    selectedIconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+    selectedIconRequestTokens.clear()
+    items.indices.forEach { index ->
       bottomNavigation.menu.findItem(index)?.let { menuItem ->
-        loadDrawable(index, source, isSelectedIcon = false) { menuItem.icon = it }
+        applyMenuItemIcon(index, menuItem)
       }
     }
   }
