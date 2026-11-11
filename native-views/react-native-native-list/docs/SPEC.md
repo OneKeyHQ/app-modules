@@ -858,6 +858,19 @@ keep their existing layout and public interfaces.
 
 ### Android section-index attachment
 
+The index rail and its letter preview MUST remain outside the view hierarchy
+until the accepted configuration contains usable index entries. Disabling the
+index or removing its last usable entry MUST detach both views, cancel the
+preview interaction, and prevent a pending attachment callback from restoring
+them. Restoring usable entries MUST reattach the same view instances without
+duplicate parents. This attachment lifecycle is Android-specific; iOS and Web
+keep their existing behavior.
+
+The section-index letter preview is decorative. It MUST NOT participate in
+React Native touch targeting while visible, fading, or invisible. Controls in
+React container slots beneath its bounds MUST remain pressable; the index rail
+continues to own index selection and scrubbing.
+
 When `sectionIndex.centeredInWindow` is enabled, the Android index rail moves
 between the list container and the window host as list visibility and attachment
 change. Before adding that same rail to its new parent, the previous parent MUST

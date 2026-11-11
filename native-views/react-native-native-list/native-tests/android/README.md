@@ -39,9 +39,12 @@ detached helper auto-scroll and stale callbacks, and the next valid/unmoved drop
 The same build command also includes `NativeListSectionIndexReparentingTest`.
 Run it on a task-owned emulator by replacing the `-e class` value above with
 `com.margelo.nitro.nativelist.NativeListSectionIndexReparentingTest` and require
-`OK (3 tests)`. It exercises the production `NativeListView` with real Android
+`OK (6 tests)`. It exercises the production `NativeListView` with real Android
 view transitions in both attachment directions, then checks delayed transition
 completion, visibility/configuration changes, RTL, and detach/reattach ownership.
+It also checks that absent or disabled indexes leave both views detached, empty
+entries can restore the same instances, pending returns cannot restore a disabled
+index, and the preview never masks RN touch targets across its visibility states.
 It does not establish physical-device interaction acceptance.
 
 ## Vertical-drag React touch cancellation
