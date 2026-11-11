@@ -203,6 +203,90 @@ describe('NativeList imperative ref', () => {
     }
   );
 
+  it.each([0, 44.2])(
+    'remeasures an iOS header added after an empty slot measured zero (%s)',
+    async (height) => {
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const platform = jest.replaceProperty(Platform, 'OS', 'ios');
+      let renderer: TestRenderer.ReactTestRenderer | undefined;
+      const currentProps = () => mockFontRenders.mock.calls.at(-1)?.[0];
+      const measuredHeights = () =>
+        JSON.parse(currentProps()?.containerSlotHeightsJson);
+      const slots = () =>
+        React.Children.toArray(currentProps()?.children) as React.ReactElement<{
+          onLayout: (event: {
+            nativeEvent: { layout: { height: number } };
+          }) => void;
+        }>[];
+      const layoutEvent = (value: number) => ({
+        nativeEvent: { layout: { height: value } },
+      });
+      try {
+        await act(async () => {
+          renderer = TestRenderer.create(<NativeList snapshot={snapshot} />);
+        });
+        const emptySlots = slots();
+        await act(async () => {
+          emptySlots[0].props.onLayout(layoutEvent(0));
+          emptySlots[2].props.onLayout(layoutEvent(17.2));
+        });
+        expect(measuredHeights()).toEqual([0, 0, 18, 0, 0, 0]);
+        await act(async () => {
+          renderer?.update(
+            <NativeList snapshot={snapshot} listHeader={<React.Fragment />} />
+          );
+        });
+        const firstHeaderSlots = slots();
+        expect(measuredHeights()).toEqual([null, 0, 18, 0, 0, 0]);
+        expect(firstHeaderSlots[0].key).not.toBe(emptySlots[0].key);
+        expect(firstHeaderSlots.slice(1).map((slot) => slot.key)).toEqual(
+          emptySlots.slice(1).map((slot) => slot.key)
+        );
+        await act(async () => emptySlots[0].props.onLayout(layoutEvent(0)));
+        expect(measuredHeights()).toEqual([null, 0, 18, 0, 0, 0]);
+        await act(async () =>
+          firstHeaderSlots[0].props.onLayout(layoutEvent(height))
+        );
+        expect(measuredHeights()).toEqual([Math.ceil(height), 0, 18, 0, 0, 0]);
+        await act(async () => {
+          renderer?.update(
+            <NativeList
+              snapshot={snapshot}
+              listHeader={<React.Fragment>new</React.Fragment>}
+            />
+          );
+        });
+        expect(slots()[0].key).toBe(firstHeaderSlots[0].key);
+        expect(measuredHeights()).toEqual([Math.ceil(height), 0, 18, 0, 0, 0]);
+        await act(async () => {
+          renderer?.update(<NativeList snapshot={snapshot} />);
+        });
+        const removedSlots = slots();
+        expect(measuredHeights()).toEqual([0, 0, 18, 0, 0, 0]);
+        expect(removedSlots[0].key).not.toBe(firstHeaderSlots[0].key);
+        await act(async () => {
+          renderer?.update(
+            <NativeList snapshot={snapshot} listHeader={<React.Fragment />} />
+          );
+        });
+        expect(slots()[0].key).not.toBe(removedSlots[0].key);
+        expect(measuredHeights()).toEqual([null, 0, 18, 0, 0, 0]);
+        await act(async () => {
+          firstHeaderSlots[0].props.onLayout(layoutEvent(65));
+          removedSlots[0].props.onLayout(layoutEvent(0));
+        });
+        expect(measuredHeights()).toEqual([null, 0, 18, 0, 0, 0]);
+        await act(async () => slots()[0].props.onLayout(layoutEvent(height)));
+        expect(measuredHeights()).toEqual([Math.ceil(height), 0, 18, 0, 0, 0]);
+      } finally {
+        await act(async () => renderer?.unmount());
+        platform.restore();
+      }
+    }
+  );
+
   it.each([
     { platform: 'android' as const, header: true },
     { platform: 'ios' as const, header: false },

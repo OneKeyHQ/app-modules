@@ -1551,7 +1551,12 @@ whose height has not been reported yet (or has just grown) never draws over rows
 iOS header first-frame measurement: when `listHeader` is present but
 its first layout has not arrived, the matching wrapper sends `null` for slot 0
 instead of an authoritative zero. The other five slot values remain finite,
-non-negative numbers; Android and absent-header serialization stay unchanged.
+non-negative numbers; Android serialization stays unchanged. On iOS, an absent
+header always reports numeric zero. Each absent/present boundary replaces only
+the header slot root and starts a new measurement epoch; a layout callback from
+an earlier epoch MUST NOT make the current header ready. Replacing header content
+while it remains present does not start another epoch. A newly present header stays pending
+until its own layout reports a number, including zero.
 Before that measurement, the iOS host may reserve the current mounted header
 root's finite, non-negative `ceil(bounds.height)` when its bounds width is finite
 and positive. It applies that height to both clipping and row placement in the
