@@ -781,7 +781,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       if let hit = cache.imageFromMemoryCache(forKey: key) {
         return hit
       }
-      return OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(forKey: key, cache: cache)
+      return OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
+        forKey: key, context: context, cache: cache
+      )
     }
 
     var exactProbes: [(variant: OneKeyImageMemoryVariant?, url: URL, size: CGSize?)] = []

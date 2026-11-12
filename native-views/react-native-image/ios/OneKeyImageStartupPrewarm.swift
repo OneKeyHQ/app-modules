@@ -189,8 +189,17 @@ final class OneKeyImageStartupPrewarm {
     SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 
-  static func prewarmMemoryKey(forKeyHash keyHash: String) -> String {
-    prewarmKeyPrefix + keyHash
+  static func prewarmMemoryKey(forKeyHash keyHash: String, scale: Double) -> String {
+    prewarmKeyPrefix + keyHash + ":" + String(scale)
+  }
+
+  private static func resolvedScale(
+    forKey key: String,
+    context: [SDWebImageContextOption: Any]
+  ) -> Double {
+    let value = (context[.imageScaleFactor] as? NSNumber)?.doubleValue
+      ?? Double(SDImageScaleFactorForKey(key))
+    return (value.isFinite && value >= 1) ? value : 1
   }
 
   static func resolveIdentity(
@@ -234,9 +243,7 @@ final class OneKeyImageStartupPrewarm {
       return name
     }()
     let isAvatar = requestURL.scheme?.lowercased() == "onekey-avatar"
-    let resolvedScale = (context[.imageScaleFactor] as? NSNumber)?.doubleValue
-      ?? Double(SDImageScaleFactorForKey(key))
-    let scale = (resolvedScale.isFinite && resolvedScale >= 1) ? resolvedScale : 1
+    let scale = resolvedScale(forKey: key, context: context)
     return Identity(
       keyHash: sha256Hex(key),
       diskFile: diskFile,
@@ -250,8 +257,13 @@ final class OneKeyImageStartupPrewarm {
 
   /// Claims a prewarmed image from `cache` for `key` and promotes it under the
   /// exact runtime `key` so subsequent probes hit `imageFromMemoryCache(forKey:)` directly.
-  func claimPrewarmedImage(forKey key: String, cache: SDImageCache) -> UIImage? {
-    let prewarmKey = Self.prewarmMemoryKey(forKeyHash: Self.sha256Hex(key))
+  func claimPrewarmedImage(
+    forKey key: String,
+    context: [SDWebImageContextOption: Any],
+    cache: SDImageCache
+  ) -> UIImage? {
+    let scale = Self.resolvedScale(forKey: key, context: context)
+    let prewarmKey = Self.prewarmMemoryKey(forKeyHash: Self.sha256Hex(key), scale: scale)
     guard let image = cache.imageFromMemoryCache(forKey: prewarmKey) else {
       return nil
     }
@@ -417,7 +429,7 @@ final class OneKeyImageStartupPrewarm {
       || seen.count >= Self.limit
       || elapsed >= Self.maxWindowDuration
 
-    let seenIdentities = Set(seen.map(\.identity))
+    let seenKeyHashes = Set(seen.map(\.keyHash))
     let previousIdentities = previous.map(\.identity)
     let currentIdentities = seen.map(\.identity)
     let allPreviousAtMaxLaunch = previous.allSatisfy { $0.launch == maxLaunch }
@@ -431,7 +443,7 @@ final class OneKeyImageStartupPrewarm {
       return copy
     }
     let retainedPrevious = previous.filter { entry in
-      !seenIdentities.contains(entry.identity) && (nextLaunch - entry.launch) < Self.maxLaunchAge
+      !seenKeyHashes.contains(entry.keyHash) && (nextLaunch - entry.launch) < Self.maxLaunchAge
     }
     let merged = Array((currentStamped + retainedPrevious).prefix(Self.limit))
 
@@ -515,7 +527,7 @@ final class OneKeyImageStartupPrewarm {
         else { return }
         cache.storeImage(
           toMemory: image,
-          forKey: Self.prewarmMemoryKey(forKeyHash: entry.keyHash)
+          forKey: Self.prewarmMemoryKey(forKeyHash: entry.keyHash, scale: scale)
         )
         decodedCount += 1
       }

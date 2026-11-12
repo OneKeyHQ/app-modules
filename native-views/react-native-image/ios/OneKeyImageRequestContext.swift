@@ -772,6 +772,15 @@ enum OneKeyImageRequestContext {
       for (key, value) in thumbnailOptions(pixelSize: thumbnailPixelSize) {
         context[key] = value
       }
+      if let url,
+        let scheme = url.scheme?.lowercased(),
+        ["http", "https", "file"].contains(scheme)
+      {
+        let scale = SDImageScaleFactorForKey(url.absoluteString)
+        if scale.isFinite, scale > 1 {
+          context[.imageScaleFactor] = NSNumber(value: Double(scale))
+        }
+      }
     }
 
     let cacheType = cacheType(for: cachePolicy)
