@@ -29,7 +29,8 @@ fun main(args: Array<String>) {
     val hex = "a".repeat(64)
     val uuid = "12345678-1234-1234-1234-123456789abc"
     for (id in listOf(hex, "0x" + hex.uppercase(), "c".repeat(128), "request-$hex",
-        "a".repeat(32) + "-" + hex, hex + "-" + "a".repeat(32), "request+%2D-$hex-", uuid)) {
+        "a".repeat(32) + "-" + hex, hex + "-" + "a".repeat(32), "request+%2D-$hex-",
+        "$hex-" + "b".repeat(62), "$hex-" + "b".repeat(63), "%" + "a".repeat(62) + "g" + "b".repeat(64), uuid)) {
         val event = SniConnectLogger.event("sni_request_start", "requestId" to id, "ip" to "2001:4860:4860::8888")
         val formatted = format(event + " secret=" + canaries[0], "SniConnect")
         val displayed = formatted.split(" ").first { it.startsWith("requestId=") }.substringAfter("=")

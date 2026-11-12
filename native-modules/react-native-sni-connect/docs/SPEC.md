@@ -222,7 +222,8 @@ complete ID while avoiding the final logger's generic 64-hex private-key filter.
 For example, a 64-hex ID is displayed as two 32-hex groups. UUIDs are unchanged;
 the ID sent in headers and used for cancellation is never reformatted.
 Only reformatted IDs add `requestIdFormat=hex32` to the event. In marked IDs,
-original `%` and `-` characters are represented as `%25` and `%2D`. To restore a
+original `%` and `-` characters are represented as `%25` and `%2D` before hex
+grouping, including any hex runs formed beside those escapes. To restore a
 marked ID, remove grouping hyphens, then percent-decode once. This also preserves
 mixed IDs containing both original separators and long hex runs. An already
 separated 32-hex/32-hex ID is unchanged and has no marker. `requestId` is

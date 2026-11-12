@@ -38,7 +38,9 @@ let hex = String(repeating: "a", count: 64)
 let uuid = "12345678-1234-1234-1234-123456789abc"
 for id in [hex, "0x" + hex.uppercased(), String(repeating: "c", count: 128), "request-" + hex,
            String(repeating: "a", count: 32) + "-" + hex, hex + "-" + String(repeating: "a", count: 32),
-           "request+%2D-" + hex + "-", uuid] {
+           "request+%2D-" + hex + "-", hex + "-" + String(repeating: "b", count: 62),
+           hex + "-" + String(repeating: "b", count: 63),
+           "%" + String(repeating: "a", count: 62) + "g" + String(repeating: "b", count: 64), uuid] {
     let event = SniConnectLog.event("sni_request_start", [("requestId", id), ("ip", "2001:4860:4860::8888")])
     let formatted = OneKeyLog.regressionFormat(event + " secret=" + canaries[0], tag: "SniConnect")
     let displayed = formatted.components(separatedBy: " ").first { $0.hasPrefix("requestId=") }!.dropFirst(10)

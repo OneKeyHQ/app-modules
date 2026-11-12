@@ -31,11 +31,11 @@ enum SniConnectLog {
           )
         : logValue
       if displayedValue != logValue {
-        displayedValue = logValue.components(separatedBy: "-").map { part in
-          part.replacingOccurrences(
+        displayedValue = logValue.replacingOccurrences(of: "%", with: "%25")
+          .replacingOccurrences(of: "-", with: "%2D")
+          .replacingOccurrences(
             of: "([0-9a-fA-F]{32})(?=[0-9a-fA-F]{32})", with: "$1-", options: .regularExpression
-          ).replacingOccurrences(of: "%", with: "%25")
-        }.joined(separator: "%2D")
+          )
       }
       return "\(key)=\(displayedValue)"
         + (displayedValue != logValue ? " requestIdFormat=hex32" : "")

@@ -47,9 +47,7 @@ internal object SniConnectLogger {
       // Keep long diagnostic IDs recoverable without matching the logger's private-key filter.
       var displayedValue = if (key == "requestId") logValue.replace(requestIdHexRun, "$1-") else logValue
       if (displayedValue != logValue) {
-        displayedValue = logValue.split('-').joinToString("%2D") { part ->
-          part.replace(requestIdHexRun, "$1-").replace("%", "%25")
-        }
+        displayedValue = logValue.replace("%", "%25").replace("-", "%2D").replace(requestIdHexRun, "$1-")
       }
       "$key=$displayedValue" + if (displayedValue != logValue) " requestIdFormat=hex32" else ""
     }
