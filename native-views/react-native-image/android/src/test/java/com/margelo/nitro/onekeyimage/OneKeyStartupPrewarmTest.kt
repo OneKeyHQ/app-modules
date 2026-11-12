@@ -306,8 +306,16 @@ class OneKeyStartupPrewarmTest {
       }
     }
 
-    // 6. clearDiskCache removes startup JSON and fallback disk cache directory
+    // 6. clearDiskCache removes startup JSON and fallback disk cache directory,
+    // and invalidates any stale pre-clear fallback write generation.
+    val preClearGeneration = OneKeyImageStartupPrewarm.currentDiskClearGenerationForTesting()
     OneKeyImageStartupPrewarm.clearDiskCache(tempDir)
+    OneKeyImageStartupPrewarm.writeFallbackDiskBytes(
+      cacheDir = tempDir,
+      safeKey = avatarDiskSafeKey,
+      bytes = pngBytes,
+      expectedGeneration = preClearGeneration,
+    )
     assertFalse(startupJsonFile.exists())
     assertFalse(File(tempDir, OneKeyImageStartupPrewarm.FALLBACK_DISK_CACHE_DIR).exists())
   }

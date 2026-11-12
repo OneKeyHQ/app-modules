@@ -987,8 +987,33 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
       }
     }
 
-    // 5. clearDiskCache removes persisted startup JSON and resets in-memory launch history.
+    // 5. clearDiskCache removes persisted startup JSON, drains pending local seeds, and resets launch history.
+    let clearedLocalURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-local-cleared-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: clearedLocalURL) }
+    try pngData.write(to: clearedLocalURL)
+    let clearedLocalContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: nil,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: clearedLocalURL
+    )
+    let clearedLocalKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: clearedLocalURL, context: clearedLocalContext)
+    )
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: clearedLocalURL,
+      rawURL: clearedLocalURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
     OneKeyImageStartupPrewarm.shared.clearDiskCache()
+    SDImageCache.shared.removeImageFromDisk(forKey: clearedLocalKey)
+    XCTAssertFalse(SDImageCache.shared.diskImageDataExists(withKey: clearedLocalKey))
     XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
 
     // 6. Local file:// images > 32 KiB are seeded to disk and replayed by prewarm().

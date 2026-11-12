@@ -64,12 +64,14 @@ internal object OneKeyImageStartupPrewarm {
 
   private val stateLock = Any()
   private val memoryLock = Any()
+  private val diskIoLock = Any()
   private val recorded = ArrayList<StartupEntry>()
   private val recordedKeys = HashSet<String>()
   private val pendingFallbackSources = HashMap<String, String>()
   private var recordStartTimeMs: Long? = null
   private var recordingClosed = false
   private var flushScheduled = false
+  private var diskClearGeneration = 0L
   private var debounceFuture: ScheduledFuture<*>? = null
   private var startupFileOverride: File? = null
   @Volatile
@@ -104,6 +106,8 @@ internal object OneKeyImageStartupPrewarm {
 
   fun metricsSnapshot(): PrewarmMetrics = synchronized(stateLock) { lastPrewarmMetrics }
 
+  internal fun currentDiskClearGenerationForTesting(): Long = synchronized(stateLock) { diskClearGeneration }
+
   fun keyHash(requestUrl: String, width: Int, height: Int, round: Boolean): String =
     sha256Hex("$requestUrl|$width|$height|$round".toByteArray(Charsets.UTF_8))
 
@@ -137,25 +141,34 @@ internal object OneKeyImageStartupPrewarm {
   internal fun ensureFallbackDiskBytesAsync(cacheDir: File, uri: String, bytes: ByteArray) {
     val safeKey = glideDataSafeKey(uri) ?: return
     if (findDiskCacheFile(cacheDir, safeKey) != null) return
+    val expectedGeneration = synchronized(stateLock) { diskClearGeneration }
     scheduler.execute {
-      writeFallbackDiskBytes(cacheDir, safeKey, bytes)
+      writeFallbackDiskBytes(cacheDir, safeKey, bytes, expectedGeneration)
     }
   }
 
-  internal fun writeFallbackDiskBytes(cacheDir: File, safeKey: String, bytes: ByteArray) {
+  internal fun writeFallbackDiskBytes(
+    cacheDir: File,
+    safeKey: String,
+    bytes: ByteArray,
+    expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
+  ) {
     if (!isSafeToken(safeKey) || bytes.isEmpty()) return
-    try {
-      val dir = File(cacheDir, FALLBACK_DISK_CACHE_DIR)
-      if (!dir.exists()) dir.mkdirs()
-      val target = File(dir, safeKey)
-      if (target.isFile && target.length() == bytes.size.toLong()) return
-      val tmp = File(dir, "$safeKey.tmp")
-      tmp.writeBytes(bytes)
-      if (!tmp.renameTo(target)) {
-        tmp.copyTo(target, overwrite = true)
-        tmp.delete()
+    synchronized(diskIoLock) {
+      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+      try {
+        val dir = File(cacheDir, FALLBACK_DISK_CACHE_DIR)
+        if (!dir.exists()) dir.mkdirs()
+        val target = File(dir, safeKey)
+        if (target.isFile && target.length() == bytes.size.toLong()) return
+        val tmp = File(dir, "$safeKey.tmp")
+        tmp.writeBytes(bytes)
+        if (!tmp.renameTo(target)) {
+          tmp.copyTo(target, overwrite = true)
+          tmp.delete()
+        }
+      } catch (_: Exception) {
       }
-    } catch (_: Exception) {
     }
   }
 
@@ -201,6 +214,7 @@ internal object OneKeyImageStartupPrewarm {
     val file: File?
     val resolvedDir: File?
     synchronized(stateLock) {
+      diskClearGeneration += 1L
       debounceFuture?.cancel(false)
       debounceFuture = null
       flushScheduled = false
@@ -210,16 +224,18 @@ internal object OneKeyImageStartupPrewarm {
       file = startupFile()
       resolvedDir = cacheDir ?: baseCacheDir ?: file?.parentFile
     }
-    try {
-      file?.delete()
-      File(file?.parentFile ?: return, "${file.name}.tmp").delete()
-    } catch (_: Exception) {
-    }
-    try {
-      if (resolvedDir != null) {
-        File(resolvedDir, FALLBACK_DISK_CACHE_DIR).deleteRecursively()
+    synchronized(diskIoLock) {
+      try {
+        file?.delete()
+        file?.parentFile?.let { File(it, "${file.name}.tmp").delete() }
+      } catch (_: Exception) {
       }
-    } catch (_: Exception) {
+      try {
+        if (resolvedDir != null) {
+          File(resolvedDir, FALLBACK_DISK_CACHE_DIR).deleteRecursively()
+        }
+      } catch (_: Exception) {
+      }
     }
   }
 
@@ -304,6 +320,7 @@ internal object OneKeyImageStartupPrewarm {
     val fallbackMap: Map<String, String>
     val file: File?
     val cacheDir: File?
+    val expectedGeneration: Long
     val now = System.currentTimeMillis()
     synchronized(stateLock) {
       if (recordingClosed && !flushScheduled) return
@@ -324,17 +341,23 @@ internal object OneKeyImageStartupPrewarm {
       pendingFallbackSources.clear()
       file = startupFile()
       cacheDir = currentCacheDir()
+      expectedGeneration = diskClearGeneration
     }
     if (cacheDir != null && fallbackMap.isNotEmpty()) {
-      materializeFallbackSources(cacheDir, fallbackMap)
+      materializeFallbackSources(cacheDir, fallbackMap, expectedGeneration)
     }
     if (file != null) {
-      persist(entries, file)
+      persist(entries, file, expectedGeneration)
     }
   }
 
-  private fun materializeFallbackSources(cacheDir: File, sources: Map<String, String>) {
+  private fun materializeFallbackSources(
+    cacheDir: File,
+    sources: Map<String, String>,
+    expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
+  ) {
     for ((diskFile, uri) in sources) {
+      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
       if (findDiskCacheFile(cacheDir, diskFile) != null) continue
       val bytes = try {
         when {
@@ -360,7 +383,7 @@ internal object OneKeyImageStartupPrewarm {
         null
       }
       if (bytes != null && bytes.isNotEmpty()) {
-        writeFallbackDiskBytes(cacheDir, diskFile, bytes)
+        writeFallbackDiskBytes(cacheDir, diskFile, bytes, expectedGeneration)
       }
     }
   }
@@ -371,72 +394,79 @@ internal object OneKeyImageStartupPrewarm {
     return File(dir, FILE_NAME)
   }
 
-  private fun persist(entries: List<StartupEntry>, file: File) {
+  private fun persist(
+    entries: List<StartupEntry>,
+    file: File,
+    expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
+  ) {
     if (entries.isEmpty()) return
-    val existing = readEntries(file)
-    val maxExistingLaunch = existing.maxOfOrNull { it.launch } ?: 0
-    val currentLaunch = maxExistingLaunch + 1
+    synchronized(diskIoLock) {
+      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+      val existing = readEntries(file)
+      val maxExistingLaunch = existing.maxOfOrNull { it.launch } ?: 0
+      val currentLaunch = maxExistingLaunch + 1
 
-    val stampedCurrent = entries.map {
-      StartupEntry(
-        keyHash = it.keyHash,
-        diskFile = it.diskFile,
-        rawDiskFile = it.rawDiskFile,
-        width = it.width,
-        height = it.height,
-        round = it.round,
-        launch = currentLaunch,
-      )
-    }
-    val seen = stampedCurrent.mapTo(HashSet()) { it.identity }
-    val merged = ArrayList<StartupEntry>(MAX_ENTRIES)
-    merged.addAll(stampedCurrent.take(MAX_ENTRIES))
-
-    for (entry in existing) {
-      if (merged.size >= MAX_ENTRIES) break
-      if (!isValidEntry(entry)) continue
-      val age = currentLaunch - entry.launch
-      if (age >= MAX_LAUNCH_AGE) continue
-      if (seen.add(entry.identity)) {
-        merged.add(entry)
+      val stampedCurrent = entries.map {
+        StartupEntry(
+          keyHash = it.keyHash,
+          diskFile = it.diskFile,
+          rawDiskFile = it.rawDiskFile,
+          width = it.width,
+          height = it.height,
+          round = it.round,
+          launch = currentLaunch,
+        )
       }
-    }
+      val seen = stampedCurrent.mapTo(HashSet()) { it.identity }
+      val merged = ArrayList<StartupEntry>(MAX_ENTRIES)
+      merged.addAll(stampedCurrent.take(MAX_ENTRIES))
 
-    if (
-      existing.size == merged.size &&
-      existing.indices.all { i ->
-        existing[i].identity == merged[i].identity &&
-          existing[i].diskFile == merged[i].diskFile &&
-          existing[i].rawDiskFile == merged[i].rawDiskFile &&
-          (currentLaunch - existing[i].launch) < 1
-      }
-    ) {
-      return
-    }
-
-    try {
-      file.parentFile?.mkdirs()
-      val json = encodeEntriesJson(merged)
-      val tmp = File(file.parentFile, "${file.name}.tmp")
-      tmp.writeText(json, Charsets.UTF_8)
-      if (!tmp.renameTo(file)) {
-        tmp.copyTo(file, overwrite = true)
-        tmp.delete()
-      }
-      val fallbackDir = File(file.parentFile, FALLBACK_DISK_CACHE_DIR)
-      if (fallbackDir.isDirectory) {
-        val activeFiles = HashSet<String>(merged.size * 2)
-        for (entry in merged) {
-          activeFiles.add(entry.diskFile)
-          entry.rawDiskFile?.let { activeFiles.add(it) }
+      for (entry in existing) {
+        if (merged.size >= MAX_ENTRIES) break
+        if (!isValidEntry(entry)) continue
+        val age = currentLaunch - entry.launch
+        if (age >= MAX_LAUNCH_AGE) continue
+        if (seen.add(entry.identity)) {
+          merged.add(entry)
         }
-        fallbackDir.listFiles()?.forEach { candidate ->
-          if (candidate.isFile && !activeFiles.contains(candidate.name)) {
-            candidate.delete()
+      }
+
+      if (
+        existing.size == merged.size &&
+        existing.indices.all { i ->
+          existing[i].identity == merged[i].identity &&
+            existing[i].diskFile == merged[i].diskFile &&
+            existing[i].rawDiskFile == merged[i].rawDiskFile &&
+            (currentLaunch - existing[i].launch) < 1
+        }
+      ) {
+        return
+      }
+
+      try {
+        file.parentFile?.mkdirs()
+        val json = encodeEntriesJson(merged)
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        tmp.writeText(json, Charsets.UTF_8)
+        if (!tmp.renameTo(file)) {
+          tmp.copyTo(file, overwrite = true)
+          tmp.delete()
+        }
+        val fallbackDir = File(file.parentFile, FALLBACK_DISK_CACHE_DIR)
+        if (fallbackDir.isDirectory) {
+          val activeFiles = HashSet<String>(merged.size * 2)
+          for (entry in merged) {
+            activeFiles.add(entry.diskFile)
+            entry.rawDiskFile?.let { activeFiles.add(it) }
+          }
+          fallbackDir.listFiles()?.forEach { candidate ->
+            if (candidate.isFile && !activeFiles.contains(candidate.name)) {
+              candidate.delete()
+            }
           }
         }
+      } catch (_: Exception) {
       }
-    } catch (_: Exception) {
     }
   }
 

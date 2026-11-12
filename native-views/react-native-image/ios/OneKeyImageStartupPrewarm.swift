@@ -159,6 +159,7 @@ final class OneKeyImageStartupPrewarm {
   private var previous: [Entry] = []
   private var maxLaunch = 0
   private var loadedPreviousFromDisk = false
+  private var diskClearGeneration: UInt64 = 0
   private var recording: Bool?
   private var firstRequestAt: CFTimeInterval = 0
   private var flushWorkItem: DispatchWorkItem?
@@ -273,6 +274,7 @@ final class OneKeyImageStartupPrewarm {
       firstRequestAt = now
     }
     let alreadySeen = seen.contains { $0.identity == identity }
+    let currentGeneration = diskClearGeneration
     var shouldSchedule = false
     if !alreadySeen, seen.count < Self.limit {
       seen.append(
@@ -291,7 +293,7 @@ final class OneKeyImageStartupPrewarm {
     if shouldSchedule {
       flushWorkItem?.cancel()
       let item = DispatchWorkItem { [weak self] in
-        self?.persist(forceClose: false)
+        self?.persist(forceClose: false, expectedGeneration: currentGeneration)
       }
       flushWorkItem = item
       Self.writer.asyncAfter(deadline: .now() + Self.window, execute: item)
@@ -299,13 +301,20 @@ final class OneKeyImageStartupPrewarm {
     lock.unlock()
 
     if needsLocalDiskSeed, !alreadySeen {
-      Self.writer.async {
-        Self.seedLocalSourceToDiskIfNeeded(url: capturedURL)
+      Self.writer.async { [weak self] in
+        self?.seedLocalSourceToDiskIfNeeded(url: capturedURL, expectedGeneration: currentGeneration)
       }
     }
   }
 
-  private static func seedLocalSourceToDiskIfNeeded(url: URL) {
+  private func isCurrentGeneration(_ expectedGeneration: UInt64) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return diskClearGeneration == expectedGeneration
+  }
+
+  private func seedLocalSourceToDiskIfNeeded(url: URL, expectedGeneration: UInt64) {
+    guard isCurrentGeneration(expectedGeneration) else { return }
     let manager = OneKeyImagePipeline.manager
     let originalContext = OneKeyImageRequestContext.make(
       headersJson: nil,
@@ -339,13 +348,15 @@ final class OneKeyImageStartupPrewarm {
       data = nil
     }
     guard let data, !data.isEmpty,
-          OneKeyImageSafetyPolicy.violation(for: data) == nil
+          OneKeyImageSafetyPolicy.violation(for: data) == nil,
+          isCurrentGeneration(expectedGeneration)
     else { return }
     cache.storeImageData(toDisk: data, forKey: originalKey)
   }
 
   func clearDiskCache() {
     lock.lock()
+    diskClearGeneration &+= 1
     flushWorkItem?.cancel()
     flushWorkItem = nil
     seen = []
@@ -354,17 +365,24 @@ final class OneKeyImageStartupPrewarm {
     loadedPreviousFromDisk = false
     let file = activeFileURL
     lock.unlock()
-    if let file {
-      try? FileManager.default.removeItem(at: file)
+    Self.writer.sync {
+      if let file {
+        try? FileManager.default.removeItem(at: file)
+      }
     }
   }
 
-  private func persist(forceClose: Bool) {
+  private func persist(forceClose: Bool, expectedGeneration: UInt64? = nil) {
     lock.lock()
+    if let expectedGeneration, diskClearGeneration != expectedGeneration {
+      lock.unlock()
+      return
+    }
     guard recording == true else {
       lock.unlock()
       return
     }
+    let generationAtStart = diskClearGeneration
     let file = activeFileURL
     if !loadedPreviousFromDisk {
       loadedPreviousFromDisk = true
@@ -410,7 +428,10 @@ final class OneKeyImageStartupPrewarm {
     }
     lock.unlock()
 
-    guard !steadyStateUnchanged, let file, let data = try? JSONEncoder().encode(merged) else {
+    guard !steadyStateUnchanged,
+          isCurrentGeneration(generationAtStart),
+          let file,
+          let data = try? JSONEncoder().encode(merged) else {
       return
     }
     try? data.write(to: file, options: .atomic)
