@@ -46,6 +46,7 @@ it('restores generic weighted columns after reusing a four-column token table', 
   const trailing = () =>
     body.querySelector<HTMLElement>('.ok-native-list-accessories')!;
   expect(body.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
+  expect(body.style.gap).toBe('0');
   expect(visual.style.gridArea).toBe('1 / 1');
   expect(cells()[0]?.style.marginInlineStart).toBe('44px');
   expect(trailing().style.gridArea).toBe('1 / 4');
@@ -68,6 +69,7 @@ it('restores generic weighted columns after reusing a four-column token table', 
     dataRowRenderer.bind(body, row, primitives);
     expect(body.style.display).toBe('');
     expect(body.style.gridTemplateColumns).toBe('');
+    expect(body.style.gap).toBe('');
     expect(visual.style.gridArea).toBe('');
     expect(cells()[0]?.style.marginInlineStart).toBe('');
     expect(trailing().style.gridArea).toBe('');
@@ -80,6 +82,7 @@ it('restores generic weighted columns after reusing a four-column token table', 
   );
   expect(body.style.display).toBe('');
   expect(body.style.gridTemplateColumns).toBe('');
+  expect(body.style.gap).toBe('');
   expect(visual.style.gridArea).toBe('');
   expect(cells()[0]?.style.marginInlineStart).toBe('');
   expect(cells()[1]?.style.flexGrow).toBe('3');
@@ -93,11 +96,13 @@ it('restores generic weighted columns after reusing a four-column token table', 
     primitives
   );
   expect(body.style.display).toBe('grid');
+  expect(body.style.gap).toBe('0');
   expect(cells()[0]?.style.marginInlineStart).toBe('48px');
   expect(body.querySelector('button')?.disabled).toBe(true);
 
   dataRowRenderer.bind(body, { ...token, leading: undefined }, primitives);
   expect(body.contains(visual)).toBe(false);
+  expect(body.style.gap).toBe('0');
   expect(cells()[0]?.style.marginInlineStart).toBe('');
 });
 

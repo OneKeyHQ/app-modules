@@ -2349,9 +2349,11 @@ The leading visual and its declared gap share the first column with the asset
 text; an absent visual reserves no icon inset. Balance and price occupy the
 second and third columns; the trailing accessories align to the end of the
 fourth. This closed migration shape uses equal columns instead of the
-previous weight approximation. Other column shapes retain their existing
-weighted layout. Rebinding a retained row between these shapes clears the old
-grid placement and asset inset, including when the leading visual is reused.
+previous weight approximation and removes the row's inherited 12px gap so
+each track occupies exactly one quarter of the padded content width. Other
+column shapes retain their existing weighted layout. Rebinding a retained row
+between these shapes clears the old grid placement, gap override, and asset
+inset, including when the leading visual is reused.
 Text, icon size, row height, actions, and iOS/Android layouts retain their
 existing contracts.
 

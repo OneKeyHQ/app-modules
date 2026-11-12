@@ -56,6 +56,7 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
     // Match the legacy four equal columns, including the icon in the first.
     body.style.display = 'grid';
     body.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+    body.style.gap = '0';
   }
 
   if (style?.horizontalPadding !== undefined)
