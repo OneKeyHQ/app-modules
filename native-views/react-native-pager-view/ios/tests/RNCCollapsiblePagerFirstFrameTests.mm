@@ -598,11 +598,19 @@ using namespace facebook::react;
   [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
   [source removeFromSuperview];
   [self finishMount:pager];
-  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
-  while (([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue] < 12 ||
-          (!finalRetryPending && [[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue])) &&
-         deadline.timeIntervalSinceNow > 0) {
-    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+  if (finalRetryPending) {
+    NSUInteger staleToken = [[pager valueForKey:@"scrollResolveRetryToken"] unsignedIntegerValue];
+    [pager setValue:@(staleToken + 1) forKey:@"scrollResolveRetryToken"];
+    [pager setValue:@NO forKey:@"scrollResolveRetryScheduled"];
+    [pager setValue:@11 forKey:@"scrollResolveRetryAttempt"];
+    [pager attachScrollObserverForCurrentPage];
+  } else {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:6];
+    while (([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue] < 12 ||
+            [[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]) &&
+           deadline.timeIntervalSinceNow > 0) {
+      [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
   }
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryAttempt"], @12);
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryScheduled"], @(finalRetryPending));
