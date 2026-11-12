@@ -404,6 +404,22 @@ public final class OneKeyNamedSVG {
     lock.unlock()
   }
 
+  func rasterDiskCachePathForTesting(name: String, color: String, width: Int,
+                                     height: Int, scale: CGFloat) -> String? {
+    guard let channels = Self.channels(color) else { return nil }
+    metadataLock.lock()
+    loadManifestIfNeeded()
+    let entry = metadata?[name]
+    metadataLock.unlock()
+    guard let digest = entry?["digest"] as? String else { return nil }
+    let mode = (entry?["recolorMode"] as? String).flatMap(RecolorMode.init(rawValue:)) ?? .raster
+    let key = Self.renderKey(
+      name: name, digest: digest, width: width, height: height,
+      scale: scale, mode: mode, color: color, channels: channels
+    ).key
+    return Self.rasterDiskCache.cachePath(forKey: key)
+  }
+
   public func cancel(owner: AnyObject) {
     lock.lock(); defer { lock.unlock() }
     let key = ObjectIdentifier(owner)
@@ -595,8 +611,21 @@ public final class OneKeyNamedSVG {
       lock.unlock(); return image
     }
     lock.unlock()
-    // Only workers access disk. The source digest and all raster inputs are in the key.
+    // The source digest and all raster inputs are in the key; diskOnly bounds encoded byte size.
     let diskCache = Self.rasterDiskCache
+    if diskOnly {
+      guard let path = diskCache.cachePath(forKey: key),
+            let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+            let size = (attributes[.size] as? NSNumber)?.intValue,
+            size > 0 else {
+        OneKeyMainThreadDecode.noteDiskMiss()
+        return nil
+      }
+      guard size <= OneKeyMainThreadDecode.maximumEncodedBytes else {
+        OneKeyMainThreadDecode.noteLimitRejection()
+        return nil
+      }
+    }
     let diskImage = diskCache.imageFromDiskCache(forKey: key)
     if let image = diskImage,
        image.cgImage?.width == request.width, image.cgImage?.height == request.height {
@@ -605,7 +634,7 @@ public final class OneKeyNamedSVG {
       return result
     }
     if diskOnly {
-      OneKeyMainThreadDecode.noteDiskMiss()
+      OneKeyMainThreadDecode.noteDecodeFailure()
       return nil
     }
     guard let url = bundle?.url(forResource: request.name, withExtension: "svg"),

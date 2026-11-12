@@ -1,12 +1,15 @@
 package com.margelo.nitro.onekeyimage
 
 import android.content.Context
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
+import android.util.DisplayMetrics
 import android.util.Log
 import com.bumptech.glide.load.Key
 import com.bumptech.glide.signature.ObjectKey
@@ -574,6 +577,16 @@ internal object OneKeyImageStartupPrewarm {
     return null
   }
 
+  internal fun defaultBitmapDensity(): Int = try {
+    Resources.getSystem().displayMetrics.densityDpi.takeIf { it > 0 }
+      ?: DisplayMetrics.DENSITY_DEFAULT
+  } catch (_: Throwable) {
+    DisplayMetrics.DENSITY_DEFAULT
+  }
+
+  internal fun exifOrientationSwapsDimensions(orientation: Int): Boolean =
+    orientation in 5..8
+
   internal fun decodeStaticBitmap(
     bytes: ByteArray,
     sourceWidth: Int,
@@ -583,13 +596,24 @@ internal object OneKeyImageStartupPrewarm {
     round: Boolean,
   ): Bitmap? {
     val safeTarget = OneKeyImageDecodeDimensions.forRender(targetWidth, targetHeight)
+    val exifOrientation = extractExifOrientation(bytes)
+    val swapsDimensions = exifOrientationSwapsDimensions(exifOrientation)
+    val orientedSourceWidth = if (swapsDimensions) sourceHeight else sourceWidth
+    val orientedSourceHeight = if (swapsDimensions) sourceWidth else sourceHeight
     bitmapDecoderOverrideForTesting?.let { override ->
-      return override(bytes, sourceWidth, sourceHeight, safeTarget.width, safeTarget.height, round)
+      return override(
+        bytes,
+        orientedSourceWidth,
+        orientedSourceHeight,
+        safeTarget.width,
+        safeTarget.height,
+        round,
+      )
     }
     return try {
       val scaleFactor = OneKeyImageDecodeDimensions.safeStaticScaleFactor(
-        sourceWidth = sourceWidth,
-        sourceHeight = sourceHeight,
+        sourceWidth = orientedSourceWidth,
+        sourceHeight = orientedSourceHeight,
         requestedWidth = safeTarget.width,
         requestedHeight = safeTarget.height,
       )
@@ -601,15 +625,19 @@ internal object OneKeyImageStartupPrewarm {
           inTargetDensity = (scaleFactor * 10_000f).toInt().coerceAtLeast(1)
         }
       }
+      val targetDensity = defaultBitmapDensity()
       var decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+      decoded.density = targetDensity
       if (decoded.width <= 0 || decoded.height <= 0) return null
       if (decoded.allocationByteCount.toLong() > OneKeyImageDecodeDimensions.MAX_DECODE_BYTES) {
         val targetW = floor(sourceWidth * scaleFactor).toInt().coerceAtLeast(1)
         val targetH = floor(sourceHeight * scaleFactor).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(decoded, targetW, targetH, true)
         if (scaled !== decoded) decoded.recycle()
+        scaled.density = targetDensity
         decoded = scaled
       }
+      decoded = applyExifOrientation(decoded, exifOrientation, targetDensity)
       if (decoded.allocationByteCount.toLong() > OneKeyImageDecodeDimensions.MAX_DECODE_BYTES) {
         return null
       }
@@ -619,10 +647,49 @@ internal object OneKeyImageStartupPrewarm {
     }
   }
 
-  private fun circleCropBitmap(source: Bitmap): Bitmap {
+  internal fun applyExifOrientation(
+    source: Bitmap,
+    orientation: Int,
+    targetDensity: Int = defaultBitmapDensity(),
+  ): Bitmap {
+    source.density = targetDensity
+    if (orientation !in 2..8) return source
+    val matrix = Matrix().apply {
+      when (orientation) {
+        2 -> setScale(-1f, 1f)
+        3 -> setRotate(180f)
+        4 -> {
+          setRotate(180f)
+          postScale(-1f, 1f)
+        }
+        5 -> {
+          setRotate(90f)
+          postScale(-1f, 1f)
+        }
+        6 -> setRotate(90f)
+        7 -> {
+          setRotate(-90f)
+          postScale(-1f, 1f)
+        }
+        8 -> setRotate(-90f)
+      }
+    }
+    val oriented = Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+    if (oriented !== source) {
+      source.recycle()
+    }
+    oriented.density = targetDensity
+    return oriented
+  }
+
+  internal fun circleCropBitmap(source: Bitmap): Bitmap {
     val size = min(source.width, source.height).coerceAtLeast(1)
     val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val targetDensity = source.density.takeIf { it > 0 } ?: defaultBitmapDensity()
+    source.density = targetDensity
+    output.density = targetDensity
     val canvas = Canvas(output)
+    canvas.density = targetDensity
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val radius = size / 2f
     canvas.drawCircle(radius, radius, radius, paint)
@@ -630,8 +697,176 @@ internal object OneKeyImageStartupPrewarm {
     val left = (size - source.width) / 2f
     val top = (size - source.height) / 2f
     canvas.drawBitmap(source, left, top, paint)
+    if (output !== source) {
+      source.recycle()
+    }
     return output
   }
+
+  internal fun extractExifOrientation(bytes: ByteArray): Int {
+    // 1. JPEG APP1 Exif segment
+    if (bytes.size >= 4 && (bytes[0].toInt() and 0xff) == 0xff && (bytes[1].toInt() and 0xff) == 0xd8) {
+      var pos = 2
+      while (pos + 4 <= bytes.size) {
+        if ((bytes[pos].toInt() and 0xff) != 0xff) {
+          pos += 1
+          continue
+        }
+        var marker = bytes[pos + 1].toInt() and 0xff
+        pos += 2
+        while (marker == 0xff && pos < bytes.size) {
+          marker = bytes[pos].toInt() and 0xff
+          pos += 1
+        }
+        if (marker == 0xd9 || marker == 0xda) break
+        if (marker == 0xd8 || marker in 0xd0..0xd7 || marker == 0x01) continue
+        if (pos + 2 > bytes.size) break
+        val segmentLength = readU16Be(bytes, pos)
+        if (segmentLength < 2 || pos + segmentLength > bytes.size) break
+        if (marker == 0xe1 && segmentLength >= 16 && hasExifHeaderPrefix(bytes, pos + 2, pos + segmentLength)) {
+          val orientation = parseTiffOrientation(bytes, pos + 8, pos + segmentLength)
+          if (orientation in 1..8) return orientation
+        }
+        pos += segmentLength
+      }
+      return 1
+    }
+
+    // 2. WebP RIFF EXIF chunk
+    if (
+      bytes.size >= 20 &&
+      bytes[0] == 'R'.code.toByte() &&
+      bytes[1] == 'I'.code.toByte() &&
+      bytes[2] == 'F'.code.toByte() &&
+      bytes[3] == 'F'.code.toByte() &&
+      bytes[8] == 'W'.code.toByte() &&
+      bytes[9] == 'E'.code.toByte() &&
+      bytes[10] == 'B'.code.toByte() &&
+      bytes[11] == 'P'.code.toByte()
+    ) {
+      var chunkPos = 12
+      while (chunkPos <= bytes.size - 8) {
+        val chunkType = String(bytes, chunkPos, 4, Charsets.US_ASCII)
+        val chunkSize = readInt32Le(bytes, chunkPos + 4)
+        val payloadStart = chunkPos + 8
+        if (chunkSize < 0 || chunkSize > bytes.size - payloadStart) break
+        val payloadEnd = payloadStart + chunkSize
+        if (chunkType == "EXIF" && chunkSize >= 8) {
+          val tiffStart = if (hasExifHeaderPrefix(bytes, payloadStart, payloadEnd)) {
+            payloadStart + 6
+          } else {
+            payloadStart
+          }
+          val orientation = parseTiffOrientation(bytes, tiffStart, payloadEnd)
+          if (orientation in 1..8) return orientation
+        }
+        val paddedSize = chunkSize + (chunkSize and 1)
+        if (paddedSize < 0 || paddedSize > bytes.size - payloadStart) break
+        chunkPos = payloadStart + paddedSize
+      }
+      return 1
+    }
+
+    // 3. PNG eXIf chunk
+    if (
+      bytes.size >= 24 &&
+      bytes[0] == 0x89.toByte() &&
+      bytes[1] == 0x50.toByte() &&
+      bytes[2] == 0x4e.toByte() &&
+      bytes[3] == 0x47.toByte()
+    ) {
+      var chunkPos = 8
+      while (chunkPos <= bytes.size - 12) {
+        val chunkSize = readInt32Be(bytes, chunkPos)
+        val chunkType = String(bytes, chunkPos + 4, 4, Charsets.US_ASCII)
+        val payloadStart = chunkPos + 8
+        if (chunkSize < 0 || chunkSize > bytes.size - payloadStart - 4) break
+        val payloadEnd = payloadStart + chunkSize
+        if (chunkType == "eXIf" && chunkSize >= 8) {
+          val tiffStart = if (hasExifHeaderPrefix(bytes, payloadStart, payloadEnd)) {
+            payloadStart + 6
+          } else {
+            payloadStart
+          }
+          val orientation = parseTiffOrientation(bytes, tiffStart, payloadEnd)
+          if (orientation in 1..8) return orientation
+        }
+        if (chunkType == "IDAT" || chunkType == "IEND") break
+        chunkPos = payloadEnd + 4
+      }
+    }
+
+    return 1
+  }
+
+  private fun hasExifHeaderPrefix(bytes: ByteArray, start: Int, end: Int): Boolean =
+    start + 6 <= end &&
+      bytes[start] == 'E'.code.toByte() &&
+      bytes[start + 1] == 'x'.code.toByte() &&
+      bytes[start + 2] == 'i'.code.toByte() &&
+      bytes[start + 3] == 'f'.code.toByte() &&
+      bytes[start + 4] == 0.toByte() &&
+      bytes[start + 5] == 0.toByte()
+
+  private fun parseTiffOrientation(bytes: ByteArray, start: Int, end: Int): Int {
+    if (start < 0 || start > end - 8 || end > bytes.size) return 1
+    val littleEndian = when {
+      bytes[start] == 'I'.code.toByte() && bytes[start + 1] == 'I'.code.toByte() -> true
+      bytes[start] == 'M'.code.toByte() && bytes[start + 1] == 'M'.code.toByte() -> false
+      else -> return 1
+    }
+    if (readU16(bytes, start + 2, littleEndian) != 0x002a) return 1
+    val ifdOffset = readInt32(bytes, start + 4, littleEndian)
+    if (ifdOffset < 8 || ifdOffset > end - start - 2) return 1
+    val ifdStart = start + ifdOffset
+    val entryCount = readU16(bytes, ifdStart, littleEndian)
+    for (i in 0 until entryCount) {
+      val entryOffset = ifdStart + 2 + i * 12
+      if (entryOffset > end - 12) break
+      val tag = readU16(bytes, entryOffset, littleEndian)
+      if (tag == 0x0112) {
+        val fieldType = readU16(bytes, entryOffset + 2, littleEndian)
+        val count = readInt32(bytes, entryOffset + 4, littleEndian)
+        if (count != 1) return 1
+        val value = when (fieldType) {
+          3 -> {
+            val primary = readU16(bytes, entryOffset + 8, littleEndian)
+            if (primary in 1..8) primary else readU16(bytes, entryOffset + 10, littleEndian)
+          }
+          4 -> readInt32(bytes, entryOffset + 8, littleEndian)
+          1 -> bytes[entryOffset + 8].toInt() and 0xff
+          else -> 1
+        }
+        return if (value in 1..8) value else 1
+      }
+    }
+    return 1
+  }
+
+  private fun readU16(bytes: ByteArray, offset: Int, littleEndian: Boolean): Int =
+    if (littleEndian) {
+      (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
+    } else {
+      readU16Be(bytes, offset)
+    }
+
+  private fun readU16Be(bytes: ByteArray, offset: Int): Int =
+    ((bytes[offset].toInt() and 0xff) shl 8) or (bytes[offset + 1].toInt() and 0xff)
+
+  private fun readInt32(bytes: ByteArray, offset: Int, littleEndian: Boolean): Int =
+    if (littleEndian) readInt32Le(bytes, offset) else readInt32Be(bytes, offset)
+
+  private fun readInt32Le(bytes: ByteArray, offset: Int): Int =
+    (bytes[offset].toInt() and 0xff) or
+      ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+      ((bytes[offset + 2].toInt() and 0xff) shl 16) or
+      ((bytes[offset + 3].toInt() and 0xff) shl 24)
+
+  private fun readInt32Be(bytes: ByteArray, offset: Int): Int =
+    ((bytes[offset].toInt() and 0xff) shl 24) or
+      ((bytes[offset + 1].toInt() and 0xff) shl 16) or
+      ((bytes[offset + 2].toInt() and 0xff) shl 8) or
+      (bytes[offset + 3].toInt() and 0xff)
 
   private fun isSafeToken(token: String): Boolean =
     token.isNotEmpty() &&

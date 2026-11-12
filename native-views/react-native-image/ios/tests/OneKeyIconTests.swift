@@ -557,7 +557,7 @@ final class OneKeyIconTests: XCTestCase {
     }
     XCTAssertTrue(syncCallbackFired, "Bridge request must invoke completion synchronously on main thread when cached")
 
-    // 2. diskRender size bound (>192px rejected) and metrics recording.
+    // 2. diskRender size bound (>192px and >32KiB rejected) and metrics recording.
     OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
     OneKeyMainThreadDecode.resetForTesting()
     XCTAssertNil(
@@ -569,6 +569,32 @@ final class OneKeyIconTests: XCTestCase {
         scale: 2
       )
     )
+    let rasterPath = try XCTUnwrap(
+      OneKeyNamedSVG.shared.rasterDiskCachePathForTesting(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    let rasterURL = URL(fileURLWithPath: rasterPath)
+    let originalRasterData = try Data(contentsOf: rasterURL)
+    try Data(repeating: 0, count: OneKeyMainThreadDecode.maximumEncodedBytes + 1024)
+      .write(to: rasterURL, options: .atomic)
+    defer {
+      try? originalRasterData.write(to: rasterURL, options: .atomic)
+    }
+    XCTAssertNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    try originalRasterData.write(to: rasterURL, options: .atomic)
     XCTAssertNotNil(
       OneKeyNamedSVG.shared.diskRender(
         name: "DotVerSolid",
@@ -580,6 +606,7 @@ final class OneKeyIconTests: XCTestCase {
     )
     let decodeMetrics = OneKeyMainThreadDecode.metricsSnapshot()
     XCTAssertEqual(decodeMetrics.hits, 1)
+    XCTAssertEqual(decodeMetrics.limitRejections, 1)
 
     // 3. App Lock multi-burst window + launch-generation eviction.
     OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)

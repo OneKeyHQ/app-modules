@@ -395,5 +395,128 @@ class OneKeyStartupPrewarmTest {
         assertEquals("DotVerSolid", entries[0].name)
       }
     }
+
+    // 5. Oversized icon raster file (> 32KiB) is rejected by diskRender with limitRejections
+    OneKeyNamedSVG.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    dotRasterFile.writeBytes(ByteArray(OneKeyMainThreadDecode.MAX_ENCODED_BYTES + 1024))
+    assertNull(OneKeyNamedSVG.diskRender(assets, "DotVerSolid", "rgba(0,0,0,1)", 48, 48, 2f))
+    assertEquals(1, OneKeyMainThreadDecode.metricsSnapshot().limitRejections)
+  }
+
+  @Test
+  fun exifOrientationParsingDimensionSwappingAndDensityFallbackWork() {
+    fun buildTiffOrientation(orientation: Int, littleEndian: Boolean): ByteArray {
+      val out = ByteArrayOutputStream()
+      fun writeU16(v: Int) {
+        if (littleEndian) {
+          out.write(v and 0xff)
+          out.write((v ushr 8) and 0xff)
+        } else {
+          out.write((v ushr 8) and 0xff)
+          out.write(v and 0xff)
+        }
+      }
+      fun writeU32(v: Int) {
+        if (littleEndian) {
+          out.write(v and 0xff)
+          out.write((v ushr 8) and 0xff)
+          out.write((v ushr 16) and 0xff)
+          out.write((v ushr 24) and 0xff)
+        } else {
+          out.write((v ushr 24) and 0xff)
+          out.write((v ushr 16) and 0xff)
+          out.write((v ushr 8) and 0xff)
+          out.write(v and 0xff)
+        }
+      }
+      out.write(if (littleEndian) "II".toByteArray() else "MM".toByteArray())
+      writeU16(0x002a)
+      writeU32(8) // IFD0 offset
+      writeU16(1) // 1 entry
+      writeU16(0x0112) // Orientation tag
+      writeU16(3) // SHORT
+      writeU32(1) // count = 1
+      writeU16(orientation)
+      writeU16(0)
+      writeU32(0) // next IFD
+      return out.toByteArray()
+    }
+
+    fun buildJpegWithExif(orientation: Int, littleEndian: Boolean): ByteArray {
+      val tiff = buildTiffOrientation(orientation, littleEndian)
+      val app1Payload = "Exif\u0000\u0000".toByteArray(Charsets.US_ASCII) + tiff
+      val segLen = app1Payload.size + 2
+      val out = ByteArrayOutputStream()
+      out.write(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe1.toByte()))
+      out.write((segLen ushr 8) and 0xff)
+      out.write(segLen and 0xff)
+      out.write(app1Payload)
+      out.write(byteArrayOf(0xff.toByte(), 0xd9.toByte()))
+      return out.toByteArray()
+    }
+
+    fun buildWebpWithExif(orientation: Int): ByteArray {
+      val tiff = buildTiffOrientation(orientation, littleEndian = true)
+      val out = ByteArrayOutputStream()
+      val riffSize = 4 + 8 + tiff.size + (tiff.size and 1)
+      fun writeLe32(v: Int) {
+        out.write(v and 0xff)
+        out.write((v ushr 8) and 0xff)
+        out.write((v ushr 16) and 0xff)
+        out.write((v ushr 24) and 0xff)
+      }
+      out.write("RIFF".toByteArray(Charsets.US_ASCII))
+      writeLe32(riffSize)
+      out.write("WEBP".toByteArray(Charsets.US_ASCII))
+      out.write("EXIF".toByteArray(Charsets.US_ASCII))
+      writeLe32(tiff.size)
+      out.write(tiff)
+      if ((tiff.size and 1) == 1) out.write(0)
+      return out.toByteArray()
+    }
+
+    val jpegRot90Le = buildJpegWithExif(orientation = 6, littleEndian = true)
+    val jpegRot270Be = buildJpegWithExif(orientation = 8, littleEndian = false)
+    val jpegRot180 = buildJpegWithExif(orientation = 3, littleEndian = true)
+    val webpTranspose = buildWebpWithExif(orientation = 5)
+
+    assertEquals(6, OneKeyImageStartupPrewarm.extractExifOrientation(jpegRot90Le))
+    assertEquals(8, OneKeyImageStartupPrewarm.extractExifOrientation(jpegRot270Be))
+    assertEquals(3, OneKeyImageStartupPrewarm.extractExifOrientation(jpegRot180))
+    assertEquals(5, OneKeyImageStartupPrewarm.extractExifOrientation(webpTranspose))
+    assertEquals(1, OneKeyImageStartupPrewarm.extractExifOrientation(createValidPng(32, 32)))
+
+    // Verify decodeStaticBitmap swaps sourceWidth/sourceHeight when EXIF orientation is 5..8
+    var capturedWidth = 0
+    var capturedHeight = 0
+    OneKeyImageStartupPrewarm.bitmapDecoderOverrideForTesting = { _, srcW, srcH, _, _, _ ->
+      capturedWidth = srcW
+      capturedHeight = srcH
+      dummyBitmap()
+    }
+    OneKeyImageStartupPrewarm.decodeStaticBitmap(
+      bytes = jpegRot90Le,
+      sourceWidth = 400,
+      sourceHeight = 200,
+      targetWidth = 100,
+      targetHeight = 200,
+      round = false,
+    )
+    assertEquals(200, capturedWidth)
+    assertEquals(400, capturedHeight)
+
+    OneKeyImageStartupPrewarm.decodeStaticBitmap(
+      bytes = jpegRot180,
+      sourceWidth = 400,
+      sourceHeight = 200,
+      targetWidth = 100,
+      targetHeight = 200,
+      round = false,
+    )
+    assertEquals(400, capturedWidth)
+    assertEquals(200, capturedHeight)
+
+    assertTrue(OneKeyImageStartupPrewarm.defaultBitmapDensity() > 0)
   }
 }
