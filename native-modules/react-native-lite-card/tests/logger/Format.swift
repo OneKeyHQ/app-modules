@@ -36,15 +36,26 @@ for canary in canaries {
 }
 let hex = String(repeating: "a", count: 64)
 let uuid = "12345678-1234-1234-1234-123456789abc"
-for id in [hex, "0x" + hex.uppercased(), String(repeating: "c", count: 128), "request-" + hex, uuid] {
+for id in [hex, "0x" + hex.uppercased(), String(repeating: "c", count: 128), "request-" + hex,
+           String(repeating: "a", count: 32) + "-" + hex, hex + "-" + String(repeating: "a", count: 32),
+           "request+%2D-" + hex + "-", uuid] {
     let event = SniConnectLog.event("sni_request_start", [("requestId", id), ("ip", "2001:4860:4860::8888")])
     let formatted = OneKeyLog.regressionFormat(event + " secret=" + canaries[0], tag: "SniConnect")
     let displayed = formatted.components(separatedBy: " ").first { $0.hasPrefix("requestId=") }!.dropFirst(10)
     expect(!displayed.contains("[REDACTED]"), "The final logger retains every diagnostic ID character")
-    expect(displayed.replacingOccurrences(of: "-", with: "") == id.replacingOccurrences(of: "-", with: ""), "Only diagnostic grouping separators are added")
+    let recovered = formatted.contains("requestIdFormat=hex32")
+        ? displayed.replacingOccurrences(of: "-", with: "").removingPercentEncoding : String(displayed)
+    expect(recovered == id, "Marked diagnostic IDs restore exactly, including original separators and percent signs")
     expect(formatted.contains("ip=2001:4860:4860::8888"), "The final logger retains the destination IP")
     expect(formatted.hasSuffix("secret=[REDACTED]"), "Same-line secrets retain generic redaction")
     if id == uuid { expect(displayed == uuid, "Existing UUID formatting is unchanged") }
 }
 expect(OneKeyLog.regressionFormat("event=sni_request_start requestId=" + hex, tag: "SniConnect").contains("requestId=[REDACTED]"), "The generic logger policy is unchanged even for SNI tags")
+let groupedId = String(repeating: "a", count: 32) + "-" + String(repeating: "a", count: 32)
+let rawIdLog = OneKeyLog.regressionFormat(SniConnectLog.event("sni_cancel", [("requestId", hex)]), tag: "SniConnect")
+let groupedIdLog = OneKeyLog.regressionFormat(SniConnectLog.event("sni_cancel", [("requestId", groupedId)]), tag: "SniConnect")
+expect(rawIdLog.contains("requestId=\(groupedId) requestIdFormat=hex32"), "Grouped raw IDs have an explicit format marker in final output")
+expect(groupedIdLog.hasSuffix("requestId=\(groupedId)"), "Originally separated IDs retain their literal form without the marker")
+expect(rawIdLog != groupedIdLog, "Distinct raw and originally separated IDs remain distinguishable")
+expect(!SniConnectLog.event("sni_cancel", [("requestId", uuid)]).contains("requestIdFormat="), "UUIDs need no format marker")
 print("SwiftLoggerSanitization: \(assertions) assertions passed")

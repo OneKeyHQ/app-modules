@@ -45,8 +45,13 @@ internal object SniConnectLogger {
     (listOf("event" to name) + fields).joinToString(separator = " ") { (key, value) ->
       val logValue = sanitize(value)
       // Keep long diagnostic IDs recoverable without matching the logger's private-key filter.
-      val displayedValue = if (key == "requestId") logValue.replace(requestIdHexRun, "$1-") else logValue
-      "$key=$displayedValue"
+      var displayedValue = if (key == "requestId") logValue.replace(requestIdHexRun, "$1-") else logValue
+      if (displayedValue != logValue) {
+        displayedValue = logValue.split('-').joinToString("%2D") { part ->
+          part.replace(requestIdHexRun, "$1-").replace("%", "%25")
+        }
+      }
+      "$key=$displayedValue" + if (displayedValue != logValue) " requestIdFormat=hex32" else ""
     }
 
   fun shortHash(value: String?): String {

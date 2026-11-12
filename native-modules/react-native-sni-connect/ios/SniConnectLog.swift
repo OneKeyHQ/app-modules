@@ -25,12 +25,20 @@ enum SniConnectLog {
     let pairs = normalizedFields.map { key, value in
       let logValue = sanitize(value)
       // Keep long diagnostic IDs recoverable without matching the logger's private-key filter.
-      let displayedValue = key == "requestId"
+      var displayedValue = key == "requestId"
         ? logValue.replacingOccurrences(
             of: "([0-9a-fA-F]{32})(?=[0-9a-fA-F]{32})", with: "$1-", options: .regularExpression
           )
         : logValue
+      if displayedValue != logValue {
+        displayedValue = logValue.components(separatedBy: "-").map { part in
+          part.replacingOccurrences(
+            of: "([0-9a-fA-F]{32})(?=[0-9a-fA-F]{32})", with: "$1-", options: .regularExpression
+          ).replacingOccurrences(of: "%", with: "%25")
+        }.joined(separator: "%2D")
+      }
       return "\(key)=\(displayedValue)"
+        + (displayedValue != logValue ? " requestIdFormat=hex32" : "")
     }
     return pairs.joined(separator: " ")
   }

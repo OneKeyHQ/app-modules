@@ -221,6 +221,13 @@ Long hexadecimal runs in the displayed `requestId` are separated with `-` after
 complete ID while avoiding the final logger's generic 64-hex private-key filter.
 For example, a 64-hex ID is displayed as two 32-hex groups. UUIDs are unchanged;
 the ID sent in headers and used for cancellation is never reformatted.
+Only reformatted IDs add `requestIdFormat=hex32` to the event. In marked IDs,
+original `%` and `-` characters are represented as `%25` and `%2D`. To restore a
+marked ID, remove grouping hyphens, then percent-decode once. This also preserves
+mixed IDs containing both original separators and long hex runs. An already
+separated 32-hex/32-hex ID is unchanged and has no marker. `requestId` is
+non-sensitive diagnostic metadata and must not carry secrets; unrelated values
+retain the generic logger's sensitive-data filtering.
 
 ## Conformance and remaining evidence
 
