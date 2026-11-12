@@ -573,13 +573,19 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       addAll(OneKeyImageMemoryVariantRegistry.candidates(family, exactVariant))
     }.distinct()
 
+    val allowPrewarmedCache = OneKeyImageModel.headers(sourceHeadersJson).isEmpty()
     for (candidate in candidates) {
-      val prewarmedBitmap = OneKeyImageStartupPrewarm.cachedBitmap(
-        requestUrl = candidate.requestUrl,
-        width = candidate.width,
-        height = candidate.height,
-        round = candidate.round,
-      )
+      val prewarmedBitmap = if (allowPrewarmedCache) {
+        OneKeyImageStartupPrewarm.cachedBitmap(
+          requestUrl = candidate.requestUrl,
+          width = candidate.width,
+          height = candidate.height,
+          round = candidate.round,
+          headersJson = sourceHeadersJson,
+        )
+      } else {
+        null
+      }
       if (prewarmedBitmap != null) {
         clearMemoryPreviewTarget()
         memoryPreviewTarget = null
@@ -671,7 +677,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     if (
       requestGeneration != generation ||
       disposed ||
-      (policy != OneKeyImageCachePolicy.MEMORY && policy != OneKeyImageCachePolicy.MEMORY_DISK)
+      (policy != OneKeyImageCachePolicy.MEMORY && policy != OneKeyImageCachePolicy.MEMORY_DISK) ||
+      OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
     ) {
       return false
     }
@@ -683,6 +690,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         width = decodeDimensions.width,
         height = decodeDimensions.height,
         round = isRound,
+        headersJson = sourceHeadersJson,
       ) ?: continue
       val hitVariant = OneKeyImageMemoryVariant(
         requestUrl = url,

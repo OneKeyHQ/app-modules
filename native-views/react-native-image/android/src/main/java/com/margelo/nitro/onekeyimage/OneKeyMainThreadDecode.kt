@@ -7,7 +7,6 @@ import android.os.Trace
 import android.util.Log
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.util.Base64
 import java.util.Locale
 
 internal object OneKeyMainThreadDecode {
@@ -328,7 +327,7 @@ internal object OneKeyMainThreadDecode {
         return null
       }
       val decoded = try {
-        Base64.getMimeDecoder().decode(url.substring(payloadStart))
+        OneKeyImageSafety.decodeDataUriBase64(url.substring(payloadStart))
       } catch (_: Exception) {
         noteDecodeFailure()
         return null

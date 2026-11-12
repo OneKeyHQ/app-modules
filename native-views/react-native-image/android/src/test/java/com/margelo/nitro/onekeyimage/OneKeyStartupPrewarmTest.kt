@@ -167,6 +167,7 @@ class OneKeyStartupPrewarmTest {
 
   @Test
   fun mainThreadDecodePromotesSmallLocalAndCachedImagesAndRejectsOversized() {
+    OneKeyMainThreadDecode.setBudgetForTesting(budgetNs = 1_000_000_000L, windowNs = 10_000_000_000L)
     val smallPng = OneKeyBlockieAvatar.png("onekey-avatar://blockie/v1/0xabc123")
     val fileImg = File(tempDir, "small.png").apply { writeBytes(smallPng) }
     val fileUrl = "file://${fileImg.absolutePath}"
@@ -263,6 +264,16 @@ class OneKeyStartupPrewarmTest {
     assertEquals(2, metrics.decodedCount)
     assertNotNull(OneKeyImageStartupPrewarm.cachedBitmap(secretAvatarUrl, 96, 96, true))
     assertNotNull(OneKeyImageStartupPrewarm.cachedBitmap(remoteUrl, 120, 60, false))
+    assertNull(
+      "Custom headers must bypass unauthenticated prewarmed bitmaps",
+      OneKeyImageStartupPrewarm.cachedBitmap(
+        remoteUrl,
+        120,
+        60,
+        false,
+        headersJson = """{"Authorization":"Bearer secret"}""",
+      ),
+    )
 
     // 5. Launch-generation eviction: after 3 launches of only remoteUrl, secretAvatarUrl is evicted
     val avatarDiskSafeKey = requireNotNull(OneKeyImageStartupPrewarm.glideDataSafeKey(secretAvatarUrl))

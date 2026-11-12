@@ -158,6 +158,7 @@ final class OneKeyImageStartupPrewarm {
   private var seen: [Entry] = []
   private var previous: [Entry] = []
   private var maxLaunch = 0
+  private var loadedPreviousFromDisk = false
   private var recording: Bool?
   private var firstRequestAt: CFTimeInterval = 0
   private var flushWorkItem: DispatchWorkItem?
@@ -350,6 +351,7 @@ final class OneKeyImageStartupPrewarm {
     seen = []
     previous = []
     maxLaunch = 0
+    loadedPreviousFromDisk = false
     let file = activeFileURL
     lock.unlock()
     if let file {
@@ -364,12 +366,15 @@ final class OneKeyImageStartupPrewarm {
       return
     }
     let file = activeFileURL
-    if previous.isEmpty,
-       let file,
-       let data = try? Data(contentsOf: file),
-       let loaded = try? JSONDecoder().decode([Entry].self, from: data) {
-      previous = loaded
-      maxLaunch = max(maxLaunch, loaded.map(\.launch).max() ?? 0)
+    if !loadedPreviousFromDisk {
+      loadedPreviousFromDisk = true
+      if previous.isEmpty,
+         let file,
+         let data = try? Data(contentsOf: file),
+         let loaded = try? JSONDecoder().decode([Entry].self, from: data) {
+        previous = loaded
+        maxLaunch = max(maxLaunch, loaded.map(\.launch).max() ?? 0)
+      }
     }
     let elapsed = CACurrentMediaTime() - firstRequestAt
     let shouldClose =
@@ -421,6 +426,7 @@ final class OneKeyImageStartupPrewarm {
           let entries = try? JSONDecoder().decode([Entry].self, from: data) else { return }
     let highestLaunch = entries.map(\.launch).max() ?? 0
     lock.lock()
+    loadedPreviousFromDisk = true
     if previous.isEmpty {
       previous = entries
       maxLaunch = max(maxLaunch, highestLaunch)
@@ -516,6 +522,7 @@ final class OneKeyImageStartupPrewarm {
       if !keepPreviousFromDisk {
         self.previous = []
         self.maxLaunch = 0
+        self.loadedPreviousFromDisk = false
       }
       self.recording = nil
       self.firstRequestAt = 0

@@ -15,7 +15,6 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.security.MessageDigest
-import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -164,8 +163,16 @@ internal object OneKeyImageStartupPrewarm {
     memoryCache[keyHash]
   }
 
-  fun cachedBitmap(requestUrl: String, width: Int, height: Int, round: Boolean): Bitmap? =
-    cachedBitmap(keyHash(requestUrl, width, height, round))
+  fun cachedBitmap(
+    requestUrl: String,
+    width: Int,
+    height: Int,
+    round: Boolean,
+    headersJson: String? = null,
+  ): Bitmap? {
+    if (OneKeyImageModel.headers(headersJson).isNotEmpty()) return null
+    return cachedBitmap(keyHash(requestUrl, width, height, round))
+  }
 
   fun putMemoryBitmap(keyHash: String, bitmap: Bitmap) {
     val bytes = estimateBitmapBytes(bitmap)
@@ -342,7 +349,7 @@ internal object OneKeyImageStartupPrewarm {
               val payloadStart = comma + 1
               val count = OneKeyImageSafety.dataUriDecodedByteCount(uri, payloadStart)
               if (count in 1L..OneKeyImageSafety.MAX_DATA_URI_DECODED_BYTES) {
-                Base64.getMimeDecoder().decode(uri.substring(payloadStart))
+                OneKeyImageSafety.decodeDataUriBase64(uri.substring(payloadStart))
               } else null
             } else null
           }

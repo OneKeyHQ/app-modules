@@ -208,6 +208,7 @@ public final class OneKeyNamedSVG {
   private var startupSeen: [StartupEntry] = []
   private var startupPrevious: [StartupEntry] = []
   private var startupMaxLaunch = 0
+  private var startupLoadedPreviousFromDisk = false
   private var startupRecording: Bool?
   private var startupFirstRequestAt: CFTimeInterval = 0
   private var startupFlushWorkItem: DispatchWorkItem?
@@ -242,6 +243,7 @@ public final class OneKeyNamedSVG {
     }
     let highestLaunch = entries.map(\.launch).max() ?? 0
     startupLock.lock()
+    startupLoadedPreviousFromDisk = true
     if startupPrevious.isEmpty {
       startupPrevious = entries
       startupMaxLaunch = max(startupMaxLaunch, highestLaunch)
@@ -307,12 +309,15 @@ public final class OneKeyNamedSVG {
       return
     }
     let file = activeStartupFileURL
-    if startupPrevious.isEmpty,
-       let file,
-       let data = try? Data(contentsOf: file),
-       let loaded = try? JSONDecoder().decode([StartupEntry].self, from: data) {
-      startupPrevious = loaded
-      startupMaxLaunch = max(startupMaxLaunch, loaded.map(\.launch).max() ?? 0)
+    if !startupLoadedPreviousFromDisk {
+      startupLoadedPreviousFromDisk = true
+      if startupPrevious.isEmpty,
+         let file,
+         let data = try? Data(contentsOf: file),
+         let loaded = try? JSONDecoder().decode([StartupEntry].self, from: data) {
+        startupPrevious = loaded
+        startupMaxLaunch = max(startupMaxLaunch, loaded.map(\.launch).max() ?? 0)
+      }
     }
     let elapsed = CACurrentMediaTime() - startupFirstRequestAt
     let shouldClose =
@@ -381,6 +386,7 @@ public final class OneKeyNamedSVG {
       if !keepPreviousFromDisk {
         self.startupPrevious = []
         self.startupMaxLaunch = 0
+        self.startupLoadedPreviousFromDisk = false
       }
       self.startupRecording = nil
       self.startupFirstRequestAt = 0
