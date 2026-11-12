@@ -973,6 +973,7 @@ final class NativeListView: UIView {
     guard !disposed,
           window != nil,
           collectionView.delegate === self,
+          flowLayout.scrollDirection == .vertical,
           collectionView.bounds.width > 0,
           collectionView.bounds.height > 0 else { return }
     NotificationCenter.default.post(

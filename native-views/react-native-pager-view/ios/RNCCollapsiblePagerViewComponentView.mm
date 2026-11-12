@@ -6237,6 +6237,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     }
   }
   if (pageIndex == NSNotFound) return;
+  if ([self verticalScrollViewForPageAtIndex:pageIndex] != scrollView) return;
 
   NSString *pageKey = [self pageKeyForIndex:pageIndex];
   BOOL hasReleasedStateForPage = _releasedPageScrollStates[pageKey] != nil;

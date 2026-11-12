@@ -1111,10 +1111,11 @@ header attachment remain deferred until selection settles. Cancelling the drag
 on the same page MUST retain the reopened recovery round. Empty transactions,
 removals and inserts outside the current page MUST NOT reopen the budget. Owned
 `NativeScroller` and `NativeList` hosts additionally emit push readiness
-notifications when their scroll views attach and obtain positive bounds so
-initial first-layout attachment (while a coalesced slot/layout reconcile is
-still pending on the main queue or a verified `NativeList` becomes ready before
-the current page has an observed owner) and late
+notifications when their vertical scroll views attach and obtain positive bounds
+and resolve as the page's eligible vertical scroll owner so initial first-layout
+attachment (while a coalesced slot/layout reconcile is still pending on the main
+queue or a verified vertical `NativeList` becomes ready before the current page
+has an observed owner) and late
 replacements recover immediately even without another Fabric insertion or after
 the retry budget expires; static pages with neither an unready scroll host nor a
 released scroll owner do not schedule retry timers.
