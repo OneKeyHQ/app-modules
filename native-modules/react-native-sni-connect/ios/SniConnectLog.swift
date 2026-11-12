@@ -23,7 +23,20 @@ enum SniConnectLog {
   static func event(_ name: String, _ fields: [(String, Any?)]) -> String {
     let normalizedFields: [(String, Any?)] = [("event", name)] + fields
     let pairs = normalizedFields.map { key, value in
-      "\(key)=\(sanitize(value))"
+      let logValue = sanitize(value)
+      // Keep long diagnostic IDs recoverable without matching the logger's private-key filter.
+      var displayedValue = logValue
+      var formatSuffix = ""
+      if key == "requestId", let requestId = value as? String,
+         requestId != logValue || requestId.range(of: "[0-9a-fA-F]{64}", options: .regularExpression) != nil {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.")
+        displayedValue = (requestId.addingPercentEncoding(withAllowedCharacters: allowed) ?? "unavailable")
+          .replacingOccurrences(
+            of: "([0-9a-fA-F]{32})(?=[0-9a-fA-F]{32})", with: "$1-", options: .regularExpression
+          )
+        formatSuffix = " requestIdFormat=uri-hex32"
+      }
+      return "\(key)=\(displayedValue)\(formatSuffix)"
     }
     return pairs.joined(separator: " ")
   }

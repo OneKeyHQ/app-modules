@@ -209,6 +209,28 @@ distinction is a separate change: the routing defaults above are unchanged by
 this section, so a POST/PUT/PATCH/DELETE still cannot fall back on any other
 final SNI code and read methods keep their existing fallback rules.
 
+## Diagnostic log fields
+
+Status: **Implemented**. Structured native logs record `requestId`, destination
+`ip`, and unexpected DNS `requestedHost` in plaintext, preserving identifiers
+and endpoints for troubleshooting. These fields are not hashed. Log values
+still escape whitespace to keep each event on one line. Sensitive headers,
+request/response bodies, and local file paths are not added to these logs.
+Long hexadecimal runs in the displayed `requestId` are separated with `-` after
+32 hex characters when another 32 hex characters follow. This preserves the
+complete ID while avoiding the final logger's generic 64-hex private-key filter.
+For example, a 64-hex ID is displayed as two 32-hex groups. UUIDs are unchanged;
+the ID sent in headers and used for cancellation is never reformatted.
+IDs affected by whitespace cleanup are encoded from their original value before
+that cleanup. Only reformatted IDs add `requestIdFormat=uri-hex32` to the event.
+Marked IDs are UTF-8 percent-encoded, leaving only ASCII letters, digits, `_` and
+`.` unescaped, before hex grouping. This includes hex runs formed beside escape
+sequences. To restore a marked ID, remove grouping hyphens, then percent-decode
+once. This preserves original spaces, separators and percent signs. An already
+separated 32-hex/32-hex ID is unchanged and has no marker. `requestId` is
+non-sensitive diagnostic metadata and must not carry secrets; unrelated values
+retain the generic logger's sensitive-data filtering.
+
 ## Conformance and remaining evidence
 
 - JS API tests cover capability detection, missing-native Promise rejection,

@@ -526,7 +526,7 @@ final class SniConnectRequestLimiter: @unchecked Sendable {
               ("limit", maxPendingRequests),
               ("reason", "max_pending_requests"),
               ("hostname", hostname.lowercased()),
-              ("ipHash", SniConnectCoreDiagnostics.shortHash(ip)),
+              ("ip", ip),
             ]))
             immediateError = SniConnectValidation.ValidationError.resourceLimit(
               "Too many pending SNI requests"
