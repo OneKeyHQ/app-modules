@@ -114,7 +114,7 @@ final class SniConnectPinnedResolverRegistry {
     guard domain.caseInsensitiveCompare(config.hostname) == .orderedSame else {
       SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_pinned_dns_unexpected_host", [
         ("expectedHost", config.hostname),
-        ("requestedHostHash", SniConnectCoreDiagnostics.shortHash(domain.lowercased())),
+        ("requestedHost", domain.lowercased()),
         ("result", "fail_closed"),
       ]))
       return nil

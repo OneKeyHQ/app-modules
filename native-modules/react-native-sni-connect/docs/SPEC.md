@@ -209,6 +209,14 @@ distinction is a separate change: the routing defaults above are unchanged by
 this section, so a POST/PUT/PATCH/DELETE still cannot fall back on any other
 final SNI code and read methods keep their existing fallback rules.
 
+## Diagnostic log fields
+
+Status: **Implemented**. Structured native logs record `requestId`, destination
+`ip`, and unexpected DNS `requestedHost` in plaintext, preserving identifiers
+and endpoints for troubleshooting. These fields are not hashed. Log values
+still escape whitespace to keep each event on one line. Sensitive headers,
+request/response bodies, and local file paths are not added to these logs.
+
 ## Conformance and remaining evidence
 
 - JS API tests cover capability detection, missing-native Promise rejection,

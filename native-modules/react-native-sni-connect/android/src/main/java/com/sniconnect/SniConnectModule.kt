@@ -151,7 +151,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           SniConnectLogger.event(
             "sni_cache_evict",
             "hostname" to eldest.key.hostname,
-            "ipHash" to SniConnectLogger.shortHash(eldest.key.ip),
+            "ip" to eldest.key.ip,
             "cacheSize" to size,
             "limit" to MAX_CLIENTS,
             "reason" to "max_cached_clients",
@@ -252,7 +252,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.info(
         SniConnectLogger.event(
           "sni_cancel",
-          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "requestId" to requestId,
           "success" to true,
         ),
       )
@@ -261,7 +261,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.warn(
         SniConnectLogger.event(
           "sni_cancel",
-          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "requestId" to requestId,
           "success" to false,
         ),
       )
@@ -348,9 +348,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.info(
         SniConnectLogger.event(
           "sni_request_start",
-          "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+          "requestId" to config.requestId,
           "hostname" to config.hostname.lowercase(Locale.US),
-          "ipHash" to SniConnectLogger.shortHash(config.ip),
+          "ip" to config.ip,
           "ipFamily" to SniConnectLogger.ipFamily(config.ip),
           "method" to config.method,
           "timeoutMs" to config.timeoutMillis,
@@ -379,9 +379,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "result" to "error",
                 "code" to code,
                 "nativeErrorClass" to e.javaClass.simpleName,
-                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "requestId" to config.requestId,
                 "hostname" to config.hostname.lowercase(Locale.US),
-                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ip" to config.ip,
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
@@ -401,9 +401,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "sni_request_result",
                 "result" to "response",
                 "status" to currentResponse.code,
-                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "requestId" to config.requestId,
                 "hostname" to config.hostname.lowercase(Locale.US),
-                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ip" to config.ip,
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
@@ -448,9 +448,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "result" to "error",
                 "code" to code,
                 "nativeErrorClass" to error.javaClass.simpleName,
-                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "requestId" to config.requestId,
                 "hostname" to config.hostname.lowercase(Locale.US),
-                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ip" to config.ip,
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
@@ -515,9 +515,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           "result" to "error",
           "code" to code,
           "nativeErrorClass" to error.javaClass.simpleName,
-          "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+          "requestId" to config.requestId,
           "hostname" to config.hostname.lowercase(Locale.US),
-          "ipHash" to SniConnectLogger.shortHash(config.ip),
+          "ip" to config.ip,
           "ipFamily" to SniConnectLogger.ipFamily(config.ip),
           "method" to config.method,
           "timeoutMs" to config.timeoutMillis,
@@ -551,7 +551,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.warn(
         SniConnectLogger.event(
           "sni_duplicate_request_id",
-          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "requestId" to requestId,
           "action" to "cancel_previous",
         ),
       )
@@ -612,7 +612,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         SniConnectLogger.event(
           "sni_transport_config",
           "hostname" to key.hostname,
-          "ipHash" to SniConnectLogger.shortHash(key.ip),
+          "ip" to key.ip,
           "ipFamily" to SniConnectLogger.ipFamily(key.ip),
           "proxyMode" to "no_proxy",
           "pinnedResolver" to true,
