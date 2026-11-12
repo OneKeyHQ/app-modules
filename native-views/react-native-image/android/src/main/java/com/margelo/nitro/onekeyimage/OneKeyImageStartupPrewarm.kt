@@ -1,0 +1,990 @@
+package com.margelo.nitro.onekeyimage
+
+import android.content.Context
+import android.content.res.Resources
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.util.DisplayMetrics
+import android.util.Log
+import com.bumptech.glide.load.Key
+import com.bumptech.glide.signature.ObjectKey
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import kotlin.math.floor
+import kotlin.math.min
+
+/**
+ * Records the first-screen image working set and warms decoded bitmaps into a
+ * bounded process-wide memory cache at process startup.
+ *
+ * Persisted entries store only hashed cache identities (`keyHash`, `diskFile`,
+ * optional `rawDiskFile`) and target pixel dimensions — never plaintext URLs,
+ * `onekey-avatar://` wallet addresses, file paths, or `data:` payloads.
+ */
+internal object OneKeyImageStartupPrewarm {
+  internal data class StartupEntry(
+    val keyHash: String,
+    val diskFile: String,
+    val rawDiskFile: String? = null,
+    val width: Int,
+    val height: Int,
+    val round: Boolean = false,
+    val launch: Int = 0,
+  ) {
+    val identity: String
+      get() = "$keyHash|$width|$height|$round"
+  }
+
+  internal data class PrewarmMetrics(
+    val entryCount: Int = 0,
+    val decodedCount: Int = 0,
+    val durationMs: Double = 0.0,
+  )
+
+  private const val MAX_ENTRIES = 48
+  private const val RECORD_DURATION_MS = 6_000L
+  private const val MAX_DURATION_MS = 60_000L
+  private const val MIN_SETTLED_COUNT = 2
+  private const val MAX_DATA_URL_LENGTH = 65_536
+  private const val MAX_LAUNCH_AGE = 3
+  private const val MAX_MEMORY_ENTRIES = 64
+  private const val MAX_MEMORY_BYTES = 16L * 1024L * 1024L
+  private const val FILE_NAME = "onekey-image-startup-v1.json"
+  internal const val GLIDE_DISK_CACHE_DIR = "image_manager_disk_cache"
+  internal const val FALLBACK_DISK_CACHE_DIR = "onekey-image-startup-disk-v1"
+
+  private val stateLock = Any()
+  private val memoryLock = Any()
+  private val diskIoLock = Any()
+  private val recorded = ArrayList<StartupEntry>()
+  private val recordedKeys = HashSet<String>()
+  private val pendingFallbackSources = HashMap<String, String>()
+  private var recordStartTimeMs: Long? = null
+  private var recordingClosed = false
+  private var flushScheduled = false
+  private var diskClearGeneration = 0L
+  private var debounceFuture: ScheduledFuture<*>? = null
+  private var startupFileOverride: File? = null
+  @Volatile
+  private var baseCacheDir: File? = null
+  private var lastPrewarmMetrics = PrewarmMetrics()
+
+  private val memoryCache = LinkedHashMap<String, Bitmap>(MAX_MEMORY_ENTRIES, 0.75f, true)
+  private var memoryCacheBytes = 0L
+
+  private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+    Thread(runnable, "onekey-image-startup-record").apply { isDaemon = true }
+  }
+  private val prewarmExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "onekey-image-startup-prewarm").apply { isDaemon = true }
+  }
+
+  @Volatile
+  internal var bitmapDecoderOverrideForTesting:
+    ((ByteArray, Int, Int, Int, Int, Boolean) -> Bitmap?)? = null
+
+  @Volatile
+  internal var bitmapByteCountOverrideForTesting: ((Bitmap) -> Long)? = null
+
+  internal fun setCacheDirIfNeeded(cacheDir: File?) {
+    if (cacheDir != null && baseCacheDir == null) {
+      baseCacheDir = cacheDir
+    }
+  }
+
+  internal fun currentCacheDir(context: Context? = null): File? =
+    startupFileOverride?.parentFile ?: context?.applicationContext?.cacheDir ?: baseCacheDir
+
+  fun metricsSnapshot(): PrewarmMetrics = synchronized(stateLock) { lastPrewarmMetrics }
+
+  internal fun currentDiskClearGenerationForTesting(): Long = synchronized(stateLock) { diskClearGeneration }
+
+  fun keyHash(requestUrl: String, width: Int, height: Int, round: Boolean): String =
+    sha256Hex("$requestUrl|$width|$height|$round".toByteArray(Charsets.UTF_8))
+
+  fun glideDataSafeKey(uri: String): String? {
+    if (uri.isBlank()) return null
+    val sourceKey: Key = when {
+      OneKeyBlockieAvatar.isAvatarUri(uri) ->
+        OneKeyImageSafetyVersionedKey(ObjectKey(OneKeyBlockieAvatarModel(uri)))
+      uri.startsWith("data:") ->
+        OneKeyImageSafetyVersionedKey(ObjectKey(OneKeyImageDataUriModel(uri)))
+      uri.startsWith("http://") || uri.startsWith("https://") ->
+        OneKeyImageSafetyVersionedKey(OneKeyImageRemoteSourceKey(uri, null))
+      uri.startsWith("file://") ->
+        OneKeyImageSafetyVersionedKey(ObjectKey(uri))
+      else -> return null
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+    sourceKey.updateDiskCacheKey(digest)
+    return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+  }
+
+  internal fun findDiskCacheFile(cacheDir: File, diskFile: String): File? {
+    if (!isSafeToken(diskFile)) return null
+    val glideFile = File(File(cacheDir, GLIDE_DISK_CACHE_DIR), "$diskFile.0")
+    if (glideFile.isFile) return glideFile
+    val fallbackFile = File(File(cacheDir, FALLBACK_DISK_CACHE_DIR), diskFile)
+    if (fallbackFile.isFile) return fallbackFile
+    return null
+  }
+
+  internal fun ensureFallbackDiskBytesAsync(cacheDir: File, uri: String, bytes: ByteArray) {
+    val safeKey = glideDataSafeKey(uri) ?: return
+    if (findDiskCacheFile(cacheDir, safeKey) != null) return
+    val expectedGeneration = synchronized(stateLock) { diskClearGeneration }
+    scheduler.execute {
+      writeFallbackDiskBytes(cacheDir, safeKey, bytes, expectedGeneration)
+    }
+  }
+
+  internal fun writeFallbackDiskBytes(
+    cacheDir: File,
+    safeKey: String,
+    bytes: ByteArray,
+    expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
+  ) {
+    if (!isSafeToken(safeKey) || bytes.isEmpty()) return
+    synchronized(diskIoLock) {
+      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+      try {
+        val dir = File(cacheDir, FALLBACK_DISK_CACHE_DIR)
+        if (!dir.exists()) dir.mkdirs()
+        val target = File(dir, safeKey)
+        if (target.isFile && target.length() == bytes.size.toLong()) return
+        val tmp = File(dir, "$safeKey.tmp")
+        tmp.writeBytes(bytes)
+        if (!tmp.renameTo(target)) {
+          tmp.copyTo(target, overwrite = true)
+          tmp.delete()
+        }
+      } catch (_: Exception) {
+      }
+    }
+  }
+
+  fun cachedBitmap(keyHash: String): Bitmap? = synchronized(memoryLock) {
+    memoryCache[keyHash]
+  }
+
+  fun cachedBitmap(
+    requestUrl: String,
+    width: Int,
+    height: Int,
+    round: Boolean,
+    headersJson: String? = null,
+  ): Bitmap? {
+    if (OneKeyImageModel.headers(headersJson).isNotEmpty()) return null
+    return cachedBitmap(keyHash(requestUrl, width, height, round))
+  }
+
+  fun putMemoryBitmap(keyHash: String, bitmap: Bitmap) {
+    val bytes = estimateBitmapBytes(bitmap)
+    if (bytes > MAX_MEMORY_BYTES) return
+    synchronized(memoryLock) {
+      memoryCache.put(keyHash, bitmap)?.let { previous ->
+        memoryCacheBytes = (memoryCacheBytes - estimateBitmapBytes(previous)).coerceAtLeast(0L)
+      }
+      memoryCacheBytes += bytes
+      while (memoryCache.size > MAX_MEMORY_ENTRIES || memoryCacheBytes > MAX_MEMORY_BYTES) {
+        val eldest = memoryCache.entries.firstOrNull() ?: break
+        memoryCacheBytes = (memoryCacheBytes - estimateBitmapBytes(eldest.value)).coerceAtLeast(0L)
+        memoryCache.remove(eldest.key)
+      }
+    }
+  }
+
+  fun clearMemoryCache() {
+    synchronized(memoryLock) {
+      memoryCache.clear()
+      memoryCacheBytes = 0L
+    }
+  }
+
+  fun clearDiskCache(cacheDir: File? = currentCacheDir()) {
+    val file: File?
+    val resolvedDir: File?
+    synchronized(stateLock) {
+      diskClearGeneration += 1L
+      debounceFuture?.cancel(false)
+      debounceFuture = null
+      flushScheduled = false
+      recorded.clear()
+      recordedKeys.clear()
+      pendingFallbackSources.clear()
+      file = startupFile()
+      resolvedDir = cacheDir ?: baseCacheDir ?: file?.parentFile
+    }
+    synchronized(diskIoLock) {
+      try {
+        file?.delete()
+        file?.parentFile?.let { File(it, "${file.name}.tmp").delete() }
+      } catch (_: Exception) {
+      }
+      try {
+        if (resolvedDir != null) {
+          File(resolvedDir, FALLBACK_DISK_CACHE_DIR).deleteRecursively()
+        }
+      } catch (_: Exception) {
+      }
+    }
+  }
+
+  private fun estimateBitmapBytes(bitmap: Bitmap): Long {
+    bitmapByteCountOverrideForTesting?.let { return it(bitmap) }
+    return try {
+      val count = bitmap.allocationByteCount.toLong()
+      if (count > 0L) count else (bitmap.width.toLong() * bitmap.height.toLong() * 4L).coerceAtLeast(1L)
+    } catch (_: Throwable) {
+      4096L
+    }
+  }
+
+  fun note(
+    cacheDir: File?,
+    requestUrl: String,
+    rawUrl: String,
+    headersJson: String?,
+    cachePolicy: OneKeyImageCachePolicy?,
+    width: Int,
+    height: Int,
+    round: Boolean,
+  ) {
+    if (cacheDir != null) setCacheDirIfNeeded(cacheDir)
+    val policy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK
+    if (policy != OneKeyImageCachePolicy.MEMORY_DISK) return
+    if (OneKeyImageModel.headers(headersJson).isNotEmpty()) return
+    if (width <= 0 || height <= 0) return
+    if (!isSupportedStartupUri(requestUrl) || !isSupportedStartupUri(rawUrl)) return
+    if (requestUrl.startsWith("data:") && requestUrl.length > MAX_DATA_URL_LENGTH) return
+    if (rawUrl.startsWith("data:") && rawUrl.length > MAX_DATA_URL_LENGTH) return
+
+    val entryKeyHash = keyHash(requestUrl, width, height, round)
+    val diskFile = glideDataSafeKey(requestUrl) ?: return
+    val rawDiskFile = if (requestUrl != rawUrl) glideDataSafeKey(rawUrl) else null
+    val entry = StartupEntry(
+      keyHash = entryKeyHash,
+      diskFile = diskFile,
+      rawDiskFile = rawDiskFile,
+      width = width,
+      height = height,
+      round = round,
+      launch = 0,
+    )
+
+    val now = System.currentTimeMillis()
+    synchronized(stateLock) {
+      if (recordingClosed) return
+      val start = recordStartTimeMs ?: now.also { recordStartTimeMs = it }
+      if (now - start >= MAX_DURATION_MS && recorded.isNotEmpty()) {
+        recordingClosed = true
+        schedulePersistLocked(delayMs = 0L)
+        return
+      }
+      if (recorded.size < MAX_ENTRIES && recordedKeys.add(entry.identity)) {
+        recorded.add(entry)
+      }
+      if (requestUrl.startsWith("file://") || requestUrl.startsWith("data:") || OneKeyBlockieAvatar.isAvatarUri(requestUrl)) {
+        pendingFallbackSources.putIfAbsent(diskFile, requestUrl)
+      }
+      schedulePersistLocked(delayMs = RECORD_DURATION_MS)
+    }
+  }
+
+  private fun isSupportedStartupUri(uri: String): Boolean =
+    uri.startsWith("http://") ||
+      uri.startsWith("https://") ||
+      OneKeyBlockieAvatar.isAvatarUri(uri) ||
+      uri.startsWith("file://") ||
+      uri.startsWith("data:")
+
+  private fun schedulePersistLocked(delayMs: Long) {
+    debounceFuture?.cancel(false)
+    flushScheduled = true
+    debounceFuture = scheduler.schedule({
+      debounceFired()
+    }, delayMs, TimeUnit.MILLISECONDS)
+  }
+
+  private fun debounceFired() {
+    val entries: List<StartupEntry>
+    val fallbackMap: Map<String, String>
+    val file: File?
+    val cacheDir: File?
+    val expectedGeneration: Long
+    val now = System.currentTimeMillis()
+    synchronized(stateLock) {
+      if (recordingClosed && !flushScheduled) return
+      val start = recordStartTimeMs ?: now
+      if (
+        !recordingClosed &&
+        recorded.size < MIN_SETTLED_COUNT &&
+        now - start < MAX_DURATION_MS
+      ) {
+        schedulePersistLocked(delayMs = RECORD_DURATION_MS)
+        return
+      }
+      recordingClosed = true
+      flushScheduled = false
+      debounceFuture = null
+      entries = ArrayList(recorded)
+      fallbackMap = HashMap(pendingFallbackSources)
+      pendingFallbackSources.clear()
+      file = startupFile()
+      cacheDir = currentCacheDir()
+      expectedGeneration = diskClearGeneration
+    }
+    if (cacheDir != null && fallbackMap.isNotEmpty()) {
+      materializeFallbackSources(cacheDir, fallbackMap, expectedGeneration)
+    }
+    if (file != null) {
+      persist(entries, file, expectedGeneration)
+    }
+  }
+
+  private fun materializeFallbackSources(
+    cacheDir: File,
+    sources: Map<String, String>,
+    expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
+  ) {
+    for ((diskFile, uri) in sources) {
+      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+      if (findDiskCacheFile(cacheDir, diskFile) != null) continue
+      val bytes = try {
+        when {
+          uri.startsWith("file://") -> {
+            val rawPath = uri.removePrefix("file://").substringBefore('?').substringBefore('#')
+            val f = File(rawPath)
+            if (f.isFile && f.length() in 1L..OneKeyImageSafety.MAX_ENCODED_BYTES) f.readBytes() else null
+          }
+          uri.startsWith("data:") -> {
+            val comma = uri.indexOf(',')
+            if (comma > 0 && uri.substring(0, comma).lowercase(Locale.ROOT).contains(";base64")) {
+              val payloadStart = comma + 1
+              val count = OneKeyImageSafety.dataUriDecodedByteCount(uri, payloadStart)
+              if (count in 1L..OneKeyImageSafety.MAX_DATA_URI_DECODED_BYTES) {
+                OneKeyImageSafety.decodeDataUriBase64(uri.substring(payloadStart))
+              } else null
+            } else null
+          }
+          OneKeyBlockieAvatar.isAvatarUri(uri) -> OneKeyBlockieAvatar.png(uri)
+          else -> null
+        }
+      } catch (_: Exception) {
+        null
+      }
+      if (bytes != null && bytes.isNotEmpty()) {
+        writeFallbackDiskBytes(cacheDir, diskFile, bytes, expectedGeneration)
+      }
+    }
+  }
+
+  private fun startupFile(): File? {
+    startupFileOverride?.let { return it }
+    val dir = baseCacheDir ?: return null
+    return File(dir, FILE_NAME)
+  }
+
+  private fun persist(
+    entries: List<StartupEntry>,
+    file: File,
+    expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
+  ) {
+    if (entries.isEmpty()) return
+    synchronized(diskIoLock) {
+      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+      val existing = readEntries(file)
+      val maxExistingLaunch = existing.maxOfOrNull { it.launch } ?: 0
+      val currentLaunch = maxExistingLaunch + 1
+
+      val stampedCurrent = entries.map {
+        StartupEntry(
+          keyHash = it.keyHash,
+          diskFile = it.diskFile,
+          rawDiskFile = it.rawDiskFile,
+          width = it.width,
+          height = it.height,
+          round = it.round,
+          launch = currentLaunch,
+        )
+      }
+      val seen = stampedCurrent.mapTo(HashSet()) { it.identity }
+      val merged = ArrayList<StartupEntry>(MAX_ENTRIES)
+      merged.addAll(stampedCurrent.take(MAX_ENTRIES))
+
+      for (entry in existing) {
+        if (merged.size >= MAX_ENTRIES) break
+        if (!isValidEntry(entry)) continue
+        val age = currentLaunch - entry.launch
+        if (age >= MAX_LAUNCH_AGE) continue
+        if (seen.add(entry.identity)) {
+          merged.add(entry)
+        }
+      }
+
+      if (
+        existing.size == merged.size &&
+        existing.indices.all { i ->
+          existing[i].identity == merged[i].identity &&
+            existing[i].diskFile == merged[i].diskFile &&
+            existing[i].rawDiskFile == merged[i].rawDiskFile &&
+            (currentLaunch - existing[i].launch) < 1
+        }
+      ) {
+        return
+      }
+
+      try {
+        file.parentFile?.mkdirs()
+        val json = encodeEntriesJson(merged)
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        tmp.writeText(json, Charsets.UTF_8)
+        if (!tmp.renameTo(file)) {
+          tmp.copyTo(file, overwrite = true)
+          tmp.delete()
+        }
+        val fallbackDir = File(file.parentFile, FALLBACK_DISK_CACHE_DIR)
+        if (fallbackDir.isDirectory) {
+          val activeFiles = HashSet<String>(merged.size * 2)
+          for (entry in merged) {
+            activeFiles.add(entry.diskFile)
+            entry.rawDiskFile?.let { activeFiles.add(it) }
+          }
+          fallbackDir.listFiles()?.forEach { candidate ->
+            if (candidate.isFile && !activeFiles.contains(candidate.name)) {
+              candidate.delete()
+            }
+          }
+        }
+      } catch (_: Exception) {
+      }
+    }
+  }
+
+  fun startPrewarmAsync(context: Context) {
+    val appContext = context.applicationContext ?: context
+    setCacheDirIfNeeded(appContext.cacheDir)
+    prewarmExecutor.execute {
+      prewarmStartupSet(appContext.cacheDir)
+    }
+  }
+
+  fun prewarmStartupSet(cacheDir: File? = currentCacheDir()) {
+    val startNs = System.nanoTime()
+    if (cacheDir != null) setCacheDirIfNeeded(cacheDir)
+    val file = synchronized(stateLock) { startupFile() } ?: return
+    val resolvedCacheDir = cacheDir ?: file.parentFile ?: return
+    val entries = readEntries(file)
+      .filter { isValidEntry(it) }
+      .take(MAX_ENTRIES)
+    if (entries.isEmpty()) {
+      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+      synchronized(stateLock) {
+        lastPrewarmMetrics = PrewarmMetrics(0, 0, elapsedMs)
+      }
+      return
+    }
+
+    var decodedCount = 0
+    for (entry in entries) {
+      if (cachedBitmap(entry.keyHash) != null) {
+        decodedCount += 1
+        continue
+      }
+      val bytes = loadCachedDiskBytes(resolvedCacheDir, entry) ?: continue
+      val metadata = try {
+        OneKeyEncodedImageInspector.inspect(ByteArrayInputStream(bytes))
+      } catch (_: Exception) {
+        continue
+      }
+      if (metadata.animated) continue
+      val bounds = if (metadata.width > 0 && metadata.height > 0) {
+        metadata.width to metadata.height
+      } else {
+        OneKeyMainThreadDecode.extractStaticImageBounds(bytes)
+      } ?: continue
+      try {
+        OneKeyImageSafety.requireStaticDimensions(bounds.first, bounds.second)
+      } catch (_: Exception) {
+        continue
+      }
+      val bitmap = decodeStaticBitmap(
+        bytes = bytes,
+        sourceWidth = bounds.first,
+        sourceHeight = bounds.second,
+        targetWidth = entry.width,
+        targetHeight = entry.height,
+        round = entry.round,
+      ) ?: continue
+      putMemoryBitmap(entry.keyHash, bitmap)
+      decodedCount += 1
+    }
+
+    val totalMs = (System.nanoTime() - startNs) / 1_000_000.0
+    synchronized(stateLock) {
+      lastPrewarmMetrics = PrewarmMetrics(
+        entryCount = entries.size,
+        decodedCount = decodedCount,
+        durationMs = totalMs,
+      )
+    }
+    try {
+      Log.i(
+        "OneKeyImage",
+        String.format(
+          Locale.ROOT,
+          "[OneKeyImageStartupMetrics] imagePrewarm entries=%d decoded=%d totalMs=%.3f",
+          entries.size,
+          decodedCount,
+          totalMs,
+        ),
+      )
+    } catch (_: Throwable) {
+    }
+  }
+
+  private fun loadCachedDiskBytes(cacheDir: File, entry: StartupEntry): ByteArray? {
+    val candidates = if (!entry.rawDiskFile.isNullOrEmpty() && entry.rawDiskFile != entry.diskFile) {
+      listOf(entry.diskFile, entry.rawDiskFile)
+    } else {
+      listOf(entry.diskFile)
+    }
+    for (token in candidates) {
+      val file = findDiskCacheFile(cacheDir, token) ?: continue
+      val length = file.length()
+      if (length <= 0L || length > OneKeyImageSafety.MAX_ENCODED_BYTES) continue
+      val bytes = try {
+        file.readBytes()
+      } catch (_: Exception) {
+        continue
+      }
+      if (bytes.isNotEmpty() && bytes.size <= OneKeyImageSafety.MAX_ENCODED_BYTES) {
+        return bytes
+      }
+    }
+    return null
+  }
+
+  internal fun defaultBitmapDensity(): Int = try {
+    Resources.getSystem().displayMetrics.densityDpi.takeIf { it > 0 }
+      ?: DisplayMetrics.DENSITY_DEFAULT
+  } catch (_: Throwable) {
+    DisplayMetrics.DENSITY_DEFAULT
+  }
+
+  internal fun exifOrientationSwapsDimensions(orientation: Int): Boolean =
+    orientation in 5..8
+
+  internal fun decodeStaticBitmap(
+    bytes: ByteArray,
+    sourceWidth: Int,
+    sourceHeight: Int,
+    targetWidth: Int,
+    targetHeight: Int,
+    round: Boolean,
+  ): Bitmap? {
+    val safeTarget = OneKeyImageDecodeDimensions.forRender(targetWidth, targetHeight)
+    val exifOrientation = extractExifOrientation(bytes)
+    val swapsDimensions = exifOrientationSwapsDimensions(exifOrientation)
+    val orientedSourceWidth = if (swapsDimensions) sourceHeight else sourceWidth
+    val orientedSourceHeight = if (swapsDimensions) sourceWidth else sourceHeight
+    bitmapDecoderOverrideForTesting?.let { override ->
+      return override(
+        bytes,
+        orientedSourceWidth,
+        orientedSourceHeight,
+        safeTarget.width,
+        safeTarget.height,
+        round,
+      )
+    }
+    return try {
+      val scaleFactor = OneKeyImageDecodeDimensions.safeStaticScaleFactor(
+        sourceWidth = orientedSourceWidth,
+        sourceHeight = orientedSourceHeight,
+        requestedWidth = safeTarget.width,
+        requestedHeight = safeTarget.height,
+      )
+      val options = BitmapFactory.Options().apply {
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+        if (scaleFactor < 1f) {
+          inScaled = true
+          inDensity = 10_000
+          inTargetDensity = (scaleFactor * 10_000f).toInt().coerceAtLeast(1)
+        }
+      }
+      val targetDensity = defaultBitmapDensity()
+      var decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+      decoded.density = targetDensity
+      if (decoded.width <= 0 || decoded.height <= 0) return null
+      if (decoded.allocationByteCount.toLong() > OneKeyImageDecodeDimensions.MAX_DECODE_BYTES) {
+        val targetW = floor(sourceWidth * scaleFactor).toInt().coerceAtLeast(1)
+        val targetH = floor(sourceHeight * scaleFactor).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(decoded, targetW, targetH, true)
+        if (scaled !== decoded) decoded.recycle()
+        scaled.density = targetDensity
+        decoded = scaled
+      }
+      decoded = applyExifOrientation(decoded, exifOrientation, targetDensity)
+      if (decoded.allocationByteCount.toLong() > OneKeyImageDecodeDimensions.MAX_DECODE_BYTES) {
+        return null
+      }
+      if (round) circleCropBitmap(decoded) else decoded
+    } catch (_: Throwable) {
+      null
+    }
+  }
+
+  internal fun applyExifOrientation(
+    source: Bitmap,
+    orientation: Int,
+    targetDensity: Int = defaultBitmapDensity(),
+  ): Bitmap {
+    source.density = targetDensity
+    if (orientation !in 2..8) return source
+    val matrix = Matrix().apply {
+      when (orientation) {
+        2 -> setScale(-1f, 1f)
+        3 -> setRotate(180f)
+        4 -> {
+          setRotate(180f)
+          postScale(-1f, 1f)
+        }
+        5 -> {
+          setRotate(90f)
+          postScale(-1f, 1f)
+        }
+        6 -> setRotate(90f)
+        7 -> {
+          setRotate(-90f)
+          postScale(-1f, 1f)
+        }
+        8 -> setRotate(-90f)
+      }
+    }
+    val oriented = Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+    if (oriented !== source) {
+      source.recycle()
+    }
+    oriented.density = targetDensity
+    return oriented
+  }
+
+  internal fun circleCropBitmap(source: Bitmap): Bitmap {
+    val size = min(source.width, source.height).coerceAtLeast(1)
+    val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val targetDensity = source.density.takeIf { it > 0 } ?: defaultBitmapDensity()
+    source.density = targetDensity
+    output.density = targetDensity
+    val canvas = Canvas(output)
+    canvas.density = targetDensity
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val radius = size / 2f
+    canvas.drawCircle(radius, radius, radius, paint)
+    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+    val left = (size - source.width) / 2f
+    val top = (size - source.height) / 2f
+    canvas.drawBitmap(source, left, top, paint)
+    if (output !== source) {
+      source.recycle()
+    }
+    return output
+  }
+
+  internal fun extractExifOrientation(bytes: ByteArray): Int {
+    // 1. JPEG APP1 Exif segment
+    if (bytes.size >= 4 && (bytes[0].toInt() and 0xff) == 0xff && (bytes[1].toInt() and 0xff) == 0xd8) {
+      var pos = 2
+      while (pos + 4 <= bytes.size) {
+        if ((bytes[pos].toInt() and 0xff) != 0xff) {
+          pos += 1
+          continue
+        }
+        var marker = bytes[pos + 1].toInt() and 0xff
+        pos += 2
+        while (marker == 0xff && pos < bytes.size) {
+          marker = bytes[pos].toInt() and 0xff
+          pos += 1
+        }
+        if (marker == 0xd9 || marker == 0xda) break
+        if (marker == 0xd8 || marker in 0xd0..0xd7 || marker == 0x01) continue
+        if (pos + 2 > bytes.size) break
+        val segmentLength = readU16Be(bytes, pos)
+        if (segmentLength < 2 || pos + segmentLength > bytes.size) break
+        if (marker == 0xe1 && segmentLength >= 16 && hasExifHeaderPrefix(bytes, pos + 2, pos + segmentLength)) {
+          val orientation = parseTiffOrientation(bytes, pos + 8, pos + segmentLength)
+          if (orientation in 1..8) return orientation
+        }
+        pos += segmentLength
+      }
+      return 1
+    }
+
+    // 2. WebP RIFF EXIF chunk
+    if (
+      bytes.size >= 20 &&
+      bytes[0] == 'R'.code.toByte() &&
+      bytes[1] == 'I'.code.toByte() &&
+      bytes[2] == 'F'.code.toByte() &&
+      bytes[3] == 'F'.code.toByte() &&
+      bytes[8] == 'W'.code.toByte() &&
+      bytes[9] == 'E'.code.toByte() &&
+      bytes[10] == 'B'.code.toByte() &&
+      bytes[11] == 'P'.code.toByte()
+    ) {
+      var chunkPos = 12
+      while (chunkPos <= bytes.size - 8) {
+        val chunkType = String(bytes, chunkPos, 4, Charsets.US_ASCII)
+        val chunkSize = readInt32Le(bytes, chunkPos + 4)
+        val payloadStart = chunkPos + 8
+        if (chunkSize < 0 || chunkSize > bytes.size - payloadStart) break
+        val payloadEnd = payloadStart + chunkSize
+        if (chunkType == "EXIF" && chunkSize >= 8) {
+          val tiffStart = if (hasExifHeaderPrefix(bytes, payloadStart, payloadEnd)) {
+            payloadStart + 6
+          } else {
+            payloadStart
+          }
+          val orientation = parseTiffOrientation(bytes, tiffStart, payloadEnd)
+          if (orientation in 1..8) return orientation
+        }
+        val paddedSize = chunkSize + (chunkSize and 1)
+        if (paddedSize < 0 || paddedSize > bytes.size - payloadStart) break
+        chunkPos = payloadStart + paddedSize
+      }
+      return 1
+    }
+
+    // 3. PNG eXIf chunk
+    if (
+      bytes.size >= 24 &&
+      bytes[0] == 0x89.toByte() &&
+      bytes[1] == 0x50.toByte() &&
+      bytes[2] == 0x4e.toByte() &&
+      bytes[3] == 0x47.toByte()
+    ) {
+      var chunkPos = 8
+      while (chunkPos <= bytes.size - 12) {
+        val chunkSize = readInt32Be(bytes, chunkPos)
+        val chunkType = String(bytes, chunkPos + 4, 4, Charsets.US_ASCII)
+        val payloadStart = chunkPos + 8
+        if (chunkSize < 0 || chunkSize > bytes.size - payloadStart - 4) break
+        val payloadEnd = payloadStart + chunkSize
+        if (chunkType == "eXIf" && chunkSize >= 8) {
+          val tiffStart = if (hasExifHeaderPrefix(bytes, payloadStart, payloadEnd)) {
+            payloadStart + 6
+          } else {
+            payloadStart
+          }
+          val orientation = parseTiffOrientation(bytes, tiffStart, payloadEnd)
+          if (orientation in 1..8) return orientation
+        }
+        if (chunkType == "IEND") break
+        chunkPos = payloadEnd + 4
+      }
+    }
+
+    return 1
+  }
+
+  private fun hasExifHeaderPrefix(bytes: ByteArray, start: Int, end: Int): Boolean =
+    start + 6 <= end &&
+      bytes[start] == 'E'.code.toByte() &&
+      bytes[start + 1] == 'x'.code.toByte() &&
+      bytes[start + 2] == 'i'.code.toByte() &&
+      bytes[start + 3] == 'f'.code.toByte() &&
+      bytes[start + 4] == 0.toByte() &&
+      bytes[start + 5] == 0.toByte()
+
+  private fun parseTiffOrientation(bytes: ByteArray, start: Int, end: Int): Int {
+    if (start < 0 || start > end - 8 || end > bytes.size) return 1
+    val littleEndian = when {
+      bytes[start] == 'I'.code.toByte() && bytes[start + 1] == 'I'.code.toByte() -> true
+      bytes[start] == 'M'.code.toByte() && bytes[start + 1] == 'M'.code.toByte() -> false
+      else -> return 1
+    }
+    if (readU16(bytes, start + 2, littleEndian) != 0x002a) return 1
+    val ifdOffset = readInt32(bytes, start + 4, littleEndian)
+    if (ifdOffset < 8 || ifdOffset > end - start - 2) return 1
+    val ifdStart = start + ifdOffset
+    val entryCount = readU16(bytes, ifdStart, littleEndian)
+    for (i in 0 until entryCount) {
+      val entryOffset = ifdStart + 2 + i * 12
+      if (entryOffset > end - 12) break
+      val tag = readU16(bytes, entryOffset, littleEndian)
+      if (tag == 0x0112) {
+        val fieldType = readU16(bytes, entryOffset + 2, littleEndian)
+        val count = readInt32(bytes, entryOffset + 4, littleEndian)
+        if (count != 1) return 1
+        val value = when (fieldType) {
+          3 -> {
+            val primary = readU16(bytes, entryOffset + 8, littleEndian)
+            if (primary in 1..8) primary else readU16(bytes, entryOffset + 10, littleEndian)
+          }
+          4 -> readInt32(bytes, entryOffset + 8, littleEndian)
+          1 -> bytes[entryOffset + 8].toInt() and 0xff
+          else -> 1
+        }
+        return if (value in 1..8) value else 1
+      }
+    }
+    return 1
+  }
+
+  private fun readU16(bytes: ByteArray, offset: Int, littleEndian: Boolean): Int =
+    if (littleEndian) {
+      (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
+    } else {
+      readU16Be(bytes, offset)
+    }
+
+  private fun readU16Be(bytes: ByteArray, offset: Int): Int =
+    ((bytes[offset].toInt() and 0xff) shl 8) or (bytes[offset + 1].toInt() and 0xff)
+
+  private fun readInt32(bytes: ByteArray, offset: Int, littleEndian: Boolean): Int =
+    if (littleEndian) readInt32Le(bytes, offset) else readInt32Be(bytes, offset)
+
+  private fun readInt32Le(bytes: ByteArray, offset: Int): Int =
+    (bytes[offset].toInt() and 0xff) or
+      ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+      ((bytes[offset + 2].toInt() and 0xff) shl 16) or
+      ((bytes[offset + 3].toInt() and 0xff) shl 24)
+
+  private fun readInt32Be(bytes: ByteArray, offset: Int): Int =
+    ((bytes[offset].toInt() and 0xff) shl 24) or
+      ((bytes[offset + 1].toInt() and 0xff) shl 16) or
+      ((bytes[offset + 2].toInt() and 0xff) shl 8) or
+      (bytes[offset + 3].toInt() and 0xff)
+
+  private fun isSafeToken(token: String): Boolean =
+    token.isNotEmpty() &&
+      !token.contains('/') &&
+      !token.contains('\\') &&
+      !token.contains("..")
+
+  private fun isValidEntry(entry: StartupEntry): Boolean =
+    entry.keyHash.isNotEmpty() &&
+      isSafeToken(entry.diskFile) &&
+      (entry.rawDiskFile == null || isSafeToken(entry.rawDiskFile)) &&
+      entry.width > 0 &&
+      entry.height > 0 &&
+      entry.width.toLong() * entry.height.toLong() <= 4_194_304L
+
+  internal fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256")
+      .digest(bytes)
+      .joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+
+  internal fun encodeEntriesJson(entries: List<StartupEntry>): String {
+    val array = JSONArray()
+    for (entry in entries) {
+      val obj = JSONObject()
+        .put("keyHash", entry.keyHash)
+        .put("diskFile", entry.diskFile)
+        .put("width", entry.width)
+        .put("height", entry.height)
+        .put("round", entry.round)
+        .put("launch", entry.launch)
+      if (!entry.rawDiskFile.isNullOrEmpty()) {
+        obj.put("rawDiskFile", entry.rawDiskFile)
+      }
+      array.put(obj)
+    }
+    return array.toString()
+  }
+
+  internal fun decodeEntriesJson(text: String): List<StartupEntry> {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return emptyList()
+    val array = JSONArray(trimmed)
+    val result = ArrayList<StartupEntry>(array.length())
+    for (i in 0 until array.length()) {
+      val obj = array.optJSONObject(i) ?: continue
+      val keyHash = obj.optString("keyHash", "").takeIf { it.isNotEmpty() } ?: continue
+      val diskFile = obj.optString("diskFile", "").takeIf { it.isNotEmpty() } ?: continue
+      val rawDiskFile = obj.optString("rawDiskFile", "").takeIf { it.isNotEmpty() }
+      val width = obj.optInt("width", 0)
+      val height = obj.optInt("height", 0)
+      if (width <= 0 || height <= 0) continue
+      val round = obj.optBoolean("round", false)
+      val launch = obj.optInt("launch", 0)
+      result.add(
+        StartupEntry(
+          keyHash = keyHash,
+          diskFile = diskFile,
+          rawDiskFile = rawDiskFile,
+          width = width,
+          height = height,
+          round = round,
+          launch = launch,
+        ),
+      )
+    }
+    return result
+  }
+
+  internal fun readEntries(file: File): List<StartupEntry> {
+    if (!file.isFile) return emptyList()
+    return try {
+      decodeEntriesJson(file.readText(Charsets.UTF_8))
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  internal fun resetForTesting(file: File? = null, cacheDir: File? = null) {
+    synchronized(stateLock) {
+      debounceFuture?.cancel(false)
+      debounceFuture = null
+      recorded.clear()
+      recordedKeys.clear()
+      pendingFallbackSources.clear()
+      recordStartTimeMs = null
+      recordingClosed = false
+      flushScheduled = false
+      startupFileOverride = file
+      baseCacheDir = cacheDir ?: file?.parentFile
+      lastPrewarmMetrics = PrewarmMetrics()
+    }
+    clearMemoryCache()
+  }
+
+  internal fun flushForTesting(forceClose: Boolean = true) {
+    val entries: List<StartupEntry>
+    val fallbackMap: Map<String, String>
+    val file: File?
+    val cacheDir: File?
+    synchronized(stateLock) {
+      debounceFuture?.cancel(false)
+      debounceFuture = null
+      if (!forceClose && recorded.size < MIN_SETTLED_COUNT) {
+        return
+      }
+      recordingClosed = true
+      flushScheduled = false
+      entries = ArrayList(recorded)
+      fallbackMap = HashMap(pendingFallbackSources)
+      pendingFallbackSources.clear()
+      file = startupFile()
+      cacheDir = currentCacheDir()
+    }
+    if (cacheDir != null && fallbackMap.isNotEmpty()) {
+      materializeFallbackSources(cacheDir, fallbackMap)
+    }
+    if (file != null) {
+      persist(entries, file)
+    }
+  }
+}

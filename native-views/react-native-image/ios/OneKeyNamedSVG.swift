@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 import SDWebImage
 import UIKit
 
@@ -30,6 +31,12 @@ internal final class OneKeyNamedSVGBridge: NSObject {
       scale: CGFloat(scale),
       complete: complete
     )
+  }
+
+  /// Called off the main thread at process start; see `OneKeyNamedSVGStartupLoader`.
+  @objc(prewarmStartupSet)
+  static func prewarmStartupSet() {
+    OneKeyNamedSVG.shared.prewarmStartupSet()
   }
 }
 
@@ -114,6 +121,305 @@ public final class OneKeyNamedSVG {
   private var recency: [String] = []
   private var bytes = 0
 
+  // MARK: Startup prewarm
+  //
+  // A cold process starts with an empty memory cache, so every icon of the first
+  // screen would miss `cachedRender` and paint one frame late. The requests seen
+  // right after launch are persisted and decoded again on a background queue at
+  // the next process start, before JS mounts the first screen.
+
+  struct StartupIdentity: Hashable {
+    let name: String
+    let color: String
+    let width: Int
+    let height: Int
+    let scale: Double
+  }
+
+  struct StartupEntry: Codable, Equatable {
+    let name: String
+    let color: String
+    let width: Int
+    let height: Int
+    let scale: Double
+    var launch: Int
+
+    var identity: StartupIdentity {
+      StartupIdentity(name: name, color: color, width: width, height: height, scale: scale)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+      case name
+      case color
+      case width
+      case height
+      case scale
+      case launch
+    }
+
+    init(name: String, color: String, width: Int, height: Int, scale: Double, launch: Int = 0) {
+      self.name = name
+      self.color = color
+      self.width = width
+      self.height = height
+      self.scale = scale
+      self.launch = launch
+    }
+
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      self.name = try container.decode(String.self, forKey: .name)
+      self.color = try container.decode(String.self, forKey: .color)
+      self.width = try container.decode(Int.self, forKey: .width)
+      self.height = try container.decode(Int.self, forKey: .height)
+      self.scale = try container.decode(Double.self, forKey: .scale)
+      self.launch = try container.decodeIfPresent(Int.self, forKey: .launch) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(name, forKey: .name)
+      try container.encode(color, forKey: .color)
+      try container.encode(width, forKey: .width)
+      try container.encode(height, forKey: .height)
+      try container.encode(scale, forKey: .scale)
+      if launch > 0 {
+        try container.encode(launch, forKey: .launch)
+      }
+    }
+  }
+
+  struct StartupMetrics: Equatable {
+    var entryCount: Int = 0
+    var decodedCount: Int = 0
+    var manifestLoadMs: Double = 0
+    var totalMs: Double = 0
+  }
+
+  static let startupWindow: TimeInterval = 6
+  static let startupMaxDuration: TimeInterval = 60
+  static let startupMinimumSettledCount = 8
+  static let startupLimit = 96
+  static let startupMaxLaunchAge = 3
+  private static let startupFile: URL? = FileManager.default
+    .urls(for: .cachesDirectory, in: .userDomainMask).first?
+    .appendingPathComponent("onekey-named-svg-startup-v1.json")
+  private let startupLock = NSLock()
+  private var startupSeen: [StartupEntry] = []
+  private var startupPrevious: [StartupEntry] = []
+  private var startupMaxLaunch = 0
+  private var startupLoadedPreviousFromDisk = false
+  private var startupRecording: Bool?
+  private var startupFirstRequestAt: CFTimeInterval = 0
+  private var startupFlushWorkItem: DispatchWorkItem?
+  private var customStartupFile: URL?
+  private var startupMetrics = StartupMetrics()
+
+  private var activeStartupFileURL: URL? {
+    customStartupFile ?? Self.startupFile
+  }
+
+  func prewarmStartupSet() {
+    let start = CACurrentMediaTime()
+    // The manifest is needed by every main-thread fast path, with or without a list.
+    metadataLock.lock()
+    loadManifestIfNeeded()
+    metadataLock.unlock()
+    let manifestMs = (CACurrentMediaTime() - start) * 1000.0
+    startupLock.lock()
+    let file = activeStartupFileURL
+    startupLock.unlock()
+    guard let file, let data = try? Data(contentsOf: file),
+          let entries = try? JSONDecoder().decode([StartupEntry].self, from: data) else {
+      startupLock.lock()
+      startupMetrics = StartupMetrics(
+        entryCount: 0,
+        decodedCount: 0,
+        manifestLoadMs: manifestMs,
+        totalMs: manifestMs
+      )
+      startupLock.unlock()
+      return
+    }
+    let highestLaunch = entries.map(\.launch).max() ?? 0
+    startupLock.lock()
+    startupLoadedPreviousFromDisk = true
+    if startupPrevious.isEmpty {
+      startupPrevious = entries
+      startupMaxLaunch = max(startupMaxLaunch, highestLaunch)
+    }
+    startupLock.unlock()
+    var decodedCount = 0
+    let bounded = entries.prefix(Self.startupLimit)
+    for entry in bounded {
+      autoreleasepool {
+        if decode(Request(name: entry.name, color: entry.color, width: entry.width,
+          height: entry.height, scale: CGFloat(entry.scale), finalColor: false, complete: { _ in })) != nil {
+          decodedCount += 1
+        }
+      }
+    }
+    let totalMs = (CACurrentMediaTime() - start) * 1000.0
+    startupLock.lock()
+    startupMetrics = StartupMetrics(
+      entryCount: bounded.count,
+      decodedCount: decodedCount,
+      manifestLoadMs: manifestMs,
+      totalMs: totalMs
+    )
+    startupLock.unlock()
+    NSLog(
+      "[OneKeyImageStartupMetrics] iconPrewarm entries=%d decoded=%d manifestMs=%.3f totalMs=%.3f",
+      bounded.count,
+      decodedCount,
+      manifestMs,
+      totalMs
+    )
+  }
+
+  private func noteStartupRequest(name: String, color: String, width: Int, height: Int, scale: CGFloat) {
+    guard (1...4096).contains(width), (1...4096).contains(height),
+          scale.isFinite, scale > 0, Self.isValidColor(color) else { return }
+    let identity = StartupIdentity(name: name, color: color, width: width, height: height, scale: Double(scale))
+    startupLock.lock()
+    defer { startupLock.unlock() }
+    if startupRecording == false { return }
+    let now = CACurrentMediaTime()
+    if startupRecording == nil {
+      startupRecording = true
+      startupFirstRequestAt = now
+    }
+    guard startupSeen.count < Self.startupLimit,
+          !startupSeen.contains(where: { $0.identity == identity }) else { return }
+    startupSeen.append(
+      StartupEntry(name: name, color: color, width: width, height: height, scale: Double(scale), launch: 0)
+    )
+    startupFlushWorkItem?.cancel()
+    let item = DispatchWorkItem { [weak self] in
+      self?.persistStartupSet(forceClose: false)
+    }
+    startupFlushWorkItem = item
+    Self.diskWriter.asyncAfter(deadline: .now() + Self.startupWindow, execute: item)
+  }
+
+  private func persistStartupSet(forceClose: Bool) {
+    startupLock.lock()
+    guard startupRecording == true else {
+      startupLock.unlock()
+      return
+    }
+    let file = activeStartupFileURL
+    if !startupLoadedPreviousFromDisk {
+      startupLoadedPreviousFromDisk = true
+      if startupPrevious.isEmpty,
+         let file,
+         let data = try? Data(contentsOf: file),
+         let loaded = try? JSONDecoder().decode([StartupEntry].self, from: data) {
+        startupPrevious = loaded
+        startupMaxLaunch = max(startupMaxLaunch, loaded.map(\.launch).max() ?? 0)
+      }
+    }
+    let elapsed = CACurrentMediaTime() - startupFirstRequestAt
+    let shouldClose =
+      forceClose
+      || startupSeen.count >= Self.startupMinimumSettledCount
+      || startupSeen.count >= Self.startupLimit
+      || elapsed >= Self.startupMaxDuration
+
+    let seenIdentities = Set(startupSeen.map(\.identity))
+    let previousIdentities = startupPrevious.map(\.identity)
+    let currentIdentities = startupSeen.map(\.identity)
+    let allPreviousAtMaxLaunch = startupPrevious.allSatisfy { $0.launch == startupMaxLaunch }
+    let steadyStateUnchanged =
+      !startupPrevious.isEmpty
+      && currentIdentities == previousIdentities
+      && allPreviousAtMaxLaunch
+
+    let nextLaunch = steadyStateUnchanged ? startupMaxLaunch : (startupMaxLaunch + 1)
+    let currentStamped = startupSeen.map { entry -> StartupEntry in
+      var copy = entry
+      copy.launch = nextLaunch
+      return copy
+    }
+    // This launch's first screen leads; recent earlier entries stay warm until aged out.
+    let retainedPrevious = startupPrevious.filter { entry in
+      !seenIdentities.contains(entry.identity) && (nextLaunch - entry.launch) < Self.startupMaxLaunchAge
+    }
+    let merged = Array((currentStamped + retainedPrevious).prefix(Self.startupLimit))
+
+    if shouldClose {
+      startupRecording = false
+      startupFlushWorkItem = nil
+      startupSeen = []
+      startupPrevious = merged
+      startupMaxLaunch = nextLaunch
+    }
+    startupLock.unlock()
+
+    guard !steadyStateUnchanged, let file,
+          let data = try? JSONEncoder().encode(merged) else { return }
+    try? data.write(to: file, options: .atomic)
+  }
+
+  func startupMetricsSnapshot() -> StartupMetrics {
+    startupLock.lock()
+    defer { startupLock.unlock() }
+    return startupMetrics
+  }
+
+  func flushStartupForTesting(forceClose: Bool = true) {
+    Self.diskWriter.sync {
+      self.startupLock.lock()
+      self.startupFlushWorkItem?.cancel()
+      self.startupFlushWorkItem = nil
+      self.startupLock.unlock()
+      self.persistStartupSet(forceClose: forceClose)
+    }
+  }
+
+  func resetStartupForTesting(fileURL: URL? = nil, keepPreviousFromDisk: Bool = false) {
+    Self.diskWriter.sync {
+      self.startupLock.lock()
+      self.startupFlushWorkItem?.cancel()
+      self.startupFlushWorkItem = nil
+      self.startupSeen = []
+      if !keepPreviousFromDisk {
+        self.startupPrevious = []
+        self.startupMaxLaunch = 0
+        self.startupLoadedPreviousFromDisk = false
+      }
+      self.startupRecording = nil
+      self.startupFirstRequestAt = 0
+      self.customStartupFile = fileURL
+      self.startupMetrics = StartupMetrics()
+      self.startupLock.unlock()
+    }
+  }
+
+  func clearMemoryCacheForTesting() {
+    lock.lock()
+    cache.removeAll()
+    recency.removeAll()
+    bytes = 0
+    lock.unlock()
+  }
+
+  func rasterDiskCachePathForTesting(name: String, color: String, width: Int,
+                                     height: Int, scale: CGFloat) -> String? {
+    guard let channels = Self.channels(color) else { return nil }
+    metadataLock.lock()
+    loadManifestIfNeeded()
+    let entry = metadata?[name]
+    metadataLock.unlock()
+    guard let digest = entry?["digest"] as? String else { return nil }
+    let mode = (entry?["recolorMode"] as? String).flatMap(RecolorMode.init(rawValue:)) ?? .raster
+    let key = Self.renderKey(
+      name: name, digest: digest, width: width, height: height,
+      scale: scale, mode: mode, color: color, channels: channels
+    ).key
+    return Self.rasterDiskCache.cachePath(forKey: key)
+  }
+
   public func cancel(owner: AnyObject) {
     lock.lock(); defer { lock.unlock() }
     let key = ObjectIdentifier(owner)
@@ -151,6 +457,7 @@ public final class OneKeyNamedSVG {
   /// manifest loading, so remounted and recycled views paint in the same frame.
   public func cachedRender(name: String, color: String, width: Int, height: Int,
                            scale: CGFloat) -> RenderResult? {
+    noteStartupRequest(name: name, color: color, width: width, height: height, scale: scale)
     guard let channels = Self.channels(color), metadataLock.try() else { return nil }
     let entry = metadata?[name]
     metadataLock.unlock()
@@ -189,12 +496,32 @@ public final class OneKeyNamedSVG {
 
   public func request(owner: AnyObject, name: String, color: String, width: Int,
                height: Int, scale: CGFloat, complete: @escaping (UIImage?) -> Void) {
+    if Thread.isMainThread {
+      if let hit = cachedRender(name: name, color: color, width: width, height: height, scale: scale)
+        ?? diskRender(name: name, color: color, width: width, height: height, scale: scale) {
+        cancel(owner: owner)
+        complete(hit.finalImage(color))
+        return
+      }
+    } else {
+      noteStartupRequest(name: name, color: color, width: width, height: height, scale: scale)
+    }
     enqueue(owner: owner, name: name, color: color, width: width, height: height, scale: scale,
       finalColor: true) { complete($0?.image) }
   }
 
   public func requestRender(owner: AnyObject, name: String, color: String, width: Int,
                height: Int, scale: CGFloat, complete: @escaping (RenderResult?) -> Void) {
+    if Thread.isMainThread {
+      if let hit = cachedRender(name: name, color: color, width: width, height: height, scale: scale)
+        ?? diskRender(name: name, color: color, width: width, height: height, scale: scale) {
+        cancel(owner: owner)
+        complete(hit)
+        return
+      }
+    } else {
+      noteStartupRequest(name: name, color: color, width: width, height: height, scale: scale)
+    }
     enqueue(owner: owner, name: name, color: color, width: width, height: height, scale: scale,
       finalColor: false, complete: complete)
   }
@@ -229,18 +556,46 @@ public final class OneKeyNamedSVG {
     }
   }
 
-  private func decode(_ request: Request) -> RenderResult? {
+  /// Main-thread path for a memory miss: a small icon (<= 192px edge and <= 32 KiB
+  /// encoded raster on disk) is read and bound in the same frame. It never parses
+  /// SVG, loads the manifest or waits for a lock; any of those leaves the miss to workers.
+  public func diskRender(name: String, color: String, width: Int, height: Int,
+                         scale: CGFloat) -> RenderResult? {
+    guard width > 0, height > 0,
+          width <= OneKeyMainThreadDecode.maximumIconEdge,
+          height <= OneKeyMainThreadDecode.maximumIconEdge else { return nil }
+    return OneKeyMainThreadDecode.run {
+      decode(Request(name: name, color: color, width: width, height: height, scale: scale,
+        finalColor: false, complete: { _ in }), diskOnly: true)
+    }
+  }
+
+  private func decode(_ request: Request, diskOnly: Bool = false) -> RenderResult? {
     guard (1...4096).contains(request.width), (1...4096).contains(request.height),
           request.width * request.height <= 4_194_304, request.scale.isFinite,
           request.scale > 0,
           let channels = Self.channels(request.color) else { return nil }
-    metadataLock.lock()
-    loadManifestIfNeeded()
+    if diskOnly {
+      guard metadataLock.try() else {
+        OneKeyMainThreadDecode.noteLockContention()
+        return nil
+      }
+      guard metadata != nil else {
+        metadataLock.unlock()
+        OneKeyMainThreadDecode.noteDiskMiss()
+        return nil
+      }
+    } else {
+      metadataLock.lock()
+      loadManifestIfNeeded()
+    }
     let entry = metadata?[request.name]
     let bundle = resourceBundle
     metadataLock.unlock()
-    guard let digest = entry?["digest"] as? String,
-          let url = bundle?.url(forResource: request.name, withExtension: "svg") else { return nil }
+    guard let digest = entry?["digest"] as? String else {
+      if diskOnly { OneKeyMainThreadDecode.noteDiskMiss() }
+      return nil
+    }
     let mode = (entry?["recolorMode"] as? String).flatMap(RecolorMode.init(rawValue:)) ?? .raster
     let (sourceIdentity, key, maskAlpha) = Self.renderKey(
       name: request.name, digest: digest, width: request.width, height: request.height,
@@ -257,8 +612,21 @@ public final class OneKeyNamedSVG {
       lock.unlock(); return image
     }
     lock.unlock()
-    // Only workers access disk. The source digest and all raster inputs are in the key.
+    // The source digest and all raster inputs are in the key; diskOnly bounds encoded byte size.
     let diskCache = Self.rasterDiskCache
+    if diskOnly {
+      guard let path = diskCache.cachePath(forKey: key),
+            let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+            let size = (attributes[.size] as? NSNumber)?.intValue,
+            size > 0 else {
+        OneKeyMainThreadDecode.noteDiskMiss()
+        return nil
+      }
+      guard size <= OneKeyMainThreadDecode.maximumEncodedBytes else {
+        OneKeyMainThreadDecode.noteLimitRejection()
+        return nil
+      }
+    }
     let diskImage = diskCache.imageFromDiskCache(forKey: key)
     if let image = diskImage,
        image.cgImage?.width == request.width, image.cgImage?.height == request.height {
@@ -266,7 +634,12 @@ public final class OneKeyNamedSVG {
       remember(result, key: key)
       return result
     }
-    guard let source = try? String(contentsOf: url, encoding: .utf8),
+    if diskOnly {
+      OneKeyMainThreadDecode.noteDecodeFailure()
+      return nil
+    }
+    guard let url = bundle?.url(forResource: request.name, withExtension: "svg"),
+          let source = try? String(contentsOf: url, encoding: .utf8),
           let pattern = try? NSRegularExpression(pattern: #"((?:fill|stroke)\s*=\s*["'])currentColor(["'])"#) else { return nil }
     // CoreSVG interprets integer rgba alpha as an 8-bit channel; decimals retain CSS endpoints.
     let svgColor = paintColor.replacingOccurrences(of: #",(0|1)\)$"#, with: ",$1.0)", options: .regularExpression)

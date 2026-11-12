@@ -3,5 +3,10 @@
     <meta-data
       android:name="com.margelo.nitro.onekeyimage.OneKeyImageGlideModule"
       android:value="GlideModule" />
+    <provider
+      android:name="com.margelo.nitro.onekeyimage.OneKeyImageStartupProvider"
+      android:authorities="${applicationId}.onekeyimagestartup"
+      android:exported="false"
+      android:initOrder="100" />
   </application>
 </manifest>

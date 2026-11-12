@@ -11,6 +11,7 @@ import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.Animatable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Looper
@@ -572,7 +573,41 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       addAll(OneKeyImageMemoryVariantRegistry.candidates(family, exactVariant))
     }.distinct()
 
+    val allowPrewarmedCache = OneKeyImageModel.headers(sourceHeadersJson).isEmpty()
     for (candidate in candidates) {
+      val prewarmedBitmap = if (allowPrewarmedCache) {
+        OneKeyImageStartupPrewarm.cachedBitmap(
+          requestUrl = candidate.requestUrl,
+          width = candidate.width,
+          height = candidate.height,
+          round = candidate.round,
+          headersJson = sourceHeadersJson,
+        )
+      } else {
+        null
+      }
+      if (prewarmedBitmap != null) {
+        clearMemoryPreviewTarget()
+        memoryPreviewTarget = null
+        memoryPreviewFamily = family
+        scalesCenterMemoryPreview = shouldScaleCenterMemoryPreview(
+          contentFit = contentFit ?: OneKeyImageContentFit.COVER,
+          candidate = candidate,
+          target = exactVariant,
+        )
+        applyContentFit()
+        displayState = DisplayState.IMAGE
+        requestActive = false
+        isPreservingDisplayedImage = false
+        hostView.skeletonRequested = false
+        hostView.drawStateSymbol = false
+        hostView.setBackgroundColor(Color.TRANSPARENT)
+        hostView.setImageDrawable(BitmapDrawable(hostView.resources, prewarmedBitmap))
+        applyAutoplay()
+        OneKeyImageMemoryVariantRegistry.record(family, candidate)
+        return true
+      }
+
       var synchronousResource: Drawable? = null
       val target = object : CustomTarget<Drawable>(candidate.width, candidate.height) {
         override fun onResourceReady(
@@ -631,12 +666,163 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     return false
   }
 
+  private fun showDirectPrewarmedOrSyncImageIfAvailable(
+    rawUrl: String,
+    optimizedUrl: String,
+    decodeDimensions: OneKeyImageDecodeDimensions,
+    memoryFamily: OneKeyImageMemoryFamilyKey,
+    policy: OneKeyImageCachePolicy,
+    requestGeneration: Long,
+  ): Boolean {
+    if (
+      requestGeneration != generation ||
+      disposed ||
+      (policy != OneKeyImageCachePolicy.MEMORY && policy != OneKeyImageCachePolicy.MEMORY_DISK) ||
+      OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
+    ) {
+      return false
+    }
+    val urls = if (optimizedUrl == rawUrl) listOf(optimizedUrl) else listOf(optimizedUrl, rawUrl)
+    val isRound = round == true
+    for (url in urls) {
+      val bitmap = OneKeyImageStartupPrewarm.cachedBitmap(
+        requestUrl = url,
+        width = decodeDimensions.width,
+        height = decodeDimensions.height,
+        round = isRound,
+        headersJson = sourceHeadersJson,
+      ) ?: continue
+      val hitVariant = OneKeyImageMemoryVariant(
+        requestUrl = url,
+        width = decodeDimensions.width,
+        height = decodeDimensions.height,
+        round = isRound,
+      )
+      clearMemoryPreviewTarget()
+      requestActive = false
+      displayState = DisplayState.IMAGE
+      isPreservingDisplayedImage = false
+      hostView.skeletonRequested = false
+      hostView.drawStateSymbol = false
+      hostView.setBackgroundColor(Color.TRANSPARENT)
+      resetImageTransition()
+      hostView.setImageDrawable(BitmapDrawable(hostView.resources, bitmap))
+      applyContentFit()
+      applyAutoplay()
+      OneKeyImageMemoryVariantRegistry.record(memoryFamily, hitVariant)
+      OneKeyImageStartupPrewarm.note(
+        cacheDir = context.applicationContext?.cacheDir ?: context.cacheDir,
+        requestUrl = url,
+        rawUrl = rawUrl,
+        headersJson = sourceHeadersJson,
+        cachePolicy = policy,
+        width = decodeDimensions.width,
+        height = decodeDimensions.height,
+        round = isRound,
+      )
+      val loadCallback = onLoad
+      val loadEndCallback = onLoadEnd
+      OneKeyTerminalEventPair.dispatch(
+        primary = loadCallback?.let { callback ->
+          {
+            callback(
+              bitmap.width.coerceAtLeast(0).toDouble(),
+              bitmap.height.coerceAtLeast(0).toDouble(),
+              OneKeyImageCacheType.MEMORY,
+            )
+          }
+        },
+        onLoadEnd = loadEndCallback,
+      )
+      if (requestGeneration == generation && !disposed) {
+        scheduleOnDisplay(requestGeneration)
+      }
+      return true
+    }
+    return false
+  }
+
+  private fun hasGlideExactMemoryCacheHit(
+    rawUrl: String,
+    optimizedUrl: String,
+    decodeDimensions: OneKeyImageDecodeDimensions,
+    policy: OneKeyImageCachePolicy,
+    requestGeneration: Long,
+  ): Boolean {
+    if (
+      Looper.myLooper() != Looper.getMainLooper() ||
+      disposed ||
+      requestGeneration != generation ||
+      (policy != OneKeyImageCachePolicy.MEMORY && policy != OneKeyImageCachePolicy.MEMORY_DISK)
+    ) {
+      return false
+    }
+    val urls = if (optimizedUrl == rawUrl) listOf(optimizedUrl) else listOf(optimizedUrl, rawUrl)
+    val isRound = round == true
+    for (url in urls) {
+      var hit = false
+      val probeTarget = object : CustomTarget<Drawable>(decodeDimensions.width, decodeDimensions.height) {
+        override fun onResourceReady(
+          resource: Drawable,
+          transition: Transition<in Drawable>?,
+        ) {
+          hit = true
+        }
+
+        override fun onLoadCleared(placeholder: Drawable?) = Unit
+      }
+      requestManager()
+        .asDrawable()
+        .load(OneKeyImageModel.build(url, sourceHeadersJson))
+        .apply(memoryProbeRequestOptions(requestOptions(policy, url, isRound)))
+        .override(decodeDimensions.width, decodeDimensions.height)
+        .into(probeTarget)
+      requestManager().clear(probeTarget)
+      if (hit) return true
+    }
+    return false
+  }
+
+  private fun promoteSmallCachedImageToMemory(
+    rawUrl: String,
+    optimizedUrl: String,
+    decodeDimensions: OneKeyImageDecodeDimensions,
+    policy: OneKeyImageCachePolicy,
+  ): Boolean {
+    if (policy != OneKeyImageCachePolicy.MEMORY_DISK) return false
+    if (OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()) return false
+    if (maxOf(decodeDimensions.width, decodeDimensions.height) > OneKeyMainThreadDecode.MAX_THUMBNAIL_PIXEL_SIZE) {
+      return false
+    }
+    val appCacheDir = context.applicationContext?.cacheDir ?: context.cacheDir
+    val urls = if (optimizedUrl == rawUrl) listOf(optimizedUrl) else listOf(optimizedUrl, rawUrl)
+    val isRound = round == true
+    val promoted = OneKeyMainThreadDecode.run {
+      for (url in urls) {
+        if (
+          OneKeyMainThreadDecode.promoteToMemory(
+            cacheDir = appCacheDir,
+            url = url,
+            rawUrl = rawUrl,
+            width = decodeDimensions.width,
+            height = decodeDimensions.height,
+            round = isRound,
+          )
+        ) {
+          return@run true
+        }
+      }
+      null
+    }
+    return promoted == true
+  }
+
   private fun startLoad(force: Boolean) {
     if (disposed) return
     if (hostView.width <= 0 || hostView.height <= 0) {
       cancelCurrent(invalidateGeneration = true, clearMemoryPreview = false)
       lastSignature = null
-      if (memoryPreviewTarget == null || hostView.drawable == null) {
+      if (memoryPreviewFamily == null || hostView.drawable == null) {
         showLoading(requestIsActive = false)
       }
       return
@@ -692,6 +878,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     } else rawUrl
     val decodeDimensions = OneKeyImageDecodeDimensions.forRender(hostView.width, hostView.height)
     val memoryFamily = OneKeyImageMemoryFamilyKey.from(rawUrl, sourceHeadersJson)
+    val effectivePolicy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK
     val exactVariant = OneKeyImageMemoryVariant(
       requestUrl = optimizedUrl,
       width = decodeDimensions.width,
@@ -699,8 +886,45 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       round = round == true,
     )
     if (
+      showDirectPrewarmedOrSyncImageIfAvailable(
+        rawUrl = rawUrl,
+        optimizedUrl = optimizedUrl,
+        decodeDimensions = decodeDimensions,
+        memoryFamily = memoryFamily,
+        policy = effectivePolicy,
+        requestGeneration = requestGeneration,
+      )
+    ) {
+      return
+    }
+    if (
+      !hasGlideExactMemoryCacheHit(
+        rawUrl = rawUrl,
+        optimizedUrl = optimizedUrl,
+        decodeDimensions = decodeDimensions,
+        policy = effectivePolicy,
+        requestGeneration = requestGeneration,
+      ) &&
+      promoteSmallCachedImageToMemory(
+        rawUrl = rawUrl,
+        optimizedUrl = optimizedUrl,
+        decodeDimensions = decodeDimensions,
+        policy = effectivePolicy,
+      ) &&
+      showDirectPrewarmedOrSyncImageIfAvailable(
+        rawUrl = rawUrl,
+        optimizedUrl = optimizedUrl,
+        decodeDimensions = decodeDimensions,
+        memoryFamily = memoryFamily,
+        policy = effectivePolicy,
+        requestGeneration = requestGeneration,
+      )
+    ) {
+      return
+    }
+    if (
       shouldProbeMemoryPreview(
-        hasTarget = memoryPreviewTarget != null,
+        hasTarget = memoryPreviewFamily != null,
         sameFamily = memoryPreviewFamily == memoryFamily,
         hasDrawable = hostView.drawable != null,
       )
@@ -709,7 +933,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         family = memoryFamily,
         exactVariant = exactVariant,
         includeExact = false,
-        policy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK,
+        policy = effectivePolicy,
         requestGeneration = requestGeneration,
       )
     }
@@ -719,7 +943,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       requestGeneration = requestGeneration,
       mayFallbackToRaw = optimizedUrl != rawUrl,
       headersJson = sourceHeadersJson,
-      policy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK,
+      policy = effectivePolicy,
       decodeDimensions = decodeDimensions,
       memoryFamily = memoryFamily,
       memoryVariant = exactVariant,
@@ -747,13 +971,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         if (requestGeneration != generation || disposed) return
         showLoading(
           requestIsActive = true,
-          preserveDisplayedImage = memoryPreviewTarget != null && hostView.drawable != null,
+          preserveDisplayedImage = memoryPreviewFamily != null && hostView.drawable != null,
         )
       }
 
       override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
         if (requestGeneration != generation || disposed) return
-        val replacesMemoryPreview = memoryPreviewTarget != null && hostView.drawable != null
+        val replacesMemoryPreview = memoryPreviewFamily != null && hostView.drawable != null
         requestActive = false
         displayState = DisplayState.IMAGE
         hostView.skeletonRequested = false
@@ -767,6 +991,16 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
             policy == OneKeyImageCachePolicy.MEMORY_DISK)
         ) {
           OneKeyImageMemoryVariantRegistry.record(memoryFamily, memoryVariant)
+          OneKeyImageStartupPrewarm.note(
+            cacheDir = context.applicationContext?.cacheDir ?: context.cacheDir,
+            requestUrl = requestUrl,
+            rawUrl = rawUrl,
+            headersJson = headersJson,
+            cachePolicy = policy,
+            width = decodeDimensions.width,
+            height = decodeDimensions.height,
+            round = memoryVariant.round,
+          )
         }
         clearMemoryPreviewTarget()
         applyLoadedImageTransition(

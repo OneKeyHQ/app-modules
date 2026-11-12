@@ -851,4 +851,267 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     image.afterUpdate()
     XCTAssertEqual(imageView.layer.cornerRadius, 0)
   }
+
+  func testStartupPrewarmHashedKeysEvictionAndMemoryHitRecording() throws {
+    let tempFile = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-image-startup-test-\(UUID().uuidString).json")
+    defer {
+      OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: nil)
+      try? FileManager.default.removeItem(at: tempFile)
+    }
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let sampleImage = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32), format: format).image { ctx in
+      UIColor.systemBlue.setFill()
+      ctx.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+    }
+    let pngData = try XCTUnwrap(sampleImage.pngData())
+
+    let remoteURL = try XCTUnwrap(URL(string: "https://example.com/sensitive-banner.png"))
+    let avatarSeed = "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce"
+    let avatarURL = try XCTUnwrap(URL(string: "onekey-avatar://blockie/v1/\(avatarSeed)"))
+    let thumbSize = CGSize(width: 64, height: 64)
+
+    let remoteOriginalContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: nil,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: remoteURL
+    )
+    let remoteOriginalKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: remoteURL, context: remoteOriginalContext)
+    )
+    SDImageCache.shared.storeImageData(toDisk: pngData, forKey: remoteOriginalKey)
+
+    let avatarOriginalContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: nil,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: avatarURL
+    )
+    let avatarOriginalKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: avatarURL, context: avatarOriginalContext)
+    )
+    OneKeyAvatarImageLoader.cache.storeImageData(toDisk: pngData, forKey: avatarOriginalKey)
+
+    // 1. App Lock partial flush (1 entry < minimumSettledCount) keeps recording open for Home screen.
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: avatarURL,
+      rawURL: avatarURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: false)
+
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: remoteURL,
+      rawURL: remoteURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: true)
+
+    // 2. Verify privacy: persisted JSON contains NO plaintext URLs, wallet addresses, or rawURL duplicates.
+    let jsonText = try String(contentsOf: tempFile, encoding: .utf8)
+    XCTAssertFalse(jsonText.contains("example.com"), "Plaintext domain must not appear in startup JSON")
+    XCTAssertFalse(jsonText.contains(avatarSeed), "Plaintext wallet address must not appear in startup JSON")
+    XCTAssertFalse(jsonText.contains("onekey-avatar"), "Plaintext scheme must not appear in startup JSON")
+    XCTAssertFalse(jsonText.contains("rawURL"), "Redundant rawURL field must not appear in startup JSON")
+
+    let decodedEntries = try JSONDecoder().decode(
+      [OneKeyImageStartupPrewarm.Entry].self,
+      from: Data(jsonText.utf8)
+    )
+    XCTAssertEqual(decodedEntries.count, 2)
+    XCTAssertEqual(decodedEntries.map(\.launch), [1, 1])
+
+    // 3. Clear memory caches, run prewarm(), and verify claimPrewarmedImage promotes to exact runtime key.
+    SDImageCache.shared.clearMemory()
+    OneKeyAvatarImageLoader.cache.clearMemory()
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.prewarm()
+
+    let prewarmMetrics = OneKeyImageStartupPrewarm.shared.metricsSnapshot()
+    XCTAssertEqual(prewarmMetrics.entryCount, 2)
+    XCTAssertEqual(prewarmMetrics.decodedCount, 2)
+
+    let remoteThumbContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: remoteURL
+    )
+    let remoteThumbKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: remoteURL, context: remoteThumbContext)
+    )
+    XCTAssertNotNil(
+      OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
+        forKey: remoteThumbKey,
+        cache: SDImageCache.shared
+      )
+    )
+    XCTAssertNotNil(SDImageCache.shared.imageFromMemoryCache(forKey: remoteThumbKey))
+
+    // 4. Launch-generation eviction: only remoteURL is noted in launches 2, 3, 4 -> avatarURL evicted on launch 4.
+    for launch in 2...4 {
+      OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+      OneKeyImageStartupPrewarm.shared.prewarm()
+      OneKeyImageStartupPrewarm.shared.note(
+        requestURL: remoteURL,
+        rawURL: remoteURL,
+        headersJson: nil,
+        cachePolicy: .memoryDisk,
+        thumbnailPixelSize: thumbSize
+      )
+      OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: true)
+      let current = try JSONDecoder().decode(
+        [OneKeyImageStartupPrewarm.Entry].self,
+        from: Data(contentsOf: tempFile)
+      )
+      if launch < 4 {
+        XCTAssertEqual(current.count, 2)
+      } else {
+        XCTAssertEqual(current.count, 1)
+        XCTAssertNil(current.first?.namespace)
+        XCTAssertEqual(current.first?.launch, 4)
+      }
+    }
+
+    // 5. clearDiskCache removes persisted startup JSON, drains pending local seeds, and resets launch history.
+    let clearedLocalURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-local-cleared-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: clearedLocalURL) }
+    try pngData.write(to: clearedLocalURL)
+    let clearedLocalContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: nil,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: clearedLocalURL
+    )
+    let clearedLocalKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: clearedLocalURL, context: clearedLocalContext)
+    )
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: clearedLocalURL,
+      rawURL: clearedLocalURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.clearDiskCache()
+    SDImageCache.shared.removeImageFromDisk(forKey: clearedLocalKey)
+    XCTAssertFalse(SDImageCache.shared.diskImageDataExists(withKey: clearedLocalKey))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
+
+    // 6. Local file:// images > 32 KiB are seeded to disk and replayed by prewarm().
+    let localFileURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-local-large-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: localFileURL) }
+    var paddedPNG = pngData
+    if paddedPNG.count <= OneKeyMainThreadDecode.maximumEncodedBytes {
+      paddedPNG.append(Data(repeating: 0, count: OneKeyMainThreadDecode.maximumEncodedBytes + 4096 - paddedPNG.count))
+    }
+    try paddedPNG.write(to: localFileURL)
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: localFileURL,
+      rawURL: localFileURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: remoteURL,
+      rawURL: remoteURL,
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: true)
+    SDImageCache.shared.clearMemory()
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.prewarm()
+    XCTAssertEqual(OneKeyImageStartupPrewarm.shared.metricsSnapshot().decodedCount, 2)
+  }
+
+  func testMainThreadDecodeLimitsBudgetAndMetrics() throws {
+    OneKeyMainThreadDecode.resetForTesting()
+    SDImageCache.shared.clearMemory()
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let smallImage = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40), format: format).image { ctx in
+      UIColor.systemGreen.setFill()
+      ctx.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+    }
+    let smallPNG = try XCTUnwrap(smallImage.pngData())
+    let smallURL = try XCTUnwrap(URL(string: "https://example.com/sync-small.png"))
+    let thumbSize = CGSize(width: 80, height: 80)
+
+    let originalContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: nil,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: smallURL
+    )
+    let originalKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: smallURL, context: originalContext)
+    )
+    SDImageCache.shared.storeImageData(toDisk: smallPNG, forKey: originalKey)
+
+    let promoted = OneKeyMainThreadDecode.run { () -> Bool? in
+      OneKeyMainThreadDecode.promoteToMemory(
+        url: smallURL,
+        rawURL: smallURL,
+        thumbnailPixelSize: thumbSize
+      ) ? true : nil
+    }
+    XCTAssertEqual(promoted, true)
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().hits, 1)
+
+    // Oversized source dimension (> 512px) must be rejected on the main thread.
+    let largeCanvasImage = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600), format: format).image { ctx in
+      UIColor.black.setFill()
+      ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
+    }
+    let largeCanvasPNG = try XCTUnwrap(largeCanvasImage.pngData())
+    let largeCanvasURL = try XCTUnwrap(URL(string: "https://example.com/sync-large-canvas.png"))
+    let largeOriginalContext = OneKeyImageRequestContext.make(
+      headersJson: nil,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: nil,
+      safetyTracker: nil,
+      manager: OneKeyImagePipeline.manager,
+      url: largeCanvasURL
+    )
+    let largeOriginalKey = try XCTUnwrap(
+      OneKeyImagePipeline.manager.cacheKey(for: largeCanvasURL, context: largeOriginalContext)
+    )
+    SDImageCache.shared.storeImageData(toDisk: largeCanvasPNG, forKey: largeOriginalKey)
+
+    let rejectedLarge = OneKeyMainThreadDecode.run { () -> Bool? in
+      OneKeyMainThreadDecode.promoteToMemory(
+        url: largeCanvasURL,
+        rawURL: largeCanvasURL,
+        thumbnailPixelSize: thumbSize
+      ) ? true : nil
+    }
+    XCTAssertNil(rejectedLarge)
+    XCTAssertGreaterThanOrEqual(OneKeyMainThreadDecode.metricsSnapshot().limitRejections, 1)
+  }
 }
