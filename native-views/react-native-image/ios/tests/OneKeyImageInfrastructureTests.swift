@@ -1131,6 +1131,7 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
       ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
     }
     let largeCanvasPNG = try XCTUnwrap(largeCanvasImage.pngData())
+    XCTAssertLessThanOrEqual(largeCanvasPNG.count, OneKeyMainThreadDecode.maximumEncodedBytes)
     let largeCanvasURL = try XCTUnwrap(URL(string: "https://example.com/sync-large-canvas.png"))
     let largeOriginalContext = OneKeyImageRequestContext.make(
       headersJson: nil,
@@ -1145,6 +1146,8 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     )
     SDImageCache.shared.storeImageData(toDisk: largeCanvasPNG, forKey: largeOriginalKey)
 
+    // Test the source-size limit in a fresh frame budget after the first decode.
+    OneKeyMainThreadDecode.resetForTesting()
     let rejectedLarge = OneKeyMainThreadDecode.run { () -> Bool? in
       OneKeyMainThreadDecode.promoteToMemory(
         url: largeCanvasURL,
@@ -1153,7 +1156,10 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
       ) ? true : nil
     }
     XCTAssertNil(rejectedLarge)
-    XCTAssertGreaterThanOrEqual(OneKeyMainThreadDecode.metricsSnapshot().limitRejections, 1)
+    let largeMetrics = OneKeyMainThreadDecode.metricsSnapshot()
+    XCTAssertEqual(largeMetrics.attempts, 1)
+    XCTAssertEqual(largeMetrics.limitRejections, 1)
+    XCTAssertEqual(largeMetrics.budgetRejections, 0)
   }
 
   func testStartupPrewarmReplacesLegacyRetinaScaleWithoutClaimingWrongImage() throws {
