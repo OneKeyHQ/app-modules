@@ -1114,4 +1114,156 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertNil(rejectedLarge)
     XCTAssertGreaterThanOrEqual(OneKeyMainThreadDecode.metricsSnapshot().limitRejections, 1)
   }
+
+  func testStartupPrewarmPreservesRetinaScaleLogicalSizeAndCenterDisplay() throws {
+    let tempFile = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-image-startup-scale-test-\(UUID().uuidString).json")
+    defer {
+      OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: nil)
+      try? FileManager.default.removeItem(at: tempFile)
+    }
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let png40 = try XCTUnwrap(
+      UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40), format: format).image { ctx in
+        UIColor(red: 1, green: 0, blue: 0, alpha: 1).setFill()
+        ctx.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+      }.pngData()
+    )
+    let png60 = try XCTUnwrap(
+      UIGraphicsImageRenderer(size: CGSize(width: 60, height: 60), format: format).image { ctx in
+        UIColor(red: 0, green: 0, blue: 1, alpha: 1).setFill()
+        ctx.fill(CGRect(x: 0, y: 0, width: 60, height: 60))
+      }.pngData()
+    )
+
+    let url2x = try XCTUnwrap(URL(string: "https://example.com/badge@2x.png"))
+    let url3x = try XCTUnwrap(URL(string: "https://example.com/badge@3x.png"))
+    let viewBounds = CGSize(width: 80, height: 80)
+    let screenScale = min(max(UIScreen.main.scale, 1), 3)
+    let thumbSize = try XCTUnwrap(
+      OneKeyImageDecodeSizing.thumbnailPixelSize(
+        viewSize: viewBounds,
+        scale: screenScale,
+        contentFit: .center
+      )
+    )
+
+    for (url, data, expectedScale) in [(url2x, png40, CGFloat(2)), (url3x, png60, CGFloat(3))] {
+      let originalContext = OneKeyImageRequestContext.make(
+        headersJson: nil,
+        cachePolicy: .memoryDisk,
+        thumbnailPixelSize: nil,
+        safetyTracker: nil,
+        manager: OneKeyImagePipeline.manager,
+        url: url
+      )
+      let originalKey = try XCTUnwrap(
+        OneKeyImagePipeline.manager.cacheKey(for: url, context: originalContext)
+      )
+      SDImageCache.shared.storeImageData(toDisk: data, forKey: originalKey)
+
+      let thumbContext = OneKeyImageRequestContext.make(
+        headersJson: nil,
+        cachePolicy: .memoryDisk,
+        thumbnailPixelSize: thumbSize,
+        safetyTracker: nil,
+        manager: OneKeyImagePipeline.manager,
+        url: url
+      )
+      let thumbKey = try XCTUnwrap(
+        OneKeyImagePipeline.manager.cacheKey(for: url, context: thumbContext)
+      )
+      let normalDecoded = try XCTUnwrap(
+        SDImageCacheDecodeImageData(data, thumbKey, [], thumbContext)
+      )
+      XCTAssertEqual(normalDecoded.scale, expectedScale)
+      XCTAssertEqual(normalDecoded.size, CGSize(width: 20, height: 20))
+
+      OneKeyImageStartupPrewarm.shared.note(
+        requestURL: url,
+        rawURL: url,
+        headersJson: nil,
+        cachePolicy: .memoryDisk,
+        thumbnailPixelSize: thumbSize
+      )
+    }
+
+    OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: true)
+    let jsonText = try String(contentsOf: tempFile, encoding: .utf8)
+    XCTAssertFalse(jsonText.contains("badge@2x"))
+    XCTAssertFalse(jsonText.contains("badge@3x"))
+
+    let persisted = try JSONDecoder().decode(
+      [OneKeyImageStartupPrewarm.Entry].self,
+      from: Data(jsonText.utf8)
+    )
+    XCTAssertEqual(persisted.map(\.scale), [2, 3])
+
+    SDImageCache.shared.clearMemory()
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.prewarm()
+    XCTAssertEqual(OneKeyImageStartupPrewarm.shared.metricsSnapshot().decodedCount, 2)
+
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+    for (url, expectedScale) in [(url2x, CGFloat(2)), (url3x, CGFloat(3))] {
+      let image = HybridOneKeyImage()
+      let hostView = try XCTUnwrap(image.view as? SDAnimatedImageView)
+      hostView.frame = CGRect(origin: .zero, size: viewBounds)
+      window.addSubview(hostView)
+      defer { hostView.removeFromSuperview() }
+
+      var loadedWidth: Double?
+      var loadedHeight: Double?
+      var loadedCacheType: OneKeyImageCacheType?
+      image.onLoad = { width, height, cacheType in
+        loadedWidth = width
+        loadedHeight = height
+        loadedCacheType = cacheType
+      }
+      image.optimizeTos = false
+      image.contentFit = .center
+      image.sourceUri = url.absoluteString
+      image.afterUpdate()
+      hostView.layoutIfNeeded()
+
+      let displayed = try XCTUnwrap(hostView.image)
+      XCTAssertEqual(displayed.scale, expectedScale)
+      XCTAssertEqual(displayed.size, CGSize(width: 20, height: 20))
+      XCTAssertEqual(hostView.contentMode, .center)
+      XCTAssertEqual(loadedWidth, 20)
+      XCTAssertEqual(loadedHeight, 20)
+      XCTAssertEqual(loadedCacheType, .memory)
+
+      let renderFormat = UIGraphicsImageRendererFormat()
+      renderFormat.scale = 1
+      let snapshot = UIGraphicsImageRenderer(size: viewBounds, format: renderFormat).image { ctx in
+        hostView.layer.render(in: ctx.cgContext)
+      }
+      let cgSnapshot = try XCTUnwrap(snapshot.cgImage)
+      var pixels = [UInt8](repeating: 0, count: 80 * 80 * 4)
+      let bitmapCtx = try XCTUnwrap(
+        CGContext(
+          data: &pixels,
+          width: 80,
+          height: 80,
+          bitsPerComponent: 8,
+          bytesPerRow: 80 * 4,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+      )
+      bitmapCtx.draw(cgSnapshot, in: CGRect(origin: .zero, size: viewBounds))
+      let centerAlpha = pixels[(40 * 80 + 40) * 4 + 3]
+      let outerRingAlpha = pixels[(15 * 80 + 15) * 4 + 3]
+      XCTAssertEqual(centerAlpha, 255, "Centered 20x20pt image must cover (40,40)")
+      XCTAssertEqual(
+        outerRingAlpha,
+        0,
+        "Outer ring (15,15) must stay transparent (would be covered if scale=1 60x60pt)"
+      )
+    }
+  }
 }

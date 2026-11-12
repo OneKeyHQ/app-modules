@@ -61,6 +61,9 @@ internal object OneKeyImageStartupPrewarm {
   private const val MAX_LAUNCH_AGE = 3
   private const val MAX_MEMORY_ENTRIES = 64
   private const val MAX_MEMORY_BYTES = 16L * 1024L * 1024L
+  internal const val MAX_FALLBACK_DISK_FILES = MAX_ENTRIES
+  internal const val MAX_FALLBACK_DISK_BYTES =
+    MAX_ENTRIES.toLong() * OneKeyMainThreadDecode.MAX_ENCODED_BYTES.toLong()
   private const val FILE_NAME = "onekey-image-startup-v1.json"
   internal const val GLIDE_DISK_CACHE_DIR = "image_manager_disk_cache"
   internal const val FALLBACK_DISK_CACHE_DIR = "onekey-image-startup-disk-v1"
@@ -70,6 +73,7 @@ internal object OneKeyImageStartupPrewarm {
   private val diskIoLock = Any()
   private val recorded = ArrayList<StartupEntry>()
   private val recordedKeys = HashSet<String>()
+  private val activeStartupDiskFiles = HashSet<String>()
   private val pendingFallbackSources = HashMap<String, String>()
   private var recordStartTimeMs: Long? = null
   private var recordingClosed = false
@@ -143,8 +147,16 @@ internal object OneKeyImageStartupPrewarm {
 
   internal fun ensureFallbackDiskBytesAsync(cacheDir: File, uri: String, bytes: ByteArray) {
     val safeKey = glideDataSafeKey(uri) ?: return
+    val expectedGeneration = synchronized(stateLock) {
+      if (recordingClosed && !activeStartupDiskFiles.contains(safeKey)) {
+        return
+      }
+      if (!recordingClosed && recorded.size >= MAX_ENTRIES && !activeStartupDiskFiles.contains(safeKey)) {
+        return
+      }
+      diskClearGeneration
+    }
     if (findDiskCacheFile(cacheDir, safeKey) != null) return
-    val expectedGeneration = synchronized(stateLock) { diskClearGeneration }
     scheduler.execute {
       writeFallbackDiskBytes(cacheDir, safeKey, bytes, expectedGeneration)
     }
@@ -156,21 +168,76 @@ internal object OneKeyImageStartupPrewarm {
     bytes: ByteArray,
     expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
   ) {
-    if (!isSafeToken(safeKey) || bytes.isEmpty()) return
+    if (
+      !isSafeToken(safeKey) ||
+      bytes.isEmpty() ||
+      bytes.size.toLong() > OneKeyImageSafety.MAX_ENCODED_BYTES
+    ) {
+      return
+    }
     synchronized(diskIoLock) {
-      if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+      val allowed = synchronized(stateLock) {
+        if (diskClearGeneration != expectedGeneration) {
+          false
+        } else if (recordingClosed) {
+          activeStartupDiskFiles.contains(safeKey)
+        } else {
+          recorded.size < MAX_ENTRIES || activeStartupDiskFiles.contains(safeKey)
+        }
+      }
+      if (!allowed) return
       try {
         val dir = File(cacheDir, FALLBACK_DISK_CACHE_DIR)
         if (!dir.exists()) dir.mkdirs()
         val target = File(dir, safeKey)
-        if (target.isFile && target.length() == bytes.size.toLong()) return
-        val tmp = File(dir, "$safeKey.tmp")
-        tmp.writeBytes(bytes)
-        if (!tmp.renameTo(target)) {
-          tmp.copyTo(target, overwrite = true)
-          tmp.delete()
+        if (!target.isFile || target.length() != bytes.size.toLong()) {
+          val tmp = File(dir, "$safeKey.tmp")
+          tmp.writeBytes(bytes)
+          if (!tmp.renameTo(target)) {
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+          }
         }
+        trimFallbackDiskCacheLocked(dir, protectedKey = safeKey)
       } catch (_: Exception) {
+      }
+    }
+  }
+
+  private fun trimFallbackDiskCacheLocked(dir: File, protectedKey: String? = null) {
+    val files = dir.listFiles() ?: return
+    val regularFiles = ArrayList<File>(files.size)
+    for (candidate in files) {
+      if (!candidate.isFile) continue
+      if (candidate.name.endsWith(".tmp")) {
+        candidate.delete()
+        continue
+      }
+      regularFiles.add(candidate)
+    }
+    var totalBytes = regularFiles.sumOf { it.length().coerceAtLeast(0L) }
+    if (regularFiles.size <= MAX_FALLBACK_DISK_FILES && totalBytes <= MAX_FALLBACK_DISK_BYTES) {
+      return
+    }
+    val activeSnapshot = synchronized(stateLock) { HashSet(activeStartupDiskFiles) }
+    val evictionOrder = regularFiles
+      .filter { it.name != protectedKey }
+      .sortedWith(
+        compareBy<File>(
+          { activeSnapshot.contains(it.name) },
+          { it.lastModified() },
+          { it.name },
+        ),
+      )
+    var remainingCount = regularFiles.size
+    for (victim in evictionOrder) {
+      if (remainingCount <= MAX_FALLBACK_DISK_FILES && totalBytes <= MAX_FALLBACK_DISK_BYTES) {
+        break
+      }
+      val len = victim.length().coerceAtLeast(0L)
+      if (victim.delete()) {
+        remainingCount -= 1
+        totalBytes = (totalBytes - len).coerceAtLeast(0L)
       }
     }
   }
@@ -223,6 +290,7 @@ internal object OneKeyImageStartupPrewarm {
       flushScheduled = false
       recorded.clear()
       recordedKeys.clear()
+      activeStartupDiskFiles.clear()
       pendingFallbackSources.clear()
       file = startupFile()
       resolvedDir = cacheDir ?: baseCacheDir ?: file?.parentFile
@@ -293,10 +361,19 @@ internal object OneKeyImageStartupPrewarm {
         schedulePersistLocked(delayMs = 0L)
         return
       }
+      var accepted = false
       if (recorded.size < MAX_ENTRIES && recordedKeys.add(entry.identity)) {
         recorded.add(entry)
+        activeStartupDiskFiles.add(diskFile)
+        rawDiskFile?.let { activeStartupDiskFiles.add(it) }
+        accepted = true
+      } else if (activeStartupDiskFiles.contains(diskFile)) {
+        accepted = true
       }
-      if (requestUrl.startsWith("file://") || requestUrl.startsWith("data:") || OneKeyBlockieAvatar.isAvatarUri(requestUrl)) {
+      if (
+        accepted &&
+        (requestUrl.startsWith("file://") || requestUrl.startsWith("data:") || OneKeyBlockieAvatar.isAvatarUri(requestUrl))
+      ) {
         pendingFallbackSources.putIfAbsent(diskFile, requestUrl)
       }
       schedulePersistLocked(delayMs = RECORD_DURATION_MS)
@@ -402,7 +479,27 @@ internal object OneKeyImageStartupPrewarm {
     file: File,
     expectedGeneration: Long = synchronized(stateLock) { diskClearGeneration },
   ) {
-    if (entries.isEmpty()) return
+    if (entries.isEmpty()) {
+      synchronized(diskIoLock) {
+        if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
+        val existing = readEntries(file)
+        val activeFiles = HashSet<String>(existing.size * 2)
+        for (entry in existing) {
+          activeFiles.add(entry.diskFile)
+          entry.rawDiskFile?.let { activeFiles.add(it) }
+        }
+        synchronized(stateLock) {
+          if (diskClearGeneration == expectedGeneration) {
+            activeStartupDiskFiles.clear()
+            activeStartupDiskFiles.addAll(activeFiles)
+          }
+        }
+        file.parentFile?.let { parent ->
+          pruneFallbackDiskCacheLocked(File(parent, FALLBACK_DISK_CACHE_DIR), activeFiles)
+        }
+      }
+      return
+    }
     synchronized(diskIoLock) {
       if (synchronized(stateLock) { diskClearGeneration != expectedGeneration }) return
       val existing = readEntries(file)
@@ -434,43 +531,54 @@ internal object OneKeyImageStartupPrewarm {
         }
       }
 
-      if (
-        existing.size == merged.size &&
-        existing.indices.all { i ->
-          existing[i].identity == merged[i].identity &&
-            existing[i].diskFile == merged[i].diskFile &&
-            existing[i].rawDiskFile == merged[i].rawDiskFile &&
-            (currentLaunch - existing[i].launch) < 1
+      val activeFiles = HashSet<String>(merged.size * 2)
+      for (entry in merged) {
+        activeFiles.add(entry.diskFile)
+        entry.rawDiskFile?.let { activeFiles.add(it) }
+      }
+      synchronized(stateLock) {
+        if (diskClearGeneration == expectedGeneration) {
+          activeStartupDiskFiles.clear()
+          activeStartupDiskFiles.addAll(activeFiles)
         }
-      ) {
-        return
       }
 
+      val unchanged =
+        existing.size == merged.size &&
+          existing.indices.all { i ->
+            existing[i].identity == merged[i].identity &&
+              existing[i].diskFile == merged[i].diskFile &&
+              existing[i].rawDiskFile == merged[i].rawDiskFile &&
+              (currentLaunch - existing[i].launch) < 1
+          }
+
       try {
-        file.parentFile?.mkdirs()
-        val json = encodeEntriesJson(merged)
-        val tmp = File(file.parentFile, "${file.name}.tmp")
-        tmp.writeText(json, Charsets.UTF_8)
-        if (!tmp.renameTo(file)) {
-          tmp.copyTo(file, overwrite = true)
-          tmp.delete()
+        if (!unchanged) {
+          file.parentFile?.mkdirs()
+          val json = encodeEntriesJson(merged)
+          val tmp = File(file.parentFile, "${file.name}.tmp")
+          tmp.writeText(json, Charsets.UTF_8)
+          if (!tmp.renameTo(file)) {
+            tmp.copyTo(file, overwrite = true)
+            tmp.delete()
+          }
         }
-        val fallbackDir = File(file.parentFile, FALLBACK_DISK_CACHE_DIR)
-        if (fallbackDir.isDirectory) {
-          val activeFiles = HashSet<String>(merged.size * 2)
-          for (entry in merged) {
-            activeFiles.add(entry.diskFile)
-            entry.rawDiskFile?.let { activeFiles.add(it) }
-          }
-          fallbackDir.listFiles()?.forEach { candidate ->
-            if (candidate.isFile && !activeFiles.contains(candidate.name)) {
-              candidate.delete()
-            }
-          }
+        file.parentFile?.let { parent ->
+          pruneFallbackDiskCacheLocked(File(parent, FALLBACK_DISK_CACHE_DIR), activeFiles)
         }
       } catch (_: Exception) {
       }
     }
+  }
+
+  private fun pruneFallbackDiskCacheLocked(fallbackDir: File, activeFiles: Set<String>) {
+    if (!fallbackDir.isDirectory) return
+    fallbackDir.listFiles()?.forEach { candidate ->
+      if (candidate.isFile && !activeFiles.contains(candidate.name)) {
+        candidate.delete()
+      }
+    }
+    trimFallbackDiskCacheLocked(fallbackDir, protectedKey = null)
   }
 
   fun startPrewarmAsync(context: Context) {
@@ -944,12 +1052,20 @@ internal object OneKeyImageStartupPrewarm {
     }
   }
 
+  internal fun drainSchedulerForTesting() {
+    try {
+      scheduler.submit {}.get(5, TimeUnit.SECONDS)
+    } catch (_: Exception) {
+    }
+  }
+
   internal fun resetForTesting(file: File? = null, cacheDir: File? = null) {
     synchronized(stateLock) {
       debounceFuture?.cancel(false)
       debounceFuture = null
       recorded.clear()
       recordedKeys.clear()
+      activeStartupDiskFiles.clear()
       pendingFallbackSources.clear()
       recordStartTimeMs = null
       recordingClosed = false

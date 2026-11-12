@@ -23,6 +23,7 @@ final class OneKeyImageStartupPrewarm {
     let namespace: String?
     let width: Double
     let height: Double
+    let scale: Double
   }
 
   struct Entry: Codable, Equatable {
@@ -32,6 +33,7 @@ final class OneKeyImageStartupPrewarm {
     let namespace: String?
     let width: Double
     let height: Double
+    let scale: Double
     var launch: Int
 
     var identity: Identity {
@@ -41,7 +43,8 @@ final class OneKeyImageStartupPrewarm {
         thumbDiskFile: thumbDiskFile,
         namespace: namespace,
         width: width,
-        height: height
+        height: height,
+        scale: scale
       )
     }
 
@@ -52,6 +55,7 @@ final class OneKeyImageStartupPrewarm {
       case namespace
       case width
       case height
+      case scale
       case launch
       // Legacy v1 keys accepted on read only for seamless migration.
       case url
@@ -64,6 +68,7 @@ final class OneKeyImageStartupPrewarm {
       namespace: String?,
       width: Double,
       height: Double,
+      scale: Double = 1,
       launch: Int = 0
     ) {
       self.keyHash = keyHash
@@ -72,6 +77,7 @@ final class OneKeyImageStartupPrewarm {
       self.namespace = namespace
       self.width = width
       self.height = height
+      self.scale = (scale.isFinite && scale >= 1) ? scale : 1
       self.launch = launch
     }
 
@@ -79,6 +85,8 @@ final class OneKeyImageStartupPrewarm {
       let container = try decoder.container(keyedBy: CodingKeys.self)
       let width = try container.decode(Double.self, forKey: .width)
       let height = try container.decode(Double.self, forKey: .height)
+      let rawScale = try container.decodeIfPresent(Double.self, forKey: .scale) ?? 1
+      let scale = (rawScale.isFinite && rawScale >= 1) ? rawScale : 1
       let launch = try container.decodeIfPresent(Int.self, forKey: .launch) ?? 0
       if let keyHash = try container.decodeIfPresent(String.self, forKey: .keyHash),
          let diskFile = try container.decodeIfPresent(String.self, forKey: .diskFile) {
@@ -91,6 +99,7 @@ final class OneKeyImageStartupPrewarm {
           namespace: namespace,
           width: width,
           height: height,
+          scale: scale,
           launch: launch
         )
         return
@@ -109,6 +118,7 @@ final class OneKeyImageStartupPrewarm {
           namespace: resolved.namespace,
           width: width,
           height: height,
+          scale: resolved.scale,
           launch: launch
         )
         return
@@ -130,6 +140,7 @@ final class OneKeyImageStartupPrewarm {
       }
       try container.encode(width, forKey: .width)
       try container.encode(height, forKey: .height)
+      try container.encode(scale, forKey: .scale)
       if launch > 0 {
         try container.encode(launch, forKey: .launch)
       }
@@ -223,13 +234,17 @@ final class OneKeyImageStartupPrewarm {
       return name
     }()
     let isAvatar = requestURL.scheme?.lowercased() == "onekey-avatar"
+    let resolvedScale = (context[.imageScaleFactor] as? NSNumber)?.doubleValue
+      ?? Double(SDImageScaleFactorForKey(key))
+    let scale = (resolvedScale.isFinite && resolvedScale >= 1) ? resolvedScale : 1
     return Identity(
       keyHash: sha256Hex(key),
       diskFile: diskFile,
       thumbDiskFile: thumbDiskFile,
       namespace: isAvatar ? avatarNamespace : nil,
       width: Double(thumbnailPixelSize.width),
-      height: Double(thumbnailPixelSize.height)
+      height: Double(thumbnailPixelSize.height),
+      scale: scale
     )
   }
 
@@ -285,6 +300,7 @@ final class OneKeyImageStartupPrewarm {
           namespace: identity.namespace,
           width: identity.width,
           height: identity.height,
+          scale: identity.scale,
           launch: 0
         )
       )
@@ -484,7 +500,8 @@ final class OneKeyImageStartupPrewarm {
           OneKeyImageSafetyPolicy.violation(encodedByteCount: encoded.count, metadata: metadata) == nil
         else { return }
         let size = CGSize(width: entry.width, height: entry.height)
-        let context = OneKeyImageRequestContext.make(
+        let scale = (entry.scale.isFinite && entry.scale >= 1) ? entry.scale : 1
+        var context = OneKeyImageRequestContext.make(
           headersJson: nil,
           cachePolicy: .memoryDisk,
           thumbnailPixelSize: size,
@@ -492,6 +509,7 @@ final class OneKeyImageStartupPrewarm {
           manager: OneKeyImagePipeline.manager,
           url: nil
         )
+        context[.imageScaleFactor] = NSNumber(value: scale)
         guard let image = SDImageCacheDecodeImageData(encoded, entry.diskFile, [], context),
               OneKeyImageSafetyPolicy.violation(for: image) == nil
         else { return }

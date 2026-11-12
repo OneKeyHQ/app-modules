@@ -106,9 +106,14 @@ public final class OneKeyNamedSVG {
     // Source digests invalidate changed assets; retain only size-based eviction.
     config.maxDiskAge = -1
     config.maxDiskSize = 128 * 1024 * 1024
+    config.diskCacheWritingOptions = .atomic
     return SDImageCache(namespace: "onekey-named-svg-raster-v1", diskCacheDirectory: nil, config: config)
   }()
   private static let diskWriter = DispatchQueue(label: "onekey.svg.raster-disk", qos: .utility)
+
+  var rasterDiskCacheForTesting: SDImageCache {
+    Self.rasterDiskCache
+  }
 
   private let lock = NSLock()
   private let metadataLock = NSLock()
@@ -612,8 +617,10 @@ public final class OneKeyNamedSVG {
       lock.unlock(); return image
     }
     lock.unlock()
-    // The source digest and all raster inputs are in the key; diskOnly bounds encoded byte size.
+    // The source digest and all raster inputs are in the key; diskOnly bounds encoded byte size
+    // and reads directly from disk to avoid blocking on SDImageCache's shared ioQueue.
     let diskCache = Self.rasterDiskCache
+    let diskImage: UIImage?
     if diskOnly {
       guard let path = diskCache.cachePath(forKey: key),
             let attributes = try? FileManager.default.attributesOfItem(atPath: path),
@@ -626,8 +633,24 @@ public final class OneKeyNamedSVG {
         OneKeyMainThreadDecode.noteLimitRejection()
         return nil
       }
+      guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+            !data.isEmpty else {
+        OneKeyMainThreadDecode.noteDiskMiss()
+        return nil
+      }
+      guard data.count <= OneKeyMainThreadDecode.maximumEncodedBytes else {
+        OneKeyMainThreadDecode.noteLimitRejection()
+        return nil
+      }
+      diskImage = SDImageCacheDecodeImageData(
+        data,
+        key,
+        [],
+        [.imageScaleFactor: NSNumber(value: 1.0)]
+      )
+    } else {
+      diskImage = diskCache.imageFromDiskCache(forKey: key)
     }
-    let diskImage = diskCache.imageFromDiskCache(forKey: key)
     if let image = diskImage,
        image.cgImage?.width == request.width, image.cgImage?.height == request.height {
       let result = RenderResult(image: image, mode: mode, sourceIdentity: sourceIdentity, maskAlpha: maskAlpha)

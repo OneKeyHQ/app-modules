@@ -608,6 +608,66 @@ final class OneKeyIconTests: XCTestCase {
     XCTAssertEqual(decodeMetrics.hits, 1)
     XCTAssertEqual(decodeMetrics.limitRejections, 1)
 
+    // 2b. Synchronous diskRender must not wait on SDImageCache.ioQueue when a concurrent
+    // write or cache cleanup is occupying ioQueue, and must handle removed files cleanly.
+    if let ioQueue = OneKeyNamedSVG.shared.rasterDiskCacheForTesting.value(forKey: "ioQueue")
+      as? DispatchQueue
+    {
+      OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+      OneKeyMainThreadDecode.resetForTesting()
+      let ioEntered = DispatchSemaphore(value: 0)
+      let ioRelease = DispatchSemaphore(value: 0)
+      let ioFinished = DispatchSemaphore(value: 0)
+      ioQueue.async {
+        ioEntered.signal()
+        _ = ioRelease.wait(timeout: .now() + 2)
+        ioFinished.signal()
+      }
+      XCTAssertEqual(ioEntered.wait(timeout: .now() + 1), .success)
+      let writerDone = DispatchSemaphore(value: 0)
+      DispatchQueue.global(qos: .utility).async {
+        OneKeyNamedSVG.shared.rasterDiskCacheForTesting.storeImageData(
+          toDisk: originalRasterData,
+          forKey: "concurrent-writer-probe"
+        )
+        writerDone.signal()
+      }
+      var finishedWhileIoBlocked = false
+      let hitWhileBusy = OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+      finishedWhileIoBlocked = (ioFinished.wait(timeout: .now()) == .timedOut)
+      ioRelease.signal()
+      _ = ioFinished.wait(timeout: .now() + 2)
+      _ = writerDone.wait(timeout: .now() + 2)
+      OneKeyNamedSVG.shared.rasterDiskCacheForTesting.removeImageFromDisk(
+        forKey: "concurrent-writer-probe"
+      )
+      XCTAssertNotNil(hitWhileBusy)
+      XCTAssertTrue(
+        finishedWhileIoBlocked,
+        "diskRender must read directly without waiting for SDImageCache.ioQueue"
+      )
+    }
+    try? FileManager.default.removeItem(at: rasterURL)
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    XCTAssertNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().diskMisses, 1)
+    try originalRasterData.write(to: rasterURL, options: .atomic)
+
     // 3. App Lock multi-burst window + launch-generation eviction.
     OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
     _ = OneKeyNamedSVG.shared.cachedRender(

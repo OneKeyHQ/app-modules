@@ -306,7 +306,50 @@ class OneKeyStartupPrewarmTest {
       }
     }
 
-    // 6. clearDiskCache removes startup JSON and fallback disk cache directory,
+    // 6. After the startup recorder closes, continuous promoteToMemory / writeFallbackDiskBytes
+    // for new local images must not add non-startup files, and pre-close writes stay bounded.
+    val fallbackDir = File(tempDir, OneKeyImageStartupPrewarm.FALLBACK_DISK_CACHE_DIR)
+    val baseSmallPng = createValidPng(16, 16)
+    val padded32KiB = baseSmallPng + ByteArray(OneKeyMainThreadDecode.MAX_ENCODED_BYTES - baseSmallPng.size)
+    for (i in 0 until 100) {
+      val localFile = File(tempDir, "post-close-$i.png").apply { writeBytes(baseSmallPng) }
+      val localUrl = "file://${localFile.absolutePath}"
+      assertTrue(OneKeyMainThreadDecode.promoteToMemory(tempDir, localUrl, localUrl, 32, 32, false))
+      OneKeyImageStartupPrewarm.writeFallbackDiskBytes(
+        cacheDir = tempDir,
+        safeKey = "post_close_key_$i",
+        bytes = padded32KiB,
+      )
+    }
+    OneKeyImageStartupPrewarm.drainSchedulerForTesting()
+    val postCloseFiles = fallbackDir.listFiles()?.filter { it.isFile } ?: emptyList()
+    assertEquals(
+      "No new fallback files may be written after startup recorder closes",
+      0,
+      postCloseFiles.size,
+    )
+
+    // 6b. Even before the startup recorder closes, fallback directory enforces file count & byte budget.
+    OneKeyImageStartupPrewarm.resetForTesting(file = startupJsonFile, cacheDir = tempDir)
+    for (i in 0 until 100) {
+      OneKeyImageStartupPrewarm.writeFallbackDiskBytes(
+        cacheDir = tempDir,
+        safeKey = "open_window_key_$i",
+        bytes = padded32KiB,
+      )
+    }
+    val openWindowFiles = fallbackDir.listFiles()?.filter { it.isFile } ?: emptyList()
+    val openWindowBytes = openWindowFiles.sumOf { it.length() }
+    assertTrue(
+      "Fallback file count (${openWindowFiles.size}) must not exceed ${OneKeyImageStartupPrewarm.MAX_FALLBACK_DISK_FILES}",
+      openWindowFiles.size <= OneKeyImageStartupPrewarm.MAX_FALLBACK_DISK_FILES,
+    )
+    assertTrue(
+      "Fallback total bytes ($openWindowBytes) must not exceed ${OneKeyImageStartupPrewarm.MAX_FALLBACK_DISK_BYTES}",
+      openWindowBytes <= OneKeyImageStartupPrewarm.MAX_FALLBACK_DISK_BYTES,
+    )
+
+    // 7. clearDiskCache removes startup JSON and fallback disk cache directory,
     // and invalidates any stale pre-clear fallback write generation.
     val preClearGeneration = OneKeyImageStartupPrewarm.currentDiskClearGenerationForTesting()
     OneKeyImageStartupPrewarm.clearDiskCache(tempDir)
