@@ -200,6 +200,15 @@ Headers are part of identity even when the URI is unchanged. TOS optimization is
 disabled for requests with custom headers so an authenticated source is not
 silently rewritten.
 
+On iOS, sized raster requests for an effective `http`, `https`, or `file`
+URL with a density marker recognized by SDWebImage decode at that image scale.
+Their `UIImage.size`, load dimensions, and `contentFit: center` display use
+logical points, including after startup prewarm. The scale comes from the
+effective request URL and is applied with or without custom headers. Unsized
+requests, 1x URLs, avatars, data URIs, and SVG's independent raster path retain
+their existing behavior. The image scale does not change the existing sized
+cache key, cache-key filter, or safety generation.
+
 There is no fixed “three sizes per image” cache contract. TOS currently has five
 layout tiers and up to two density renditions per tier. The memory-variant
 registry records the variants actually requested, with a maximum of eight hints
@@ -788,7 +797,8 @@ plaintext URLs, `onekey-avatar` wallet addresses, or duplicate inline base64
 payloads to disk, each persisted entry stores only the SHA-256 hash of the
 sized memory-cache key (`keyHash`), the disk cache filename (`diskFile` and
 optional `thumbDiskFile` / `rawDiskFile`), optional cache namespace (`avatar`) or
-shape flag (`round`), target pixel dimensions, and `launch`. Legacy plaintext entries are migrated
+shape flag (`round`), target pixel dimensions, image scale on iOS, and `launch`.
+Legacy plaintext entries are migrated
 on read and overwritten with hashed entries on the next flush. At the next
 process start each entry is read from the corresponding disk cache, validated
 through `OneKeyImageSafetyPolicy` / `OneKeyEncodedImageInspector`, decoded at the recorded target size
@@ -799,18 +809,22 @@ bitmap density on Android after `inDensity`/`inTargetDensity` downsampling, and
 applying circular cropping with matching canvas/bitmap density when `round` is set), and
 stored in the memory cache under its prewarm hash key, which the view's
 synchronous memory probe claims and displays on first hit (requests carrying
-custom headers bypass the unauthenticated prewarmed bitmap cache). Clearing the
-disk cache (`clearDisk()` / `clearAll()`) advances a generation fence and
+custom headers bypass the unauthenticated prewarmed bitmap cache).
+The iOS prewarm memory identity includes both `keyHash` and resolved image
+scale. A claim succeeds only when the active request context resolves to the
+same scale as the entry. Entries written before the Retina fix may record scale
+1 for an `@2x` or `@3x` key; these must miss prewarm promotion and continue
+through the normal request path. A new observation for the same `keyHash`
+replaces that old scale entry at the next manifest flush, while an unchanged
+full identity retains its existing launch behavior. The manifest JSON format
+and disk cache keys remain unchanged.
+
+Clearing the disk cache (`clearDisk()` / `clearAll()`) advances a generation fence and
 synchronizes with the background writer so queued pre-clear startup flushes or
 local/fallback disk-cache writes cannot recreate files after clearing completes.
 The replay never touches the network. The view-side behavior is unchanged: a
 prewarmed image binds in the mount frame, anything else loads asynchronously as
 before.
-
-On iOS, request contexts resolve the image scale from the original source URL
-before thumbnail cache-key rewriting. Startup entries retain that scale and
-restore it during replay, so `@2x`/`@3x` images keep the same logical size and
-`center` presentation in normal, synchronous and prewarmed decoding.
 
 #### Main-thread decode of small local images (iOS and Android)
 

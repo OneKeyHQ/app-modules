@@ -16,6 +16,46 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertFalse(OneKeyImageRequestContext.preloadOptions.contains(.handleCookies))
   }
 
+  func testThumbnailRetinaScaleContextKeepsCacheIdentity() throws {
+    let manager = OneKeyImagePipeline.manager
+    let size = CGSize(width: 120, height: 120)
+    let headersJson = "{\"Authorization\":\"Bearer test\"}"
+    let cases: [(String, String?, CGSize?, Double?)] = [
+      ("https://example.com/token@2x.png", headersJson, size, 2),
+      ("https://example.com/token%402x.png", nil, size, 2),
+      ("http://example.com/token@3x.png", nil, size, 3),
+      ("file:///tmp/token@2x.png", nil, size, 2),
+      ("https://example.com/token.png", nil, size, nil),
+      ("https://example.com/token@3x.png", nil, nil, nil),
+      ("data:image/png;base64,AAAA", nil, size, nil),
+      ("onekey-avatar://blockie/v1/token@2x.png", nil, size, nil),
+    ]
+
+    for (urlString, headers, thumbnailSize, expectedScale) in cases {
+      let url = try XCTUnwrap(URL(string: urlString))
+      let context = OneKeyImageRequestContext.make(
+        headersJson: headers,
+        cachePolicy: .memoryDisk,
+        thumbnailPixelSize: thumbnailSize,
+        safetyTracker: nil,
+        manager: manager,
+        url: url
+      )
+      XCTAssertEqual(
+        (context[.imageScaleFactor] as? NSNumber)?.doubleValue,
+        expectedScale,
+        urlString
+      )
+      var withoutScale = context
+      withoutScale.removeValue(forKey: .imageScaleFactor)
+      XCTAssertEqual(
+        manager.cacheKey(for: url, context: context),
+        manager.cacheKey(for: url, context: withoutScale),
+        urlString
+      )
+    }
+  }
+
   func testExplicitCookieHeadersHaveDistinctPrivateIdentities() throws {
     let url = try XCTUnwrap(URL(string: "https://example.com/private.png"))
     let first = OneKeyImageHeadersIdentity(headers: ["Cookie": "session=first"])
@@ -957,6 +997,7 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertNotNil(
       OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
         forKey: remoteThumbKey,
+        context: remoteThumbContext,
         cache: SDImageCache.shared
       )
     )
@@ -1084,14 +1125,13 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertEqual(promoted, true)
     XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().hits, 1)
 
-    // Test the dimension limit independently of the preceding decode's frame budget.
-    OneKeyMainThreadDecode.resetForTesting()
     // Oversized source dimension (> 512px) must be rejected on the main thread.
     let largeCanvasImage = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600), format: format).image { ctx in
       UIColor.black.setFill()
       ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
     }
     let largeCanvasPNG = try XCTUnwrap(largeCanvasImage.pngData())
+    XCTAssertLessThanOrEqual(largeCanvasPNG.count, OneKeyMainThreadDecode.maximumEncodedBytes)
     let largeCanvasURL = try XCTUnwrap(URL(string: "https://example.com/sync-large-canvas.png"))
     let largeOriginalContext = OneKeyImageRequestContext.make(
       headersJson: nil,
@@ -1106,6 +1146,8 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     )
     SDImageCache.shared.storeImageData(toDisk: largeCanvasPNG, forKey: largeOriginalKey)
 
+    // Test the source-size limit in a fresh frame budget after the first decode.
+    OneKeyMainThreadDecode.resetForTesting()
     let rejectedLarge = OneKeyMainThreadDecode.run { () -> Bool? in
       OneKeyMainThreadDecode.promoteToMemory(
         url: largeCanvasURL,
@@ -1114,7 +1156,133 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
       ) ? true : nil
     }
     XCTAssertNil(rejectedLarge)
-    XCTAssertGreaterThanOrEqual(OneKeyMainThreadDecode.metricsSnapshot().limitRejections, 1)
+    let largeMetrics = OneKeyMainThreadDecode.metricsSnapshot()
+    XCTAssertEqual(largeMetrics.attempts, 1)
+    XCTAssertEqual(largeMetrics.limitRejections, 1)
+    XCTAssertEqual(largeMetrics.budgetRejections, 0)
+  }
+
+  func testStartupPrewarmReplacesLegacyRetinaScaleWithoutClaimingWrongImage() throws {
+    let tempFile = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-image-scale-migration-\(UUID().uuidString).json")
+    defer {
+      OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: nil)
+      try? FileManager.default.removeItem(at: tempFile)
+    }
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let retinaData = try XCTUnwrap(
+      UIGraphicsImageRenderer(size: CGSize(width: 60, height: 60), format: format)
+        .image { ctx in
+          UIColor.red.setFill()
+          ctx.fill(CGRect(x: 0, y: 0, width: 60, height: 60))
+        }.pngData()
+    )
+    let ordinaryData = try XCTUnwrap(
+      UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20), format: format)
+        .image { ctx in
+          UIColor.blue.setFill()
+          ctx.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        }.pngData()
+    )
+    let unique = UUID().uuidString
+    let retinaURL = try XCTUnwrap(URL(string: "https://example.com/\(unique)@3x.png"))
+    let ordinaryURL = try XCTUnwrap(URL(string: "https://example.com/\(unique).png"))
+    let thumbSize = CGSize(width: 240, height: 240)
+    let manager = OneKeyImagePipeline.manager
+    var storedOriginalKeys: [String] = []
+    defer {
+      for key in storedOriginalKeys {
+        SDImageCache.shared.removeImageFromDisk(forKey: key)
+      }
+    }
+
+    func contextAndKey(for url: URL) throws -> ([SDWebImageContextOption: Any], String) {
+      let originalContext = OneKeyImageRequestContext.make(
+        headersJson: nil, cachePolicy: .memoryDisk, thumbnailPixelSize: nil,
+        safetyTracker: nil, manager: manager, url: url
+      )
+      let originalKey = try XCTUnwrap(manager.cacheKey(for: url, context: originalContext))
+      storedOriginalKeys.append(originalKey)
+      SDImageCache.shared.storeImageData(
+        toDisk: url == retinaURL ? retinaData : ordinaryData,
+        forKey: originalKey
+      )
+      let context = OneKeyImageRequestContext.make(
+        headersJson: nil, cachePolicy: .memoryDisk, thumbnailPixelSize: thumbSize,
+        safetyTracker: nil, manager: manager, url: url
+      )
+      return (context, try XCTUnwrap(manager.cacheKey(for: url, context: context)))
+    }
+
+    let (retinaContext, retinaKey) = try contextAndKey(for: retinaURL)
+    let (ordinaryContext, ordinaryKey) = try contextAndKey(for: ordinaryURL)
+    let retinaIdentity = try XCTUnwrap(
+      OneKeyImageStartupPrewarm.resolveIdentity(requestURL: retinaURL, thumbnailPixelSize: thumbSize)
+    )
+    let ordinaryIdentity = try XCTUnwrap(
+      OneKeyImageStartupPrewarm.resolveIdentity(requestURL: ordinaryURL, thumbnailPixelSize: thumbSize)
+    )
+    let legacyRetina = OneKeyImageStartupPrewarm.Entry(
+      keyHash: retinaIdentity.keyHash,
+      diskFile: retinaIdentity.diskFile,
+      thumbDiskFile: retinaIdentity.thumbDiskFile,
+      namespace: retinaIdentity.namespace,
+      width: retinaIdentity.width,
+      height: retinaIdentity.height,
+      scale: 1,
+      launch: 1
+    )
+    let ordinary = OneKeyImageStartupPrewarm.Entry(
+      keyHash: ordinaryIdentity.keyHash,
+      diskFile: ordinaryIdentity.diskFile,
+      thumbDiskFile: ordinaryIdentity.thumbDiskFile,
+      namespace: ordinaryIdentity.namespace,
+      width: ordinaryIdentity.width,
+      height: ordinaryIdentity.height,
+      scale: 1,
+      launch: 1
+    )
+    try JSONEncoder().encode([legacyRetina, ordinary]).write(to: tempFile)
+
+    SDImageCache.shared.clearMemory()
+    OneKeyImageStartupPrewarm.shared.prewarm()
+    XCTAssertEqual(OneKeyImageStartupPrewarm.shared.metricsSnapshot().decodedCount, 2)
+    XCTAssertNil(
+      OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
+        forKey: retinaKey, context: retinaContext, cache: SDImageCache.shared
+      )
+    )
+    XCTAssertNil(SDImageCache.shared.imageFromMemoryCache(forKey: retinaKey))
+    XCTAssertNotNil(
+      OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
+        forKey: ordinaryKey, context: ordinaryContext, cache: SDImageCache.shared
+      )
+    )
+
+    OneKeyImageStartupPrewarm.shared.note(
+      requestURL: retinaURL, rawURL: retinaURL, headersJson: nil,
+      cachePolicy: .memoryDisk, thumbnailPixelSize: thumbSize
+    )
+    OneKeyImageStartupPrewarm.shared.flushForTesting(forceClose: true)
+    let persisted = try JSONDecoder().decode(
+      [OneKeyImageStartupPrewarm.Entry].self, from: Data(contentsOf: tempFile)
+    )
+    XCTAssertEqual(persisted.filter { $0.keyHash == retinaIdentity.keyHash }.map(\.scale), [3])
+    XCTAssertEqual(persisted.filter { $0.keyHash == ordinaryIdentity.keyHash }.map(\.scale), [1])
+
+    SDImageCache.shared.clearMemory()
+    OneKeyImageStartupPrewarm.shared.resetForTesting(fileURL: tempFile)
+    OneKeyImageStartupPrewarm.shared.prewarm()
+    let image = try XCTUnwrap(
+      OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
+        forKey: retinaKey, context: retinaContext, cache: SDImageCache.shared
+      )
+    )
+    XCTAssertEqual(image.scale, 3)
+    XCTAssertEqual(image.size, CGSize(width: 20, height: 20))
   }
 
   func testStartupPrewarmPreservesRetinaScaleLogicalSizeAndCenterDisplay() throws {
