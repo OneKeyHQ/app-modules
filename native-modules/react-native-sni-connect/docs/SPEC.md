@@ -216,6 +216,11 @@ Status: **Implemented**. Structured native logs record `requestId`, destination
 and endpoints for troubleshooting. These fields are not hashed. Log values
 still escape whitespace to keep each event on one line. Sensitive headers,
 request/response bodies, and local file paths are not added to these logs.
+Long hexadecimal runs in the displayed `requestId` are separated with `-` after
+32 hex characters when another 32 hex characters follow. This preserves the
+complete ID while avoiding the final logger's generic 64-hex private-key filter.
+For example, a 64-hex ID is displayed as two 32-hex groups. UUIDs are unchanged;
+the ID sent in headers and used for cancellation is never reformatted.
 
 ## Conformance and remaining evidence
 

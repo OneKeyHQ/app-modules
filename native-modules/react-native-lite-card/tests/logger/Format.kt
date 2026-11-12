@@ -1,4 +1,5 @@
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.sniconnect.SniConnectLogger
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -6,7 +7,7 @@ fun main(args: Array<String>) {
     fun expect(value: Boolean, scenario: String) { check(value) { scenario }; assertions++ }
     val method = OneKeyLog::class.java.getDeclaredMethod("formatMessage", String::class.java, String::class.java, String::class.java)
     method.isAccessible = true
-    fun format(message: String) = method.invoke(OneKeyLog, "LiteCard", "INFO", message) as String
+    fun format(message: String, tag: String = "LiteCard") = method.invoke(OneKeyLog, tag, "INFO", message) as String
     val lines = File(args[0]).readLines().filter { it.isNotEmpty() }
     val canonical = lines.first()
     expect(Regex("source-v1:[0-9a-f]{64}").matches(canonical), "Actual compiled symbol retains canonical identity")
@@ -25,5 +26,18 @@ fun main(args: Array<String>) {
         val combined = format(lines[1] + " secret=" + canary)
         expect(combined.contains(lines[1]) && combined.endsWith("secret=[REDACTED]") && !combined.contains(canary), "Grouped identity does not exempt same-line secrets from redaction")
     }
+    val hex = "a".repeat(64)
+    val uuid = "12345678-1234-1234-1234-123456789abc"
+    for (id in listOf(hex, "0x" + hex.uppercase(), "c".repeat(128), "request-$hex", uuid)) {
+        val event = SniConnectLogger.event("sni_request_start", "requestId" to id, "ip" to "2001:4860:4860::8888")
+        val formatted = format(event + " secret=" + canaries[0], "SniConnect")
+        val displayed = formatted.split(" ").first { it.startsWith("requestId=") }.substringAfter("=")
+        expect(!displayed.contains("[REDACTED]"), "The final logger retains every diagnostic ID character")
+        expect(displayed.replace("-", "") == id.replace("-", ""), "Only diagnostic grouping separators are added")
+        expect(formatted.contains("ip=2001:4860:4860::8888"), "The final logger retains the destination IP")
+        expect(formatted.endsWith("secret=[REDACTED]"), "Same-line secrets retain generic redaction")
+        if (id == uuid) expect(displayed == uuid, "Existing UUID formatting is unchanged")
+    }
+    expect(format("event=sni_request_start requestId=$hex", "SniConnect").contains("requestId=[REDACTED]"), "The generic logger policy is unchanged even for SNI tags")
     println("KotlinLoggerSanitization: $assertions assertions passed")
 }

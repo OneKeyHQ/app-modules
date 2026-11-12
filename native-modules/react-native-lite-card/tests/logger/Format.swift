@@ -1,8 +1,8 @@
 
 // Appended to a temporary copy of the complete production file for private access.
 extension OneKeyLog {
-    static func regressionFormat(_ message: String) -> String {
-        formatMessage("LiteCard", "INFO", message)
+    static func regressionFormat(_ message: String, tag: String = "LiteCard") -> String {
+        formatMessage(tag, "INFO", message)
     }
 }
 var assertions = 0
@@ -34,4 +34,17 @@ for canary in canaries {
     let combined = OneKeyLog.regressionFormat(lines[1] + " secret=" + canary)
     expect(combined.contains(lines[1]) && combined.hasSuffix("secret=[REDACTED]") && !combined.contains(canary), "Grouped identity does not exempt same-line secrets from redaction")
 }
+let hex = String(repeating: "a", count: 64)
+let uuid = "12345678-1234-1234-1234-123456789abc"
+for id in [hex, "0x" + hex.uppercased(), String(repeating: "c", count: 128), "request-" + hex, uuid] {
+    let event = SniConnectLog.event("sni_request_start", [("requestId", id), ("ip", "2001:4860:4860::8888")])
+    let formatted = OneKeyLog.regressionFormat(event + " secret=" + canaries[0], tag: "SniConnect")
+    let displayed = formatted.components(separatedBy: " ").first { $0.hasPrefix("requestId=") }!.dropFirst(10)
+    expect(!displayed.contains("[REDACTED]"), "The final logger retains every diagnostic ID character")
+    expect(displayed.replacingOccurrences(of: "-", with: "") == id.replacingOccurrences(of: "-", with: ""), "Only diagnostic grouping separators are added")
+    expect(formatted.contains("ip=2001:4860:4860::8888"), "The final logger retains the destination IP")
+    expect(formatted.hasSuffix("secret=[REDACTED]"), "Same-line secrets retain generic redaction")
+    if id == uuid { expect(displayed == uuid, "Existing UUID formatting is unchanged") }
+}
+expect(OneKeyLog.regressionFormat("event=sni_request_start requestId=" + hex, tag: "SniConnect").contains("requestId=[REDACTED]"), "The generic logger policy is unchanged even for SNI tags")
 print("SwiftLoggerSanitization: \(assertions) assertions passed")
