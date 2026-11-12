@@ -44,6 +44,9 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
   body.removeAttribute('data-nl-container-border');
   const style = row.style;
   const isTokenTable =
+    row.index === undefined &&
+    !row.favorite &&
+    !row.checkbox &&
     row.columns.length === 4 &&
     row.columns[0]?.key === 'asset' &&
     row.columns[1]?.key === 'balance' &&

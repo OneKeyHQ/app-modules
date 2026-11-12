@@ -2342,11 +2342,13 @@ measurements from a local runtime overlay; formal SDK release integration is
 separate.
 
 A Web `DataRow` with exactly the ordered column keys `asset`, `balance`, `price`,
-and `swapSpacer` preserves the legacy four equal columns. The leading visual and
-its declared gap share the first column with the asset text; an absent visual
-reserves no icon inset. Balance and price occupy the second and third columns;
-the trailing accessories align to the end
-of the fourth. This closed migration shape uses equal columns instead of the
+and `swapSpacer`, without an ordinal index, favorite control, or checkbox,
+preserves the legacy four equal columns. Rows with any of those controls retain
+their existing weighted layout so the controls keep their linear positions.
+The leading visual and its declared gap share the first column with the asset
+text; an absent visual reserves no icon inset. Balance and price occupy the
+second and third columns; the trailing accessories align to the end of the
+fourth. This closed migration shape uses equal columns instead of the
 previous weight approximation. Other column shapes retain their existing
 weighted layout. Rebinding a retained row between these shapes clears the old
 grid placement and asset inset, including when the leading visual is reused.
@@ -2359,9 +2361,10 @@ its page padding. The footer and expanded-content slots keep their existing
 insets. Changing the accepted content padding updates the compensation;
 removing disclosure still hides and disables the retained toggle subtree.
 
-Conformance covers token-to-generic and generic-to-token row reuse, leading
-visual and disabled action preservation, accepted padding changes, and absent
-disclosure. The consuming App comparison covers six visible rows and the toggle
+Conformance covers token-to-generic and generic-to-token row reuse, rows with an
+index/favorite/checkbox, leading visual and disabled action preservation,
+accepted padding changes, and absent disclosure. The consuming App comparison
+covers six visible rows and the toggle
 at 1024, 1280, and 1600 CSS-pixel viewports; it does not establish native runtime
 acceptance or a performance improvement.
 

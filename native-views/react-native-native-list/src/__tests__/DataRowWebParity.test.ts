@@ -51,6 +51,28 @@ it('restores generic weighted columns after reusing a four-column token table', 
   expect(trailing().style.gridArea).toBe('1 / 4');
   expect(body.querySelector('button')?.disabled).toBe(true);
 
+  const controlledRows: DataRow[] = [
+    { ...token, index: 0 },
+    { ...token, favorite: true },
+    {
+      ...token,
+      checkbox: {
+        kind: 'checkbox',
+        state: 'unchecked',
+        target: { scope: 'row' },
+      },
+    },
+  ];
+  for (const row of controlledRows) {
+    dataRowRenderer.bind(body, token, primitives);
+    dataRowRenderer.bind(body, row, primitives);
+    expect(body.style.display).toBe('');
+    expect(body.style.gridTemplateColumns).toBe('');
+    expect(visual.style.gridArea).toBe('');
+    expect(cells()[0]?.style.marginInlineStart).toBe('');
+    expect(trailing().style.gridArea).toBe('');
+  }
+
   dataRowRenderer.bind(
     body,
     { ...token, columns: token.columns.slice(0, 3) },
