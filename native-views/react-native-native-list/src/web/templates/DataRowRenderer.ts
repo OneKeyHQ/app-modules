@@ -43,6 +43,18 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
   const style = row.style;
+  const isTokenTable =
+    row.columns.length === 4 &&
+    row.columns[0]?.key === 'asset' &&
+    row.columns[1]?.key === 'balance' &&
+    row.columns[2]?.key === 'price' &&
+    row.columns[3]?.key === 'swapSpacer';
+  if (isTokenTable) {
+    // Match the legacy four equal columns, including the icon in the first.
+    body.style.display = 'grid';
+    body.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+  }
+
   if (style?.horizontalPadding !== undefined)
     body.style.paddingInline = `${style.horizontalPadding}px`;
   if (style?.verticalPadding !== undefined)
@@ -80,6 +92,9 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
     style?.image?.height ?? 40,
     (style?.leadingGap ?? 12) - 12
   );
+  if (v.visual) v.visual.style.gridArea = isTokenTable ? '1 / 1' : '';
+  v.trailing.style.gridArea = isTokenTable ? '1 / 4' : '';
+  v.trailing.style.justifySelf = isTokenTable ? 'end' : '';
   v.columns.forEach((cell, index) => {
     const column = row.columns[index];
     cell.body.hidden = !column;
@@ -92,6 +107,15 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
     cell.body.hidden = false;
     cell.body.style.flex = String(column.weight ?? 1);
     cell.body.style.display = 'flex';
+    if (isTokenTable) {
+      cell.body.style.gridArea = `1 / ${index + 1}`;
+      if (index === 0 && v.visual) {
+        cell.body.style.marginInlineStart = `${
+          (style?.image?.width ?? 40) + (style?.leadingGap ?? 12)
+        }px`;
+      }
+    }
+
     cell.body.dataset.align = column.alignment ?? 'start';
     if (style?.lineGap !== undefined)
       cell.body.style.rowGap = `${style.lineGap}px`;

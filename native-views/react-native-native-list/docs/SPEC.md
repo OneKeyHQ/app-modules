@@ -2335,6 +2335,36 @@ The same native display-link/animator tick changes suffix extent, footer positio
 
 Web/Desktop/extension prefix-preserving tail refinement status: source implemented; Web and Desktop consuming-app preview routes exercised with the local candidate Web overlay. Browser extension was outside that preview scope, and no FPS or paint-duration claim has been verified. The complete accepted snapshot becomes current immediately, while removed suffix rows may remain only in an inert, accessibility-hidden presentation window until the existing 220 ms transition completes. That window follows the same scroll owner and mounts only viewport-near old rows as the owner moves; each row keeps its natural height while the tail is clipped by the interpolated list extent. Inserted suffix rows use their final layout immediately and are revealed by the growing extent. The shared animation frame updates list height, React footer compensation, and programmatic scroll together. Its final scroll range uses the actual parent page extent, including a taller sidecar. For an off-screen fallback, Web uses the footer's complete visible interval where it fits, including the sticky inset, and otherwise aligns the footer start below the sticky region; the retained row is preferred only when the footer is absent. Price patches update the accepted snapshot and visible retained rows without restarting the transition. A newer structure command, unsupported shape, user scroll takeover, reduced motion, resize, or disposal releases presentation nodes and animation ownership without a stale completion writing an older offset. Other structural changes retain the existing behavior. This refinement adds no public field or native behavior; focused Web DOM tests passed, while browser extension and broader runtime performance remain unverified.
 
+### Web token table geometry
+
+Status: implemented with focused SDK regression coverage and consuming-App
+measurements from a local runtime overlay; formal SDK release integration is
+separate.
+
+A Web `DataRow` with exactly the ordered column keys `asset`, `balance`, `price`,
+and `swapSpacer` preserves the legacy four equal columns. The leading visual and
+its declared gap share the first column with the asset text; an absent visual
+reserves no icon inset. Balance and price occupy the second and third columns;
+the trailing accessories align to the end
+of the fourth. This closed migration shape uses equal columns instead of the
+previous weight approximation. Other column shapes retain their existing
+weighted layout. Rebinding a retained row between these shapes clears the old
+grid placement and asset inset, including when the leading visual is reused.
+Text, icon size, row height, actions, and iOS/Android layouts retain their
+existing contracts.
+
+The Web `listStructureToggle` slot cancels the enclosing footer band's
+horizontal content inset while disclosure is present, since toggle content owns
+its page padding. The footer and expanded-content slots keep their existing
+insets. Changing the accepted content padding updates the compensation;
+removing disclosure still hides and disables the retained toggle subtree.
+
+Conformance covers token-to-generic and generic-to-token row reuse, leading
+visual and disabled action preservation, accepted padding changes, and absent
+disclosure. The consuming App comparison covers six visible rows and the toggle
+at 1024, 1280, and 1600 CSS-pixel viewports; it does not establish native runtime
+acceptance or a performance improvement.
+
 `DataRow.trailing?: readonly TrailingAccessory[]` reuses the existing accessory action contract, including `rowKey`, `actionKey`, disabled state, and accessibility/test labels. At most two accessories are accepted. Desktop Home can render its independent price/balance columns with `DataRow.columns` and a Swap button in `trailing`. Existing rows without `trailing` retain their current layout. On iOS, trailing controls reserve their intrinsic width and the weighted columns fill the remaining row width. Changing between linear and table layout rebinds retained cells even when their row payload is unchanged.
 
 `DataColumn.textSegments` and `secondaryTextSegments` reuse `ValueTextSegment` (`text`, optional `style: 'subscript'`) for formatted prices, balances, and values in each independent table column. Plain `text` and `secondaryText` remain the spoken/fallback strings. Missing segments preserve existing rendering.
