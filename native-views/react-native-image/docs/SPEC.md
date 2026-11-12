@@ -807,6 +807,11 @@ The replay never touches the network. The view-side behavior is unchanged: a
 prewarmed image binds in the mount frame, anything else loads asynchronously as
 before.
 
+On iOS, request contexts resolve the image scale from the original source URL
+before thumbnail cache-key rewriting. Startup entries retain that scale and
+restore it during replay, so `@2x`/`@3x` images keep the same logical size and
+`center` presentation in normal, synchronous and prewarmed decoding.
+
 #### Main-thread decode of small local images (iOS and Android)
 
 This is the one exception to "UI probes may only access decoded memory" and

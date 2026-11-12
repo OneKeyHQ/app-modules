@@ -1084,6 +1084,8 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertEqual(promoted, true)
     XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().hits, 1)
 
+    // Test the dimension limit independently of the preceding decode's frame budget.
+    OneKeyMainThreadDecode.resetForTesting()
     // Oversized source dimension (> 512px) must be rejected on the main thread.
     let largeCanvasImage = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600), format: format).image { ctx in
       UIColor.black.setFill()

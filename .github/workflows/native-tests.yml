@@ -715,12 +715,18 @@ jobs:
           plan.fetch('testSchemes').each do |name|
             target = project.targets.find { |candidate| candidate.name == name }
             abort "Missing unit test target: #{name}" unless target && target.product_type == 'com.apple.product-type.bundle.unit-test'
-            target.dependencies.reject! do |dep|
-              dep.name&.start_with?('AppHost-') || dep.target&.name&.start_with?('AppHost-')
+            # NativeList's video tests require the foreground app host declared by its podspec.
+            needs_app_host = name == 'react-native-native-list-Unit-Tests'
+            unless needs_app_host
+              target.dependencies.reject! do |dep|
+                dep.name&.start_with?('AppHost-') || dep.target&.name&.start_with?('AppHost-')
+              end
             end
             target.build_configurations.each do |config|
-              config.build_settings.delete('TEST_HOST')
-              config.build_settings.delete('BUNDLE_LOADER')
+              unless needs_app_host
+                config.build_settings.delete('TEST_HOST')
+                config.build_settings.delete('BUNDLE_LOADER')
+              end
               config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = [
                 '$(inherited)',
                 '@executable_path/Frameworks',

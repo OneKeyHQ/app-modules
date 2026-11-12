@@ -752,6 +752,10 @@ enum OneKeyImageRequestContext {
   ) -> [SDWebImageContextOption: Any] {
     var context = baseContext
     context[.customManager] = manager
+    if let url {
+      // Thumbnail keys insert a suffix between @2x/@3x and the file extension.
+      context[.imageScaleFactor] = NSNumber(value: Double(SDImageScaleFactorForKey(url.absoluteString)))
+    }
     if let safetyTracker {
       for (key, value) in transportGuards(tracker: safetyTracker) {
         context[key] = value

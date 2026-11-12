@@ -44,6 +44,7 @@ final class NativeListMediaVisibilityTests: XCTestCase {
 @MainActor
 final class NativeListMediaFrameCaptureTests: XCTestCase {
   func testVisibleVideoReleasesPlayerAfterCapturingFirstFrame() throws {
+    XCTAssertEqual(UIApplication.shared.applicationState, .active, "Video capture requires a foreground app host")
     let url = try writeVideo()
     defer { try? FileManager.default.removeItem(at: url) }
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
