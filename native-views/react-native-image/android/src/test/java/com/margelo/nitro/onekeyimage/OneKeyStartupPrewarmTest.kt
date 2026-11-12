@@ -481,10 +481,33 @@ class OneKeyStartupPrewarmTest {
     val jpegRot180 = buildJpegWithExif(orientation = 3, littleEndian = true)
     val webpTranspose = buildWebpWithExif(orientation = 5)
 
+    fun buildPngWithPostIdatExif(orientation: Int): ByteArray {
+      val basePng = createValidPng(32, 16)
+      val tiff = buildTiffOrientation(orientation, littleEndian = false)
+      // Insert eXIf chunk immediately before the 12-byte IEND chunk at the end of basePng
+      val iendStart = basePng.size - 12
+      val out = ByteArrayOutputStream()
+      out.write(basePng, 0, iendStart)
+      val dos = DataOutputStream(out)
+      val typeBytes = "eXIf".toByteArray(Charsets.US_ASCII)
+      dos.writeInt(tiff.size)
+      dos.write(typeBytes)
+      dos.write(tiff)
+      val crc = CRC32().apply {
+        update(typeBytes)
+        update(tiff)
+      }
+      dos.writeInt(crc.value.toInt())
+      out.write(basePng, iendStart, 12)
+      return out.toByteArray()
+    }
+    val pngPostIdatTransverse = buildPngWithPostIdatExif(orientation = 7)
+
     assertEquals(6, OneKeyImageStartupPrewarm.extractExifOrientation(jpegRot90Le))
     assertEquals(8, OneKeyImageStartupPrewarm.extractExifOrientation(jpegRot270Be))
     assertEquals(3, OneKeyImageStartupPrewarm.extractExifOrientation(jpegRot180))
     assertEquals(5, OneKeyImageStartupPrewarm.extractExifOrientation(webpTranspose))
+    assertEquals(7, OneKeyImageStartupPrewarm.extractExifOrientation(pngPostIdatTransverse))
     assertEquals(1, OneKeyImageStartupPrewarm.extractExifOrientation(createValidPng(32, 32)))
 
     // Verify decodeStaticBitmap swaps sourceWidth/sourceHeight when EXIF orientation is 5..8

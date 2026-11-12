@@ -556,12 +556,13 @@ public final class OneKeyNamedSVG {
     }
   }
 
-  /// Main-thread path for a memory miss: a small icon whose raster is already on
-  /// disk is read and bound in the same frame. It never parses SVG, loads the
-  /// manifest or waits for a lock; any of those leaves the miss to the workers.
+  /// Main-thread path for a memory miss: a small icon (<= 192px edge and <= 32 KiB
+  /// encoded raster on disk) is read and bound in the same frame. It never parses
+  /// SVG, loads the manifest or waits for a lock; any of those leaves the miss to workers.
   public func diskRender(name: String, color: String, width: Int, height: Int,
                          scale: CGFloat) -> RenderResult? {
-    guard width <= OneKeyMainThreadDecode.maximumIconEdge,
+    guard width > 0, height > 0,
+          width <= OneKeyMainThreadDecode.maximumIconEdge,
           height <= OneKeyMainThreadDecode.maximumIconEdge else { return nil }
     return OneKeyMainThreadDecode.run {
       decode(Request(name: name, color: color, width: width, height: height, scale: scale,

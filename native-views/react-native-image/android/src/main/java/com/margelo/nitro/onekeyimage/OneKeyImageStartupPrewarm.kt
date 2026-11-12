@@ -791,7 +791,7 @@ internal object OneKeyImageStartupPrewarm {
           val orientation = parseTiffOrientation(bytes, tiffStart, payloadEnd)
           if (orientation in 1..8) return orientation
         }
-        if (chunkType == "IDAT" || chunkType == "IEND") break
+        if (chunkType == "IEND") break
         chunkPos = payloadEnd + 4
       }
     }

@@ -791,10 +791,19 @@ optional `thumbDiskFile` / `rawDiskFile`), optional cache namespace (`avatar`) o
 shape flag (`round`), target pixel dimensions, and `launch`. Legacy plaintext entries are migrated
 on read and overwritten with hashed entries on the next flush. At the next
 process start each entry is read from the corresponding disk cache, validated
-through `OneKeyImageSafetyPolicy` / `OneKeyEncodedImageInspector`, decoded at the recorded target size, and
+through `OneKeyImageSafetyPolicy` / `OneKeyEncodedImageInspector`, decoded at the recorded target size
+(normalizing EXIF orientation `1..8` — including swapping source width/height for
+orientations `5..8` and applying the rotation/flip transform for JPEG `APP1 Exif`,
+WebP `EXIF`, and pre- or post-`IDAT` PNG `eXIf` metadata — restoring the display
+bitmap density on Android after `inDensity`/`inTargetDensity` downsampling, and
+applying circular cropping with matching canvas/bitmap density when `round` is set), and
 stored in the memory cache under its prewarm hash key, which the view's
-synchronous memory probe claims and displays on first hit. The
-replay never touches the network. The view-side behavior is unchanged: a
+synchronous memory probe claims and displays on first hit (requests carrying
+custom headers bypass the unauthenticated prewarmed bitmap cache). Clearing the
+disk cache (`clearDisk()` / `clearAll()`) advances a generation fence and
+synchronizes with the background writer so queued pre-clear startup flushes or
+local/fallback disk-cache writes cannot recreate files after clearing completes.
+The replay never touches the network. The view-side behavior is unchanged: a
 prewarmed image binds in the mount frame, anything else loads asynchronously as
 before.
 
@@ -813,9 +822,10 @@ hold. Otherwise the request takes the asynchronous pipeline unchanged.
 - Encoded size at most 32 KiB, checked from file attributes before the bytes
   are read; source dimensions at most 512 px per edge, read from the header
   before decoding; static image; target thumbnail at most 256 px per edge.
-- Named icons: requested size at most 192 px per edge, the manifest already
-  loaded, its lock uncontended, and the raster present on disk. An icon that
-  still needs SVG parsing is asynchronous.
+- Named icons: requested size at most 192 px per edge, encoded disk raster at
+  most 32 KiB (checked from file attributes before decoding on both iOS and
+  Android), the manifest already loaded, its lock uncontended, and the raster
+  present on disk. An icon that still needs SVG parsing is asynchronous.
 - A shared budget of 4 ms per 1/60 s window. Each attempt, hit or miss, is
   charged its wall time; once the window has spent the budget, later misses in
   it are asynchronous. The filters above bound a single decode, the budget
@@ -824,7 +834,8 @@ hold. Otherwise the request takes the asynchronous pipeline unchanged.
   contention, disk misses, limit rejections, window counts, and latency
   percentiles).
 
-The encoded and decoded safety checks of the pipeline run on this path too.
+The encoded and decoded safety checks of the pipeline (including EXIF orientation
+normalization and display-density restoration on Android) run on this path too.
 The result is stored under the exact key of the view's memory probe, which is
 then repeated, so such a load reports `cacheType: memory`. The process-start
 hook loads the icon manifest even without a startup list, because every icon
