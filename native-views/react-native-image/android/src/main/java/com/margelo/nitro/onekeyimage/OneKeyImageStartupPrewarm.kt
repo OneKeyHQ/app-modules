@@ -171,7 +171,7 @@ internal object OneKeyImageStartupPrewarm {
     if (
       !isSafeToken(safeKey) ||
       bytes.isEmpty() ||
-      bytes.size.toLong() > OneKeyImageSafety.MAX_ENCODED_BYTES
+      bytes.size.toLong() > MAX_FALLBACK_DISK_BYTES
     ) {
       return
     }
@@ -444,14 +444,14 @@ internal object OneKeyImageStartupPrewarm {
           uri.startsWith("file://") -> {
             val rawPath = uri.removePrefix("file://").substringBefore('?').substringBefore('#')
             val f = File(rawPath)
-            if (f.isFile && f.length() in 1L..OneKeyImageSafety.MAX_ENCODED_BYTES) f.readBytes() else null
+            if (f.isFile && f.length() in 1L..MAX_FALLBACK_DISK_BYTES) f.readBytes() else null
           }
           uri.startsWith("data:") -> {
             val comma = uri.indexOf(',')
             if (comma > 0 && uri.substring(0, comma).lowercase(Locale.ROOT).contains(";base64")) {
               val payloadStart = comma + 1
               val count = OneKeyImageSafety.dataUriDecodedByteCount(uri, payloadStart)
-              if (count in 1L..OneKeyImageSafety.MAX_DATA_URI_DECODED_BYTES) {
+              if (count in 1L..minOf(MAX_FALLBACK_DISK_BYTES, OneKeyImageSafety.MAX_DATA_URI_DECODED_BYTES)) {
                 OneKeyImageSafety.decodeDataUriBase64(uri.substring(payloadStart))
               } else null
             } else null

@@ -329,8 +329,20 @@ class OneKeyStartupPrewarmTest {
       postCloseFiles.size,
     )
 
-    // 6b. Even before the startup recorder closes, fallback directory enforces file count & byte budget.
+    // 6b. Even before the startup recorder closes, fallback directory enforces file count & byte budget,
+    // including rejecting a single protected source that individually exceeds MAX_FALLBACK_DISK_BYTES.
     OneKeyImageStartupPrewarm.resetForTesting(file = startupJsonFile, cacheDir = tempDir)
+    val oversizedSingleKey = "oversized_single_key"
+    val oversizedBytes = ByteArray(OneKeyImageStartupPrewarm.MAX_FALLBACK_DISK_BYTES.toInt() + 1)
+    OneKeyImageStartupPrewarm.writeFallbackDiskBytes(
+      cacheDir = tempDir,
+      safeKey = oversizedSingleKey,
+      bytes = oversizedBytes,
+    )
+    assertFalse(
+      "Single write exceeding MAX_FALLBACK_DISK_BYTES must be rejected before creating a file",
+      File(fallbackDir, oversizedSingleKey).exists(),
+    )
     for (i in 0 until 100) {
       OneKeyImageStartupPrewarm.writeFallbackDiskBytes(
         cacheDir = tempDir,

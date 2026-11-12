@@ -542,6 +542,14 @@ final class OneKeyImageStartupPrewarm {
     return metrics
   }
 
+  static func decodeForTesting(
+    data: Data,
+    cacheKey: String,
+    context: [SDWebImageContextOption: Any]
+  ) -> UIImage? {
+    SDImageCacheDecodeImageData(data, cacheKey, [], context)
+  }
+
   func flushForTesting(forceClose: Bool = true) {
     Self.writer.sync {
       self.lock.lock()

@@ -1177,7 +1177,11 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
         OneKeyImagePipeline.manager.cacheKey(for: url, context: thumbContext)
       )
       let normalDecoded = try XCTUnwrap(
-        SDImageCacheDecodeImageData(data, thumbKey, [], thumbContext)
+        OneKeyImageStartupPrewarm.decodeForTesting(
+          data: data,
+          cacheKey: thumbKey,
+          context: thumbContext
+        )
       )
       XCTAssertEqual(normalDecoded.scale, expectedScale)
       XCTAssertEqual(normalDecoded.size, CGSize(width: 20, height: 20))
