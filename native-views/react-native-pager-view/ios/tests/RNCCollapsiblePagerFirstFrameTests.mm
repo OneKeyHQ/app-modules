@@ -936,6 +936,8 @@ using namespace facebook::react;
   UICollectionViewFlowLayout *horizontalLayout =
     (UICollectionViewFlowLayout *)horizontalList.collectionViewLayout;
   horizontalLayout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
+  horizontalList.alwaysBounceVertical = NO;
+  horizontalList.alwaysBounceHorizontal = YES;
 
   [pager setNeedsLayout];
   [pager layoutIfNeeded];
