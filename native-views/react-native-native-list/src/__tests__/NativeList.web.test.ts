@@ -2892,6 +2892,29 @@ describe('web row style', () => {
     expect(body.querySelector('[data-nl-slot="valueSecondary"]')).toBeNull();
   });
 
+  it('spaces identity trailing accessories without separating the lines of a value pair', () => {
+    const body = render({
+      type: 'identity',
+      key: 'network',
+      title: 'Arbitrum',
+      subtitle: '88.0%',
+      leading: { kind: 'icon', name: 'coin' },
+      trailing: [
+        { kind: 'valuePair', primary: '0.002909', secondary: '$40.96' },
+        { kind: 'chevron' },
+      ],
+      style: { trailingGap: 12 },
+    });
+    const accessories = body.querySelector<HTMLElement>(
+      '.ok-native-list-accessories'
+    )!;
+    const pair = body.querySelector<HTMLElement>('.ok-native-list-amounts')!;
+    expect(pair.parentElement).toBe(accessories);
+    expect(accessories.style.gap).toBe('12px');
+    // A value pair is one accessory: trailingGap never spreads its two lines.
+    expect(pair.style.gap).toBe('');
+  });
+
   it('tags each slot with the model field it renders', () => {
     const body = render({
       type: 'message',

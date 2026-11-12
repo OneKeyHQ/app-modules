@@ -505,10 +505,10 @@ function applyIdentityStyle(body: HTMLElement, row: IdentityRow) {
   }
   if (box.trailingGap !== undefined) {
     const gap = String(box.trailingGap) + 'px';
+    // The accessory row only. A value pair is one accessory whose two lines
+    // are a flex column, so a gap there would push the lines apart.
     body
-      .querySelectorAll<HTMLElement>(
-        '.ok-native-list-accessories, .ok-native-list-amounts'
-      )
+      .querySelectorAll<HTMLElement>('.ok-native-list-accessories')
       .forEach((trailing) => {
         trailing.style.gap = gap;
       });
