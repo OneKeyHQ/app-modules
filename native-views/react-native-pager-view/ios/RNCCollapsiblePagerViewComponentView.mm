@@ -6237,12 +6237,15 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     }
   }
   if (pageIndex == NSNotFound) return;
+  if ([self verticalScrollViewForPageAtIndex:pageIndex] != scrollView) return;
 
   NSString *pageKey = [self pageKeyForIndex:pageIndex];
   BOOL hasReleasedStateForPage = _releasedPageScrollStates[pageKey] != nil;
   BOOL currentPageNeedsOwner = pageIndex == _currentIndex &&
     (_awaitingScrollOwnerForCurrentPage || _needsScrollObserverReattachAfterMount ||
      hasReleasedStateForPage ||
+     (_observedScrollView == nil &&
+      (_scrollReconcileScheduled || RNCIsMountedNativeListScrollView(scrollView))) ||
      (_observedScrollView != nil &&
       [_observedScrollView isKindOfClass:UICollectionView.class] &&
       !RNCIsMountedNativeListScrollView(_observedScrollView) &&

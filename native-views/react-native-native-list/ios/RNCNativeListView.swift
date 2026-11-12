@@ -973,6 +973,7 @@ final class NativeListView: UIView {
     guard !disposed,
           window != nil,
           collectionView.delegate === self,
+          flowLayout.scrollDirection == .vertical,
           collectionView.bounds.width > 0,
           collectionView.bounds.height > 0 else { return }
     NotificationCenter.default.post(
@@ -1007,11 +1008,11 @@ final class NativeListView: UIView {
       configureLayout(config)
       if lastLayoutDirection != direction { rebindRowsForLayoutDirection(config) }
     }
-    performPendingScrollIfNeeded()
-    layoutContainerSlots()
     if !hadUsableBounds && collectionView.bounds.width > 0 && collectionView.bounds.height > 0 {
       notifyPagerScrollViewReadyIfNeeded()
     }
+    performPendingScrollIfNeeded()
+    layoutContainerSlots()
   }
 
   // A layout-direction change may arrive without a layout pass (semantic attribute or trait).
@@ -3613,7 +3614,9 @@ final class NativeListFlowLayout: UICollectionViewFlowLayout {
     guard scrollDirection == .horizontal, let collectionView else { return }
 
     var nextX = sectionInset.left
-    let itemCount = collectionView.numberOfItems(inSection: 0)
+    let itemCount = collectionView.numberOfSections > 0
+      ? collectionView.numberOfItems(inSection: 0)
+      : 0
     for item in 0..<itemCount {
       let indexPath = IndexPath(item: item, section: 0)
       guard let attributes = super.layoutAttributesForItem(at: indexPath)?.copy()

@@ -1580,6 +1580,11 @@ it. The first numeric measurement, including a genuine zero, is authoritative
 and retains ordinary dynamic growth and shrink behavior. Legacy four- and
 six-number arrays remain accepted. Only header slot 0 may be null, and the
 wrapper and native binary must match for this pending-header protocol.
+When the vertical iOS collection view first obtains positive bounds in
+`layoutSubviews`, it emits `OneKeyNativeScrollViewDidBecomeReady` before
+executing pending scroll requests or laying out container slots so an enclosing
+`CollapsiblePagerView` can synchronously attach and apply top insets, offset
+alignment, and sticky heights during the same layout pass.
 
 Android uses ConcatAdapter with three single-item slot adapters around the existing
 data adapter; adapter binding indices stay local while layout-manager positions

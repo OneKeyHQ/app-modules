@@ -905,6 +905,87 @@ using namespace facebook::react;
   return component;
 }
 
+- (void)testUnmeasuredNativeListAttachesAndAlignsSynchronouslyOnFirstLayoutReadiness
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
+  [pager setValue:@293 forKey:@"headerHeight"];
+  [pager setValue:@52 forKey:@"stickyHeaderHeight"];
+  Class nativeListClass = NSClassFromString(@"HybridNativeListComponent");
+  XCTAssertNotNil(nativeListClass, @"The real NativeList test dependency must be linked");
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+
+  RCTViewComponentView *horizontalComponent = [[nativeListClass alloc] init];
+  horizontalComponent.tag = 92002;
+  horizontalComponent.frame = CGRectZero;
+  horizontalComponent.contentView.frame = CGRectZero;
+  [page.view addSubview:horizontalComponent];
+
+  RCTViewComponentView *component = [[nativeListClass alloc] init];
+  component.tag = 92003;
+  component.frame = CGRectZero;
+  component.contentView.frame = CGRectZero;
+  [page.view addSubview:component];
+  [self addTeardownBlock:^{
+    [horizontalComponent prepareForRecycle];
+    [horizontalComponent removeFromSuperview];
+    [component prepareForRecycle];
+    [component removeFromSuperview];
+  }];
+
+  UICollectionView *horizontalList = nil;
+  for (UIView *child in horizontalComponent.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      horizontalList = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(horizontalList);
+  UICollectionViewFlowLayout *horizontalLayout =
+    (UICollectionViewFlowLayout *)horizontalList.collectionViewLayout;
+  horizontalLayout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
+  horizontalList.alwaysBounceVertical = NO;
+  horizontalList.alwaysBounceHorizontal = YES;
+
+  [pager setNeedsLayout];
+  [pager layoutIfNeeded];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertFalse([[pager valueForKey:@"awaitingScrollOwnerForCurrentPage"] boolValue]);
+  XCTAssertTrue([[pager valueForKey:@"scrollReconcileScheduled"] boolValue]);
+
+  horizontalComponent.frame = CGRectMake(0, 0, 390, 120);
+  horizontalComponent.contentView.frame = horizontalComponent.bounds;
+  [horizontalComponent.contentView layoutIfNeeded];
+  [[NSNotificationCenter defaultCenter]
+    postNotificationName:@"OneKeyNativeScrollViewDidBecomeReady"
+                  object:horizontalList];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertEqualWithAccuracy(horizontalList.contentInset.top, 0, 0.01);
+  XCTAssertEqualWithAccuracy(horizontalList.contentOffset.y, 0, 0.01);
+  XCTAssertFalse(horizontalList.alwaysBounceVertical);
+
+  UICollectionView *list = nil;
+  for (UIView *child in component.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      list = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, 0, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, 0, 0.01);
+
+  component.frame = CGRectMake(0, 0, 390, 697);
+  component.contentView.frame = component.bounds;
+  [component.contentView layoutIfNeeded];
+
+  UIView *header = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqual(header.superview, list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, 345, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, -345, 0.01);
+}
+
 - (void)testNativeListFooterScrollViewCannotReplacePageOwner
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];

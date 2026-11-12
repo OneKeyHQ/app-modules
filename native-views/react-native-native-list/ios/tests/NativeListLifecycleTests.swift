@@ -1340,6 +1340,50 @@ final class NativeListLifecycleTests: XCTestCase {
     view.dispose()
   }
 
+  func testFirstUsableBoundsNotifiesPagerBeforeSlotLayout() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    let root = UIViewController()
+    window.rootViewController = root
+    window.isHidden = false
+    let view = NativeListView(frame: .zero)
+    root.view.addSubview(view)
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.rootViewController = nil
+      window.isHidden = true
+    }
+
+    let header = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 65))
+    view.mountContainerSlot(header, atIndex: 0)
+    view.setContainerSlotHeightsJson("[65,0,0,0,0,0]")
+    view.applySnapshotJson(try scrollingSnapshot(count: 6))
+
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let owner = NSObject()
+    var readyCount = 0
+    let observer = NotificationCenter.default.addObserver(
+      forName: Notification.Name("OneKeyNativeScrollViewDidBecomeReady"),
+      object: list,
+      queue: nil
+    ) { _ in
+      readyCount += 1
+      view.setPagerStickyHeight(52, forOwner: owner)
+      list.contentInset = UIEdgeInsets(top: 345, left: 0, bottom: 0, right: 0)
+      list.setContentOffset(CGPoint(x: 0, y: -345), animated: false)
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    view.frame = CGRect(x: 0, y: 0, width: 390, height: 697)
+    view.layoutIfNeeded()
+
+    let host = try XCTUnwrap(header.superview)
+    XCTAssertEqual(readyCount, 1)
+    XCTAssertEqual(list.contentInset.top, 345, accuracy: 0.01)
+    XCTAssertEqual(list.contentOffset.y, -345, accuracy: 0.01)
+    XCTAssertNil(host.layer.mask)
+  }
+
   func testSidecarCentersRowsWhenConfiguredBeforeFirstWidth() throws {
     try assertHomeSidecarGeometry(sidecarBeforeFirstLayout: true)
   }
