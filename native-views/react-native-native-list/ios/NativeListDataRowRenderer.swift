@@ -191,6 +191,8 @@ final class NativeListDataRowCell: NativeListRendererCell {
 
 private final class NativeListTableColumnView: UIStackView {
   private let primaryLine = UIStackView()
+  private let primaryLeadingSpace = UIView()
+  private let primaryTrailingSpace = UIView()
   private let primaryLabel = NativeListTextLabel()
   private let titleIconView = NativeListIconImageView()
   private let secondaryTitleIconView = NativeListIconImageView()
@@ -199,6 +201,8 @@ private final class NativeListTableColumnView: UIStackView {
   private let secondaryLeadingLabel = NativeListTextLabel()
   private let secondaryLabel = NativeListTextLabel()
   private var linear = false
+  private var packedLinear = false
+  private var equalPrimarySpaces: NSLayoutConstraint?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -213,6 +217,13 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.numberOfLines = 1
     primaryLabel.lineBreakMode = .byTruncatingTail
     primaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    for space in [primaryLeadingSpace, primaryTrailingSpace] {
+      space.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+      space.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
+      space.isHidden = true
+    }
+    equalPrimarySpaces = primaryLeadingSpace.widthAnchor.constraint(
+      equalTo: primaryTrailingSpace.widthAnchor)
     for icon in [titleIconView, secondaryTitleIconView] {
       icon.contentMode = .scaleAspectFit
       icon.translatesAutoresizingMaskIntoConstraints = false
@@ -225,10 +236,14 @@ private final class NativeListTableColumnView: UIStackView {
     badgesStack.alignment = .center
     badgesStack.spacing = 4
     badgesStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+    primaryLine.addArrangedSubview(primaryLeadingSpace)
+    primaryLine.setCustomSpacing(0, after: primaryLeadingSpace)
     primaryLine.addArrangedSubview(primaryLabel)
     primaryLine.addArrangedSubview(titleIconView)
     primaryLine.addArrangedSubview(secondaryTitleIconView)
     primaryLine.addArrangedSubview(badgesStack)
+    primaryLine.addArrangedSubview(primaryTrailingSpace)
+    primaryLine.setCustomSpacing(0, after: badgesStack)
 
     secondaryLine.axis = .horizontal
     secondaryLine.alignment = .center
@@ -251,6 +266,10 @@ private final class NativeListTableColumnView: UIStackView {
 
   func reset(clearPrimaryText: Bool = true) {
     linear = false
+    packedLinear = false
+    equalPrimarySpaces?.isActive = false
+    primaryLeadingSpace.isHidden = true
+    primaryTrailingSpace.isHidden = true
     primaryLine.alignment = .center
     for icon in [titleIconView, secondaryTitleIconView] {
       icon.image = nil
@@ -260,6 +279,7 @@ private final class NativeListTableColumnView: UIStackView {
     }
     primaryLine.setCustomSpacing(UIStackView.spacingUseDefault, after: primaryLabel)
     primaryLine.setCustomSpacing(UIStackView.spacingUseDefault, after: titleIconView)
+    primaryLine.setCustomSpacing(UIStackView.spacingUseDefault, after: secondaryTitleIconView)
     for label in [primaryLabel, secondaryLeadingLabel, secondaryLabel] {
       label.rowVerticalAlignment = nil
       label.rowOffsetY = 0
@@ -300,7 +320,11 @@ private final class NativeListTableColumnView: UIStackView {
     if descriptors.contains(where: { $0 != nil }) {
       primaryLine.setCustomSpacing(4, after: primaryLabel)
       primaryLine.setCustomSpacing(4, after: titleIconView)
-      if linear { primaryLine.alignment = .top }
+      if linear && !packedLinear { primaryLine.alignment = .top }
+      if packedLinear && badgesStack.isHidden {
+        primaryLine.setCustomSpacing(
+          0, after: secondaryTitleIconView.isHidden ? titleIconView : secondaryTitleIconView)
+      }
     }
   }
 
@@ -381,21 +405,29 @@ private final class NativeListTableColumnView: UIStackView {
     }
   }
 
-  /// Legacy linear layout: one label per column holding the primary text, up to two inline
-  /// badge runs and the secondary text on a second line. `secondaryLeadingText` is not shown.
-  /// Unstyled output is exactly the legacy label. `style.columns` / `style.columnSecondary`
-  /// map onto their attributed ranges (font, weight, color) and paragraphs (lineHeight,
-  /// alignment); `lines`/`truncate` and vertical alignment/offset act on the single label.
+  /// Columns with title icons pack the primary line separately, so a longer subtitle
+  /// cannot move the icons. Other linear columns retain the legacy single label.
+  /// `secondaryLeadingText` is not shown in either linear presentation.
+  /// Text styles retain the linear fonts, paragraphs and inline badge appearance.
+  /// No-icon columns keep applying both text styles to one legacy label.
   func bindLinear(
     column: [String: Any], badges: [[String: Any]], theme: [String: Any]?,
     style: [String: Any] = [:], fonts: NativeListFontFamilies
   ) {
     reset(clearPrimaryText: !linear)
     linear = true
+    packedLinear = column.dictionary("titleIcon") != nil
+      || column.dictionary("secondaryTitleIcon") != nil
     alignment = .fill
     badgesStack.isHidden = true
+    if packedLinear {
+      spacing = CGFloat(style.double("lineGap"))
+      primaryLine.spacing = CGFloat(style.double("titleBadgeGap"))
+    }
     let primaryStyle = style.dictionary("columns") ?? [:]
     let secondaryStyle = style.dictionary("columnSecondary") ?? [:]
+    let columnTextAlignment: NSTextAlignment = column.string("alignment") == "end"
+      ? .right : column.string("alignment") == "center" ? .center : .left
     func font(_ textStyle: [String: Any], size: CGFloat, weight: NativeListFontWeight) -> UIFont {
       guard textStyle["fontSize"] != nil || textStyle["fontWeight"] != nil else {
         return nativeListFont(ofSize: size, weight: weight, fonts: fonts)
@@ -419,7 +451,7 @@ private final class NativeListTableColumnView: UIStackView {
       let paragraph = NSMutableParagraphStyle()
       paragraph.alignment = NativeListTextStyles.marketTextAlignment(
         textStyle.string("alignment"), direction: direction)
-      if textStyle["alignment"] == nil { paragraph.alignment = primaryLabel.textAlignment }
+      if textStyle["alignment"] == nil { paragraph.alignment = columnTextAlignment }
       var attributes: [NSAttributedString.Key: Any] = [.paragraphStyle: paragraph]
       if textStyle["lineHeight"] != nil {
         let box = CGFloat(textStyle.double("lineHeight"))
@@ -432,9 +464,20 @@ private final class NativeListTableColumnView: UIStackView {
     }
     // Legacy physical alignment from the column data; set before the attributed text so that
     // unstyled paragraphs inherit it.
-    primaryLabel.textAlignment =
-      column.string("alignment") == "end"
-      ? .right : column.string("alignment") == "center" ? .center : .left
+    primaryLabel.textAlignment = columnTextAlignment
+    if packedLinear, primaryStyle["alignment"] != nil {
+      primaryLabel.textAlignment = NativeListTextStyles.marketTextAlignment(
+        primaryStyle.string("alignment"), direction: direction)
+    }
+    if packedLinear {
+      // Fillers absorb column slack while the title keeps its intrinsic width.
+      let directionIsRTL = direction == .rightToLeft
+      let leading = primaryLabel.textAlignment == .right ? !directionIsRTL : directionIsRTL
+      let centered = primaryLabel.textAlignment == .center
+      primaryLeadingSpace.isHidden = !centered && !leading
+      primaryTrailingSpace.isHidden = !centered && leading
+      equalPrimarySpaces?.isActive = centered
+    }
     let secondary = nativeListDataColumnText(column, "secondaryText")
     let primaryFont = font(primaryStyle, size: 14, weight: .medium)
     let attributed = NSMutableAttributedString(
@@ -449,25 +492,33 @@ private final class NativeListTableColumnView: UIStackView {
     // background and are its left padding. `titleBadgeGap` adds an exact, unfilled gap between
     // the title and the first pill as kern on the title's last composed character; unstyled
     // rows add no kern and stay byte-identical to legacy.
-    if style["titleBadgeGap"] != nil, !badges.isEmpty, primaryLength > 0 {
+    if !packedLinear, style["titleBadgeGap"] != nil, !badges.isEmpty, primaryLength > 0 {
       attributed.addAttribute(
         .kern, value: CGFloat(style.double("titleBadgeGap")),
         range: (attributed.string as NSString).rangeOfComposedCharacterSequence(
           at: primaryLength - 1))
     }
     for badge in badges.prefix(2) {
-      attributed.append(
-        NSAttributedString(
-          string: "  \(badge.string("text")) ",
-          attributes: [
-            .font: nativeListFont(ofSize: 12, weight: .medium, fonts: fonts),
-            .foregroundColor: nativeListColor(theme, "info", "#0D74CE"),
-            .backgroundColor: UIColor(nativeListHex: "#008FF519", fallback: .systemBlue),
-          ]))
+      let text = NSAttributedString(
+        string: "  \(badge.string("text")) ",
+        attributes: [
+          .font: nativeListFont(ofSize: 12, weight: .medium, fonts: fonts),
+          .foregroundColor: nativeListColor(theme, "info", "#0D74CE"),
+          .backgroundColor: UIColor(nativeListHex: "#008FF519", fallback: .systemBlue),
+        ])
+      if packedLinear {
+        let label = NativeListTextLabel()
+        label.attributedText = text
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        badgesStack.addArrangedSubview(label)
+        badgesStack.isHidden = false
+      } else {
+        attributed.append(text)
+      }
     }
     let primaryParagraph = paragraph(
       primaryStyle, font: primaryFont,
-      spacing: !secondary.isEmpty && style["lineGap"] != nil
+      spacing: !packedLinear && !secondary.isEmpty && style["lineGap"] != nil
         ? CGFloat(style.double("lineGap")) : nil)
     if !primaryParagraph.isEmpty {
       attributed.addAttributes(
@@ -483,29 +534,49 @@ private final class NativeListTableColumnView: UIStackView {
           textColor(column.string("secondaryTone", default: "secondary"), theme: theme)),
       ]
       attributes.merge(paragraph(secondaryStyle, font: secondaryFont, spacing: nil)) { $1 }
-      attributed.append(NSAttributedString(string: "\n", attributes: attributes))
-      attributed.append(nativeListDataSegments(
+      let secondaryText = nativeListDataSegments(
         NSAttributedString(string: secondary, attributes: attributes),
-        column.dictionaries("secondaryTextSegments")))
-      lines = min(3, lines + max(1, secondaryStyle.int("lines", default: 1)))
+        column.dictionaries("secondaryTextSegments"))
+      let secondaryLines = min(3, max(1, secondaryStyle.int("lines", default: 1)))
+      if packedLinear {
+        secondaryLabel.font = secondaryFont
+        secondaryLabel.textAlignment = secondaryStyle["alignment"] != nil
+          ? NativeListTextStyles.marketTextAlignment(
+            secondaryStyle.string("alignment"), direction: direction)
+          : columnTextAlignment
+        secondaryLabel.numberOfLines = secondaryLines
+        secondaryLabel.attributedText = secondaryText
+        secondaryLabel.lineBreakMode = NativeListTextStyles.styledLineBreakMode(
+          secondaryStyle, lines: secondaryLines)
+        secondaryLabel.rowVerticalAlignment = secondaryStyle["verticalAlignment"] as? String
+        secondaryLabel.rowOffsetY = CGFloat(secondaryStyle.double("offsetY"))
+        secondaryLabel.isHidden = false
+        secondaryLine.isHidden = false
+      } else {
+        attributed.append(NSAttributedString(string: "\n", attributes: attributes))
+        attributed.append(secondaryText)
+        lines = min(3, lines + secondaryLines)
+      }
     }
-    primaryLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
+    primaryLabel.font = packedLinear ? primaryFont : nativeListFont(ofSize: 12, fonts: fonts)
     primaryLabel.numberOfLines = lines
     primaryLabel.attributedText = attributed
     let truncation =
       primaryStyle["truncate"] != nil || primaryStyle["lines"] != nil
       ? primaryStyle
-      : secondaryStyle["truncate"] != nil || secondaryStyle["lines"] != nil ? secondaryStyle : nil
+      : !packedLinear && (secondaryStyle["truncate"] != nil || secondaryStyle["lines"] != nil)
+        ? secondaryStyle : nil
     primaryLabel.lineBreakMode =
       truncation.map { NativeListTextStyles.styledLineBreakMode($0, lines: lines) }
       ?? .byTruncatingTail
-    if let vertical = (primaryStyle["verticalAlignment"] ?? secondaryStyle["verticalAlignment"])
+    if let vertical = (primaryStyle["verticalAlignment"]
+      ?? (packedLinear ? nil : secondaryStyle["verticalAlignment"]))
       as? String
     {
       primaryLabel.rowVerticalAlignment = vertical
     }
     primaryLabel.rowOffsetY = CGFloat(
-      primaryStyle.double("offsetY", default: secondaryStyle.double("offsetY")))
+      primaryStyle.double("offsetY", default: packedLinear ? 0 : secondaryStyle.double("offsetY")))
   }
 
   func applySegments(_ column: [String: Any]) {

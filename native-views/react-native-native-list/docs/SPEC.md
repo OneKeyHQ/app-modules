@@ -2376,6 +2376,34 @@ acceptance or a performance improvement.
 
 `DataColumn.titleIcon` and `secondaryTitleIcon` reuse `IdentityRow.titleIcon` after the primary column text. They preserve native-asset and receipt-token symbols in the desktop asset column. Web `hoverActionKey` uses the same anchored help action as Identity rows; absent icons leave the existing column layout unchanged.
 
+### iOS linear column title icons — Implemented; scoped App runtime verification
+
+A linear column with either title icon keeps primary and secondary text on
+separate lines. The primary line is packed in title, title icon, secondary title
+icon, then badge order; the first icon follows the visible title by 4 points.
+A longer secondary line MUST NOT push either icon away from the primary title.
+Column alignment, semantic text styles, line gap, text segments, trailing
+accessories and weighted column widths retain their existing behavior. Linear
+columns without title icons retain the legacy single-label rendering, including
+inline badges. Rebinding a column between these presentations clears old icons,
+secondary text and badges. This corrects iOS rendering only; Android styled
+columns and Web already use separate primary and secondary lines. In the
+structured icon presentation, primary and secondary style alignment, truncation
+and vertical offsets apply to their own labels; an omitted alignment falls back
+to the column alignment. Flexible spaces keep the primary title/icon group
+packed at the chosen alignment without constraining the secondary line width.
+
+Conformance: `NativeListDataRowTitleIconLayoutTests` exercises the production
+UIKit cell for narrow/wide rows, long subtitles, both title icons and a badge,
+end-aligned amounts, typography and icon/no-icon reuse. Simulator verification
+in the consuming App remains separate from these renderer tests.
+
+The consuming App was rebuilt with this renderer and its iPhone 17 Pro Home
+token row was manually accepted: the native-token icon follows XMR, Preparing
+appears on the second line and the loading accessory remains beside the balance.
+This scoped check does not establish full UIKit XCTest coverage; that suite
+remains pending CI.
+
 `IdentityRow.titleSuffixes?: readonly { text: string; tone: 'secondary' | 'disabled'; maxWidth?: number }[]` supports up to three plain 12/16 labels on the title line. Each suffix truncates independently at its optional maximum width. This preserves Recent recipient EVM, network, and relative-time metadata without using background badges; rows without suffixes keep their present title layout.
 
 ### Web slot-list scroll ownership
