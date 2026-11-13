@@ -147,6 +147,57 @@ protocol NativeOverlayWindowOwner: AnyObject {
   func overlaySceneDidDisconnect(window: UIWindow)
 }
 
+/// Observes delivered window touches without participating in gesture arbitration.
+final class NativeOverlayAppTouchObserver: UIGestureRecognizer {
+  var onTouchesFinished: (() -> Void)?
+  private var activeTouches = Set<ObjectIdentifier>()
+  var hasActiveTouches: Bool { !activeTouches.isEmpty }
+
+  override init(target: Any?, action: Selector?) {
+    super.init(target: target, action: action)
+    configure()
+  }
+
+  private func configure() {
+    cancelsTouchesInView = false
+    delaysTouchesBegan = false
+    delaysTouchesEnded = false
+    requiresExclusiveTouchType = false
+  }
+
+  override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    activeTouches.formUnion(touches.map(ObjectIdentifier.init))
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {}
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    finish(touches)
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    finish(touches)
+  }
+
+  private func finish(_ touches: Set<UITouch>) {
+    let hadTouches = hasActiveTouches
+    activeTouches.subtract(touches.map(ObjectIdentifier.init))
+    guard hadTouches, !hasActiveTouches else { return }
+    state = .failed
+    onTouchesFinished?()
+  }
+
+  override func reset() {
+    super.reset()
+    let hadTouches = hasActiveTouches
+    activeTouches.removeAll()
+    if hadTouches { onTouchesFinished?() }
+  }
+}
+
 final class NativeOverlayWindowManager: NSObject {
   static let shared = NativeOverlayWindowManager()
 
@@ -185,12 +236,42 @@ final class NativeOverlayWindowManager: NSObject {
     }
   }
 
+  private final class WeakAppWindow {
+    weak var window: UIWindow?
+    init(_ window: UIWindow) { self.window = window }
+  }
+
+  private final class AppTouchObservation {
+    weak var window: UIWindow?
+    weak var appWindow: UIWindow?
+    let observer: NativeOverlayAppTouchObserver
+    var previousAppWindows: [ObjectIdentifier: WeakAppWindow] = [:]
+
+    var appWindows: [UIWindow] {
+      (appWindow.map { [$0] } ?? []) + previousAppWindows.values.compactMap(\.window)
+    }
+
+    init(window: UIWindow, appWindow: UIWindow, observer: NativeOverlayAppTouchObserver) {
+      self.window = window
+      self.appWindow = appWindow
+      self.observer = observer
+    }
+  }
+
   private var scenes: [ObjectIdentifier: [ObjectIdentifier: Entry]] = [:]
   private var retiredWindows: [ObjectIdentifier: [ObjectIdentifier: RetiredWindow]] = [:]
+  private var appTouchObservations: [ObjectIdentifier: AppTouchObservation] = [:]
   private var disconnectingScenes = Set<ObjectIdentifier>()
   private var sequence = 0
+  private let sceneIdentity: (UIWindowScene) -> ObjectIdentifier
 
-  override init() {
+  override convenience init() {
+    self.init(sceneIdentity: { ObjectIdentifier($0) })
+  }
+
+  // Internal identity projection lets native tests exercise scene ownership with real windows.
+  init(sceneIdentity: @escaping (UIWindowScene) -> ObjectIdentifier) {
+    self.sceneIdentity = sceneIdentity
     super.init()
     NotificationCenter.default.addObserver(
       self, selector: #selector(sceneDidDisconnect(_:)),
@@ -198,7 +279,13 @@ final class NativeOverlayWindowManager: NSObject {
     )
   }
 
-  deinit { NotificationCenter.default.removeObserver(self) }
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+    for observation in appTouchObservations.values {
+      observation.observer.onTouchesFinished = nil
+      observation.window?.removeGestureRecognizer(observation.observer)
+    }
+  }
 
   /// Every owner has an independent root presenter, shared by no other entry.
   func window(for owner: NativeOverlayWindowOwner, level: NativeOverlayLevel,
@@ -208,10 +295,11 @@ final class NativeOverlayWindowManager: NSObject {
       ((hostWindow as? NativeOverlayPassthroughWindow)?.rootViewController
         as? NativeOverlayRootViewController)?.appWindow ?? hostWindow
     guard let scene = appWindow.windowScene, scene.activationState != .unattached else { return nil }
-    let sceneKey = ObjectIdentifier(scene)
+    let sceneKey = sceneIdentity(scene)
     guard !disconnectingScenes.contains(sceneKey) else { return nil }
     let orphanWindows = (scenes[sceneKey] ?? [:]).values.filter { $0.owner == nil }.map(\.window)
     orphanWindows.forEach { entryRemoved(from: $0) }
+    observeTouches(in: appWindow, appWindow: appWindow)
     let ownerKey = ObjectIdentifier(owner)
     var entries = scenes[sceneKey] ?? [:]
     let entry: Entry
@@ -234,9 +322,11 @@ final class NativeOverlayWindowManager: NSObject {
     }
     entry.appWindow = appWindow
     (entry.window.rootViewController as? NativeOverlayRootViewController)?.appWindow = appWindow
+    observeTouches(in: entry.window, appWindow: appWindow)
     reorder(entries)
     entry.window.isHidden = false
     entry.window.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+    removeUnusedTouchObservers()
     return entry.window
   }
 
@@ -268,8 +358,8 @@ final class NativeOverlayWindowManager: NSObject {
     scenes[sceneKey]?[ownerKey] = nil
     let remaining = scenes[sceneKey] ?? [:]
     if remaining.isEmpty { scenes[sceneKey] = nil }
-    if Self.interactiveCoordinator(in: entry.appWindow) != nil {
-      // Destroying this window context can strand a touch already routed to the app's interactive sheet.
+    if hasActiveTouches(in: entry.appWindow) || Self.interactiveCoordinator(in: entry.appWindow) != nil {
+      // Keep the routing context until this host's delivered touches and UIKit interactions finish.
       let retirement = RetiredWindow(window: entry.window, appWindow: entry.appWindow)
       let windowKey = ObjectIdentifier(entry.window)
       retiredWindows[sceneKey, default: [:]][windowKey] = retirement
@@ -277,12 +367,14 @@ final class NativeOverlayWindowManager: NSObject {
     } else {
       release(entry.window)
     }
+    removeUnusedTouchObservers()
     reorder(remaining)
     guard wasKey, let scene,
           scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive else { return }
     let next = remaining.values.filter { Self.eligible($0, in: scene) }
       .max { Self.ordered($0, before: $1) }
-    (next?.window ?? entry.appWindow)?.makeKey()
+    let appWindow = entry.appWindow?.windowScene === scene ? entry.appWindow : nil
+    (next?.window ?? appWindow)?.makeKey()
   }
 
   func restoreFocus(_ responder: UIView, in window: UIWindow) -> Bool {
@@ -351,6 +443,92 @@ final class NativeOverlayWindowManager: NSObject {
     window.windowScene = nil
   }
 
+  private func observeTouches(in window: UIWindow, appWindow: UIWindow) {
+    let windowKey = ObjectIdentifier(window)
+    if let observation = appTouchObservations[windowKey] {
+      if observation.appWindow !== appWindow, let previous = observation.appWindow {
+        // Reparenting does not change the context of an already delivered or queued touch stream.
+        if observation.observer.hasActiveTouches || hasRetirements(for: previous) {
+          observation.previousAppWindows[ObjectIdentifier(previous)] = WeakAppWindow(previous)
+        }
+        observation.appWindow = appWindow
+        scheduleObservationCleanup(observation, windowKey: windowKey)
+        scheduleRetirementCheck(for: previous)
+      } else {
+        observation.appWindow = appWindow
+      }
+      return
+    }
+    let observer = NativeOverlayAppTouchObserver(target: nil, action: nil)
+    appTouchObservations[windowKey] = AppTouchObservation(
+      window: window, appWindow: appWindow, observer: observer)
+    observer.onTouchesFinished = { [weak self, weak window, weak observer] in
+      guard let self, let window, let observer,
+            let observation = self.appTouchObservations[ObjectIdentifier(window)],
+            observation.observer === observer else { return }
+      self.scheduleObservationCleanup(observation, windowKey: ObjectIdentifier(window))
+      for appWindow in observation.appWindows { self.scheduleRetirementCheck(for: appWindow) }
+    }
+    window.addGestureRecognizer(observer)
+  }
+
+  private func scheduleObservationCleanup(_ observation: AppTouchObservation, windowKey: ObjectIdentifier) {
+    guard !observation.previousAppWindows.isEmpty else { return }
+    DispatchQueue.main.async { [weak self, weak observation] in
+      guard let self, let observation, self.appTouchObservations[windowKey] === observation,
+            !observation.observer.hasActiveTouches else { return }
+      self.prunePreviousAppWindows(in: observation)
+    }
+  }
+
+  private func prunePreviousAppWindows(in observation: AppTouchObservation) {
+    guard !observation.observer.hasActiveTouches else { return }
+    // An idle gap does not retire the old context if another touch or transition still owns it.
+    observation.previousAppWindows = observation.previousAppWindows.filter {
+      $0.value.window.map { hasRetirements(for: $0) } ?? false
+    }
+  }
+
+  private func hasRetirements(for appWindow: UIWindow) -> Bool {
+    retiredWindows.values.contains { $0.values.contains { $0.appWindow === appWindow } }
+  }
+
+  private func scheduleRetirementCheck(for appWindow: UIWindow?) {
+    guard let appWindow, hasRetirements(for: appWindow) else { return }
+    DispatchQueue.main.async { [weak self, weak appWindow] in
+      guard let self, let appWindow else { return }
+      // The source observer may be gone; query current host ownership and all delivered touches.
+      for (sceneKey, windows) in self.retiredWindows {
+        for (windowKey, retirement) in windows where retirement.appWindow === appWindow {
+          self.finishRetirement(retirement, sceneKey: sceneKey, windowKey: windowKey)
+        }
+      }
+    }
+  }
+
+  private func hasActiveTouches(in appWindow: UIWindow?) -> Bool {
+    guard let appWindow else { return false }
+    return appTouchObservations.values.contains {
+      $0.observer.hasActiveTouches && ($0.appWindow === appWindow ||
+        $0.previousAppWindows[ObjectIdentifier(appWindow)]?.window === appWindow)
+    }
+  }
+
+  private func removeUnusedTouchObservers() {
+    for (key, observation) in appTouchObservations {
+      prunePreviousAppWindows(in: observation)
+      let active = observation.window.map { window in
+        scenes.values.contains { $0.values.contains { $0.window === window || $0.appWindow === window } } ||
+          retiredWindows.values.contains { $0.values.contains { $0.window === window || $0.appWindow === window } }
+      } ?? false
+      guard !active else { continue }
+      observation.observer.onTouchesFinished = nil
+      observation.window?.removeGestureRecognizer(observation.observer)
+      appTouchObservations[key] = nil
+      for appWindow in observation.appWindows { scheduleRetirementCheck(for: appWindow) }
+    }
+  }
+
   private static func interactiveCoordinator(in appWindow: UIWindow?) -> UIViewControllerTransitionCoordinator? {
     var controller = appWindow?.rootViewController
     while let current = controller {
@@ -365,12 +543,15 @@ final class NativeOverlayWindowManager: NSObject {
   private func finishRetirement(_ retirement: RetiredWindow, sceneKey: ObjectIdentifier,
                                 windowKey: ObjectIdentifier) {
     guard retiredWindows[sceneKey]?[windowKey] === retirement else { return }
-    guard let coordinator = Self.interactiveCoordinator(in: retirement.appWindow) else {
+    let coordinator = Self.interactiveCoordinator(in: retirement.appWindow)
+    if coordinator == nil && !hasActiveTouches(in: retirement.appWindow) {
       retiredWindows[sceneKey]?[windowKey] = nil
       if retiredWindows[sceneKey]?.isEmpty == true { retiredWindows[sceneKey] = nil }
       release(retirement.window)
+      removeUnusedTouchObservers()
       return
     }
+    guard let coordinator else { return }
     guard retirement.observedCoordinator !== coordinator else { return }
     retirement.observedCoordinator = coordinator
     coordinator.notifyWhenInteractionChanges { [weak self, weak retirement] context in
@@ -386,12 +567,13 @@ final class NativeOverlayWindowManager: NSObject {
   @objc private func sceneDidDisconnect(_ notification: Notification) {
     precondition(Thread.isMainThread)
     guard let scene = notification.object as? UIWindowScene else { return }
-    let sceneKey = ObjectIdentifier(scene)
+    let sceneKey = sceneIdentity(scene)
     let entries = scenes.removeValue(forKey: sceneKey) ?? [:]
     let retired = retiredWindows.removeValue(forKey: sceneKey) ?? [:]
     guard !entries.isEmpty || !retired.isEmpty else { return }
     disconnectingScenes.insert(sceneKey)
     defer { disconnectingScenes.remove(sceneKey) }
+    removeUnusedTouchObservers()
     // Unregister first: owner callbacks must not restore a disconnected scene's key.
     for entry in entries.values {
       entry.owner?.overlaySceneDidDisconnect(window: entry.window)
