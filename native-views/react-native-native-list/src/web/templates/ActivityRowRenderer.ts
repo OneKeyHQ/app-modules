@@ -197,6 +197,8 @@ const isHistory = (row: ActivityRow) =>
   row.presentation !== undefined || row.amounts !== undefined;
 const ellipsis =
   'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+/** Width a description prefix always leaves for the action text after it. */
+const descriptionActionReserve = '3em';
 function valueText(
   node: HTMLElement,
   text: string | undefined,
@@ -590,9 +592,12 @@ function bindHistory(
   v.descriptionPrefix.textContent = description
     .slice(0, actionStart)
     .replace(/\r\n|[\r\n]/g, ' ');
-  v.descriptionPrefix.style.cssText = `${ellipsis}flex-shrink:0;max-width:100%;white-space:pre;display:${
-    actionStart > 0 ? 'block' : 'none'
-  }`;
+  // The prefix keeps its width and the action truncates first, as the tail of
+  // the one native label does. A prefix wider than the row is capped instead,
+  // or it would squeeze the action to nothing and leave no pointer target.
+  v.descriptionPrefix.style.cssText = `${ellipsis}flex-shrink:0;max-width:${
+    actionText ? `calc(100% - ${descriptionActionReserve})` : '100%'
+  };white-space:pre;display:${actionStart > 0 ? 'block' : 'none'}`;
   v.descriptionAction.style.cssText = `${ellipsis}appearance:none;max-width:100%;border:0;padding:0;background:transparent;text-align:left;color:inherit;font:inherit;font-variant-numeric:inherit;display:${
     actionText ? 'block' : 'none'
   };`;

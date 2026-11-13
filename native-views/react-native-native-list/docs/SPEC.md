@@ -1816,6 +1816,14 @@ its wording; a caller that composes `prefix + label` records `prefix.length`.
   away from the text, never a line in between, so the slop cannot reach into a
   line that holds only plain text. Android extends the first and last line of
   the layout to the view's top and bottom edge.
+- Truncation. The description stays on its declared lines as `prefix + action`.
+  On Web the prefix keeps its natural width and the action text truncates
+  first, which matches the tail truncation of the native label. While action
+  text follows, the Web prefix is capped at the row width less `3em` and
+  truncates itself, so a prefix wider than the row cannot squeeze the action to
+  nothing and leave it without a pointer target. iOS and Android draw one label
+  and truncate its tail; they do not reserve room, so there a long prefix can
+  push the action text out of view.
 - Internally the native text view holds one optional start: none keeps the
   view's own hit testing (rows without the action), `0` limits touches to all of
   the text, a positive value to the text from there on. Binding, rebinding

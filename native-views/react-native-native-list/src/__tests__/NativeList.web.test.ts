@@ -1888,6 +1888,64 @@ describe('web row style', () => {
     }
   });
 
+  it('keeps room for the Activity description action behind a prefix wider than the row', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    Object.defineProperty(host, 'clientWidth', { value: 160 });
+    document.body.appendChild(host);
+    const prefix = 'Received from a very long counterparty name • ';
+    const row: ActivityRow = {
+      type: 'activity',
+      key: 'tx',
+      leading: { kind: 'image', image },
+      title: 'Send',
+      amounts: [{ key: 'send', text: '-1 ETH' }],
+      description: `${prefix}Router`,
+      descriptionActionKey: 'address-info',
+      descriptionActionStart: prefix.length,
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    const description = host.querySelector<HTMLElement>(
+      '[data-nl-slot="description"]'
+    )!;
+    const [prefixNode, action] = Array.from(
+      description.children
+    ) as HTMLElement[];
+    try {
+      expect(prefixNode!.textContent).toBe(prefix);
+      expect(action!.dataset.nativeListAction).toBe('address-info');
+      // The prefix keeps its own width but can never take the whole line: it
+      // is capped short of the row and truncates, so the action after it
+      // cannot be squeezed to nothing.
+      expect(prefixNode!.style.flexShrink).toBe('0');
+      expect(prefixNode!.style.maxWidth).toBe('calc(100% - 3em)');
+      expect(prefixNode!.style.overflow).toBe('hidden');
+      expect(prefixNode!.style.textOverflow).toBe('ellipsis');
+      expect(action!.style.display).toBe('block');
+      expect(action!.style.minWidth).toBe('0');
+
+      // Nothing is reserved when no action text follows the prefix.
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...row,
+            description: prefix,
+            descriptionActionStart: prefix.length,
+          },
+        ])
+      );
+      expect(prefixNode!.style.maxWidth).toBe('100%');
+      expect(action!.style.display).toBe('none');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it.each([false, true])(
     'removes and restores the Activity leading slot on %s rich rows',
     (rich) => {
