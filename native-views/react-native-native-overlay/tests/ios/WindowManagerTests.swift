@@ -16,9 +16,59 @@ private final class Owner: NativeOverlayWindowOwner, NativeOverlaySheetHost {
   func sheetRequestedDismiss(_ controller: NativeOverlaySheetController, reason: String) {}
 }
 
+private final class TransitionRoot: UIViewController {
+  var activeCoordinator: UIViewControllerTransitionCoordinator?
+  override var transitionCoordinator: UIViewControllerTransitionCoordinator? { activeCoordinator }
+}
+
+private final class TestTransitionCoordinator: NSObject, UIViewControllerTransitionCoordinator {
+  var isInteractive = true
+  var isCancelled = false
+  var subscriptions = 0
+  private var handlers: [(UIViewControllerTransitionCoordinatorContext) -> Void] = []
+
+  var isAnimated: Bool { true }
+  var presentationStyle: UIModalPresentationStyle { .pageSheet }
+  var initiallyInteractive: Bool { true }
+  var isInterruptible: Bool { true }
+  var transitionDuration: TimeInterval { 0.3 }
+  var percentComplete: CGFloat { 0.2 }
+  var completionVelocity: CGFloat { 1 }
+  var completionCurve: UIView.AnimationCurve { .easeInOut }
+  var containerView = UIView()
+  var targetTransform: CGAffineTransform { .identity }
+
+  func viewController(forKey key: UITransitionContextViewControllerKey) -> UIViewController? { nil }
+  func view(forKey key: UITransitionContextViewKey) -> UIView? { nil }
+  func animate(alongsideTransition animation: ((UIViewControllerTransitionCoordinatorContext) -> Void)?,
+               completion: ((UIViewControllerTransitionCoordinatorContext) -> Void)?) -> Bool { false }
+  func animateAlongsideTransition(in view: UIView?,
+               animation: ((UIViewControllerTransitionCoordinatorContext) -> Void)?,
+               completion: ((UIViewControllerTransitionCoordinatorContext) -> Void)?) -> Bool { false }
+  func notifyWhenInteractionEnds(_ handler: @escaping (UIViewControllerTransitionCoordinatorContext) -> Void) {
+    handlers.append(handler)
+  }
+  func notifyWhenInteractionChanges(_ handler: @escaping (UIViewControllerTransitionCoordinatorContext) -> Void) {
+    subscriptions += 1
+    handlers.append(handler)
+  }
+
+  func changeInteraction(to interactive: Bool, cancelled: Bool = false) {
+    isInteractive = interactive
+    isCancelled = cancelled
+    handlers.forEach { $0(self) }
+  }
+}
+
 private struct Failure: Error { let name: String }
 private func require(_ condition: @autoclosure () -> Bool, _ name: String) throws {
   if !condition() { throw Failure(name: name) }
+}
+
+@MainActor private func nextMainTurn() async {
+  await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+    DispatchQueue.main.async { done.resume() }
+  }
 }
 
 @MainActor private func runTests(scene: UIWindowScene, app: UIWindow) async throws -> [String] {
@@ -128,6 +178,84 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
   await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in cb.dismiss(animated: false) { done.resume() } }
   manager.entryRemoved(from: sb)
   passed.append("production-system-sheet-independent-close")
+
+  let transitionApp = UIWindow(windowScene: scene)
+  let transitionRoot = TransitionRoot()
+  transitionApp.rootViewController = transitionRoot
+  transitionApp.makeKeyAndVisible()
+  let transitionManager = NativeOverlayWindowManager()
+  let finishingOwner = Owner()
+  let finishingWindow = transitionManager.window(for: finishingOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: transitionApp)!
+  finishingWindow.makeKey()
+  let finishing = TestTransitionCoordinator()
+  transitionRoot.activeCoordinator = finishing
+  transitionManager.entryRemoved(from: finishingWindow)
+  try require(transitionApp.isKeyWindow && finishingWindow.windowScene === scene &&
+    finishingWindow.rootViewController != nil && finishing.subscriptions == 1,
+    "interactive removal retains old context and restores key")
+  finishing.changeInteraction(to: false)
+  await nextMainTurn()
+  try require(finishingWindow.windowScene == nil && finishingWindow.rootViewController == nil,
+    "finished interaction releases old context on next main turn")
+  passed.append("interactive-window-retirement-finish")
+
+  let cancellingOwner = Owner()
+  let cancellingWindow = transitionManager.window(for: cancellingOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: transitionApp)!
+  let cancelling = TestTransitionCoordinator()
+  transitionRoot.activeCoordinator = cancelling
+  transitionManager.entryRemoved(from: cancellingWindow)
+  cancelling.changeInteraction(to: false)
+  cancelling.changeInteraction(to: true)
+  await nextMainTurn()
+  try require(cancellingWindow.windowScene === scene && cancelling.subscriptions == 1,
+    "same coordinator reentry keeps context without duplicate subscription")
+  cancelling.changeInteraction(to: false, cancelled: true)
+  await nextMainTurn()
+  try require(cancellingWindow.windowScene == nil && cancellingWindow.rootViewController == nil,
+    "cancelled interaction releases old context")
+  passed.append("interactive-window-retirement-cancel-reentry")
+
+  let reopeningOwner = Owner()
+  let oldWindow = transitionManager.window(for: reopeningOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: transitionApp)!
+  let oldInteraction = TestTransitionCoordinator()
+  transitionRoot.activeCoordinator = oldInteraction
+  transitionManager.entryRemoved(from: oldWindow)
+  let newWindow = transitionManager.window(for: reopeningOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: transitionApp)!
+  let newInteraction = TestTransitionCoordinator()
+  oldInteraction.changeInteraction(to: false)
+  transitionRoot.activeCoordinator = newInteraction
+  await nextMainTurn()
+  try require(oldWindow.windowScene === scene && newWindow.windowScene === scene &&
+    newInteraction.subscriptions == 1, "new coordinator retains only old window lifetime")
+  newInteraction.changeInteraction(to: false)
+  await nextMainTurn()
+  try require(oldWindow.windowScene == nil && newWindow.windowScene === scene &&
+    newWindow.rootViewController != nil, "late callback does not release reopened owner")
+  transitionManager.entryRemoved(from: newWindow)
+  passed.append("interactive-window-retirement-owner-reuse")
+
+  let disconnectedOwner = Owner()
+  let disconnectedWindow = transitionManager.window(for: disconnectedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: transitionApp)!
+  let disconnectedInteraction = TestTransitionCoordinator()
+  transitionRoot.activeCoordinator = disconnectedInteraction
+  transitionManager.entryRemoved(from: disconnectedWindow)
+  NotificationCenter.default.post(name: UIScene.didDisconnectNotification, object: scene)
+  try require(disconnectedWindow.windowScene == nil && disconnectedWindow.rootViewController == nil &&
+    disconnectedOwner.disconnects == 0, "scene disconnect drains retired-only window once")
+  disconnectedInteraction.changeInteraction(to: false)
+  await nextMainTurn()
+  try require(disconnectedOwner.disconnects == 0 && disconnectedWindow.rootViewController == nil,
+    "late interaction callback after disconnect is inert")
+  transitionApp.isHidden = true
+  transitionApp.rootViewController = nil
+  transitionApp.windowScene = nil
+  app.makeKey()
+  passed.append("interactive-window-retirement-scene-disconnect")
   return passed
 }
 

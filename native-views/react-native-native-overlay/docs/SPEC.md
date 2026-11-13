@@ -1,10 +1,12 @@
 # react-native-native-overlay SPEC
 
 Status: Implemented through the P5 caller migration in app-monorepo. Android
-and Web runtime checks passed there; focused iOS 26.5 simulator and Android 16
-emulator checks are recorded below. Broader iOS runtime, physical-device and
-iPad acceptance remain unverified. Packaging in app-modules is validated
-separately.
+and Web runtime checks passed there; focused iOS 26.5 and iOS 27.0 simulator
+checks and Android 16 emulator checks are recorded below. The iOS 27.0 check
+covers this window handoff with repeated More-sheet gestures, immediate and
+delayed account-selector dismissal, and an interactive cancellation. Broader
+iOS runtime, physical-device and iPad acceptance remain unverified. Packaging
+in app-modules is validated separately.
 
 The implementation is migrated from app-monorepo commit
 `376633bd9f1c410dbccb01fb6a0492be9a5c3f38`, package
@@ -345,6 +347,16 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   first responder; passive toast/debug entries do not win solely by level.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
+- Removing an entry while the app window has an interactive UIKit presentation
+  removes that entry from active ordering and restores key ownership immediately,
+  but retains its exiting window/root/scene until the interaction finishes or
+  cancels. After UIKit reports the interaction change, cleanup runs on the next
+  main turn and rechecks the current transition coordinator before releasing
+  that exact window lifetime. A newly interactive transition keeps it retired
+  until its own completion; repeated or late callbacks cannot release a new
+  entry for the same owner. Scene disconnect releases active and retired windows
+  without notifying an already removed owner again. No fixed timeout controls
+  this handoff.
 - Every presentation lifetime has a generation. Asynchronous present, dismiss,
   and animation completions must match the generation, controller/entry
   identity and applicable phase before changing state or emitting callbacks.
@@ -634,11 +646,13 @@ of these UIKit resources. Native logger persistence is owned by the logger.
 
 ## 5.8 Performance and resource budget
 
-- iOS entry windows are created lazily and released after their entry detaches.
-  Window count is O(active global entries) per scene, rather than a six-window
-  level cache. No new public limit/configuration is introduced; page entries
-  remain views. Re-ranking is O(n log n) for the affected scene and creates no
-  per-frame bridge work.
+- iOS entry windows are created lazily and released after their entry detaches,
+  or after an in-progress UIKit interaction finishes when release is deferred.
+  Window count is O(active global entries plus retired interactive windows) per
+  scene, rather than a six-window level cache. Scene disconnect drains both.
+  No new public limit/configuration is introduced; page entries remain views.
+  Re-ranking is O(n log n) for the affected scene and creates no per-frame
+  bridge work.
 - Android layers are views, not windows: no extra surfaces or WindowManager IPC.
 - Store operations are O(n) in the number of live entries. Snapshots are
   rebuilt once per mutation.
@@ -670,15 +684,27 @@ navigation remains a separate runtime acceptance item.
 
 ## 5.9 Conformance and acceptance
 
+Focused iOS 27.0 simulator runtime check (2026-11-13): three repetitions of
+the previously failing 0.25-second More-to-account-selector handoff and one
+1.25-second control dismissed to Home. A separate 0.25-second handoff with a
+slow partial selector drag canceled and returned to its original position;
+More reopened and a subsequent full drag dismissed normally. Home and Market
+remained interactive. This checks the main-UI window handoff only; physical
+devices and the broader runtime matrix remain unverified.
+
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its seven checks cover bounded/live
+  Animation into an isolated UIKit test app. Its eleven checks cover bounded/live
   ordering, key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
   higher/foreign/new-input guards), and a native sheet surviving another
-  entry's dismissal.
+  entry's dismissal. Four focused checks cover interactive retirement after
+  finish and cancellation, reopening the same owner while the old window is
+  retired, and disconnecting a scene with only a retired window. They use a
+  controlled transition coordinator to test manager lifecycle; the real
+  gesture check is the iOS 27.0 simulator run above.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
