@@ -11,11 +11,12 @@ class NativeListTextLabel: UILabel {
   var touchableTextStart: Int?
   private static let touchSlop = CGSize(width: 8, height: 6)
 
-  /// One rect per laid-out line that holds touchable text, in label coordinates.
-  /// The label's own layout is not public, so the lines come from a text
-  /// container with the label's width, line cap and truncation.
+  /// One rect per laid-out run of touchable text, in label coordinates. The
+  /// label's own layout is not public, so the runs come from a text container
+  /// with the label's width, line cap and truncation. A line holds one run, or
+  /// several where mixed-direction text puts plain text between touchable text.
   var touchableTextRegions: [CGRect] {
-    guard let start = touchableTextStart, let attributed = attributedText, attributed.length > 0,
+    guard let start = touchableTextStart, let attributed = attributedText, attributed.length > start,
       bounds.width > 0
     else { return [] }
     let storage = NSTextStorage(attributedString: attributed)
@@ -35,28 +36,60 @@ class NativeListTextLabel: UILabel {
       originY = alignment == "top" ? 0 : alignment == "bottom" ? bounds.height - textHeight : originY
     }
     originY += rowOffsetY
-    var lines: [(used: CGRect, characters: NSRange)] = []
+    var lines: [CGRect] = []
+    var visibleEnd = attributed.length
     manager.enumerateLineFragments(forGlyphRange: glyphs) { _, usedRect, _, lineGlyphs, _ in
-      lines.append(
-        (usedRect, manager.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)))
-    }
-    return lines.enumerated().compactMap { index, line in
-      guard NSMaxRange(line.characters) > start else { return nil }
-      var rect = line.used
-      if line.characters.location < start {
-        let touchable = NSRange(location: start, length: NSMaxRange(line.characters) - start)
-        rect = manager.boundingRect(
-          forGlyphRange: manager.glyphRange(forCharacterRange: touchable, actualCharacterRange: nil),
-          in: container)
+      lines.append(usedRect)
+      let truncated = manager.truncatedGlyphRange(inLineFragmentForGlyphAt: lineGlyphs.location)
+      if truncated.location != NSNotFound {
+        visibleEnd = min(visibleEnd, manager.characterIndexForGlyph(at: truncated.location))
       }
-      // The slop widens every line. Vertically it grows only past the first
-      // and last line of the whole layout, so it never reaches into another
-      // line, including one that holds no touchable text.
-      let top = index == 0 ? Self.touchSlop.height : 0
-      let bottom = index == lines.count - 1 ? Self.touchSlop.height : 0
+    }
+    // Truncation can hide the touchable text altogether. The ellipsis then
+    // stands for plain text as well, so nothing is left to touch.
+    guard start < visibleEnd else { return [] }
+    // The layout engine's own rects for a character range: one per line and
+    // per visual run, which is what makes mixed-direction text come out right.
+    func runs(_ characters: NSRange) -> [CGRect] {
+      let range = NSIntersectionRange(
+        manager.glyphRange(forCharacterRange: characters, actualCharacterRange: nil), glyphs)
+      guard range.length > 0 else { return [] }
+      var rects: [CGRect] = []
+      manager.enumerateEnclosingRects(
+        forGlyphRange: range, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+        in: container
+      ) { rect, _ in
+        // A run that continues on the next line is reported up to the
+        // container edge; its text ends where the line's used rect does.
+        guard let used = lines.first(where: { $0.minY <= rect.midY && rect.midY < $0.maxY })
+        else { return }
+        let minX = max(rect.minX, used.minX)
+        let maxX = min(rect.maxX, used.maxX)
+        if maxX > minX {
+          rects.append(CGRect(x: minX, y: rect.minY, width: maxX - minX, height: rect.height))
+        }
+      }
+      return rects
+    }
+    let plain = runs(NSRange(location: 0, length: start))
+    return runs(NSRange(location: start, length: attributed.length - start)).map { run in
+      // The slop reaches into blank space only. Sideways it stops at plain
+      // text on the same line, so text before the start never takes the
+      // touch, however narrow it is.
+      var minX = run.minX - Self.touchSlop.width
+      var maxX = run.maxX + Self.touchSlop.width
+      for other in plain where other.minY < run.midY && run.midY < other.maxY {
+        if other.maxX <= run.minX + 0.5 { minX = max(minX, other.maxX) }
+        if other.minX >= run.maxX - 0.5 { maxX = min(maxX, other.minX) }
+      }
+      // Vertically it grows only past the first and last line of the whole
+      // layout, so it never reaches into another line.
+      let line = lines.firstIndex { $0.minY <= run.midY && run.midY < $0.maxY }
+      let top = line == 0 ? Self.touchSlop.height : 0
+      let bottom = line == lines.count - 1 ? Self.touchSlop.height : 0
       return CGRect(
-        x: rect.minX - Self.touchSlop.width, y: rect.minY + originY - top,
-        width: rect.width + Self.touchSlop.width * 2, height: rect.height + top + bottom)
+        x: minX, y: run.minY + originY - top, width: maxX - minX,
+        height: run.height + top + bottom)
     }
   }
 

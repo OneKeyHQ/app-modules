@@ -68,11 +68,40 @@ class NativeListDescriptionActionTouchTest : InstrumentationTestCase() {
     val prefix = "08:48 • "
     val description = bind("${prefix}Router • V2", "address-info", prefix.length)
     val text = textRegion(description)
-    assertTrue(text.left + slop() > dp(20))
+    assertTrue(text.left > dp(20))
     assertEquals(listOf("press"), tap(description, dp(4)))
-    assertEquals(listOf("address-info:description"), tap(description, text.left + slop() + dp(4)))
+    assertEquals(listOf("address-info:description"), tap(description, text.left + dp(4)))
     assertEquals(listOf("address-info:description"), tap(description, text.right - slop() - dp(4)))
     assertEquals(listOf("press"), tap(description, blankX(description, text)))
+  }
+
+  fun testPlainTextRightBeforeTheStartReachesTheRowPress() {
+    // "i" is narrower than the touch slop, so a slop that reached towards it
+    // would let this one plain character open the action.
+    val description = bind("iRouter", "address-info", 1)
+    val i = textWidth(description, "i")
+    assertTrue(i < slop())
+    assertEquals(i, textRegion(description).left, 1.5f)
+    assertEquals(listOf("press"), tap(description, i / 2))
+    assertEquals(listOf("address-info:description"), tap(description, i + textWidth(description, "R") / 2))
+    // The slop still reaches into the blank after the text.
+    assertEquals(listOf("address-info:description"), tap(description, textWidth(description, "iRouter") + slop() / 2))
+  }
+
+  fun testMixedDirectionSuffixFollowsTheLaidOutRuns() {
+    // The suffix from offset 6 is the last Hebrew letter and " XYZ". The Hebrew
+    // run is drawn right to left, so that letter sits left of the two plain
+    // ones and the suffix is two runs with plain text between them.
+    val description = bind("ABC \u05D0\u05D1\u05D2 XYZ", "address-info", 6)
+    val abc = textWidth(description, "ABC ")
+    val last = textWidth(description, "\u05D2")
+    val plain = textWidth(description, "\u05D1\u05D0")
+    val xyz = textWidth(description, " XYZ")
+    assertEquals(2, onMainValue { description.touchableTextRegions }.size)
+    assertEquals(listOf("press"), tap(description, abc / 2))
+    assertEquals(listOf("address-info:description"), tap(description, abc + last / 2))
+    assertEquals(listOf("press"), tap(description, abc + last + plain / 2))
+    assertEquals(listOf("address-info:description"), tap(description, abc + last + plain + xyz / 2))
   }
 
   fun testStartCountsUtf16UnitsOfTheDescription() {
@@ -81,7 +110,7 @@ class NativeListDescriptionActionTouchTest : InstrumentationTestCase() {
     val description = bind("${prefix}Router • V2", "address-info", prefix.length)
     val text = textRegion(description)
     assertEquals(listOf("press"), tap(description, dp(4)))
-    assertEquals(listOf("address-info:description"), tap(description, text.left + slop() + dp(4)))
+    assertEquals(listOf("address-info:description"), tap(description, text.left + dp(4)))
     assertEquals(listOf("address-info:description"), tap(description, text.right - slop() - dp(4)))
   }
 
@@ -155,6 +184,9 @@ class NativeListDescriptionActionTouchTest : InstrumentationTestCase() {
   /** The single touchable line of the bound description, in view coordinates and including the slop. */
   private fun textRegion(description: NativeListTextView): NativeListTouchRegion =
     onMainValue { description.touchableTextRegions }.also { assertEquals(1, it.size) }.single()
+
+  private fun textWidth(view: NativeListTextView, text: String): Float =
+    onMainValue { view.paint.measureText(text) }
 
   /** An x on the description line well clear of its text, inside the view. */
   private fun blankX(description: NativeListTextView, text: NativeListTouchRegion): Float {

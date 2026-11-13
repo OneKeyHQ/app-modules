@@ -3,10 +3,16 @@ package com.margelo.nitro.nativelist
 import android.graphics.Canvas
 import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Region
+import android.graphics.RegionIterator
 import android.text.Layout
 import android.view.MotionEvent
 import android.widget.TextView
+import kotlin.math.ceil
+import kotlin.math.floor
 
 internal open class NativeListTextView(context: android.content.Context) : TextView(context) {
   var helpBindingGeneration = 0
@@ -48,30 +54,53 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
     get() {
       val textStart = touchableTextStart ?: return emptyList()
       val textLayout = layout ?: return emptyList()
-      val count = textLayout.lineCount
+      // Lines past the line cap are laid out but never drawn.
+      val count = minOf(textLayout.lineCount, maxLines.takeIf { it > 0 } ?: Int.MAX_VALUE)
       if (count == 0) return emptyList()
       val originX = totalPaddingLeft.toFloat()
       val originY = totalPaddingTop + opticalOffsetY
       val lines = (0 until count).map { line ->
+        val lineStart = textLayout.getLineStart(line)
+        val lineEnd = textLayout.getLineEnd(line)
+        // An ellipsis hides the rest of its line. Once it hides the touchable
+        // text as well it also stands for plain text, so nothing is left to touch.
+        val visibleEnd =
+          if (textLayout.getEllipsisCount(line) > 0) lineStart + textLayout.getEllipsisStart(line) else lineEnd
+        val touchableStart = maxOf(textStart, lineStart)
         NativeListTextLine(
-          start = textLayout.getLineStart(line),
-          end = textLayout.getLineEnd(line),
-          left = originX + textLayout.getLineLeft(line),
           // The outer lines also take the view's own vertical padding.
           top = if (line == 0) 0f else originY + textLayout.getLineTop(line),
-          right = originX + textLayout.getLineRight(line),
           bottom = if (line == count - 1) height.toFloat() else originY + textLayout.getLineBottom(line),
-          isRtl = textLayout.getParagraphDirection(line) == Layout.DIR_RIGHT_TO_LEFT,
+          touchable =
+            if (touchableStart < visibleEnd) textRuns(textLayout, line, touchableStart, lineEnd, originX)
+            else emptyList(),
+          plain = textRuns(textLayout, line, lineStart, minOf(textStart, lineEnd), originX),
         )
       }
-      val startsInside = textStart > 0 && textStart < textLayout.text.length
-      return nativeListTouchableTextRegions(
-        lines = lines,
-        textStart = textStart,
-        textStartX = if (startsInside) originX + textLayout.getPrimaryHorizontal(textStart) else 0f,
-        slop = TOUCH_SLOP_DP * resources.displayMetrics.density,
-      )
+      return nativeListTouchableTextRegions(lines, TOUCH_SLOP_DP * resources.displayMetrics.density)
     }
+
+  /**
+   * Horizontal extents the layout gives characters `[from, to)` of [line]: the
+   * layout's own selection, so mixed-direction text yields one run per
+   * direction run instead of one box around all of them.
+   */
+  private fun textRuns(textLayout: Layout, line: Int, from: Int, to: Int, originX: Float): List<NativeListTextRun> {
+    if (from >= to) return emptyList()
+    val selection = Path()
+    textLayout.getSelectionPath(from, to, selection)
+    // A selection that reaches the line end also covers the blank up to the
+    // layout edge and starts the next line; only this line's text counts.
+    val lineBounds = Region(
+      floor(textLayout.getLineLeft(line)).toInt(), textLayout.getLineTop(line),
+      ceil(textLayout.getLineRight(line)).toInt(), textLayout.getLineBottom(line),
+    )
+    val runs = mutableListOf<NativeListTextRun>()
+    val iterator = RegionIterator(Region().apply { setPath(selection, lineBounds) })
+    val run = Rect()
+    while (iterator.next(run)) runs += NativeListTextRun(originX + run.left, originX + run.right)
+    return runs
+  }
 
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (primaryHelpOnly && event.actionMasked == MotionEvent.ACTION_DOWN &&

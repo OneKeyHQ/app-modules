@@ -1809,13 +1809,23 @@ its wording; a caller that composes `prefix + label` records `prefix.length`.
   a prefix restate the offset in the same patch.
 - iOS and Android map the offset onto the displayed text: a one-line description
   folds each line break into one space, so offsets after a CRLF move by one.
-- The hit area follows the laid-out lines. A line that ends before the offset
-  takes no touches, the line that holds it takes them from the offset on, later
-  lines take them on their text. iOS and Android widen each line by 8 units.
-  iOS also extends the first and the last line of the whole layout by 6 points
-  away from the text, never a line in between, so the slop cannot reach into a
-  line that holds only plain text. Android extends the first and last line of
-  the layout to the view's top and bottom edge.
+- The hit area follows the laid-out text. iOS and Android build it from the
+  layout engine's own rects for the action's character range (TextKit enclosing
+  rects, the Android layout's selection), one per line and per visual run. A
+  line that ends before the offset takes no touches, the line that holds it
+  takes them from the offset on, later lines take them on their text. In
+  mixed-direction text the action can be several runs on one line with plain
+  text between them, and each run is its own region.
+- Touch slop reaches into blank space only. iOS and Android widen each run of
+  action text by 8 units, and the widening stops at plain description text on
+  the same line: text before the offset never opens the action, however narrow
+  it is. iOS also extends the first and the last line of the whole layout by 6
+  points away from the text, never a line in between, so the slop cannot reach
+  into a line that holds only plain text. Android extends the first and last
+  line of the layout to the view's top and bottom edge.
+- An ellipsis belongs to the action while action text is visible before it.
+  Once truncation hides the action text altogether the ellipsis also stands for
+  plain text, and the row has no hit area for the action.
 - Truncation. The description stays on its declared lines as `prefix + action`.
   On Web the prefix keeps its natural width and the action text truncates
   first, which matches the tail truncation of the native label. While action
@@ -1823,7 +1833,10 @@ its wording; a caller that composes `prefix + label` records `prefix.length`.
   truncates itself, so a prefix wider than the row cannot squeeze the action to
   nothing and leave it without a pointer target. iOS and Android draw one label
   and truncate its tail; they do not reserve room, so there a long prefix can
-  push the action text out of view.
+  push the action text out of view. The Web prefix and action are two elements
+  side by side and each resolves its own text direction, so an offset inside a
+  directional run draws that run in two parts; the action element is still
+  exactly the action text.
 - Internally the native text view holds one optional start: none keeps the
   view's own hit testing (rows without the action), `0` limits touches to all of
   the text, a positive value to the text from there on. Binding, rebinding

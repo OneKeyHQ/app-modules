@@ -8,40 +8,88 @@ import org.junit.Test
 class NativeListDescriptionTouchPolicyTest {
   private fun hit(regions: List<NativeListTouchRegion>, x: Float, y: Float) = regions.any { it.contains(x, y) }
 
+  private fun run(left: Float, right: Float) = NativeListTextRun(left, right)
+
+  private fun regions(vararg lines: NativeListTextLine) = nativeListTouchableTextRegions(lines.toList(), slop = 8f)
+
   // The description view spans the identity column, so a tap anywhere on its
   // line used to open the description action. Only the text opens it now; the
   // blank rest of the line belongs to the row press (OK-67219).
   @Test
   fun onlyTheDrawnTextTakesTouches() {
-    val regions = nativeListTouchableTextRegions(
-      lines = listOf(NativeListTextLine(start = 0, end = 7, left = 0f, top = 0f, right = 60f, bottom = 20f)),
-      textStart = 0, textStartX = 0f, slop = 8f,
-    )
+    val text = regions(NativeListTextLine(top = 0f, bottom = 20f, touchable = listOf(run(0f, 60f))))
 
-    assertTrue(hit(regions, 30f, 10f))
-    assertTrue(hit(regions, 66f, 10f))
-    assertFalse(hit(regions, 120f, 10f))
+    assertTrue(hit(text, 30f, 10f))
+    // The slop reaches into the blank on both sides of the text.
+    assertTrue(hit(text, 66f, 10f))
+    assertTrue(hit(text, -6f, 10f))
+    assertFalse(hit(text, 120f, 10f))
   }
 
   // The caller states where the action text starts; the text before it, a
   // time for one, is not part of the action.
   @Test
   fun textBeforeTheStartIsNotPartOfTheAction() {
-    val ltr = nativeListTouchableTextRegions(
-      lines = listOf(NativeListTextLine(start = 0, end = 15, left = 0f, top = 0f, right = 160f, bottom = 20f)),
-      textStart = 8, textStartX = 50f, slop = 8f,
+    val ltr = regions(
+      NativeListTextLine(top = 0f, bottom = 20f, touchable = listOf(run(50f, 160f)), plain = listOf(run(0f, 50f))),
     )
     assertFalse(hit(ltr, 20f, 10f))
     assertTrue(hit(ltr, 100f, 10f))
 
-    val rtl = nativeListTouchableTextRegions(
-      lines = listOf(
-        NativeListTextLine(start = 0, end = 15, left = 40f, top = 0f, right = 200f, bottom = 20f, isRtl = true),
-      ),
-      textStart = 8, textStartX = 150f, slop = 8f,
+    // Right to left the plain text sits on the right of the touchable text.
+    val rtl = regions(
+      NativeListTextLine(top = 0f, bottom = 20f, touchable = listOf(run(40f, 150f)), plain = listOf(run(150f, 200f))),
     )
     assertTrue(hit(rtl, 100f, 10f))
     assertFalse(hit(rtl, 180f, 10f))
+  }
+
+  // The slop is for blank space. It must not reach into plain text beside the
+  // touchable text, or a prefix narrower than the slop, like the "i" of
+  // "iRouter", would open the action it is not part of.
+  @Test
+  fun theSlopStopsAtPlainTextBesideTheTouchableText() {
+    val short = regions(
+      NativeListTextLine(top = 0f, bottom = 20f, touchable = listOf(run(3f, 46f)), plain = listOf(run(0f, 3f))),
+    )
+    assertFalse(hit(short, 1.5f, 10f))
+    assertFalse(hit(short, -4f, 10f))
+    assertTrue(hit(short, 4f, 10f))
+    assertTrue(hit(short, 52f, 10f))
+    assertEquals(3f, short.single().left)
+    assertEquals(54f, short.single().right)
+
+    // Neighbouring runs read back from pixel regions may be a pixel apart.
+    val apart = regions(
+      NativeListTextLine(top = 0f, bottom = 20f, touchable = listOf(run(4f, 46f)), plain = listOf(run(0f, 3f))),
+    )
+    assertEquals(3f, apart.single().left)
+  }
+
+  // Mixed-direction text can split one logical suffix into several visual
+  // runs with plain text between them: "ABC אבג XYZ" from the last Hebrew
+  // letter on draws that letter left of the two plain ones. Each run is its
+  // own region, and the plain text between them takes no touches.
+  @Test
+  fun aSuffixSplitByMixedDirectionTextIsSeveralRuns() {
+    val mixed = regions(
+      NativeListTextLine(
+        top = 0f, bottom = 20f,
+        touchable = listOf(run(32f, 38f), run(55f, 86f)),
+        plain = listOf(run(0f, 32f), run(38f, 55f)),
+      ),
+    )
+
+    assertEquals(2, mixed.size)
+    assertFalse(hit(mixed, 16f, 10f))
+    assertTrue(hit(mixed, 35f, 10f))
+    assertFalse(hit(mixed, 46f, 10f))
+    assertTrue(hit(mixed, 70f, 10f))
+    // Only the outer edge of the last run faces blank space.
+    assertTrue(hit(mixed, 92f, 10f))
+    assertEquals(32f, mixed[0].left)
+    assertEquals(38f, mixed[0].right)
+    assertEquals(55f, mixed[1].left)
   }
 
   // A narrow row wraps the description. The time stays outside the action on
@@ -49,12 +97,9 @@ class NativeListDescriptionTouchPolicyTest {
   // occupies one line above.
   @Test
   fun aWrappedDescriptionKeepsTheTimeOutsideTheAction() {
-    val wrapped = nativeListTouchableTextRegions(
-      lines = listOf(
-        NativeListTextLine(start = 0, end = 16, left = 0f, top = 0f, right = 110f, bottom = 20f),
-        NativeListTextLine(start = 16, end = 32, left = 0f, top = 20f, right = 100f, bottom = 40f),
-      ),
-      textStart = 8, textStartX = 55f, slop = 8f,
+    val wrapped = regions(
+      NativeListTextLine(top = 0f, bottom = 20f, touchable = listOf(run(55f, 110f)), plain = listOf(run(0f, 55f))),
+      NativeListTextLine(top = 20f, bottom = 40f, touchable = listOf(run(0f, 100f))),
     )
     assertFalse(hit(wrapped, 20f, 10f))
     assertTrue(hit(wrapped, 80f, 10f))
@@ -62,12 +107,9 @@ class NativeListDescriptionTouchPolicyTest {
     assertFalse(hit(wrapped, 130f, 30f))
 
     // The whole time sits on the first line: that line takes no touches at all.
-    val timeOnItsOwnLine = nativeListTouchableTextRegions(
-      lines = listOf(
-        NativeListTextLine(start = 0, end = 8, left = 0f, top = 0f, right = 55f, bottom = 20f),
-        NativeListTextLine(start = 8, end = 24, left = 0f, top = 20f, right = 100f, bottom = 40f),
-      ),
-      textStart = 8, textStartX = 0f, slop = 8f,
+    val timeOnItsOwnLine = regions(
+      NativeListTextLine(top = 0f, bottom = 20f, touchable = emptyList(), plain = listOf(run(0f, 55f))),
+      NativeListTextLine(top = 20f, bottom = 40f, touchable = listOf(run(0f, 100f))),
     )
     assertFalse(hit(timeOnItsOwnLine, 20f, 10f))
     // Nor does the address line reach up into it.
@@ -77,13 +119,10 @@ class NativeListDescriptionTouchPolicyTest {
 
   // A start at the end of the text leaves nothing to touch.
   @Test
-  fun aStartAtTheEndOfTheTextLeavesNoRegion() {
-    val regions = nativeListTouchableTextRegions(
-      lines = listOf(NativeListTextLine(start = 0, end = 8, left = 0f, top = 0f, right = 55f, bottom = 20f)),
-      textStart = 8, textStartX = 0f, slop = 8f,
-    )
+  fun aLineWithoutTouchableTextLeavesNoRegion() {
+    val none = regions(NativeListTextLine(top = 0f, bottom = 20f, touchable = emptyList(), plain = listOf(run(0f, 55f))))
 
-    assertTrue(regions.isEmpty())
+    assertTrue(none.isEmpty())
   }
 
   // `descriptionActionStart` is a UTF-16 offset into the caller's string. It is
@@ -101,7 +140,7 @@ class NativeListDescriptionTouchPolicyTest {
     assertEquals(label.length, nativeListDisplayOffset(label, Long.MAX_VALUE, foldsLineBreaks = true))
 
     // The emoji takes two UTF-16 units, as in the JavaScript string.
-    val emojiPrefix = "\uD83D\uDD58 08:48 • "
+    val emojiPrefix = "🕘 08:48 • "
     assertEquals(11, emojiPrefix.length)
     assertEquals(label, "$emojiPrefix$label".substring(nativeListDisplayOffset("$emojiPrefix$label", 11, foldsLineBreaks = false)))
 

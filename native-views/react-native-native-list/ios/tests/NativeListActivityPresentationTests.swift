@@ -117,9 +117,11 @@ final class NativeListActivityPresentationTests: XCTestCase {
     let timedText = try XCTUnwrap(timed.touchableTextRegions.first)
     XCTAssertEqual(timed.touchableTextRegions.count, 1)
     XCTAssertGreaterThan(timed.bounds.width, timedText.maxX + 40)
-    XCTAssertEqual(timedText.width, labelText.width, accuracy: 1)
+    // The same label, less the slop on the side where the time is.
+    XCTAssertEqual(timedText.width, labelText.width - 8, accuracy: 1)
     XCTAssertFalse(hit(timed, x: 4))
-    XCTAssertTrue(hit(timed, x: timedText.minX + 12))
+    XCTAssertFalse(hit(timed, x: timedText.minX - 2))
+    XCTAssertTrue(hit(timed, x: timedText.minX + 2))
     XCTAssertTrue(hit(timed, x: timedText.maxX - 12))
     XCTAssertFalse(hit(timed, x: timed.bounds.maxX - 4))
 
@@ -129,9 +131,10 @@ final class NativeListActivityPresentationTests: XCTestCase {
     let emoji = try bind(
       description: emojiPrefix + "Router • V2", actionKey: "address-info", actionStart: 11)
     let emojiText = try XCTUnwrap(emoji.touchableTextRegions.first)
-    XCTAssertEqual(emojiText.width, labelText.width, accuracy: 1)
+    XCTAssertEqual(emojiText.width, labelText.width - 8, accuracy: 1)
     XCTAssertFalse(hit(emoji, x: 4))
-    XCTAssertTrue(hit(emoji, x: emojiText.minX + 12))
+    XCTAssertFalse(hit(emoji, x: emojiText.minX - 2))
+    XCTAssertTrue(hit(emoji, x: emojiText.minX + 2))
     XCTAssertTrue(hit(emoji, x: emojiText.maxX - 12))
 
     // A start at the end of the text, or clamped to it, leaves nothing to tap.
@@ -213,6 +216,98 @@ final class NativeListActivityPresentationTests: XCTestCase {
     XCTAssertTrue(hit(y: line.minY + 2))
     // The last line of the layout still takes its slop below the text.
     XCTAssertTrue(hit(y: label.bounds.maxY + 4))
+  }
+
+  private func descriptionText(_ value: String, style: [String: Any]? = nil) -> NativeListResolvedText {
+    NativeListResolvedText(
+      value, style: style, size: 14, color: .label, lineHeight: 20, lines: 1,
+      fonts: NativeListFontFamilies())
+  }
+
+  /// Width the description font gives `value` on its own.
+  private func descriptionWidth(_ value: String) -> CGFloat {
+    descriptionText(value).attributed(direction: .leftToRight).size().width
+  }
+
+  private func descriptionLabel(
+    _ value: String, start: Int, width: CGFloat = 300, style: [String: Any]? = nil
+  ) -> NativeListTextLabel {
+    let label = NativeListTextLabel()
+    descriptionText(value, style: style).bind(label)
+    label.frame = CGRect(x: 0, y: 0, width: width, height: 20)
+    label.touchableTextStart = start
+    return label
+  }
+
+  private func hit(_ label: NativeListTextLabel, x: CGFloat) -> Bool {
+    label.point(inside: CGPoint(x: x, y: label.bounds.midY), with: nil)
+  }
+
+  // The slop is for blank space. It stops at plain text beside the action
+  // text, or a prefix narrower than the slop, like the "i" of "iRouter", would
+  // open an action it is not part of.
+  func testSlopStopsAtPlainTextBesideTheActionText() throws {
+    let short = descriptionLabel("iRouter", start: 1)
+    let i = descriptionWidth("i")
+    XCTAssertLessThan(i, 8)
+    let region = try XCTUnwrap(short.touchableTextRegions.first)
+    XCTAssertEqual(short.touchableTextRegions.count, 1)
+    XCTAssertEqual(region.minX, i, accuracy: 0.5)
+    XCTAssertFalse(hit(short, x: i / 2))
+    XCTAssertFalse(hit(short, x: -3))
+    XCTAssertTrue(hit(short, x: i + 2))
+    // Into the blank after the text the slop still reaches.
+    XCTAssertTrue(hit(short, x: descriptionWidth("iRouter") + 6))
+    XCTAssertFalse(hit(short, x: descriptionWidth("iRouter") + 10))
+    // And into the blank before a line that starts with the action text.
+    XCTAssertTrue(hit(descriptionLabel("Router", start: 0), x: -6))
+  }
+
+  // Mixed-direction text can split one logical suffix into several visual
+  // runs. From offset 6 of "ABC אבג XYZ" the suffix is the last Hebrew letter
+  // and " XYZ"; the Hebrew run is drawn right to left, so that letter sits
+  // left of the two plain ones. Each run is its own region and the plain text
+  // between them takes no touches.
+  func testMixedDirectionSuffixFollowsTheLaidOutRuns() {
+    let label = descriptionLabel("ABC \u{05D0}\u{05D1}\u{05D2} XYZ", start: 6)
+    let abc = descriptionWidth("ABC ")
+    let last = descriptionWidth("\u{05D2}")
+    let plain = descriptionWidth("\u{05D1}\u{05D0}")
+    let xyz = descriptionWidth(" XYZ")
+    let regions = label.touchableTextRegions.sorted { $0.minX < $1.minX }
+    XCTAssertEqual(regions.count, 2)
+    guard regions.count == 2 else { return }
+    XCTAssertEqual(regions[0].minX, abc, accuracy: 1)
+    XCTAssertEqual(regions[0].maxX, abc + last, accuracy: 1)
+    XCTAssertEqual(regions[1].minX, abc + last + plain, accuracy: 1)
+    XCTAssertFalse(hit(label, x: abc / 2))
+    XCTAssertTrue(hit(label, x: abc + last / 2))
+    XCTAssertFalse(hit(label, x: abc + last + plain / 2))
+    XCTAssertTrue(hit(label, x: abc + last + plain + xyz / 2))
+    // Only the outer edge of the last run faces blank space.
+    XCTAssertTrue(hit(label, x: abc + last + plain + xyz + 5))
+  }
+
+  // A one-line description that does not fit ends in an ellipsis. Action text
+  // it only shortens stays touchable up to and including the ellipsis. Once it
+  // hides the action text altogether the ellipsis also stands for plain text,
+  // and nothing is left to touch.
+  func testTruncationCanHideTheActionText() throws {
+    let cut = descriptionLabel(
+      "08:48 • UniswapUniversalRouterWithAVeryLongName", start: 8, width: 150,
+      style: ["lines": 1])
+    let region = try XCTUnwrap(cut.touchableTextRegions.first)
+    XCTAssertEqual(cut.touchableTextRegions.count, 1)
+    XCTAssertEqual(region.minX, descriptionWidth("08:48 • "), accuracy: 1)
+    XCTAssertFalse(hit(cut, x: 20))
+    XCTAssertTrue(hit(cut, x: 100))
+    XCTAssertTrue(hit(cut, x: 145))
+
+    let prefix = "A very long plain prefix that fills the row • "
+    let hidden = descriptionLabel(
+      prefix + "Router", start: (prefix as NSString).length, width: 150, style: ["lines": 1])
+    XCTAssertTrue(hidden.touchableTextRegions.isEmpty)
+    XCTAssertFalse(hit(hidden, x: 145))
   }
 
   // A one-line description folds each line break into one space, so the

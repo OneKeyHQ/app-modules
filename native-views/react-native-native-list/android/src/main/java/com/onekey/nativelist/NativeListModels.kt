@@ -77,42 +77,49 @@ internal fun nativeListDisplayOffset(source: String, sourceOffset: Long, foldsLi
   return if (foldsLineBreaks) nativeListFoldLineBreaks(source.substring(0, clamped)).length else clamped
 }
 
-/** One laid-out line of a text view, in view coordinates; `[start, end)` are character offsets. */
+/** A horizontal run of laid-out text on one line, in view coordinates. */
+internal data class NativeListTextRun(val left: Float, val right: Float)
+
+/**
+ * One laid-out line of a text view, in view coordinates: its vertical extent,
+ * the runs of [touchable] text and the runs of [plain] text before it. A line
+ * holds one run of each, or several where mixed-direction text puts plain text
+ * between touchable text.
+ */
 internal data class NativeListTextLine(
-  val start: Int,
-  val end: Int,
-  val left: Float,
   val top: Float,
-  val right: Float,
   val bottom: Float,
-  val isRtl: Boolean = false,
+  val touchable: List<NativeListTextRun>,
+  val plain: List<NativeListTextRun> = emptyList(),
 )
 
 internal data class NativeListTouchRegion(val left: Float, val top: Float, val right: Float, val bottom: Float) {
   fun contains(x: Float, y: Float): Boolean = x in left..right && y in top..bottom
 }
 
+/** Runs are read back from pixel regions, so neighbours can be a pixel apart. */
+private const val TEXT_RUN_EDGE = 1f
+
 /**
- * Parts of a stretched text view that take touches: on every line the drawn
- * text from character [textStart] on, widened horizontally by [slop]. A line
- * that ends before [textStart] takes none, and the line that holds it takes
- * none before [textStartX], however the text wraps; a [textStart] at the end
- * of the text leaves no region. Touches outside the regions fall through to
- * the row behind the view (OK-67219).
+ * Parts of a stretched text view that take touches: every run of touchable
+ * text, widened by [slop] into blank space only. The widening stops at plain
+ * text on the same line, so text before the touchable text never takes the
+ * touch, however narrow it is. Touches outside the regions fall through to the
+ * row behind the view (OK-67219).
  */
 internal fun nativeListTouchableTextRegions(
   lines: List<NativeListTextLine>,
-  textStart: Int,
-  textStartX: Float,
   slop: Float,
-): List<NativeListTouchRegion> = lines.mapNotNull { line ->
-  if (line.end <= textStart) return@mapNotNull null
-  var left = line.left
-  var right = line.right
-  if (line.start < textStart) {
-    if (line.isRtl) right = minOf(right, textStartX) else left = maxOf(left, textStartX)
+): List<NativeListTouchRegion> = lines.flatMap { line ->
+  line.touchable.map { run ->
+    var left = run.left - slop
+    var right = run.right + slop
+    for (other in line.plain) {
+      if (other.right <= run.left + TEXT_RUN_EDGE) left = maxOf(left, other.right)
+      if (other.left >= run.right - TEXT_RUN_EDGE) right = minOf(right, other.left)
+    }
+    NativeListTouchRegion(left, line.top, right, line.bottom)
   }
-  NativeListTouchRegion(left - slop, line.top, right + slop, line.bottom)
 }
 
 internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
