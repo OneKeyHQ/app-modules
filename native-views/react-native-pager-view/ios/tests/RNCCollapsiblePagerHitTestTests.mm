@@ -25,6 +25,8 @@ using namespace facebook::react;
 - (void)goTo:(NSInteger)index animated:(BOOL)animated;
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView;
 - (void)emitPageSelected:(NSInteger)position;
+- (void)attachScrollObserverForCurrentPage;
+- (void)syncScrollEdgeAppearance;
 @end
 
 @interface UIView (NativeTabReservationTesting)
@@ -56,6 +58,39 @@ using namespace facebook::react;
   if (_selectedIndexes == nil) _selectedIndexes = [NSMutableArray new];
   [_selectedIndexes addObject:@(position)];
   [super emitPageSelected:position];
+}
+@end
+
+// Model the equivalent fresh UIColor instances observed on NativeListCollectionView.
+@interface RNCEquivalentBackgroundScrollView : UIScrollView
+@end
+
+@implementation RNCEquivalentBackgroundScrollView
+- (UIColor *)backgroundColor
+{
+  UIColor *color = super.backgroundColor;
+  return color == nil ? nil : [[UIColor alloc] initWithCGColor:color.CGColor];
+}
+@end
+
+@interface RNCAlignedTakeoverPan : UIPanGestureRecognizer
+@property (nonatomic) UIGestureRecognizerState observedState;
+@end
+
+@implementation RNCAlignedTakeoverPan
+- (UIGestureRecognizerState)state { return _observedState; }
+@end
+
+@interface RNCAlignedTakeoverScrollView : UIScrollView
+@property (nonatomic) BOOL observedDragging;
+@property (nonatomic, strong) RNCAlignedTakeoverPan *observedPan;
+@end
+
+@implementation RNCAlignedTakeoverScrollView
+- (BOOL)isDragging { return _observedDragging; }
+- (UIPanGestureRecognizer *)panGestureRecognizer
+{
+  return _observedPan ?: super.panGestureRecognizer;
 }
 @end
 
@@ -497,6 +532,17 @@ using namespace facebook::react;
   return horizontal;
 }
 
+- (void)prepareIncomingListsScrolledBeyondBars
+{
+  NSMutableDictionary *offsets = [self.pager valueForKey:@"pageOffsets"];
+  NSArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
+  for (NSNumber *index in @[@0, @2]) {
+    offsets[[NSString stringWithFormat:@"page-%ld", (long)index.integerValue]] = @200;
+    UIScrollView *list = (UIScrollView *)pages[index.integerValue].view.subviews.firstObject;
+    list.contentOffset = CGPointMake(0, 200);
+  }
+}
+
 - (UIScrollView *)prepareExternalDirectDragWithSource:(UIScrollView **)sourceOut
                                            overlay:(UIView **)overlayOut
 {
@@ -681,6 +727,7 @@ using namespace facebook::react;
     UIScrollView *source = nil;
     UIView *overlay = nil;
     UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:&overlay];
+    [self prepareIncomingListsScrolledBeyondBars];
     UIView *proxy = [self.pager valueForKey:@"topOverlayHostView"];
     UIView *pinned = [self.pager valueForKey:@"pinnedStickyHostView"];
     UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
@@ -729,6 +776,8 @@ using namespace facebook::react;
       XCTAssertTrue([[owner valueForKey:@"ownsTransitionHosts"] boolValue]);
       UIView *page = [owner valueForKey:@"page"];
       UIScrollView *list = [owner valueForKey:@"scrollView"];
+      XCTAssertNil([owner valueForKey:@"standInScrollView"]);
+      XCTAssertEqual(list, page.subviews.firstObject);
       UIView *ownedTop = [owner valueForKey:@"ownedTopHost"];
       UIView *ownedSticky = [owner valueForKey:@"ownedStickyHost"];
       XCTAssertNotNil(ownedTop);
@@ -796,15 +845,23 @@ using namespace facebook::react;
 
     horizontal.contentOffset = CGPointMake(640, 0);
     [self.pager scrollViewDidEndDragging:horizontal willDecelerate:NO];
-    XCTestExpectation *settled = [self expectationWithDescription:@"external drag settles"];
-    dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+    NSPredicate *released = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+      for (UIView *host in ownedHosts) {
+        if (host.superview != nil || host.interactions.count != 0) return NO;
+      }
+      for (UIView *edgeMarker in ownedMarkers) {
+        if (edgeMarker.superview != nil) return NO;
+      }
+      for (UIScrollEdgeElementContainerInteraction *edge in ownedEdges) {
+        if (edge.scrollView != nil) return NO;
+      }
+      return YES;
+    }];
+    XCTNSPredicateExpectation *settled = [[XCTNSPredicateExpectation alloc]
+      initWithPredicate:released object:self.pager];
     [self waitForExpectations:@[settled] timeout:2];
     XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 2);
     XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
-    for (id owner in incomingOwners) {
-      XCTAssertNil([owner valueForKey:@"ownedTopHost"]);
-      XCTAssertNil([owner valueForKey:@"ownedStickyHost"]);
-    }
     for (UIView *host in ownedHosts) {
       XCTAssertNil(host.superview);
       XCTAssertEqual(host.interactions.count, 0);
@@ -979,9 +1036,10 @@ using namespace facebook::react;
 
 - (void)testDirectDragAdoptsSourceBeforeDetachAndOwnsBothNeighbours
 {
-  if (@available(iOS 27.0, *)) {
+  if (@available(iOS 26.0, *)) {
     UIScrollView *source = nil;
     UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    [self prepareIncomingListsScrolledBeyondBars];
     UIView *topHost = [self.pager valueForKey:@"topEdgeInteractionHost"];
     UIView *pinnedHost = [self.pager valueForKey:@"pinnedStickyHostView"];
     UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
@@ -1015,8 +1073,10 @@ using namespace facebook::react;
       XCTAssertNotNil([[owner valueForKey:@"topInteraction"] scrollView]);
       if (owner == sourceOwner) continue;
       XCTAssertTrue([[owner valueForKey:@"ownsTransitionHosts"] boolValue]);
+      XCTAssertNil([owner valueForKey:@"standInScrollView"]);
       UIView *page = [owner valueForKey:@"page"];
       UIScrollView *list = [owner valueForKey:@"scrollView"];
+      XCTAssertEqual(list, page.subviews.firstObject);
       UIView *incomingTop = [owner valueForKey:@"ownedTopHost"];
       UIView *incomingSticky = [owner valueForKey:@"ownedStickyHost"];
       XCTAssertEqual(incomingTop.superview, page);
@@ -1029,15 +1089,16 @@ using namespace facebook::react;
         CGRectGetMinX([list convertRect:list.bounds toView:page]), 0.001);
     }
   } else {
-    XCTSkip(@"Direct local Hard drag handoff requires iOS 27 or newer");
+    XCTSkip(@"Direct local Hard drag handoff requires iOS 26 or newer");
   }
 }
 
 - (void)testDirectDragTakeoverIgnoresOldSettlementAndReleasesOnReturn
 {
-  if (@available(iOS 27.0, *)) {
+  if (@available(iOS 26.0, *)) {
     UIScrollView *source = nil;
     UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    [self prepareIncomingListsScrolledBeyondBars];
     UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
     UIView *topHost = [self.pager valueForKey:@"topEdgeInteractionHost"];
     NSUInteger originalTransition = [[self.pager valueForKey:@"transitionId"] unsignedIntegerValue];
@@ -1073,13 +1134,13 @@ using namespace facebook::react;
     XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
     XCTAssertEqual(incomingHosts.count, 4);
     for (UIView *host in incomingHosts) XCTAssertNil(host.superview);
-    XCTAssertFalse([topHost.interactions containsObject:top]);
-    XCTAssertNil(top.scrollView);
+    XCTAssertTrue([topHost.interactions containsObject:top]);
+    XCTAssertEqual(top.scrollView, source);
     XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
     XCTAssertEqual([self.pager valueForKey:@"topEdgeScrollView"], source);
     XCTAssertEqual([self.pager valueForKey:@"originalTopEdgeStyle"], UIScrollEdgeEffectStyle.softStyle);
     UIScrollEdgeElementContainerInteraction *normal = [self.pager valueForKey:@"topEdgeInteraction"];
-    XCTAssertNotNil(normal);
+    XCTAssertEqual(normal, top);
     XCTAssertEqual(normal.scrollView, source);
     XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.hardStyle);
     NSArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
@@ -1088,7 +1149,363 @@ using namespace facebook::react;
       XCTAssertEqual(neighbor.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
     }
   } else {
-    XCTSkip(@"Direct local Hard drag handoff requires iOS 27 or newer");
+    XCTSkip(@"Direct local Hard drag handoff requires iOS 26 or newer");
+  }
+}
+
+- (void)testLocalDragMissingIncomingListReleasesStandInOnRecycle
+{
+  if (@available(iOS 26.0, *)) {
+    self.root.backgroundColor = UIColor.blackColor;
+    UIScrollView *horizontal = [self prepareDirectDragWithSource:NULL];
+    NSArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
+    UIView *incomingPage = pages[2].view;
+    for (UIView *child in incomingPage.subviews.copy) [child removeFromSuperview];
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    id incomingOwner = nil;
+    for (id owner in [self.pager valueForKey:@"programmaticScrollEdgeOwners"]) {
+      if ([owner valueForKey:@"page"] == incomingPage) incomingOwner = owner;
+    }
+    XCTAssertNotNil(incomingOwner);
+    UIScrollView *standIn = [incomingOwner valueForKey:@"standInScrollView"];
+    UIView *topHost = [incomingOwner valueForKey:@"ownedTopHost"];
+    UIView *stickyHost = [incomingOwner valueForKey:@"ownedStickyHost"];
+    UIScrollEdgeElementContainerInteraction *top = [incomingOwner valueForKey:@"topInteraction"];
+    UIScrollEdgeElementContainerInteraction *sticky = [incomingOwner valueForKey:@"stickyInteraction"];
+    XCTAssertNotNil(standIn);
+    XCTAssertEqual(standIn.superview, incomingPage.superview);
+    XCTAssertEqual(topHost.superview, incomingPage.superview);
+    XCTAssertEqual(stickyHost.superview, incomingPage.superview);
+    XCTAssertEqualWithAccuracy(standIn.frame.origin.x,
+      [incomingPage convertPoint:CGPointZero toView:incomingPage.superview].x, 0.001);
+    XCTAssertEqualWithAccuracy(topHost.frame.origin.x, standIn.frame.origin.x, 0.001);
+    XCTAssertEqualWithAccuracy(stickyHost.frame.origin.x, standIn.frame.origin.x, 0.001);
+    if (@available(iOS 27.0, *)) {
+      XCTAssertEqualObjects(standIn.backgroundColor, UIColor.clearColor);
+    } else {
+      XCTAssertEqualObjects(standIn.backgroundColor, UIColor.blackColor);
+    }
+    XCTAssertEqual(top.scrollView, standIn);
+    XCTAssertEqual(sticky.scrollView, standIn);
+    XCTAssertFalse(standIn.userInteractionEnabled);
+    [self.pager prepareForRecycle];
+    XCTAssertNil(standIn.superview);
+    XCTAssertEqualObjects(standIn.backgroundColor, UIColor.clearColor);
+    XCTAssertNil(topHost.superview);
+    XCTAssertNil(stickyHost.superview);
+    XCTAssertNil(top.scrollView);
+    XCTAssertNil(sticky.scrollView);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"Local Hard stand-in edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26TransparentBackingRestoresExactOriginalAndUpdatesTheme
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"Opaque backing is restricted to iOS 26");
+  } else if (@available(iOS 26.0, *)) {
+    UIScrollView *source = [self preparePinnedLocalHardSource];
+    UIColor *dark = [UIColor colorWithWhite:0.06 alpha:1];
+    UIColor *light = [UIColor colorWithWhite:0.98 alpha:1];
+    for (id value in @[NSNull.null, UIColor.clearColor]) {
+      UIColor *original = value == NSNull.null ? nil : value;
+      source.backgroundColor = original;
+      self.root.backgroundColor = dark;
+      [self.pager updateTopScrollEdgeForScrollView:source];
+      UIColor *applied = source.backgroundColor;
+      XCTAssertEqualObjects(applied, dark);
+      XCTAssertEqualObjects(source.backgroundColor, applied);
+      self.root.backgroundColor = light;
+      [self.pager syncScrollEdgeAppearance];
+      XCTAssertEqualObjects(source.backgroundColor, light);
+      self.root.backgroundColor = nil;
+      [self.pager syncScrollEdgeAppearance];
+      XCTAssertEqualObjects(source.backgroundColor, original);
+      self.root.backgroundColor = dark;
+      [self.pager syncScrollEdgeAppearance];
+      XCTAssertEqualObjects(source.backgroundColor, dark);
+      [self.pager setValue:@NO forKey:@"topScrollEdgeEnabled"];
+      [self.pager updateTopScrollEdgeForScrollView:nil];
+      XCTAssertEqualObjects(source.backgroundColor, original);
+      [self.pager setValue:@YES forKey:@"topScrollEdgeEnabled"];
+      [self.pager updateTopScrollEdgeForScrollView:source];
+      XCTAssertEqualObjects(source.backgroundColor, dark);
+      [self.pager updateTopScrollEdgeForScrollView:nil];
+      XCTAssertEqualObjects(source.backgroundColor, original);
+    }
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26BackingPreservesCallerColorsAndReleasesOnWindowExit
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"Opaque backing is restricted to iOS 26");
+  } else if (@available(iOS 26.0, *)) {
+    UIScrollView *source = [self preparePinnedLocalHardSource];
+    self.root.backgroundColor = UIColor.blackColor;
+    for (UIColor *custom in @[UIColor.redColor, [UIColor colorWithWhite:0.5 alpha:0.5]]) {
+      source.backgroundColor = custom;
+      [self.pager updateTopScrollEdgeForScrollView:source];
+      [self.pager syncScrollEdgeAppearance];
+      XCTAssertEqualObjects(source.backgroundColor, custom);
+      [self.pager updateTopScrollEdgeForScrollView:nil];
+      XCTAssertEqualObjects(source.backgroundColor, custom);
+    }
+    source.backgroundColor = nil;
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    XCTAssertEqualObjects(source.backgroundColor, UIColor.blackColor);
+    UIColor *replacement = UIColor.blueColor;
+    source.backgroundColor = replacement;
+    self.root.backgroundColor = UIColor.whiteColor;
+    [self.pager syncScrollEdgeAppearance];
+    XCTAssertEqualObjects(source.backgroundColor, replacement);
+    [self.pager updateTopScrollEdgeForScrollView:nil];
+    XCTAssertEqualObjects(source.backgroundColor, replacement);
+    source.backgroundColor = UIColor.clearColor;
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    XCTAssertEqualObjects(source.backgroundColor, UIColor.whiteColor);
+    [self.pager setValue:@YES forKey:@"pendingTopOverlayAppearanceCommit"];
+    [self.pager updateTopScrollEdgeForScrollView:nil];
+    XCTAssertNil([self.pager valueForKey:@"topEdgeScrollView"]);
+    XCTAssertEqualObjects(source.backgroundColor, UIColor.whiteColor);
+    [self.root removeFromSuperview];
+    XCTAssertEqualObjects(source.backgroundColor, UIColor.clearColor);
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26BackingSurvivesBorrowedOwnerAndRestoresOnRecycle
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"Opaque backing is restricted to iOS 26");
+  } else if (@available(iOS 26.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    self.root.backgroundColor = UIColor.blackColor;
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    UIColor *applied = source.backgroundColor;
+    XCTAssertEqualObjects(applied, UIColor.blackColor);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqualObjects(source.backgroundColor, applied);
+    NSArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
+    NSArray *owners = [[self.pager valueForKey:@"programmaticScrollEdgeOwners"] copy];
+    XCTAssertEqual(owners.count, 3);
+    NSMutableArray<UIScrollView *> *standIns = [NSMutableArray new];
+    for (id owner in owners) {
+      UIScrollView *list = [owner valueForKey:@"scrollView"];
+      XCTAssertEqualObjects(list.backgroundColor, UIColor.blackColor);
+      if (list != source) {
+        XCTAssertEqual([owner valueForKey:@"standInScrollView"], list);
+        [standIns addObject:list];
+      }
+    }
+    XCTAssertEqual(standIns.count, 2);
+    for (UIViewController *page in pages) {
+      UIScrollView *list = (UIScrollView *)page.view.subviews.firstObject;
+      if (list != source) XCTAssertNil(list.backgroundColor);
+    }
+    [self.pager scrollViewDidEndDragging:horizontal willDecelerate:NO];
+    XCTestExpectation *settled = [self expectationWithDescription:@"background handoff cleanup"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+    [self waitForExpectations:@[settled] timeout:2];
+    XCTAssertEqualObjects(source.backgroundColor, UIColor.blackColor);
+    [self.pager prepareForRecycle];
+    for (UIScrollView *standIn in standIns) {
+      XCTAssertEqualObjects(standIn.backgroundColor, UIColor.clearColor);
+      XCTAssertNil(standIn.superview);
+    }
+    for (UIViewController *page in pages) {
+      UIScrollView *list = (UIScrollView *)page.view.subviews.firstObject;
+      XCTAssertNil(list.backgroundColor);
+    }
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26EquivalentGetterColorsKeepLeaseThroughThemeAndReacquisition
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"Opaque backing is restricted to iOS 26");
+  } else if (@available(iOS 26.0, *)) {
+    UIScrollView *previous = [self preparePinnedLocalHardSource];
+    [self.pager updateTopScrollEdgeForScrollView:nil];
+    RNCEquivalentBackgroundScrollView *source = [[RNCEquivalentBackgroundScrollView alloc]
+      initWithFrame:previous.frame];
+    source.contentSize = previous.contentSize;
+    [previous.superview insertSubview:source belowSubview:previous];
+    for (UIView *child in previous.subviews.copy) [source addSubview:child];
+    [previous removeFromSuperview];
+    [self.pager setValue:source forKey:@"observedScrollView"];
+    [self.pager setValue:source forKey:@"sharedHeaderScrollView"];
+    self.root.backgroundColor = [UIColor colorWithRed:0.06 green:0.06 blue:0.06 alpha:1];
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    UIColor *first = source.backgroundColor;
+    UIColor *second = source.backgroundColor;
+    XCTAssertNotEqual(first, second);
+    XCTAssertEqualObjects(first, second);
+    XCTAssertEqualObjects(first, self.root.backgroundColor);
+    self.root.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:1];
+    [self.pager syncScrollEdgeAppearance];
+    XCTAssertEqualObjects(source.backgroundColor, self.root.backgroundColor);
+    [self.pager updateTopScrollEdgeForScrollView:nil];
+    XCTAssertNil(source.backgroundColor);
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    XCTAssertEqualObjects(source.backgroundColor, self.root.backgroundColor);
+    UIColor *replacement = [UIColor colorWithRed:0.8 green:0.1 blue:0.2 alpha:1];
+    source.backgroundColor = replacement;
+    [self.pager syncScrollEdgeAppearance];
+    XCTAssertEqualObjects(source.backgroundColor, replacement);
+    [self.pager updateTopScrollEdgeForScrollView:nil];
+    XCTAssertEqualObjects(source.backgroundColor, replacement);
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS27HardEdgesKeepTransparentCallerBacking
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    self.root.backgroundColor = UIColor.blackColor;
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    XCTAssertNil(source.backgroundColor);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertNil(source.backgroundColor);
+    [self.pager prepareForRecycle];
+    XCTAssertNil(source.backgroundColor);
+  } else {
+    XCTSkip(@"The unchanged transparent-backing control requires iOS 27");
+  }
+}
+
+- (RNCAlignedTakeoverScrollView *)prepareAlignedLocalListForDragTakeover
+{
+  UIScrollView *previous = [self preparePinnedLocalHardSource];
+  RNCAlignedTakeoverScrollView *scroll = [[RNCAlignedTakeoverScrollView alloc] initWithFrame:previous.frame];
+  scroll.observedPan = [RNCAlignedTakeoverPan new];
+  scroll.contentSize = previous.contentSize;
+  [previous.superview insertSubview:scroll belowSubview:previous];
+  [previous removeFromSuperview];
+  [self.pager setValue:nil forKey:@"observedScrollView"];
+  [self.pager setValue:nil forKey:@"sharedHeaderScrollView"];
+  [self.pager setValue:@[@"portfolio"] forKey:@"pageKeys"];
+  [self.pager setValue:@0 forKey:@"headerOffset"];
+  [self.pager attachScrollObserverForCurrentPage];
+  XCTAssertEqual([self.pager valueForKey:@"observedScrollView"], scroll);
+  XCTAssertTrue([[self.pager valueForKey:@"observingContentOffset"] boolValue]);
+  [[self.pager valueForKey:@"pendingPageRestoreKeys"] removeAllObjects];
+  return scroll;
+}
+
+- (void)testIOS26DraggingAfterPanResetTakesOverAlignedBody
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"The isDragging fallback is restricted to iOS 26");
+  } else if (@available(iOS 26.0, *)) {
+    RNCAlignedTakeoverScrollView *scroll = [self prepareAlignedLocalListForDragTakeover];
+    NSMutableSet *aligned = [self.pager valueForKey:@"alignedBodyKeys"];
+    NSMutableDictionary *display = [self.pager valueForKey:@"displayBodyOverrides"];
+    NSInteger step = 0;
+    for (NSNumber *state in @[@(UIGestureRecognizerStatePossible), @(UIGestureRecognizerStateEnded)]) {
+      scroll.observedDragging = NO;
+      scroll.contentOffset = CGPointMake(0, -scroll.contentInset.top);
+      [self.pager setValue:@0 forKey:@"headerOffset"];
+      [aligned addObject:@"portfolio"];
+      display[@"portfolio"] = @94;
+      scroll.observedPan.observedState = static_cast<UIGestureRecognizerState>(state.integerValue);
+      scroll.observedDragging = YES;
+      scroll.contentOffset = CGPointMake(0, 140 + step++ * 20 - scroll.contentInset.top);
+      XCTAssertFalse([aligned containsObject:@"portfolio"]);
+      XCTAssertNil(display[@"portfolio"]);
+      XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"headerOffset"] doubleValue], 100, 0.001);
+    }
+    scroll.observedDragging = NO;
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26NonDraggingSyntheticAndCommandOffsetsKeepAlignedBody
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"The isDragging fallback is restricted to iOS 26");
+  } else if (@available(iOS 26.0, *)) {
+    RNCAlignedTakeoverScrollView *scroll = [self prepareAlignedLocalListForDragTakeover];
+    NSMutableSet *aligned = [self.pager valueForKey:@"alignedBodyKeys"];
+    NSMutableSet *commands = [self.pager valueForKey:@"commandBodyKeys"];
+    NSMutableDictionary *display = [self.pager valueForKey:@"displayBodyOverrides"];
+    NSArray<NSString *> *guards = @[@"not-dragging", @"syntheticPageRestore", @"transitioning",
+      @"commandBodyKeys", @"headerCommandOwner", @"correctingTopInsetRebound"];
+    NSInteger step = 0;
+    for (NSString *guard in guards) {
+      scroll.observedDragging = NO;
+      [self.pager setValue:@NO forKey:@"syntheticPageRestore"];
+      [self.pager setValue:@NO forKey:@"transitioning"];
+      [self.pager setValue:@NO forKey:@"correctingTopInsetRebound"];
+      [self.pager setValue:nil forKey:@"headerCommandOwner"];
+      [commands removeAllObjects];
+      scroll.contentOffset = CGPointMake(0, -scroll.contentInset.top);
+      [self.pager setValue:@0 forKey:@"headerOffset"];
+      [aligned addObject:@"portfolio"];
+      display[@"portfolio"] = @94;
+      if ([guard isEqualToString:@"commandBodyKeys"]) [commands addObject:@"portfolio"];
+      else if ([guard isEqualToString:@"headerCommandOwner"]) [self.pager setValue:scroll forKey:guard];
+      else if (![guard isEqualToString:@"not-dragging"]) [self.pager setValue:@YES forKey:guard];
+      scroll.observedDragging = ![guard isEqualToString:@"not-dragging"];
+      scroll.contentOffset = CGPointMake(0, 140 + step++ * 20 - scroll.contentInset.top);
+      XCTAssertTrue([aligned containsObject:@"portfolio"], @"%@", guard);
+      XCTAssertEqualObjects(display[@"portfolio"], @94, @"%@", guard);
+      XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"headerOffset"] doubleValue], 0, 0.001, @"%@", guard);
+    }
+    scroll.observedDragging = NO;
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26ExternalDragDoesNotBorrowTransitionEdges
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"iOS 27 external edge ownership is covered separately");
+  } else if (@available(iOS 26.0, *)) {
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:NULL overlay:NULL];
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"External scroll edges require iOS 26 or newer");
+  }
+}
+
+- (void)testIOS26AnimatedLocalHardPageCommandSettlesWithBorrowedEdges
+{
+  if (@available(iOS 27.0, *)) {
+    XCTSkip(@"iOS 27 native animated-scroll ownership is covered separately");
+  } else if (@available(iOS 26.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    [self.pager goTo:2 animated:YES];
+    XCTAssertNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 2);
+    XCTAssertEqual(top.scrollView, source);
+    [self waitForNativeResizeCommandsToSettle];
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 2);
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 640, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertNil(top.scrollView);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    UIScrollEdgeElementContainerInteraction *settled = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(settled);
+    XCTAssertEqual(settled.scrollView, [self.pager valueForKey:@"observedScrollView"]);
+  } else {
+    XCTSkip(@"Local Hard scroll edges require iOS 26 or newer");
   }
 }
 
