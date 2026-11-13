@@ -236,16 +236,21 @@ stacked (phone)                     table (wide)
   56, or 60 with secondary text (Android 64); table 60 with secondary text,
   otherwise 48 on iOS/Web and 52 on Android (STYLE_SPEC §6.1).
 - **Linear layout per platform (legacy defaults):**
-  - *iOS and Android, unstyled:* one label per column holding the primary text,
+  - *iOS and Android, unstyled (iOS title-icon exception below):* one label per column holding the primary text,
     up to two inline badge runs and the secondary text on a second line.
     `secondaryLeadingText` is not rendered. On Android, `disabled`/`caution`
     tones render as primary text (legacy tone mapping).
-  - *iOS, styled:* the same single label. `columns`/`columnSecondary` apply
+  - *iOS, styled without title icons:* the same single label. `columns`/`columnSecondary` apply
     font, weight, color, line height and alignment to their text runs/lines;
     `lines`, `truncate`, `verticalAlignment` and `offsetY` act on the whole
     label. Badge pills keep the legacy two-space padding inside their
     background; `titleBadgeGap` adds an exact, unfilled gap between the title
     and the first pill. Unstyled rows are unchanged.
+  - *iOS, with `titleIcon` or `secondaryTitleIcon`:* primary text, icons and
+    badges form a packed first line; secondary text has a separate full-width
+    line. Each text style applies to its own label. Icon placement does not
+    depend on secondary text width; omitted text alignment uses the column
+    alignment. Badge runs retain their legacy font and padding.
   - *Android, text-styled:* only `style.columns`, `columnSecondary`, `lineGap`
     or `titleBadgeGap` switch a row off the legacy layout (single label per
     column in linear; fixed 40dp column blocks with 20/16dp lines in table).
