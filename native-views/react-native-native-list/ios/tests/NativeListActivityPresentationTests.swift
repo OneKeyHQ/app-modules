@@ -60,6 +60,55 @@ final class NativeListActivityPresentationTests: XCTestCase {
     }
   }
 
+  // The description label spans the identity column, so a tap anywhere on its
+  // line used to open the description action. Only the text opens it now; the
+  // blank rest of the line belongs to the row press (OK-67219).
+  func testDescriptionActionTakesTouchesOnItsTextOnly() throws {
+    let details = NativeListActivityDetailsView()
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 366, height: 300))
+    details.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(details)
+    NSLayoutConstraint.activate([
+      details.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      details.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      details.topAnchor.constraint(equalTo: container.topAnchor),
+    ])
+    func bind(description: String, actionKey: String?) throws -> NativeListTextLabel {
+      var data: [String: Any] = [
+        "type": "activity", "key": "tx", "title": "Swap", "description": description,
+        "leading": ["kind": "icon", "name": "ArrowTopOutline"],
+        "amounts": [["key": "send", "text": "-1"]],
+      ]
+      if let actionKey { data["descriptionActionKey"] = actionKey }
+      details.bind(try NativeListItem(data: data), theme: nil, fonts: NativeListFontFamilies())
+      container.layoutIfNeeded()
+      func find(_ view: UIView) -> NativeListTextLabel? {
+        if let label = view as? NativeListTextLabel, label.text == description { return label }
+        return view.subviews.lazy.compactMap(find).first
+      }
+      return try XCTUnwrap(find(details))
+    }
+    func hit(_ label: NativeListTextLabel, x: CGFloat) -> Bool {
+      label.point(inside: CGPoint(x: x, y: label.bounds.midY), with: nil)
+    }
+
+    let address = try bind(description: "Uniswap", actionKey: "address-info")
+    XCTAssertGreaterThan(address.bounds.width, address.touchableTextBounds.maxX + 40)
+    XCTAssertTrue(hit(address, x: 4))
+    XCTAssertFalse(hit(address, x: address.bounds.maxX - 4))
+
+    // Of "time • address" only the address opens the action, as on Web.
+    let timed = try bind(description: "08:48 • Uniswap", actionKey: "address-info")
+    XCTAssertFalse(hit(timed, x: 4))
+    XCTAssertTrue(hit(timed, x: timed.touchableTextBounds.maxX - 12))
+    XCTAssertFalse(hit(timed, x: timed.bounds.maxX - 4))
+
+    // A reused view without the action takes no special touch handling.
+    let plain = try bind(description: "Uniswap", actionKey: nil)
+    XCTAssertFalse(plain.touchesTextOnly)
+    XCTAssertTrue(hit(plain, x: plain.bounds.maxX - 4))
+  }
+
   func testSmallNumberRunsPreserveBaselineAcrossAmountsFiatAndFee() throws {
     func segments(_ prefix: String, _ suffix: String) -> [[String: Any]] {
       [["text": prefix], ["text": "5", "style": "subscript"], ["text": suffix]]

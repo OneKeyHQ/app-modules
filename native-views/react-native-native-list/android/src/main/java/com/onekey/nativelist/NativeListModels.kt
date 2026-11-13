@@ -62,6 +62,37 @@ internal fun nativeListLeadingVisualOverhangsFrame(
  */
 internal fun nativeListActivityHostClips(leadingOverhangs: Boolean): Boolean = !leadingOverhangs
 
+/**
+ * Character offset an Activity description's action starts at. A description is
+ * either the address or `time • address`; only the address opens the action, as
+ * on Web, so the offset skips the time and its separator.
+ */
+internal fun nativeListDescriptionActionTextStart(description: String): Int {
+  val separator = description.indexOf(" • ")
+  return if (separator < 0) 0 else separator + 3
+}
+
+/**
+ * Horizontal span of a stretched text view that takes touches: the drawn lines
+ * from [lineLeft] to [lineRight], without the part before [textStart] when one
+ * is given, widened by [slop] on both sides. Touches outside the span fall
+ * through to the row behind the view (OK-67219).
+ */
+internal fun nativeListTouchableTextSpan(
+  lineLeft: Float,
+  lineRight: Float,
+  textStart: Float?,
+  isRtl: Boolean,
+  slop: Float,
+): ClosedFloatingPointRange<Float> {
+  var left = lineLeft
+  var right = lineRight
+  if (textStart != null) {
+    if (isRtl) right = minOf(right, textStart) else left = maxOf(left, textStart)
+  }
+  return (left - slop)..(right + slop)
+}
+
 internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
 
 /** Side of one member of an Activity token pair inside a [frame]-unit box (24 in 40). */

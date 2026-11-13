@@ -1785,7 +1785,10 @@ and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
 tones. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
-disabled behavior. All actions use the current host binding epoch.
+disabled behavior. All actions use the current host binding epoch. The action
+is hit on the description text only: of a `time • address` description on the
+address, and never on the unused width of the description line, which belongs
+to the row press. iOS and Android add a small touch slop around the text.
 
 Rich rows measure the declared line/visual metrics; there is no six-line native
 truncation. iOS automatic height mirrors the rendered stacks: `lineGap` between the

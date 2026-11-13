@@ -197,6 +197,12 @@ final class NativeListActivityDetailsView: UIStackView {
     ).bind(status)
     descriptionKey = data.string("descriptionActionKey")
     descriptionLabel.isUserInteractionEnabled = !descriptionKey.isEmpty
+    // The label spans the identity column; only its text opens the action, and
+    // of a "time • address" description only the address, as on Web.
+    descriptionLabel.touchesTextOnly = !descriptionKey.isEmpty
+    let descriptionText = data.string("description") as NSString
+    let separator = descriptionText.range(of: " • ")
+    descriptionLabel.touchableTextStart = separator.location == NSNotFound ? 0 : NSMaxRange(separator)
     descriptionLabel.accessibilityTraits = descriptionKey.isEmpty ? .staticText : .button
     for badge in badgeViews { titleLine.removeArrangedSubview(badge); badge.removeFromSuperview() }
     badgeViews = data.dictionaries("badges").map { descriptor in
@@ -269,6 +275,7 @@ final class NativeListActivityDetailsView: UIStackView {
   }
   func recycle() {
     visual.recycle(); visual.isHidden = false; amountViews.forEach { $0.recycle() }; actionKeys = []; descriptionKey = ""
+    descriptionLabel.touchesTextOnly = false; descriptionLabel.touchableTextStart = 0
   }
 }
 

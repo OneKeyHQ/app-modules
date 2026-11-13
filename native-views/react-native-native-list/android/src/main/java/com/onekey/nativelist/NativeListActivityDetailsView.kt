@@ -103,6 +103,10 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     description.setOnClickListener(null)
     val descriptionKey = data.optString("descriptionActionKey")
     description.isClickable = descriptionKey.isNotEmpty()
+    // The view spans the identity column; only its text opens the action, and of
+    // a "time • address" description only the address, as on Web.
+    description.touchesTextOnly = descriptionKey.isNotEmpty()
+    description.touchableTextStart = nativeListDescriptionActionTextStart(data.optString("description"))
     if (descriptionKey.isNotEmpty()) description.setOnClickListener { onAction?.invoke(descriptionKey, description, "description", 0) }
     for (view in listOf(description, status)) (view.layoutParams as LayoutParams).topMargin = if (style.has("lineGap")) px(style.optDouble("lineGap")) else 0
     badges.forEach(titleLine::removeView); badges.clear()
@@ -172,6 +176,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   }
   fun recycle() {
     visual.recycle(); visual.visibility = VISIBLE; amountViews.forEach { it.recycle() }; description.setOnClickListener(null); actions.removeAllViews()
+    description.touchesTextOnly = false; description.touchableTextStart = 0
     leadingOverhangs = false
     setClipping(true)
   }
