@@ -58,6 +58,7 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     rootView.addSubview(container)
     defer { container.removeFromSuperview() }
     let slot = NativeListMediaPreviewSlot()
+    defer { slot.recycle() }
     slot.view.frame = CGRect(x: 0, y: 0, width: 120, height: 120)
     container.addSubview(slot.view)
     slot.view.layoutIfNeeded()
@@ -98,6 +99,7 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     XCTAssertNotNil(slot.capturedFrame)
     XCTAssertEqual(slot.createdPlayerCount, coldPlayers, "Recycled row reuses the cached still")
     let second = NativeListMediaPreviewSlot()
+    defer { second.recycle() }
     second.view.frame = CGRect(x: 120, y: 0, width: 120, height: 120)
     container.addSubview(second.view)
     second.view.layoutIfNeeded()
@@ -108,7 +110,6 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     }
     XCTAssertNotNil(second.capturedFrame)
     XCTAssertEqual(second.createdPlayerCount, 0, "A different cell uses shared cached pixels")
-    second.recycle(); slot.recycle()
   }
 
   /// A 64×48, ten-frame H.264 MP4 (generated with AVAssetWriter on macOS); the simulator

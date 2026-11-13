@@ -347,11 +347,14 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   first responder; passive toast/debug entries do not win solely by level.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
-- Removing an entry while the app window has an interactive UIKit presentation
-  removes that entry from active ordering and restores key ownership immediately,
+- Removing an entry while the app window or an attached contained controller
+  has an interactive UIKit transition removes that entry from active ordering
+  and restores key ownership immediately,
   but retains its exiting window/root/scene until the interaction finishes or
-  cancels. After UIKit reports the interaction change, cleanup runs on the next
-  main turn and rechecks the current transition coordinator before releasing
+  cancels. The search covers presented controllers and child controllers whose
+  loaded views belong to the app window. After UIKit reports the interaction
+  change, cleanup runs on the next main turn and rechecks the current
+  transition coordinator before releasing
   that exact window lifetime. A newly interactive transition keeps it retired
   until its own completion; repeated or late callbacks cannot release a new
   entry for the same owner. Scene disconnect releases active and retired windows
@@ -695,16 +698,19 @@ devices and the broader runtime matrix remain unverified.
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its eleven checks cover bounded/live
+  Animation into an isolated UIKit test app. Its thirteen checks cover bounded/live
   ordering, key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
   higher/foreign/new-input guards), and a native sheet surviving another
-  entry's dismissal. Four focused checks cover interactive retirement after
+  entry's dismissal. Six focused checks cover interactive retirement after
   finish and cancellation, reopening the same owner while the old window is
-  retired, and disconnecting a scene with only a retired window. They use a
-  controlled transition coordinator to test manager lifecycle; the real
-  gesture check is the iOS 27.0 simulator run above.
+  retired, and disconnecting a scene with only a retired window. Four use a
+  controlled transition coordinator to test manager lifecycle; one uses a
+  real contained `UINavigationController` interactive pop to verify retention
+  until cancellation; one ensures unloaded and unattached children do not
+  retain the window or load their views. The App gesture check above covers
+  the main-window handoff, not this contained-navigation path.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
