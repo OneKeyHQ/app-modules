@@ -35,26 +35,27 @@ class NativeListTextLabel: UILabel {
       originY = alignment == "top" ? 0 : alignment == "bottom" ? bounds.height - textHeight : originY
     }
     originY += rowOffsetY
-    var lines: [CGRect] = []
+    var lines: [(used: CGRect, characters: NSRange)] = []
     manager.enumerateLineFragments(forGlyphRange: glyphs) { _, usedRect, _, lineGlyphs, _ in
-      let characters = manager.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)
-      guard NSMaxRange(characters) > start else { return }
-      var rect = usedRect
-      if characters.location < start {
-        let touchable = NSRange(location: start, length: NSMaxRange(characters) - start)
+      lines.append(
+        (usedRect, manager.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)))
+    }
+    return lines.enumerated().compactMap { index, line in
+      guard NSMaxRange(line.characters) > start else { return nil }
+      var rect = line.used
+      if line.characters.location < start {
+        let touchable = NSRange(location: start, length: NSMaxRange(line.characters) - start)
         rect = manager.boundingRect(
           forGlyphRange: manager.glyphRange(forCharacterRange: touchable, actualCharacterRange: nil),
           in: container)
       }
-      lines.append(rect.offsetBy(dx: 0, dy: originY))
-    }
-    // The slop widens every line, but grows vertically only away from the
-    // text, so it never reaches into a neighbouring line.
-    return lines.enumerated().map { index, rect in
+      // The slop widens every line. Vertically it grows only past the first
+      // and last line of the whole layout, so it never reaches into another
+      // line, including one that holds no touchable text.
       let top = index == 0 ? Self.touchSlop.height : 0
       let bottom = index == lines.count - 1 ? Self.touchSlop.height : 0
       return CGRect(
-        x: rect.minX - Self.touchSlop.width, y: rect.minY - top,
+        x: rect.minX - Self.touchSlop.width, y: rect.minY + originY - top,
         width: rect.width + Self.touchSlop.width * 2, height: rect.height + top + bottom)
     }
   }

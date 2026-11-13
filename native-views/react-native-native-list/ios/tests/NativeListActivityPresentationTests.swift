@@ -187,6 +187,33 @@ final class NativeListActivityPresentationTests: XCTestCase {
     XCTAssertFalse(hit(label.bounds.maxX - 2, lines[1].midY))
   }
 
+  // The first line holds only the time, so it takes no touches, and the slop
+  // of the address line below it must not reach up into the time.
+  func testAddressStartingOnTheSecondLineLeavesTheTimeLineAlone() throws {
+    let prefix = "08:48 • "
+    let address = "UniswapUniversalRouter"
+    func text(_ value: String) -> NativeListResolvedText {
+      NativeListResolvedText(
+        value, style: nil, size: 14, color: .label, lineHeight: 20, lines: 2,
+        fonts: NativeListFontFamilies())
+    }
+    let label = NativeListTextLabel()
+    text(prefix + address).bind(label)
+    // Wide enough for the address alone, too narrow for the time beside it.
+    label.frame = CGRect(x: 0, y: 0, width: text(address).measureWidth() + 4, height: 40)
+    label.touchableTextStart = (prefix as NSString).length
+    func hit(y: CGFloat) -> Bool { label.point(inside: CGPoint(x: 4, y: y), with: nil) }
+
+    let line = try XCTUnwrap(label.touchableTextRegions.first)
+    XCTAssertEqual(label.touchableTextRegions.count, 1)
+    XCTAssertEqual(line.minY, 20, accuracy: 0.5)
+    XCTAssertFalse(hit(y: 10))
+    XCTAssertFalse(hit(y: line.minY - 2))
+    XCTAssertTrue(hit(y: line.minY + 2))
+    // The last line of the layout still takes its slop below the text.
+    XCTAssertTrue(hit(y: label.bounds.maxY + 4))
+  }
+
   // A one-line description folds each line break into one space, so the
   // caller's offset is mapped onto the displayed text and kept inside it.
   func testDescriptionActionStartFollowsTheDisplayedText() {

@@ -1811,8 +1811,11 @@ its wording; a caller that composes `prefix + label` records `prefix.length`.
   folds each line break into one space, so offsets after a CRLF move by one.
 - The hit area follows the laid-out lines. A line that ends before the offset
   takes no touches, the line that holds it takes them from the offset on, later
-  lines take them on their text. iOS and Android add a small touch slop around
-  the text.
+  lines take them on their text. iOS and Android widen each line by 8 units.
+  iOS also extends the first and the last line of the whole layout by 6 points
+  away from the text, never a line in between, so the slop cannot reach into a
+  line that holds only plain text. Android extends the first and last line of
+  the layout to the view's top and bottom edge.
 - Internally the native text view holds one optional start: none keeps the
   view's own hit testing (rows without the action), `0` limits touches to all of
   the text, a positive value to the text from there on. Binding, rebinding
