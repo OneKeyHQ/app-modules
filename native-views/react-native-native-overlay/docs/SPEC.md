@@ -347,15 +347,20 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   first responder; passive toast/debug entries do not win solely by level.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
-- App-touch retirement extension (Implemented; nineteen focused native checks
-  and eight local iOS 27.0 App handoff cases passed): before showing the first
-  global entry for a real app window, install
-  one passive touch observer on that app window. Entries, including nested
-  overlay hosts, share that observer. It tracks delivered touch identities, never
+- Delivered-touch retirement extension (Implemented; thirty native checks
+  passed, final review-version App acceptance pending):
+  before showing a global entry, install a passive touch observer on its real
+  app window and on the entry window. Active and retired entries of that real
+  host share a touch lifetime, including touches delivered to a lower entry or
+  the exiting window itself. Other real app windows remain independent, even
+  within the same scene. Each observer tracks delivered touch identities, never
   retains UIEvent objects, never cancels or delays touches, and neither prevents
   nor can be prevented by another recognizer. It stays possible until the last
   tracked touch ends or cancels, then fails and resets without recognizing.
-- Removing an entry while its real app window has delivered active touches or
+  It accepts concurrent touch types with `requiresExclusiveTouchType = false`
+  and preserves UIKit's default allowed touch types.
+- Removing an entry while its real app window or any active/retired entry owned
+  by that real host has delivered active touches or
   an interactive UIKit presentation
   removes that entry from active ordering and restores key ownership immediately,
   but retains its exiting window/root/scene, without hiding it, until both the
@@ -368,11 +373,22 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   entry for the same owner. A new touch beginning after a previous touch ends but
   before queued cleanup keeps the window retired. Overlapping multi-touch can
   extend retirement without a timeout. When neither condition exists, removal
-  still releases synchronously. Remove the shared observer only when that app
-  window has no active or retired entries. Scene disconnect unregisters observers
-  and their callbacks before releasing active and retired windows
+  still releases synchronously. Remove an entry observer only when its window
+  is released; remove a real app window's observer only when that host has no
+  active or retired entries. Touch callbacks query current host ownership across
+  scenes, rather than binding to the scene of first installation. Moving the
+  same real host to another scene keeps its remaining users protected.
+  Reassigning an observed window to a different host does not change its
+  delivered touch context: retain weak prior-host associations until a next-turn
+  check finds its complete touch set empty and those hosts' retirements released.
+  A new touch during an idle gap still protects a prior host whose context remains
+  retired. Touch completion, observer removal and host reassignment wake current
+  and prior hosts; queued cleanup does not require the source observer to survive.
+  Scene disconnect removes that scene's records and unregisters only observers with
+  no remaining users before releasing active and retired windows
   without notifying an already removed owner again. No fixed timeout controls
   this handoff.
+  Key restoration MUST NOT activate a host that has moved to another scene.
   Public UIKit observation cannot account for a DOWN not yet delivered to the
   app window; acceptance must separately exercise that delivery/teardown boundary.
 - Every presentation lifetime has a generation. Asynchronous present, dismiss,
@@ -710,7 +726,8 @@ More reopened and a subsequent full drag dismissed normally. Home and Market
 remained interactive. This checks the main-UI window handoff only; physical
 devices and the broader runtime matrix remain unverified.
 
-App-touch extension acceptance (2026-11-13, local Debug build on an isolated
+Historical app-touch acceptance for revision `404e87c` (2026-11-13,
+local Debug build on an isolated
 iOS 27.0 simulator): all eight first-pan-only cases passed, starting from the
 Home header or list body at 250, 300, 350 and 400 ms after More close UP. The
 250/300 ms cases kept all twenty old-context events routed to the app window;
@@ -723,8 +740,9 @@ AccountSelectorStack (body), without another pan or tab switch. Per-case main
 and background runtime markers remained unchanged. These measured teardown
 boundaries do not guarantee observation of a DOWN UIKit has not delivered yet.
 
-Two additional selector handoffs exercised multiple front-card drags and a
-partial rebound, then front dismissal followed 250 ms later by either a complete
+For the same historical revision, two additional selector handoffs exercised
+multiple front-card drags and a partial rebound, then front dismissal followed
+250 ms later by either a complete
 back-selector dismissal or a partial drag canceled into rebound. Both preserved
 complete old-context delivery (36 and 16 events respectively), zero backing-only
 events, stable main/background markers, and working direct React controls.
@@ -734,10 +752,22 @@ It is an equivalent-host regression, not a replay of the original three-account
 HD wallet-level menu. Release/TestFlight binaries, physical devices and other
 OS versions remain unverified.
 
+Review extension acceptance: thirty focused native checks passed. Final
+review-version App first-only Home and nested-entry interaction acceptance is
+pending. The earlier nineteen native checks, eight Home cases and two equivalent
+selector handoffs above belong to `404e87c`, not a rerun of the review version.
+The eleven added native groups cover lower/exiting-entry and cross-window touch
+ownership, mixed delivered types, repeated host reassignment, UP/rehost/DOWN and
+coordinator-held idle gaps, projected scene ownership/disconnect, and key scope.
+Mixed-type tests directly deliver synthetic touches and assert observer flags;
+they do not prove physical Pencil input. Scene tests project one real scene into
+controlled manager identity buckets using an internal resolver; they do not prove
+system multi-scene migration. The default resolver remains `ObjectIdentifier(scene)`.
+
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its nineteen checks cover bounded/live
+  Animation into an isolated UIKit test app. Its original nineteen checks cover bounded/live
   ordering, key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
