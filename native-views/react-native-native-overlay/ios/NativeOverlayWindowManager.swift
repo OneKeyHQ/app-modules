@@ -174,7 +174,19 @@ final class NativeOverlayWindowManager: NSObject {
     }
   }
 
+  private final class RetiredWindow {
+    let window: NativeOverlayPassthroughWindow
+    weak var appWindow: UIWindow?
+    weak var observedCoordinator: AnyObject?
+
+    init(window: NativeOverlayPassthroughWindow, appWindow: UIWindow?) {
+      self.window = window
+      self.appWindow = appWindow
+    }
+  }
+
   private var scenes: [ObjectIdentifier: [ObjectIdentifier: Entry]] = [:]
+  private var retiredWindows: [ObjectIdentifier: [ObjectIdentifier: RetiredWindow]] = [:]
   private var disconnectingScenes = Set<ObjectIdentifier>()
   private var sequence = 0
 
@@ -256,7 +268,15 @@ final class NativeOverlayWindowManager: NSObject {
     scenes[sceneKey]?[ownerKey] = nil
     let remaining = scenes[sceneKey] ?? [:]
     if remaining.isEmpty { scenes[sceneKey] = nil }
-    release(entry.window)
+    if Self.interactiveCoordinator(in: entry.appWindow) != nil {
+      // Destroying this window context can strand a touch already routed to the app's interactive sheet.
+      let retirement = RetiredWindow(window: entry.window, appWindow: entry.appWindow)
+      let windowKey = ObjectIdentifier(entry.window)
+      retiredWindows[sceneKey, default: [:]][windowKey] = retirement
+      finishRetirement(retirement, sceneKey: sceneKey, windowKey: windowKey)
+    } else {
+      release(entry.window)
+    }
     reorder(remaining)
     guard wasKey, let scene,
           scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive else { return }
@@ -331,11 +351,45 @@ final class NativeOverlayWindowManager: NSObject {
     window.windowScene = nil
   }
 
+  private static func interactiveCoordinator(in appWindow: UIWindow?) -> UIViewControllerTransitionCoordinator? {
+    var controller = appWindow?.rootViewController
+    while let current = controller {
+      if let coordinator = current.transitionCoordinator, coordinator.isInteractive {
+        return coordinator
+      }
+      controller = current.presentedViewController
+    }
+    return nil
+  }
+
+  private func finishRetirement(_ retirement: RetiredWindow, sceneKey: ObjectIdentifier,
+                                windowKey: ObjectIdentifier) {
+    guard retiredWindows[sceneKey]?[windowKey] === retirement else { return }
+    guard let coordinator = Self.interactiveCoordinator(in: retirement.appWindow) else {
+      retiredWindows[sceneKey]?[windowKey] = nil
+      if retiredWindows[sceneKey]?.isEmpty == true { retiredWindows[sceneKey] = nil }
+      release(retirement.window)
+      return
+    }
+    guard retirement.observedCoordinator !== coordinator else { return }
+    retirement.observedCoordinator = coordinator
+    coordinator.notifyWhenInteractionChanges { [weak self, weak retirement] context in
+      guard !context.isInteractive else { return }
+      DispatchQueue.main.async { [weak self, weak retirement] in
+        guard let self, let retirement,
+              self.retiredWindows[sceneKey]?[windowKey] === retirement else { return }
+        self.finishRetirement(retirement, sceneKey: sceneKey, windowKey: windowKey)
+      }
+    }
+  }
+
   @objc private func sceneDidDisconnect(_ notification: Notification) {
     precondition(Thread.isMainThread)
     guard let scene = notification.object as? UIWindowScene else { return }
     let sceneKey = ObjectIdentifier(scene)
-    guard let entries = scenes.removeValue(forKey: sceneKey) else { return }
+    let entries = scenes.removeValue(forKey: sceneKey) ?? [:]
+    let retired = retiredWindows.removeValue(forKey: sceneKey) ?? [:]
+    guard !entries.isEmpty || !retired.isEmpty else { return }
     disconnectingScenes.insert(sceneKey)
     defer { disconnectingScenes.remove(sceneKey) }
     // Unregister first: owner callbacks must not restore a disconnected scene's key.
@@ -343,5 +397,6 @@ final class NativeOverlayWindowManager: NSObject {
       entry.owner?.overlaySceneDidDisconnect(window: entry.window)
       release(entry.window)
     }
+    for retirement in retired.values { release(retirement.window) }
   }
 }
