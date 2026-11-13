@@ -93,15 +93,34 @@ final class NativeListActivityPresentationTests: XCTestCase {
     }
 
     let address = try bind(description: "Uniswap", actionKey: "address-info")
-    XCTAssertGreaterThan(address.bounds.width, address.touchableTextBounds.maxX + 40)
+    let addressText = try XCTUnwrap(address.touchableTextRegions.first)
+    XCTAssertEqual(address.touchableTextRegions.count, 1)
+    XCTAssertGreaterThan(address.bounds.width, addressText.maxX + 40)
     XCTAssertTrue(hit(address, x: 4))
     XCTAssertFalse(hit(address, x: address.bounds.maxX - 4))
 
     // Of "time • address" only the address opens the action, as on Web.
     let timed = try bind(description: "08:48 • Uniswap", actionKey: "address-info")
+    let timedText = try XCTUnwrap(timed.touchableTextRegions.first)
+    XCTAssertEqual(timed.touchableTextRegions.count, 1)
     XCTAssertFalse(hit(timed, x: 4))
-    XCTAssertTrue(hit(timed, x: timed.touchableTextBounds.maxX - 12))
+    XCTAssertTrue(hit(timed, x: timedText.maxX - 12))
     XCTAssertFalse(hit(timed, x: timed.bounds.maxX - 4))
+
+    // A narrow row wraps the description. The time stays outside the action on
+    // its line, while the address is hit on both lines, also at the x the time
+    // occupies one line above.
+    container.frame.size.width = 220
+    let wrapped = try bind(
+      description: "08:48 • Uniswap Universal Router", actionKey: "address-info")
+    let lines = wrapped.touchableTextRegions
+    XCTAssertEqual(lines.count, 2)
+    XCTAssertFalse(wrapped.point(inside: CGPoint(x: 4, y: lines[0].midY), with: nil))
+    XCTAssertTrue(wrapped.point(inside: CGPoint(x: lines[0].maxX - 12, y: lines[0].midY), with: nil))
+    XCTAssertTrue(wrapped.point(inside: CGPoint(x: 4, y: lines[1].midY), with: nil))
+    XCTAssertFalse(
+      wrapped.point(inside: CGPoint(x: wrapped.bounds.maxX - 2, y: lines[1].midY), with: nil))
+    container.frame.size.width = 366
 
     // A reused view without the action takes no special touch handling.
     let plain = try bind(description: "Uniswap", actionKey: nil)

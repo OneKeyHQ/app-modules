@@ -39,33 +39,34 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
    * width of a stretched view falls through to the row behind it.
    */
   var touchesTextOnly = false
-  /** Character offset the touchable text starts at; a single-line view ignores touches before it. */
+  /** Character offset the touchable text starts at; text before it takes no touches on any line. */
   var touchableTextStart = 0
 
-  val touchableTextBounds: RectF?
+  val touchableTextRegions: List<NativeListTouchRegion>
     get() {
-      val textLayout = layout ?: return null
-      val lines = textLayout.lineCount
-      if (lines == 0) return null
-      var left = Float.MAX_VALUE
-      var right = -Float.MAX_VALUE
-      for (line in 0 until lines) {
-        left = minOf(left, textLayout.getLineLeft(line))
-        right = maxOf(right, textLayout.getLineRight(line))
+      val textLayout = layout ?: return emptyList()
+      val count = textLayout.lineCount
+      if (count == 0) return emptyList()
+      val originX = totalPaddingLeft.toFloat()
+      val originY = totalPaddingTop + opticalOffsetY
+      val lines = (0 until count).map { line ->
+        NativeListTextLine(
+          start = textLayout.getLineStart(line),
+          end = textLayout.getLineEnd(line),
+          left = originX + textLayout.getLineLeft(line),
+          // The outer lines also take the view's own vertical padding.
+          top = if (line == 0) 0f else originY + textLayout.getLineTop(line),
+          right = originX + textLayout.getLineRight(line),
+          bottom = if (line == count - 1) height.toFloat() else originY + textLayout.getLineBottom(line),
+          isRtl = textLayout.getParagraphDirection(line) == Layout.DIR_RIGHT_TO_LEFT,
+        )
       }
-      val startsInside = lines == 1 && touchableTextStart > 0 && touchableTextStart < textLayout.text.length
-      val span = nativeListTouchableTextSpan(
-        lineLeft = left,
-        lineRight = right,
-        textStart = if (startsInside) textLayout.getPrimaryHorizontal(touchableTextStart) else null,
-        isRtl = textLayout.getParagraphDirection(0) == Layout.DIR_RIGHT_TO_LEFT,
+      val startsInside = touchableTextStart > 0 && touchableTextStart < textLayout.text.length
+      return nativeListTouchableTextRegions(
+        lines = lines,
+        textStart = touchableTextStart,
+        textStartX = if (startsInside) originX + textLayout.getPrimaryHorizontal(touchableTextStart) else 0f,
         slop = TOUCH_SLOP_DP * resources.displayMetrics.density,
-      )
-      return RectF(
-        totalPaddingLeft + span.start,
-        0f,
-        totalPaddingLeft + span.endInclusive,
-        height.toFloat(),
       )
     }
 
@@ -73,7 +74,7 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
     if (primaryHelpOnly && event.actionMasked == MotionEvent.ACTION_DOWN &&
       helpAnchorBounds?.contains(event.x, event.y) != true) return false
     if (touchesTextOnly && event.actionMasked == MotionEvent.ACTION_DOWN &&
-      touchableTextBounds?.contains(event.x, event.y) != true) return false
+      touchableTextRegions.none { it.contains(event.x, event.y) }) return false
     if (guardsHelpTouches) {
       if (event.actionMasked == MotionEvent.ACTION_DOWN) helpDownGeneration = helpBindingGeneration
       if (event.actionMasked == MotionEvent.ACTION_UP && helpDownGeneration != helpBindingGeneration) {

@@ -72,25 +72,41 @@ internal fun nativeListDescriptionActionTextStart(description: String): Int {
   return if (separator < 0) 0 else separator + 3
 }
 
+/** One laid-out line of a text view, in view coordinates; `[start, end)` are character offsets. */
+internal data class NativeListTextLine(
+  val start: Int,
+  val end: Int,
+  val left: Float,
+  val top: Float,
+  val right: Float,
+  val bottom: Float,
+  val isRtl: Boolean = false,
+)
+
+internal data class NativeListTouchRegion(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+  fun contains(x: Float, y: Float): Boolean = x in left..right && y in top..bottom
+}
+
 /**
- * Horizontal span of a stretched text view that takes touches: the drawn lines
- * from [lineLeft] to [lineRight], without the part before [textStart] when one
- * is given, widened by [slop] on both sides. Touches outside the span fall
- * through to the row behind the view (OK-67219).
+ * Parts of a stretched text view that take touches: on every line the drawn
+ * text from character [textStart] on, widened horizontally by [slop]. A line
+ * that ends before [textStart] takes none, and the line that holds it takes
+ * none before [textStartX], however the text wraps. Touches outside the regions
+ * fall through to the row behind the view (OK-67219).
  */
-internal fun nativeListTouchableTextSpan(
-  lineLeft: Float,
-  lineRight: Float,
-  textStart: Float?,
-  isRtl: Boolean,
+internal fun nativeListTouchableTextRegions(
+  lines: List<NativeListTextLine>,
+  textStart: Int,
+  textStartX: Float,
   slop: Float,
-): ClosedFloatingPointRange<Float> {
-  var left = lineLeft
-  var right = lineRight
-  if (textStart != null) {
-    if (isRtl) right = minOf(right, textStart) else left = maxOf(left, textStart)
+): List<NativeListTouchRegion> = lines.mapNotNull { line ->
+  if (line.end <= textStart) return@mapNotNull null
+  var left = line.left
+  var right = line.right
+  if (line.start < textStart) {
+    if (line.isRtl) right = minOf(right, textStartX) else left = maxOf(left, textStartX)
   }
-  return (left - slop)..(right + slop)
+  NativeListTouchRegion(left - slop, line.top, right + slop, line.bottom)
 }
 
 internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
