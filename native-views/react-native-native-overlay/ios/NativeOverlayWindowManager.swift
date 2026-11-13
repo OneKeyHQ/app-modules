@@ -352,12 +352,16 @@ final class NativeOverlayWindowManager: NSObject {
   }
 
   private static func interactiveCoordinator(in appWindow: UIWindow?) -> UIViewControllerTransitionCoordinator? {
-    var controller = appWindow?.rootViewController
-    while let current = controller {
+    guard let appWindow, let root = appWindow.rootViewController else { return nil }
+    var stack = [root]
+    var visited = Set<ObjectIdentifier>()
+    while let current = stack.popLast() {
+      guard visited.insert(ObjectIdentifier(current)).inserted else { continue }
       if let coordinator = current.transitionCoordinator, coordinator.isInteractive {
         return coordinator
       }
-      controller = current.presentedViewController
+      stack.append(contentsOf: current.children.filter { $0.viewIfLoaded?.window === appWindow })
+      if let presented = current.presentedViewController { stack.append(presented) }
     }
     return nil
   }

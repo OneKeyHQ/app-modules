@@ -60,6 +60,40 @@ private final class TestTransitionCoordinator: NSObject, UIViewControllerTransit
   }
 }
 
+private final class TestPopAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  func transitionDuration(using context: UIViewControllerContextTransitioning?) -> TimeInterval { 0.2 }
+
+  func animateTransition(using context: UIViewControllerContextTransitioning) {
+    guard let from = context.view(forKey: .from), let to = context.view(forKey: .to) else {
+      context.completeTransition(false)
+      return
+    }
+    if to.superview == nil { context.containerView.insertSubview(to, belowSubview: from) }
+    UIView.animate(withDuration: transitionDuration(using: context), animations: {
+      from.transform = CGAffineTransform(translationX: context.containerView.bounds.width, y: 0)
+    }, completion: { _ in
+      from.transform = .identity
+      context.completeTransition(!context.transitionWasCancelled)
+    })
+  }
+}
+
+private final class TestPopDelegate: NSObject, UINavigationControllerDelegate {
+  let animator = TestPopAnimator()
+  var interaction: UIPercentDrivenInteractiveTransition?
+
+  func navigationController(_ navigationController: UINavigationController,
+                            animationControllerFor operation: UINavigationController.Operation,
+                            from fromVC: UIViewController, to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+    operation == .pop ? animator : nil
+  }
+
+  func navigationController(_ navigationController: UINavigationController,
+                            interactionControllerFor animationController: UIViewControllerAnimatedTransitioning) -> UIViewControllerInteractiveTransitioning? {
+    interaction
+  }
+}
+
 private struct Failure: Error { let name: String }
 private func require(_ condition: @autoclosure () -> Bool, _ name: String) throws {
   if !condition() { throw Failure(name: name) }
@@ -237,6 +271,68 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
     newWindow.rootViewController != nil, "late callback does not release reopened owner")
   transitionManager.entryRemoved(from: newWindow)
   passed.append("interactive-window-retirement-owner-reuse")
+
+  let nestedApp = UIWindow(windowScene: scene)
+  let containerRoot = UIViewController()
+  nestedApp.rootViewController = containerRoot
+  nestedApp.makeKeyAndVisible()
+  let navigation = UINavigationController(rootViewController: UIViewController())
+  containerRoot.addChild(navigation)
+  navigation.view.frame = containerRoot.view.bounds
+  containerRoot.view.addSubview(navigation.view)
+  navigation.didMove(toParent: containerRoot)
+  navigation.pushViewController(UIViewController(), animated: false)
+  let popDelegate = TestPopDelegate()
+  let popInteraction = UIPercentDrivenInteractiveTransition()
+  popDelegate.interaction = popInteraction
+  navigation.delegate = popDelegate
+  let nestedManager = NativeOverlayWindowManager()
+  let nestedOwner = Owner()
+  let nestedWindow = nestedManager.window(for: nestedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: nestedApp)!
+  nestedWindow.makeKey()
+  _ = navigation.popViewController(animated: true)
+  popInteraction.update(0.25)
+  for _ in 0..<5 where navigation.transitionCoordinator?.isInteractive != true { await nextMainTurn() }
+  try require(containerRoot.transitionCoordinator == nil &&
+    navigation.transitionCoordinator?.isInteractive == true && navigation.viewIfLoaded?.window === nestedApp,
+    "real contained navigation transition is interactive only in the child")
+  nestedManager.entryRemoved(from: nestedWindow)
+  try require(nestedWindow.windowScene === scene && nestedWindow.rootViewController != nil,
+    "attached child navigation transition retains the exiting window")
+  popInteraction.cancel()
+  let nestedDeadline = Date().addingTimeInterval(2)
+  while nestedWindow.windowScene != nil && Date() < nestedDeadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  try require(nestedWindow.windowScene == nil && nestedWindow.rootViewController == nil,
+    "cancelled child navigation transition releases the exiting window")
+  let unloadedChild = TransitionRoot()
+  unloadedChild.activeCoordinator = TestTransitionCoordinator()
+  containerRoot.addChild(unloadedChild)
+  let detachedChild = TransitionRoot()
+  _ = detachedChild.view
+  detachedChild.activeCoordinator = TestTransitionCoordinator()
+  containerRoot.addChild(detachedChild)
+  try require(unloadedChild.viewIfLoaded == nil && detachedChild.viewIfLoaded?.window == nil,
+    "inactive child transition precondition")
+  let inactiveOwner = Owner()
+  let inactiveWindow = nestedManager.window(for: inactiveOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: nestedApp)!
+  nestedManager.entryRemoved(from: inactiveWindow)
+  try require(inactiveWindow.windowScene == nil && inactiveWindow.rootViewController == nil &&
+    unloadedChild.viewIfLoaded == nil, "unattached children do not retain a window or load a view")
+  unloadedChild.removeFromParent()
+  detachedChild.removeFromParent()
+  passed.append("interactive-window-retirement-unattached-children")
+  navigation.willMove(toParent: nil)
+  navigation.view.removeFromSuperview()
+  navigation.removeFromParent()
+  nestedApp.isHidden = true
+  nestedApp.rootViewController = nil
+  nestedApp.windowScene = nil
+  transitionApp.makeKey()
+  passed.append("interactive-window-retirement-contained-navigation")
 
   let disconnectedOwner = Owner()
   let disconnectedWindow = transitionManager.window(for: disconnectedOwner, level: .modal,
