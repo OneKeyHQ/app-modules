@@ -1,0 +1,20 @@
+Local Windows x64 crash-capture prototype
+
+The capture DLL is built from Crashpad, with its mini_chromium and zlib
+dependencies, plus the reviewable OneKey bounded-memory C ABI wrapper.
+The accompanying license texts retain the upstream notices, including
+mini_chromium's ICU-derived code and Crashpad's getopt compatibility code.
+
+Crashpad source:
+https://chromium.googlesource.com/crashpad/crashpad/
+Revision: ad1827ddbc03f1c214030b31b380243ded660b95
+This is the upstream revision recorded by Chromium 152.0.7977.130.
+
+Reviewed x64 capture DLL SHA-256:
+56d419be2d3a89f5d9e46745613885ac43dc09a729a11d8a9168c7ee44c9c247
+
+The official Electron 44.5.1 headers used to compile the V8 bridge are
+build inputs only; Electron itself is not rebuilt or included in this
+package. Source/build provenance is described in SPEC.md.
+
+This private prototype does not upload crash information.

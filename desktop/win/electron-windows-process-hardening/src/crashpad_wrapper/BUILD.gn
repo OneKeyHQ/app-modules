@@ -1,0 +1,15 @@
+import("../build/crashpad_buildconfig.gni")
+static_library("onekey_capture") {
+  sources = [ "capture.cc", "capture.h" ]
+  deps = [ "../minidump:minidump", "../snapshot:snapshot", "../util:util" ]
+  configs += [ "..:crashpad_config" ]
+  libs = [ "advapi32.lib" ]
+}
+loadable_module("onekey_capture_test") {
+  sources = [ "capture.cc", "capture.h" ]
+  defines = [ "ONEKEY_CAPTURE_DLL" ]
+  deps = [ "../minidump:minidump", "../snapshot:snapshot", "../util:util" ]
+  configs += [ "..:crashpad_config" ]
+  libs = [ "advapi32.lib" ]
+}
+group("all") { deps = [ ":onekey_capture", ":onekey_capture_test" ] }
