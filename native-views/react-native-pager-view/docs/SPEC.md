@@ -87,6 +87,33 @@ transition gates apply only while an outer PagerView is registered.
 `topOverlayColorScheme` is optional (`"light" | "dark"`) and coordinates the
 fixed overlay's effective appearance with React theme commits. It does not
 change the requested style, scroll owner, content inset or page identity.
+
+Implemented: on iOS 26, changing an existing overlay color scheme detaches its
+scroll-edge interaction until a single main-run-loop callback after the Fabric
+mount transaction. The callback runs in common modes so tracking does not defer
+reattachment until the gesture ends. Layout and further mount work cannot
+reattach the interaction while this appearance commit is pending. A newer scheme
+cancels the queued callback and schedules from its own completed mount, using the
+latest scheme and currently observed scroll view. Window detachment, recycling
+and disabling the edge cancel pending work. Reattachment requires an enabled
+edge, a current window and a local or resolved external overlay still mounted in
+that window; stale work cannot attach to a recycled owner. The existing attach
+path restores the requested edge style and preserves React child identities,
+order, geometry and hit targets. Initial mount retains its existing timing;
+iOS 27 and newer retain synchronous appearance reattachment in the mount
+transaction. Android, Web and iOS before 26 are unchanged.
+
+Runtime verified in consumer iOS Simulator Debug builds: iOS 26.0 completed
+two light/dark cycles with Home mounted and consecutive system-theme commands
+with the final appearance checked. iOS 27.0 completed light-to-dark-to-light
+against its existing light and dark appearance baselines. Both platforms verified
+actual edge ownership and mounted child order, plus opening/returning from Search and
+Action Center. Both builds compiled the identical Pager native object and
+source. The App debug-dylib UUIDs differed; this is source/object parity, not
+byte-identical App binaries. Same-mount rapid scheme races and cancellation
+guards were source reviewed. Physical devices and Release builds remain
+unverified.
+
 When a smooth shared header reaches the overlay boundary, the existing sticky
 React and native tab views move together into a view pinned to the active
 scroll view. Their identities, scroll-view gesture ancestry and hit targets

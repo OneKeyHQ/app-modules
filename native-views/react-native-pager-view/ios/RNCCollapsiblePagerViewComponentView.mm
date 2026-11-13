@@ -2294,6 +2294,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)syncScrollEdgeAppearance;
 - (void)updateHardEdgeSeparatorCovers;
 - (void)updateTopOverlayThemeBackground;
+- (void)commitTopOverlayAppearance;
+- (void)cancelTopOverlayAppearanceCommit;
 - (BOOL)canPreserveHorizontalScrollEdgesAllowExternalOverlay:(BOOL)allowExternalOverlay;
 - (void)beginProgrammaticScrollEdgesToIndex:(NSInteger)index allowExternalOverlay:(BOOL)allowExternalOverlay;
 - (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay;
@@ -2368,6 +2370,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   RNCCollapsiblePagerViewTopScrollEdgeEffect _topScrollEdgeEffect;
   NSString *_topOverlayColorScheme;
   BOOL _pendingTopOverlayAppearanceCommit;
+  BOOL _topOverlayAppearanceCommitScheduled;
   BOOL _applyingTopOverlayInsetChange;
   BOOL _correctingTopInsetRebound;
   __weak UIScrollView *_pendingTopInsetReboundScrollView;
@@ -2687,6 +2690,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 {
   [super didMoveToWindow];
   [self cancelNativeToolbarSettlement];
+  if (self.window == nil && _pendingTopOverlayAppearanceCommit) {
+    [self cancelTopOverlayAppearanceCommit];
+  }
   if (self.window == nil) [self stopProgrammaticTabProgress];
   if (self.window == nil && _pendingNativePagerScrollCompletion != nil) {
     [self cancelPendingNativePagerScroll];
@@ -3498,6 +3504,30 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   return NO;
 }
 
+- (void)cancelTopOverlayAppearanceCommit
+{
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                         selector:@selector(commitTopOverlayAppearance)
+                                           object:nil];
+  _topOverlayAppearanceCommitScheduled = NO;
+  _pendingTopOverlayAppearanceCommit = NO;
+}
+
+- (void)commitTopOverlayAppearance
+{
+  _topOverlayAppearanceCommitScheduled = NO;
+  if (!_pendingTopOverlayAppearanceCommit) return;
+  _pendingTopOverlayAppearanceCommit = NO;
+  BOOL localOverlayReady = _topOverlayView.superview == _topOverlayHostView &&
+    _topOverlayView.window == self.window;
+  BOOL externalOverlayReady = _externalTopOverlayTag > 0 &&
+    _externalTopOverlayView.window == self.window;
+  if (!_isBeingRecycled && _topScrollEdgeEnabled && self.window != nil &&
+      (localOverlayReady || externalOverlayReady)) {
+    [self updateTopScrollEdgeForScrollView:_observedScrollView];
+  }
+}
+
 - (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView
 {
   [self syncScrollEdgeAppearance];
@@ -3671,6 +3701,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)dealloc
 {
+  [self cancelTopOverlayAppearanceCommit];
   [self cancelNativeToolbarSettlement];
   [self stopProgrammaticTabProgress];
   [self clearProgrammaticScrollEdges];
@@ -4349,14 +4380,19 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     [self setNeedsLayout];
   }
   if (_pendingTopOverlayAppearanceCommit) {
-    _pendingTopOverlayAppearanceCommit = NO;
-    BOOL localOverlayReady = _topOverlayView.superview == _topOverlayHostView &&
-      _topOverlayView.window == self.window;
-    BOOL externalOverlayReady = _externalTopOverlayTag > 0 &&
-      _externalTopOverlayView.window == self.window;
-    if (!_isBeingRecycled && _topScrollEdgeEnabled && self.window != nil &&
-        (localOverlayReady || externalOverlayReady)) {
-      [self updateTopScrollEdgeForScrollView:_observedScrollView];
+    if (@available(iOS 27.0, *)) {
+      [self commitTopOverlayAppearance];
+    } else if (@available(iOS 26.0, *)) {
+      // UIKit must commit the detached edge before it can resolve the new glass appearance.
+      if (!_topOverlayAppearanceCommitScheduled) {
+        _topOverlayAppearanceCommitScheduled = YES;
+        [self performSelector:@selector(commitTopOverlayAppearance)
+                   withObject:nil
+                   afterDelay:0
+                      inModes:@[NSRunLoopCommonModes]];
+      }
+    } else {
+      [self commitTopOverlayAppearance];
     }
   }
   [self updateScrollEdgeContentMasks];
@@ -4687,6 +4723,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)prepareForRecycle
 {
+  [self cancelTopOverlayAppearanceCommit];
   [self cancelNativeToolbarSettlement];
   [self cancelPendingNativePagerScroll];
   [_externalOuterPager removeNestedOverlayObserver:self];
@@ -4921,6 +4958,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     BOOL enabledChanged = _topScrollEdgeEnabled != enabled;
     _topScrollEdgeEnabled = enabled;
     _topScrollEdgeEffect = newViewProps.topScrollEdgeEffect;
+    if (!enabled && _pendingTopOverlayAppearanceCommit) {
+      [self cancelTopOverlayAppearanceCommit];
+    }
     if (enabledChanged) {
       _deferTopEdgeSlotRebuild = YES;
       [self rebuildSlots];
@@ -4940,6 +4980,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     if (self.hasFixedTopOverlay && _topScrollEdgeEnabled &&
         _topOverlayColorScheme != nil &&
         ![_topOverlayColorScheme isEqualToString:nextScheme]) {
+      // A newer scheme must wait for its own mount before scheduling the edge again.
+      [self cancelTopOverlayAppearanceCommit];
       _pendingTopOverlayAppearanceCommit = YES;
       [self updateTopScrollEdgeForScrollView:nil];
     }
