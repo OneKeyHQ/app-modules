@@ -71,6 +71,12 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
   }
 }
 
+private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchObserver {
+  guard let observer = window.gestureRecognizers?.compactMap({ $0 as? NativeOverlayAppTouchObserver }).first
+  else { throw Failure(name: "app touch observer installed before overlay visibility") }
+  return observer
+}
+
 @MainActor private func runTests(scene: UIWindowScene, app: UIWindow) async throws -> [String] {
   var passed: [String] = []
   let manager = NativeOverlayWindowManager()
@@ -256,6 +262,195 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
   transitionApp.windowScene = nil
   app.makeKey()
   passed.append("interactive-window-retirement-scene-disconnect")
+
+  let touchManager = NativeOverlayWindowManager()
+  let touchOwner = Owner()
+  let touchWindow = touchManager.window(for: touchOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let observer = try touchObserver(in: app)
+  let pan = UIPanGestureRecognizer()
+  try require(!observer.cancelsTouchesInView && !observer.delaysTouchesBegan &&
+    !observer.delaysTouchesEnded && !observer.canPrevent(pan) && !observer.canBePrevented(by: pan),
+    "touch observer cannot delay, cancel, prevent or be prevented")
+  let event = UIEvent()
+  let firstTouch = UITouch()
+  observer.touchesBegan([firstTouch], with: event)
+  observer.touchesMoved([firstTouch], with: event)
+  touchWindow.makeKey()
+  let touchRoot = touchWindow.rootViewController
+  touchManager.entryRemoved(from: touchWindow)
+  try require(app.isKeyWindow && touchWindow.windowScene === scene &&
+    touchWindow.rootViewController === touchRoot && !touchWindow.isHidden && observer.state == .possible,
+    "touch-only removal keeps routing context visible while restoring key")
+  observer.touchesEnded([firstTouch], with: event)
+  try require(touchWindow.windowScene === scene, "touch completion waits for next main turn")
+  await nextMainTurn()
+  try require(touchWindow.windowScene == nil && touchWindow.rootViewController == nil &&
+    observer.view == nil && observer.onTouchesFinished == nil,
+    "last touch releases window and unregisters idle observer")
+  passed.append("touch-window-retirement-and-passive-observer")
+
+  let overlapA = Owner(), overlapB = Owner()
+  let overlapWindowA = touchManager.window(for: overlapA, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let sharedObserver = try touchObserver(in: app)
+  let overlapWindowB = touchManager.window(for: overlapB, level: .modal,
+    stackOrder: 2, blocking: true, appWindow: overlapWindowA)!
+  let nestedObserver = try touchObserver(in: app)
+  try require(nestedObserver === sharedObserver &&
+    app.gestureRecognizers?.filter({ $0 is NativeOverlayAppTouchObserver }).count == 1 &&
+    overlapWindowA.gestureRecognizers?.contains(where: { $0 is NativeOverlayAppTouchObserver }) != true,
+    "nested and multiple entries share only the real app window observer")
+  let fingerA = UITouch(), fingerB = UITouch()
+  sharedObserver.touchesBegan([fingerA, fingerB], with: event)
+  let otherApp = UIWindow(windowScene: scene)
+  otherApp.rootViewController = UIViewController()
+  let otherOwner = Owner()
+  let otherWindow = touchManager.window(for: otherOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: otherApp)!
+  let otherObserver = try touchObserver(in: otherApp)
+  touchManager.entryRemoved(from: otherWindow)
+  try require(otherObserver !== sharedObserver && otherWindow.windowScene == nil &&
+    otherObserver.view == nil && sharedObserver.view === app,
+    "another app window in the same scene has an independent touch lifetime")
+  otherApp.rootViewController = nil
+  otherApp.windowScene = nil
+  touchManager.entryRemoved(from: overlapWindowA)
+  touchManager.entryRemoved(from: overlapWindowB)
+  sharedObserver.touchesEnded([fingerA], with: event)
+  await nextMainTurn()
+  try require(overlapWindowA.windowScene === scene && overlapWindowB.windowScene === scene &&
+    sharedObserver.hasActiveTouches, "one finger ending cannot release either retired entry")
+  sharedObserver.touchesCancelled([fingerB], with: event)
+  await nextMainTurn()
+  try require(overlapWindowA.windowScene == nil && overlapWindowB.windowScene == nil &&
+    sharedObserver.view == nil, "last finger cancellation releases all retired entries")
+  passed.append("touch-window-retirement-shared-multitouch-cancel")
+
+  let queuedOwner = Owner()
+  let queuedWindow = touchManager.window(for: queuedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let queuedObserver = try touchObserver(in: app)
+  let endingTouch = UITouch(), nextTouch = UITouch()
+  queuedObserver.touchesBegan([endingTouch], with: event)
+  touchManager.entryRemoved(from: queuedWindow)
+  queuedObserver.touchesEnded([endingTouch], with: event)
+  queuedObserver.reset()
+  queuedObserver.touchesBegan([nextTouch], with: event)
+  await nextMainTurn()
+  try require(queuedWindow.windowScene === scene && queuedObserver.hasActiveTouches,
+    "queued cleanup rechecks a new touch beginning after the prior last UP")
+  queuedObserver.touchesEnded([nextTouch], with: event)
+  await nextMainTurn()
+  try require(queuedWindow.windowScene == nil, "replacement touch completion releases old window")
+  passed.append("touch-window-retirement-rechecks-current-touch-set")
+
+  let resetOwner = Owner()
+  let resetWindow = touchManager.window(for: resetOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let resetObserver = try touchObserver(in: app)
+  resetObserver.touchesBegan([UITouch()], with: event)
+  touchManager.entryRemoved(from: resetWindow)
+  resetObserver.reset()
+  await nextMainTurn()
+  try require(resetWindow.windowScene == nil && resetObserver.view == nil,
+    "UIKit reset of a live observer wakes pending retirement cleanup")
+  passed.append("touch-window-retirement-reset-cleanup")
+
+  let combinedApp = UIWindow(windowScene: scene)
+  let combinedRoot = TransitionRoot()
+  combinedApp.rootViewController = combinedRoot
+  combinedApp.makeKeyAndVisible()
+  let combinedOwner = Owner()
+  let combinedWindow = touchManager.window(for: combinedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: combinedApp)!
+  let combinedObserver = try touchObserver(in: combinedApp)
+  let combinedTouch = UITouch()
+  let combinedCoordinator = TestTransitionCoordinator()
+  combinedRoot.activeCoordinator = combinedCoordinator
+  combinedObserver.touchesBegan([combinedTouch], with: event)
+  touchManager.entryRemoved(from: combinedWindow)
+  combinedCoordinator.changeInteraction(to: false)
+  await nextMainTurn()
+  try require(combinedWindow.windowScene === scene, "coordinator completion cannot release an active touch")
+  combinedCoordinator.changeInteraction(to: true)
+  combinedObserver.touchesCancelled([combinedTouch], with: event)
+  await nextMainTurn()
+  try require(combinedWindow.windowScene === scene && combinedCoordinator.subscriptions == 1,
+    "touch cancellation cannot release a newly interactive coordinator")
+  combinedCoordinator.changeInteraction(to: false, cancelled: true)
+  await nextMainTurn()
+  try require(combinedWindow.windowScene == nil && combinedObserver.view == nil,
+    "combined ownership releases only after both current conditions finish")
+  combinedApp.isHidden = true
+  combinedApp.rootViewController = nil
+  combinedApp.windowScene = nil
+  app.makeKey()
+  passed.append("touch-window-retirement-coordinator-conjunction")
+
+  let reuseOwner = Owner()
+  let reuseOldWindow = touchManager.window(for: reuseOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let reuseObserver = try touchObserver(in: app)
+  let reuseTouch = UITouch()
+  reuseObserver.touchesBegan([reuseTouch], with: event)
+  touchManager.entryRemoved(from: reuseOldWindow)
+  let reuseNewWindow = touchManager.window(for: reuseOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  reuseObserver.touchesEnded([reuseTouch], with: event)
+  await nextMainTurn()
+  try require(reuseOldWindow.windowScene == nil && reuseNewWindow.windowScene === scene &&
+    reuseObserver.view === app, "touch callback releases only the retired window, preserving reopened owner")
+  touchManager.entryRemoved(from: reuseNewWindow)
+  try require(reuseNewWindow.windowScene == nil && reuseObserver.view == nil,
+    "touch-free noninteractive removal remains synchronous")
+  passed.append("touch-window-retirement-owner-reuse-and-sync-removal")
+
+  var orphanOwner: Owner? = Owner()
+  let orphanWindow = touchManager.window(for: orphanOwner!, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let orphanObserver = try touchObserver(in: app)
+  orphanOwner = nil
+  let afterOrphanOwner = Owner()
+  let afterOrphanWindow = touchManager.window(for: afterOrphanOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let afterOrphanObserver = try touchObserver(in: app)
+  try require(orphanWindow.windowScene == nil && orphanObserver.view == nil &&
+    afterOrphanObserver !== orphanObserver, "orphan cleanup precedes replacement observer installation")
+  let afterOrphanTouch = UITouch()
+  afterOrphanObserver.touchesBegan([afterOrphanTouch], with: event)
+  touchManager.entryRemoved(from: afterOrphanWindow)
+  try require(afterOrphanWindow.windowScene === scene, "replacement observer protects the new entry")
+  afterOrphanObserver.touchesEnded([afterOrphanTouch], with: event)
+  await nextMainTurn()
+  passed.append("touch-window-retirement-orphan-replacement")
+
+  let disconnectTouchOwner = Owner(), activeDisconnectOwner = Owner()
+  let disconnectTouchWindow = touchManager.window(for: disconnectTouchOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  let disconnectObserver = try touchObserver(in: app)
+  let disconnectTouch = UITouch()
+  disconnectObserver.touchesBegan([disconnectTouch], with: event)
+  touchManager.entryRemoved(from: disconnectTouchWindow)
+  disconnectObserver.touchesEnded([disconnectTouch], with: event)
+  let activeDisconnectWindow = touchManager.window(for: activeDisconnectOwner, level: .modal,
+    stackOrder: 2, blocking: true, appWindow: app)!
+  var observerRemovedBeforeCallback = false
+  activeDisconnectOwner.onDisconnect = { _ in
+    observerRemovedBeforeCallback = disconnectObserver.view == nil && disconnectObserver.onTouchesFinished == nil
+  }
+  NotificationCenter.default.post(name: UIScene.didDisconnectNotification, object: scene)
+  try require(observerRemovedBeforeCallback && disconnectTouchWindow.windowScene == nil &&
+    activeDisconnectWindow.windowScene == nil, "disconnect unregisters observer before owner callbacks and releases retired windows")
+  let afterDisconnectOwner = Owner()
+  let afterDisconnectWindow = touchManager.window(for: afterDisconnectOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  await nextMainTurn()
+  let afterDisconnectObserver = try touchObserver(in: app)
+  try require(afterDisconnectWindow.windowScene === scene &&
+    afterDisconnectObserver.view === app, "queued pre-disconnect touch callback cannot affect new registration")
+  touchManager.entryRemoved(from: afterDisconnectWindow)
+  passed.append("touch-window-retirement-disconnect-callback-identity")
   return passed
 }
 

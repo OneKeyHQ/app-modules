@@ -347,16 +347,34 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   first responder; passive toast/debug entries do not win solely by level.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
-- Removing an entry while the app window has an interactive UIKit presentation
+- App-touch retirement extension (Implemented; nineteen focused native checks
+  and eight local iOS 27.0 App handoff cases passed): before showing the first
+  global entry for a real app window, install
+  one passive touch observer on that app window. Entries, including nested
+  overlay hosts, share that observer. It tracks delivered touch identities, never
+  retains UIEvent objects, never cancels or delays touches, and neither prevents
+  nor can be prevented by another recognizer. It stays possible until the last
+  tracked touch ends or cancels, then fails and resets without recognizing.
+- Removing an entry while its real app window has delivered active touches or
+  an interactive UIKit presentation
   removes that entry from active ordering and restores key ownership immediately,
-  but retains its exiting window/root/scene until the interaction finishes or
-  cancels. After UIKit reports the interaction change, cleanup runs on the next
-  main turn and rechecks the current transition coordinator before releasing
+  but retains its exiting window/root/scene, without hiding it, until both the
+  delivered touch set is empty and the interaction finishes or cancels. Touch
+  completion/cancellation and UIKit interaction changes schedule cleanup on the
+  next main turn. Cleanup rechecks the complete current touch set and transition
+  coordinator before releasing
   that exact window lifetime. A newly interactive transition keeps it retired
   until its own completion; repeated or late callbacks cannot release a new
-  entry for the same owner. Scene disconnect releases active and retired windows
+  entry for the same owner. A new touch beginning after a previous touch ends but
+  before queued cleanup keeps the window retired. Overlapping multi-touch can
+  extend retirement without a timeout. When neither condition exists, removal
+  still releases synchronously. Remove the shared observer only when that app
+  window has no active or retired entries. Scene disconnect unregisters observers
+  and their callbacks before releasing active and retired windows
   without notifying an already removed owner again. No fixed timeout controls
   this handoff.
+  Public UIKit observation cannot account for a DOWN not yet delivered to the
+  app window; acceptance must separately exercise that delivery/teardown boundary.
 - Every presentation lifetime has a generation. Asynchronous present, dismiss,
   and animation completions must match the generation, controller/entry
   identity and applicable phase before changing state or emitting callbacks.
@@ -692,10 +710,34 @@ More reopened and a subsequent full drag dismissed normally. Home and Market
 remained interactive. This checks the main-UI window handoff only; physical
 devices and the broader runtime matrix remain unverified.
 
+App-touch extension acceptance (2026-11-13, local Debug build on an isolated
+iOS 27.0 simulator): all eight first-pan-only cases passed, starting from the
+Home header or list body at 250, 300, 350 and 400 ms after More close UP. The
+250/300 ms cases kept all twenty old-context events routed to the app window;
+350/400 ms started after teardown (observed 5–49 ms later) and routed all twenty
+new-context events normally. No backing-event-only dispatch occurred. Native
+pager logs recorded ended state 3 in every case. List-body accessibility samples
+continued moving after UP without another input, confirming inertia. After
+waiting for release, the first React control tap opened Home More (header) or
+AccountSelectorStack (body), without another pan or tab switch. Per-case main
+and background runtime markers remained unchanged. These measured teardown
+boundaries do not guarantee observation of a DOWN UIKit has not delivered yet.
+
+Two additional selector handoffs exercised multiple front-card drags and a
+partial rebound, then front dismissal followed 250 ms later by either a complete
+back-selector dismissal or a partial drag canceled into rebound. Both preserved
+complete old-context delivery (36 and 16 events respectively), zero backing-only
+events, stable main/background markers, and working direct React controls.
+The entry was the watch-only account-row More inside AccountSelectorStack,
+which uses the same global NativeOverlay UIWindow over a UIKit modal host.
+It is an equivalent-host regression, not a replay of the original three-account
+HD wallet-level menu. Release/TestFlight binaries, physical devices and other
+OS versions remain unverified.
+
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its eleven checks cover bounded/live
+  Animation into an isolated UIKit test app. Its nineteen checks cover bounded/live
   ordering, key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
@@ -705,6 +747,14 @@ Automated (P0):
   retired, and disconnecting a scene with only a retired window. They use a
   controlled transition coordinator to test manager lifecycle; the real
   gesture check is the iOS 27.0 simulator run above.
+  Eight app-touch checks directly drive the production observer's
+  `touchesBegan`/`touchesEnded`/`touchesCancelled` and reset with synthetic
+  touch objects. They assert passive gesture flags, touch-only retirement,
+  multi-touch and per-real-window isolation, next-turn touch-set rechecks,
+  reset cleanup, conjunction with coordinator ownership, owner/orphan reuse,
+  and scene-disconnect callback invalidation. They prove manager lifecycle,
+  not UIKit delivery or scroll inertia; those are covered separately by the
+  local App runtime checks above, with the stated selector-entry limitation.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
