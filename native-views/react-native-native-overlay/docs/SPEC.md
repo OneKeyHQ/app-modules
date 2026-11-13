@@ -347,8 +347,8 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   first responder; passive toast/debug entries do not win solely by level.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
-- Delivered-touch retirement extension (Implemented; thirty native checks
-  passed, final review-version App acceptance pending):
+- Delivered-touch retirement extension (Implemented; thirty native checks and
+  four focused local iOS 27.0 App cases passed):
   before showing a global entry, install a passive touch observer on its real
   app window and on the entry window. Active and retired entries of that real
   host share a touch lifetime, including touches delivered to a lower entry or
@@ -752,9 +752,18 @@ It is an equivalent-host regression, not a replay of the original three-account
 HD wallet-level menu. Release/TestFlight binaries, physical devices and other
 OS versions remain unverified.
 
-Review extension acceptance: thirty focused native checks passed. Final
-review-version App first-only Home and nested-entry interaction acceptance is
-pending. The earlier nineteen native checks, eight Home cases and two equivalent
+Review extension acceptance for `c59572b`: thirty focused native checks passed.
+A rebuilt local Debug App passed first-only header/250 ms and body/300 ms Home
+handoffs with native ended state 3, direct React control actions and stable
+main/background runtime markers. Two further cases used an independently mounted
+passive global entry over Home More. A lower-entry drag received all sixteen
+events in its own context while the upper entry closed; its next React close
+action worked. This does not establish use of the upper entry's context by the
+lower drag. In the exiting-entry case, UIKit delivered DOWN to the upper window,
+restored key ownership to the lower window on close, and delivered UP to the
+same upper window/context 657 ms after native close; the next lower React close
+action worked. Runtime markers stayed stable throughout these four post-recovery
+cases. The earlier nineteen native checks, eight Home cases and two equivalent
 selector handoffs above belong to `404e87c`, not a rerun of the review version.
 The eleven added native groups cover lower/exiting-entry and cross-window touch
 ownership, mixed delivered types, repeated host reassignment, UP/rehost/DOWN and
