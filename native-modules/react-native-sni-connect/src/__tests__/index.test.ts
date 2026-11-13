@@ -8,6 +8,7 @@ jest.mock('../NativeSniConnect', () => ({
     getDebugSnapshot: jest.fn(),
     isProxyActiveForUrl: jest.fn(),
     uploadFile: jest.fn(),
+    getUploadProgress: jest.fn(),
   },
 }));
 
@@ -16,6 +17,7 @@ import {
   cancelRequest,
   clearDNSCache,
   getDebugSnapshot,
+  getUploadProgress,
   isProxyActiveForUrl,
   isUploadFileSupported,
   request,
@@ -34,6 +36,7 @@ const mockNativeModule = NativeSniConnect as unknown as {
   getDebugSnapshot: jest.Mock;
   isProxyActiveForUrl: jest.Mock;
   uploadFile: jest.Mock;
+  getUploadProgress: jest.Mock;
 };
 
 describe('react-native-sni-connect public API', () => {
@@ -98,6 +101,23 @@ describe('react-native-sni-connect public API', () => {
     await expect(uploadFile({} as SniConnectUploadFileRequest)).rejects.toBe(
       error
     );
+  });
+
+  it('returns upload progress from native when supported', async () => {
+    const snapshot = { bytesSent: 1024, totalBytes: 2048 };
+    mockNativeModule.getUploadProgress.mockResolvedValue(snapshot);
+    await expect(getUploadProgress('upload-1')).resolves.toBe(snapshot);
+    expect(mockNativeModule.getUploadProgress).toHaveBeenCalledWith('upload-1');
+  });
+
+  it('returns null when an older native binary lacks upload progress', async () => {
+    const nativeProgress = mockNativeModule.getUploadProgress;
+    try {
+      Reflect.deleteProperty(mockNativeModule, 'getUploadProgress');
+      await expect(getUploadProgress('upload-1')).resolves.toBeNull();
+    } finally {
+      mockNativeModule.getUploadProgress = nativeProgress;
+    }
   });
 
   it('forwards cancelRequest() with the request id', async () => {

@@ -75,6 +75,11 @@ export type SniConnectResponse = {
   multiValueHeaders?: MultiValueHeaderMap;
 };
 
+export type SniConnectUploadProgress = {
+  bytesSent: Double;
+  totalBytes: Double;
+};
+
 export type SniConnectDebugTarget = {
   ip: string;
   hostname: string;
@@ -94,6 +99,9 @@ export interface Spec extends TurboModule {
   uploadFile(
     config: NativeSniConnectUploadFileRequest
   ): Promise<SniConnectResponse>;
+  getUploadProgress(
+    requestId: string
+  ): Promise<SniConnectUploadProgress | null>;
   cancelRequest(requestId: string): Promise<{ success: boolean }>;
   cancelAllRequests(): Promise<{ success: boolean }>;
   clearDNSCache(): Promise<{ success: boolean }>;

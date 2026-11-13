@@ -16,6 +16,9 @@
 - (void)uploadFile:(NSDictionary *)config
            resolve:(RCTPromiseResolveBlock)resolve
             reject:(RCTPromiseRejectBlock)reject;
+- (void)getUploadProgress:(NSString *)requestId
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject;
 - (void)cancelRequest:(NSString *)requestId
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject;
@@ -103,6 +106,12 @@ RCT_EXPORT_MODULE(SniConnect)
   [_implementation uploadFile:configDict resolve:resolve reject:reject];
 }
 
+- (void)getUploadProgress:(NSString *)requestId
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_implementation getUploadProgress:requestId resolve:resolve reject:reject];
+}
+
 - (void)cancelRequest:(NSString *)requestId
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject {
@@ -152,6 +161,12 @@ RCT_EXPORT_METHOD(uploadFile:(NSDictionary *)config
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
   [_implementation uploadFile:config resolve:resolve reject:reject];
+}
+
+RCT_EXPORT_METHOD(getUploadProgress:(NSString *)requestId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+  [_implementation getUploadProgress:requestId resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(cancelRequest:(NSString *)requestId
