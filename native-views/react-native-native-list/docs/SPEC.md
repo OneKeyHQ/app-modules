@@ -1787,6 +1787,61 @@ tones. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
 disabled behavior. All actions use the current host binding epoch.
 
+Description action text. The action is hit on text only, never on the unused
+width of the description line, which belongs to the row press. Which text is
+stated by the caller in `descriptionActionStart`, a UTF-16 offset into
+`description` as supplied (JavaScript string index): the text from the offset on
+opens the action, the text before it is plain and belongs to the row press.
+NativeList never derives the offset from the displayed string, its separators or
+its wording; a caller that composes `prefix + label` records `prefix.length`.
+
+- Absent means `0`: the whole description text is the action.
+  `description.length` leaves no action text; the row then has no description
+  action, and no button semantics, on any platform.
+- The field is ignored without `descriptionActionKey`.
+- Development validation rejects a value that is not a non-negative safe
+  integer, and on a complete row (a snapshot row, or a row after a patch is
+  merged) a value past `description.length`. Production drops a malformed value,
+  which restores the default, and renderers clamp a value past the text to its
+  end.
+- A patch that changes `description` without `descriptionActionStart` clears the
+  stored offset, because it pointed into the previous string. Callers that keep
+  a prefix restate the offset in the same patch.
+- iOS and Android map the offset onto the displayed text: a one-line description
+  folds each line break into one space, so offsets after a CRLF move by one.
+- The hit area follows the laid-out text. iOS and Android build it from the
+  layout engine's own rects for the action's character range (TextKit enclosing
+  rects, the Android layout's selection), one per line and per visual run. A
+  line that ends before the offset takes no touches, the line that holds it
+  takes them from the offset on, later lines take them on their text. In
+  mixed-direction text the action can be several runs on one line with plain
+  text between them, and each run is its own region.
+- Touch slop reaches into blank space only. iOS and Android widen each run of
+  action text by 8 units, and the widening stops at plain description text on
+  the same line: text before the offset never opens the action, however narrow
+  it is. iOS also extends the first and the last line of the whole layout by 6
+  points away from the text, never a line in between, so the slop cannot reach
+  into a line that holds only plain text. Android extends the first and last
+  line of the layout to the view's top and bottom edge.
+- An ellipsis belongs to the action while action text is visible before it.
+  Once truncation hides the action text altogether the ellipsis also stands for
+  plain text, and the row has no hit area for the action.
+- Truncation. The description stays on its declared lines as `prefix + action`.
+  On Web the prefix keeps its natural width and the action text truncates
+  first, which matches the tail truncation of the native label. While action
+  text follows, the Web prefix is capped at the row width less `3em` and
+  truncates itself, so a prefix wider than the row cannot squeeze the action to
+  nothing and leave it without a pointer target. iOS and Android draw one label
+  and truncate its tail; they do not reserve room, so there a long prefix can
+  push the action text out of view. The Web prefix and action are two elements
+  side by side and each resolves its own text direction, so an offset inside a
+  directional run draws that run in two parts; the action element is still
+  exactly the action text.
+- Internally the native text view holds one optional start: none keeps the
+  view's own hit testing (rows without the action), `0` limits touches to all of
+  the text, a positive value to the text from there on. Binding, rebinding
+  without the action and recycling set or clear that one value.
+
 Rich rows measure the declared line/visual metrics; there is no six-line native
 truncation. iOS automatic height mirrors the rendered stacks: `lineGap` between the
 visible title/description/status lines, the description measured at the identity

@@ -1,4 +1,5 @@
 #import <XCTest/XCTest.h>
+#import <objc/runtime.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCNativeScrollerComponentView.h"
 #import <React/RCTScrollViewComponentView.h>
@@ -1033,6 +1034,53 @@ using namespace facebook::react;
   XCTAssertEqualWithAccuracy(list.contentInset.top, inset, 0.01);
   XCTAssertEqualWithAccuracy(list.contentOffset.y, offset, 0.01);
   XCTAssertEqualWithAccuracy(footerList.scrollView.contentInset.top, 0, 0.01);
+}
+
+// Overlay content (popover, sheet) stays mounted inside its host view until
+// the overlay window presents it, and the host can sit beside the page's list.
+// As a Fabric scroll view its scroller outranks the native list, so the pager
+// used to adopt it and apply the collapsed-header offset to it: the sheet then
+// opened scrolled past its content (OK-67220).
+- (void)testStagedOverlayScrollViewCannotReplacePageOwner
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RCTViewComponentView *component = [self addNativeListToPager:pager];
+  UICollectionView *list = nil;
+  for (UIView *child in component.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      list = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(list);
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], list);
+
+  // The overlay package is not linked into this target; stand in for its host.
+  Class overlayHostClass = NSClassFromString(@"RCTNativeOverlayComponentView");
+  if (overlayHostClass == Nil) {
+    overlayHostClass = objc_allocateClassPair(UIView.class, "RCTNativeOverlayComponentView", 0);
+    objc_registerClassPair(overlayHostClass);
+  }
+  UIView *overlayHost = [overlayHostClass new];
+  RCTScrollViewComponentView *sheetScroller = [RCTScrollViewComponentView new];
+  sheetScroller.frame = CGRectMake(0, 0, 320, 60);
+  sheetScroller.scrollView.frame = sheetScroller.bounds;
+  sheetScroller.scrollView.contentSize = CGSizeMake(320, 60);
+  sheetScroller.scrollView.alwaysBounceHorizontal = NO;
+  [overlayHost addSubview:sheetScroller];
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+  [page.view addSubview:overlayHost];
+
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], list);
+  XCTAssertNil([pager findVerticalScrollViewInView:overlayHost]);
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqualWithAccuracy(sheetScroller.scrollView.contentOffset.y, 0, 0.01);
+
+  // The same scroll view outside an overlay host is still a page scroller.
+  [sheetScroller removeFromSuperview];
+  [page.view addSubview:sheetScroller];
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], sheetScroller.scrollView);
 }
 
 - (void)testExplicitScrollerSiblingStillPrecedesNativeList

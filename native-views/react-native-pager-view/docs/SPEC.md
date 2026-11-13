@@ -1095,6 +1095,24 @@ Status: implemented and verified by production-native UIKit regressions on
 iOS 27.1 for footer insertion, explicit-sibling priority and nested-pager
 delegation. Full App and physical-device visual acceptance are reported separately.
 
+A NativeOverlay host is a discovery boundary on iOS as well. Overlay content
+(popover, sheet, dialog) stays mounted inside its host view until the overlay
+window presents it, and the host can sit anywhere in a page's subtree, including
+beside the page's NativeList. Scroll views inside a host belong to the overlay:
+they MUST NOT be resolved as the page's vertical scroll owner or receive its
+insets, logical offsets or shared header. Without this boundary a staged sheet's
+Fabric scroll view outranks a NativeList sibling, takes the collapsed-header
+offset, and the sheet opens scrolled past its content. The host is recognised by
+its component class; discovery is unchanged when the overlay package is absent,
+and a scroll view outside a host keeps its existing priority. Android owner
+discovery is not changed by this boundary.
+
+Status: implemented on iOS. Verified in the OneKey app on an iPhone SE (3rd
+generation) simulator, iOS 26.5: with the Home header collapsed, a popover opened
+from the History list showed an empty body before this boundary and its content
+from the first frame after it. A UIKit regression covers the boundary; Android
+was not inspected beyond the absence of the symptom.
+
 When the active scroll owner is removed before its replacement becomes usable,
 the pager MUST retain bounded recovery (at most 12 retries per recovery round,
 spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT

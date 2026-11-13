@@ -616,6 +616,14 @@ export type ActivityRow = RowBase &
       hidden?: boolean;
     }>;
     descriptionActionKey?: string;
+    /**
+     * UTF-16 offset into `description` where the text that opens
+     * `descriptionActionKey` starts; the text before it stays plain. An integer
+     * in `0...description.length`: `0`, the default, makes the whole
+     * description the action and `description.length` leaves no action text.
+     * Ignored without `descriptionActionKey`.
+     */
+    descriptionActionStart?: number;
     footerActions?: readonly FooterAction[];
     style?: ActivityRowStyle;
   }>;
@@ -1131,6 +1139,7 @@ export type RowPatch =
         | 'presentation'
         | 'fee'
         | 'descriptionActionKey'
+        | 'descriptionActionStart'
         | 'primaryAmount'
         | 'secondaryAmount'
         | 'leading'

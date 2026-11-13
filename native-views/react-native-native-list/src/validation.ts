@@ -1621,6 +1621,11 @@ function assertVisual(row: RowModel, path: string): void {
   });
 }
 
+/** The type half of the `descriptionActionStart` contract; the range needs the row. */
+function isDescriptionActionStart(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function assertActivity(row: Partial<ActivityRow>, path: string): void {
   if (row.hideLeading !== undefined && typeof row.hideLeading !== 'boolean')
     fail(`${path}.hideLeading`, 'must be boolean');
@@ -1633,6 +1638,11 @@ function assertActivity(row: Partial<ActivityRow>, path: string): void {
     fail(`${path}.presentation`, 'must be stacked or table');
   if (row.descriptionActionKey !== undefined)
     assertKey(row.descriptionActionKey, `${path}.descriptionActionKey`);
+  if (
+    row.descriptionActionStart !== undefined &&
+    !isDescriptionActionStart(row.descriptionActionStart)
+  )
+    fail(`${path}.descriptionActionStart`, 'must be a non-negative integer');
   if ((row.amounts?.length ?? 0) > 32)
     fail(`${path}.amounts`, 'supports at most 32 amount lines');
   const amountKeys = new Set<string>();
@@ -1899,6 +1909,13 @@ function assertRow(
       break;
     case 'activity':
       assertActivity(row, path);
+      // Checked on the complete row only: a patch may carry the offset
+      // without the description it points into.
+      if ((row.descriptionActionStart ?? 0) > (row.description?.length ?? 0))
+        fail(
+          `${path}.descriptionActionStart`,
+          'must not exceed the description length'
+        );
       break;
     case 'message':
       if (
@@ -2449,6 +2466,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'presentation',
     'fee',
     'descriptionActionKey',
+    'descriptionActionStart',
     'footerActions',
   ],
   message: [
@@ -2616,6 +2634,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'amounts',
     'fee',
     'descriptionActionKey',
+    'descriptionActionStart',
     'footerActions',
   ],
   message: [
@@ -3931,6 +3950,11 @@ function sanitizeRowForProduction(row: RowModel): RowModel {
       delete next[field];
       continue;
     }
+    if (field === 'descriptionActionStart') {
+      // Renderers clamp an offset past the text; anything else has no meaning.
+      if (!isDescriptionActionStart(value)) delete next[field];
+      continue;
+    }
     if (field === 'parent' && isRecord(value))
       next[field] = sanitizeRowForProduction(value as unknown as RowModel);
     else if (field === 'children' && Array.isArray(value))
@@ -4862,6 +4886,16 @@ function mergeAndValidateSingleRow(
     )
       changes.subtitle = null;
   }
+  // The offset points into one specific description string, so a patch that
+  // replaces the description without restating it falls back to the default.
+  if (
+    previous.type === 'activity' &&
+    'description' in changes &&
+    changes.description !== previous.description &&
+    !('descriptionActionStart' in changes) &&
+    previous.descriptionActionStart !== undefined
+  )
+    changes.descriptionActionStart = null;
   const merged = { ...previous } as unknown as Record<string, unknown>;
   for (const [field, value] of Object.entries(changes)) {
     if (value === null) delete merged[field];

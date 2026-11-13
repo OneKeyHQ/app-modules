@@ -187,17 +187,24 @@ final class NativeListActivityDetailsView: UIStackView {
       weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 24,
       lines: 1, fonts: fonts
     ).bind(title)
-    NativeListResolvedText(data.string("description"), style: style.dictionary("description"), size: 14,
+    let descriptionText = NativeListResolvedText(data.string("description"), style: style.dictionary("description"), size: 14,
       color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20, lines: 2,
-      fonts: fonts
-    ).bind(descriptionLabel)
+      fonts: fonts)
+    descriptionText.bind(descriptionLabel)
     NativeListResolvedText(data.string("status"), style: style.dictionary("status"), size: 12,
       color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1,
       fonts: fonts
     ).bind(status)
     descriptionKey = data.string("descriptionActionKey")
-    descriptionLabel.isUserInteractionEnabled = !descriptionKey.isEmpty
-    descriptionLabel.accessibilityTraits = descriptionKey.isEmpty ? .staticText : .button
+    // The label spans the identity column, so with an action only its text
+    // from the caller's `descriptionActionStart` on takes touches. The start is
+    // never read out of the string, and one at the end leaves no action.
+    let actionStart = descriptionKey.isEmpty
+      ? nil : descriptionText.displayOffset(data.int("descriptionActionStart"), in: data.string("description"))
+    let hasActionText = actionStart.map { $0 < (descriptionText.text as NSString).length } ?? false
+    descriptionLabel.touchableTextStart = actionStart
+    descriptionLabel.isUserInteractionEnabled = hasActionText
+    descriptionLabel.accessibilityTraits = hasActionText ? .button : .staticText
     for badge in badgeViews { titleLine.removeArrangedSubview(badge); badge.removeFromSuperview() }
     badgeViews = data.dictionaries("badges").map { descriptor in
       let label = NativeListTextLabel()
@@ -269,6 +276,7 @@ final class NativeListActivityDetailsView: UIStackView {
   }
   func recycle() {
     visual.recycle(); visual.isHidden = false; amountViews.forEach { $0.recycle() }; actionKeys = []; descriptionKey = ""
+    descriptionLabel.touchableTextStart = nil
   }
 }
 

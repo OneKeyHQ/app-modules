@@ -60,6 +60,276 @@ final class NativeListActivityPresentationTests: XCTestCase {
     }
   }
 
+  // The description label spans the identity column, so a tap anywhere on its
+  // line used to open the description action. Only the action text opens it
+  // now; the blank rest of the line belongs to the row press (OK-67219). Where
+  // that text starts is the caller's `descriptionActionStart`, never something
+  // read out of the string.
+  func testDescriptionActionTakesTouchesOnItsTextOnly() throws {
+    let details = NativeListActivityDetailsView()
+    // Wide enough that the label keeps blank space beside its text even when
+    // the amounts take their full half of the row.
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 600, height: 300))
+    details.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(details)
+    NSLayoutConstraint.activate([
+      details.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      details.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      details.topAnchor.constraint(equalTo: container.topAnchor),
+    ])
+    func bind(description: String, actionKey: String?, actionStart: Int? = nil) throws -> NativeListTextLabel {
+      var data: [String: Any] = [
+        "type": "activity", "key": "tx", "title": "Swap", "description": description,
+        "leading": ["kind": "icon", "name": "ArrowTopOutline"],
+        "amounts": [["key": "send", "text": "-1"]],
+      ]
+      if let actionKey { data["descriptionActionKey"] = actionKey }
+      if let actionStart { data["descriptionActionStart"] = actionStart }
+      details.bind(try NativeListItem(data: data), theme: nil, fonts: NativeListFontFamilies())
+      container.layoutIfNeeded()
+      func find(_ view: UIView) -> NativeListTextLabel? {
+        if let label = view as? NativeListTextLabel, label.text == description { return label }
+        return view.subviews.lazy.compactMap(find).first
+      }
+      return try XCTUnwrap(find(details))
+    }
+    func hit(_ label: NativeListTextLabel, x: CGFloat) -> Bool {
+      label.point(inside: CGPoint(x: x, y: label.bounds.midY), with: nil)
+    }
+
+    // Without a start the whole text is the action, also a label holding the
+    // separator a time prefix would use.
+    let label = try bind(description: "Router • V2", actionKey: "address-info")
+    let labelText = try XCTUnwrap(label.touchableTextRegions.first)
+    XCTAssertEqual(label.touchableTextStart, 0)
+    XCTAssertEqual(label.touchableTextRegions.count, 1)
+    XCTAssertGreaterThan(label.bounds.width, labelText.maxX + 40)
+    XCTAssertTrue(hit(label, x: 4))
+    XCTAssertTrue(hit(label, x: labelText.maxX - 12))
+    XCTAssertFalse(hit(label, x: label.bounds.maxX - 4))
+
+    // With a start only the text from there on is the action: the time is
+    // not, the complete label behind it is.
+    let prefix = "08:48 • "
+    let timed = try bind(
+      description: prefix + "Router • V2", actionKey: "address-info",
+      actionStart: (prefix as NSString).length)
+    let timedText = try XCTUnwrap(timed.touchableTextRegions.first)
+    XCTAssertEqual(timed.touchableTextRegions.count, 1)
+    XCTAssertGreaterThan(timed.bounds.width, timedText.maxX + 40)
+    // The same label, less the slop on the side where the time is.
+    XCTAssertEqual(timedText.width, labelText.width - 8, accuracy: 1)
+    XCTAssertFalse(hit(timed, x: 4))
+    XCTAssertFalse(hit(timed, x: timedText.minX - 2))
+    XCTAssertTrue(hit(timed, x: timedText.minX + 2))
+    XCTAssertTrue(hit(timed, x: timedText.maxX - 12))
+    XCTAssertFalse(hit(timed, x: timed.bounds.maxX - 4))
+
+    // The start counts UTF-16 units: the emoji takes two.
+    let emojiPrefix = "🕘 08:48 • "
+    XCTAssertEqual((emojiPrefix as NSString).length, 11)
+    let emoji = try bind(
+      description: emojiPrefix + "Router • V2", actionKey: "address-info", actionStart: 11)
+    let emojiText = try XCTUnwrap(emoji.touchableTextRegions.first)
+    XCTAssertEqual(emojiText.width, labelText.width - 8, accuracy: 1)
+    XCTAssertFalse(hit(emoji, x: 4))
+    XCTAssertFalse(hit(emoji, x: emojiText.minX - 2))
+    XCTAssertTrue(hit(emoji, x: emojiText.minX + 2))
+    XCTAssertTrue(hit(emoji, x: emojiText.maxX - 12))
+
+    // A start at the end of the text, or clamped to it, leaves nothing to tap.
+    // 4294967296 is a safe integer past 32 bits; it must clamp, not wrap to 0.
+    for start in [(prefix as NSString).length, 99, 4_294_967_296] {
+      let ended = try bind(description: prefix, actionKey: "address-info", actionStart: start)
+      XCTAssertTrue(ended.touchableTextRegions.isEmpty)
+      XCTAssertFalse(ended.isUserInteractionEnabled)
+      XCTAssertFalse(hit(ended, x: 4))
+    }
+
+    // The reused view keeps no state: a rebind without a start covers the
+    // whole text again, one without the action restores the label's own hit
+    // testing even when a start is still supplied, and so does recycling.
+    let rebound = try bind(description: "Router • V2", actionKey: "address-info")
+    XCTAssertEqual(rebound.touchableTextStart, 0)
+    XCTAssertTrue(rebound.isUserInteractionEnabled)
+    XCTAssertTrue(hit(rebound, x: 4))
+    let plain = try bind(description: "Router • V2", actionKey: nil, actionStart: 3)
+    XCTAssertNil(plain.touchableTextStart)
+    XCTAssertFalse(plain.isUserInteractionEnabled)
+    XCTAssertTrue(hit(plain, x: plain.bounds.maxX - 4))
+    let recycled = try bind(
+      description: prefix + "Router", actionKey: "address-info",
+      actionStart: (prefix as NSString).length)
+    XCTAssertEqual(recycled.touchableTextStart, (prefix as NSString).length)
+    details.recycle()
+    XCTAssertNil(recycled.touchableTextStart)
+  }
+
+  // A narrow column wraps "time • address". The time stays outside the action
+  // on its line, while the address is hit on both lines, also at the x the
+  // time occupies one line above. The label is sized directly so the wrap does
+  // not depend on how the row shares its width.
+  func testWrappedDescriptionKeepsTheTimeOutsideTheAction() throws {
+    let description = "08:48 • Uniswap Router"
+    let label = NativeListTextLabel()
+    NativeListResolvedText(
+      description, style: nil, size: 14, color: .label, lineHeight: 20, lines: 2,
+      fonts: NativeListFontFamilies()
+    ).bind(label)
+    label.frame = CGRect(x: 0, y: 0, width: 142, height: 40)
+    label.touchableTextStart = ("08:48 • " as NSString).length
+    func hit(_ x: CGFloat, _ y: CGFloat) -> Bool {
+      label.point(inside: CGPoint(x: x, y: y), with: nil)
+    }
+
+    let lines = label.touchableTextRegions
+    XCTAssertEqual(lines.count, 2)
+    guard lines.count == 2 else { return }
+    XCTAssertFalse(hit(4, lines[0].midY))
+    XCTAssertTrue(hit(lines[0].maxX - 12, lines[0].midY))
+    XCTAssertTrue(hit(4, lines[1].midY))
+    XCTAssertFalse(hit(label.bounds.maxX - 2, lines[1].midY))
+  }
+
+  // The first line holds only the time, so it takes no touches, and the slop
+  // of the address line below it must not reach up into the time.
+  func testAddressStartingOnTheSecondLineLeavesTheTimeLineAlone() throws {
+    let prefix = "08:48 • "
+    let address = "UniswapUniversalRouter"
+    func text(_ value: String) -> NativeListResolvedText {
+      NativeListResolvedText(
+        value, style: nil, size: 14, color: .label, lineHeight: 20, lines: 2,
+        fonts: NativeListFontFamilies())
+    }
+    let label = NativeListTextLabel()
+    text(prefix + address).bind(label)
+    // Wide enough for the address alone, too narrow for the time beside it.
+    label.frame = CGRect(x: 0, y: 0, width: text(address).measureWidth() + 4, height: 40)
+    label.touchableTextStart = (prefix as NSString).length
+    func hit(y: CGFloat) -> Bool { label.point(inside: CGPoint(x: 4, y: y), with: nil) }
+
+    let line = try XCTUnwrap(label.touchableTextRegions.first)
+    XCTAssertEqual(label.touchableTextRegions.count, 1)
+    XCTAssertEqual(line.minY, 20, accuracy: 0.5)
+    XCTAssertFalse(hit(y: 10))
+    XCTAssertFalse(hit(y: line.minY - 2))
+    XCTAssertTrue(hit(y: line.minY + 2))
+    // The last line of the layout still takes its slop below the text.
+    XCTAssertTrue(hit(y: label.bounds.maxY + 4))
+  }
+
+  private func descriptionText(_ value: String, style: [String: Any]? = nil) -> NativeListResolvedText {
+    NativeListResolvedText(
+      value, style: style, size: 14, color: .label, lineHeight: 20, lines: 1,
+      fonts: NativeListFontFamilies())
+  }
+
+  /// Width the description font gives `value` on its own.
+  private func descriptionWidth(_ value: String) -> CGFloat {
+    descriptionText(value).attributed(direction: .leftToRight).size().width
+  }
+
+  private func descriptionLabel(
+    _ value: String, start: Int, width: CGFloat = 300, style: [String: Any]? = nil
+  ) -> NativeListTextLabel {
+    let label = NativeListTextLabel()
+    descriptionText(value, style: style).bind(label)
+    label.frame = CGRect(x: 0, y: 0, width: width, height: 20)
+    label.touchableTextStart = start
+    return label
+  }
+
+  private func hit(_ label: NativeListTextLabel, x: CGFloat) -> Bool {
+    label.point(inside: CGPoint(x: x, y: label.bounds.midY), with: nil)
+  }
+
+  // The slop is for blank space. It stops at plain text beside the action
+  // text, or a prefix narrower than the slop, like the "i" of "iRouter", would
+  // open an action it is not part of.
+  func testSlopStopsAtPlainTextBesideTheActionText() throws {
+    let short = descriptionLabel("iRouter", start: 1)
+    let i = descriptionWidth("i")
+    XCTAssertLessThan(i, 8)
+    let region = try XCTUnwrap(short.touchableTextRegions.first)
+    XCTAssertEqual(short.touchableTextRegions.count, 1)
+    XCTAssertEqual(region.minX, i, accuracy: 0.5)
+    XCTAssertFalse(hit(short, x: i / 2))
+    XCTAssertFalse(hit(short, x: -3))
+    XCTAssertTrue(hit(short, x: i + 2))
+    // Into the blank after the text the slop still reaches.
+    XCTAssertTrue(hit(short, x: descriptionWidth("iRouter") + 6))
+    XCTAssertFalse(hit(short, x: descriptionWidth("iRouter") + 10))
+    // And into the blank before a line that starts with the action text.
+    XCTAssertTrue(hit(descriptionLabel("Router", start: 0), x: -6))
+  }
+
+  // Mixed-direction text can split one logical suffix into several visual
+  // runs. From offset 6 of "ABC אבג XYZ" the suffix is the last Hebrew letter
+  // and " XYZ"; the Hebrew run is drawn right to left, so that letter sits
+  // left of the two plain ones. Each run is its own region and the plain text
+  // between them takes no touches.
+  func testMixedDirectionSuffixFollowsTheLaidOutRuns() {
+    let label = descriptionLabel("ABC \u{05D0}\u{05D1}\u{05D2} XYZ", start: 6)
+    let abc = descriptionWidth("ABC ")
+    let last = descriptionWidth("\u{05D2}")
+    let plain = descriptionWidth("\u{05D1}\u{05D0}")
+    let xyz = descriptionWidth(" XYZ")
+    let regions = label.touchableTextRegions.sorted { $0.minX < $1.minX }
+    XCTAssertEqual(regions.count, 2)
+    guard regions.count == 2 else { return }
+    XCTAssertEqual(regions[0].minX, abc, accuracy: 1)
+    XCTAssertEqual(regions[0].maxX, abc + last, accuracy: 1)
+    XCTAssertEqual(regions[1].minX, abc + last + plain, accuracy: 1)
+    XCTAssertFalse(hit(label, x: abc / 2))
+    XCTAssertTrue(hit(label, x: abc + last / 2))
+    XCTAssertFalse(hit(label, x: abc + last + plain / 2))
+    XCTAssertTrue(hit(label, x: abc + last + plain + xyz / 2))
+    // Only the outer edge of the last run faces blank space.
+    XCTAssertTrue(hit(label, x: abc + last + plain + xyz + 5))
+  }
+
+  // A one-line description that does not fit ends in an ellipsis. Action text
+  // it only shortens stays touchable up to and including the ellipsis. Once it
+  // hides the action text altogether the ellipsis also stands for plain text,
+  // and nothing is left to touch.
+  func testTruncationCanHideTheActionText() throws {
+    let cut = descriptionLabel(
+      "08:48 • UniswapUniversalRouterWithAVeryLongName", start: 8, width: 150,
+      style: ["lines": 1])
+    let region = try XCTUnwrap(cut.touchableTextRegions.first)
+    XCTAssertEqual(cut.touchableTextRegions.count, 1)
+    XCTAssertEqual(region.minX, descriptionWidth("08:48 • "), accuracy: 1)
+    XCTAssertFalse(hit(cut, x: 20))
+    XCTAssertTrue(hit(cut, x: 100))
+    XCTAssertTrue(hit(cut, x: 145))
+
+    let prefix = "A very long plain prefix that fills the row • "
+    let hidden = descriptionLabel(
+      prefix + "Router", start: (prefix as NSString).length, width: 150, style: ["lines": 1])
+    XCTAssertTrue(hidden.touchableTextRegions.isEmpty)
+    XCTAssertFalse(hit(hidden, x: 145))
+  }
+
+  // A one-line description folds each line break into one space, so the
+  // caller's offset is mapped onto the displayed text and kept inside it.
+  func testDescriptionActionStartFollowsTheDisplayedText() {
+    let source = "08:48\r\n• Router"
+    func text(_ style: [String: Any]?) -> NativeListResolvedText {
+      NativeListResolvedText(
+        source, style: style, size: 14, color: .label, lineHeight: 20, lines: 2,
+        fonts: NativeListFontFamilies())
+    }
+    let oneLine = text(["lines": 1])
+    XCTAssertEqual(oneLine.text, "08:48 • Router")
+    XCTAssertEqual(oneLine.displayOffset(9, in: source), 8)
+    XCTAssertEqual(oneLine.displayOffset(-3, in: source), 0)
+    XCTAssertEqual(oneLine.displayOffset(99, in: source), 14)
+    let wrapping = text(nil)
+    XCTAssertEqual(wrapping.text, source)
+    XCTAssertEqual(wrapping.displayOffset(9, in: source), 9)
+    XCTAssertEqual(wrapping.displayOffset(99, in: source), 15)
+  }
+
   func testSmallNumberRunsPreserveBaselineAcrossAmountsFiatAndFee() throws {
     func segments(_ prefix: String, _ suffix: String) -> [[String: Any]] {
       [["text": prefix], ["text": "5", "style": "subscript"], ["text": suffix]]

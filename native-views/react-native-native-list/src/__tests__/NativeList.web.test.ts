@@ -1818,6 +1818,134 @@ describe('web row style', () => {
     }
   });
 
+  it('takes the Activity description action text from descriptionActionStart, never from the string', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: ActivityRow = {
+      type: 'activity',
+      key: 'tx',
+      leading: { kind: 'image', image },
+      title: 'Send',
+      amounts: [{ key: 'send', text: '-1 ETH' }],
+      description: 'Router • V2',
+      descriptionActionKey: 'address-info',
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    const body = host.querySelector<HTMLElement>(
+      '[data-nl-renderer="activity"]'
+    )!;
+    const description = () =>
+      body.querySelector<HTMLElement>('[data-nl-slot="description"]')!;
+    const action = () =>
+      description().querySelector<HTMLElement>('[data-native-list-action]');
+    const bind = (changes: Partial<ActivityRow>) =>
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [{ ...row, ...changes }])
+      );
+    try {
+      // A label holding the separator a time prefix would use is one action.
+      expect(action()?.dataset.nativeListAction).toBe('address-info');
+      expect(action()?.textContent).toBe('Router • V2');
+      expect(description().textContent).toBe('Router • V2');
+
+      bind({ description: '08:48 • Router • V2', descriptionActionStart: 8 });
+      expect(action()?.textContent).toBe('Router • V2');
+      expect(description().textContent).toBe('08:48 • Router • V2');
+
+      // UTF-16 units: the emoji counts two.
+      const prefix = '🕘 08:48 • ';
+      bind({
+        description: `${prefix}Router`,
+        descriptionActionStart: prefix.length,
+      });
+      expect(action()?.textContent).toBe('Router');
+      expect(description().textContent).toBe(`${prefix}Router`);
+
+      // A start at the end leaves no action text.
+      bind({ description: '08:48 • ', descriptionActionStart: 8 });
+      expect(action()).toBeNull();
+      expect(description().textContent).toBe('08:48 • ');
+
+      // Without the key the offset splits nothing.
+      bind({
+        description: '08:48 • Router',
+        descriptionActionStart: 8,
+        descriptionActionKey: undefined,
+      });
+      expect(action()).toBeNull();
+      expect(description().textContent).toBe('08:48 • Router');
+
+      bind({});
+      expect(action()?.textContent).toBe('Router • V2');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps room for the Activity description action behind a prefix wider than the row', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    Object.defineProperty(host, 'clientWidth', { value: 160 });
+    document.body.appendChild(host);
+    const prefix = 'Received from a very long counterparty name • ';
+    const row: ActivityRow = {
+      type: 'activity',
+      key: 'tx',
+      leading: { kind: 'image', image },
+      title: 'Send',
+      amounts: [{ key: 'send', text: '-1 ETH' }],
+      description: `${prefix}Router`,
+      descriptionActionKey: 'address-info',
+      descriptionActionStart: prefix.length,
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    const description = host.querySelector<HTMLElement>(
+      '[data-nl-slot="description"]'
+    )!;
+    const [prefixNode, action] = Array.from(
+      description.children
+    ) as HTMLElement[];
+    try {
+      expect(prefixNode!.textContent).toBe(prefix);
+      expect(action!.dataset.nativeListAction).toBe('address-info');
+      // The prefix keeps its own width but can never take the whole line: it
+      // is capped short of the row and truncates, so the action after it
+      // cannot be squeezed to nothing.
+      expect(prefixNode!.style.flexShrink).toBe('0');
+      expect(prefixNode!.style.maxWidth).toBe('calc(100% - 3em)');
+      expect(prefixNode!.style.overflow).toBe('hidden');
+      expect(prefixNode!.style.textOverflow).toBe('ellipsis');
+      expect(action!.style.display).toBe('block');
+      expect(action!.style.minWidth).toBe('0');
+
+      // Nothing is reserved when no action text follows the prefix.
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...row,
+            description: prefix,
+            descriptionActionStart: prefix.length,
+          },
+        ])
+      );
+      expect(prefixNode!.style.maxWidth).toBe('100%');
+      expect(action!.style.display).toBe('none');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it.each([false, true])(
     'removes and restores the Activity leading slot on %s rich rows',
     (rich) => {

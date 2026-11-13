@@ -207,6 +207,21 @@ struct RNCScrollCandidateResolution {
 @implementation RNCCollapsiblePagerTransitionEdgeOwner
 @end
 
+// OneKey patch: overlay content (popover, sheet, dialog) stays mounted inside
+// its host view until the overlay window presents it, so a host can sit in a
+// page's subtree. That content is never the page's scroller: adopting its
+// scroll view applies the collapsed-header offset to it, and the sheet then
+// opens scrolled past its content.
+static BOOL RNCIsNativeOverlayHost(UIView *view)
+{
+  // Looked up by name: the overlay package is optional here. Main thread only.
+  static Class overlayHostClass = Nil;
+  if (overlayHostClass == Nil) {
+    overlayHostClass = NSClassFromString(@"RCTNativeOverlayComponentView");
+  }
+  return overlayHostClass != Nil && [view isKindOfClass:overlayHostClass];
+}
+
 static UIView *RNCScrollComponentView(UIScrollView *scrollView)
 {
   for (UIView *view = scrollView; view != nil; view = view.superview) {
@@ -5090,7 +5105,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (RNCScrollCandidateResolution)resolveScrollCandidateInView:(UIView *)view
 {
   RNCScrollCandidateResolution resolution;
-  if (view == nil || view == _sharedHeaderHostView) return resolution;
+  if (view == nil || view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return resolution;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     UIScrollView *nested = [(RNCCollapsiblePagerViewComponentView *)view
@@ -5181,7 +5196,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return nil;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     return [(RNCCollapsiblePagerViewComponentView *)view
@@ -5208,7 +5223,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findFabricScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return nil;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     return [(RNCCollapsiblePagerViewComponentView *)view
@@ -5231,7 +5246,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView ||
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view) ||
       ([view isKindOfClass:UIScrollView.class] &&
        [_mountingRemovedScrollViews containsObject:(UIScrollView *)view])) return nil;
   // A parent pager must follow the nested pager's active page instead of the

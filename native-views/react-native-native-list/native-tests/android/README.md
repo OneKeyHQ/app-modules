@@ -58,3 +58,19 @@ vertical drag, continued native scrolling, ordinary tap touch-end/click,
 ACTION_CANCEL cleanup, and removal/reattachment with the retained list and slot.
 It uses the existing platform runner without additional dependencies. It does
 not run JavaScript press handlers or establish physical-device gesture feel.
+
+## Activity description action hit area
+
+The same build command includes `NativeListDescriptionActionTouchTest`. Run it
+with `-e class com.margelo.nitro.nativelist.NativeListDescriptionActionTouchTest`
+and require `OK (7 tests)`. It binds rich Activity rows in a standalone
+NativeListView and taps the description line with `sendPointerSync`, so the
+events go through the window, the RecyclerView and the row. It checks that the
+text from `descriptionActionStart` on emits the description action, that the
+text before it and the blank width of the line emit the row press, also for a
+one-character prefix narrower than the touch slop and for the plain text
+between the two runs of a mixed-direction suffix. It covers UTF-16 offsets
+behind an emoji prefix, a start at, past and far past the end (beyond Int
+range), and that rebinding without a start, removing the action and recycling
+leave no stale start. It does not run JavaScript validation or present the
+caller's sheet.

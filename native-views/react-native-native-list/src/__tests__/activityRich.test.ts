@@ -1,5 +1,9 @@
 import type { ActivityRow, NativeListSnapshot } from '../models';
-import { validatePatches, validateSnapshot } from '../validation';
+import {
+  applyOwnedNativePatches,
+  validatePatches,
+  validateSnapshot,
+} from '../validation';
 
 const row: ActivityRow = {
   type: 'activity',
@@ -122,4 +126,137 @@ test('rich data fields are not style keys; activity accepts titleBadgeGap', () =
       ],
     })
   ).toThrow(/is not a style key/);
+});
+
+describe('descriptionActionStart', () => {
+  // The caller that assembles the description states where its action text
+  // starts. NativeList never reads that out of the displayed string.
+  const labelled: ActivityRow = {
+    ...row,
+    amounts: [{ key: 'send', text: '-1 ETH' }],
+    description: '08:48 • Router • V2',
+    descriptionActionKey: 'open-address',
+  };
+  const patch = (changes: Record<string, unknown>) =>
+    [{ type: 'activity', key: row.key, changes }] as never;
+
+  test('accepts an offset anywhere in the description, both ends included', () => {
+    for (const descriptionActionStart of [0, 8, labelled.description!.length])
+      expect(() =>
+        validateSnapshot(snapshot({ ...labelled, descriptionActionStart }))
+      ).not.toThrow();
+    // UTF-16 code units, as `String.prototype.length` counts them.
+    const prefix = '🕘 08:48 • ';
+    expect(prefix.length).toBe(11);
+    expect(() =>
+      validateSnapshot(
+        snapshot({
+          ...labelled,
+          description: `${prefix}Router`,
+          descriptionActionStart: prefix.length,
+        })
+      )
+    ).not.toThrow();
+  });
+
+  test('rejects an offset that is not an integer inside the description', () => {
+    for (const descriptionActionStart of [
+      -1,
+      1.5,
+      '8',
+      labelled.description!.length + 1,
+    ])
+      expect(() =>
+        validateSnapshot(
+          snapshot({ ...labelled, descriptionActionStart } as ActivityRow)
+        )
+      ).toThrow(/descriptionActionStart/);
+    // Without a description there is nothing to offset into.
+    expect(() =>
+      validateSnapshot(snapshot({ ...row, descriptionActionStart: 1 }))
+    ).toThrow(/descriptionActionStart/);
+    expect(() =>
+      validatePatches(patch({ descriptionActionStart: -1 }))
+    ).toThrow(/descriptionActionStart/);
+  });
+
+  test('a patch that replaces the description resets an offset it does not restate', () => {
+    const initial = snapshot({ ...labelled, descriptionActionStart: 8 });
+    const renamed = applyOwnedNativePatches(
+      initial,
+      patch({ description: 'Router • V2' })
+    );
+    expect(renamed.snapshot.rows[0]).toMatchObject({
+      description: 'Router • V2',
+    });
+    expect(renamed.snapshot.rows[0]).not.toHaveProperty(
+      'descriptionActionStart'
+    );
+    expect(JSON.parse(renamed.json)[0].changes).toEqual({
+      description: 'Router • V2',
+      descriptionActionStart: null,
+    });
+
+    const restated = applyOwnedNativePatches(
+      initial,
+      patch({ description: '09:10 • Router', descriptionActionStart: 8 })
+    );
+    expect(restated.snapshot.rows[0]).toMatchObject({
+      description: '09:10 • Router',
+      descriptionActionStart: 8,
+    });
+
+    // The same string again, or a patch of other fields, keeps the offset.
+    const untouched = applyOwnedNativePatches(
+      initial,
+      patch({ description: labelled.description, title: 'Swap' })
+    );
+    expect(untouched.snapshot.rows[0]).toMatchObject({
+      title: 'Swap',
+      descriptionActionStart: 8,
+    });
+    expect(JSON.parse(untouched.json)[0].changes).not.toHaveProperty(
+      'descriptionActionStart'
+    );
+
+    // Clearing the description clears the offset with it.
+    const cleared = applyOwnedNativePatches(
+      initial,
+      patch({ description: null })
+    );
+    expect(cleared.snapshot.rows[0]).not.toHaveProperty('description');
+    expect(cleared.snapshot.rows[0]).not.toHaveProperty(
+      'descriptionActionStart'
+    );
+
+    // The merged row is checked: this offset is past the current description.
+    expect(() =>
+      applyOwnedNativePatches(initial, patch({ descriptionActionStart: 40 }))
+    ).toThrow(/descriptionActionStart/);
+  });
+
+  test('production ignores a malformed offset instead of forwarding it', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const original = environment.__DEV__;
+    environment.__DEV__ = false;
+    try {
+      for (const descriptionActionStart of [-1, 1.5, '8']) {
+        const [accepted] = validateSnapshot(
+          snapshot({ ...labelled, descriptionActionStart } as ActivityRow)
+        ).rows;
+        expect(accepted).toMatchObject({ description: labelled.description });
+        expect(accepted).not.toHaveProperty('descriptionActionStart');
+      }
+      expect(
+        validateSnapshot(snapshot({ ...labelled, descriptionActionStart: 8 }))
+          .rows[0]
+      ).toMatchObject({ descriptionActionStart: 8 });
+      expect(
+        validatePatches(patch({ title: 'Swap', descriptionActionStart: -1 }))[0]
+          ?.changes
+      ).toEqual({ title: 'Swap' });
+    } finally {
+      environment.__DEV__ = original;
+    }
+  });
 });
