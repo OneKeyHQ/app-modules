@@ -181,7 +181,10 @@ separately from source implementation in STYLE_SPEC §9.
 - **Native rich amounts:** optional `amounts` replaces the legacy two strings,
   with at most 32 unique keyed entries. Each entry supports a leading visual,
   tone, primary/secondary text and subscript segments. The title supports at
-  most four keyed badges. `descriptionActionKey` emits a description action.
+  most four keyed badges. `descriptionActionKey` emits a description action on
+  the description text from `descriptionActionStart` on (a UTF-16 offset the
+  caller supplies; default `0`, the whole text). The text before it and the
+  rest of the line stay with the row press.
   `presentation: 'table'` allocates identity (including the leading visual and
   its gap), amounts and optional fee in a stable `1:1:0.6` ratio after column
   gaps. Without fee, identity and amounts have equal widths. Amount content

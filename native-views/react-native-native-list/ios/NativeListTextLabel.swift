@@ -3,19 +3,21 @@ import UIKit
 class NativeListTextLabel: UILabel {
   var rowVerticalAlignment: String? { didSet { setNeedsDisplay() } }
   var rowOffsetY: CGFloat = 0 { didSet { setNeedsDisplay() } }
-  /// Limits touches to the drawn text plus a small slop, so the unused width of
-  /// a stretched label falls through to the row behind it.
-  var touchesTextOnly = false
-  /// UTF-16 offset the touchable text starts at; text before it takes no
-  /// touches on any line.
-  var touchableTextStart = 0
+  /// UTF-16 offset the touchable text starts at. `nil` keeps the label's own
+  /// hit testing, its whole bounds. With an offset only the drawn text from
+  /// there on takes touches, plus a small slop, so text before the offset and
+  /// the unused width of a stretched label fall through to the row behind it:
+  /// `0` covers all of the text, the text length leaves nothing to touch.
+  var touchableTextStart: Int?
   private static let touchSlop = CGSize(width: 8, height: 6)
 
   /// One rect per laid-out line that holds touchable text, in label coordinates.
   /// The label's own layout is not public, so the lines come from a text
   /// container with the label's width, line cap and truncation.
   var touchableTextRegions: [CGRect] {
-    guard let attributed = attributedText, attributed.length > 0, bounds.width > 0 else { return [] }
+    guard let start = touchableTextStart, let attributed = attributedText, attributed.length > 0,
+      bounds.width > 0
+    else { return [] }
     let storage = NSTextStorage(attributedString: attributed)
     let manager = NSLayoutManager()
     let container = NSTextContainer(
@@ -33,7 +35,6 @@ class NativeListTextLabel: UILabel {
       originY = alignment == "top" ? 0 : alignment == "bottom" ? bounds.height - textHeight : originY
     }
     originY += rowOffsetY
-    let start = touchableTextStart
     var lines: [CGRect] = []
     manager.enumerateLineFragments(forGlyphRange: glyphs) { _, usedRect, _, lineGlyphs, _ in
       let characters = manager.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)
@@ -59,14 +60,14 @@ class NativeListTextLabel: UILabel {
   }
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-    guard touchesTextOnly else { return super.point(inside: point, with: event) }
+    guard touchableTextStart != nil else { return super.point(inside: point, with: event) }
     return touchableTextRegions.contains { $0.contains(point) }
   }
 
   // Assistive activation taps this point; the label's center can be blank.
   override var accessibilityActivationPoint: CGPoint {
     get {
-      guard touchesTextOnly, let region = touchableTextRegions.first else {
+      guard let region = touchableTextRegions.first else {
         return super.accessibilityActivationPoint
       }
       let target = UIAccessibility.convertToScreenCoordinates(region.intersection(bounds), in: self)

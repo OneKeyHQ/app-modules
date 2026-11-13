@@ -168,9 +168,10 @@ type HistoryViews = {
   title: HTMLElement;
   badges: HTMLElement;
   description: HTMLElement;
-  descriptionTime: HTMLElement;
-  descriptionDot: HTMLElement;
-  descriptionAddress: HTMLButtonElement;
+  /** Description text before the action, or nothing. */
+  descriptionPrefix: HTMLElement;
+  /** Description text that opens the action; the whole text without one. */
+  descriptionAction: HTMLButtonElement;
   amounts: HTMLElement;
   amountRows: Map<string, AmountViews>;
   fee: HTMLElement;
@@ -221,14 +222,13 @@ function createHistory(body: HTMLElement, primitives: RowPrimitives) {
   const badges = node('badges');
   const description = node('description');
   description.dataset.nlSlot = 'description';
-  const descriptionTime = createElement(document, 'span');
-  const descriptionDot = createElement(document, 'span', undefined, '•');
-  const descriptionAddress = createElement(
+  const descriptionPrefix = createElement(document, 'span');
+  const descriptionAction = createElement(
     document,
     'button'
   ) as HTMLButtonElement;
-  descriptionAddress.type = 'button';
-  description.append(descriptionTime, descriptionDot, descriptionAddress);
+  descriptionAction.type = 'button';
+  description.append(descriptionPrefix, descriptionAction);
   const amounts = node('amounts');
   const fee = node('fee');
   const feeLabel = node('fee-label');
@@ -252,9 +252,8 @@ function createHistory(body: HTMLElement, primitives: RowPrimitives) {
     title,
     badges,
     description,
-    descriptionTime,
-    descriptionDot,
-    descriptionAddress,
+    descriptionPrefix,
+    descriptionAction,
     amounts,
     amountRows: new Map(),
     fee,
@@ -579,29 +578,35 @@ function bindHistory(
     ellipsis +
     'display:flex;max-width:100%;color:var(--nl-secondary);font-family:inherit;font-size:14px;line-height:20px;font-weight:400;font-variant-numeric:tabular-nums;';
   applyTextWeight(v.description, 400);
-  const split = row.description?.indexOf(' • ') ?? -1;
-  v.descriptionTime.textContent =
-    split >= 0 ? row.description!.slice(0, split) : '';
-  v.descriptionTime.style.display = split >= 0 ? 'inline' : 'none';
-  v.descriptionTime.style.flexShrink = '0';
-  v.descriptionDot.style.cssText = `flex-shrink:0;margin:0 4px;display:${
-    split >= 0 ? 'inline' : 'none'
+  // The caller states where the action text starts; the string is not parsed.
+  const description = row.description ?? '';
+  const actionStart = row.descriptionActionKey
+    ? Math.min(Math.max(row.descriptionActionStart ?? 0, 0), description.length)
+    : 0;
+  const actionText = description.slice(actionStart);
+  const boundAction =
+    row.descriptionActionKey && actionText ? row.descriptionActionKey : '';
+  // `pre` keeps the space a prefix ends with; a line break stays a space.
+  v.descriptionPrefix.textContent = description
+    .slice(0, actionStart)
+    .replace(/\r\n|[\r\n]/g, ' ');
+  v.descriptionPrefix.style.cssText = `${ellipsis}flex-shrink:0;max-width:100%;white-space:pre;display:${
+    actionStart > 0 ? 'block' : 'none'
   }`;
-  v.descriptionAddress.style.cssText =
-    ellipsis +
-    'appearance:none;display:block;max-width:100%;border:0;padding:0;background:transparent;text-align:left;color:inherit;font:inherit;font-variant-numeric:inherit;';
-  v.descriptionAddress.textContent =
-    split >= 0 ? row.description!.slice(split + 3) : row.description ?? '';
+  v.descriptionAction.style.cssText = `${ellipsis}appearance:none;max-width:100%;border:0;padding:0;background:transparent;text-align:left;color:inherit;font:inherit;font-variant-numeric:inherit;display:${
+    actionText ? 'block' : 'none'
+  };`;
+  v.descriptionAction.textContent = actionText;
   v.description.style.display = row.description ? 'flex' : 'none';
-  v.descriptionAddress.tabIndex = row.descriptionActionKey ? 0 : -1;
-  if (row.descriptionActionKey) {
-    v.descriptionAddress.dataset.nativeListAction = row.descriptionActionKey;
-    markActionAnchorSource(v.descriptionAddress, 'description');
-    v.descriptionAddress.style.cursor = 'pointer';
+  v.descriptionAction.tabIndex = boundAction ? 0 : -1;
+  if (boundAction) {
+    v.descriptionAction.dataset.nativeListAction = boundAction;
+    markActionAnchorSource(v.descriptionAction, 'description');
+    v.descriptionAction.style.cursor = 'pointer';
   } else {
-    delete v.descriptionAddress.dataset.nativeListAction;
-    delete v.descriptionAddress.dataset.nativeListAnchorSource;
-    v.descriptionAddress.style.cursor = 'inherit';
+    delete v.descriptionAction.dataset.nativeListAction;
+    delete v.descriptionAction.dataset.nativeListAnchorSource;
+    v.descriptionAction.style.cursor = 'inherit';
   }
   if (row.style?.description)
     primitives.textStyle(v.description, row.style.description);

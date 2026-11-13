@@ -1785,10 +1785,38 @@ and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
 tones. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
-disabled behavior. All actions use the current host binding epoch. The action
-is hit on the description text only: of a `time • address` description on the
-address, and never on the unused width of the description line, which belongs
-to the row press. iOS and Android add a small touch slop around the text.
+disabled behavior. All actions use the current host binding epoch.
+
+Description action text. The action is hit on text only, never on the unused
+width of the description line, which belongs to the row press. Which text is
+stated by the caller in `descriptionActionStart`, a UTF-16 offset into
+`description` as supplied (JavaScript string index): the text from the offset on
+opens the action, the text before it is plain and belongs to the row press.
+NativeList never derives the offset from the displayed string, its separators or
+its wording; a caller that composes `prefix + label` records `prefix.length`.
+
+- Absent means `0`: the whole description text is the action.
+  `description.length` leaves no action text; the row then has no description
+  action, and no button semantics, on any platform.
+- The field is ignored without `descriptionActionKey`.
+- Development validation rejects a value that is not a non-negative safe
+  integer, and on a complete row (a snapshot row, or a row after a patch is
+  merged) a value past `description.length`. Production drops a malformed value,
+  which restores the default, and renderers clamp a value past the text to its
+  end.
+- A patch that changes `description` without `descriptionActionStart` clears the
+  stored offset, because it pointed into the previous string. Callers that keep
+  a prefix restate the offset in the same patch.
+- iOS and Android map the offset onto the displayed text: a one-line description
+  folds each line break into one space, so offsets after a CRLF move by one.
+- The hit area follows the laid-out lines. A line that ends before the offset
+  takes no touches, the line that holds it takes them from the offset on, later
+  lines take them on their text. iOS and Android add a small touch slop around
+  the text.
+- Internally the native text view holds one optional start: none keeps the
+  view's own hit testing (rows without the action), `0` limits touches to all of
+  the text, a positive value to the text from there on. Binding, rebinding
+  without the action and recycling set or clear that one value.
 
 Rich rows measure the declared line/visual metrics; there is no six-line native
 truncation. iOS automatic height mirrors the rendered stacks: `lineGap` between the

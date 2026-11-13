@@ -35,15 +35,18 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
     }
 
   /**
-   * Limits touches to the drawn text plus a small horizontal slop, so the unused
-   * width of a stretched view falls through to the row behind it.
+   * Character offset the touchable text starts at. `null` keeps the view's own
+   * hit testing, its whole bounds. With an offset only the drawn text from
+   * there on takes touches, plus a small horizontal slop, so text before the
+   * offset and the unused width of a stretched view fall through to the row
+   * behind it: `0` covers all of the text, the text length leaves nothing to
+   * touch.
    */
-  var touchesTextOnly = false
-  /** Character offset the touchable text starts at; text before it takes no touches on any line. */
-  var touchableTextStart = 0
+  var touchableTextStart: Int? = null
 
   val touchableTextRegions: List<NativeListTouchRegion>
     get() {
+      val textStart = touchableTextStart ?: return emptyList()
       val textLayout = layout ?: return emptyList()
       val count = textLayout.lineCount
       if (count == 0) return emptyList()
@@ -61,11 +64,11 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
           isRtl = textLayout.getParagraphDirection(line) == Layout.DIR_RIGHT_TO_LEFT,
         )
       }
-      val startsInside = touchableTextStart > 0 && touchableTextStart < textLayout.text.length
+      val startsInside = textStart > 0 && textStart < textLayout.text.length
       return nativeListTouchableTextRegions(
         lines = lines,
-        textStart = touchableTextStart,
-        textStartX = if (startsInside) originX + textLayout.getPrimaryHorizontal(touchableTextStart) else 0f,
+        textStart = textStart,
+        textStartX = if (startsInside) originX + textLayout.getPrimaryHorizontal(textStart) else 0f,
         slop = TOUCH_SLOP_DP * resources.displayMetrics.density,
       )
     }
@@ -73,7 +76,7 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (primaryHelpOnly && event.actionMasked == MotionEvent.ACTION_DOWN &&
       helpAnchorBounds?.contains(event.x, event.y) != true) return false
-    if (touchesTextOnly && event.actionMasked == MotionEvent.ACTION_DOWN &&
+    if (touchableTextStart != null && event.actionMasked == MotionEvent.ACTION_DOWN &&
       touchableTextRegions.none { it.contains(event.x, event.y) }) return false
     if (guardsHelpTouches) {
       if (event.actionMasked == MotionEvent.ACTION_DOWN) helpDownGeneration = helpBindingGeneration

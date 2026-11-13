@@ -23,12 +23,10 @@ class NativeListDescriptionTouchPolicyTest {
     assertFalse(hit(regions, 120f, 10f))
   }
 
-  // Of `time • address` only the address opens the action, as on Web.
+  // The caller states where the action text starts; the text before it, a
+  // time for one, is not part of the action.
   @Test
-  fun aLeadingTimeIsNotPartOfTheAction() {
-    assertEquals(0, nativeListDescriptionActionTextStart("0x35e6cb…cd1f0e"))
-    assertEquals(8, nativeListDescriptionActionTextStart("08:48 • Uniswap"))
-
+  fun textBeforeTheStartIsNotPartOfTheAction() {
     val ltr = nativeListTouchableTextRegions(
       lines = listOf(NativeListTextLine(start = 0, end = 15, left = 0f, top = 0f, right = 160f, bottom = 20f)),
       textStart = 8, textStartX = 50f, slop = 8f,
@@ -72,6 +70,41 @@ class NativeListDescriptionTouchPolicyTest {
       textStart = 8, textStartX = 0f, slop = 8f,
     )
     assertFalse(hit(timeOnItsOwnLine, 20f, 10f))
+    // Nor does the address line reach up into it.
+    assertFalse(hit(timeOnItsOwnLine, 20f, 19f))
     assertTrue(hit(timeOnItsOwnLine, 20f, 30f))
+  }
+
+  // A start at the end of the text leaves nothing to touch.
+  @Test
+  fun aStartAtTheEndOfTheTextLeavesNoRegion() {
+    val regions = nativeListTouchableTextRegions(
+      lines = listOf(NativeListTextLine(start = 0, end = 8, left = 0f, top = 0f, right = 55f, bottom = 20f)),
+      textStart = 8, textStartX = 0f, slop = 8f,
+    )
+
+    assertTrue(regions.isEmpty())
+  }
+
+  // `descriptionActionStart` is a UTF-16 offset into the caller's string. It is
+  // kept within the text, and follows the line breaks a one-line view folds.
+  @Test
+  fun theCallersStartIsMappedOntoTheDisplayedText() {
+    val label = "Router • V2"
+    assertEquals(0, nativeListDisplayOffset(label, 0, foldsLineBreaks = false))
+    assertEquals(8, nativeListDisplayOffset("08:48 • $label", 8, foldsLineBreaks = false))
+    assertEquals(0, nativeListDisplayOffset(label, -3, foldsLineBreaks = false))
+    assertEquals(label.length, nativeListDisplayOffset(label, 99, foldsLineBreaks = false))
+
+    // The emoji takes two UTF-16 units, as in the JavaScript string.
+    val emojiPrefix = "\uD83D\uDD58 08:48 • "
+    assertEquals(11, emojiPrefix.length)
+    assertEquals(label, "$emojiPrefix$label".substring(nativeListDisplayOffset("$emojiPrefix$label", 11, foldsLineBreaks = false)))
+
+    val broken = "08:48\r\n• Router"
+    assertEquals("08:48 • Router", nativeListFoldLineBreaks(broken))
+    assertEquals(8, nativeListDisplayOffset(broken, 9, foldsLineBreaks = true))
+    assertEquals(9, nativeListDisplayOffset(broken, 9, foldsLineBreaks = false))
+    assertEquals(14, nativeListDisplayOffset(broken, 99, foldsLineBreaks = true))
   }
 }

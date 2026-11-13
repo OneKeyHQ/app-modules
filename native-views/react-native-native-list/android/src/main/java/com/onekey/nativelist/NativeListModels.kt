@@ -62,14 +62,17 @@ internal fun nativeListLeadingVisualOverhangsFrame(
  */
 internal fun nativeListActivityHostClips(leadingOverhangs: Boolean): Boolean = !leadingOverhangs
 
+/** A one-line text view shows each line break of its text as one space. */
+internal fun nativeListFoldLineBreaks(text: String): String = text.replace(Regex("\\r\\n|[\\r\\n]"), " ")
+
 /**
- * Character offset an Activity description's action starts at. A description is
- * either the address or `time • address`; only the address opens the action, as
- * on Web, so the offset skips the time and its separator.
+ * Offset into the displayed text for [sourceOffset], a UTF-16 offset into the
+ * caller's [source], kept within the text. Folding line breaks
+ * ([nativeListFoldLineBreaks]) moves every offset after a CRLF.
  */
-internal fun nativeListDescriptionActionTextStart(description: String): Int {
-  val separator = description.indexOf(" • ")
-  return if (separator < 0) 0 else separator + 3
+internal fun nativeListDisplayOffset(source: String, sourceOffset: Int, foldsLineBreaks: Boolean): Int {
+  val clamped = sourceOffset.coerceIn(0, source.length)
+  return if (foldsLineBreaks) nativeListFoldLineBreaks(source.substring(0, clamped)).length else clamped
 }
 
 /** One laid-out line of a text view, in view coordinates; `[start, end)` are character offsets. */
@@ -91,8 +94,9 @@ internal data class NativeListTouchRegion(val left: Float, val top: Float, val r
  * Parts of a stretched text view that take touches: on every line the drawn
  * text from character [textStart] on, widened horizontally by [slop]. A line
  * that ends before [textStart] takes none, and the line that holds it takes
- * none before [textStartX], however the text wraps. Touches outside the regions
- * fall through to the row behind the view (OK-67219).
+ * none before [textStartX], however the text wraps; a [textStart] at the end
+ * of the text leaves no region. Touches outside the regions fall through to
+ * the row behind the view (OK-67219).
  */
 internal fun nativeListTouchableTextRegions(
   lines: List<NativeListTextLine>,
