@@ -180,8 +180,8 @@ export type SniConnectUploadFileRequest = SniConnectRequestBase & {
   I/O.
 - The caller supplies `content-type` in `headers`; `Content-Length` stays
   module-owned (Section 4.4).
-- Native React Native upload progress is available through the optional
-  `getUploadProgress(requestId)` capability described in the
+- Native React Native upload progress is available through
+  `getUploadProgress(requestId)` as described in the
   [native upload contract](docs/SPEC.md). `timeout` covers the whole upload.
 - Status: **Implemented** on iOS and Android React Native. Node/Desktop and
   shared JS adapters do not expose it; adapters MUST feature-detect it and
@@ -223,7 +223,7 @@ export type SniConnectResponse = {
   [native upload contract](docs/SPEC.md) for unsupported Promise rejection and
   consumption-time file bounds)
 - `getUploadProgress(requestId): Promise<{ bytesSent: number; totalBytes: number } | null>`
-  (React Native only; optional on older native binaries)
+  (React Native only; requires the matching JS and native release)
 - `cancelRequest(requestId): Promise<{ success: boolean }>`
 - `cancelAllRequests(): Promise<{ success: boolean }>`
 - `clearDNSCache(): Promise<{ success: boolean }>`

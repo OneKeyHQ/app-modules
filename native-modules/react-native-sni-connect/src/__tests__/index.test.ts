@@ -110,16 +110,6 @@ describe('react-native-sni-connect public API', () => {
     expect(mockNativeModule.getUploadProgress).toHaveBeenCalledWith('upload-1');
   });
 
-  it('returns null when an older native binary lacks upload progress', async () => {
-    const nativeProgress = mockNativeModule.getUploadProgress;
-    try {
-      Reflect.deleteProperty(mockNativeModule, 'getUploadProgress');
-      await expect(getUploadProgress('upload-1')).resolves.toBeNull();
-    } finally {
-      mockNativeModule.getUploadProgress = nativeProgress;
-    }
-  });
-
   it('forwards cancelRequest() with the request id', async () => {
     mockNativeModule.cancelRequest.mockResolvedValue({ success: true });
     await expect(cancelRequest('req-1')).resolves.toEqual({ success: true });

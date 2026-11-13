@@ -28,12 +28,9 @@ export async function uploadFile(
   return NativeSniConnect.uploadFile(config);
 }
 
-export async function getUploadProgress(
+export function getUploadProgress(
   requestId: string
 ): Promise<SniConnectUploadProgress | null> {
-  if (typeof NativeSniConnect.getUploadProgress !== 'function') {
-    return null;
-  }
   return NativeSniConnect.getUploadProgress(requestId);
 }
 

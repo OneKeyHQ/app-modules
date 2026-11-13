@@ -12,9 +12,9 @@ upload boundary and its focused review corrections.
   absent, it rejects with an Error whose `code` is `SNI_UNSUPPORTED`.
 - Supported native methods receive the caller's config unchanged.
 - `getUploadProgress(requestId)` returns the latest active upload snapshot or
-  `null` for an unknown, inactive, or non-upload request ID. New JS checks for
-  this native method before invoking it and resolves `null` with older binaries.
-  It does not change `uploadFile(config)` or its response/error behavior.
+  `null` for an unknown, inactive, or non-upload request ID. JS calls the native
+  method directly; the JS and native changes must ship together. This does not
+  change `uploadFile(config)` or its response/error behavior.
 
 ## Upload progress
 
@@ -269,7 +269,7 @@ retain the generic logger's sensitive-data filtering.
 ## Conformance and remaining evidence
 
 - TypeScript typecheck and React Native Codegen parse cover the nullable
-  progress result; JS API tests cover forwarding and old-native `null` fallback.
+  progress result; JS API tests cover forwarding.
 - Android RequestBody test verifies progress from sink-accepted payload bytes.
   iOS uses EMASCurl 1.5.5's per-request callback, which counts bytes read into
   libcurl. Native build and device/network behavior remain unverified here.
