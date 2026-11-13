@@ -187,6 +187,15 @@ struct RNCScrollCandidateResolution {
 @implementation RNCCollapsiblePagerReleasedScrollState
 @end
 
+@interface RNCCollapsiblePagerScrollEdgeBackgroundState : NSObject
+@property (nonatomic, strong) UIColor *originalColor;
+@property (nonatomic, strong) UIColor *appliedColor;
+@property (nonatomic, assign) BOOL relinquished;
+@end
+
+@implementation RNCCollapsiblePagerScrollEdgeBackgroundState
+@end
+
 @interface RNCCollapsiblePagerTransitionEdgeOwner : NSObject
 @property (nonatomic, weak) UIScrollView *scrollView;
 @property (nonatomic, weak) UIView *page;
@@ -2307,8 +2316,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)cancelTopInsetReboundCheck;
 - (void)scheduleTopInsetReboundCheck;
 - (void)syncScrollEdgeAppearance;
+- (void)applyScrollEdgeBackgroundToScrollView:(UIScrollView *)scrollView;
+- (void)restoreScrollEdgeBackgroundForScrollView:(UIScrollView *)scrollView;
+- (void)restoreUnusedScrollEdgeBackgroundForScrollView:(UIScrollView *)scrollView;
 - (void)updateHardEdgeSeparatorCovers;
 - (void)updateTopOverlayThemeBackground;
+- (void)commitTopOverlayAppearance;
+- (void)cancelTopOverlayAppearanceCommit;
 - (BOOL)canPreserveHorizontalScrollEdgesAllowExternalOverlay:(BOOL)allowExternalOverlay;
 - (void)beginProgrammaticScrollEdgesToIndex:(NSInteger)index allowExternalOverlay:(BOOL)allowExternalOverlay;
 - (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay;
@@ -2364,6 +2378,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   __weak UIView *_stickyEdgeInteractionHost;
   __weak UIScrollView *_topEdgeScrollView;
   UIScrollEdgeEffectStyle *_originalTopEdgeStyle;
+  NSMapTable<UIScrollView *, RNCCollapsiblePagerScrollEdgeBackgroundState *> *_scrollEdgeBackgroundStates;
   RNCCollapsiblePagerNativeTabBarView *_nativeTabBarView;
   RNCCollapsiblePagerNativeSubHeaderView *_nativeSubHeaderView;
   NSInteger _currentIndex;
@@ -2383,6 +2398,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   RNCCollapsiblePagerViewTopScrollEdgeEffect _topScrollEdgeEffect;
   NSString *_topOverlayColorScheme;
   BOOL _pendingTopOverlayAppearanceCommit;
+  BOOL _topOverlayAppearanceCommitScheduled;
   BOOL _applyingTopOverlayInsetChange;
   BOOL _correctingTopInsetRebound;
   __weak UIScrollView *_pendingTopInsetReboundScrollView;
@@ -2702,6 +2718,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 {
   [super didMoveToWindow];
   [self cancelNativeToolbarSettlement];
+  if (self.window == nil && _pendingTopOverlayAppearanceCommit) {
+    [self cancelTopOverlayAppearanceCommit];
+  }
   if (self.window == nil) [self stopProgrammaticTabProgress];
   if (self.window == nil && _pendingNativePagerScrollCompletion != nil) {
     [self cancelPendingNativePagerScroll];
@@ -2846,6 +2865,78 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   }
 }
 
+- (void)restoreScrollEdgeBackgroundForScrollView:(UIScrollView *)scrollView
+{
+  RNCCollapsiblePagerScrollEdgeBackgroundState *state = [_scrollEdgeBackgroundStates objectForKey:scrollView];
+  if (state == nil) return;
+  UIColor *current = scrollView.backgroundColor;
+  if (!state.relinquished && state.appliedColor != nil &&
+      (current == state.appliedColor || [current isEqual:state.appliedColor])) {
+    scrollView.backgroundColor = state.originalColor;
+  }
+  [_scrollEdgeBackgroundStates removeObjectForKey:scrollView];
+}
+
+- (void)restoreUnusedScrollEdgeBackgroundForScrollView:(UIScrollView *)scrollView
+{
+  if (scrollView == nil || scrollView == _topEdgeScrollView ||
+      [_programmaticScrollEdges objectForKey:scrollView] != nil ||
+      (_pendingTopOverlayAppearanceCommit && scrollView == _observedScrollView &&
+       [self canPreserveHorizontalScrollEdgesAllowExternalOverlay:NO])) return;
+  [self restoreScrollEdgeBackgroundForScrollView:scrollView];
+}
+
+- (void)applyScrollEdgeBackgroundToScrollView:(UIScrollView *)scrollView
+{
+  if (scrollView == nil) return;
+  BOOL eligible = NO;
+  if (@available(iOS 27.0, *)) {
+    // iOS 27 passed the transparent-backing checks without this workaround.
+  } else if (@available(iOS 26.0, *)) {
+    eligible = [self canPreserveHorizontalScrollEdgesAllowExternalOverlay:NO];
+  }
+  if (!eligible) {
+    [self restoreScrollEdgeBackgroundForScrollView:scrollView];
+    return;
+  }
+  RNCCollapsiblePagerScrollEdgeBackgroundState *state = [_scrollEdgeBackgroundStates objectForKey:scrollView];
+  UIColor *current = scrollView.backgroundColor;
+  if (state == nil) {
+    state = [RNCCollapsiblePagerScrollEdgeBackgroundState new];
+    state.originalColor = current;
+    UIColor *resolved = [current resolvedColorWithTraitCollection:_topOverlayHostView.traitCollection];
+    state.relinquished = resolved != nil && CGColorGetAlpha(resolved.CGColor) > 0;
+    if (_scrollEdgeBackgroundStates == nil) _scrollEdgeBackgroundStates = [NSMapTable weakToStrongObjectsMapTable];
+    [_scrollEdgeBackgroundStates setObject:state forKey:scrollView];
+  } else if (current != (state.appliedColor ?: state.originalColor) &&
+             ![current isEqual:(state.appliedColor ?: state.originalColor)]) {
+    // UIKit may return equivalent UIColor instances from consecutive getter reads.
+    // Preserve a caller's replacement rather than reclaiming its color on later updates.
+    state.relinquished = YES;
+  }
+  if (state.relinquished) return;
+  UIColor *color = nil;
+  for (UIView *view = self; view != nil; view = view.superview) {
+    UIColor *candidate = [view.backgroundColor resolvedColorWithTraitCollection:_topOverlayHostView.traitCollection];
+    if (candidate != nil && CGColorGetAlpha(candidate.CGColor) >= 1) {
+      color = candidate;
+      break;
+    }
+  }
+  if (color == nil) {
+    if (state.appliedColor != nil) {
+      scrollView.backgroundColor = state.originalColor;
+      state.appliedColor = nil;
+    }
+    return;
+  }
+  if ([state.appliedColor isEqual:color]) return;
+  // iOS 26 Hard edges with transparent scroll backing reproduced stale pale Glass
+  // in a pure UIKit probe. Match the actual opaque ancestor; keep the native effect.
+  scrollView.backgroundColor = color;
+  state.appliedColor = scrollView.backgroundColor;
+}
+
 - (void)syncScrollEdgeAppearance
 {
   BOOL active = _topScrollEdgeEnabled &&
@@ -2861,9 +2952,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       style = self.traitCollection.userInterfaceStyle;
     }
   }
-  if (_topOverlayHostView.overrideUserInterfaceStyle == style) return;
-  _topOverlayHostView.overrideUserInterfaceStyle = style;
-  _pinnedStickyHostView.overrideUserInterfaceStyle = style;
+  if (_topOverlayHostView.overrideUserInterfaceStyle != style) {
+    _topOverlayHostView.overrideUserInterfaceStyle = style;
+    _pinnedStickyHostView.overrideUserInterfaceStyle = style;
+  }
+  for (UIScrollView *scrollView in _scrollEdgeBackgroundStates.keyEnumerator.allObjects) {
+    [self applyScrollEdgeBackgroundToScrollView:scrollView];
+  }
 }
 
 - (void)restoreScrollEdgeContentMasks
@@ -3097,23 +3192,27 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (BOOL)canPreserveHorizontalScrollEdgesAllowExternalOverlay:(BOOL)allowExternalOverlay
 {
-  if (@available(iOS 27.0, *)) {
+  // The edge APIs exist on iOS 26, but the former iOS 27 gate skipped local Hard
+  // transition ownership there. External-overlay handoff keeps its iOS 27 boundary.
+  if (@available(iOS 26.0, *)) {
     if (!_directNativePagerEnabled || !_topScrollEdgeEnabled ||
         !_nativeSmoothHeaderScrollEnabled ||
         _topScrollEdgeEffect != RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard ||
         self.window == nil || _isBeingRecycled) return NO;
     if (_topOverlayView != nil && _externalTopOverlayTag <= 0) return YES;
-    return allowExternalOverlay && _topOverlayView == nil && _externalTopOverlayTag > 0 &&
-      _externalTopOverlayView.window == self.window && _externalTopOverlayHeight > 0 &&
-      _topOverlayHostView.window == self.window && !_topOverlayHostView.hidden &&
-      (_externalOuterPager == nil || (_externalOuterPageActive && !_externalOuterTransitioning));
+    if (@available(iOS 27.0, *)) {
+      return allowExternalOverlay && _topOverlayView == nil && _externalTopOverlayTag > 0 &&
+        _externalTopOverlayView.window == self.window && _externalTopOverlayHeight > 0 &&
+        _topOverlayHostView.window == self.window && !_topOverlayHostView.hidden &&
+        (_externalOuterPager == nil || (_externalOuterPageActive && !_externalOuterTransitioning));
+    }
   }
   return NO;
 }
 
 - (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay
 {
-  if (@available(iOS 27.0, *)) {
+  if (@available(iOS 26.0, *)) {
     UIScrollView *source = _observedScrollView;
     if (![self canPreserveHorizontalScrollEdgesAllowExternalOverlay:allowExternalOverlay] ||
         source == nil || source != _topEdgeScrollView ||
@@ -3158,7 +3257,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)beginProgrammaticScrollEdgesToIndex:(NSInteger)index allowExternalOverlay:(BOOL)allowExternalOverlay
 {
-  if (@available(iOS 27.0, *)) {
+  if (@available(iOS 26.0, *)) {
     if (![self canPreserveHorizontalScrollEdgesAllowExternalOverlay:allowExternalOverlay]) return;
     if (_programmaticScrollEdges == nil) {
       _programmaticScrollEdges = [NSMapTable weakToStrongObjectsMapTable];
@@ -3187,6 +3286,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       owner.scrollView = scrollView;
       owner.page = _pageControllers[pageIndex].view;
       owner.originalStyle = scrollView.topEdgeEffect.style;
+      [self applyScrollEdgeBackgroundToScrollView:scrollView];
       scrollView.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
       UILabel *(^markerForHost)(UIView *) = ^UILabel *(UIView *host) {
         UILabel *marker = [UILabel new];
@@ -3279,6 +3379,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     }
     if (scrollView != nil) [_programmaticScrollEdges removeObjectForKey:scrollView];
     [_programmaticScrollEdgeOwners removeObjectIdenticalTo:owner];
+    [self restoreUnusedScrollEdgeBackgroundForScrollView:scrollView];
   }
 }
 
@@ -3355,6 +3456,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   handoff.borrowsPinnedStickyHost = NO;
   // The caller reattaches the shared header in this run loop turn; drop the
   // transitional resources on the next one, after the header is rendered.
+  __weak __typeof__(self) weakSelf = self;
   dispatch_async(dispatch_get_main_queue(), ^{
     if (@available(iOS 26.0, *)) {
       [handoff.topHost removeInteraction:handoff.topInteraction];
@@ -3372,6 +3474,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       [handoff.ownedTopHost removeFromSuperview];
       [handoff.ownedStickyHost removeFromSuperview];
     }
+    [weakSelf restoreUnusedScrollEdgeBackgroundForScrollView:handoff.scrollView];
   });
 }
 
@@ -3381,7 +3484,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   // own an edge effect, so its masked top shows the bare background. An empty
   // stand-in scroll view resting past its top edge renders the same Hard
   // material (the settled header is masked out under the overlay as well).
-  if (@available(iOS 27.0, *)) {
+  if (@available(iOS 26.0, *)) {
     if (pageIndex == _currentIndex || pageIndex < 0 ||
         pageIndex >= (NSInteger)_pageControllers.count) return NO;
     UIView *page = _pageControllers[pageIndex].view;
@@ -3405,6 +3508,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     standIn.accessibilityElementsHidden = YES;
     standIn.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
     [container insertSubview:standIn aboveSubview:page];
+    [self applyScrollEdgeBackgroundToScrollView:standIn];
 
     RNCCollapsiblePagerTransitionEdgeOwner *owner = [RNCCollapsiblePagerTransitionEdgeOwner new];
     owner.scrollView = standIn;
@@ -3513,6 +3617,30 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   return NO;
 }
 
+- (void)cancelTopOverlayAppearanceCommit
+{
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                         selector:@selector(commitTopOverlayAppearance)
+                                           object:nil];
+  _topOverlayAppearanceCommitScheduled = NO;
+  _pendingTopOverlayAppearanceCommit = NO;
+}
+
+- (void)commitTopOverlayAppearance
+{
+  _topOverlayAppearanceCommitScheduled = NO;
+  if (!_pendingTopOverlayAppearanceCommit) return;
+  _pendingTopOverlayAppearanceCommit = NO;
+  BOOL localOverlayReady = _topOverlayView.superview == _topOverlayHostView &&
+    _topOverlayView.window == self.window;
+  BOOL externalOverlayReady = _externalTopOverlayTag > 0 &&
+    _externalTopOverlayView.window == self.window;
+  if (!_isBeingRecycled && _topScrollEdgeEnabled && self.window != nil &&
+      (localOverlayReady || externalOverlayReady)) {
+    [self updateTopScrollEdgeForScrollView:_observedScrollView];
+  }
+}
+
 - (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView
 {
   [self syncScrollEdgeAppearance];
@@ -3538,6 +3666,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       (hasOverlay && _topEdgeInteractionHost != _topOverlayHostView);
     if (_topEdgeScrollView != nil && (!enabled || _topEdgeScrollView != scrollView ||
         topHostChanged)) {
+      UIScrollView *previousScrollView = _topEdgeScrollView;
       [_topEdgeInteractionHost removeInteraction:_topEdgeInteraction];
       _topEdgeInteraction.scrollView = nil;
       [_stickyEdgeInteractionHost removeInteraction:_stickyEdgeInteraction];
@@ -3553,12 +3682,14 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       _stickyEdgeInteractionHost = nil;
       _topEdgeScrollView = nil;
       _originalTopEdgeStyle = nil;
+      [self restoreUnusedScrollEdgeBackgroundForScrollView:previousScrollView];
     }
     if (enabled && _topEdgeScrollView == nil) {
       _originalTopEdgeStyle = scrollView.topEdgeEffect.style;
       _topEdgeScrollView = scrollView;
     }
     if (enabled) {
+      [self applyScrollEdgeBackgroundToScrollView:scrollView];
       UIScrollEdgeEffectStyle *style =
         _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Soft
           ? UIScrollEdgeEffectStyle.softStyle : UIScrollEdgeEffectStyle.hardStyle;
@@ -3686,6 +3817,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)dealloc
 {
+  for (UIScrollView *scrollView in _scrollEdgeBackgroundStates.keyEnumerator.allObjects) {
+    [self restoreScrollEdgeBackgroundForScrollView:scrollView];
+  }
+  [self cancelTopOverlayAppearanceCommit];
   [self cancelNativeToolbarSettlement];
   [self stopProgrammaticTabProgress];
   [self clearProgrammaticScrollEdges];
@@ -4364,14 +4499,21 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     [self setNeedsLayout];
   }
   if (_pendingTopOverlayAppearanceCommit) {
-    _pendingTopOverlayAppearanceCommit = NO;
-    BOOL localOverlayReady = _topOverlayView.superview == _topOverlayHostView &&
-      _topOverlayView.window == self.window;
-    BOOL externalOverlayReady = _externalTopOverlayTag > 0 &&
-      _externalTopOverlayView.window == self.window;
-    if (!_isBeingRecycled && _topScrollEdgeEnabled && self.window != nil &&
-        (localOverlayReady || externalOverlayReady)) {
-      [self updateTopScrollEdgeForScrollView:_observedScrollView];
+    if (@available(iOS 27.0, *)) {
+      [self commitTopOverlayAppearance];
+    } else if (@available(iOS 26.0, *)) {
+      // On iOS 26, same-mount edge reattachment was observed to leave stale pale glass.
+      // One main-run-loop turn with the edge detached restores the current appearance.
+      // iOS 27 passed the same theme-switch checks with the synchronous path above.
+      if (!_topOverlayAppearanceCommitScheduled) {
+        _topOverlayAppearanceCommitScheduled = YES;
+        [self performSelector:@selector(commitTopOverlayAppearance)
+                   withObject:nil
+                   afterDelay:0
+                      inModes:@[NSRunLoopCommonModes]];
+      }
+    } else {
+      [self commitTopOverlayAppearance];
     }
   }
   [self updateScrollEdgeContentMasks];
@@ -4702,6 +4844,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)prepareForRecycle
 {
+  [self cancelTopOverlayAppearanceCommit];
   [self cancelNativeToolbarSettlement];
   [self cancelPendingNativePagerScroll];
   [_externalOuterPager removeNestedOverlayObserver:self];
@@ -4712,6 +4855,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self cancelHeaderSettledCheck];
   [self publishHeaderSettledAtTop:NO identityChanged:NO];
   _isBeingRecycled = YES;
+  for (UIScrollView *scrollView in _scrollEdgeBackgroundStates.keyEnumerator.allObjects) {
+    [self restoreScrollEdgeBackgroundForScrollView:scrollView];
+  }
   _toolbarTransitionPending = NO;
   [_nativeTabBarView updateToolbarPagerIndex:-1 busy:YES];
   _pendingTopOverlayAppearanceCommit = NO;
@@ -4936,6 +5082,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     BOOL enabledChanged = _topScrollEdgeEnabled != enabled;
     _topScrollEdgeEnabled = enabled;
     _topScrollEdgeEffect = newViewProps.topScrollEdgeEffect;
+    if (!enabled && _pendingTopOverlayAppearanceCommit) {
+      [self cancelTopOverlayAppearanceCommit];
+    }
     if (enabledChanged) {
       _deferTopEdgeSlotRebuild = YES;
       [self rebuildSlots];
@@ -4955,6 +5104,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     if (self.hasFixedTopOverlay && _topScrollEdgeEnabled &&
         _topOverlayColorScheme != nil &&
         ![_topOverlayColorScheme isEqualToString:nextScheme]) {
+      // A newer scheme must wait for its own mount before scheduling the edge again.
+      [self cancelTopOverlayAppearanceCommit];
       _pendingTopOverlayAppearanceCommit = YES;
       [self updateTopScrollEdgeForScrollView:nil];
     }
@@ -6369,6 +6520,23 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     UIScrollView *ownedScroll = (UIScrollView *)object;
     NSValue *oldPoint = change[NSKeyValueChangeOldKey];
     NSValue *newPoint = change[NSKeyValueChangeNewKey];
+    BOOL hasVerticalOffsetDelta = [keyPath isEqualToString:@"contentOffset"] &&
+      [oldPoint isKindOfClass:NSValue.class] && [newPoint isKindOfClass:NSValue.class] &&
+      oldPoint.CGPointValue.y != newPoint.CGPointValue.y;
+    BOOL ownsScrollDrag = ownedScroll.panGestureRecognizer.state == UIGestureRecognizerStateChanged;
+    if (@available(iOS 27.0, *)) {
+      // Keep the existing iOS 27 gesture ownership rule.
+    } else if (@available(iOS 26.0, *)) {
+      // Observed iOS 26 drag offsets can arrive after the pan has ended or reset.
+      // Only the active local list may use isDragging to take over saved alignment.
+      if (hasVerticalOffsetDelta && ownedScroll.isDragging &&
+          ownedScroll.window == self.window &&
+          [self canPreserveHorizontalScrollEdgesAllowExternalOverlay:NO] &&
+          !_correctingTopInsetRebound && ![self matchesPagerTop:ownedScroll] &&
+          ![_commandBodyKeys containsObject:_observedPageKey] && _headerCommandOwner == nil) {
+        ownsScrollDrag = YES;
+      }
+    }
     if ([keyPath isEqualToString:@"contentOffset"] && [self matchesPagerTop:ownedScroll] && ownedScroll.panGestureRecognizer.state == UIGestureRecognizerStateChanged &&
         [oldPoint isKindOfClass:NSValue.class] && [newPoint isKindOfClass:NSValue.class] &&
         oldPoint.CGPointValue.y != newPoint.CGPointValue.y) {
@@ -6376,16 +6544,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       [self cancelPagerTop];
       [ownedScroll setContentOffset:interruptedOffset animated:NO];
     }
-    if ([keyPath isEqualToString:@"contentOffset"] &&
-        ownedScroll.panGestureRecognizer.state == UIGestureRecognizerStateChanged &&
-        [oldPoint isKindOfClass:NSValue.class] && [newPoint isKindOfClass:NSValue.class] &&
-        oldPoint.CGPointValue.y != newPoint.CGPointValue.y) {
+    if (hasVerticalOffsetDelta && ownsScrollDrag) {
       [_alignedBodyKeys removeObject:_observedPageKey];
     }
-    if (_nativeSmoothHeaderScrollEnabled && [keyPath isEqualToString:@"contentOffset"] &&
-        ownedScroll.panGestureRecognizer.state == UIGestureRecognizerStateChanged &&
-        [oldPoint isKindOfClass:NSValue.class] && [newPoint isKindOfClass:NSValue.class] &&
-        oldPoint.CGPointValue.y != newPoint.CGPointValue.y) {
+    if (_nativeSmoothHeaderScrollEnabled && hasVerticalOffsetDelta && ownsScrollDrag) {
       [self cancelPagerTop];
       [_commandBodyKeys removeObject:_observedPageKey];
       [_pendingPageRestoreKeys removeObject:_observedPageKey];
@@ -6424,7 +6586,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
     if (_correctingTopInsetRebound) return;
     if ([_alignedBodyKeys containsObject:_observedPageKey] ||
-        (_nativeSmoothHeaderScrollEnabled && scrollView.panGestureRecognizer.state != UIGestureRecognizerStateChanged &&
+        (_nativeSmoothHeaderScrollEnabled && !ownsScrollDrag &&
          !scrollView.isDecelerating && ![_commandBodyKeys containsObject:_observedPageKey])) return;
     _pageOffsets[_nativeSmoothHeaderScrollEnabled ? _observedPageKey : self.currentPageKey] =
       @(_nativeSmoothHeaderScrollEnabled ? MAX(_currentLogicalOffset - _headerHeight, 0) : _currentLogicalOffset);

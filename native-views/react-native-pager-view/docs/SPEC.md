@@ -59,6 +59,63 @@ cleanup path. A new drag invalidates an older pending settlement before it can
 release the new transition's owners.
 If the direct pager viewport width changes while a native animated page command is pending, stop the old-coordinate animation before resizing its viewport. After the normal layout completes, settle the captured logical destination at its new physical offset through the original generation/transition-guarded completion path. This restores scrolling, releases temporary edge ownership and drains queued commands. Any width change, including a fractional-point change, is significant. Zero width completes the logical destination without retaining a disabled pending animation; a later positive-width idle layout realigns the current page. Height-only layout and horizontal user drags retain their existing paths. Late animation-end callbacks must not complete a newer command before its own current target has been reached.
 
+Implemented: iOS 26 local fixed-overlay smooth Hard
+direct pagers use the existing source-edge ownership transfer and incoming-page
+hosts during horizontal user drags and animated page commands. The source's actual top/pinned interactions
+remain attached until settlement or cancellation; unmounted incoming pages use
+the existing noninteractive stand-in only while the sticky header is pinned.
+Returning to the source, recycling or window detachment releases temporary
+resources and restores the current settled owner. External-overlay transitions
+remain restricted to iOS 27 and newer. The native programmatic-animation choice
+and the overlay theme-background layer also retain their iOS 27 gates. There is
+no new public prop, page identity, inset, child reparenting or JavaScript work.
+Native regressions exercise local source ownership, interrupted/returning drags,
+animated page-command settlement, missing-list stand-in cleanup and the iOS 26
+external-overlay exclusion.
+
+Implemented: on iOS 26 only, a current local smooth
+Hard direct-pager list may take over saved body alignment when a real vertical
+`contentOffset` change arrives with `isDragging == true` after its pan recognizer
+has ended or reset to Possible. Current-page identity, attachment, transition
+and synthetic-restore guards still apply. Pager-top and active native header/body
+commands, plus inset-rebound correction, retain ownership. This narrow takeover
+clears temporary alignment/display-body state and advances the shared header;
+a matching offset change without active dragging must keep that state. Other
+platforms, external overlays, refresh/inset/size handling and explicit gesture
+interruption of pager-top retain their existing rules. Focused native tests cover
+Possible/Ended dragging takeover and non-dragging, synthetic and command guards.
+
+Implemented: iOS 26 local smooth Hard direct-pager
+scroll owners with an original nil or fully transparent background temporarily
+use the resolved opaque Pager/ancestor background as their native scroll backing.
+Custom opaque or translucent backgrounds remain caller-owned. The exact original
+nil-versus-clear value is retained. UIKit can return a new equivalent UIColor
+on each read, so ownership uses nil-safe color value equality. An observably
+different caller color makes the pager relinquish that lease; an equal-color
+replacement is indistinguishable from UIKit rebuilding the same color. Theme
+changes update only a still-owned backing.
+The same lease spans settled/transition ownership and pending theme commits,
+including incoming pages and stand-ins, without a transparent handoff frame.
+Disabling the effect, detaching, recycling or releasing the last owner restores
+the original value only while the current value is still the pager's applied
+color. The native Hard effect, Glass views, opacity and React children are not
+replaced. iOS 27 and newer retain their existing backgrounds and timing.
+
+Runtime verified with the same Pager source and native object in consumer Debug
+simulators: iPhone SE (3rd generation) on iOS 26.0 and iPhone 17 Pro on iOS 27.0
+completed natural vertical scrolling, pinned half-drag returns, full page
+switches, light/dark changes and opening/returning from Search and Action Center.
+The iOS 26 active-list lease captured the original clear value and applied
+white/dark backing from its actual opaque ancestor; iOS 27 retained clear scroll
+backgrounds with no backing leases. The final iOS 26 repair has recordings;
+the final iOS 27 check used captured frame sequences. The App debug dylibs have
+different UUIDs despite identical Pager objects. Focused native XCTest selected
+14 cases on each OS: iOS 26 passed 11 and skipped 3 iOS-27 controls; iOS 27
+passed 6 and skipped 8 iOS-26-only cases, with no failures. These checks cover
+actual owner identity/geometry and cleanup, nil/clear/custom color ownership,
+equivalent UIColor getter instances, theme changes, drag takeover and command
+guards. Physical-device and Release behavior remain unverified.
+
 Other pager modes retain their prior command and observer ordering. Recycling,
 window detachment, slot replacement and disabling the style also release the
 temporary resources. Conformance requires preserving the source interaction
@@ -87,6 +144,33 @@ transition gates apply only while an outer PagerView is registered.
 `topOverlayColorScheme` is optional (`"light" | "dark"`) and coordinates the
 fixed overlay's effective appearance with React theme commits. It does not
 change the requested style, scroll owner, content inset or page identity.
+
+Implemented: on iOS 26, changing an existing overlay color scheme detaches its
+scroll-edge interaction until a single main-run-loop callback after the Fabric
+mount transaction. The callback runs in common modes so tracking does not defer
+reattachment until the gesture ends. Layout and further mount work cannot
+reattach the interaction while this appearance commit is pending. A newer scheme
+cancels the queued callback and schedules from its own completed mount, using the
+latest scheme and currently observed scroll view. Window detachment, recycling
+and disabling the edge cancel pending work. Reattachment requires an enabled
+edge, a current window and a local or resolved external overlay still mounted in
+that window; stale work cannot attach to a recycled owner. The existing attach
+path restores the requested edge style and preserves React child identities,
+order, geometry and hit targets. Initial mount retains its existing timing;
+iOS 27 and newer retain synchronous appearance reattachment in the mount
+transaction. Android, Web and iOS before 26 are unchanged.
+
+Runtime verified in consumer iOS Simulator Debug builds: iOS 26.0 completed
+two light/dark cycles with Home mounted and consecutive system-theme commands
+with the final appearance checked. iOS 27.0 completed light-to-dark-to-light
+against its existing light and dark appearance baselines. Both platforms verified
+actual edge ownership and mounted child order, plus opening/returning from Search and
+Action Center. Both builds compiled the identical Pager native object and
+source. The App debug-dylib UUIDs differed; this is source/object parity, not
+byte-identical App binaries. Same-mount rapid scheme races and cancellation
+guards were source reviewed. Physical devices and Release builds remain
+unverified.
+
 When a smooth shared header reaches the overlay boundary, the existing sticky
 React and native tab views move together into a view pinned to the active
 scroll view. Their identities, scroll-view gesture ancestry and hit targets
