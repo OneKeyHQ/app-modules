@@ -135,7 +135,8 @@ final class NativeListActivityPresentationTests: XCTestCase {
     XCTAssertTrue(hit(emoji, x: emojiText.maxX - 12))
 
     // A start at the end of the text, or clamped to it, leaves nothing to tap.
-    for start in [(prefix as NSString).length, 99] {
+    // 4294967296 is a safe integer past 32 bits; it must clamp, not wrap to 0.
+    for start in [(prefix as NSString).length, 99, 4_294_967_296] {
       let ended = try bind(description: prefix, actionKey: "address-info", actionStart: start)
       XCTAssertTrue(ended.touchableTextRegions.isEmpty)
       XCTAssertFalse(ended.isUserInteractionEnabled)

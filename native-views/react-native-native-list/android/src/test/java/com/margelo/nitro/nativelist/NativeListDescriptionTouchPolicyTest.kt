@@ -95,6 +95,10 @@ class NativeListDescriptionTouchPolicyTest {
     assertEquals(8, nativeListDisplayOffset("08:48 • $label", 8, foldsLineBreaks = false))
     assertEquals(0, nativeListDisplayOffset(label, -3, foldsLineBreaks = false))
     assertEquals(label.length, nativeListDisplayOffset(label, 99, foldsLineBreaks = false))
+    // Any safe integer arrives over JSON. One past Int range still clamps to
+    // the end; narrowed to Int first it would wrap to 0, the whole text.
+    assertEquals(label.length, nativeListDisplayOffset(label, 4_294_967_296L, foldsLineBreaks = false))
+    assertEquals(label.length, nativeListDisplayOffset(label, Long.MAX_VALUE, foldsLineBreaks = true))
 
     // The emoji takes two UTF-16 units, as in the JavaScript string.
     val emojiPrefix = "\uD83D\uDD58 08:48 • "

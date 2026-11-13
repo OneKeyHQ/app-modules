@@ -107,7 +107,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     // never read out of the string, and one at the end leaves no action.
     val actionStart =
       if (descriptionKey.isEmpty()) null
-      else descriptionText.displayOffset(data.optInt("descriptionActionStart"), data.optString("description"))
+      else descriptionText.displayOffset(data.optLong("descriptionActionStart"), data.optString("description"))
     val hasActionText = actionStart != null && actionStart < descriptionText.text.length
     description.touchableTextStart = actionStart
     description.isClickable = hasActionText

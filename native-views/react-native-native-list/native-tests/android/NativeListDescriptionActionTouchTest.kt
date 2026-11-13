@@ -86,7 +86,9 @@ class NativeListDescriptionActionTouchTest : InstrumentationTestCase() {
   }
 
   fun testStartAtTheEndLeavesNoAction() {
-    for (start in listOf("08:48 • ".length, 99)) {
+    // 4294967296 is a safe integer past Int range: narrowed it would wrap to
+    // 0 and make the whole text the action instead of clamping to the end.
+    for (start in listOf("08:48 • ".length.toLong(), 99L, 4_294_967_296L)) {
       val description = bind("08:48 • ", "address-info", start)
       assertTrue(onMainValue { description.touchableTextRegions.isEmpty() })
       assertEquals(listOf("press"), tap(description, dp(4)))
@@ -116,13 +118,13 @@ class NativeListDescriptionActionTouchTest : InstrumentationTestCase() {
     assertNull(onMainValue { description.touchableTextStart })
   }
 
-  private fun bind(description: String, actionKey: String?, actionStart: Int? = null): NativeListTextView {
+  private fun bind(description: String, actionKey: String?, actionStart: Number? = null): NativeListTextView {
     val row = JSONObject().put("key", "tx").put("type", "activity").put("title", "Swap")
       .put("description", description)
       .put("leading", JSONObject().put("kind", "icon").put("name", "ArrowTopOutline"))
       .put("amounts", JSONArray().put(JSONObject().put("key", "send").put("text", "-1")))
     actionKey?.let { row.put("descriptionActionKey", it) }
-    actionStart?.let { row.put("descriptionActionStart", it) }
+    actionStart?.let { row.put("descriptionActionStart", it.toLong()) }
     generation += 1
     val revision = generation
     row.put("revision", revision)

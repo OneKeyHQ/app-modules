@@ -68,10 +68,12 @@ internal fun nativeListFoldLineBreaks(text: String): String = text.replace(Regex
 /**
  * Offset into the displayed text for [sourceOffset], a UTF-16 offset into the
  * caller's [source], kept within the text. Folding line breaks
- * ([nativeListFoldLineBreaks]) moves every offset after a CRLF.
+ * ([nativeListFoldLineBreaks]) moves every offset after a CRLF. The offset is a
+ * Long because JSON carries any safe integer; narrowing it first would wrap a
+ * value past Int range instead of clamping it to the end.
  */
-internal fun nativeListDisplayOffset(source: String, sourceOffset: Int, foldsLineBreaks: Boolean): Int {
-  val clamped = sourceOffset.coerceIn(0, source.length)
+internal fun nativeListDisplayOffset(source: String, sourceOffset: Long, foldsLineBreaks: Boolean): Int {
+  val clamped = sourceOffset.coerceIn(0L, source.length.toLong()).toInt()
   return if (foldsLineBreaks) nativeListFoldLineBreaks(source.substring(0, clamped)).length else clamped
 }
 

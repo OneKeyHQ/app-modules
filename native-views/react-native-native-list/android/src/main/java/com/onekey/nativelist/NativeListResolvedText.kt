@@ -44,7 +44,7 @@ internal data class NativeListResolvedText(
   val offset: Float,
 ) {
   /** Offset into [text] for a UTF-16 offset into the [source] it was resolved from. */
-  fun displayOffset(sourceOffset: Int, source: String): Int =
+  fun displayOffset(sourceOffset: Long, source: String): Int =
     nativeListDisplayOffset(source, sourceOffset, foldsLineBreaks = lines == 1 && explicitTruncation)
 
   fun bind(view: NativeListTextView) {
