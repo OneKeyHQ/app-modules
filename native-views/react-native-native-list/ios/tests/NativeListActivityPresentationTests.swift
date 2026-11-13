@@ -65,7 +65,9 @@ final class NativeListActivityPresentationTests: XCTestCase {
   // blank rest of the line belongs to the row press (OK-67219).
   func testDescriptionActionTakesTouchesOnItsTextOnly() throws {
     let details = NativeListActivityDetailsView()
-    let container = UIView(frame: CGRect(x: 0, y: 0, width: 366, height: 300))
+    // Wide enough that the label keeps blank space beside its text even when
+    // the amounts take their full half of the row.
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 600, height: 300))
     details.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(details)
     NSLayoutConstraint.activate([
@@ -103,29 +105,42 @@ final class NativeListActivityPresentationTests: XCTestCase {
     let timed = try bind(description: "08:48 • Uniswap", actionKey: "address-info")
     let timedText = try XCTUnwrap(timed.touchableTextRegions.first)
     XCTAssertEqual(timed.touchableTextRegions.count, 1)
+    XCTAssertGreaterThan(timed.bounds.width, timedText.maxX + 40)
     XCTAssertFalse(hit(timed, x: 4))
     XCTAssertTrue(hit(timed, x: timedText.maxX - 12))
     XCTAssertFalse(hit(timed, x: timed.bounds.maxX - 4))
-
-    // A narrow row wraps the description. The time stays outside the action on
-    // its line, while the address is hit on both lines, also at the x the time
-    // occupies one line above.
-    container.frame.size.width = 220
-    let wrapped = try bind(
-      description: "08:48 • Uniswap Universal Router", actionKey: "address-info")
-    let lines = wrapped.touchableTextRegions
-    XCTAssertEqual(lines.count, 2)
-    XCTAssertFalse(wrapped.point(inside: CGPoint(x: 4, y: lines[0].midY), with: nil))
-    XCTAssertTrue(wrapped.point(inside: CGPoint(x: lines[0].maxX - 12, y: lines[0].midY), with: nil))
-    XCTAssertTrue(wrapped.point(inside: CGPoint(x: 4, y: lines[1].midY), with: nil))
-    XCTAssertFalse(
-      wrapped.point(inside: CGPoint(x: wrapped.bounds.maxX - 2, y: lines[1].midY), with: nil))
-    container.frame.size.width = 366
 
     // A reused view without the action takes no special touch handling.
     let plain = try bind(description: "Uniswap", actionKey: nil)
     XCTAssertFalse(plain.touchesTextOnly)
     XCTAssertTrue(hit(plain, x: plain.bounds.maxX - 4))
+  }
+
+  // A narrow column wraps "time • address". The time stays outside the action
+  // on its line, while the address is hit on both lines, also at the x the
+  // time occupies one line above. The label is sized directly so the wrap does
+  // not depend on how the row shares its width.
+  func testWrappedDescriptionKeepsTheTimeOutsideTheAction() throws {
+    let description = "08:48 • Uniswap Router"
+    let label = NativeListTextLabel()
+    NativeListResolvedText(
+      description, style: nil, size: 14, color: .label, lineHeight: 20, lines: 2,
+      fonts: NativeListFontFamilies()
+    ).bind(label)
+    label.frame = CGRect(x: 0, y: 0, width: 142, height: 40)
+    label.touchesTextOnly = true
+    label.touchableTextStart = ("08:48 • " as NSString).length
+    func hit(_ x: CGFloat, _ y: CGFloat) -> Bool {
+      label.point(inside: CGPoint(x: x, y: y), with: nil)
+    }
+
+    let lines = label.touchableTextRegions
+    XCTAssertEqual(lines.count, 2)
+    guard lines.count == 2 else { return }
+    XCTAssertFalse(hit(4, lines[0].midY))
+    XCTAssertTrue(hit(lines[0].maxX - 12, lines[0].midY))
+    XCTAssertTrue(hit(4, lines[1].midY))
+    XCTAssertFalse(hit(label.bounds.maxX - 2, lines[1].midY))
   }
 
   func testSmallNumberRunsPreserveBaselineAcrossAmountsFiatAndFee() throws {
