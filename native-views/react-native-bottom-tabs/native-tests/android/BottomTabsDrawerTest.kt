@@ -4,6 +4,7 @@ import coil3.asDrawable
 import android.content.Intent
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.test.InstrumentationTestCase
 import android.view.MotionEvent
@@ -71,6 +72,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       drawer = BottomTabsDrawerView(activity)
       drawer.setDrawerEnabled(true)
       drawer.swipeEnabled = true
+      drawer.colorScheme = "light"
       drawer.addReactChild(View(activity).apply { setBackgroundColor(Color.DKGRAY) }, 0)
       main = FrameLayout(activity).apply {
         setBackgroundColor(Color.WHITE)
@@ -98,13 +100,13 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       assertEquals(1, root.ended)
       assertEquals(drawer.width, main.width)
       assertEquals(drawer.height, main.height)
-      assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
-      assertEquals(drawer.width * .78f, drawer.getReactChild(0).width.toFloat(), 1f)
+      assertEquals(drawer.width * .8f, drawer.getChildAt(1).translationX, 1f)
+      assertEquals(drawer.width * .8f, drawer.getReactChild(0).width.toFloat(), 1f)
       val dim = (drawer.getChildAt(1) as FrameLayout).getChildAt(1)
       assertEquals(drawer.width, dim.width)
       assertEquals(drawer.height, dim.height)
       assertEquals(View.VISIBLE, dim.visibility)
-      assertEquals(.7f, dim.alpha)
+      assertEquals(.5f, dim.alpha)
       // A prop echo has no second event or animation.
       drawer.setDrawerOpen(true)
       assertEquals(listOf(true), events)
@@ -115,6 +117,52 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       assertEquals(listOf(true, false), events)
       assertEquals(0f, drawer.getChildAt(1).translationX)
       assertEquals(0, clicks)
+    }
+  }
+
+  fun testColorSchemeSelectsThePageWashAndTheMenuFinishesOpen() {
+    onMain {
+      drawer.colorScheme = "dark"
+      drawer.setDrawerOpen(true)
+    }
+    settle()
+    onMain {
+      val dim = (drawer.getChildAt(1) as FrameLayout).getChildAt(1)
+      assertEquals(.58f, dim.alpha, .001f)
+      assertEquals(Color.rgb(36, 36, 36), (dim.background as ColorDrawable).color)
+      drawer.colorScheme = "light"
+      assertEquals(.5f, dim.alpha, .001f)
+      assertEquals(Color.WHITE, (dim.background as ColorDrawable).color)
+      // The menu has scaled up from its left edge and faded fully in.
+      val menu = drawer.getChildAt(0)
+      assertEquals(1f, menu.alpha)
+      assertEquals(1f, menu.scaleX)
+      assertEquals(0f, menu.pivotX)
+      assertEquals(View.LAYER_TYPE_NONE, menu.layerType)
+      assertTrue(events.isEmpty())
+    }
+  }
+
+  fun testProgressEventsAreOptInAndEndOnTheStableState() {
+    val progress = mutableListOf<Float>()
+    onMain {
+      drawer.onDrawerProgress = { progress.add(it) }
+      drawer.setDrawerOpen(true)
+    }
+    settle()
+    onMain {
+      assertTrue(progress.isEmpty())
+      drawer.progressEventsEnabled = true
+      // A new subscriber receives the current position at once.
+      assertEquals(listOf(1f), progress)
+      drawer.setDrawerOpen(false)
+    }
+    settle()
+    onMain {
+      assertTrue(progress.size > 2)
+      assertTrue(progress.all { it in 0f..1f })
+      assertEquals(0f, progress.last())
+      assertTrue(events.isEmpty())
     }
   }
 
@@ -140,7 +188,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     settle()
     onMain {
       assertTrue(events.isEmpty())
-      assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
+      assertEquals(drawer.width * .8f, drawer.getChildAt(1).translationX, 1f)
       assertSame(main, drawer.getReactChild(1))
       drag(drawer.width * .95f, 150f, drawer.width * .25f, 150f)
     }
@@ -177,7 +225,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     settle()
     onMain {
       assertEquals(listOf(false), events)
-      assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
+      assertEquals(drawer.width * .8f, drawer.getChildAt(1).translationX, 1f)
     }
   }
 
@@ -199,7 +247,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
     settle()
     onMain {
-      assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
+      assertEquals(drawer.width * .8f, drawer.getChildAt(1).translationX, 1f)
       drawer.setDrawerEnabled(false)
       assertEquals(0f, drawer.getChildAt(1).translationX)
       assertSame(main, drawer.getReactChild(1))
@@ -212,7 +260,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       drawer.layout(0, 0, drawer.width - 40, drawer.height - 20)
       assertEquals(listOf(true), events)
       assertSame(main, drawer.getReactChild(1))
-      assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
+      assertEquals(drawer.width * .8f, drawer.getChildAt(1).translationX, 1f)
     }
     settle()
     onMain { assertEquals(listOf(true), events) }
@@ -246,7 +294,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       onMain {
         val after = IntArray(2)
         tabs.getLocationOnScreen(after)
-        assertEquals(drawer.width * .78f, (after[0] - before[0]).toFloat(), 1f)
+        assertEquals(drawer.width * .8f, (after[0] - before[0]).toFloat(), 1f)
         assertEquals(drawer.width, tabs.width)
         assertEquals(drawer.height, tabs.height)
         assertTrue(tabs.layoutHolder.height > 0)

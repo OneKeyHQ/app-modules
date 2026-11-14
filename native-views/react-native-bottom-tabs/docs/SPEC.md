@@ -74,6 +74,11 @@ The static Home example also passed a focused TypeScript check.
 Detailed iOS runtime evidence is recorded separately; physical-device and exact
 reference-video acceptance remain pending.
 
+Reference-recording motion revision: implemented on iOS and Android. iOS is
+runtime verified in the consumer app on an iPhone 17 simulator; Android is
+source-complete with updated native tests that still need an emulator run (see
+Conformance below).
+
 `renderDrawerContent?: () => React.ReactNode` supplies an optional menu slot.
 `drawerOpen?: boolean` defaults to false and requests its stable open state.
 `onDrawerOpenChange?: (open: boolean) => void` reports a completed user transition;
@@ -86,8 +91,28 @@ screen). Existing `hapticFeedbackEnabled` enables one light native haptic after
 a completed user transition changes the stable state. Programmatic updates and
 cancelled gestures do not vibrate.
 
+`onDrawerProgress?: (event) => void` receives `{ progress }`, the displayed
+progress clamped to [0, 1], while the drawer moves. Native emits it only while
+a handler is set (the wrapper derives the internal `progressEventsEnabled` prop
+from the handler's presence), at most once per frame, when progress changed by
+at least .002, and always on reaching 0 or 1. Enabling it emits the current
+value once, so a new subscriber starts in sync. The wrapper enables it one
+commit after mount, once the host's event emitter and an animated host's
+worklet handler are attached; on iOS the host also re-sends the current value
+when Fabric attaches the event emitter after a mount's first props. The handler is passed to the
+host unchanged, so `drawerHostComponent?` (default: the native host) can be an
+animated wrapper such as `Animated.createAnimatedComponent(BottomTabsDrawerNative)`
+whose worklet handler consumes the event on the UI thread. The package does
+not depend on Reanimated; `BottomTabsDrawerNative` is exported for this use.
+`drawerColorScheme?: "light" | "dark"` selects the page palette below; when
+omitted the internal `colorScheme` prop is `"system"` and follows the iOS trait
+collection or the Android configuration's night mode. Pass the app theme when
+it can differ from those (an app-level iOS window style override is followed
+without it).
+
 The drawer is physically left on both iOS and Android, including RTL. Its width
-is 78 percent of the host. The foreground is the full tab container, including
+is 80 percent of the host, and the React menu slot is laid out at the same
+80 percent so its descendants reach the menu's edge. The foreground is the full tab container, including
 the native tab bar and an optional custom JS bar. It keeps its full width and
 height while moving right, without scaling, scene reparenting or remounting.
 The native host and two slots remain mounted when the drawer is disabled or its
@@ -96,12 +121,19 @@ an event, and passes foreground input through. Web omits the drawer host/menu
 and passes the existing tab content through; it implements no drawer gestures.
 The existing tab view's other Web support is unchanged.
 
-For normalized progress `p` in [0, 1], foreground translation is `.78 * width * p`,
-its left circular corner radius is `64 * p` points/dp and its neutral gray
-dim surface (RGB 28/28/28) has opacity `.7 * p`.
-The menu translates from `-.12 * drawerWidth` to zero; a black menu shade fades
-from .12 to zero. These are initial reference-video tuning values, not a claim
-of pixel-perfect parity. Closed menus are hidden from touch/accessibility;
+For normalized progress `p` in [0, 1], foreground translation is `.8 * width * p`
+and its left circular corner radius is `62 * min(1, p / .1)` points/dp, so
+screens with other display corners never show a radius jump. The dim surface
+washes the page linearly: white at `.5 * p` in the light palette, RGB 36/36/36
+at `.58 * p` in the dark palette. In the light palette the page also casts a
+black shadow under its left edge and corners, opacity .16, Gaussian sigma 18
+points/dp, no offset, following the current corner radius; in the dark palette it instead draws a one-physical-pixel
+white edge at 17 percent opacity. The menu scales from .97 to 1 about its
+left-center edge (1 throughout when motion is reduced, see below) and its
+opacity is `min(1, p / .6)`. The host itself is transparent, so whatever lies
+behind it shows through the fading menu and its scaled-down margins.
+These values were measured frame by frame from the reference recording.
+Closed menus are hidden from touch/accessibility;
 while visible, the foreground is blocked by a native dim surface. Tapping that
 surface closes the drawer. iOS accessibility escape and Android Back close an
 open drawer; the dim surface exposes an accessible close action.
@@ -153,27 +185,55 @@ Vertical gestures fail before taking ownership. Active touches interrupted by
 a second finger, system cancellation, disabling, detach or a newer prop update
 cannot later emit an event. Cancellation returns to the previous stable state,
 or resumes an external target whose programmatic animation the gesture interrupted.
-No gesture progress crosses the JS bridge.
+Gesture progress crosses the JS bridge only through the opt-in `onDrawerProgress`.
 
-Both platforms settle on their UI thread with the same critically damped curve:
-`p(t) = target + (a + b*t) * exp(-22*t)`, where `a = p0-target`,
-`b = v0 + 22*a`, and normalized velocity `v0` is clamped to [-8, 8] per second.
-Presentation is clamped to [0, 1], and the transition ends at or before 500 ms.
-Release targets open when `p + v0*.12 >= .5`. A newer animation or touch starts
-from the current displayed progress and cancels the previous completion.
+Both platforms settle on their UI thread with the same curves. A tap, dim
+close, Back/escape or prop change starting from rest eases with
+cubic-bezier(.55, .6, .2, 1) over `max(.12, D * |target - p0|)` seconds, where D
+is .36 to open and .29 to close. A released drag settles on a spring with
+natural frequency 25.5 rad/s and damping ratio .84, starting from its normalized
+finger velocity `v0` clamped to [-12, 12] per second; release targets open when
+`p + v0*.12 >= .5`. Only this spring may carry the page past open, by at most
+3 percent of the drawer width; reported progress and touch/accessibility state
+stay clamped to [0, 1]. The spring ends once within .0005 of its target and
+slower than .02 per second, or at 600 ms. A request for a different target
+while animating continues from the displayed progress with its current
+velocity on the spring; a request for the same target keeps the running
+animation and only replaces whether its completion is a user transition. A
+touch starts from the current displayed progress and cancels the previous
+completion. When the system asks for less motion (iOS Reduce Motion; Android
+with animator duration scale 0), the menu does not scale. On iOS a tap,
+close or prop change from rest then cross-fades from a snapshot to the final
+state over 200 ms instead of moving, and a released drag settles critically
+damped (damping ratio 1) without travelling past its target. A cross-fade is
+an in-flight transition like an animation: its final state shows at once under
+the snapshot, but the stable state, `onDrawerOpenChange` and the haptic follow
+only when the fade ends. A newer cross-fade replaces the previous snapshot
+(capturing it as currently shown). A request for the target already being
+faded to leaves the fade running and only replaces whether its completion is a
+user transition. A touch, an animated settle, a newer cross-fade, disabling or
+detach removes the snapshot without completing it, as a touch does a running
+animation, so a drag that begins during a faded close never receives that
+close's prop echo; a resize completes it at once.
+Android has no separate reduced-motion setting and lands such transitions
+immediately.
 Resize snaps a pending settlement to its target, emitting its user event once
 if appropriate; an active drag follows the same cancellation rule. Detach cancels
 animations and callbacks; reattachment reapplies the latest external target.
 The host retains at most one display-link/animator, one touch
-sequence, two React child slots, and native dim surfaces. It owns no snapshots,
-workers, persistence, JS animation objects, RNGH or Reanimated dependency.
+sequence, two React child slots, and native dim surfaces; on iOS one transient
+snapshot during a reduced-motion cross-fade, removed when it ends; on Android
+one hardware layer on the menu while its opacity is strictly between 0 and 1,
+and three gradient shaders for the page shadow, rebuilt only when the corner
+radius, height or palette changes. It owns no workers, persistence, JS
+animation objects, RNGH or Reanimated dependency.
 
 Implementation boundaries: `src/BottomTabs.tsx` owns slots and settled callbacks;
 `src/BottomTabsDrawerNativeComponent.ts` defines the Fabric boundary;
 `ios/RCTBottomTabsDrawerContainerView.swift` and
 `android/src/main/java/com/onekey/bottomtabs/BottomTabsDrawerView.kt` own native
 input, layout, animation and cleanup. The iOS Fabric component and Android manager only forward children,
-props and the settled event. Required acceptance includes both bar styles,
+props, the settled event and the opt-in progress event. Required acceptance includes both bar styles,
 custom bars, content/vertical gestures, dim close, rapid reversal, cancellation,
 disable/remove-content, resize, detach, accessibility, RTL and bottom-bar
 gesture ownership, including a real pager, nested horizontal list and vertical
@@ -181,6 +241,29 @@ scrolling in the complete Fabric example. Source checks and emulator checks do n
 device smoothness or exact reference-video fidelity.
 The Android native suite also exercises generated drawer prop forwarding in RTL,
 physical-left placement, and closing pans while opening swipes are disabled.
+For the reference-recording revision it asserts the 80 percent travel, the
+light and dark wash, the menu's final scale/opacity/layer, and that progress
+events are opt-in, start in sync and end on the stable state; the wrapper tests
+assert that progress stays off without a handler and during the mount commit,
+that the handler, a replacement host and the color scheme reach native
+unchanged, and that the menu slot is 80 percent wide. The iOS suite
+`ios/tests/BottomTabsDrawerReduceMotionTests.swift` runs without an app host,
+forcing Reduce Motion and supplying the fade snapshot through internal test
+hooks. It asserts that a user close reports once, after the snapshot is gone;
+that a drag taking over the fade drops the faded close and reports only its own
+release; that a resize lands the fade at once; and that same-target and newer
+requests, disabling and detach take over or drop the pending report.
+Recorded evidence so far: on the iPhone 17 simulator (iOS 26) in the consumer
+app, tap open/close timing, fling overshoot (about 2 points), smooth reversal,
+the corner ramp, the reduced-motion cross-fade, the light/dark palettes and a
+UI-thread Reanimated progress handler were compared frame by frame with the
+reference recording. After the review fixes, the same setup showed menu content
+reaching 20 points from the 80 percent edge, the header avatar hidden at full
+open through the deferred progress event, no travel past open on a
+reduced-motion fling, and three toggles within 120 ms under Reduce Motion
+cross-fading to the final state with no leftover image (snapshot replacement
+itself is source-verified). The Android suite has not yet been run for this revision;
+physical-device smoothness on either platform remains unverified.
 
 The standalone `example/react-native/pages/BottomTabsHomeDrawerExample.tsx`
 reproduces Home’s wallet toolbar, balance/actions/banner shared header and
