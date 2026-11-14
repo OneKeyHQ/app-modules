@@ -11,6 +11,41 @@ upload boundary and its focused review corrections.
 - `uploadFile(config)` always returns a Promise. When the native method is
   absent, it rejects with an Error whose `code` is `SNI_UNSUPPORTED`.
 - Supported native methods receive the caller's config unchanged.
+- `getUploadProgress(requestId)` returns the latest active upload snapshot or
+  `null` for an unknown, inactive, or non-upload request ID. JS calls the native
+  method directly; the JS and native changes must ship together. This does not
+  change `uploadFile(config)` or its response/error behavior.
+
+## Upload progress
+
+Status: **Implemented in source**; native device/network acceptance remains open.
+
+- Progress is opt-in through the existing optional `requestId`; uploads without
+  one continue unchanged and have no queryable snapshot. Each native module
+  instance owns its own snapshots. The ID is validated by existing request
+  validation; a progress query itself performs no network I/O.
+- `bytesSent` and `totalBytes` are payload bytes, not headers or a server
+  acknowledgement. Once the body is prepared, `totalBytes` is its declared
+  length, 1 through 20 MiB; before preparation it is zero. `bytesSent` is
+  between zero and `totalBytes`. iOS counts bytes read by EMASCurl into
+  libcurl; Android counts bytes accepted by OkHttp's sink. Built-in transport
+  recovery may replay a body. Android resets its write count for each OkHttp
+  `writeTo` and retains the largest prefix. EMASCurl's public callback counts
+  reads over one URLProtocol instance without an exposed retry boundary, so
+  iOS clamps that cumulative value at `totalBytes`; it may reach 100% across
+  replayed reads before a single complete attempt. Counts never accumulate
+  across separate `uploadFile` calls.
+- A snapshot becomes available after native registration and remains available
+  while the upload waits for admission, sends, or awaits its response. Before
+  the file body is constructed, `totalBytes` may be zero. It is removed on
+  settlement, cancellation, or module invalidation. Late transport callbacks
+  cannot restore a removed snapshot. Duplicate active IDs replace the older
+  operation; completion of the older one cannot erase the replacement.
+- Snapshots are retained only for registered operations. Admission limits
+  steady-state work to 64 active and 256 pending requests process-wide;
+  concurrent pre-admission registrations can transiently exceed those counts
+  and are released when admission rejects or the operation settles. Polling is
+  caller owned; the native module emits no progress events or bridge callbacks.
 
 ## File ownership, lifecycle, and bounds
 
@@ -233,6 +268,11 @@ retain the generic logger's sensitive-data filtering.
 
 ## Conformance and remaining evidence
 
+- TypeScript typecheck and React Native Codegen parse cover the nullable
+  progress result; JS API tests cover forwarding.
+- Android RequestBody test verifies progress from sink-accepted payload bytes.
+  iOS uses EMASCurl 1.5.5's per-request callback, which counts bytes read into
+  libcurl. Native build and device/network behavior remain unverified here.
 - JS API tests cover capability detection, missing-native Promise rejection,
   supported forwarding, and synchronous native errors becoming rejections.
 - Swift validation tests exercise bounded reads after validated files grow or

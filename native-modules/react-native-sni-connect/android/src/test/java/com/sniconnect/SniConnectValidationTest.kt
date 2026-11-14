@@ -100,6 +100,21 @@ class SniConnectValidationTest {
   }
 
   @Test
+  fun uploadBodyReportsOnlyAcceptedPayloadBytesPerWrite() {
+    val file = tempFolder.newFile("progress.zip").apply { writeBytes(ByteArray(16 * 1024) { 1 }) }
+    val progress = mutableListOf<Pair<Long, Long>>()
+    val body = SniUploadFileRequestBody(file, null) { sent, total ->
+      progress.add(sent to total)
+    }
+    val sink = Buffer()
+    body.writeTo(sink)
+    assertEquals(0L to file.length(), progress.first())
+    assertEquals(file.length() to file.length(), progress.last())
+    assertTrue(progress.zipWithNext().all { (before, after) -> after.first >= before.first })
+    assertEquals(file.length(), sink.size)
+  }
+
+  @Test
   fun uploadBodyRejectsGrowthAfterValidation() {
     val root = tempFolder.newFolder("sandbox")
     val file = File(root, "growing.zip").apply { writeBytes(byteArrayOf(1)) }

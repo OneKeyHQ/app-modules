@@ -186,6 +186,7 @@ final class SniConnectClient {
   // token so cancelAllRequests() also covers requests that do not have a requestId.
   private var activeTasksByToken: [UUID: Task<Response, Error>] = [:]
   private var requestTokensById: [String: UUID] = [:]
+  private var uploadProgressByToken: [UUID: SniConnectUploadProgress] = [:]
   private var invalidated = false
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
   private let requestLimiter = SniConnectRequestLimiter.shared
@@ -261,6 +262,7 @@ final class SniConnectClient {
     let timeout: TimeInterval
     // Set only by uploadFile(); already resolved inside the app sandbox.
     var bodyFileURL: URL? = nil
+    var uploadProgress: SniConnectUploadProgress? = nil
 
     // Advanced timeout configurations
     let connectTimeout: TimeInterval? // Connection establishment timeout
@@ -586,6 +588,7 @@ final class SniConnectClient {
         ]))
         return false
       }
+      self.uploadProgressByToken.removeValue(forKey: token)
       task.cancel()
       SniConnectLog.info(SniConnectLog.event("sni_cancel", [
         ("requestId", requestId),
@@ -617,6 +620,7 @@ final class SniConnectClient {
       }
       self.activeTasksByToken.removeAll()
       self.requestTokensById.removeAll()
+      self.uploadProgressByToken.removeAll()
       SniConnectLog.info(SniConnectLog.event(logAction, [
         ("cancelledCount", tasks.count),
         ("success", true),
@@ -625,7 +629,11 @@ final class SniConnectClient {
   }
 
   /// Register an active task immediately after creation, before JS can cancel it.
-  func registerTask(_ task: Task<Response, Error>, for requestId: String?) -> UUID {
+  func registerTask(
+    _ task: Task<Response, Error>,
+    for requestId: String?,
+    uploadProgress: SniConnectUploadProgress? = nil
+  ) -> UUID {
     let token = UUID()
     var shouldCancel = false
     tasksQueue.sync(flags: .barrier) { [weak self] in
@@ -636,6 +644,7 @@ final class SniConnectClient {
       }
       if let requestId = requestId, let previousToken = self.requestTokensById[requestId],
          let previousTask = self.activeTasksByToken.removeValue(forKey: previousToken) {
+        self.uploadProgressByToken.removeValue(forKey: previousToken)
         previousTask.cancel()
         SniConnectLog.warn(SniConnectLog.event("sni_duplicate_request_id", [
           ("requestId", requestId),
@@ -643,6 +652,9 @@ final class SniConnectClient {
         ]))
       }
       self.activeTasksByToken[token] = task
+      if let uploadProgress = uploadProgress {
+        self.uploadProgressByToken[token] = uploadProgress
+      }
       if let requestId = requestId {
         self.requestTokensById[requestId] = token
       }
@@ -655,11 +667,28 @@ final class SniConnectClient {
 
   /// Unregister a completed or failed task
   func unregisterTask(requestId: String?, token: UUID) {
-    tasksQueue.async(flags: .barrier) { [weak self] in
+    tasksQueue.sync(flags: .barrier) { [weak self] in
       self?.activeTasksByToken.removeValue(forKey: token)
+      self?.uploadProgressByToken.removeValue(forKey: token)
       if let requestId = requestId, self?.requestTokensById[requestId] == token {
         self?.requestTokensById.removeValue(forKey: requestId)
       }
+    }
+  }
+
+  func getUploadProgress(requestId: String) -> [String: Int64]? {
+    return tasksQueue.sync { () -> [String: Int64]? in
+      guard let token = requestTokensById[requestId],
+            let progress = uploadProgressByToken[token] else {
+        return nil
+      }
+      return progress.snapshot()
+    }
+  }
+
+  func finishUploadProgress(token: UUID) {
+    _ = tasksQueue.sync(flags: .barrier) {
+      uploadProgressByToken.removeValue(forKey: token)
     }
   }
 
@@ -783,6 +812,7 @@ final class SniConnectClient {
       }
       mutableRequest.httpBody = fileData
       bodyBytes = fileData.count
+      config.uploadProgress?.setTotal(fileData.count)
     } else if let bodyString = config.body, let bodyData = bodyString.data(using: .utf8) {
       mutableRequest.httpBody = bodyData
       bodyBytes = bodyData.count
@@ -790,6 +820,14 @@ final class SniConnectClient {
 
     // Per-request connect timeout (avoids the process-global setter race).
     EMASCurlProtocol.setConnectTimeoutIntervalFor(mutableRequest, connectTimeoutInterval: connectTimeoutSeconds)
+    if let uploadProgress = config.uploadProgress {
+      EMASCurlProtocol.setUploadProgressUpdateBlockFor(
+        mutableRequest,
+        uploadProgressUpdateBlock: { _, _, totalBytesSent, _ in
+          uploadProgress.record(totalBytesSent)
+        }
+      )
+    }
     let request = mutableRequest as URLRequest
 
     SniConnectLog.info(SniConnectLog.event("sni_request_start", [
