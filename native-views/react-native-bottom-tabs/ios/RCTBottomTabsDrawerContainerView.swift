@@ -78,8 +78,10 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private var trackedTime: CFTimeInterval = 0
   private var trackedVelocity: CGFloat = 0
   private var shadowPathRadius: CGFloat = -1
-  // The single snapshot of an in-flight Reduce Motion cross-fade.
+  // The single snapshot of an in-flight Reduce Motion cross-fade, and the
+  // user transition it reports once it ends.
   private var fadeSnapshot: UIView?
+  private var fadeCompletion: (target: Bool, changed: Bool)?
 
   // Measured frame by frame from the reference recording: the page travels
   // 80% of the width, keeps a fixed display-like corner, washes toward the
@@ -170,7 +172,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       let user = displayLink != nil && animationUser && previousSize != .zero
       interruptGesture()
       stopAnimation()
-      removeFadeSnapshot()
+      removeFadeSnapshot(complete: true)
       finish(target: enabled && (previousSize == .zero ? open : target), user: user)
       previousSize = bounds.size
     }
@@ -321,7 +323,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     case .began:
       gestureReturnOpen = displayLink != nil && !animationUser ? animationTarget : stableOpen
       stopAnimation()
-      removeFadeSnapshot()
+      removeFadeSnapshot(complete: true)
       gestureStartProgress = progress
     case .changed:
       guard recognizer.numberOfTouches <= 1 else {
@@ -443,8 +445,13 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       setProgress(target ? 1 : 0)
       return
     }
-    // Already at the target; a cross-fade landing there keeps fading.
     if !retarget && progress == (target ? 1 : 0) {
+      // A cross-fade landing there keeps fading; a newer non-user request
+      // cancels its pending user completion.
+      if fadeSnapshot != nil {
+        if !user { fadeCompletion = nil }
+        return
+      }
       finish(target: target, user: user)
       return
     }
@@ -479,17 +486,34 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     snapshot.isUserInteractionEnabled = false
     addSubview(snapshot)
     fadeSnapshot = snapshot
-    finish(target: target, user: user)
+    // The final state applies now, under the snapshot; a user transition
+    // completes (callback and haptic) only when the fade does.
+    let changed = stableOpen != target
+    stableOpen = target
+    setProgress(target ? 1 : 0)
+    fadeCompletion = user ? (target, changed) : nil
     UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut], animations: {
       snapshot.alpha = 0
     }, completion: { [weak self] _ in
       snapshot.removeFromSuperview()
-      if self?.fadeSnapshot === snapshot { self?.fadeSnapshot = nil }
+      guard let self, self.fadeSnapshot === snapshot else { return }
+      self.fadeSnapshot = nil
+      self.completeFade()
     })
     return true
   }
 
-  private func removeFadeSnapshot() {
+  private func completeFade() {
+    guard let pending = fadeCompletion else { return }
+    fadeCompletion = nil
+    reportCompletion(target: pending.target, changed: pending.changed)
+  }
+
+  /// Drops the cross-fade snapshot. Its pending user completion is reported
+  /// first when `complete` is set (a drag or resize takes over), and discarded
+  /// otherwise (a newer transition, disabling or detach).
+  private func removeFadeSnapshot(complete: Bool = false) {
+    if complete { completeFade() } else { fadeCompletion = nil }
     fadeSnapshot?.layer.removeAllAnimations()
     fadeSnapshot?.removeFromSuperview()
     fadeSnapshot = nil
@@ -542,10 +566,13 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     let changed = stableOpen != target
     stableOpen = target
     setProgress(target ? 1 : 0)
-    if user && (changed || target != open) {
-      if hapticFeedbackEnabled && changed { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-      onDrawerOpenChange?(target)
-    }
+    if user { reportCompletion(target: target, changed: changed) }
+  }
+
+  private func reportCompletion(target: Bool, changed: Bool) {
+    guard changed || target != open else { return }
+    if hapticFeedbackEnabled && changed { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    onDrawerOpenChange?(target)
   }
 
   private func stopAnimation() {

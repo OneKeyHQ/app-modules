@@ -208,7 +208,11 @@ state over 200 ms instead of moving, and a released drag settles critically
 damped (damping ratio 1) without travelling past its target. A newer
 cross-fade replaces the previous snapshot (capturing it as currently shown); a
 request for the target already being faded to leaves the fade running; a drag,
-an animated settle, disabling, detach or a resize removes the snapshot.
+an animated settle, disabling, detach or a resize removes the snapshot. A user
+transition that cross-fades reports `onDrawerOpenChange` and its haptic when
+the fade ends, not when it starts. A newer transition, disabling or detach
+discards that pending report; a drag or a resize reports it at once; a newer
+non-user request for the same target cancels it.
 Android has no separate reduced-motion setting and lands such transitions
 immediately.
 Resize snaps a pending settlement to its target, emitting its user event once
