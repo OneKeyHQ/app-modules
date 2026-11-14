@@ -96,7 +96,10 @@ progress clamped to [0, 1], while the drawer moves. Native emits it only while
 a handler is set (the wrapper derives the internal `progressEventsEnabled` prop
 from the handler's presence), at most once per frame, when progress changed by
 at least .002, and always on reaching 0 or 1. Enabling it emits the current
-value once, so a new subscriber starts in sync. The handler is passed to the
+value once, so a new subscriber starts in sync. The wrapper enables it one
+commit after mount, once the host's event emitter and an animated host's
+worklet handler are attached; on iOS the host also re-sends the current value
+when Fabric attaches the event emitter after a mount's first props. The handler is passed to the
 host unchanged, so `drawerHostComponent?` (default: the native host) can be an
 animated wrapper such as `Animated.createAnimatedComponent(BottomTabsDrawerNative)`
 whose worklet handler consumes the event on the UI thread. The package does
@@ -108,7 +111,8 @@ it can differ from those (an app-level iOS window style override is followed
 without it).
 
 The drawer is physically left on both iOS and Android, including RTL. Its width
-is 80 percent of the host. The foreground is the full tab container, including
+is 80 percent of the host, and the React menu slot is laid out at the same
+80 percent so its descendants reach the menu's edge. The foreground is the full tab container, including
 the native tab bar and an optional custom JS bar. It keeps its full width and
 height while moving right, without scaling, scene reparenting or remounting.
 The native host and two slots remain mounted when the drawer is disabled or its
@@ -123,7 +127,7 @@ screens with other display corners never show a radius jump. The dim surface
 washes the page linearly: white at `.5 * p` in the light palette, RGB 36/36/36
 at `.58 * p` in the dark palette. In the light palette the page also casts a
 black shadow under its left edge and corners, opacity .16, Gaussian sigma 18
-points/dp, no offset; in the dark palette it instead draws a one-physical-pixel
+points/dp, no offset, following the current corner radius; in the dark palette it instead draws a one-physical-pixel
 white edge at 17 percent opacity. The menu scales from .97 to 1 about its
 left-center edge (1 throughout when motion is reduced, see below) and its
 opacity is `min(1, p / .6)`. The host itself is transparent, so whatever lies
@@ -201,8 +205,12 @@ completion. When the system asks for less motion (iOS Reduce Motion; Android
 with animator duration scale 0), the menu does not scale. On iOS a tap,
 close or prop change from rest then cross-fades from a snapshot to the final
 state over 200 ms instead of moving, and a released drag settles critically
-damped (damping ratio 1). Android has no separate reduced-motion setting and
-lands such transitions immediately.
+damped (damping ratio 1) without travelling past its target. A newer
+cross-fade replaces the previous snapshot (capturing it as currently shown); a
+request for the target already being faded to leaves the fade running; a drag,
+an animated settle, disabling, detach or a resize removes the snapshot.
+Android has no separate reduced-motion setting and lands such transitions
+immediately.
 Resize snaps a pending settlement to its target, emitting its user event once
 if appropriate; an active drag follows the same cancellation rule. Detach cancels
 animations and callbacks; reattachment reapplies the latest external target.
@@ -230,13 +238,19 @@ physical-left placement, and closing pans while opening swipes are disabled.
 For the reference-recording revision it asserts the 80 percent travel, the
 light and dark wash, the menu's final scale/opacity/layer, and that progress
 events are opt-in, start in sync and end on the stable state; the wrapper tests
-assert that progress stays off without a handler and that the handler, a
-replacement host and the color scheme reach native unchanged.
+assert that progress stays off without a handler and during the mount commit,
+that the handler, a replacement host and the color scheme reach native
+unchanged, and that the menu slot is 80 percent wide.
 Recorded evidence so far: on the iPhone 17 simulator (iOS 26) in the consumer
 app, tap open/close timing, fling overshoot (about 2 points), smooth reversal,
 the corner ramp, the reduced-motion cross-fade, the light/dark palettes and a
 UI-thread Reanimated progress handler were compared frame by frame with the
-reference recording. The Android suite has not yet been run for this revision;
+reference recording. After the review fixes, the same setup showed menu content
+reaching 20 points from the 80 percent edge, the header avatar hidden at full
+open through the deferred progress event, no travel past open on a
+reduced-motion fling, and three toggles within 120 ms under Reduce Motion
+cross-fading to the final state with no leftover image (snapshot replacement
+itself is source-verified). The Android suite has not yet been run for this revision;
 physical-device smoothness on either platform remains unverified.
 
 The standalone `example/react-native/pages/BottomTabsHomeDrawerExample.tsx`

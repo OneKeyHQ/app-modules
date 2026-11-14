@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 
 jest.mock(
@@ -90,6 +90,10 @@ describe('native drawer slots', () => {
     const drawer = renderer!.root.findByType('NativeDrawer' as any);
     expect(drawer.props.hapticFeedbackEnabled).toBe(true);
     expect(drawer.props.swipeEnabled).toBe(true);
+    // The menu slot lays out at the native drawer width.
+    expect(
+      StyleSheet.flatten((drawer.children[0] as any).props.style).width,
+    ).toBe('80%');
     expect(drawer.props.progressEventsEnabled).toBe(false);
     expect(drawer.props.onDrawerProgress).toBeUndefined();
     expect(drawer.props.colorScheme).toBeUndefined();
@@ -100,14 +104,19 @@ describe('native drawer slots', () => {
 
   it('passes progress handlers, a replacement host and the color scheme to native as is', async () => {
     const onProgress = jest.fn();
-    const Host = (props: React.PropsWithChildren<object>) => (
-      <View testID="drawer-host">{props.children}</View>
-    );
+    const renderScene = jest.fn(() => <View />);
+    const enabledByCommit: boolean[] = [];
+    const Host = (
+      props: React.PropsWithChildren<{ progressEventsEnabled?: boolean }>,
+    ) => {
+      enabledByCommit.push(!!props.progressEventsEnabled);
+      return <View testID="drawer-host">{props.children}</View>;
+    };
     await act(() => {
       renderer = ReactTestRenderer.create(
         <BottomTabs
           navigationState={{ index: 0, routes: [{ key: 'home' }] }}
-          renderScene={() => <View />}
+          renderScene={renderScene}
           onIndexChange={() => {}}
           renderDrawerContent={menu}
           onDrawerProgress={onProgress}
@@ -118,7 +127,12 @@ describe('native drawer slots', () => {
     });
     expect(renderer!.root.findAllByType('NativeDrawer' as any)).toHaveLength(0);
     const host = renderer!.root.findByType(Host);
+    // Off during the mount commit, so native's current-position event is
+    // sent once the host and its handler are attached.
+    expect(enabledByCommit).toEqual([false, true]);
     expect(host.props.progressEventsEnabled).toBe(true);
+    // That second commit re-renders only the host, not the tabs.
+    expect(renderScene).toHaveBeenCalledTimes(1);
     expect(host.props.onDrawerProgress).toBe(onProgress);
     expect(host.props.colorScheme).toBe('dark');
     expect(renderer!.root.findByProps({ testID: 'menu-content' })).toBeTruthy();

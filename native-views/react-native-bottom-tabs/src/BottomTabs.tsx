@@ -386,6 +386,26 @@ const defaultGetIcon = ({
 
 const ANDROID_MAX_TABS = 100;
 
+type DrawerHostProps = React.ComponentProps<typeof NativeBottomTabsDrawer>;
+
+// Progress events start one commit after mount: during the mount itself the
+// iOS event emitter and an animated host's worklet handler are not attached
+// yet, so the current position native sends on enabling would be lost. The
+// state lives here so that commit re-renders only the host, not the tabs.
+function DrawerHostWithProgress({
+  host: Host,
+  ...props
+}: DrawerHostProps & { host: React.ComponentType<DrawerHostProps> }) {
+  const hasProgressHandler = props.onDrawerProgress != null;
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    if (hasProgressHandler) setMounted(true);
+  }, [hasProgressHandler]);
+  return (
+    <Host {...props} progressEventsEnabled={mounted && hasProgressHandler} />
+  );
+}
+
 const BottomTabs = <Route extends BaseRoute>({
   navigationState,
   renderScene,
@@ -628,7 +648,8 @@ const BottomTabs = <Route extends BaseRoute>({
 
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
-      <DrawerHost
+      <DrawerHostWithProgress
+        host={DrawerHost}
         style={styles.fullWidth}
         enabled={!!renderDrawerContent}
         open={drawerOpen}
@@ -636,7 +657,6 @@ const BottomTabs = <Route extends BaseRoute>({
         hapticFeedbackEnabled={hapticFeedbackEnabled}
         bottomBarHeight={tabBarHeight ?? 0}
         colorScheme={drawerColorScheme}
-        progressEventsEnabled={onDrawerProgress != null}
         onDrawerOpenChange={(event) =>
           onDrawerOpenChange?.(event.nativeEvent.open)
         }
@@ -746,7 +766,7 @@ const BottomTabs = <Route extends BaseRoute>({
             </View>
           ) : null}
         </View>
-      </DrawerHost>
+      </DrawerHostWithProgress>
     </BottomTabBarHeightContext.Provider>
   );
 };
@@ -759,7 +779,8 @@ const styles = StyleSheet.create({
   },
   drawerMenu: {
     position: "absolute",
-    width: "78%",
+    // Must match the native drawer width so menu descendants lay out to its edge.
+    width: "80%",
     height: "100%",
   },
   screen: {

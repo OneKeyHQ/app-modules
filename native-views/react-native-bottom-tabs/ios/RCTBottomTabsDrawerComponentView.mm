@@ -19,6 +19,7 @@
 @property(nonatomic, copy) void (^onDrawerProgress)(double progress);
 - (void)insertChild:(UIView *)child atIndex:(NSInteger)index;
 - (void)removeChildAtIndex:(NSInteger)index;
+- (void)resendProgress;
 @end
 
 using namespace facebook::react;
@@ -66,6 +67,14 @@ using namespace facebook::react;
 - (void)unmountChildComponentView:(UIView<RCTComponentViewProtocol> *)child index:(NSInteger)index
 {
   [_drawer removeChildAtIndex:index];
+}
+
+- (void)updateEventEmitter:(EventEmitter::Shared const &)eventEmitter
+{
+  [super updateEventEmitter:eventEmitter];
+  // Fabric applies a mount's props before its emitter, so a position reported
+  // then never left native; send the current one now.
+  [_drawer resendProgress];
 }
 
 - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps

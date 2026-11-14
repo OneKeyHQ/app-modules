@@ -8,6 +8,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       guard enabled != oldValue else { return }
       interruptGesture()
       stopAnimation()
+      removeFadeSnapshot()
       stableOpen = false
       setProgress(0)
       if enabled && open { settle(to: true, velocity: 0, user: false) }
@@ -76,6 +77,9 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private var trackedValue: CGFloat = 0
   private var trackedTime: CFTimeInterval = 0
   private var trackedVelocity: CGFloat = 0
+  private var shadowPathRadius: CGFloat = -1
+  // The single snapshot of an in-flight Reduce Motion cross-fade.
+  private var fadeSnapshot: UIView?
 
   // Measured frame by frame from the reference recording: the page travels
   // 80% of the width, keeps a fixed display-like corner, washes toward the
@@ -166,6 +170,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       let user = displayLink != nil && animationUser && previousSize != .zero
       interruptGesture()
       stopAnimation()
+      removeFadeSnapshot()
       finish(target: enabled && (previousSize == .zero ? open : target), user: user)
       previousSize = bounds.size
     }
@@ -176,11 +181,8 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     pageClip.frame = foreground.bounds
     foregroundContent.frame = pageClip.bounds
     dim.frame = pageClip.bounds
-    foreground.layer.shadowPath = UIBezierPath(
-      roundedRect: foreground.bounds,
-      byRoundingCorners: [.topLeft, .bottomLeft],
-      cornerRadii: CGSize(width: Self.pageCornerRadius, height: Self.pageCornerRadius)
-    ).cgPath
+    // Rebuilt for the new bounds by setProgress below.
+    shadowPathRadius = -1
     if slots.count > 0 { slots[0].frame = menu.bounds }
     if slots.count > 1 { slots[1].frame = foreground.bounds }
     setProgress(appliedValue, overshoot: appliedOvershoot)
@@ -191,6 +193,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     if window == nil {
       interruptGesture()
       stopAnimation()
+      removeFadeSnapshot()
       setProgress(stableOpen && enabled ? 1 : 0)
     } else if enabled && stableOpen != open {
       settle(to: open, velocity: 0, user: false)
@@ -318,6 +321,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     case .began:
       gestureReturnOpen = displayLink != nil && !animationUser ? animationTarget : stableOpen
       stopAnimation()
+      removeFadeSnapshot()
       gestureStartProgress = progress
     case .changed:
       guard recognizer.numberOfTouches <= 1 else {
@@ -359,7 +363,17 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     let travel = overshoot ? min(1.03, max(0, raw)) : progress
     foreground.transform = CGAffineTransform(translationX: menuWidth * travel, y: 0)
     // Rounds in over the first 10% so screens with other corner radii never pop.
-    pageClip.layer.cornerRadius = visible ? Self.pageCornerRadius * min(1, progress / 0.1) : 0
+    let cornerRadius = visible ? Self.pageCornerRadius * min(1, progress / 0.1) : 0
+    pageClip.layer.cornerRadius = cornerRadius
+    // The shadow follows the same corner while it rounds in.
+    if cornerRadius != shadowPathRadius {
+      shadowPathRadius = cornerRadius
+      foreground.layer.shadowPath = UIBezierPath(
+        roundedRect: foreground.bounds,
+        byRoundingCorners: [.topLeft, .bottomLeft],
+        cornerRadii: CGSize(width: cornerRadius, height: cornerRadius)
+      ).cgPath
+    }
     pageClip.layer.borderWidth = visible && pageHairline ? 1 / max(1, traitCollection.displayScale) : 0
     foreground.layer.shadowOpacity = visible ? pageShadowOpacity : 0
     dim.alpha = scrimMaxAlpha * progress
@@ -375,6 +389,12 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     menu.alpha = min(1, progress / 0.6)
     menu.isHidden = !visible
     menu.accessibilityElementsHidden = !visible
+    reportProgress()
+  }
+
+  /// Sends the current position again, for an event emitter attached after it was reported.
+  @objc func resendProgress() {
+    reportedProgress = -1
     reportProgress()
   }
 
@@ -418,10 +438,12 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     let carried = retarget ? trackedVelocity : velocity
     stopAnimation()
     guard bounds.width > 0, window != nil else {
+      removeFadeSnapshot()
       stableOpen = target
       setProgress(target ? 1 : 0)
       return
     }
+    // Already at the target; a cross-fade landing there keeps fading.
     if !retarget && progress == (target ? 1 : 0) {
       finish(target: target, user: user)
       return
@@ -429,6 +451,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     if tween && !retarget && UIAccessibility.isReduceMotionEnabled && crossFade(to: target, user: user) {
       return
     }
+    removeFadeSnapshot()
     animationFrom = from
     animationVelocity = min(12, max(-12, carried))
     animationTarget = target
@@ -448,17 +471,28 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   // Reduce Motion: taps and programmatic changes cross-fade into place
   // instead of sliding the whole page.
   private func crossFade(to target: Bool, user: Bool) -> Bool {
+    // Captures what is on screen, including any fade still in progress, which
+    // this one then replaces: the host keeps at most one snapshot.
     guard let snapshot = snapshotView(afterScreenUpdates: false) else { return false }
+    removeFadeSnapshot()
     snapshot.frame = bounds
     snapshot.isUserInteractionEnabled = false
     addSubview(snapshot)
+    fadeSnapshot = snapshot
     finish(target: target, user: user)
     UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut], animations: {
       snapshot.alpha = 0
-    }, completion: { _ in
+    }, completion: { [weak self] _ in
       snapshot.removeFromSuperview()
+      if self?.fadeSnapshot === snapshot { self?.fadeSnapshot = nil }
     })
     return true
+  }
+
+  private func removeFadeSnapshot() {
+    fadeSnapshot?.layer.removeAllAnimations()
+    fadeSnapshot?.removeFromSuperview()
+    fadeSnapshot = nil
   }
 
   @objc private func tick() {
@@ -490,7 +524,8 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     }
     trackedValue = value
     trackedTime = now
-    setProgress(value, overshoot: isSpring)
+    // Reduce Motion never carries the page past its target.
+    setProgress(value, overshoot: isSpring && !UIAccessibility.isReduceMotionEnabled)
     // A spring ends once it is visually at rest, not after a fixed time.
     let done = isSpring
       ? (abs(value - target) < 0.0005 && abs(trackedVelocity) < 0.02) || elapsed >= 0.6
