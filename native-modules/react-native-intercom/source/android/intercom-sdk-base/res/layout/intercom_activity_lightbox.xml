@@ -1,0 +1,17 @@
+<RelativeLayout
+    android:id="@+id/root_view"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/intercom_full_transparent_full_black"
+    android:orientation="vertical">
+
+    <io.intercom.android.sdk.lightbox.LightBoxImageView
+        android:id="@+id/full_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_centerInParent="true"
+        android:scaleType="fitCenter"
+        tools:ignore="ContentDescription"/>
+</RelativeLayout>

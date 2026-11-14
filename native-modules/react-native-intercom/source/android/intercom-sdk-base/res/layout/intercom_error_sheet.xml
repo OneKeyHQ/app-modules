@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<io.intercom.android.sdk.views.IntercomErrorView
+    android:id="@+id/error_layout_sheet"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    tools:background="#fff">
+
+    <TextView
+        android:id="@+id/empty_text_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Give it another try"
+        android:textColor="@color/intercom_grey_700"
+        android:textSize="16sp"/>
+
+    <Button
+        android:id="@+id/action_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_below="@+id/empty_text_subtitle"
+        android:layout_gravity="center_horizontal"
+        android:background="@color/intercom_full_transparent_full_black"
+        android:text="Reload"
+        android:textAllCaps="true"/>
+    <TextView
+        android:id="@+id/empty_text_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:gravity="center"
+        android:text="Couldn't load the content"
+        android:textColor="@color/intercom_error_state_title"
+        android:textSize="20sp"
+        android:layout_above="@+id/empty_text_subtitle"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true"/>
+
+</io.intercom.android.sdk.views.IntercomErrorView>

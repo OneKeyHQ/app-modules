@@ -1,0 +1,991 @@
+{
+  "entry": "META-INF/intercom-sdk-base_release.kotlin_module",
+  "version": [
+    1,
+    9,
+    9999
+  ],
+  "flags": 0,
+  "package_parts": [
+    {
+      "package_fq_name": "io.intercom.android.sdk",
+      "short_class_names": [
+        "AuthTokenKt",
+        "IntercomFileProviderKt",
+        "IntercomStatusCallbackKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.api",
+      "short_class_names": [
+        "ErrorStringExtractorKt",
+        "PlatformIdentifierUtilKt",
+        "ServerErrorCodeKt",
+        "UserLocaleUtilKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.blocks",
+      "short_class_names": [
+        "VideoUrlUtilKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.helpcenter.articles",
+      "short_class_names": [
+        "ReactionsComponentKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.helpcenter.component",
+      "short_class_names": [
+        "TeammateHelpKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.helpcenter.search",
+      "short_class_names": [
+        "HelpCenterSearchTopBarKt",
+        "IntercomArticleSearchScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.helpcenter.utils",
+      "short_class_names": [
+        "ConstantsKt",
+        "HelpCenterUrlUtilsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.helpcenter.utils.networking",
+      "short_class_names": [
+        "NetworkResponseKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.identity",
+      "short_class_names": [
+        "AppConfigKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5",
+      "short_class_names": [
+        "ConfigurableIntercomThemeKt",
+        "ConversationScreenOpenerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.components",
+      "short_class_names": [
+        "AvatarGroupKt",
+        "AvatarTriangleGroupKt",
+        "BotAndHumansFacePileKt",
+        "ConversationEndedCardKt",
+        "ConversationHistoryCardKt",
+        "ConversationItemKt",
+        "EmptyStateKt",
+        "FooterNoticeKt",
+        "HomeCardScaffoldKt",
+        "HomeItemKt",
+        "IntercomChevronKt",
+        "IntercomErrorScreenKt",
+        "IntercomPrimaryButtonKt",
+        "LoadingScreenKt",
+        "PoweredByBadgeKt",
+        "SearchBrowseCardKt",
+        "TeamPresenceRowKt",
+        "TextWithSeparatorKt",
+        "TicketHeaderKt",
+        "TopActionBarKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.components.avatar",
+      "short_class_names": [
+        "AvatarIconKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation",
+      "short_class_names": [
+        "ConversationViewModelKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.data",
+      "short_class_names": [
+        "CombinedEventAsFlowKt",
+        "NexusEventAsFlowKt",
+        "ParsedAblyEventKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.reducers",
+      "short_class_names": [
+        "ComposerStateReducerKt",
+        "ComposerSuggestionsReducerKt",
+        "ConversationPartsReducerKt",
+        "ErrorReducerKt",
+        "HeaderReducerKt",
+        "InitialStateReducerKt",
+        "IntroPartsReducerKt",
+        "LoadingStateReducerKt",
+        "TeamPresenceReducerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.states",
+      "short_class_names": [
+        "ConversationUiStateKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.ui",
+      "short_class_names": [
+        "ConversationErrorScreenKt",
+        "ConversationLoadingScreenKt",
+        "ConversationScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.ui.components",
+      "short_class_names": [
+        "AnswerInfoDialogKt",
+        "ConversationKebabKt",
+        "ConversationTopAppBarKt",
+        "DeleteFailedMessageDialogKt",
+        "HeaderMenuItemRowKt",
+        "InlineSourcesSheetContentKt",
+        "MediaInputSheetContentKt",
+        "MessageMetadataKt",
+        "PushNotificationsBannerKt",
+        "StreamingMessageListKt",
+        "TeammateSheetContentKt",
+        "UploadErrorDialogKt",
+        "UploadSizeLimitDialogKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.ui.components.composer",
+      "short_class_names": [
+        "BottomBarButtonComponentKt",
+        "CameraInputButtonKt",
+        "ConversationBottomBarKt",
+        "GifGridKt",
+        "MediaItemsKt",
+        "MessageComposerKt",
+        "PrivacyPolicyKt",
+        "SoundWaveVisualizationKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.ui.components.row",
+      "short_class_names": [
+        "AskedAboutRowKt",
+        "BigTicketCardKt",
+        "BubbleMessageRowKt",
+        "ClickableMessageRowKt",
+        "ContentSegmentKt",
+        "DayDividerKt",
+        "EventRowKt",
+        "ExpandedTeamPresenceLayoutKt",
+        "FileRowKt",
+        "FinAnswerRowKt",
+        "FinStreamingRowKt",
+        "GroupedFilesKt",
+        "GroupedMediaKt",
+        "MergedConversationRowKt",
+        "NewMessagesRowKt",
+        "NoteCardRowKt",
+        "PostCardRowKt",
+        "QuickRepliesKt",
+        "SegmentedFinLayoutKt",
+        "SpecialNoticeKt",
+        "StreamingMessageContentKt",
+        "StreamingTextRevealKt",
+        "TeamIntroKt",
+        "TicketStatusRowKt",
+        "TypingIndicatorKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.usecase",
+      "short_class_names": [
+        "RefreshConversationUseCaseKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.utils",
+      "short_class_names": [
+        "KeyboardStateKt",
+        "URIExtensionsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.conversation.utils.audio",
+      "short_class_names": [
+        "AudioPermissionHandlerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.data",
+      "short_class_names": [
+        "UserJwtExpiredResetKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.helpcenter.ui",
+      "short_class_names": [
+        "HelpCenterCollectionDetailsScreenKt",
+        "HelpCenterCollectionsScreenKt",
+        "HelpCenterEmptyScreenKt",
+        "HelpCenterErrorScreenKt",
+        "HelpCenterLoadingScreenKt",
+        "HelpCenterScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.helpcenter.ui.components",
+      "short_class_names": [
+        "ArticleCountComponentKt",
+        "ArticleResultRowComponentKt",
+        "ArticleRowComponentKt",
+        "BrowseAllHelpTopicsComponentKt",
+        "CollectionRowComponentKt",
+        "CollectionSummaryComponentKt",
+        "HelpCenterTopBarKt",
+        "TeamPresenceComponentKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.home.reducers",
+      "short_class_names": [
+        "HomeHeaderStateReducerKt",
+        "HomeItemBadgeReducerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.home.ui",
+      "short_class_names": [
+        "HomeContentScreenKt",
+        "HomeErrorContentKt",
+        "HomeScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.home.ui.components",
+      "short_class_names": [
+        "ExternalLinkCardKt",
+        "LegacyMessengerAppCardKt",
+        "NewConversationCardKt",
+        "SpacesCardKt",
+        "TicketLinksCardKt",
+        "WrapReportingTextKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.home.ui.header",
+      "short_class_names": [
+        "HomeHeaderBackdropKt",
+        "HomeHeaderKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.home.ui.helpers",
+      "short_class_names": [
+        "InMemoryWebViewCacheKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.inbox.reducers",
+      "short_class_names": [
+        "InboxPagingItemsReducerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.inbox.ui",
+      "short_class_names": [
+        "InboxContentScreenItemsKt",
+        "InboxEmptyScreenKt",
+        "InboxErrorScreenKt",
+        "InboxLoadingScreenKt",
+        "InboxScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.navigation",
+      "short_class_names": [
+        "ConversationDestinationKt",
+        "CreateTicketDestinationKt",
+        "HelpCenterDestinationKt",
+        "HomeScreenDestinationKt",
+        "IntercomRootActivityArgsKt",
+        "IntercomRootNavHostKt",
+        "IntercomRouterKt",
+        "IntercomTransitionsKt",
+        "MessagesDestinationKt",
+        "TicketDetailDestinationKt",
+        "TicketsDestinationKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.navigation.transitions",
+      "short_class_names": [
+        "TransitionStyleKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.notification",
+      "short_class_names": [
+        "ChatFullNotificationKt",
+        "InAppNotificationCardKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.preview.data",
+      "short_class_names": [
+        "IntercomPreviewArgsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.preview.ui",
+      "short_class_names": [
+        "IntercomPreviewActivityKt",
+        "MediaPickerButtonKt",
+        "PreviewBottomBarKt",
+        "PreviewRootScreenKt",
+        "PreviewTopBarKt",
+        "PreviewUriKt",
+        "ZoomableImageKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.preview.util",
+      "short_class_names": [
+        "MimeTypeResolverKt",
+        "PdfUtilsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.push",
+      "short_class_names": [
+        "ConversationActionHandlerKt",
+        "ConversationDeepLinkRouterKt",
+        "IntercomPushBitmapUtilsKt",
+        "IntercomPushDataKt",
+        "NotificationPermissionCheckerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.push.ui",
+      "short_class_names": [
+        "BasePushUIKt",
+        "BubbleMetaDataKt",
+        "ConversationShortcutKt",
+        "ConversationStylePushUIKt",
+        "DeepLinkStylePushUIKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.m5.utils",
+      "short_class_names": [
+        "MediaCompressionKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.models",
+      "short_class_names": [
+        "AttachmentSettingsKt",
+        "ConfigModulesKt",
+        "ConversationKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.overlay",
+      "short_class_names": [
+        "ComposeCompatibilityUtilKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.post",
+      "short_class_names": [
+        "IntercomPostActivityKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey",
+      "short_class_names": [
+        "SurveyViewModelKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.block",
+      "short_class_names": [
+        "AttachmentBlockKt",
+        "BlockExtensionsKt",
+        "BlockViewKt",
+        "CodeBlockSyntaxHighlightingKt",
+        "ConversationRatingBlockKt",
+        "EnhancedCodeBlockKt",
+        "ImageBlockKt",
+        "LinkListBlockKt",
+        "PdfAttachmentBlockKt",
+        "TableBlockKt",
+        "TableModelKt",
+        "TextBlockKt",
+        "VideoFileBlockKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.components",
+      "short_class_names": [
+        "CircularAvatarComponentKt",
+        "ErrorComponentKt",
+        "LoadingComponentKt",
+        "QuestionComponentKt",
+        "QuestionHeaderComponentKt",
+        "SurveyComponentKt",
+        "SurveyCtaButtonComponentKt",
+        "SurveyTopBarComponentKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.components.validation",
+      "short_class_names": [
+        "ValidationErrorComponentKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.questiontype",
+      "short_class_names": [
+        "DatePickerQuestionKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.questiontype.choice",
+      "short_class_names": [
+        "ChoicePillKt",
+        "MultipleChoiceQuestionKt",
+        "OtherOptionKt",
+        "SingleChoiceQuestionKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.questiontype.dropdown",
+      "short_class_names": [
+        "DropDownQuestionKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.questiontype.files",
+      "short_class_names": [
+        "AddFileButtonKt",
+        "FileActionSheetKt",
+        "FileAttachmentListKt",
+        "FileUploadErrorComponentKt",
+        "FileUploadProgressComponentKt",
+        "UploadFileQuestionHeaderKt",
+        "UploadFileQuestionKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.questiontype.numericscale",
+      "short_class_names": [
+        "EmojiQuestionKt",
+        "EmojiRatingKt",
+        "NumericRatingCellKt",
+        "NumericRatingQuestionKt",
+        "StarRatingKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.survey.ui.questiontype.text",
+      "short_class_names": [
+        "LongTextQuestionKt",
+        "ShortTextQuestionKt",
+        "TextInputPillKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.tickets",
+      "short_class_names": [
+        "FIleAttachmentListKt",
+        "RecentTicketsCardKt",
+        "TicketDetailContentKt",
+        "TicketDetailErrorScreenKt",
+        "TicketDetailReducerKt",
+        "TicketDetailsLoadingScreenKt",
+        "TicketProgressBannerKt",
+        "TicketProgressIndicatorKt",
+        "TicketTimelineCardKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.tickets.create.model",
+      "short_class_names": [
+        "CreateTicketViewModelKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.tickets.create.reducers",
+      "short_class_names": [
+        "ConditionalAttributesReducerKt",
+        "CreateTicketReducerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.tickets.create.ui",
+      "short_class_names": [
+        "CreateTicketCardKt",
+        "CreateTicketContentScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.tickets.list.reducers",
+      "short_class_names": [
+        "TicketRowReducerKt",
+        "TicketsListReducerKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.tickets.list.ui",
+      "short_class_names": [
+        "TicketRowKt",
+        "TicketsEmptyScreenKt",
+        "TicketsErrorScreenKt",
+        "TicketsLoadingScreenKt",
+        "TicketsScreenKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.utilities",
+      "short_class_names": [
+        "AblyClientUtilsKt",
+        "AttributeCollectorValidatorKt",
+        "BitmapUtilsKt",
+        "ColorExtensionsKt",
+        "CoroutineExceptionHandlersKt",
+        "FirstMessageUtilsKt",
+        "IntercomCoilKt",
+        "MultiProcessDataStoreDelegateKt",
+        "NexusClientUtilsKt",
+        "SafeSharedPreferencesKt",
+        "TimeFormatterExtKt",
+        "UtilsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.utilities.extensions",
+      "short_class_names": [
+        "AppConfigExtensionsKt",
+        "ContextExtensionsKt",
+        "ConversationExtensionsKt",
+        "MapExtensionsKt",
+        "PartExtensionsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.views.compose",
+      "short_class_names": [
+        "AttributeCollectorCardKt",
+        "BooleanAttributeCollectorKt",
+        "IntercomOutlinedTextFieldKt",
+        "ListAttributeCollectorKt",
+        "TextAttributeCollectorKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    }
+  ],
+  "metadata_parts": [],
+  "jvm_package_names": [],
+  "string_table_hex": "",
+  "qualified_name_table_hex": "",
+  "annotations": [],
+  "optional_annotation_classes": [],
+  "unknown_fields": [],
+  "original_sha256": "24a82ac330135e9ff0b90bb15d6bfe01fcd243804ca397ba2b662f0726a580e8"
+}

@@ -1,0 +1,93 @@
+{
+  "entry": "META-INF/intercom-sdk-ui_release.kotlin_module",
+  "version": [
+    1,
+    9,
+    9999
+  ],
+  "flags": 0,
+  "package_parts": [
+    {
+      "package_fq_name": "io.intercom.android.sdk.ui.coil",
+      "short_class_names": [
+        "IntercomImageLoaderKt",
+        "PdfDecoderKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.ui.common",
+      "short_class_names": [
+        "ActualStringOrResKt",
+        "TransitionsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.ui.component",
+      "short_class_names": [
+        "BoxedTextLayoutKt",
+        "ErrorMessageLayoutKt",
+        "IntercomButtonKt",
+        "IntercomCardKt",
+        "IntercomDividerKt",
+        "IntercomTopBarKt",
+        "JumpToBottomKt",
+        "PermissionDeniedDialogKt",
+        "PulsatingBoxKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.ui.extension",
+      "short_class_names": [
+        "ContentTypeExtensionKt",
+        "ModifierExtensionsKt",
+        "NavBackStackEntryExtensionKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.ui.theme",
+      "short_class_names": [
+        "IntercomColorsKt",
+        "IntercomThemeKt",
+        "IntercomTypographyKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    }
+  ],
+  "metadata_parts": [],
+  "jvm_package_names": [],
+  "string_table_hex": "",
+  "qualified_name_table_hex": "",
+  "annotations": [],
+  "optional_annotation_classes": [],
+  "unknown_fields": [],
+  "original_sha256": "bff15d8e2b2cd4b120ff3d125ca1bd395dea925fa5496f937843401c910f1c34"
+}

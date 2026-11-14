@@ -1,0 +1,353 @@
+[
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-messaging",
+    "version": "25.1.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-messaging/25.1.1/firebase-messaging-25.1.1.aar",
+    "sha256": "7b5f54a80179d72b14f5e0269a2bdd08c1d4e14beb4546ed227292e2e357c954",
+    "classpath_name": "external-000.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-installations",
+    "version": "19.1.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-installations/19.1.1/firebase-installations-19.1.1.aar",
+    "sha256": "50b2f43e2853cb7bea93b6f2022db0bbc33a388de51ae94ecbab565b9dcfd9fa",
+    "classpath_name": "external-001.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-common",
+    "version": "22.0.1",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-common/22.0.1/firebase-common-22.0.1.aar",
+    "sha256": "33c4cbac4692f61c49ec5dde9111ae0a295e6c0e7f0c3d722498edd67947995c",
+    "classpath_name": "external-002.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-components",
+    "version": "19.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-components/19.0.0/firebase-components-19.0.0.aar",
+    "sha256": "5d79597f7774b2f68ad57e91c2592e89ecef4d09a5f1c5c03c75f573f00cb3e4",
+    "classpath_name": "external-003.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-datatransport",
+    "version": "18.2.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-datatransport/18.2.0/firebase-datatransport-18.2.0.aar",
+    "sha256": "b2b28f6ba173f5e0c4fe3d36a2d7ee5239c7acbf4143b549ecf031a3485b35bb",
+    "classpath_name": "external-004.jar"
+  },
+  {
+    "group": "com.google.android.datatransport",
+    "artifact": "transport-backend-cct",
+    "version": "3.1.9",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/datatransport/transport-backend-cct/3.1.9/transport-backend-cct-3.1.9.aar",
+    "sha256": "07a32025a65b08ee7e11d14dc539a758b66713f0c1d13900a81599ceadbaf44d",
+    "classpath_name": "external-005.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-encoders-json",
+    "version": "18.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders-json/18.0.0/firebase-encoders-json-18.0.0.aar",
+    "sha256": "80aece7e1ef58957ca2fc1957bc9208ec92a3a9528201331d3c63e3182570f97",
+    "classpath_name": "external-006.jar"
+  },
+  {
+    "group": "com.google.android.datatransport",
+    "artifact": "transport-runtime",
+    "version": "3.1.9",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/datatransport/transport-runtime/3.1.9/transport-runtime-3.1.9.aar",
+    "sha256": "41745c5b8f427d24439015b84f651ad420718991867d2afc262c264009b802c1",
+    "classpath_name": "external-007.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-encoders-proto",
+    "version": "16.0.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders-proto/16.0.0/firebase-encoders-proto-16.0.0.jar",
+    "sha256": "293db96a0d1d43f033167881b638d8fde844e4e5495f5101cf52295765295e0e",
+    "classpath_name": "external-008.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-encoders",
+    "version": "17.0.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-encoders/17.0.0/firebase-encoders-17.0.0.jar",
+    "sha256": "282a5a703f9b7eb56508dde97ea918e95d73318b157050f457f7a86dca750150",
+    "classpath_name": "external-009.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-iid-interop",
+    "version": "17.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-iid-interop/17.1.0/firebase-iid-interop-17.1.0.aar",
+    "sha256": "0b7c3721c84b62e70415307239ed4a7f998989084bf2833f90b9f5bea3095a05",
+    "classpath_name": "external-010.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-installations-interop",
+    "version": "17.3.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-installations-interop/17.3.0/firebase-installations-interop-17.3.0.aar",
+    "sha256": "8d8f643fdee27700c4cc865b38c6fe834a9e3f569e4eaa219ba3567dae794276",
+    "classpath_name": "external-011.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-measurement-connector",
+    "version": "19.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-measurement-connector/19.0.0/firebase-measurement-connector-19.0.0.aar",
+    "sha256": "dba74d6bf94647ee397bf7afb2ab07f6fe8d13157e56785fa540a2a13ed82c99",
+    "classpath_name": "external-012.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-coroutines-core-jvm",
+    "version": "1.9.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar",
+    "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a",
+    "classpath_name": "external-013.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlinx",
+    "artifact": "kotlinx-coroutines-play-services",
+    "version": "1.9.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-play-services/1.9.0/kotlinx-coroutines-play-services-1.9.0.jar",
+    "sha256": "4cb6b6321df1664b99fee756de63f6af65ccb4f68936f26cf76c211dea1b23ae",
+    "classpath_name": "external-014.jar"
+  },
+  {
+    "group": "com.google.firebase",
+    "artifact": "firebase-annotations",
+    "version": "17.0.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/firebase/firebase-annotations/17.0.0/firebase-annotations-17.0.0.jar",
+    "sha256": "f80305e6f7b5d111278d4df9504f51f7230e06c6457a0fa7c16e236c7613cc71",
+    "classpath_name": "external-015.jar"
+  },
+  {
+    "group": "com.google.android.datatransport",
+    "artifact": "transport-api",
+    "version": "3.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/datatransport/transport-api/3.0.0/transport-api-3.0.0.aar",
+    "sha256": "4e6983c0703b357df6f1c6ceacb1b5dfc2c5006a789c799fec2298b2b5337466",
+    "classpath_name": "external-016.jar"
+  },
+  {
+    "group": "com.google.android.gms",
+    "artifact": "play-services-tasks",
+    "version": "18.4.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-tasks/18.4.0/play-services-tasks-18.4.0.aar",
+    "sha256": "e3f7666ca0532142ab7c0c3f4e2dbf34113d590c3542845ce03ce79ea6b83d29",
+    "classpath_name": "external-017.jar"
+  },
+  {
+    "group": "com.google.android.gms",
+    "artifact": "play-services-basement",
+    "version": "18.8.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-basement/18.8.0/play-services-basement-18.8.0.aar",
+    "sha256": "deb9aea6c5a1874442baa5341117c0c71ce05a729c26fff555cb11f4be0e46e6",
+    "classpath_name": "external-018.jar"
+  },
+  {
+    "group": "androidx.fragment",
+    "artifact": "fragment",
+    "version": "1.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/fragment/fragment/1.1.0/fragment-1.1.0.aar",
+    "sha256": "a14c8b8f2153f128e800fbd266a6beab1c283982a29ec570d2cc05d307d81496",
+    "classpath_name": "external-019.jar"
+  },
+  {
+    "group": "androidx.viewpager",
+    "artifact": "viewpager",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+    "sha256": "147af4e14a1984010d8f155e5e19d781f03c1d70dfed02a8e0d18428b8fc8682",
+    "classpath_name": "external-020.jar"
+  },
+  {
+    "group": "androidx.loader",
+    "artifact": "loader",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+    "sha256": "11f735cb3b55c458d470bed9e25254375b518b4b1bad6926783a7026db0f5025",
+    "classpath_name": "external-021.jar"
+  },
+  {
+    "group": "androidx.activity",
+    "artifact": "activity",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.0.0/activity-1.0.0.aar",
+    "sha256": "d1bc9842455c2e534415d88c44df4d52413b478db9093a1ba36324f705f44c3d",
+    "classpath_name": "external-022.jar"
+  },
+  {
+    "group": "androidx.customview",
+    "artifact": "customview",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+    "sha256": "20e5b8f6526a34595a604f56718da81167c0b40a7a94a57daa355663f2594df2",
+    "classpath_name": "external-023.jar"
+  },
+  {
+    "group": "androidx.core",
+    "artifact": "core",
+    "version": "1.2.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/core/core/1.2.0/core-1.2.0.aar",
+    "sha256": "524b8b88ceb6a74a7e44e6b567a135660f211799904cb218bfee5be1166820b2",
+    "classpath_name": "external-024.jar"
+  },
+  {
+    "group": "androidx.versionedparcelable",
+    "artifact": "versionedparcelable",
+    "version": "1.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/versionedparcelable/versionedparcelable/1.1.0/versionedparcelable-1.1.0.aar",
+    "sha256": "9a1d77140ac222b7866b5054ee7d159bc1800987ed2d46dd6afdd145abb710c1",
+    "classpath_name": "external-025.jar"
+  },
+  {
+    "group": "androidx.collection",
+    "artifact": "collection",
+    "version": "1.1.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+    "sha256": "632a0e5407461de774409352940e292a291037724207a787820c77daf7d33b72",
+    "classpath_name": "external-026.jar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-runtime",
+    "version": "2.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime/2.1.0/lifecycle-runtime-2.1.0.aar",
+    "sha256": "e5173897b965e870651e83d9d5af1742d3f532d58863223a390ce3a194c8312b",
+    "classpath_name": "external-027.jar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-viewmodel",
+    "version": "2.1.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel/2.1.0/lifecycle-viewmodel-2.1.0.aar",
+    "sha256": "ba55fb7ac1b2828d5327cda8acf7085d990b2b4c43ef336caa67686249b8523d",
+    "classpath_name": "external-028.jar"
+  },
+  {
+    "group": "androidx.savedstate",
+    "artifact": "savedstate",
+    "version": "1.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate/1.0.0/savedstate-1.0.0.aar",
+    "sha256": "2510a5619c37579c9ce1a04574faaf323cd0ffe2fc4e20fa8f8f01e5bb402e83",
+    "classpath_name": "external-029.jar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata",
+    "version": "2.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata/2.0.0/lifecycle-livedata-2.0.0.aar",
+    "sha256": "c82609ced8c498f0a701a30fb6771bb7480860daee84d82e0a81ee86edf7ba39",
+    "classpath_name": "external-030.jar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-livedata-core",
+    "version": "2.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core/2.0.0/lifecycle-livedata-core-2.0.0.aar",
+    "sha256": "fde334ec7e22744c0f5bfe7caf1a84c9d717327044400577bdf9bd921ec4f7bc",
+    "classpath_name": "external-031.jar"
+  },
+  {
+    "group": "androidx.arch.core",
+    "artifact": "core-runtime",
+    "version": "2.0.0",
+    "extension": ".aar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-runtime/2.0.0/core-runtime-2.0.0.aar",
+    "sha256": "87e65fc767c712b437649c7cee2431ebb4bed6daef82e501d4125b3ed3f65f8e",
+    "classpath_name": "external-032.jar"
+  },
+  {
+    "group": "androidx.arch.core",
+    "artifact": "core-common",
+    "version": "2.1.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-common/2.1.0/core-common-2.1.0.jar",
+    "sha256": "fe1237bf029d063e7f29fe39aeaf73ef74c8b0a3658486fc29d3c54326653889",
+    "classpath_name": "external-033.jar"
+  },
+  {
+    "group": "androidx.lifecycle",
+    "artifact": "lifecycle-common",
+    "version": "2.1.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common/2.1.0/lifecycle-common-2.1.0.jar",
+    "sha256": "76db6be533bd730fb361c2feb12a2c26d9952824746847da82601ef81f082643",
+    "classpath_name": "external-034.jar"
+  },
+  {
+    "group": "androidx.annotation",
+    "artifact": "annotation",
+    "version": "1.3.0",
+    "extension": ".jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation/1.3.0/annotation-1.3.0.jar",
+    "sha256": "97dc45afefe3a1e421da42b8b6e9f90491477c45fc6178203e3a5e8a05ee8553",
+    "classpath_name": "external-035.jar"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-stdlib",
+    "version": "2.0.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.0.0/kotlin-stdlib-2.0.0.jar",
+    "sha256": "240938c4aab8e73e888703e3e7d3f87383ffe5bd536d6d5e3c100d4cd0379fcf",
+    "classpath_name": "external-036.jar"
+  },
+  {
+    "group": "javax.inject",
+    "artifact": "javax.inject",
+    "version": "1",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/javax/inject/javax.inject/1/javax.inject-1.jar",
+    "sha256": "91c77044a50c481636c32d916fd89c9118a72195390452c81065080f957de7ff",
+    "classpath_name": "external-037.jar"
+  },
+  {
+    "group": "org.jetbrains",
+    "artifact": "annotations",
+    "version": "23.0.0",
+    "extension": ".jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+    "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+    "classpath_name": "external-038.jar"
+  }
+]

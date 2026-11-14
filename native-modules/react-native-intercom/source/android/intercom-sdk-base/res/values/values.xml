@@ -1,0 +1,710 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:ns1="http://schemas.android.com/tools">
+    <color name="intercom_accessibility_black">#000000</color>
+    <color name="intercom_accessibility_grey">#737376</color>
+    <color name="intercom_active_state">#7ED321</color>
+    <color name="intercom_attribute_collector_error">#FD3A57</color>
+    <color name="intercom_attribute_input_hint">#888888</color>
+    <color name="intercom_away_state">#F8BE00</color>
+    <color name="intercom_black">#FF000000</color>
+    <color name="intercom_black_40">#66000000</color>
+    <color name="intercom_border_color">#DCDCDC</color>
+    <color name="intercom_carousel_grey">#666666</color>
+    <color name="intercom_container_border">#3b969696</color>
+    <color name="intercom_conversation_rating_text">#3a3c4c</color>
+    <color name="intercom_error_state_title">#444444</color>
+    <color name="intercom_full_transparent_full_black">#00000000</color>
+    <color name="intercom_full_transparent_full_white">#00FFFFFF</color>
+    <color name="intercom_grey_500">#9E9E9E</color>
+    <color name="intercom_grey_600">#757575</color>
+    <color name="intercom_grey_700">#616161</color>
+    <color name="intercom_grey_800">#424242</color>
+    <color name="intercom_help_center_grey">@color/intercom_accessibility_grey</color>
+    <color name="intercom_image_preview_grey">#E0E0E0</color>
+    <color name="intercom_inbox_count_background">#FE536C</color>
+    <color name="intercom_main_blue">#0F8BF0</color>
+    <color name="intercom_note_tint">#b22a3037</color>
+    <color name="intercom_ripple_light">#1F000000</color>
+    <color name="intercom_semi_transparent">#55000000</color>
+    <color name="intercom_semi_transparent_white">#CFFFFFFF</color>
+    <color name="intercom_slate_grey_two">#696972</color>
+    <color name="intercom_transparent_black_lightbox">#E6000000</color>
+    <color name="intercom_transparent_white">#00FFFFFF</color>
+    <color name="intercom_white">#FFFFFFFF</color>
+    <dimen name="intercom_app_bar_shadow_height">30dp</dimen>
+    <dimen name="intercom_avatar_size">28dp</dimen>
+    <dimen name="intercom_bottom_padding">0dp</dimen>
+    <dimen name="intercom_carousel_action_button_bottom_padding">36dp</dimen>
+    <dimen name="intercom_carousel_action_button_radius">8dp</dimen>
+    <dimen name="intercom_carousel_close_container">64dp</dimen>
+    <dimen name="intercom_carousel_padding">24dp</dimen>
+    <dimen name="intercom_cell_content_padding">8dp</dimen>
+    <dimen name="intercom_cell_horizontal_padding">16dp</dimen>
+    <dimen name="intercom_cell_padding_bottom">11dp</dimen>
+    <dimen name="intercom_cell_padding_top">11dp</dimen>
+    <dimen name="intercom_chat_full_top_margin">80dp</dimen>
+    <dimen name="intercom_chat_head_bottom_margin">16dp</dimen>
+    <dimen name="intercom_chat_overlay_padding_right">14dp</dimen>
+    <dimen name="intercom_chat_overlay_text_margin_left">52dp</dimen>
+    <dimen name="intercom_chat_overlay_text_padding_left">24dp</dimen>
+    <dimen name="intercom_chat_overlay_text_padding_right">16dp</dimen>
+    <dimen name="intercom_chat_overlay_width">312dp</dimen>
+    <dimen name="intercom_composer_height">56dp</dimen>
+    <dimen name="intercom_container_card_avatar_size">32dp</dimen>
+    <dimen name="intercom_conversation_rating_size">28dp</dimen>
+    <dimen name="intercom_conversation_row_icon_spacer">8dp</dimen>
+    <dimen name="intercom_conversation_row_margin">64dp</dimen>
+    <dimen name="intercom_home_screen_height">246dp</dimen>
+    <dimen name="intercom_image_rounded_corners">4dp</dimen>
+    <dimen name="intercom_launcher_height">56dp</dimen>
+    <dimen name="intercom_launcher_padding_bottom">16dp</dimen>
+    <dimen name="intercom_launcher_padding_right">11dp</dimen>
+    <dimen name="intercom_link_padding">24dp</dimen>
+    <dimen name="intercom_list_indentation">19dp</dimen>
+    <dimen name="intercom_local_image_upload_size">40dp</dimen>
+    <dimen name="intercom_navigation_dot_radius">4dp</dimen>
+    <dimen name="intercom_navigation_dot_radius_selected">5dp</dimen>
+    <dimen name="intercom_note_cell_padding">16dp</dimen>
+    <dimen name="intercom_note_layout_margin">16dp</dimen>
+    <dimen name="intercom_notification_preview_height">88dp</dimen>
+    <dimen name="intercom_office_hours_height">48dp</dimen>
+    <dimen name="intercom_overlay_pill_bottom_margin">182dp</dimen>
+    <dimen name="intercom_post_cell_padding">16dp</dimen>
+    <dimen name="intercom_reaction_offset">56dp</dimen>
+    <dimen name="intercom_reaction_size">24dp</dimen>
+    <dimen name="intercom_teammate_active_state_size">8dp</dimen>
+    <dimen name="intercom_teammate_avatar_size">32dp</dimen>
+    <dimen name="intercom_toolbar_height">56dp</dimen>
+    <item format="float" name="intercom_wallpaper_image_alpha" type="dimen">0.1
+    </item>
+    <item name="intercom_help_center_webview" type="id"/>
+    <item name="intercom_messenger_card_webview" type="id"/>
+    <item name="intercom_overlay_root" type="id"/>
+    <item name="intercom_reply_options" type="id"/>
+    <item name="intercom_sheet_webview" type="id"/>
+    <item name="intercom_video_thumbnail" type="id"/>
+    <item name="intercom_video_thumbnail_play_button" type="id"/>
+    <integer name="intercom_max_composer_lines">8</integer>
+    <integer name="intercom_server_region_aus">3</integer>
+    <integer name="intercom_server_region_eu">2</integer>
+    <integer name="intercom_server_region_us">1</integer>
+    <string name="intercom_access_background_location_message">Go to your device’s settings to enable the app to use your location in the background</string>
+    <string name="intercom_access_background_location_title">Allow access to your location all the time</string>
+    <string name="intercom_access_device_settings">Go to your device settings to allow access to your photos</string>
+    <string name="intercom_access_photos">Access your photos</string>
+    <string name="intercom_active_15m_ago">Active in the last {minutes}m</string>
+    <string name="intercom_active_day_ago">Active {days}d ago</string>
+    <string name="intercom_active_hour_ago">Active {hours}h ago</string>
+    <string name="intercom_active_minute_ago">Active {minutes}m ago</string>
+    <string name="intercom_active_state">Active</string>
+    <string name="intercom_active_week_ago">Active over 1w ago</string>
+    <string name="intercom_add">Add</string>
+    <string name="intercom_ai_answer">AI Answer</string>
+    <string name="intercom_ai_answer_information">AI Answer, information</string>
+    <string name="intercom_ai_bot">AI Bot</string>
+    <string name="intercom_allow_access">Allow access</string>
+    <string name="intercom_allow_storage_access">Please allow access to storage to see your photos</string>
+    <string name="intercom_almost_there">Almost there...</string>
+    <string name="intercom_also_in_this_conversation">Also in this conversation</string>
+    <string name="intercom_android_activated_message">Your Android app is now integrated with the Intercom platform</string>
+    <string name="intercom_answer">Answer</string>
+    <string name="intercom_app_settings">App settings</string>
+    <string name="intercom_article_double_author">By {author_first_name1} and {author_first_name2}</string>
+    <string name="intercom_article_load_error">Couldn\'t load the article</string>
+    <string name="intercom_article_multiple_authors">By {author_first_name1} and {number_of_other_authors} others</string>
+    <string name="intercom_article_question">Did this answer your question?</string>
+    <string name="intercom_article_response">You reacted with</string>
+    <string name="intercom_article_search_hint_text">Search articles...</string>
+    <string name="intercom_article_search_search_results">Search results</string>
+    <string name="intercom_article_single_author">By {author_first_name}</string>
+    <string name="intercom_ask_a_question">Ask a question</string>
+    <string name="intercom_ask_a_question_with_ellipsis">Ask a question...</string>
+    <string name="intercom_ask_another_question_with_ellipsis">Ask another question...</string>
+    <string name="intercom_ask_our_bot_a_question">Ask our bot a question</string>
+    <string name="intercom_asked_about">Asked about</string>
+    <string name="intercom_assigned_to_admin">Assigned to {admin}</string>
+    <string name="intercom_attribute_collector_negative">No</string>
+    <string name="intercom_attribute_collector_positive">Yes</string>
+    <string name="intercom_available_teammates">Teammates available: {available_teammates}</string>
+    <string name="intercom_avatar">Avatar</string>
+    <string name="intercom_avatars">Avatars</string>
+    <string name="intercom_away_state">Away</string>
+    <string name="intercom_bot">Bot</string>
+    <string name="intercom_bot_answers_instantly">Bot answers instantly</string>
+    <string name="intercom_bot_expectation_text">Our bot can answer many common questions</string>
+    <string name="intercom_bot_is_still_thinking">Bot is still thinking...</string>
+    <string name="intercom_bot_is_thinking">Bot is thinking...</string>
+    <string name="intercom_browse_all_help_topics">Browse all help topics</string>
+    <string name="intercom_browse_collections">Browse collections</string>
+    <string name="intercom_cancel">Cancel</string>
+    <string name="intercom_chat_with">Chat with {assignee_name}</string>
+    <string name="intercom_chat_with_us">Chat with us</string>
+    <string name="intercom_check_later_for_updates">Check back later for updates.</string>
+    <string name="intercom_checklist_card_first_step">First step</string>
+    <string name="intercom_checklist_card_next_step">Next step</string>
+    <string name="intercom_checklist_completed">Completed</string>
+    <string name="intercom_checklist_in_progress_time_remaining_plural">About {minutes} minutes left</string>
+    <string name="intercom_checklist_in_progress_time_remaining_singular">About 1 minute left</string>
+    <string name="intercom_checklist_mark_step_as_complete">Mark as completed</string>
+    <string name="intercom_checklist_not_started_time_remaining_plural">About {minutes} minutes</string>
+    <string name="intercom_checklist_not_started_time_remaining_singular">About 1 minute</string>
+    <string name="intercom_checklist_number_of_steps_plural">{number_of_steps} steps</string>
+    <string name="intercom_checklist_number_of_steps_progress_plural">{steps_completed} of {total_steps} done</string>
+    <string name="intercom_checklist_number_of_steps_progress_singular">1 of {total_steps} done</string>
+    <string name="intercom_checklist_number_of_steps_singular">1 step</string>
+    <string name="intercom_checklist_sender_name">Shared by {name}</string>
+    <string name="intercom_checklist_step_action_button">Step action button</string>
+    <string name="intercom_checklist_step_completed">Completed</string>
+    <string name="intercom_checklist_toggle_task_details">Toggle task details</string>
+    <string name="intercom_choose_one">Choose one…</string>
+    <string name="intercom_choose_the_date">Choose the date…</string>
+    <string name="intercom_clear">Clear</string>
+    <string name="intercom_close">Close</string>
+    <string name="intercom_code_block_label">Code</string>
+    <string name="intercom_congratulations">Congratulations</string>
+    <string name="intercom_connected">You\'re connected</string>
+    <string name="intercom_contact_support">Contact support</string>
+    <string name="intercom_contact_us">Contact us</string>
+    <string name="intercom_continue_the_conversation">Continue the conversation</string>
+    <string name="intercom_conversation_card_office_hours_header">We\'ll be back online</string>
+    <string name="intercom_conversation_card_reply_time_header">Our usual reply time</string>
+    <string name="intercom_conversation_card_reply_time_header_m5">Usual reply time</string>
+    <string name="intercom_conversation_has_ended">Your conversation has ended</string>
+    <string name="intercom_conversation_number_and_description">Conversation number {conversation_number}: {conversation_description}</string>
+    <string name="intercom_conversations">Conversations</string>
+    <string name="intercom_conversations_space_title">Conversations</string>
+    <string name="intercom_conversations_with_app">Conversations with {name}</string>
+    <string name="intercom_copied_to_clipboard">Copied to clipboard</string>
+    <string name="intercom_copy_to_clipboard">Copy this code block to your clipboard.</string>
+    <string name="intercom_couldnt_complete_action">Couldn\'t complete this action</string>
+    <string name="intercom_couldnt_load_apps">Couldn\'t load apps.</string>
+    <string name="intercom_couldnt_load_content">Couldn\'t load the content</string>
+    <string name="intercom_couldnt_load_messenger">Couldn\'t load the Messenger.</string>
+    <string name="intercom_count_more">{count} more</string>
+    <string name="intercom_create_a_ticket">Create a ticket</string>
+    <string name="intercom_currently_no_help_articles">There’s currently no help articles available.</string>
+    <string name="intercom_data_table">Data table</string>
+    <string name="intercom_delete">Delete</string>
+    <string name="intercom_delete_attachment">Delete attachment</string>
+    <string name="intercom_delivered">Delivered</string>
+    <string name="intercom_disappointed_face_emoji">Disappointed face</string>
+    <string name="intercom_dismiss">Dismiss</string>
+    <string name="intercom_empty_conversations">Messages from the team will be shown here</string>
+    <string name="intercom_enter_text_placeholder">Enter text…</string>
+    <string name="intercom_error_loading_conversation">Couldn\'t load the conversation</string>
+    <string name="intercom_error_loading_ticket">Couldn\'t load the ticket</string>
+    <string name="intercom_expanded_mode_enable">Expand window</string>
+    <string name="intercom_expected_response_delay_10800">under 3 hours</string>
+    <string name="intercom_expected_response_delay_120">under 2 minutes</string>
+    <string name="intercom_expected_response_delay_1200">under 20 minutes</string>
+    <string name="intercom_expected_response_delay_14400">under 4 hours</string>
+    <string name="intercom_expected_response_delay_172800">2 days</string>
+    <string name="intercom_expected_response_delay_180">under 3 minutes</string>
+    <string name="intercom_expected_response_delay_1800">under 30 minutes</string>
+    <string name="intercom_expected_response_delay_18000">under 5 hours</string>
+    <string name="intercom_expected_response_delay_21600">under 6 hours</string>
+    <string name="intercom_expected_response_delay_240">under 4 minutes</string>
+    <string name="intercom_expected_response_delay_259200">3 days</string>
+    <string name="intercom_expected_response_delay_300">under 5 minutes</string>
+    <string name="intercom_expected_response_delay_345600">4 days</string>
+    <string name="intercom_expected_response_delay_3600">under 1 hour</string>
+    <string name="intercom_expected_response_delay_43200">under 12 hours</string>
+    <string name="intercom_expected_response_delay_432000">5 days</string>
+    <string name="intercom_expected_response_delay_518400">6 days</string>
+    <string name="intercom_expected_response_delay_60">under 1 minute</string>
+    <string name="intercom_expected_response_delay_600">under 10 minutes</string>
+    <string name="intercom_expected_response_delay_604800">under 1 week</string>
+    <string name="intercom_expected_response_delay_7200">under 2 hours</string>
+    <string name="intercom_expected_response_delay_86400">1 day</string>
+    <string name="intercom_expected_response_delay_900">under 15 minutes</string>
+    <string name="intercom_extra_labels_count">+ {labels_count} labels</string>
+    <string name="intercom_facebook_like">Like us on Facebook</string>
+    <string name="intercom_failed_delivery">Couldn\'t deliver the message</string>
+    <string name="intercom_failed_to_load_conversation">Couldn\'t load your conversations</string>
+    <string name="intercom_failed_to_load_tickets">Couldn\'t load your tickets</string>
+    <string name="intercom_failed_to_load_tickets_with_app">Couldn\'t load your tickets with {app_name}</string>
+    <string name="intercom_failed_to_send">Couldn\'t send</string>
+    <string name="intercom_field_is_required">Field {field_name} is required</string>
+    <string name="intercom_file">File</string>
+    <string name="intercom_file_access_failed">Can\'t access that file</string>
+    <string name="intercom_file_max_limit">Maximum {limit} files</string>
+    <string name="intercom_file_saved">File saved</string>
+    <string name="intercom_file_too_big">Can\'t send files over {limit}MB</string>
+    <string name="intercom_file_too_large_to_transcribe">File too large to transcribe</string>
+    <string name="intercom_file_type_not_allowed">File type is not allowed</string>
+    <string name="intercom_files">Files</string>
+    <string name="intercom_gallery">Gallery</string>
+    <string name="intercom_gcm_sender_id" translatable="false"/>
+    <string name="intercom_generating_answer">Generating answer...</string>
+    <string name="intercom_generating_table">Generating table…</string>
+    <string name="intercom_get_help">Get help</string>
+    <string name="intercom_get_notified_by_email">Get notified by email</string>
+    <string name="intercom_gif_attribution">via {providername}</string>
+    <string name="intercom_gifs_load_error">Couldn\'t load GIFs</string>
+    <string name="intercom_give_it_another_try">Give it another try</string>
+    <string name="intercom_go_to_device_settings">To allow access, go to your device app settings\'
+        permissions menu</string>
+    <string name="intercom_grinning_face_with_big_eyes_emoji">Grinning face with big eyes</string>
+    <string name="intercom_group_conversation_1_other_participant_count_short">+1 other</string>
+    <string name="intercom_group_conversation_multiple_other_participant_count_short">+{other_participant_count} others</string>
+    <string name="intercom_group_conversation_multiple_person_also_participating">{other_participant_count} others are also participating</string>
+    <string name="intercom_group_conversation_name_also_participating">{participant_name} is also participating</string>
+    <string name="intercom_group_conversation_name_and_1_other_also_particiapting">{participant_name} and 1 other are also participating</string>
+    <string name="intercom_group_conversation_name_and_multiple_others_also_participating">{participant_name} and {other_participant_count} others are also participating</string>
+    <string name="intercom_group_conversation_one_person_also_participating">1 other is also participating</string>
+    <string name="intercom_help_center">Help Center</string>
+    <string name="intercom_help_center_article">Help Center Article</string>
+    <string name="intercom_help_space_title">Help</string>
+    <string name="intercom_home_space_title">Home</string>
+    <string name="intercom_how_can_we_help">How can we help?</string>
+    <string name="intercom_how_would_you_rate_this">How would you rate this?</string>
+    <string name="intercom_image_attached">(image attached)</string>
+    <string name="intercom_inbox_error_state_title">Something went wrong</string>
+    <string name="intercom_last_active_hours_ago">Last active {mins} hours ago</string>
+    <string name="intercom_last_active_mins_ago">Last active {mins} mins ago</string>
+    <string name="intercom_last_active_over_a_week">Last active over 1w ago</string>
+    <string name="intercom_learn_more">Learn more</string>
+    <string name="intercom_listening">Listening...</string>
+    <string name="intercom_loading">Loading</string>
+    <string name="intercom_message_failed_try_again">Couldn\'t send, tap to retry</string>
+    <string name="intercom_message_placeholder">Message…</string>
+    <string name="intercom_message_seen">Seen</string>
+    <string name="intercom_message_state_sending">Sending…</string>
+    <string name="intercom_message_summary">Message summary: {summary}, Teammate name: {name}, Message sent time: {sentTime}. </string>
+    <string name="intercom_message_summary_with_teammate_status">Message summary: {summary}, Teammate name: {name}, Teammate status: {adminStatus}, Message sent time: {sentTime}. </string>
+    <string name="intercom_message_unread">Message is unread.</string>
+    <string name="intercom_message_unseen">Not seen yet</string>
+    <string name="intercom_messages_space_title">Messages</string>
+    <string name="intercom_messenger_bot_reply_time">Our bot will reply instantly</string>
+    <string name="intercom_multiple_articles">{total_articles} articles</string>
+    <string name="intercom_multiple_collections">{total_collection} collections</string>
+    <string name="intercom_name_and_1_other">{name} and 1 other</string>
+    <string name="intercom_name_and_x_others">{name} and {count} others</string>
+    <string name="intercom_navigation_back">Back</string>
+    <string name="intercom_need_camera_access">{app_name} needs camera access so that you can take photos and videos. Tap Settings > Permissions, and turn Camera on.</string>
+    <string name="intercom_need_microphone_access">{app_name} needs microphone access so that you can use voice input. Tap Settings > Permissions, and turn Microphone on.</string>
+    <string name="intercom_neutral_face_emoji">Neutral face</string>
+    <string name="intercom_new">New</string>
+    <string name="intercom_new_chat">New chat</string>
+    <string name="intercom_new_conversation">New conversation</string>
+    <string name="intercom_new_message">New message</string>
+    <string name="intercom_new_messages">You have {n} new messages</string>
+    <string name="intercom_new_notifications">New notifications</string>
+    <string name="intercom_news">News</string>
+    <string name="intercom_news_empty_title">No news yet</string>
+    <string name="intercom_news_latest_subtitle">From Team {team_name}</string>
+    <string name="intercom_news_latest_title">Latest</string>
+    <string name="intercom_news_older_title">Older</string>
+    <string name="intercom_news_space_title">News</string>
+    <string name="intercom_next_match">Next match</string>
+    <string name="intercom_no_articles_to_display">No articles yet</string>
+    <string name="intercom_no_conversations">No conversations</string>
+    <string name="intercom_no_gifs_found">No GIFs found</string>
+    <string name="intercom_no_gifs_matching_query">We couldn\'t find any GIFs matching your query</string>
+    <string name="intercom_no_help_articles_to_display">No help articles</string>
+    <string name="intercom_no_messages_from_the_team">No messages from the team</string>
+    <string name="intercom_no_network_connection">No network connection</string>
+    <string name="intercom_no_photos">No photos</string>
+    <string name="intercom_no_photos_on_device">There are no photos on this device</string>
+    <string name="intercom_no_results_for_searchterm">No results for {searchTerm}</string>
+    <string name="intercom_no_tasks">No tasks</string>
+    <string name="intercom_no_tasks_available_currently">There are currently no tasks available.</string>
+    <string name="intercom_not_now">Not now</string>
+    <string name="intercom_nothing_to_see_here_yet">Nothing to see here yet</string>
+    <string name="intercom_notification_channel_actions_description">Contain links to take an action in this app</string>
+    <string name="intercom_notification_channel_actions_title">Actions</string>
+    <string name="intercom_notification_channel_chat_replies_description">Reply notifications from chats in this app</string>
+    <string name="intercom_notification_channel_chat_replies_title">Chat replies</string>
+    <string name="intercom_notification_channel_new_chats_description">New chat messages sent from this app</string>
+    <string name="intercom_notification_channel_new_chats_title">New chats</string>
+    <string name="intercom_notification_enable_prompt">&lt;u>Enable notifications&lt;/u> to stay updated</string>
+    <string name="intercom_number_is_incorrect">That number doesn\'t look quite right</string>
+    <string name="intercom_ok">OK</string>
+    <string name="intercom_one_new_message">You have a new message</string>
+    <string name="intercom_open_gallery">Open gallery</string>
+    <string name="intercom_our_bot_answers_instantly">Our bot answers instantly</string>
+    <string name="intercom_page_not_found">That page isn’t here anymore</string>
+    <string name="intercom_permission_denied">This permission was denied</string>
+    <string name="intercom_photo_access_denied">You denied access to your photos</string>
+    <string name="intercom_photo_and_video_library">Photo and Video Library</string>
+    <string name="intercom_placeholder_datepicker">DD-MM-YYYY</string>
+    <string name="intercom_placeholder_email_input">Enter email here...</string>
+    <string name="intercom_placeholder_numerical_inputs">Enter number here...</string>
+    <string name="intercom_placeholder_text_inputs">Enter text here...</string>
+    <string name="intercom_please_select">Please select...</string>
+    <string name="intercom_plus_x_more">+{n} more</string>
+    <string name="intercom_powered_by_fin_ai_agent">Powered by Fin</string>
+    <string name="intercom_powered_by_intercom">Powered by Intercom</string>
+    <string name="intercom_previous_match">Previous match</string>
+    <string name="intercom_profile_location">{time} in {location}</string>
+    <string name="intercom_rate_your_conversation">Rate your conversation</string>
+    <string name="intercom_rating_window_closed">This conversation can no longer be rated</string>
+    <string name="intercom_recent_ticket">Recent ticket</string>
+    <string name="intercom_recent_tickets">Recent tickets</string>
+    <string name="intercom_record_a_video">Record a video</string>
+    <string name="intercom_reload">Reload</string>
+    <string name="intercom_reply">Reply</string>
+    <string name="intercom_reply_from_admin">Reply from {name}</string>
+    <string name="intercom_reply_to_conversation">Write a reply…</string>
+    <string name="intercom_report_ai_answer">Report AI answer</string>
+    <string name="intercom_report_ai_answer_message">I want to talk to a teammate. I have received an inappropriate message from AI.</string>
+    <string name="intercom_retry">Retry</string>
+    <string name="intercom_saving">Saving...</string>
+    <string name="intercom_search">Search</string>
+    <string name="intercom_search_browse_empty_state_text">Sorry, we couldn’t find any results for that. Try rewording your search.</string>
+    <string name="intercom_search_conversation">Search conversation</string>
+    <string name="intercom_search_for_help">Search for help</string>
+    <string name="intercom_search_gif">Search GIFs…</string>
+    <string name="intercom_search_help_articles">Search help articles</string>
+    <string name="intercom_see_all">See all</string>
+    <string name="intercom_see_all_conversations">See all your conversations</string>
+    <string name="intercom_see_past_conversations">See previous</string>
+    <string name="intercom_see_previous_conversations">See your previous conversations</string>
+    <string name="intercom_select_files">Select files</string>
+    <string name="intercom_send">Send</string>
+    <string name="intercom_send_a_message_reply_time">Usual reply time is</string>
+    <string name="intercom_send_us_a_message">Send us a message</string>
+    <string name="intercom_send_us_a_message_bot">Send us a message and our bot will reply instantly</string>
+    <string name="intercom_settings">Settings</string>
+    <string name="intercom_shared_by">Shared by</string>
+    <string name="intercom_show_less">Show less</string>
+    <string name="intercom_single_article">1 article</string>
+    <string name="intercom_single_collection">1 collection</string>
+    <string name="intercom_some_things_failed_to_load">Some things failed to load. Try again.</string>
+    <string name="intercom_something_went_wrong_try_again">Something went wrong. Try again.</string>
+    <string name="intercom_source">Source</string>
+    <string name="intercom_sources">Sources</string>
+    <string name="intercom_spaces_error_description">Content could not be loaded</string>
+    <string name="intercom_spaces_error_title">Something\'s gone wrong</string>
+    <string name="intercom_start_a_conversation">Start a conversation</string>
+    <string name="intercom_start_another_conversation">Start another conversation</string>
+    <string name="intercom_start_conversation">Start a conversation…</string>
+    <string name="intercom_start_conversation_error">Couldn\'t start a new conversation</string>
+    <string name="intercom_status">Status</string>
+    <string name="intercom_still_generating_answer">Still generating answer...</string>
+    <string name="intercom_still_thinking">Still thinking...</string>
+    <string name="intercom_still_working_on_it">Still working on it...</string>
+    <string name="intercom_stop_upload">Stop upload</string>
+    <string name="intercom_storage_access_request">To see your photos you need to allow access to storage</string>
+    <string name="intercom_string_is_incorrect">That doesn\'t look quite right</string>
+    <string name="intercom_submit">Submit</string>
+    <string name="intercom_suggested_articles">Suggested articles</string>
+    <string name="intercom_surveys_all_options_response_hint">Please select all options that apply</string>
+    <string name="intercom_surveys_dismiss">Dismiss survey</string>
+    <string name="intercom_surveys_done_button">Done</string>
+    <string name="intercom_surveys_dropdown_default_option">Please select a response...</string>
+    <string name="intercom_surveys_email_error">Please enter a valid email address</string>
+    <string name="intercom_surveys_fixed_response_count_response_hint">Please select {response_count} options</string>
+    <string name="intercom_surveys_from_company">Survey from {company}</string>
+    <string name="intercom_surveys_from_teammate">Survey by {sender_name} from {company}</string>
+    <string name="intercom_surveys_multi_select_too_few_responses">This question requires at least {response_count} options to be selected</string>
+    <string name="intercom_surveys_multi_select_too_many_responses">This question requires {response_count} options to be selected</string>
+    <string name="intercom_surveys_multi_star_rating">{count} stars</string>
+    <string name="intercom_surveys_multiselect_other_option">Other (Please specify)</string>
+    <string name="intercom_surveys_multiselect_other_option_input_label">Please specify</string>
+    <string name="intercom_surveys_multiselect_other_option_input_placeholder">Enter response</string>
+    <string name="intercom_surveys_multiselect_other_option_value">Other</string>
+    <string name="intercom_surveys_next_button">Next</string>
+    <string name="intercom_surveys_nps_lower_label">Not likely</string>
+    <string name="intercom_surveys_nps_upper_label">Very likely</string>
+    <string name="intercom_surveys_number_error">Please enter a number</string>
+    <string name="intercom_surveys_one_star_rating">1 star</string>
+    <string name="intercom_surveys_question_question_number_of_question_count">Question {questioin_number} of {question_count}</string>
+    <string name="intercom_surveys_required_question">This is a required question</string>
+    <string name="intercom_surveys_required_response">This is a required response</string>
+    <string name="intercom_surveys_response_range_response_hint">Please select a minimum of {minimum_response_count} and a maximum of {maximum_response_count} options</string>
+    <string name="intercom_surveys_response_too_long">Please keep answers to a maximum of {character_count} characters</string>
+    <string name="intercom_surveys_response_too_short">Please ensure answers have a minimum of {character_count} characters</string>
+    <string name="intercom_surveys_sender_image">Survey sender image</string>
+    <string name="intercom_surveys_single_response_hint">Please select 1 option</string>
+    <string name="intercom_surveys_telephone_error">Please enter a valid telephone number</string>
+    <string name="intercom_surveys_text_input_question_placeholder">Please type your response here...</string>
+    <string name="intercom_take_a_photo">Take a photo</string>
+    <string name="intercom_tap_to_send_image">Tap to send an image</string>
+    <string name="intercom_tasks_space_title">Tasks</string>
+    <string name="intercom_team_name_custom_response_delay_2">{app_name} typically replies in a day</string>
+    <string name="intercom_team_name_custom_response_delay_3">{app_name} typically replies in a week</string>
+    <string name="intercom_team_name_proactive_expected_response_delay_one_business_day">{app_name} typically replies in one business day</string>
+    <string name="intercom_team_name_proactive_expected_response_delay_two_business_days">{app_name} typically replies in two business days</string>
+    <string name="intercom_teammate_from_company">{name} from {company}</string>
+    <string name="intercom_tell_us_more">Tell us more…</string>
+    <string name="intercom_tell_us_what_you_need">Tell us what you need help with and our bot will do its best to answer</string>
+    <string name="intercom_thanks_custom_response_delay_one_business_day">Thanks! The team will reply in one business day</string>
+    <string name="intercom_thanks_custom_response_delay_two_business_days">Thanks! The team will reply in two business days</string>
+    <string name="intercom_thanks_for_letting_us_know">Thanks for letting us know</string>
+    <string name="intercom_thanks_proactive_expected_response_delay_unknown">Thanks! The team will reply as soon as they can</string>
+    <string name="intercom_that_country_code_doesnt_look_quite_right">That country code doesn\'t look quite right</string>
+    <string name="intercom_that_email_address_doesnt_look_quite_right">That email doesn\'t look quite right</string>
+    <string name="intercom_that_number_doesnt_look_quite_right">That number doesn\'t look quite right</string>
+    <string name="intercom_that_number_has_too_many_digits">That number has too many digits</string>
+    <string name="intercom_that_number_is_missing_a_few_digits">That number is missing a few digits</string>
+    <string name="intercom_that_number_needs_a_prefix">That number needs a prefix (+ or 00)</string>
+    <string name="intercom_the_team_can_help_if_needed">The team can help if needed</string>
+    <string name="intercom_the_team_typically_replies_in_hours">The team typically replies in a few hours.</string>
+    <string name="intercom_the_team_typically_replies_in_one_business_day">The team typically replies in one business day.</string>
+    <string name="intercom_the_team_typically_replies_in_two_business_days">The team typically replies in two business days</string>
+    <string name="intercom_thinking">Thinking...</string>
+    <string name="intercom_ticket_could_not_be_created">Ticket could not be created</string>
+    <string name="intercom_ticket_create_ticket_with_type_title">Create {ticket_type_title} ticket</string>
+    <string name="intercom_ticket_current_status">Current status: {current_status_title}</string>
+    <string name="intercom_ticket_current_status_with_date">Current status: {current_status_title}, {date}</string>
+    <string name="intercom_ticket_details_attributes_accessibility_text">Ticket attributes;</string>
+    <string name="intercom_ticket_details_for_title">Ticket details for {title}</string>
+    <string name="intercom_ticket_details_notification_detail">You will be notified here and via email at</string>
+    <string name="intercom_ticket_has_been_created">Ticket has been created</string>
+    <string name="intercom_ticket_has_been_updated">Ticket has been updated</string>
+    <string name="intercom_ticket_sla_details">SLA details: {sla_details}</string>
+    <string name="intercom_ticket_status_details">Status details: {status_details}</string>
+    <string name="intercom_ticket_status_event_moved_automation_with_bullet_point">Ticket moved into {status} • {timestamp}</string>
+    <string name="intercom_ticket_status_event_moved_with_bullet_point">{teammate} moved ticket into {status} • {timestamp}</string>
+    <string name="intercom_tickets_add_file">Add file</string>
+    <string name="intercom_tickets_add_files">Add files</string>
+    <string name="intercom_tickets_create_ticket">Create ticket</string>
+    <string name="intercom_tickets_create_ticket_fallback">Please reply with the following information and someone will get back to you soon.</string>
+    <string name="intercom_tickets_created_confirmation_header">Ticket is created</string>
+    <string name="intercom_tickets_cta_text">Have a question about this ticket?</string>
+    <string name="intercom_tickets_email_copy">Replies and ticket updates will be sent to this email</string>
+    <string name="intercom_tickets_email_subject">Your {ticket_type_name} ticket</string>
+    <string name="intercom_tickets_email_subject_with_ticket_id">Your {ticket_type_name} ticket #{ticket_id}</string>
+    <string name="intercom_tickets_empty_state_text">Your tickets will be shown here</string>
+    <string name="intercom_tickets_empty_state_title">No tickets</string>
+    <string name="intercom_tickets_estimated_resolution">Estimated time to resolution: {duration}</string>
+    <string name="intercom_tickets_files_added">Files added</string>
+    <string name="intercom_tickets_have_a_question">Have a question about this issue?</string>
+    <string name="intercom_tickets_in_progress_status_detail">We’re working on this 🙌</string>
+    <string name="intercom_tickets_in_progress_status_detail_with_assignee">{first_name} is working on this!</string>
+    <string name="intercom_tickets_is_resolved">Is this ticket resolved?</string>
+    <string name="intercom_tickets_log_a_ticket">Log a ticket</string>
+    <string name="intercom_tickets_resolved_status_detail">We’ve completed your ticket</string>
+    <string name="intercom_tickets_resolved_status_detail_with_assignee">{first_name} has completed your ticket</string>
+    <string name="intercom_tickets_sla">Estimated to be resolved {time}</string>
+    <string name="intercom_tickets_space_title">Tickets</string>
+    <string name="intercom_tickets_status_change_event">Ticket is now {status} • {timestamp}</string>
+    <string name="intercom_tickets_status_description_completed">We\'ve completed your ticket</string>
+    <string name="intercom_tickets_status_description_more_info">We need more information</string>
+    <string name="intercom_tickets_status_description_prefix_status_changed_by_admin">{admin_first_name} moved your ticket to</string>
+    <string name="intercom_tickets_status_description_prefix_status_changed_by_admin_with_ticket_id">{admin_first_name} moved your ticket #{ticket_id} to</string>
+    <string name="intercom_tickets_status_description_prefix_status_changed_by_operator">Your ticket has moved to</string>
+    <string name="intercom_tickets_status_description_prefix_status_changed_by_operator_with_ticket_id">Your ticket #{ticket_id} has moved to</string>
+    <string name="intercom_tickets_status_description_prefix_when_submitted">Your ticket has been</string>
+    <string name="intercom_tickets_status_description_prefix_when_submitted_with_ticket_id">Your ticket #{ticket_id} has been</string>
+    <string name="intercom_tickets_status_description_well_pick_up_soon">We\'ll pick up your ticket soon</string>
+    <string name="intercom_tickets_status_description_working_on">We\'re working on your ticket</string>
+    <string name="intercom_tickets_status_event_moved">{teammate} moved ticket into {status} {timestamp}</string>
+    <string name="intercom_tickets_status_event_moved_automation">Ticket moved into {status} {timestamp}</string>
+    <string name="intercom_tickets_status_event_submitted">Ticket has been {submitted_status} • {timestamp}</string>
+    <string name="intercom_tickets_status_in_progress">In progress</string>
+    <string name="intercom_tickets_status_resolved">Resolved</string>
+    <string name="intercom_tickets_status_submitted">Submitted</string>
+    <string name="intercom_tickets_status_waiting_on_you">Waiting on you</string>
+    <string name="intercom_tickets_submitted_confirmation_header">Ticket is submitted</string>
+    <string name="intercom_tickets_submitted_confirmation_paragraph">We\'ll notify you once your ticket has an update</string>
+    <string name="intercom_tickets_submitted_status_detail">We’ll pick this up soon</string>
+    <string name="intercom_tickets_submitted_status_detail_with_assignee">{first_name} will pick this up soon</string>
+    <string name="intercom_tickets_unread">Tickets. You have unread ticket updates.</string>
+    <string name="intercom_tickets_updates_prompt">You will receive updates in the Messenger and via email</string>
+    <string name="intercom_tickets_view_ticket">View ticket details</string>
+    <string name="intercom_tickets_waiting_on_customer_status_detail">We need more information from you</string>
+    <string name="intercom_tickets_waiting_on_customer_status_detail_with_assignee">{first_name} needs more information</string>
+    <string name="intercom_time_day_ago">{delta}d</string>
+    <string name="intercom_time_future_1h">In 1 hour</string>
+    <string name="intercom_time_future_2h">In 2 hours</string>
+    <string name="intercom_time_future_30m">In 30 minutes</string>
+    <string name="intercom_time_future_3h">In 3 hours</string>
+    <string name="intercom_time_future_day_0">Monday</string>
+    <string name="intercom_time_future_day_1">Tuesday</string>
+    <string name="intercom_time_future_day_2">Wednesday</string>
+    <string name="intercom_time_future_day_3">Thursday</string>
+    <string name="intercom_time_future_day_4">Friday</string>
+    <string name="intercom_time_future_day_5">Saturday</string>
+    <string name="intercom_time_future_day_6">Sunday</string>
+    <string name="intercom_time_future_later_today">Later today</string>
+    <string name="intercom_time_future_next_week">Next week</string>
+    <string name="intercom_time_future_tomorrow">Tomorrow</string>
+    <string name="intercom_time_hour_ago">{delta}h</string>
+    <string name="intercom_time_just_now">Just now</string>
+    <string name="intercom_time_minute_ago">{delta}m</string>
+    <string name="intercom_time_month_ago">{delta}mo</string>
+    <string name="intercom_time_week_ago">{delta}w</string>
+    <string name="intercom_time_year_ago">{delta}y</string>
+    <string name="intercom_time_yesterday">yesterday</string>
+    <string name="intercom_transcribing">Transcribing...</string>
+    <string name="intercom_transcription_failed">Transcription failed</string>
+    <string name="intercom_try_again">Try Again</string>
+    <string name="intercom_try_again_minute">Try again in a minute</string>
+    <string name="intercom_try_use_different_keywords">Try different keywords or type your full question</string>
+    <string name="intercom_twitter_follow">Follow us on Twitter</string>
+    <string name="intercom_two_business_days">Two business days</string>
+    <string name="intercom_type_a_number">Type a number…</string>
+    <string name="intercom_typically_replies_in_one_business_day">Typically replies in one business day</string>
+    <string name="intercom_typically_replies_in_two_business_days">Typically replies in two business days</string>
+    <string name="intercom_unread_message_count">{unread_count} unread</string>
+    <string name="intercom_upfront_collection_form_close_out">You can return here anytime to see responses and send updates.</string>
+    <string name="intercom_upfront_collection_form_introduction">Share some context to help the team respond better and faster.</string>
+    <string name="intercom_upfront_collection_form_submission_confirmation">Thanks for sending that context. To save time later, feel free to add more details now.</string>
+    <string name="intercom_upfront_collection_form_subtitle">Send the team some context</string>
+    <string name="intercom_upfront_collection_form_subtitle_submitted">They\'ll keep this context in mind</string>
+    <string name="intercom_upfront_collection_form_title">Get help faster</string>
+    <string name="intercom_upfront_collection_form_title_submitted">Sent to the team!</string>
+    <string name="intercom_upload_attach_button">Attach</string>
+    <string name="intercom_upload_failed">Upload failed</string>
+    <string name="intercom_upload_file_load_error">Couldn\'t load the file</string>
+    <string name="intercom_upload_max_files_allowed">Maximum {limit} files allowed</string>
+    <string name="intercom_upload_max_files_size">Maximum file size is {limit}MB</string>
+    <string name="intercom_user_avatar_image">User avatar image</string>
+    <string name="intercom_view_all">View all</string>
+    <string name="intercom_view_conversation">View conversation</string>
+    <string name="intercom_view_more">View more</string>
+    <string name="intercom_view_more_details">View more details</string>
+    <string name="intercom_view_post">View post</string>
+    <string name="intercom_we_run_on_fin">We run on Fin</string>
+    <string name="intercom_we_run_on_intercom">We run on Intercom</string>
+    <string name="intercom_within_custom_response_delay_0">a few minutes</string>
+    <string name="intercom_within_custom_response_delay_1">a few hours</string>
+    <string name="intercom_within_custom_response_delay_2">a day</string>
+    <string name="intercom_within_custom_response_delay_3">a week</string>
+    <string name="intercom_within_expected_response_delay_10800">3 hours</string>
+    <string name="intercom_within_expected_response_delay_120">2 minutes</string>
+    <string name="intercom_within_expected_response_delay_1200">20 minutes</string>
+    <string name="intercom_within_expected_response_delay_14400">4 hours</string>
+    <string name="intercom_within_expected_response_delay_172800">2 days</string>
+    <string name="intercom_within_expected_response_delay_180">3 minutes</string>
+    <string name="intercom_within_expected_response_delay_1800">30 minutes</string>
+    <string name="intercom_within_expected_response_delay_18000">5 hours</string>
+    <string name="intercom_within_expected_response_delay_21600">6 hours</string>
+    <string name="intercom_within_expected_response_delay_240">4 minutes</string>
+    <string name="intercom_within_expected_response_delay_259200">3 days</string>
+    <string name="intercom_within_expected_response_delay_300">5 minutes</string>
+    <string name="intercom_within_expected_response_delay_345600">4 days</string>
+    <string name="intercom_within_expected_response_delay_3600">1 hour</string>
+    <string name="intercom_within_expected_response_delay_43200">12 hours</string>
+    <string name="intercom_within_expected_response_delay_432000">5 days</string>
+    <string name="intercom_within_expected_response_delay_518400">6 days</string>
+    <string name="intercom_within_expected_response_delay_60">1 minute</string>
+    <string name="intercom_within_expected_response_delay_600">10 minutes</string>
+    <string name="intercom_within_expected_response_delay_604800">1 week</string>
+    <string name="intercom_within_expected_response_delay_7200">2 hours</string>
+    <string name="intercom_within_expected_response_delay_86400">1 day</string>
+    <string name="intercom_within_expected_response_delay_900">15 minutes</string>
+    <string name="intercom_working_on_it">Working on it...</string>
+    <string name="intercom_you">You</string>
+    <string name="intercom_you_are_all_up_to_date">You\'re all caught up!</string>
+    <string name="intercom_you_have_new_messages">You have new messages.</string>
+    <string name="intercom_you_rated_the_conversation">You rated the conversation</string>
+    <string name="intercom_youll_be_notified_here_and_by_email">You will be notified here and by email</string>
+    <string name="intercom_your_checklists">Your checklists</string>
+    <string name="intercom_your_conversations">Your conversations</string>
+    <string name="intercom_your_recent_conversations">Recent conversations</string>
+    <string name="intercom_your_recent_message">Recent message</string>
+    <string name="intercom_your_recent_messages">Recent messages</string>
+    <string name="intercom_your_ticket">Your ticket</string>
+    <style name="Intercom.BaseMaterial" parent="Intercom.Light.NoActionBar">
+        
+        <item name="android:windowAnimationStyle">@style/Intercom.WindowAnimation.Fade</item>
+        
+        <item name="android:colorEdgeEffect">@color/intercom_ripple_light</item>
+        
+        <item name="colorControlNormal">@color/intercom_help_center_grey</item>
+        
+    </style>
+    <style name="Intercom.BaseMaterial.Compose" parent="Intercom.Light.NoActionBar"/>
+    <style name="Intercom.Light.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:forceDarkAllowed" ns1:targetApi="q">false</item>
+    </style>
+    <style name="Intercom.WindowAnimation.Fade" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/intercom_fade_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/intercom_donothing</item>
+        <item name="android:activityCloseEnterAnimation">@anim/intercom_donothing</item>
+        <item name="android:activityCloseExitAnimation">@anim/intercom_fade_out</item>
+        
+        <item name="android:taskOpenEnterAnimation">@anim/intercom_fade_in</item>
+        <item name="android:taskOpenExitAnimation">@anim/intercom_donothing</item>
+        <item name="android:taskCloseEnterAnimation">@anim/intercom_donothing</item>
+        <item name="android:taskCloseExitAnimation">@anim/intercom_fade_out</item>
+    </style>
+    <style name="Intercom_CarouselTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:forceDarkAllowed" ns1:targetApi="q">false</item>
+    </style>
+    <style name="Intercom_LightBoxTheme" parent="Intercom_PanelTheme">
+        <item name="android:windowContentTransitions" ns1:ignore="NewApi">true
+        </item>
+        <item name="android:windowActionModeOverlay" ns1:ignore="NewApi">true
+        </item>
+    </style>
+    <style name="Intercom_ModalActivityTheme" parent="Intercom_PanelTheme">
+        <item name="android:windowContentTransitions" ns1:ignore="NewApi">true
+        </item>
+        <item name="android:windowActionModeOverlay" ns1:ignore="NewApi">true
+        </item>
+    </style>
+    <style name="Intercom_NoteTheme" parent="Intercom_PanelTheme">
+    </style>
+    <style name="Intercom_PanelTheme" parent="Intercom.Light.NoActionBar">
+        <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/intercom_full_transparent_full_black</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowActionModeOverlay" ns1:ignore="NewApi">true</item>
+        
+        <item name="colorControlNormal">#FFFFFF</item>
+    </style>
+    <style name="Intercom_PostAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/intercom_slide_in_bottom</item>
+        <item name="android:activityOpenExitAnimation">@anim/intercom_donothing</item>
+        <item name="android:activityCloseEnterAnimation">@anim/intercom_donothing</item>
+        <item name="android:activityCloseExitAnimation">@anim/intercom_fade_out</item>
+    </style>
+    <style name="Intercom_PostTheme" parent="Intercom_PanelTheme">
+        <item name="android:windowAnimationStyle">@style/Intercom_PostAnimation</item>
+    </style>
+    <style name="Intercom_PreviewTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:forceDarkAllowed" ns1:targetApi="q">false</item>
+    </style>
+    <style name="Intercom_TransparentTheme" parent="Intercom.Light.NoActionBar">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation</item>
+    </style>
+    <style name="Intercom_TransparentTheme_WithAnimations" parent="Intercom_TransparentTheme">
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+    </style>
+    <style name="intercom_toolbar_inbox_title_style">
+        <item name="android:textColor">@color/intercom_white</item>
+        <item name="android:textSize">18sp</item>
+    </style>
+    <style name="intercom_toolbar_style">
+        <item name="android:layout_height">@dimen/intercom_toolbar_height</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:clickable">true</item>
+        <item name="android:descendantFocusability">beforeDescendants</item>
+        <item name="android:focusable">true</item>
+        <item name="android:focusableInTouchMode">true</item>
+        <item name="contentInsetEnd">0dp</item>
+        <item name="contentInsetStart">0dp</item>
+        <item name="contentInsetRight">0dp</item>
+    </style>
+    <style name="intercom_toolbar_subtitle_style">
+        <item name="android:textColor">@color/intercom_white</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+    <style name="intercom_wallpaper_image_style">
+        <item name="android:scaleType">fitXY</item>
+        <item name="android:alpha">@dimen/intercom_wallpaper_image_alpha</item>
+    </style>
+    <declare-styleable name="AuthorAvatarView">
+        <attr format="dimension" name="avatarSize"/>
+        <attr format="dimension" name="activeStateSize"/>
+    </declare-styleable>
+    <declare-styleable name="ExpandableLayout">
+        <attr format="boolean" name="intercomCanExpand"/>
+    </declare-styleable>
+    <declare-styleable name="LockableScrollView">
+        <attr format="dimension" name="intercomHeightLimit"/>
+        <attr format="boolean" name="intercomExpanded"/>
+        <attr format="boolean" name="intercomInterceptTouch"/>
+    </declare-styleable>
+</resources>

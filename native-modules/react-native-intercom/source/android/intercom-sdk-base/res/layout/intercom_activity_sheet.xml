@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    android:id="@+id/sheet_root"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/intercom_post_gradient"
+    android:orientation="vertical">
+
+    <io.intercom.android.sdk.views.IntercomToolbar
+        android:id="@+id/intercom_toolbar"
+        style="@style/intercom_toolbar_style"/>
+
+    <FrameLayout
+        android:id="@+id/sheet_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/intercom_white"
+        android:clipChildren="false"
+        android:orientation="vertical">
+
+        <include layout="@layout/intercom_error_sheet"
+                 android:visibility="gone"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/intercom_app_bar_shadow_height"
+            android:background="@drawable/intercom_top_shadow"/>
+
+    </FrameLayout>
+
+</LinearLayout>

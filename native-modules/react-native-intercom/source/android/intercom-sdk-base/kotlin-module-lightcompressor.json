@@ -1,0 +1,43 @@
+{
+  "entry": "META-INF/intercom-sdk-lightcompressor_release.kotlin_module",
+  "version": [
+    1,
+    9,
+    9999
+  ],
+  "flags": 0,
+  "package_parts": [
+    {
+      "package_fq_name": "io.intercom.android.sdk.lightcompressor.data",
+      "short_class_names": [
+        "AtomsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    },
+    {
+      "package_fq_name": "io.intercom.android.sdk.lightcompressor.utils",
+      "short_class_names": [
+        "NumbersUtilsKt"
+      ],
+      "multifile_facade_short_name_ids": [],
+      "multifile_facade_short_names": [],
+      "class_with_jvm_package_name_short_names": [],
+      "class_with_jvm_package_name_package_ids": [],
+      "class_with_jvm_package_name_multifile_facade_short_name_ids": [],
+      "unknown_fields": []
+    }
+  ],
+  "metadata_parts": [],
+  "jvm_package_names": [],
+  "string_table_hex": "",
+  "qualified_name_table_hex": "",
+  "annotations": [],
+  "optional_annotation_classes": [],
+  "unknown_fields": [],
+  "original_sha256": "8e82ce3a1f0f078b2f2697dd3a66eed1fd746f744689c099e21f5a5e914b3f96"
+}

@@ -1,0 +1,491 @@
+C	io/intercom/android/nexus/EventData	52	33	java/util/HashMap	Ljava/util/HashMap<Ljava/lang/String;Ljava/lang/Object;>;	
+M	io/intercom/android/nexus/EventData	<init>	()V	1		
+M	io/intercom/android/nexus/EventData	<init>	(I)V	1		
+M	io/intercom/android/nexus/EventData	optString	(Ljava/lang/String;)Ljava/lang/String;	1		
+M	io/intercom/android/nexus/EventData	optString	(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;	1		
+M	io/intercom/android/nexus/EventData	optLong	(Ljava/lang/String;)J	1		
+M	io/intercom/android/nexus/EventData	optLong	(Ljava/lang/String;J)J	1		
+C	io/intercom/android/nexus/EverythingIsNonnullByDefault	52	9728	java/lang/Object		java/lang/annotation/Annotation
+C	io/intercom/android/nexus/NexusClient$1	52	32	java/lang/Object		java/lang/Runnable
+E	io/intercom/android/nexus/NexusClient$1	io/intercom/android/nexus/NexusClient	schedulePing	()V
+I	io/intercom/android/nexus/NexusClient$1	io/intercom/android/nexus/NexusClient$1			0
+F	io/intercom/android/nexus/NexusClient$1	this$0	Lio/intercom/android/nexus/NexusClient;	4112	
+M	io/intercom/android/nexus/NexusClient$1	<init>	(Lio/intercom/android/nexus/NexusClient;)V	0		
+M	io/intercom/android/nexus/NexusClient$1	run	()V	1		
+C	io/intercom/android/nexus/NexusClient$NexusThreadFactory	52	32	java/lang/Object		java/util/concurrent/ThreadFactory
+I	io/intercom/android/nexus/NexusClient$NexusThreadFactory	io/intercom/android/nexus/NexusClient$NexusThreadFactory	io/intercom/android/nexus/NexusClient	NexusThreadFactory	10
+I	io/intercom/android/nexus/NexusClient$NexusThreadFactory	io/intercom/android/nexus/NexusClient$1			0
+F	io/intercom/android/nexus/NexusClient$NexusThreadFactory	defaultFactory	Ljava/util/concurrent/ThreadFactory;	18	
+F	io/intercom/android/nexus/NexusClient$NexusThreadFactory	threadCount	I	2	
+M	io/intercom/android/nexus/NexusClient$NexusThreadFactory	<init>	()V	2		
+M	io/intercom/android/nexus/NexusClient$NexusThreadFactory	newThread	(Ljava/lang/Runnable;)Ljava/lang/Thread;	1		
+M	io/intercom/android/nexus/NexusClient$NexusThreadFactory	<init>	(Lio/intercom/android/nexus/NexusClient$1;)V	4096		
+C	io/intercom/android/nexus/NexusClient	52	33	java/lang/Object		io/intercom/android/nexus/NexusTopicProvider
+I	io/intercom/android/nexus/NexusClient	okhttp3/OkHttpClient$Builder	okhttp3/OkHttpClient	Builder	25
+I	io/intercom/android/nexus/NexusClient	io/intercom/android/nexus/NexusClient$NexusThreadFactory	io/intercom/android/nexus/NexusClient	NexusThreadFactory	10
+I	io/intercom/android/nexus/NexusClient	io/intercom/android/nexus/NexusClient$1			0
+F	io/intercom/android/nexus/NexusClient	sockets	Ljava/util/List;	18	Ljava/util/List<Lio/intercom/android/nexus/NexusSocket;>;
+F	io/intercom/android/nexus/NexusClient	topics	Ljava/util/List;	18	Ljava/util/List<Ljava/lang/String;>;
+F	io/intercom/android/nexus/NexusClient	twig	Lcom/intercom/twig/Twig;	18	
+F	io/intercom/android/nexus/NexusClient	client	Lokhttp3/OkHttpClient;	18	
+F	io/intercom/android/nexus/NexusClient	eventPropagator	Lio/intercom/android/nexus/NexusEventPropagator;	18	
+F	io/intercom/android/nexus/NexusClient	backgroundTaskExecutor	Ljava/util/concurrent/ScheduledExecutorService;	2	
+F	io/intercom/android/nexus/NexusClient	future	Ljava/util/concurrent/ScheduledFuture;	2	
+F	io/intercom/android/nexus/NexusClient	heartbeatInterval	J	2	
+M	io/intercom/android/nexus/NexusClient	defaultOkHttpClientBuilder	()Lokhttp3/OkHttpClient$Builder;	9		
+M	io/intercom/android/nexus/NexusClient	<init>	(Lcom/intercom/twig/Twig;)V	1		
+M	io/intercom/android/nexus/NexusClient	<init>	(Lcom/intercom/twig/Twig;Lokhttp3/OkHttpClient;)V	1		
+M	io/intercom/android/nexus/NexusClient	<init>	(Lcom/intercom/twig/Twig;Lokhttp3/OkHttpClient;Lio/intercom/android/nexus/NexusEventPropagator;)V	0		
+M	io/intercom/android/nexus/NexusClient	connect	(Lio/intercom/android/nexus/NexusConfig;Z)V	1		
+M	io/intercom/android/nexus/NexusClient	disconnect	()V	33		
+M	io/intercom/android/nexus/NexusClient	fire	(Lio/intercom/android/nexus/NexusEvent;)V	33		
+M	io/intercom/android/nexus/NexusClient	localUpdate	(Lio/intercom/android/nexus/NexusEvent;)V	33		
+M	io/intercom/android/nexus/NexusClient	isConnected	()Z	33		
+M	io/intercom/android/nexus/NexusClient	addEventListener	(Lio/intercom/android/nexus/NexusListener;)V	1		
+M	io/intercom/android/nexus/NexusClient	removeEventListener	(Lio/intercom/android/nexus/NexusListener;)V	1		
+M	io/intercom/android/nexus/NexusClient	getTopics	()Ljava/util/List;	33	()Ljava/util/List<Ljava/lang/String;>;	
+M	io/intercom/android/nexus/NexusClient	setTopics	(Ljava/util/List;)V	33	(Ljava/util/List<Ljava/lang/String;>;)V	
+M	io/intercom/android/nexus/NexusClient	addTopics	(Ljava/util/List;)V	33	(Ljava/util/List<Ljava/lang/String;>;)V	
+M	io/intercom/android/nexus/NexusClient	removeTopics	(Ljava/util/List;)V	33	(Ljava/util/List<Ljava/lang/String;>;)V	
+M	io/intercom/android/nexus/NexusClient	clearTopics	()V	33		
+M	io/intercom/android/nexus/NexusClient	subscribeToTopics	(Ljava/util/List;)V	2	(Ljava/util/List<Ljava/lang/String;>;)V	
+M	io/intercom/android/nexus/NexusClient	unSubscribeFromTopics	(Ljava/util/List;)V	2	(Ljava/util/List<Ljava/lang/String;>;)V	
+M	io/intercom/android/nexus/NexusClient	schedulePing	()V	2		
+M	io/intercom/android/nexus/NexusClient	access$100	(Lio/intercom/android/nexus/NexusClient;)V	4104		
+P	io/intercom/android/nexus/NexusClient	access$100	(Lio/intercom/android/nexus/NexusClient;)V	a812c6ac6a9a47b9b81474eb65365dc24f01620ba15319bbb5b1140b0c3d8d9c
+C	io/intercom/android/nexus/NexusConfig$Builder	52	33	java/lang/Object		
+I	io/intercom/android/nexus/NexusConfig$Builder	io/intercom/android/nexus/NexusConfig$Builder	io/intercom/android/nexus/NexusConfig	Builder	9
+F	io/intercom/android/nexus/NexusConfig$Builder	endpoints	Ljava/util/List;	0	Ljava/util/List<Ljava/lang/String;>;
+F	io/intercom/android/nexus/NexusConfig$Builder	presence_heartbeat_interval	I	0	
+F	io/intercom/android/nexus/NexusConfig$Builder	connection_timeout	I	0	
+M	io/intercom/android/nexus/NexusConfig$Builder	<init>	()V	1		
+M	io/intercom/android/nexus/NexusConfig$Builder	build	()Lio/intercom/android/nexus/NexusConfig;	1		
+M	io/intercom/android/nexus/NexusConfig$Builder	withEndpoints	(Ljava/util/List;)Lio/intercom/android/nexus/NexusConfig$Builder;	1	(Ljava/util/List<Ljava/lang/String;>;)Lio/intercom/android/nexus/NexusConfig$Builder;	
+M	io/intercom/android/nexus/NexusConfig$Builder	withPresenceHeartbeatInterval	(I)Lio/intercom/android/nexus/NexusConfig$Builder;	1		
+M	io/intercom/android/nexus/NexusConfig$Builder	withConnectionTimeout	(I)Lio/intercom/android/nexus/NexusConfig$Builder;	1		
+C	io/intercom/android/nexus/NexusConfig	52	33	java/lang/Object		
+I	io/intercom/android/nexus/NexusConfig	io/intercom/android/nexus/NexusConfig$Builder	io/intercom/android/nexus/NexusConfig	Builder	9
+F	io/intercom/android/nexus/NexusConfig	endpoints	Ljava/util/List;	18	Ljava/util/List<Ljava/lang/String;>;
+F	io/intercom/android/nexus/NexusConfig	presenceHeartbeatInterval	I	18	
+F	io/intercom/android/nexus/NexusConfig	connectionTimeout	I	18	
+M	io/intercom/android/nexus/NexusConfig	<init>	()V	1		
+M	io/intercom/android/nexus/NexusConfig	<init>	(Lio/intercom/android/nexus/NexusConfig$Builder;)V	1		
+M	io/intercom/android/nexus/NexusConfig	getEndpoints	()Ljava/util/List;	1	()Ljava/util/List<Ljava/lang/String;>;	
+M	io/intercom/android/nexus/NexusConfig	getPresenceHeartbeatInterval	()I	1		
+M	io/intercom/android/nexus/NexusConfig	getConnectionTimeout	()I	1		
+M	io/intercom/android/nexus/NexusConfig	equals	(Ljava/lang/Object;)Z	1		
+M	io/intercom/android/nexus/NexusConfig	hashCode	()I	1		
+C	io/intercom/android/nexus/NexusEvent$Builder	52	33	java/lang/Object		
+I	io/intercom/android/nexus/NexusEvent$Builder	io/intercom/android/nexus/NexusEvent$Builder	io/intercom/android/nexus/NexusEvent	Builder	9
+F	io/intercom/android/nexus/NexusEvent$Builder	eventName	Lio/intercom/android/nexus/NexusEventType;	16	
+F	io/intercom/android/nexus/NexusEvent$Builder	eventData	Lio/intercom/android/nexus/EventData;	0	
+F	io/intercom/android/nexus/NexusEvent$Builder	topics	Ljava/util/List;	0	Ljava/util/List<Ljava/lang/String;>;
+F	io/intercom/android/nexus/NexusEvent$Builder	userId	Ljava/lang/String;	0	
+M	io/intercom/android/nexus/NexusEvent$Builder	<init>	(Lio/intercom/android/nexus/NexusEventType;)V	0		
+M	io/intercom/android/nexus/NexusEvent$Builder	withTopics	(Ljava/util/List;)Lio/intercom/android/nexus/NexusEvent$Builder;	1	(Ljava/util/List<Ljava/lang/String;>;)Lio/intercom/android/nexus/NexusEvent$Builder;	
+M	io/intercom/android/nexus/NexusEvent$Builder	withEventData	(Lio/intercom/android/nexus/EventData;)Lio/intercom/android/nexus/NexusEvent$Builder;	1		
+M	io/intercom/android/nexus/NexusEvent$Builder	withUserId	(Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent$Builder;	1		
+M	io/intercom/android/nexus/NexusEvent$Builder	build	()Lio/intercom/android/nexus/NexusEvent;	1		
+C	io/intercom/android/nexus/NexusEvent	52	33	java/lang/Object		
+I	io/intercom/android/nexus/NexusEvent	io/intercom/android/nexus/NexusEvent$Builder	io/intercom/android/nexus/NexusEvent	Builder	9
+F	io/intercom/android/nexus/NexusEvent	TOPIC_PREFIX_CONVERSATION	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	EVENT_GUID	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	EVENT_DATA	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	EVENT_NAME	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	NX_TOPICS	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	NX_TO_USER	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	NX_FROM_USER	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	ADMIN_ID	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	ADMIN_NAME	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	ADMIN_AVATAR	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	ADMIN_TIMESTAMP	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	CONVERSATION_ID	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	ASSIGNEE_ID	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	TITLE	Ljava/lang/String;	24	
+F	io/intercom/android/nexus/NexusEvent	eventType	Lio/intercom/android/nexus/NexusEventType;	18	
+F	io/intercom/android/nexus/NexusEvent	eventData	Lio/intercom/android/nexus/EventData;	18	
+F	io/intercom/android/nexus/NexusEvent	topics	Ljava/util/List;	18	Ljava/util/List<Ljava/lang/String;>;
+F	io/intercom/android/nexus/NexusEvent	guid	Ljava/lang/String;	18	
+F	io/intercom/android/nexus/NexusEvent	userId	Ljava/lang/String;	18	
+M	io/intercom/android/nexus/NexusEvent	<init>	(Lio/intercom/android/nexus/NexusEvent$Builder;)V	1		
+M	io/intercom/android/nexus/NexusEvent	<init>	(Lorg/json/JSONObject;)V	1		
+M	io/intercom/android/nexus/NexusEvent	toStringEncodedJsonObject	()Ljava/lang/String;	1		
+M	io/intercom/android/nexus/NexusEvent	getEventType	()Lio/intercom/android/nexus/NexusEventType;	1		
+M	io/intercom/android/nexus/NexusEvent	getEventData	()Lio/intercom/android/nexus/EventData;	1		
+M	io/intercom/android/nexus/NexusEvent	getTopics	()Ljava/util/List;	1	()Ljava/util/List<Ljava/lang/String;>;	
+M	io/intercom/android/nexus/NexusEvent	getGuid	()Ljava/lang/String;	1		
+M	io/intercom/android/nexus/NexusEvent	getUserId	()Ljava/lang/String;	1		
+M	io/intercom/android/nexus/NexusEvent	getAdminIsTypingEvent	(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getAdminIsTypingNoteEvent	(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getUserIsTypingEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationSeenEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationSeenAdminEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getNewCommentEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getNewContentEvent	(Ljava/lang/String;J)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getNewNoteEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationAssignedEvent	(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationClosedEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationReopenedEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationTitleGeneratedEvent	(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getConversationPartTokenEvent	(Ljava/lang/String;Ljava/lang/String;)Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getUserPresenceEvent	()Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getPingEvent	()Lio/intercom/android/nexus/NexusEvent;	9		
+M	io/intercom/android/nexus/NexusEvent	getSubscribeEvent	(Ljava/util/List;)Lio/intercom/android/nexus/NexusEvent;	9	(Ljava/util/List<Ljava/lang/String;>;)Lio/intercom/android/nexus/NexusEvent;	
+M	io/intercom/android/nexus/NexusEvent	getUnsubscribeEvent	(Ljava/util/List;)Lio/intercom/android/nexus/NexusEvent;	9	(Ljava/util/List<Ljava/lang/String;>;)Lio/intercom/android/nexus/NexusEvent;	
+M	io/intercom/android/nexus/NexusEvent	conversationTopics	(Ljava/lang/String;)Ljava/util/List;	10	(Ljava/lang/String;)Ljava/util/List<Ljava/lang/String;>;	
+C	io/intercom/android/nexus/NexusEventPropagator	52	32	java/lang/Object		io/intercom/android/nexus/NexusListener
+F	io/intercom/android/nexus/NexusEventPropagator	cache	Landroid/util/LruCache;	18	Landroid/util/LruCache<Ljava/lang/String;Ljava/lang/Boolean;>;
+F	io/intercom/android/nexus/NexusEventPropagator	listeners	Ljava/util/List;	18	Ljava/util/List<Lio/intercom/android/nexus/NexusListener;>;
+F	io/intercom/android/nexus/NexusEventPropagator	twig	Lcom/intercom/twig/Twig;	18	
+M	io/intercom/android/nexus/NexusEventPropagator	<init>	(Lcom/intercom/twig/Twig;)V	1		
+M	io/intercom/android/nexus/NexusEventPropagator	addListener	(Lio/intercom/android/nexus/NexusListener;)V	0		
+M	io/intercom/android/nexus/NexusEventPropagator	removeListener	(Lio/intercom/android/nexus/NexusListener;)V	0		
+M	io/intercom/android/nexus/NexusEventPropagator	cacheEvent	(Lio/intercom/android/nexus/NexusEvent;)V	0		
+M	io/intercom/android/nexus/NexusEventPropagator	notifyEvent	(Lio/intercom/android/nexus/NexusEvent;)V	1		
+M	io/intercom/android/nexus/NexusEventPropagator	onConnect	()V	1		
+M	io/intercom/android/nexus/NexusEventPropagator	onConnectFailed	()V	1		
+M	io/intercom/android/nexus/NexusEventPropagator	onShutdown	()V	1		
+C	io/intercom/android/nexus/NexusEventType$1	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$1	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$1	io/intercom/android/nexus/NexusEventType$1			16400
+M	io/intercom/android/nexus/NexusEventType$1	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$1	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$10	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$10	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$10	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$10	io/intercom/android/nexus/NexusEventType$10			16400
+M	io/intercom/android/nexus/NexusEventType$10	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$10	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$11	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$11	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$11	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$11	io/intercom/android/nexus/NexusEventType$11			16400
+M	io/intercom/android/nexus/NexusEventType$11	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$11	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$12	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$12	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$12	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$12	io/intercom/android/nexus/NexusEventType$12			16400
+M	io/intercom/android/nexus/NexusEventType$12	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$12	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$13	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$13	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$13	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$13	io/intercom/android/nexus/NexusEventType$13			16400
+M	io/intercom/android/nexus/NexusEventType$13	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$13	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$14	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$14	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$14	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$14	io/intercom/android/nexus/NexusEventType$14			16400
+M	io/intercom/android/nexus/NexusEventType$14	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$14	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$15	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$15	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$15	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$15	io/intercom/android/nexus/NexusEventType$15			16400
+M	io/intercom/android/nexus/NexusEventType$15	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$15	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$16	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$16	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$16	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$16	io/intercom/android/nexus/NexusEventType$16			16400
+M	io/intercom/android/nexus/NexusEventType$16	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$16	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$17	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$17	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$17	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$17	io/intercom/android/nexus/NexusEventType$17			16400
+M	io/intercom/android/nexus/NexusEventType$17	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$17	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$18	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$18	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$18	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$18	io/intercom/android/nexus/NexusEventType$18			16400
+M	io/intercom/android/nexus/NexusEventType$18	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$18	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$19	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$19	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$19	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$19	io/intercom/android/nexus/NexusEventType$19			16400
+M	io/intercom/android/nexus/NexusEventType$19	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$19	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$2	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$2	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$2	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$2	io/intercom/android/nexus/NexusEventType$2			16400
+M	io/intercom/android/nexus/NexusEventType$2	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$2	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$20	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$20	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$20	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$20	io/intercom/android/nexus/NexusEventType$20			16400
+M	io/intercom/android/nexus/NexusEventType$20	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$20	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$21	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$21	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$21	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$21	io/intercom/android/nexus/NexusEventType$21			16400
+M	io/intercom/android/nexus/NexusEventType$21	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$21	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$22	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$22	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$22	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$22	io/intercom/android/nexus/NexusEventType$22			16400
+M	io/intercom/android/nexus/NexusEventType$22	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$22	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$23	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$23	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$23	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$23	io/intercom/android/nexus/NexusEventType$23			16400
+M	io/intercom/android/nexus/NexusEventType$23	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$23	toStringEncodedJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Ljava/lang/String;	4		
+C	io/intercom/android/nexus/NexusEventType$3	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$3	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$3	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$3	io/intercom/android/nexus/NexusEventType$3			16400
+M	io/intercom/android/nexus/NexusEventType$3	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$3	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$4	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$4	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$4	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$4	io/intercom/android/nexus/NexusEventType$4			16400
+M	io/intercom/android/nexus/NexusEventType$4	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$4	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$5	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$5	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$5	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$5	io/intercom/android/nexus/NexusEventType$5			16400
+M	io/intercom/android/nexus/NexusEventType$5	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$5	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$6	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$6	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$6	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$6	io/intercom/android/nexus/NexusEventType$6			16400
+M	io/intercom/android/nexus/NexusEventType$6	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$6	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$7	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$7	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$7	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$7	io/intercom/android/nexus/NexusEventType$7			16400
+M	io/intercom/android/nexus/NexusEventType$7	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$7	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$8	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$8	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$8	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$8	io/intercom/android/nexus/NexusEventType$8			16400
+M	io/intercom/android/nexus/NexusEventType$8	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$8	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType$9	52	16432	io/intercom/android/nexus/NexusEventType		
+E	io/intercom/android/nexus/NexusEventType$9	io/intercom/android/nexus/NexusEventType		
+I	io/intercom/android/nexus/NexusEventType$9	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType$9	io/intercom/android/nexus/NexusEventType$9			16400
+M	io/intercom/android/nexus/NexusEventType$9	<init>	(Ljava/lang/String;I)V	0		
+M	io/intercom/android/nexus/NexusEventType$9	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+C	io/intercom/android/nexus/NexusEventType	52	16417	java/lang/Enum	Ljava/lang/Enum<Lio/intercom/android/nexus/NexusEventType;>;	
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$1			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$2			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$3			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$4			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$5			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$6			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$7			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$8			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$9			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$10			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$11			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$12			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$13			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$14			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$15			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$16			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$17			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$18			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$19			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$20			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$21			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$22			16400
+I	io/intercom/android/nexus/NexusEventType	io/intercom/android/nexus/NexusEventType$23			16400
+F	io/intercom/android/nexus/NexusEventType	NewComment	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	NewContent	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ConversationSeen	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	UserIsTyping	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	AdminIsTyping	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	AdminIsTypingANote	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	NewNote	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ConversationAssigned	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ConversationClosed	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ConversationReopened	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ConversationTitleGenerated	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	UserPresence	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	Ping	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	UserContentSeenByAdmin	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	Subscribe	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	Unsubscribe	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ThreadAssigned	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ThreadClosed	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ThreadReopened	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ThreadUpdated	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ThreadCreated	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	ConversationPartToken	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	UNKNOWN	Lio/intercom/android/nexus/NexusEventType;	16409	
+F	io/intercom/android/nexus/NexusEventType	$VALUES	[Lio/intercom/android/nexus/NexusEventType;	4122	
+M	io/intercom/android/nexus/NexusEventType	values	()[Lio/intercom/android/nexus/NexusEventType;	9		
+M	io/intercom/android/nexus/NexusEventType	valueOf	(Ljava/lang/String;)Lio/intercom/android/nexus/NexusEventType;	9		
+M	io/intercom/android/nexus/NexusEventType	<init>	(Ljava/lang/String;I)V	2	()V	
+M	io/intercom/android/nexus/NexusEventType	toStringEncodedJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Ljava/lang/String;	4		
+M	io/intercom/android/nexus/NexusEventType	toJsonObject	(Lio/intercom/android/nexus/NexusEvent;)Lorg/json/JSONObject;	4		org/json/JSONException
+M	io/intercom/android/nexus/NexusEventType	safeValueOf	(Ljava/lang/String;)Lio/intercom/android/nexus/NexusEventType;	9		
+M	io/intercom/android/nexus/NexusEventType	$values	()[Lio/intercom/android/nexus/NexusEventType;	4106		
+P	io/intercom/android/nexus/NexusEventType	$values	()[Lio/intercom/android/nexus/NexusEventType;	3ffd05d5994f930d40d02831d9badb67491b637818948bed523f75ea7b7164e0
+M	io/intercom/android/nexus/NexusEventType	<init>	(Ljava/lang/String;ILio/intercom/android/nexus/NexusEventType$1;)V	4096		
+M	io/intercom/android/nexus/NexusEventType	<clinit>	()V	8		
+C	io/intercom/android/nexus/NexusListener	52	1537	java/lang/Object		
+M	io/intercom/android/nexus/NexusListener	notifyEvent	(Lio/intercom/android/nexus/NexusEvent;)V	1025		
+M	io/intercom/android/nexus/NexusListener	onConnect	()V	1025		
+M	io/intercom/android/nexus/NexusListener	onConnectFailed	()V	1025		
+M	io/intercom/android/nexus/NexusListener	onShutdown	()V	1025		
+C	io/intercom/android/nexus/NexusSocket$1	52	32	java/lang/Object		java/lang/Runnable
+E	io/intercom/android/nexus/NexusSocket$1	io/intercom/android/nexus/NexusSocket		
+I	io/intercom/android/nexus/NexusSocket$1	io/intercom/android/nexus/NexusSocket$1			0
+F	io/intercom/android/nexus/NexusSocket$1	this$0	Lio/intercom/android/nexus/NexusSocket;	4112	
+M	io/intercom/android/nexus/NexusSocket$1	<init>	(Lio/intercom/android/nexus/NexusSocket;)V	0		
+M	io/intercom/android/nexus/NexusSocket$1	run	()V	1		
+C	io/intercom/android/nexus/NexusSocket$2	52	32	java/lang/Object		java/lang/Runnable
+E	io/intercom/android/nexus/NexusSocket$2	io/intercom/android/nexus/NexusSocket	scheduleReconnect	()V
+I	io/intercom/android/nexus/NexusSocket$2	io/intercom/android/nexus/NexusSocket$2			0
+F	io/intercom/android/nexus/NexusSocket$2	this$0	Lio/intercom/android/nexus/NexusSocket;	4112	
+M	io/intercom/android/nexus/NexusSocket$2	<init>	(Lio/intercom/android/nexus/NexusSocket;)V	0		
+M	io/intercom/android/nexus/NexusSocket$2	run	()V	1		
+C	io/intercom/android/nexus/NexusSocket$3	52	32	okhttp3/WebSocketListener		
+E	io/intercom/android/nexus/NexusSocket$3	io/intercom/android/nexus/NexusSocket		
+I	io/intercom/android/nexus/NexusSocket$3	io/intercom/android/nexus/NexusSocket$3			0
+F	io/intercom/android/nexus/NexusSocket$3	this$0	Lio/intercom/android/nexus/NexusSocket;	4112	
+M	io/intercom/android/nexus/NexusSocket$3	<init>	(Lio/intercom/android/nexus/NexusSocket;)V	0		
+M	io/intercom/android/nexus/NexusSocket$3	onOpen	(Lokhttp3/WebSocket;Lokhttp3/Response;)V	1		
+M	io/intercom/android/nexus/NexusSocket$3	onMessage	(Lokhttp3/WebSocket;Ljava/lang/String;)V	1		
+M	io/intercom/android/nexus/NexusSocket$3	parseJsonString	(Ljava/lang/String;)V	2		
+M	io/intercom/android/nexus/NexusSocket$3	onMessage	(Lokhttp3/WebSocket;Lokio/ByteString;)V	1		
+M	io/intercom/android/nexus/NexusSocket$3	onClosing	(Lokhttp3/WebSocket;ILjava/lang/String;)V	1		
+M	io/intercom/android/nexus/NexusSocket$3	onClosed	(Lokhttp3/WebSocket;ILjava/lang/String;)V	1		
+M	io/intercom/android/nexus/NexusSocket$3	onFailure	(Lokhttp3/WebSocket;Ljava/lang/Throwable;Lokhttp3/Response;)V	1		
+C	io/intercom/android/nexus/NexusSocket$4	52	32	java/lang/Object		okhttp3/WebSocket
+E	io/intercom/android/nexus/NexusSocket$4	io/intercom/android/nexus/NexusSocket		
+I	io/intercom/android/nexus/NexusSocket$4	io/intercom/android/nexus/NexusSocket$4			0
+M	io/intercom/android/nexus/NexusSocket$4	<init>	()V	0		
+M	io/intercom/android/nexus/NexusSocket$4	request	()Lokhttp3/Request;	1		
+M	io/intercom/android/nexus/NexusSocket$4	queueSize	()J	1		
+M	io/intercom/android/nexus/NexusSocket$4	send	(Ljava/lang/String;)Z	1		
+M	io/intercom/android/nexus/NexusSocket$4	send	(Lokio/ByteString;)Z	1		
+M	io/intercom/android/nexus/NexusSocket$4	close	(ILjava/lang/String;)Z	1		
+M	io/intercom/android/nexus/NexusSocket$4	cancel	()V	1		
+C	io/intercom/android/nexus/NexusSocket	52	32	java/lang/Object		
+I	io/intercom/android/nexus/NexusSocket	io/intercom/android/nexus/NexusSocket$1			0
+I	io/intercom/android/nexus/NexusSocket	io/intercom/android/nexus/NexusSocket$3			0
+I	io/intercom/android/nexus/NexusSocket	okhttp3/Request$Builder	okhttp3/Request	Builder	9
+I	io/intercom/android/nexus/NexusSocket	io/intercom/android/nexus/NexusSocket$2			0
+I	io/intercom/android/nexus/NexusSocket	io/intercom/android/nexus/NexusSocket$4			0
+F	io/intercom/android/nexus/NexusSocket	OK_CLIENT_DISCONNECT	I	26	
+F	io/intercom/android/nexus/NexusSocket	N_TIMEOUT_DISCONNECT	I	26	
+F	io/intercom/android/nexus/NexusSocket	MAX_RECONNECT_TIME_SECONDS	I	26	
+F	io/intercom/android/nexus/NexusSocket	HEADER	Ljava/lang/String;	26	
+F	io/intercom/android/nexus/NexusSocket	listener	Lio/intercom/android/nexus/NexusListener;	18	
+F	io/intercom/android/nexus/NexusSocket	topicProvider	Lio/intercom/android/nexus/NexusTopicProvider;	18	
+F	io/intercom/android/nexus/NexusSocket	timeoutExecutor	Ljava/util/concurrent/ScheduledExecutorService;	18	
+F	io/intercom/android/nexus/NexusSocket	client	Lokhttp3/OkHttpClient;	18	
+F	io/intercom/android/nexus/NexusSocket	twig	Lcom/intercom/twig/Twig;	18	
+F	io/intercom/android/nexus/NexusSocket	url	Ljava/lang/String;	18	
+F	io/intercom/android/nexus/NexusSocket	connectionTimeoutSeconds	J	18	
+F	io/intercom/android/nexus/NexusSocket	shouldSendPing	Z	18	
+F	io/intercom/android/nexus/NexusSocket	socket	Lokhttp3/WebSocket;	2	
+F	io/intercom/android/nexus/NexusSocket	reconnectFuture	Ljava/util/concurrent/ScheduledFuture;	2	
+F	io/intercom/android/nexus/NexusSocket	timeoutFuture	Ljava/util/concurrent/ScheduledFuture;	2	
+F	io/intercom/android/nexus/NexusSocket	timeoutRunnable	Ljava/lang/Runnable;	18	
+F	io/intercom/android/nexus/NexusSocket	lastReconnectAt	J	2	
+F	io/intercom/android/nexus/NexusSocket	reconnectAttempts	I	2	
+F	io/intercom/android/nexus/NexusSocket	webSocketListener	Lokhttp3/WebSocketListener;	18	
+F	io/intercom/android/nexus/NexusSocket	CLOSED_SOCKET	Lokhttp3/WebSocket;	26	
+M	io/intercom/android/nexus/NexusSocket	<init>	(Ljava/lang/String;IZLcom/intercom/twig/Twig;Ljava/util/concurrent/ScheduledExecutorService;Lokhttp3/OkHttpClient;Lio/intercom/android/nexus/NexusListener;Lio/intercom/android/nexus/NexusTopicProvider;)V	0		
+M	io/intercom/android/nexus/NexusSocket	connect	()V	0		
+M	io/intercom/android/nexus/NexusSocket	fire	(Ljava/lang/String;)V	0		
+M	io/intercom/android/nexus/NexusSocket	disconnect	()V	0		
+M	io/intercom/android/nexus/NexusSocket	isConnected	()Z	0		
+M	io/intercom/android/nexus/NexusSocket	disconnect	(ILjava/lang/String;)V	2		
+M	io/intercom/android/nexus/NexusSocket	timedOut	()V	2		
+M	io/intercom/android/nexus/NexusSocket	resetTimeout	()V	2		
+M	io/intercom/android/nexus/NexusSocket	scheduleReconnect	()V	2		
+M	io/intercom/android/nexus/NexusSocket	modifyReconnectAttempts	()V	2		
+M	io/intercom/android/nexus/NexusSocket	shutdown	()V	2		
+M	io/intercom/android/nexus/NexusSocket	calculateReconnectTimerInSeconds	(I)J	8		
+M	io/intercom/android/nexus/NexusSocket	shouldReconnectFromFailure	(Ljava/lang/Throwable;Lokhttp3/Response;)Z	8		
+M	io/intercom/android/nexus/NexusSocket	isAndroidLifecycleException	(Ljava/lang/Throwable;)Z	10		
+M	io/intercom/android/nexus/NexusSocket	access$000	(Lio/intercom/android/nexus/NexusSocket;)V	4104		
+P	io/intercom/android/nexus/NexusSocket	access$000	(Lio/intercom/android/nexus/NexusSocket;)V	163f5cb9fa2d2687b44dd6490cdf07dcb99d9a81c660542ea783382fd1707ae6
+M	io/intercom/android/nexus/NexusSocket	access$102	(Lio/intercom/android/nexus/NexusSocket;Ljava/util/concurrent/ScheduledFuture;)Ljava/util/concurrent/ScheduledFuture;	4104		
+P	io/intercom/android/nexus/NexusSocket	access$102	(Lio/intercom/android/nexus/NexusSocket;Ljava/util/concurrent/ScheduledFuture;)Ljava/util/concurrent/ScheduledFuture;	1f0eaed91aff6ef4d5ffa6216a73d7bf1f52fef31fa65ba58a89c9a5fa55c112
+M	io/intercom/android/nexus/NexusSocket	access$200	(Lio/intercom/android/nexus/NexusSocket;)Lcom/intercom/twig/Twig;	4104		
+P	io/intercom/android/nexus/NexusSocket	access$200	(Lio/intercom/android/nexus/NexusSocket;)Lcom/intercom/twig/Twig;	634db8885bd90b34c6f3d07674e13a10081e30aac058076bc637d570d6b20073
+M	io/intercom/android/nexus/NexusSocket	access$302	(Lio/intercom/android/nexus/NexusSocket;Lokhttp3/WebSocket;)Lokhttp3/WebSocket;	4104		
+P	io/intercom/android/nexus/NexusSocket	access$302	(Lio/intercom/android/nexus/NexusSocket;Lokhttp3/WebSocket;)Lokhttp3/WebSocket;	d8645acc78ac385eca2b885c52a885f7c320a4bcb2c37681bcb5625cfa3ba451
+M	io/intercom/android/nexus/NexusSocket	access$400	(Lio/intercom/android/nexus/NexusSocket;)V	4104		
+P	io/intercom/android/nexus/NexusSocket	access$400	(Lio/intercom/android/nexus/NexusSocket;)V	3da09cbb13ffe3ab438049e7b974de9db92bd3db2f19345a6dea07a7881e3657
+M	io/intercom/android/nexus/NexusSocket	access$500	(Lio/intercom/android/nexus/NexusSocket;)Lio/intercom/android/nexus/NexusTopicProvider;	4104		
+P	io/intercom/android/nexus/NexusSocket	access$500	(Lio/intercom/android/nexus/NexusSocket;)Lio/intercom/android/nexus/NexusTopicProvider;	56303d7b6551f12037d3acf9c0081af1e5fb1a54dd7492f4c063e0707778594b
+M	io/intercom/android/nexus/NexusSocket	access$600	(Lio/intercom/android/nexus/NexusSocket;)Z	4104		
+P	io/intercom/android/nexus/NexusSocket	access$600	(Lio/intercom/android/nexus/NexusSocket;)Z	1053232f245b0a251c7bb8b60a91da644adf266b15af677d18207635f7f13cf2
+M	io/intercom/android/nexus/NexusSocket	access$700	(Lio/intercom/android/nexus/NexusSocket;)Lio/intercom/android/nexus/NexusListener;	4104		
+P	io/intercom/android/nexus/NexusSocket	access$700	(Lio/intercom/android/nexus/NexusSocket;)Lio/intercom/android/nexus/NexusListener;	efde12eef230af4a65eeff473a3a50ecee80bb794faa122b511acaed60e780cb
+M	io/intercom/android/nexus/NexusSocket	access$800	(Lio/intercom/android/nexus/NexusSocket;)V	4104		
+P	io/intercom/android/nexus/NexusSocket	access$800	(Lio/intercom/android/nexus/NexusSocket;)V	d18bc1f027e09cc3dfd3c11bf17ee62f33b77401ea006a3d93e5a12e0fe94798
+M	io/intercom/android/nexus/NexusSocket	access$900	(Lio/intercom/android/nexus/NexusSocket;)V	4104		
+P	io/intercom/android/nexus/NexusSocket	access$900	(Lio/intercom/android/nexus/NexusSocket;)V	f7bb7134761d97e5be7152ce565f63d1e705abc3d814d2c21f6ca83093bfba25
+M	io/intercom/android/nexus/NexusSocket	<clinit>	()V	8		
+C	io/intercom/android/nexus/NexusTopicProvider	52	1536	java/lang/Object		
+M	io/intercom/android/nexus/NexusTopicProvider	getTopics	()Ljava/util/List;	1025	()Ljava/util/List<Ljava/lang/String;>;	
+C	io/intercom/android/nexus/package-info	52	5632	java/lang/Object		
+C	com/intercom/twig/BuildConfig	51	49	java/lang/Object		
+F	com/intercom/twig/BuildConfig	DEBUG	Z	25	
+F	com/intercom/twig/BuildConfig	APPLICATION_ID	Ljava/lang/String;	25	
+F	com/intercom/twig/BuildConfig	BUILD_TYPE	Ljava/lang/String;	25	
+F	com/intercom/twig/BuildConfig	FLAVOR	Ljava/lang/String;	25	
+F	com/intercom/twig/BuildConfig	VERSION_CODE	I	25	
+F	com/intercom/twig/BuildConfig	VERSION_NAME	Ljava/lang/String;	25	
+M	com/intercom/twig/BuildConfig	<init>	()V	1		
+C	com/intercom/twig/Twig$LogLevel	51	9729	java/lang/Object		java/lang/annotation/Annotation
+I	com/intercom/twig/Twig$LogLevel	com/intercom/twig/Twig$LogLevel	com/intercom/twig/Twig	LogLevel	9737
+C	com/intercom/twig/Twig	51	33	java/lang/Object		
+I	com/intercom/twig/Twig	com/intercom/twig/Twig$LogLevel	com/intercom/twig/Twig	LogLevel	9737
+F	com/intercom/twig/Twig	MAX_LOG_LENGTH	I	26	
+F	com/intercom/twig/Twig	tag	Ljava/lang/String;	18	
+F	com/intercom/twig/Twig	logLevel	I	2	
+F	com/intercom/twig/Twig	internalLoggingEnabled	Z	18	
+F	com/intercom/twig/Twig	DISABLED	I	25	
+M	com/intercom/twig/Twig	<init>	(ILjava/lang/String;Z)V	1		
+M	com/intercom/twig/Twig	v	(Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	v	(Ljava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	v	(Ljava/lang/Throwable;)V	1		
+M	com/intercom/twig/Twig	d	(Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	d	(Ljava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	d	(Ljava/lang/Throwable;)V	1		
+M	com/intercom/twig/Twig	i	(Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	i	(Ljava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	i	(Ljava/lang/Throwable;)V	1		
+M	com/intercom/twig/Twig	w	(Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	w	(Ljava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	w	(Ljava/lang/Throwable;)V	1		
+M	com/intercom/twig/Twig	e	(Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	e	(Ljava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	e	(Ljava/lang/Throwable;)V	1		
+M	com/intercom/twig/Twig	wtf	(Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	wtf	(Ljava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	129		
+M	com/intercom/twig/Twig	wtf	(Ljava/lang/Throwable;)V	1		
+M	com/intercom/twig/Twig	internal	(Ljava/lang/String;)V	1		
+M	com/intercom/twig/Twig	internal	(Ljava/lang/String;Ljava/lang/String;)V	1		
+M	com/intercom/twig/Twig	setLogLevel	(I)V	1		
+M	com/intercom/twig/Twig	getLogLevel	()I	0		
+M	com/intercom/twig/Twig	getTag	()Ljava/lang/String;	1		
+M	com/intercom/twig/Twig	prepareLog	(ILjava/lang/Throwable;Ljava/lang/String;[Ljava/lang/Object;)V	130		
+M	com/intercom/twig/Twig	log	(ILjava/lang/String;[Ljava/lang/Object;)V	128		
+M	com/intercom/twig/Twig	log	(ILjava/lang/String;Ljava/lang/String;)V	2		
+M	com/intercom/twig/Twig	printLog	(ILjava/lang/String;Ljava/lang/String;)V	2		
+M	com/intercom/twig/Twig	getStackTraceString	(Ljava/lang/Throwable;)Ljava/lang/String;	2		

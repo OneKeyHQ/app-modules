@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:orientation="vertical">
+
+    <TextView android:id="@+id/rate_your_conversation_text_view"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:text="@string/intercom_rate_your_conversation"
+              android:layout_gravity="center_horizontal"
+              android:textColor="@color/intercom_conversation_rating_text"
+              android:textSize="14sp"
+              android:visibility="gone" />
+
+    <TextView android:id="@+id/intercom_rating_expired_text_view"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:text="@string/intercom_rating_window_closed"
+              android:layout_gravity="center_horizontal"
+              android:textColor="@color/intercom_conversation_rating_text"
+              android:textSize="14sp"
+              android:visibility="gone" />
+
+    <LinearLayout android:id="@+id/intercom_rating_options_layout"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:orientation="horizontal"
+                  android:visibility="gone"/>
+
+    <io.intercom.android.sdk.m5.components.IntercomPrimaryButton
+            android:id="@+id/intercom_rating_tell_us_more_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:paddingTop="6dp"
+            android:visibility="gone" />
+
+    <LinearLayout android:id="@+id/intercom_you_rated_layout"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:layout_gravity="center_horizontal"
+                  android:visibility="gone"
+                  android:paddingBottom="6dp">
+        <LinearLayout android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_gravity="center_horizontal"
+                      android:orientation="horizontal">
+            <TextView android:text="@string/intercom_you_rated_the_conversation"
+                      android:textColor="@color/intercom_conversation_rating_text"
+                      android:textSize="16sp"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content" />
+            <ImageView android:id="@+id/intercom_you_rated_image_view"
+                       android:layout_gravity="center_vertical"
+                       android:paddingLeft="5dp"
+                       android:layout_width="18dp"
+                       android:layout_height="18dp"
+                       android:importantForAccessibility="no"/>
+        </LinearLayout>
+
+        <TextView android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:textSize="14sp"
+                  android:layout_gravity="center_horizontal"
+                  android:text="@string/intercom_thanks_for_letting_us_know"/>
+    </LinearLayout>
+
+</LinearLayout>
