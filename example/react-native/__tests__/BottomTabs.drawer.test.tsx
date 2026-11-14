@@ -72,7 +72,7 @@ describe('native drawer slots', () => {
     expect(drawer.props.enabled).toBe(false);
   });
 
-  it('forwards only the settled boolean, with native progress absent from the API', async () => {
+  it('forwards only the settled boolean, with native progress off unless requested', async () => {
     const onChange = jest.fn();
     await act(() => {
       renderer = ReactTestRenderer.create(
@@ -90,9 +90,38 @@ describe('native drawer slots', () => {
     const drawer = renderer!.root.findByType('NativeDrawer' as any);
     expect(drawer.props.hapticFeedbackEnabled).toBe(true);
     expect(drawer.props.swipeEnabled).toBe(true);
+    expect(drawer.props.progressEventsEnabled).toBe(false);
+    expect(drawer.props.onDrawerProgress).toBeUndefined();
+    expect(drawer.props.colorScheme).toBeUndefined();
     act(() => drawer.props.onDrawerOpenChange({ nativeEvent: { open: true } }));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('passes progress handlers, a replacement host and the color scheme to native as is', async () => {
+    const onProgress = jest.fn();
+    const Host = (props: React.PropsWithChildren<object>) => (
+      <View testID="drawer-host">{props.children}</View>
+    );
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <BottomTabs
+          navigationState={{ index: 0, routes: [{ key: 'home' }] }}
+          renderScene={() => <View />}
+          onIndexChange={() => {}}
+          renderDrawerContent={menu}
+          onDrawerProgress={onProgress}
+          drawerHostComponent={Host as any}
+          drawerColorScheme="dark"
+        />,
+      );
+    });
+    expect(renderer!.root.findAllByType('NativeDrawer' as any)).toHaveLength(0);
+    const host = renderer!.root.findByType(Host);
+    expect(host.props.progressEventsEnabled).toBe(true);
+    expect(host.props.onDrawerProgress).toBe(onProgress);
+    expect(host.props.colorScheme).toBe('dark');
+    expect(renderer!.root.findByProps({ testID: 'menu-content' })).toBeTruthy();
   });
 
   it('Web omits the menu and returns only the foreground', async () => {

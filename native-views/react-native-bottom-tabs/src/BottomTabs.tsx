@@ -129,6 +129,24 @@ interface Props<Route extends BaseRoute> {
   /** Reports a completed user target so the external open state can follow it. */
   onDrawerOpenChange?: (open: boolean) => void;
   /**
+   * The drawer's visual progress (0 closed, 1 open) on every frame it moves.
+   * Passed to the drawer host as is, so a Reanimated handler can run it on the
+   * UI thread when `drawerHostComponent` is an animated component. Native sends
+   * no progress events without this handler.
+   */
+  onDrawerProgress?: (
+    event: NativeSyntheticEvent<Readonly<{ progress: number }>>
+  ) => void;
+  /** Host for the native drawer, e.g. `Animated.createAnimatedComponent(BottomTabsDrawerNative)`. */
+  drawerHostComponent?: React.ComponentType<
+    React.ComponentProps<typeof NativeBottomTabsDrawer>
+  >;
+  /**
+   * Palette for the page's overlay, shadow and edge while the drawer is open.
+   * Defaults to the platform appearance; pass the app theme when it can differ.
+   */
+  drawerColorScheme?: "light" | "dark";
+  /**
    * A tab bar style that adapts to each platform.
    *
    * Tab views using the sidebar adaptable style have an appearance
@@ -378,6 +396,9 @@ const BottomTabs = <Route extends BaseRoute>({
   drawerOpen = false,
   drawerSwipeEnabled = false,
   onDrawerOpenChange,
+  onDrawerProgress,
+  drawerHostComponent: DrawerHost = NativeBottomTabsDrawer,
+  drawerColorScheme,
   rippleColor,
   tabBarActiveTintColor: activeTintColor,
   tabBarInactiveTintColor: inactiveTintColor,
@@ -607,16 +628,19 @@ const BottomTabs = <Route extends BaseRoute>({
 
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
-      <NativeBottomTabsDrawer
+      <DrawerHost
         style={styles.fullWidth}
         enabled={!!renderDrawerContent}
         open={drawerOpen}
         swipeEnabled={drawerSwipeEnabled}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
         bottomBarHeight={tabBarHeight ?? 0}
+        colorScheme={drawerColorScheme}
+        progressEventsEnabled={onDrawerProgress != null}
         onDrawerOpenChange={(event) =>
           onDrawerOpenChange?.(event.nativeEvent.open)
         }
+        onDrawerProgress={onDrawerProgress}
       >
         <View collapsable={false} style={styles.drawerMenu}>
           {Platform.OS !== "web" ? renderDrawerContent?.() : null}
@@ -722,7 +746,7 @@ const BottomTabs = <Route extends BaseRoute>({
             </View>
           ) : null}
         </View>
-      </NativeBottomTabsDrawer>
+      </DrawerHost>
     </BottomTabBarHeightContext.Provider>
   );
 };

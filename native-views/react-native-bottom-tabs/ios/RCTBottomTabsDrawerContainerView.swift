@@ -23,11 +23,29 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   @objc var swipeEnabled = false
   @objc var hapticFeedbackEnabled = false
   @objc var bottomBarHeight: Double = 0
+  /// "light" or "dark" forces that palette; anything else follows the trait collection.
+  @objc var colorScheme = "system" {
+    didSet {
+      guard colorScheme != oldValue else { return }
+      applyAppearance()
+      setProgress(appliedValue, overshoot: appliedOvershoot)
+    }
+  }
+  @objc var progressEventsEnabled = false {
+    didSet {
+      guard progressEventsEnabled != oldValue else { return }
+      // A new subscriber starts from the current position.
+      reportedProgress = -1
+      if progressEventsEnabled { reportProgress() }
+    }
+  }
   @objc var onDrawerOpenChange: ((Bool) -> Void)?
+  @objc var onDrawerProgress: ((Double) -> Void)?
 
   private let menu = UIView()
-  private let menuShade = UIView()
   private let foreground = UIView()
+  // Clips the page to its rounded corners; the unclipped foreground casts the shadow.
+  private let pageClip = UIView()
   private let foregroundContent = UIView()
   private let dim = UIButton(type: .custom)
   private var slots: [UIView] = []
@@ -45,28 +63,78 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private var animationTarget = false
   private var animationUser = false
   private var previousSize = CGSize.zero
+  private var animationDuration: CFTimeInterval = 0
+  private var scrimMaxAlpha: CGFloat = 0.58
+  private var pageShadowOpacity: Float = 0
+  private var pageHairline = false
+  private var reportedProgress: CGFloat = -1
+  // The last requested position, kept so a layout pass mid-settle does not
+  // clip the spring's overshoot back to fully open.
+  private var appliedValue: CGFloat = 0
+  private var appliedOvershoot = false
+  // Running speed of the current animation, for handing off to a retarget.
+  private var trackedValue: CGFloat = 0
+  private var trackedTime: CFTimeInterval = 0
+  private var trackedVelocity: CGFloat = 0
+
+  // Measured frame by frame from the reference recording: the page travels
+  // 80% of the width, keeps a fixed display-like corner, washes toward the
+  // background linearly, and casts a soft shadow onto the menu below it (a
+  // hairline in dark mode).
+  private static let menuWidthFraction: CGFloat = 0.8
+  private static let pageCornerRadius: CGFloat = 62
+  private static let menuMinScale: CGFloat = 0.97
+  // Released drags settle on a slightly underdamped spring: about 2pt of
+  // overshoot after a fling, none after a slow release.
+  private static let springFrequency: CGFloat = 25.5
+  private static let springDamping: CGFloat = 0.84
+  private var menuWidth: CGFloat { bounds.width * Self.menuWidthFraction }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
     clipsToBounds = true
     addSubview(menu)
-    menuShade.backgroundColor = .black
-    menuShade.isUserInteractionEnabled = false
-    menu.addSubview(menuShade)
     addSubview(foreground)
-    foreground.addSubview(foregroundContent)
-    dim.backgroundColor = UIColor(white: 28.0 / 255.0, alpha: 1)
+    foreground.addSubview(pageClip)
+    pageClip.addSubview(foregroundContent)
     dim.accessibilityLabel = NSLocalizedString("Close menu", comment: "Close the tab drawer")
     dim.addTarget(self, action: #selector(closeFromUser), for: .touchUpInside)
-    foreground.addSubview(dim)
-    foreground.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-    foreground.layer.cornerCurve = .circular
-    foreground.clipsToBounds = true
+    pageClip.addSubview(dim)
+    pageClip.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+    pageClip.layer.cornerCurve = .circular
+    pageClip.clipsToBounds = true
+    foreground.layer.shadowColor = UIColor.black.cgColor
+    foreground.layer.shadowOffset = .zero
+    foreground.layer.shadowRadius = 18
+    foreground.layer.shadowOpacity = 0
     pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
     pan.maximumNumberOfTouches = 1
     pan.delegate = self
     addGestureRecognizer(pan)
+    applyAppearance()
     setProgress(0)
+  }
+
+  private func applyAppearance() {
+    let dark: Bool
+    switch colorScheme {
+    case "dark": dark = true
+    case "light": dark = false
+    default: dark = traitCollection.userInterfaceStyle == .dark
+    }
+    // The page washes toward white in light mode and toward gray in dark mode.
+    dim.backgroundColor = dark ? UIColor(white: 36.0 / 255.0, alpha: 1) : .white
+    scrimMaxAlpha = dark ? 0.58 : 0.5
+    pageShadowOpacity = dark ? 0 : 0.16
+    pageHairline = dark
+    pageClip.layer.borderColor = UIColor(white: 1, alpha: 0.17).cgColor
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    guard traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) else { return }
+    applyAppearance()
+    setProgress(appliedValue, overshoot: appliedOvershoot)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -87,7 +155,6 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     for (index, child) in slots.enumerated() {
       (index == 0 ? menu : foregroundContent).insertSubview(child, at: 0)
     }
-    menu.bringSubviewToFront(menuShade)
     setNeedsLayout()
   }
 
@@ -104,14 +171,19 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     }
     menu.transform = .identity
     foreground.transform = .identity
-    menu.frame = CGRect(x: 0, y: 0, width: bounds.width * 0.78, height: bounds.height)
+    menu.frame = CGRect(x: 0, y: 0, width: menuWidth, height: bounds.height)
     foreground.frame = bounds
-    foregroundContent.frame = foreground.bounds
-    dim.frame = foreground.bounds
-    menuShade.frame = menu.bounds
+    pageClip.frame = foreground.bounds
+    foregroundContent.frame = pageClip.bounds
+    dim.frame = pageClip.bounds
+    foreground.layer.shadowPath = UIBezierPath(
+      roundedRect: foreground.bounds,
+      byRoundingCorners: [.topLeft, .bottomLeft],
+      cornerRadii: CGSize(width: Self.pageCornerRadius, height: Self.pageCornerRadius)
+    ).cgPath
     if slots.count > 0 { slots[0].frame = menu.bounds }
     if slots.count > 1 { slots[1].frame = foreground.bounds }
-    setProgress(progress)
+    setProgress(appliedValue, overshoot: appliedOvershoot)
   }
 
   override func didMoveToWindow() {
@@ -137,7 +209,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     guard start.y < bounds.height - CGFloat(max(0, bottomBarHeight)) else { return false }
     guard !isInsideNativeTabBar(touch.view) else { return false }
     touchTarget = touch.view
-    if progress > 0 { return start.x >= bounds.width * 0.78 * progress }
+    if progress > 0 { return start.x >= menuWidth * progress }
     return swipeEnabled && !touchPathContainsExclusiveControl()
   }
 
@@ -150,7 +222,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     let start = CGPoint(x: location.x - translation.x, y: location.y - translation.y)
     guard start.y < bounds.height - CGFloat(max(0, bottomBarHeight)) else { return false }
     if progress > 0 {
-      return start.x >= bounds.width * 0.78 * progress
+      return start.x >= menuWidth * progress
     }
     return swipeEnabled && velocity.x > 0 && !touchPathCanScrollRight()
   }
@@ -253,10 +325,10 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
         settle(to: gestureReturnOpen, velocity: 0, user: false)
         return
       }
-      setProgress(gestureStartProgress + recognizer.translation(in: self).x / max(1, bounds.width * 0.78))
+      setProgress(gestureStartProgress + recognizer.translation(in: self).x / max(1, menuWidth))
     case .ended:
-      let velocity = min(8, max(-8, recognizer.velocity(in: self).x / max(1, bounds.width * 0.78)))
-      settle(to: progress + velocity * 0.12 >= 0.5, velocity: velocity, user: true)
+      let velocity = min(12, max(-12, recognizer.velocity(in: self).x / max(1, menuWidth)))
+      settle(to: progress + velocity * 0.12 >= 0.5, velocity: velocity, user: true, tween: false)
     case .cancelled, .failed:
       if !suppressCancellation { settle(to: gestureReturnOpen, velocity: 0, user: false) }
     default: break
@@ -277,49 +349,153 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     settle(to: false, velocity: 0, user: true)
   }
 
-  private func setProgress(_ value: CGFloat) {
-    progress = min(1, max(0, enabled ? value : 0))
-    foreground.transform = CGAffineTransform(translationX: bounds.width * 0.78 * progress, y: 0)
-    foreground.layer.cornerRadius = 64 * progress
-    dim.alpha = 0.7 * progress
-    dim.isHidden = progress == 0
-    foregroundContent.isUserInteractionEnabled = progress == 0
-    foregroundContent.accessibilityElementsHidden = progress > 0
-    menu.transform = CGAffineTransform(translationX: -0.12 * bounds.width * 0.78 * (1 - progress), y: 0)
-    menuShade.alpha = 0.12 * (1 - progress)
-    menu.isHidden = progress == 0
-    menu.accessibilityElementsHidden = progress == 0
+  private func setProgress(_ value: CGFloat, overshoot: Bool = false) {
+    appliedValue = value
+    appliedOvershoot = overshoot
+    let raw = enabled ? value : 0
+    progress = min(1, max(0, raw))
+    let visible = progress > 0
+    // Only the settle spring may carry the page a few points past open.
+    let travel = overshoot ? min(1.03, max(0, raw)) : progress
+    foreground.transform = CGAffineTransform(translationX: menuWidth * travel, y: 0)
+    // Rounds in over the first 10% so screens with other corner radii never pop.
+    pageClip.layer.cornerRadius = visible ? Self.pageCornerRadius * min(1, progress / 0.1) : 0
+    pageClip.layer.borderWidth = visible && pageHairline ? 1 / max(1, traitCollection.displayScale) : 0
+    foreground.layer.shadowOpacity = visible ? pageShadowOpacity : 0
+    dim.alpha = scrimMaxAlpha * progress
+    dim.isHidden = !visible
+    foregroundContent.isUserInteractionEnabled = !visible
+    foregroundContent.accessibilityElementsHidden = visible
+    // The menu grows from its left-center edge and fades in over whatever is
+    // behind the host, fully visible by 60% open.
+    let minScale = UIAccessibility.isReduceMotionEnabled ? 1 : Self.menuMinScale
+    let scale = minScale + (1 - minScale) * progress
+    menu.transform = CGAffineTransform(translationX: -(1 - scale) * menu.bounds.width / 2, y: 0)
+      .scaledBy(x: scale, y: scale)
+    menu.alpha = min(1, progress / 0.6)
+    menu.isHidden = !visible
+    menu.accessibilityElementsHidden = !visible
+    reportProgress()
   }
 
-  private func settle(to target: Bool, velocity: CGFloat, user: Bool) {
+  private func reportProgress() {
+    guard progressEventsEnabled else { return }
+    if progress != reportedProgress && (abs(progress - reportedProgress) >= 0.002 || progress == 0 || progress == 1) {
+      reportedProgress = progress
+      onDrawerProgress?(Double(progress))
+    }
+  }
+
+  // cubic-bezier(0.55, 0.6, 0.2, 1), fitted to the reference tap open and close.
+  private static func pageCurve(_ x: CGFloat) -> CGFloat {
+    func bezier(_ t: CGFloat, _ p1: CGFloat, _ p2: CGFloat) -> CGFloat {
+      let u = 1 - t
+      return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t
+    }
+    var low: CGFloat = 0
+    var high: CGFloat = 1
+    for _ in 0..<24 {
+      let mid = (low + high) / 2
+      if bezier(mid, 0.55, 0.2) < x { low = mid } else { high = mid }
+    }
+    return bezier((low + high) / 2, 0.6, 1)
+  }
+
+  // Taps and programmatic changes ease over a fixed time; a released drag
+  // keeps its finger velocity through a slightly underdamped spring.
+  private func settle(to requested: Bool, velocity: CGFloat, user: Bool, tween: Bool = true) {
+    let target = enabled && requested
+    // An animation already heading there keeps running; the newer request
+    // still decides whether its completion is a user event.
+    if displayLink != nil && animationTarget == target {
+      animationUser = user
+      return
+    }
+    // Reversing mid-flight continues from the page's on-screen position and
+    // speed, so the motion bends instead of stopping dead.
+    let retarget = displayLink != nil
+    let from = retarget ? appliedValue : progress
+    let carried = retarget ? trackedVelocity : velocity
     stopAnimation()
-    let target = enabled && target
     guard bounds.width > 0, window != nil else {
       stableOpen = target
       setProgress(target ? 1 : 0)
       return
     }
-    if progress == (target ? 1 : 0) {
+    if !retarget && progress == (target ? 1 : 0) {
       finish(target: target, user: user)
       return
     }
-    animationFrom = progress
-    animationVelocity = min(8, max(-8, velocity))
+    if tween && !retarget && UIAccessibility.isReduceMotionEnabled && crossFade(to: target, user: user) {
+      return
+    }
+    animationFrom = from
+    animationVelocity = min(12, max(-12, carried))
     animationTarget = target
     animationUser = user
+    // Closing runs about 20% shorter than opening.
+    let fullDuration: CGFloat = target ? 0.36 : 0.29
+    animationDuration = tween && !retarget ? max(0.12, fullDuration * abs((target ? 1 : 0) - from)) : 0
     animationStart = CACurrentMediaTime()
+    trackedValue = from
+    trackedTime = animationStart
+    trackedVelocity = animationVelocity
     let link = CADisplayLink(target: self, selector: #selector(tick))
     link.add(to: .main, forMode: .common)
     displayLink = link
   }
 
+  // Reduce Motion: taps and programmatic changes cross-fade into place
+  // instead of sliding the whole page.
+  private func crossFade(to target: Bool, user: Bool) -> Bool {
+    guard let snapshot = snapshotView(afterScreenUpdates: false) else { return false }
+    snapshot.frame = bounds
+    snapshot.isUserInteractionEnabled = false
+    addSubview(snapshot)
+    finish(target: target, user: user)
+    UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut], animations: {
+      snapshot.alpha = 0
+    }, completion: { _ in
+      snapshot.removeFromSuperview()
+    })
+    return true
+  }
+
   @objc private func tick() {
-    let elapsed = CGFloat(CACurrentMediaTime() - animationStart)
+    let now = CACurrentMediaTime()
+    let elapsed = CGFloat(now - animationStart)
     let target: CGFloat = animationTarget ? 1 : 0
-    let a = animationFrom - target
-    let b = animationVelocity + 22 * a
-    setProgress(target + (a + b * elapsed) * exp(-22 * elapsed))
-    if elapsed >= 0.5 {
+    let value: CGFloat
+    let isSpring = animationDuration == 0
+    var tweenDone = false
+    if !isSpring {
+      let x = min(1, elapsed / CGFloat(animationDuration))
+      value = animationFrom + (target - animationFrom) * Self.pageCurve(x)
+      tweenDone = x >= 1
+    } else {
+      let w = Self.springFrequency
+      let a = animationFrom - target
+      if UIAccessibility.isReduceMotionEnabled {
+        // Critically damped: same speed, no bounce.
+        value = target + (a + (animationVelocity + w * a) * elapsed) * exp(-w * elapsed)
+      } else {
+        let z = Self.springDamping
+        let wd = w * sqrt(1 - z * z)
+        let decay = exp(-z * w * elapsed)
+        value = target + decay * (a * cos(wd * elapsed) + (animationVelocity + z * w * a) / wd * sin(wd * elapsed))
+      }
+    }
+    if now > trackedTime {
+      trackedVelocity = (value - trackedValue) / CGFloat(now - trackedTime)
+    }
+    trackedValue = value
+    trackedTime = now
+    setProgress(value, overshoot: isSpring)
+    // A spring ends once it is visually at rest, not after a fixed time.
+    let done = isSpring
+      ? (abs(value - target) < 0.0005 && abs(trackedVelocity) < 0.02) || elapsed >= 0.6
+      : tweenDone
+    if done {
       let target = animationTarget
       let user = animationUser
       stopAnimation()
