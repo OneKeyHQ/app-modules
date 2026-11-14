@@ -205,14 +205,16 @@ completion. When the system asks for less motion (iOS Reduce Motion; Android
 with animator duration scale 0), the menu does not scale. On iOS a tap,
 close or prop change from rest then cross-fades from a snapshot to the final
 state over 200 ms instead of moving, and a released drag settles critically
-damped (damping ratio 1) without travelling past its target. A newer
-cross-fade replaces the previous snapshot (capturing it as currently shown); a
-request for the target already being faded to leaves the fade running; a drag,
-an animated settle, disabling, detach or a resize removes the snapshot. A user
-transition that cross-fades reports `onDrawerOpenChange` and its haptic when
-the fade ends, not when it starts. A newer transition, disabling or detach
-discards that pending report; a drag or a resize reports it at once; a newer
-non-user request for the same target cancels it.
+damped (damping ratio 1) without travelling past its target. A cross-fade is
+an in-flight transition like an animation: its final state shows at once under
+the snapshot, but the stable state, `onDrawerOpenChange` and the haptic follow
+only when the fade ends. A newer cross-fade replaces the previous snapshot
+(capturing it as currently shown). A request for the target already being
+faded to leaves the fade running and only replaces whether its completion is a
+user transition. A touch, an animated settle, a newer cross-fade, disabling or
+detach removes the snapshot without completing it, as a touch does a running
+animation, so a drag that begins during a faded close never receives that
+close's prop echo; a resize completes it at once.
 Android has no separate reduced-motion setting and lands such transitions
 immediately.
 Resize snaps a pending settlement to its target, emitting its user event once
@@ -244,7 +246,13 @@ light and dark wash, the menu's final scale/opacity/layer, and that progress
 events are opt-in, start in sync and end on the stable state; the wrapper tests
 assert that progress stays off without a handler and during the mount commit,
 that the handler, a replacement host and the color scheme reach native
-unchanged, and that the menu slot is 80 percent wide.
+unchanged, and that the menu slot is 80 percent wide. The iOS suite
+`ios/tests/BottomTabsDrawerReduceMotionTests.swift` runs without an app host,
+forcing Reduce Motion and supplying the fade snapshot through internal test
+hooks. It asserts that a user close reports once, after the snapshot is gone;
+that a drag taking over the fade drops the faded close and reports only its own
+release; that a resize lands the fade at once; and that same-target and newer
+requests, disabling and detach take over or drop the pending report.
 Recorded evidence so far: on the iPhone 17 simulator (iOS 26) in the consumer
 app, tap open/close timing, fling overshoot (about 2 points), smooth reversal,
 the corner ramp, the reduced-motion cross-fade, the light/dark palettes and a

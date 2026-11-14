@@ -78,10 +78,16 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private var trackedTime: CFTimeInterval = 0
   private var trackedVelocity: CGFloat = 0
   private var shadowPathRadius: CGFloat = -1
-  // The single snapshot of an in-flight Reduce Motion cross-fade, and the
-  // user transition it reports once it ends.
+  // An in-flight Reduce Motion cross-fade: its one snapshot, the state it
+  // lands on and whether that is a user transition. Like a running settle, it
+  // updates `stableOpen` and reports only when it lands.
   private var fadeSnapshot: UIView?
-  private var fadeCompletion: (target: Bool, changed: Bool)?
+  private var fadeTarget = false
+  private var fadeUser = false
+  // Hooks for native tests: they set Reduce Motion, and run without an app
+  // host, where UIKit cannot snapshot a view.
+  var isReduceMotionEnabled: () -> Bool = { UIAccessibility.isReduceMotionEnabled }
+  var makeFadeSnapshot: (UIView) -> UIView? = { $0.snapshotView(afterScreenUpdates: false) }
 
   // Measured frame by frame from the reference recording: the page travels
   // 80% of the width, keeps a fixed display-like corner, washes toward the
@@ -167,12 +173,13 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   override func layoutSubviews() {
     super.layoutSubviews()
     if previousSize != bounds.size {
+      // A cross-fade's image is of the old size, so it lands at once.
+      completeFade()
       let dragging = pan.state == .began || pan.state == .changed
       let target = displayLink != nil ? animationTarget : (dragging ? gestureReturnOpen : stableOpen)
       let user = displayLink != nil && animationUser && previousSize != .zero
       interruptGesture()
       stopAnimation()
-      removeFadeSnapshot(complete: true)
       finish(target: enabled && (previousSize == .zero ? open : target), user: user)
       previousSize = bounds.size
     }
@@ -321,9 +328,18 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
     switch recognizer.state {
     case .began:
-      gestureReturnOpen = displayLink != nil && !animationUser ? animationTarget : stableOpen
+      // The drag takes over a settle or cross-fade in flight and drops its
+      // completion. Cancelling returns to a programmatic target, else to the
+      // stable state.
+      if displayLink != nil && !animationUser {
+        gestureReturnOpen = animationTarget
+      } else if fadeSnapshot != nil && !fadeUser {
+        gestureReturnOpen = fadeTarget
+      } else {
+        gestureReturnOpen = stableOpen
+      }
       stopAnimation()
-      removeFadeSnapshot(complete: true)
+      removeFadeSnapshot()
       gestureStartProgress = progress
     case .changed:
       guard recognizer.numberOfTouches <= 1 else {
@@ -384,7 +400,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     foregroundContent.accessibilityElementsHidden = visible
     // The menu grows from its left-center edge and fades in over whatever is
     // behind the host, fully visible by 60% open.
-    let minScale = UIAccessibility.isReduceMotionEnabled ? 1 : Self.menuMinScale
+    let minScale = isReduceMotionEnabled() ? 1 : Self.menuMinScale
     let scale = minScale + (1 - minScale) * progress
     menu.transform = CGAffineTransform(translationX: -(1 - scale) * menu.bounds.width / 2, y: 0)
       .scaledBy(x: scale, y: scale)
@@ -446,16 +462,16 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       return
     }
     if !retarget && progress == (target ? 1 : 0) {
-      // A cross-fade landing there keeps fading; a newer non-user request
-      // cancels its pending user completion.
+      // A cross-fade landing there keeps fading; as for a running animation,
+      // the newer request decides whether its completion is a user event.
       if fadeSnapshot != nil {
-        if !user { fadeCompletion = nil }
+        fadeUser = user
         return
       }
       finish(target: target, user: user)
       return
     }
-    if tween && !retarget && UIAccessibility.isReduceMotionEnabled && crossFade(to: target, user: user) {
+    if tween && !retarget && isReduceMotionEnabled() && crossFade(to: target, user: user) {
       return
     }
     removeFadeSnapshot()
@@ -480,43 +496,45 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private func crossFade(to target: Bool, user: Bool) -> Bool {
     // Captures what is on screen, including any fade still in progress, which
     // this one then replaces: the host keeps at most one snapshot.
-    guard let snapshot = snapshotView(afterScreenUpdates: false) else { return false }
+    guard let snapshot = makeFadeSnapshot(self) else { return false }
     removeFadeSnapshot()
     snapshot.frame = bounds
     snapshot.isUserInteractionEnabled = false
     addSubview(snapshot)
     fadeSnapshot = snapshot
-    // The final state applies now, under the snapshot; a user transition
-    // completes (callback and haptic) only when the fade does.
-    let changed = stableOpen != target
-    stableOpen = target
+    fadeTarget = target
+    fadeUser = user
+    // The final state shows now, under the snapshot. The transition completes
+    // (stable state, callback and haptic) only when the fade does.
     setProgress(target ? 1 : 0)
-    fadeCompletion = user ? (target, changed) : nil
     UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut], animations: {
       snapshot.alpha = 0
     }, completion: { [weak self] _ in
       snapshot.removeFromSuperview()
       guard let self, self.fadeSnapshot === snapshot else { return }
-      self.fadeSnapshot = nil
       self.completeFade()
     })
     return true
   }
 
+  /// Lands an in-flight cross-fade on its target, as a settle's last frame does.
   private func completeFade() {
-    guard let pending = fadeCompletion else { return }
-    fadeCompletion = nil
-    reportCompletion(target: pending.target, changed: pending.changed)
+    guard fadeSnapshot != nil else { return }
+    let target = fadeTarget
+    let user = fadeUser
+    removeFadeSnapshot()
+    finish(target: target, user: user)
   }
 
-  /// Drops the cross-fade snapshot. Its pending user completion is reported
-  /// first when `complete` is set (a drag or resize takes over), and discarded
-  /// otherwise (a newer transition, disabling or detach).
-  private func removeFadeSnapshot(complete: Bool = false) {
-    if complete { completeFade() } else { fadeCompletion = nil }
-    fadeSnapshot?.layer.removeAllAnimations()
-    fadeSnapshot?.removeFromSuperview()
+  /// Drops the cross-fade without landing it (a newer transition, a drag,
+  /// disabling or detach), so its completion is never reported.
+  private func removeFadeSnapshot() {
+    guard let snapshot = fadeSnapshot else { return }
+    // Cleared first, so the completion handler that removing the animation
+    // triggers does not land it.
     fadeSnapshot = nil
+    snapshot.layer.removeAllAnimations()
+    snapshot.removeFromSuperview()
   }
 
   @objc private func tick() {
@@ -533,7 +551,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     } else {
       let w = Self.springFrequency
       let a = animationFrom - target
-      if UIAccessibility.isReduceMotionEnabled {
+      if isReduceMotionEnabled() {
         // Critically damped: same speed, no bounce.
         value = target + (a + (animationVelocity + w * a) * elapsed) * exp(-w * elapsed)
       } else {
@@ -549,7 +567,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     trackedValue = value
     trackedTime = now
     // Reduce Motion never carries the page past its target.
-    setProgress(value, overshoot: isSpring && !UIAccessibility.isReduceMotionEnabled)
+    setProgress(value, overshoot: isSpring && !isReduceMotionEnabled())
     // A spring ends once it is visually at rest, not after a fixed time.
     let done = isSpring
       ? (abs(value - target) < 0.0005 && abs(trackedVelocity) < 0.02) || elapsed >= 0.6
