@@ -97,6 +97,30 @@ final class BottomTabsDrawerReduceMotionTests: XCTestCase {
     XCTAssertEqual(fixture.drawer.subviews.count, 2)
   }
 
+  func testTouchesLandOnTheHostUntilTheFadeEnds() throws {
+    // Closing: the menu still shows, over a page already back in place.
+    let closing = Fixture(open: true)
+    defer { closing.close() }
+    let inMenu = CGPoint(x: closing.menuWidth / 2, y: 100)
+    XCTAssertTrue(closing.drawer.accessibilityPerformEscape())
+    try closing.requireFade()
+    XCTAssertTrue(closing.hit(inMenu) === closing.drawer, "not the page under the shown menu")
+    XCTAssertTrue(closing.waitUntil { !closing.isFading })
+    XCTAssertTrue(closing.hit(inMenu) === closing.page)
+
+    // Opening: the page still shows, over a menu and dim already open.
+    let opening = Fixture(open: false)
+    defer { opening.close() }
+    let onDim = CGPoint(x: opening.menuWidth + 20, y: 100)
+    opening.drawer.open = true
+    try opening.requireFade()
+    XCTAssertTrue(opening.hit(inMenu) === opening.drawer, "not the menu under the shown page")
+    XCTAssertTrue(opening.hit(onDim) === opening.drawer, "not the dim, which would close")
+    XCTAssertTrue(opening.waitUntil { !opening.isFading })
+    XCTAssertTrue(opening.hit(inMenu) === opening.menu)
+    XCTAssertTrue(opening.hit(onDim) is UIButton)
+  }
+
   func testDisablingOrDetachingDropsThePendingClose() throws {
     let disabled = Fixture(open: true)
     defer { disabled.close() }
@@ -127,6 +151,8 @@ final class BottomTabsDrawerReduceMotionTests: XCTestCase {
 private final class Fixture {
   let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
   let drawer = RCTBottomTabsDrawerContainerView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+  let menu = UIView()
+  let page = UIView()
   private(set) var events: [Bool] = []
   private(set) var fadingAtEvent: [Bool] = []
   private let recognizer = FakePan(target: nil, action: nil)
@@ -135,8 +161,8 @@ private final class Fixture {
   init(open: Bool) {
     drawer.isReduceMotionEnabled = { true }
     drawer.makeFadeSnapshot = { _ in UIView() }
-    drawer.insertChild(UIView(), atIndex: 0)
-    drawer.insertChild(UIView(), atIndex: 1)
+    drawer.insertChild(menu, atIndex: 0)
+    drawer.insertChild(page, atIndex: 1)
     drawer.swipeEnabled = true
     drawer.enabled = true
     // Outside a window, the drawer lands on a target without animating.
@@ -160,6 +186,9 @@ private final class Fixture {
     _ = try XCTUnwrap(value("fadeSnapshot") as UIView?, "Reduce Motion should cross-fade",
                       file: file, line: line)
   }
+
+  /// The view UIKit would deliver a touch at `point` to.
+  func hit(_ point: CGPoint) -> UIView? { drawer.hitTest(point, with: nil) }
 
   /// Delivers one recognizer callback, as UIKit does for the drawer's pan.
   func pan(_ state: UIGestureRecognizer.State, dx: CGFloat = 0) {

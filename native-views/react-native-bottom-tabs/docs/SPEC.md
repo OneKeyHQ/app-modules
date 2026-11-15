@@ -214,7 +214,9 @@ faded to leaves the fade running and only replaces whether its completion is a
 user transition. A touch, an animated settle, a newer cross-fade, disabling or
 detach removes the snapshot without completing it, as a touch does a running
 animation, so a drag that begins during a faded close never receives that
-close's prop echo; a resize completes it at once.
+close's prop echo; a resize completes it at once. While the snapshot shows, the
+host takes every touch itself, so none reaches a page, menu or dim control that
+is already in the final state under it; the drawer pan still receives them.
 Android has no separate reduced-motion setting and lands such transitions
 immediately.
 Resize snaps a pending settlement to its target, emitting its user event once
@@ -251,8 +253,10 @@ unchanged, and that the menu slot is 80 percent wide. The iOS suite
 forcing Reduce Motion and supplying the fade snapshot through internal test
 hooks. It asserts that a user close reports once, after the snapshot is gone;
 that a drag taking over the fade drops the faded close and reports only its own
-release; that a resize lands the fade at once; and that same-target and newer
-requests, disabling and detach take over or drop the pending report.
+release; that a resize lands the fade at once; that same-target and newer
+requests, disabling and detach take over or drop the pending report; and that
+touches during an opening or closing fade land on the host, not on the menu,
+page or dim under the snapshot.
 Recorded evidence so far: on the iPhone 17 simulator (iOS 26) in the consumer
 app, tap open/close timing, fling overshoot (about 2 points), smooth reversal,
 the corner ramp, the reduced-motion cross-fade, the light/dark palettes and a

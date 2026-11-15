@@ -215,6 +215,16 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     return true
   }
 
+  // While a cross-fade runs, the views under the snapshot already show the
+  // final state, so a touch would reach a control that is not where it
+  // appears. The host takes those touches itself (the snapshot cannot: its
+  // alpha is already 0 for hit-testing once the fade starts). The pan is on
+  // the host, so a drag still takes over the fade.
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let hit = super.hitTest(point, with: event)
+    return hit != nil && fadeSnapshot != nil ? self : hit
+  }
+
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     guard enabled else { return false }
     let start = touch.location(in: self)
