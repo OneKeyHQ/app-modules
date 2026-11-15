@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 
-// Keep Pager with NativeList and Image: its test bundle links both pods.
+// Keep Pager with NativeList and Image: its test bundle links both pods. Bottom
+// tabs also links Image.
 const plans = {
   ui: {
     buildTargets: [],
@@ -8,6 +9,7 @@ const plans = {
       "react-native-pager-view-Unit-Tests",
       "react-native-native-list-Unit-Tests",
       "OneKeyImage-Unit-Tests",
+      "react-native-bottom-tabs-Unit-Tests",
     ],
   },
   services: {

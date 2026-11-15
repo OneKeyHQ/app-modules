@@ -13,9 +13,13 @@
 @property(nonatomic) BOOL swipeEnabled;
 @property(nonatomic) BOOL hapticFeedbackEnabled;
 @property(nonatomic) double bottomBarHeight;
+@property(nonatomic, copy) NSString *colorScheme;
+@property(nonatomic) BOOL progressEventsEnabled;
 @property(nonatomic, copy) void (^onDrawerOpenChange)(BOOL open);
+@property(nonatomic, copy) void (^onDrawerProgress)(double progress);
 - (void)insertChild:(UIView *)child atIndex:(NSInteger)index;
 - (void)removeChildAtIndex:(NSInteger)index;
+- (void)resendProgress;
 @end
 
 using namespace facebook::react;
@@ -45,6 +49,12 @@ using namespace facebook::react;
       auto emitter = std::static_pointer_cast<const RNBottomTabsDrawerEventEmitter>(strongSelf->_eventEmitter);
       if (emitter) emitter->onDrawerOpenChange({.open = (bool)open});
     };
+    _drawer.onDrawerProgress = ^(double progress) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNBottomTabsDrawerEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) emitter->onDrawerProgress({.progress = progress});
+    };
   }
   return self;
 }
@@ -59,6 +69,14 @@ using namespace facebook::react;
   [_drawer removeChildAtIndex:index];
 }
 
+- (void)updateEventEmitter:(EventEmitter::Shared const &)eventEmitter
+{
+  [super updateEventEmitter:eventEmitter];
+  // Fabric applies a mount's props before its emitter, so a position reported
+  // then never left native; send the current one now.
+  [_drawer resendProgress];
+}
+
 - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
 {
   const auto &next = *std::static_pointer_cast<const RNBottomTabsDrawerProps>(props);
@@ -69,6 +87,12 @@ using namespace facebook::react;
   if (next.hapticFeedbackEnabled != previous.hapticFeedbackEnabled)
     _drawer.hapticFeedbackEnabled = next.hapticFeedbackEnabled;
   if (next.bottomBarHeight != previous.bottomBarHeight) _drawer.bottomBarHeight = next.bottomBarHeight;
+  if (next.colorScheme != previous.colorScheme) {
+    _drawer.colorScheme = next.colorScheme == RNBottomTabsDrawerColorScheme::Light ? @"light"
+      : next.colorScheme == RNBottomTabsDrawerColorScheme::Dark ? @"dark" : @"system";
+  }
+  if (next.progressEventsEnabled != previous.progressEventsEnabled)
+    _drawer.progressEventsEnabled = next.progressEventsEnabled;
   [super updateProps:props oldProps:oldProps];
 }
 @end

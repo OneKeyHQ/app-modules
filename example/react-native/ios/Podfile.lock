@@ -1892,6 +1892,30 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-bottom-tabs/Tests (6.7.0-26):
+    - hermes-engine
+    - OneKeyImage
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-native-list (6.7.0-26):
     - hermes-engine
     - NitroModules
@@ -3311,6 +3335,7 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - React-mutationobservernativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
   - "react-native-bottom-tabs (from `../../../node_modules/@onekeyfe/react-native-bottom-tabs`)"
+  - "react-native-bottom-tabs/Tests (from `../../../node_modules/@onekeyfe/react-native-bottom-tabs`)"
   - "react-native-native-list (from `../../../node_modules/@onekeyfe/react-native-native-list`)"
   - "react-native-native-list/Tests (from `../../../node_modules/@onekeyfe/react-native-native-list`)"
   - "react-native-pager-view (from `../../../node_modules/@onekeyfe/react-native-pager-view`)"
@@ -3739,7 +3764,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: a2dae4f2cb335ebb97f2240494d0c2bab84cd339
   React-microtasksnativemodule: 8b3aaa5f3b907ecf071b105589868d9f027a448d
   React-mutationobservernativemodule: 11d77d3f7360578f07847843544ada23cc473049
-  react-native-bottom-tabs: 31c6a231936155254baa3a09c6e76a1cae887fde
+  react-native-bottom-tabs: b42bb7227d2d7870a8ca66513bb44186fe76368f
   react-native-native-list: f7c9cacff8abdbd12e7405f5ff855098698dcb4b
   react-native-pager-view: 03d14fbd70b2e1edbdc6dda3ab3b9c213d1e6774
   react-native-safe-area-context: 839ca66874035361e526a8bcb1bfe7c2076c5c0d
@@ -3811,6 +3836,6 @@ SPEC CHECKSUMS:
   TcpSocket: c8d79a8794cc9848513718044ceee976d8bcf6f0
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
-PODFILE CHECKSUM: 6dbd008521e902b8ae039b8440e066a762f0955e
+PODFILE CHECKSUM: f3f249fd79ae24990015132b000a41da6eab78e2
 
 COCOAPODS: 1.16.2

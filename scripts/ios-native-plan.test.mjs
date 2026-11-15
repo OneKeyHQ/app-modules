@@ -20,6 +20,7 @@ const originalSchemes = [
   "react-native-native-list-Unit-Tests", "PerpDepthBar-Unit-Tests", "ReactNativeBundleCrypto-Unit-Tests",
   "ReactNativeImageCropPicker-Unit-Tests", "ReactNativeCaptureProtection-Unit-Tests",
   "ReactNativePhotoLibrary-Unit-Tests", "ReactNativeJpush-Unit-Tests",
+  "react-native-bottom-tabs-Unit-Tests",
 ];
 
 test("two independent macOS jobs preserve every original iOS suite and both pod builds", () => {
@@ -43,6 +44,7 @@ test("two independent macOS jobs preserve every original iOS suite and both pod 
   assert.deepEqual(plans.flatMap((plan) => plan.buildTargets), ["ReactNativeLiteCard", "NativeOverlay"]);
   assert.deepEqual(getIosNativePlan("ui").testSchemes, [
     "react-native-pager-view-Unit-Tests", "react-native-native-list-Unit-Tests", "OneKeyImage-Unit-Tests",
+    "react-native-bottom-tabs-Unit-Tests",
   ]);
 });
 
