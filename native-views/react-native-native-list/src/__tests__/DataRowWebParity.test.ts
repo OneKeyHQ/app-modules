@@ -333,8 +333,17 @@ it('draws a passive leading badge before the column text and clears it on row re
   expect(badge.style.color).toBe(cssColor('#8a6d00'));
   expect(badge.style.backgroundColor).toBe(cssColor('#fff4cc'));
   expect(badge.style.pointerEvents).toBe('none');
-  expect(badge.style.flexShrink).toBe('0');
   expect(badge.querySelector('button')).toBeNull();
+  // The line spans its column and keeps the column alignment, so the cap is
+  // half of the column; the label truncates there instead of overflowing.
+  expect(balanceLine.style.alignSelf).toBe('stretch');
+  expect(balanceLine.style.justifyContent).toBe('flex-end');
+  expect(badge.style.flexShrink).toBe('0');
+  expect(badge.style.maxWidth).toBe('50%');
+  expect(badge.style.boxSizing).toBe('border-box');
+  expect(badge.style.overflow).toBe('hidden');
+  expect(badge.style.textOverflow).toBe('ellipsis');
+  expect(badge.style.whiteSpace).toBe('nowrap');
   expect(balanceLine.style.gap).toBe('8px');
   expect(primary.style.overflow).toBe('hidden');
   expect(primary.style.textOverflow).toBe('ellipsis');
@@ -356,10 +365,28 @@ it('draws a passive leading badge before the column text and clears it on row re
   expect(badge.style.color).toBe(cssColor('#1f6feb'));
   expect(badge.style.backgroundColor).toBe(cssColor('#ddf4ff80'));
 
+  for (const [alignment, justifyContent] of [
+    ['center', 'center'],
+    ['start', 'flex-start'],
+    [undefined, 'flex-start'],
+  ] as const) {
+    dataRowRenderer.bind(
+      body,
+      {
+        ...row,
+        columns: [row.columns[0]!, { ...row.columns[1]!, alignment }],
+      },
+      primitives
+    );
+    expect(balanceLine.style.justifyContent).toBe(justifyContent);
+  }
+
   dataRowRenderer.bind(body, plain, primitives);
   expect(badge.hidden).toBe(true);
   expect(badge.textContent).toBe('');
   expect(badge.style.cssText).toBe('');
+  expect(balanceLine.style.alignSelf).toBe('');
+  expect(balanceLine.style.justifyContent).toBe('');
   expect(balanceLine.style.gap).toBe('2px');
   expect(primary.style.textOverflow).toBe('');
   expect(

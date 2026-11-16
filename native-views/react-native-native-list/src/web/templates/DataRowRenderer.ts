@@ -138,17 +138,31 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
       fontWeight(style?.columns?.fontWeight, 500)
     );
     if (style?.columns) primitives.textStyle(cell.primary, style.columns);
-    // The badge keeps its intrinsic width; the primary text truncates instead,
-    // so an end-aligned column stays aligned with its secondary line.
     const leadingBadge = column.webLeadingBadge;
     cell.leadingBadge.hidden = !leadingBadge;
     cell.leadingBadge.style.cssText = '';
     cell.leadingBadge.textContent = leadingBadge?.text ?? '';
     if (leadingBadge) {
+      // The line spans the column so the badge cap is a share of the column
+      // rather than of the line's own content; justifyContent then carries
+      // the column alignment the shrink-to-fit line got from its cell.
+      cell.primaryLine.style.alignSelf = 'stretch';
+      cell.primaryLine.style.justifyContent =
+        column.alignment === 'end'
+          ? 'flex-end'
+          : column.alignment === 'center'
+          ? 'center'
+          : 'flex-start';
       cell.primaryLine.style.gap = '8px';
-      cell.leadingBadge.style.display = 'inline-flex';
-      cell.leadingBadge.style.alignItems = 'center';
+      // A long label truncates at half the column; the primary text keeps the
+      // rest and truncates after it, so neither can leave the column.
+      cell.leadingBadge.style.display = 'block';
+      cell.leadingBadge.style.boxSizing = 'border-box';
       cell.leadingBadge.style.flexShrink = '0';
+      cell.leadingBadge.style.maxWidth = '50%';
+      cell.leadingBadge.style.overflow = 'hidden';
+      cell.leadingBadge.style.textOverflow = 'ellipsis';
+      cell.leadingBadge.style.whiteSpace = 'nowrap';
       cell.leadingBadge.style.padding = '2px 6px';
       cell.leadingBadge.style.borderRadius = '4px';
       cell.leadingBadge.style.fontSize = '12px';
