@@ -257,7 +257,9 @@ stacked (phone)                     table (wide)
     view. Container, padding, image, `leadingGap` and `index` styles keep the
     legacy text layout.
   - *Web:* `secondaryLeadingText` precedes the primary text on the same line,
-    badges follow it, and secondary text is directly below.
+    badges follow it, and secondary text is directly below. An optional
+    `webLeadingBadge` on a column is a passive label at the start of that line;
+    iOS and Android ignore it.
   - Table layout uses the column view on every platform (Android unstyled:
     the fixed legacy column geometry above).
 - **Style isolation:** primary and secondary text use independent style targets in

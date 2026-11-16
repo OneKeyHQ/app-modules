@@ -11,6 +11,7 @@ type ColumnViews = {
   body: HTMLElement;
   primaryLine: HTMLElement;
   primary: HTMLElement;
+  leadingBadge: HTMLElement;
   titleIcons: HTMLElement;
   badges: HTMLElement;
   secondaryLine: HTMLElement;
@@ -137,6 +138,31 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
       fontWeight(style?.columns?.fontWeight, 500)
     );
     if (style?.columns) primitives.textStyle(cell.primary, style.columns);
+    // The badge keeps its intrinsic width; the primary text truncates instead,
+    // so an end-aligned column stays aligned with its secondary line.
+    const leadingBadge = column.webLeadingBadge;
+    cell.leadingBadge.hidden = !leadingBadge;
+    cell.leadingBadge.style.cssText = '';
+    cell.leadingBadge.textContent = leadingBadge?.text ?? '';
+    if (leadingBadge) {
+      cell.primaryLine.style.gap = '8px';
+      cell.leadingBadge.style.display = 'inline-flex';
+      cell.leadingBadge.style.alignItems = 'center';
+      cell.leadingBadge.style.flexShrink = '0';
+      cell.leadingBadge.style.padding = '2px 6px';
+      cell.leadingBadge.style.borderRadius = '4px';
+      cell.leadingBadge.style.fontSize = '12px';
+      cell.leadingBadge.style.lineHeight = '16px';
+      cell.leadingBadge.style.fontWeight = '400';
+      cell.leadingBadge.style.fontFamily = 'var(--nl-font-regular)';
+      cell.leadingBadge.style.color = leadingBadge.textColor;
+      cell.leadingBadge.style.backgroundColor = leadingBadge.backgroundColor;
+      cell.leadingBadge.style.pointerEvents = 'none';
+      cell.primary.style.minWidth = '0';
+      cell.primary.style.overflow = 'hidden';
+      cell.primary.style.textOverflow = 'ellipsis';
+      cell.primary.style.whiteSpace = 'nowrap';
+    }
     cell.titleIcons.replaceChildren();
     if (column.titleIcon || column.secondaryTitleIcon) {
       cell.primary.style.minWidth = '0';
@@ -238,10 +264,16 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       'ok-native-list-data-primary'
     );
     const primary = tagSlot(createElement(document, 'span'), 'columns');
+    const leadingBadge = createElement(
+      document,
+      'span',
+      'ok-native-list-data-leading-badge'
+    );
+    leadingBadge.hidden = true;
     const titleIcons = createElement(document, 'span');
     titleIcons.style.display = 'contents';
     const badges = createElement(document, 'span');
-    primaryLine.append(primary, titleIcons, badges);
+    primaryLine.append(leadingBadge, primary, titleIcons, badges);
     const secondaryLine = createElement(
       document,
       'span',
@@ -260,6 +292,7 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       body: cell,
       primaryLine,
       primary,
+      leadingBadge,
       titleIcons,
       badges,
       secondaryLine,

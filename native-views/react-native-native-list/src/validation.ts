@@ -1344,6 +1344,32 @@ function assertButtonGroup(
   });
 }
 
+// A passive label: its text and two caller colors, with no action or style slot.
+function assertWebLeadingBadge(value: unknown, path: string): void {
+  if (value === undefined) return;
+  const badge = protocolObject(value, path);
+  assertUnknownKeys(
+    badge,
+    ['text', 'textColor', 'backgroundColor'],
+    path,
+    'web leading badge key'
+  );
+  if (
+    typeof badge.text !== 'string' ||
+    !badge.text.trim() ||
+    badge.text.length > MAX_TEXT_LENGTH
+  )
+    fail(`${path}.text`, 'must be non-blank within the text limit');
+  for (const field of ['textColor', 'backgroundColor']) {
+    const color = badge[field];
+    if (
+      typeof color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)
+    )
+      fail(`${path}.${field}`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+}
+
 function assertIdentityExtras(
   row: Pick<
     IdentityRow,
@@ -1939,6 +1965,10 @@ function assertRow(
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
         assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${path}.columns[${columnIndex}].webLeadingBadge`
+        );
         for (const field of [
           'textSegments',
           'secondaryTextSegments',
@@ -3048,7 +3078,13 @@ function assertRowProtocol(row: RowModel, path: string): void {
     row.columns.forEach((column, index) => {
       const columnPath = `${path}.columns[${index}]`;
       protocolObject(column, columnPath);
-      if (isDevelopment()) assertIdentityExtras(column, columnPath);
+      if (isDevelopment()) {
+        assertIdentityExtras(column, columnPath);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${columnPath}.webLeadingBadge`
+        );
+      }
     });
     if (isDevelopment())
       assertTrailingAccessories(row.trailing, `${path}.trailing`);
@@ -3507,6 +3543,7 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'textSegments',
     'titleIcon',
     'secondaryTitleIcon',
+    'webLeadingBadge',
     'secondaryLeadingText',
     'secondaryText',
     'secondaryTextSegments',
@@ -3581,6 +3618,26 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
 function sanitizeDecoration(value: unknown, field: string): unknown {
   if (value === undefined || value === null) return undefined;
+  // All or nothing: a badge without valid text and both colors is dropped, and
+  // only its three declared fields are kept.
+  if (field === 'webLeadingBadge') {
+    if (
+      !isRecord(value) ||
+      typeof value.text !== 'string' ||
+      !value.text.trim() ||
+      value.text.length > MAX_TEXT_LENGTH
+    )
+      return undefined;
+    const { textColor, backgroundColor } = value;
+    if (
+      typeof textColor !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(textColor) ||
+      typeof backgroundColor !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(backgroundColor)
+    )
+      return undefined;
+    return { text: value.text, textColor, backgroundColor };
+  }
   if (
     !Array.isArray(value) &&
     [
@@ -4401,6 +4458,10 @@ function assertPatchChanges(patch: PatchValues, index: number): void {
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
         assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${path}.columns[${columnIndex}].webLeadingBadge`
+        );
         for (const field of [
           'textSegments',
           'secondaryTextSegments',

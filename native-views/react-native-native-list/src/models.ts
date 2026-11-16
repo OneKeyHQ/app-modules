@@ -650,6 +650,15 @@ export type DataColumn = Readonly<{
   textSegments?: readonly ValueTextSegment[];
   titleIcon?: IdentityRow['titleIcon'];
   secondaryTitleIcon?: IdentityRow['titleIcon'];
+  /**
+   * Web-only passive label before the primary column text. The caller supplies
+   * both colors as #RRGGBB or #RRGGBBAA; native renderers ignore the field.
+   */
+  webLeadingBadge?: Readonly<{
+    text: string;
+    textColor: string;
+    backgroundColor: string;
+  }>;
   secondaryLeadingText?: string;
   secondaryText?: string;
   secondaryTextSegments?: readonly ValueTextSegment[];

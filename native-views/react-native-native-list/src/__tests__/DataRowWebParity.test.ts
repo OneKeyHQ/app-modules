@@ -260,3 +260,112 @@ it('keeps first-column help icons anchored and clears them on row reuse', () => 
     'USDC'
   );
 });
+
+it('draws a passive leading badge before the column text and clears it on row reuse', () => {
+  const document = new JSDOM('<!doctype html><body></body>').window.document;
+  const primitives: RowPrimitives = {
+    background: '#ffffff',
+    visual: () => undefined,
+    thumbnail: () => undefined,
+    icon: () => undefined,
+    iconAction: () => document.createElement('button'),
+    accessory: () => document.createElement('button'),
+    textStyle: applyTextStyleToSlot,
+    dispose: () => undefined,
+  };
+  // jsdom normalizes hex colors, so compare against the same assignment.
+  const cssColor = (value: string) => {
+    const probe = document.createElement('span');
+    probe.style.color = value;
+    return probe.style.color;
+  };
+  const plain: DataRow = {
+    type: 'dataRow',
+    key: 'xmr',
+    columns: [
+      { key: 'asset', text: 'XMR' },
+      {
+        key: 'balance',
+        text: '1.00',
+        secondaryLeadingText: '~',
+        secondaryText: '$150.00',
+        alignment: 'end',
+      },
+    ],
+    style: { titleBadgeGap: 2 },
+  };
+  const withBadge = (
+    webLeadingBadge: NonNullable<DataRow['columns'][number]['webLeadingBadge']>
+  ): DataRow => ({
+    ...plain,
+    columns: [plain.columns[0]!, { ...plain.columns[1]!, webLeadingBadge }],
+  });
+  const row = withBadge({
+    text: 'Unverified',
+    textColor: '#8a6d00',
+    backgroundColor: '#fff4cc',
+  });
+  const body = dataRowRenderer.create(document, row, primitives);
+  const lines = body.querySelectorAll<HTMLElement>(
+    '.ok-native-list-data-primary'
+  );
+  const badges = body.querySelectorAll<HTMLElement>(
+    '.ok-native-list-data-leading-badge'
+  );
+  const [assetLine, balanceLine] = [lines[0]!, lines[1]!];
+  const [assetBadge, badge] = [badges[0]!, badges[1]!];
+  const primary = balanceLine.querySelector<HTMLElement>(
+    '[data-nl-slot="columns"]'
+  )!;
+
+  expect(assetBadge.hidden).toBe(true);
+  expect(assetBadge.textContent).toBe('');
+  expect(assetLine.style.gap).toBe('2px');
+
+  expect(badge.hidden).toBe(false);
+  expect(
+    Array.from(balanceLine.children)
+      .slice(0, 3)
+      .map((node) => node.textContent)
+  ).toEqual(['Unverified', '~', '1.00']);
+  expect(balanceLine.children[0]).toBe(badge);
+  expect(balanceLine.children[2]).toBe(primary);
+  expect(badge.style.color).toBe(cssColor('#8a6d00'));
+  expect(badge.style.backgroundColor).toBe(cssColor('#fff4cc'));
+  expect(badge.style.pointerEvents).toBe('none');
+  expect(badge.style.flexShrink).toBe('0');
+  expect(badge.querySelector('button')).toBeNull();
+  expect(balanceLine.style.gap).toBe('8px');
+  expect(primary.style.overflow).toBe('hidden');
+  expect(primary.style.textOverflow).toBe('ellipsis');
+  expect(primary.style.whiteSpace).toBe('nowrap');
+  expect(dataRowRenderer.measure(row, 320)).toBe(
+    dataRowRenderer.measure(plain, 320)
+  );
+
+  dataRowRenderer.bind(
+    body,
+    withBadge({
+      text: 'Syncing',
+      textColor: '#1f6feb',
+      backgroundColor: '#ddf4ff80',
+    }),
+    primitives
+  );
+  expect(badge.textContent).toBe('Syncing');
+  expect(badge.style.color).toBe(cssColor('#1f6feb'));
+  expect(badge.style.backgroundColor).toBe(cssColor('#ddf4ff80'));
+
+  dataRowRenderer.bind(body, plain, primitives);
+  expect(badge.hidden).toBe(true);
+  expect(badge.textContent).toBe('');
+  expect(badge.style.cssText).toBe('');
+  expect(balanceLine.style.gap).toBe('2px');
+  expect(primary.style.textOverflow).toBe('');
+  expect(
+    Array.from(balanceLine.children)
+      .filter((node) => !(node as HTMLElement).hidden)
+      .slice(0, 2)
+      .map((node) => node.textContent)
+  ).toEqual(['~', '1.00']);
+});

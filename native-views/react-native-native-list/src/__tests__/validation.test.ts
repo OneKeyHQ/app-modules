@@ -809,6 +809,52 @@ describe('NativeList model validation', () => {
     ).toThrow('titleIcon.name');
   });
 
+  it('accepts a web leading badge only as text with two hex colors', () => {
+    const badge = {
+      text: 'Unverified',
+      textColor: '#8a6d00',
+      backgroundColor: '#fff4cc80',
+    };
+    const withBadge = (webLeadingBadge: unknown) =>
+      ({
+        type: 'dataRow',
+        key: 'asset',
+        columns: [
+          { key: 'asset', text: 'XMR' },
+          { key: 'balance', text: '1.00', webLeadingBadge },
+        ],
+      } as unknown as DataRow);
+    expect(
+      JSON.parse(serializeSnapshot(snapshot([withBadge(badge)]))).rows[0]
+        .columns[1].webLeadingBadge
+    ).toEqual(badge);
+    const malformed: readonly (readonly [unknown, string])[] = [
+      ['Unverified', 'columns[1].webLeadingBadge'],
+      [{ ...badge, text: ' ' }, 'webLeadingBadge.text'],
+      [{ ...badge, text: 'x'.repeat(4097) }, 'webLeadingBadge.text'],
+      [{ ...badge, textColor: 'red' }, 'webLeadingBadge.textColor'],
+      [
+        { text: badge.text, textColor: badge.textColor },
+        'webLeadingBadge.backgroundColor',
+      ],
+      [{ ...badge, actionKey: 'verify' }, 'webLeadingBadge.actionKey'],
+    ];
+    for (const [invalid, path] of malformed) {
+      expect(() => validateSnapshot(snapshot([withBadge(invalid)]))).toThrow(
+        path
+      );
+      expect(() =>
+        validatePatches([
+          {
+            type: 'dataRow',
+            key: 'asset',
+            changes: { columns: withBadge(invalid).columns },
+          },
+        ])
+      ).toThrow(path);
+    }
+  });
+
   it('validates native disclosure targets independently of transition ids', () => {
     const disclosed = {
       ...snapshot([]),
@@ -2553,6 +2599,52 @@ describe('NativeList production validation', () => {
   });
   afterEach(() => {
     environment.__DEV__ = development;
+  });
+
+  it('drops a malformed web leading badge and keeps the data row', () => {
+    const badge = {
+      text: 'Unverified',
+      textColor: '#8a6d00',
+      backgroundColor: '#fff4cc',
+    };
+    const columns = (webLeadingBadge: unknown) =>
+      [
+        { key: 'asset', text: 'XMR' },
+        { key: 'balance', text: '1.00', webLeadingBadge },
+      ] as unknown as DataRow['columns'];
+    const balance = (webLeadingBadge: unknown) => {
+      const [accepted] = validateSnapshot(
+        snapshot([
+          { type: 'dataRow', key: 'asset', columns: columns(webLeadingBadge) },
+        ])
+      ).rows;
+      return (accepted as DataRow).columns[1];
+    };
+    expect(balance({ ...badge, actionKey: 'verify', style: {} })).toEqual({
+      key: 'balance',
+      text: '1.00',
+      webLeadingBadge: badge,
+    });
+    for (const malformed of [
+      'Unverified',
+      { ...badge, text: ' ' },
+      { ...badge, textColor: 'red' },
+      { text: badge.text, textColor: badge.textColor },
+    ])
+      expect(balance(malformed)).toEqual({ key: 'balance', text: '1.00' });
+    const [patch] = validatePatches([
+      {
+        type: 'dataRow',
+        key: 'asset',
+        changes: { columns: columns({ ...badge, backgroundColor: 'yellow' }) },
+      },
+    ]);
+    expect(patch?.changes).toEqual({
+      columns: [
+        { key: 'asset', text: 'XMR' },
+        { key: 'balance', text: '1.00' },
+      ],
+    });
   });
 
   it('sanitizes production decorations while retaining essential action checks', () => {
