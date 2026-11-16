@@ -181,10 +181,12 @@ ambiguous sources, invalid metadata and stale output. Stable sorting emits no
 machine paths or timestamps. Frozen tests compare exact registry key sets;
 this does not prove that every application-computed name is registered.
 
-The closed manifest contains 43 names with iOS 42, Android 41 and Web 25
+The closed manifest contains 43 names with iOS 42, Android 41 and Web 26
 registry entries (including DotVerSolid). Document2Outline, WalletOutline and
 PlusLargeOutline are registered on all three platforms; TicketOutline also
-retains Web and adds native coverage. These main-line names use image-owned
+retains Web and adds native coverage. InfoCircleOutline is registered on Web as
+well as native, so a Web data-column `titleIcon` draws the host artwork rather
+than the text glyph. These main-line names use image-owned
 canonical SVGs, not duplicate NativeList paths or asset catalogs.
 Existing Activity ten-name and Market/Media private call sites resolve canonical
 names through the same DOM helper; their previous coverage does not expand.
@@ -2430,6 +2432,8 @@ acceptance or a performance improvement.
 `DataColumn.textSegments` and `secondaryTextSegments` reuse `ValueTextSegment` (`text`, optional `style: 'subscript'`) for formatted prices, balances, and values in each independent table column. Plain `text` and `secondaryText` remain the spoken/fallback strings. Missing segments preserve existing rendering.
 
 `DataColumn.titleIcon` and `secondaryTitleIcon` reuse `IdentityRow.titleIcon` after the primary column text. They preserve native-asset and receipt-token symbols in the desktop asset column. Web `hoverActionKey` uses the same anchored help action as Identity rows; absent icons leave the existing column layout unchanged.
+
+`DataColumn.webLeadingBadge?: { text: string; textColor: string; backgroundColor: string }` is an optional Web-only passive label on the primary line, placed before `secondaryLeadingText` and the primary text. The caller supplies the visible text and both colors: `text` is non-blank and within the 4096-character text limit, both colors are required `#RRGGBB` or `#RRGGBBAA` values, and no other key is accepted. The label is a 12/16 regular pill (2 by 6 padding, radius 4) that receives no pointer events and has no action, hover target, tone or style slot. While it is present the primary line spans its column, keeps the column's start, center or end alignment and uses an 8-unit gap in place of `titleBadgeGap`. The label is capped at half of the column width, padding included, and truncates with an ellipsis at that cap; the primary text keeps the remaining width and truncates after it, so neither leaves the column. A label that fits is drawn at its intrinsic width. Row height and measurement do not change. Development validation rejects a malformed badge in a snapshot and in a row patch that replaces `columns`; production drops the badge, strips undeclared keys and keeps the row. iOS and Android ignore the field, so a caller that needs the same signal there uses `titleIcon`. A column without the field renders as before. `validation.test.ts` covers the validation rules and `DataRowWebParity.test.ts` the element order, declared layout styles and row reuse in jsdom, which performs no layout. A scoped Chrome 157 measurement of the compiled renderer with `WEB_LIST_CSS` used four-column table rows 1000, 560 and 420 CSS pixels wide, all three alignments and labels of 10, 15 and 63 characters: the label stayed inside its column at no more than half of its width and the primary value kept a visible width in every case, and a label that fits kept the geometry it had without the cap. This is not app-host runtime acceptance.
 
 `IdentityRow.titleSuffixes?: readonly { text: string; tone: 'secondary' | 'disabled'; maxWidth?: number }[]` supports up to three plain 12/16 labels on the title line. Each suffix truncates independently at its optional maximum width. This preserves Recent recipient EVM, network, and relative-time metadata without using background badges; rows without suffixes keep their present title layout.
 

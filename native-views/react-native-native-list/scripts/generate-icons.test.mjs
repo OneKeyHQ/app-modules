@@ -124,6 +124,7 @@ const migrationCoverage = {
     'GasSolid',
     'GlobusOutline',
     'GoogleIllus',
+    'InfoCircleOutline',
     'LockSolid',
     'PencilOutline',
     'PlusLargeOutline',
