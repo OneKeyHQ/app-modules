@@ -443,9 +443,10 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertTrue(trailingWidth.isActive)
     let shortTrailingWidth = trailingWidth.constant
     XCTAssertEqual(sizeConstraints[2].constant, 32, accuracy: 0.1)
-    XCTAssertTrue(primary.attributedText?.string.contains("Badge") ?? false)
+    XCTAssertEqual(primary.attributedText?.string, "ETH")
+    XCTAssertEqual(secondary.attributedText?.string, "Ethereum")
     XCTAssertFalse(titleIcon.isHidden)
-    XCTAssertEqual(badges.arrangedSubviews.count, 0)
+    XCTAssertEqual(badges.arrangedSubviews.count, 1)
 
     try bind("ETH", secondary: "Ethereum", visualWidth: 32, trailing: "Manage asset")
     XCTAssertGreaterThan(trailingWidth.constant, shortTrailingWidth + 1)
