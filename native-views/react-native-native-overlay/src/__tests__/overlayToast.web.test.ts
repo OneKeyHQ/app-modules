@@ -431,3 +431,58 @@ test('stale events from a previous generation are ignored after showing the same
   expect(lone.getSnapshot().items).toHaveLength(0);
   detachLone();
 });
+
+test('detaching the last renderer during exit preserves the dismiss reason in onClose', () => {
+  const lone = new OverlayToastStore();
+  const detachLone = lone.attachRenderer();
+  const onDismiss = jest.fn();
+  const onClose = jest.fn();
+  lone.show(message('a'), { onDismiss, onClose });
+  const generation = lone.getSnapshot().items[0]!.generation;
+
+  lone.handleEvent({
+    id: 'a',
+    generation,
+    type: 'dismiss',
+    reason: 'timeout',
+  });
+  expect(onDismiss).toHaveBeenCalledWith('timeout');
+  expect(onClose).not.toHaveBeenCalled();
+
+  detachLone();
+  expect(onClose).toHaveBeenCalledWith('timeout');
+  expect(lone.getSnapshot().items).toHaveLength(0);
+});
+
+test('removing a hovered position group releases hover and resumes remaining group timers', () => {
+  const onBottomClose = jest.fn();
+  store.show(message('top', { position: 'top-center', duration: Infinity }));
+  store.show(message('bottom', { position: 'bottom-right', duration: 1000 }), {
+    onClose: onBottomClose,
+  });
+
+  const topList = document.querySelector<HTMLElement>(
+    '[data-onekey-toast-toaster][data-y-position="top"]'
+  );
+  expect(topList).not.toBeNull();
+  topList?.dispatchEvent(new MouseEvent('mouseenter'));
+  expect(
+    cards().every((card) => card.getAttribute('data-expanded') === 'true')
+  ).toBe(true);
+
+  jest.advanceTimersByTime(2000);
+  expect(onBottomClose).not.toHaveBeenCalled();
+
+  store.dismiss('top');
+  jest.advanceTimersByTime(200);
+  expect(
+    document.querySelector('[data-onekey-toast-toaster][data-y-position="top"]')
+  ).toBeNull();
+  expect(cards()).toHaveLength(1);
+  expect(cards()[0]?.getAttribute('data-expanded')).toBe('false');
+
+  jest.advanceTimersByTime(1000);
+  jest.advanceTimersByTime(200);
+  expect(onBottomClose).toHaveBeenCalledWith('timeout');
+  expect(cards()).toHaveLength(0);
+});

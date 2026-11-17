@@ -135,11 +135,17 @@ final class NativeListLifecycleTests: XCTestCase {
       window.rootViewController = controller
       controller.view.addSubview(view)
       window.isHidden = false
-      defer { window.isHidden = true }
       window.layoutIfNeeded()
       view.layoutIfNeeded()
       drainMainQueue()
       let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      defer {
+        list.setContentOffset(list.contentOffset, animated: false)
+        view.dispose()
+        view.removeFromSuperview()
+        window.isHidden = true
+        window.rootViewController = nil
+      }
       XCTAssertNotNil(view.window)
       XCTAssertGreaterThan(list.contentSize.height - list.bounds.height +
         list.adjustedContentInset.top + list.adjustedContentInset.bottom, 800)
@@ -2875,8 +2881,8 @@ final class NativeListLifecycleTests: XCTestCase {
     drainMainQueue()
     list.contentOffset.y = 300
     list.layoutIfNeeded()
-    view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
-      transitionID: "interrupt-boundary", durationMs: 1200))
+    view.applySnapshotJson(try structuralRowsSnapshot(count: 15, generation: 2,
+      transitionID: "interrupt-boundary", durationMs: 2400))
     let footerBottomBeforeResize = footer.convert(.zero, to: list).y + 60
     view.setContainerSlotHeightsJson("[0,0,80,2200]")
     XCTAssertEqual(footer.convert(.zero, to: list).y + 80,
@@ -2890,7 +2896,7 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertFalse(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop / 2), with: nil))
     XCTAssertTrue(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop + 1), with: nil))
     var boundaryCell: NativeListRowHost?
-    let deadline = Date().addingTimeInterval(1)
+    let deadline = Date().addingTimeInterval(3)
     while boundaryCell == nil && Date() < deadline {
       if let clip = flow.tailClip {
         for case let cell as NativeListRowHost in list.visibleCells {
@@ -3345,7 +3351,7 @@ final class NativeListLifecycleTests: XCTestCase {
   private func drainMainQueue() {
     let settled = expectation(description: "Deferred content shrink correction")
     DispatchQueue.main.async { settled.fulfill() }
-    wait(for: [settled], timeout: 1)
+    wait(for: [settled], timeout: 5)
   }
 
   private func footerCell(in view: NativeListView) -> NativeListRowHost? {

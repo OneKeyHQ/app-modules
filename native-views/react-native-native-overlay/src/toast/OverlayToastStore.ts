@@ -35,6 +35,11 @@ export class OverlayToastStore {
 
   private readonly handlers = new Map<string, IOverlayToastHandlers>();
 
+  private readonly dismissReasons = new Map<
+    string,
+    IOverlayToastDismissReason
+  >();
+
   private readonly listeners = new Set<() => void>();
 
   private renderers = 0;
@@ -66,7 +71,12 @@ export class OverlayToastStore {
         // Nothing can report `close` any more: finish pending exits.
         this.items
           .filter((item) => !item.visible)
-          .forEach((item) => this.remove(item.spec.id, 'programmatic'));
+          .forEach((item) =>
+            this.remove(
+              item.spec.id,
+              this.dismissReasons.get(item.spec.id) ?? 'programmatic'
+            )
+          );
       }
     };
   }
@@ -85,6 +95,7 @@ export class OverlayToastStore {
     this.nextGeneration += 1;
     const existing = this.items.find((item) => item.spec.id === id);
     this.handlers.set(id, handlers);
+    this.dismissReasons.delete(id);
     if (existing) {
       this.items = this.items.map((item) =>
         item === existing
@@ -103,9 +114,10 @@ export class OverlayToastStore {
       ];
       // Past the limit the oldest toasts leave without an animation, as the
       // list they came from did.
-      this.items
-        .slice(TOAST_LIMIT)
-        .forEach((item) => this.handlers.delete(item.spec.id));
+      this.items.slice(TOAST_LIMIT).forEach((item) => {
+        this.handlers.delete(item.spec.id);
+        this.dismissReasons.delete(item.spec.id);
+      });
       this.items = this.items.slice(0, TOAST_LIMIT);
     }
     this.emit();
@@ -136,6 +148,7 @@ export class OverlayToastStore {
     this.items = this.items.map((entry) =>
       entry === item ? { ...entry, visible: false } : entry
     );
+    this.dismissReasons.set(id, 'programmatic');
     this.handlers.get(id)?.onDismiss?.('programmatic');
     if (this.renderers === 0) {
       this.remove(id, 'programmatic');
@@ -177,6 +190,7 @@ export class OverlayToastStore {
         this.items = this.items.map((entry) =>
           entry === item ? { ...entry, visible: false } : entry
         );
+        this.dismissReasons.set(event.id, event.reason);
         handlers?.onDismiss?.(event.reason);
         this.emit();
         return;
@@ -225,6 +239,7 @@ export class OverlayToastStore {
     }
     const handlers = this.handlers.get(id);
     this.handlers.delete(id);
+    this.dismissReasons.delete(id);
     this.items = this.items.filter((entry) => entry !== item);
     this.emit();
     handlers?.onClose?.(reason);

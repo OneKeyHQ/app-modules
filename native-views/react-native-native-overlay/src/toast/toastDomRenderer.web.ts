@@ -52,6 +52,7 @@ interface IToastNode {
 interface IToastGroup {
   position: IOverlayToastPosition;
   ol: HTMLOListElement;
+  hovered: boolean;
   /** Newest first, leaving cards included until they unmount. */
   toasts: IToastNode[];
   /** Newest first, without leaving cards. */
@@ -130,9 +131,11 @@ export function createToastDomRenderer(
   let config: IOverlayToasterConfig = {};
   let section: HTMLElement | null = null;
   let expanded = false;
-  let hovered = false;
   let interacting = false;
   let destroyed = false;
+
+  const isHovered = (): boolean =>
+    [...groups.values()].some((group) => group.hovered);
 
   const positionOf = (spec: IOverlayToastSpec): IOverlayToastPosition =>
     spec.position ?? config.position ?? DEFAULT_POSITION;
@@ -165,7 +168,7 @@ export function createToastDomRenderer(
   function setInteracting(value: boolean) {
     if (interacting !== value) {
       interacting = value;
-      if (!value && !hovered) {
+      if (!value && !isHovered()) {
         expanded = false;
       }
       update();
@@ -178,22 +181,29 @@ export function createToastDomRenderer(
       const ol = document.createElement('ol');
       ol.tabIndex = -1;
       ol.setAttribute('data-onekey-toast-toaster', '');
+      const nextGroup: IToastGroup = {
+        position,
+        ol,
+        hovered: false,
+        toasts: [],
+        heights: [],
+      };
       ol.addEventListener('mouseenter', () => {
-        hovered = true;
+        nextGroup.hovered = true;
         expanded = nodes.size > 1;
         update();
       });
       ol.addEventListener('mousemove', () => {
-        if (!hovered || (nodes.size > 1 && !expanded)) {
-          hovered = true;
+        if (!nextGroup.hovered || (nodes.size > 1 && !expanded)) {
+          nextGroup.hovered = true;
           expanded = nodes.size > 1;
           update();
         }
       });
       ol.addEventListener('mouseleave', () => {
-        hovered = false;
+        nextGroup.hovered = false;
         // Keep the stack open while a card is being dragged.
-        if (!interacting) {
+        if (!interacting && !isHovered()) {
           expanded = false;
         }
         update();
@@ -201,7 +211,7 @@ export function createToastDomRenderer(
       ol.addEventListener('pointerdown', () => setInteracting(true));
       ol.addEventListener('pointerup', () => setInteracting(false));
       ol.addEventListener('pointercancel', () => setInteracting(false));
-      group = { position, ol, toasts: [], heights: [] };
+      group = nextGroup;
       groups.set(position, group);
     }
     if (group.ol.parentElement !== ensureSection()) {
@@ -255,7 +265,7 @@ export function createToastDomRenderer(
   }
 
   function syncTimers() {
-    const paused = expanded || hovered || interacting;
+    const paused = expanded || isHovered() || interacting;
     nodes.forEach((node) => {
       if (node.removed || !Number.isFinite(node.spec.duration)) {
         clearCloseTimer(node);
@@ -545,23 +555,30 @@ export function createToastDomRenderer(
     if (destroyed) {
       return;
     }
+    let releasedHover = false;
+    groups.forEach((group, position) => {
+      if (group.toasts.length === 0) {
+        if (group.hovered) {
+          releasedHover = true;
+        }
+        group.ol.remove();
+        groups.delete(position);
+      }
+    });
+    const hovered = isHovered();
     if (nodes.size <= 1 && expanded) {
       // One card has nothing to fan out.
+      expanded = false;
+    } else if (releasedHover && !hovered && !interacting) {
       expanded = false;
     } else if (nodes.size > 1 && hovered && !expanded) {
       expanded = true;
     }
-    groups.forEach((group, position) => {
-      if (group.toasts.length === 0) {
-        group.ol.remove();
-        groups.delete(position);
-        return;
-      }
+    groups.forEach((group) => {
       applyGroup(group);
     });
     if (nodes.size === 0) {
       section?.remove();
-      hovered = false;
       interacting = false;
     }
     syncTimers();
