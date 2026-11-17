@@ -22,7 +22,10 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   var leadingOverhangs = false
     private set
   private val identity = LinearLayout(context).apply { orientation = VERTICAL }
-  private val titleLine = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+  // Packs the title at its intrinsic width so badges follow the text (OK-67497).
+  private val titleLine = PackedTitleLineLayout(context).apply {
+    orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; packsChildrenAtStart = true
+  }
   private val title = NativeListTextView(context)
   private val description = NativeListTextView(context)
   private val status = NativeListTextView(context)
@@ -125,6 +128,9 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
       titleLine.addView(label, LayoutParams(-2, -2).apply { marginStart = if (style.has("titleBadgeGap")) px(style.optDouble("titleBadgeGap")) else dp(4) })
       badges.add(label)
     }
+    // PackedTitleLineLayout only re-caps the title while it has accessories; a recycled
+    // row whose badges were removed must not keep the previous cap.
+    if (badges.isEmpty()) title.maxWidth = Int.MAX_VALUE
     val amountData = data.optJSONArray("amounts")
     val count = amountData?.length() ?: 0
     while (amountViews.size > count) { val child = amountViews.removeAt(amountViews.lastIndex); child.recycle(); amounts.removeView(child) }

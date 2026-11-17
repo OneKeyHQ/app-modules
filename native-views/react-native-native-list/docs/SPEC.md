@@ -1785,7 +1785,11 @@ Fee text length and leading visibility cannot move the amount column. These
 native widths match the existing Web table layout. Fee supports label, primary
 and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
-tones. `descriptionActionKey` makes only the description emit that action with
+tones. The badges follow the title text directly: the title line packs at its
+start on every platform (iOS a slack-absorbing filler at the end of the title
+line, Android `PackedTitleLineLayout`, Web flex `0 1 auto`), so badges never
+drift toward the amount column, and a long title truncates in front of its
+badges (OK-67497). `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
 disabled behavior. All actions use the current host binding epoch.
 
@@ -1855,7 +1859,8 @@ legacy Activity rows without rich fields retain their existing behavior.
 
 Acceptance: 1/2/6/32 lines, changed keys/order, paired icons and network overlays,
 small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchanged
-baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
+baseline, matching NumberSizeableText), badge tone/clear, badges adjacent to
+short and truncated long titles, hidden fee, disabled
 actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
 
 

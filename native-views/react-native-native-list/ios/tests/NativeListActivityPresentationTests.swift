@@ -519,4 +519,59 @@ final class NativeListActivityPresentationTests: XCTestCase {
         rendered, accuracy: 1, name)
     }
   }
+
+  // OK-67497: History rows with a risk badge ("High risk") must keep the badge right
+  // after the title, like the identity title row (OK-66041). The title line used to
+  // stretch the title across the identity column, pushing badges to the amount column.
+  func testTitleBadgesFollowTheTitleTextAndSurviveRebind() throws {
+    func data(title: String, badges: Bool) -> [String: Any] {
+      var value: [String: Any] = [
+        "type": "activity", "key": "receive", "title": title, "description": "0xc168f7...62f46d",
+        "leading": ["kind": "icon", "name": "ArrowBottomOutline"],
+        "amounts": [["key": "usdt", "text": "+1,250 USDT", "secondaryText": "$1,250.13"]],
+      ]
+      if badges { value["badges"] = [["key": "risk", "text": "High risk", "tone": "warning"]] }
+      return value
+    }
+    let details = NativeListActivityDetailsView()
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 200))
+    details.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(details)
+    NSLayoutConstraint.activate([
+      details.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      details.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      details.topAnchor.constraint(equalTo: container.topAnchor),
+    ])
+    let title = try XCTUnwrap(Mirror(reflecting: details).children.first { $0.label == "title" }?.value as? UILabel)
+    let titleLine = try XCTUnwrap(Mirror(reflecting: details).children.first { $0.label == "titleLine" }?.value as? UIStackView)
+    func badge() throws -> UILabel {
+      let views = try XCTUnwrap(Mirror(reflecting: details).children.first { $0.label == "badgeViews" }?.value as? [UILabel])
+      return try XCTUnwrap(views.first)
+    }
+
+    details.bind(try NativeListItem(data: data(title: "Receive", badges: true)), theme: nil, fonts: NativeListFontFamilies())
+    container.layoutIfNeeded()
+    XCTAssertEqual(title.bounds.width, title.intrinsicContentSize.width, accuracy: 1,
+      "title must keep its intrinsic width instead of stretching across the title line")
+    var titleFrame = title.convert(title.bounds, to: titleLine)
+    var badgeFrame = try badge().convert(try badge().bounds, to: titleLine)
+    XCTAssertEqual(badgeFrame.minX, titleFrame.maxX + 4, accuracy: 1, "badge follows the title with titleBadgeGap")
+    XCTAssertLessThan(badgeFrame.maxX, titleLine.bounds.width / 2, "badge stays beside the title, not at the amount column")
+
+    // A long title truncates in front of the badge; the badge stays whole inside the line.
+    details.bind(try NativeListItem(data: data(title: String(repeating: "Contract interaction ", count: 6), badges: true)),
+      theme: nil, fonts: NativeListFontFamilies())
+    container.layoutIfNeeded()
+    titleFrame = title.convert(title.bounds, to: titleLine)
+    badgeFrame = try badge().convert(try badge().bounds, to: titleLine)
+    XCTAssertEqual(badgeFrame.minX, titleFrame.maxX + 4, accuracy: 1)
+    XCTAssertLessThanOrEqual(badgeFrame.maxX, titleLine.bounds.width + 0.5)
+    XCTAssertEqual(try badge().bounds.width, try badge().intrinsicContentSize.width, accuracy: 1)
+
+    // Rebinding without badges gives the title the whole line again.
+    details.bind(try NativeListItem(data: data(title: String(repeating: "Contract interaction ", count: 6), badges: false)),
+      theme: nil, fonts: NativeListFontFamilies())
+    container.layoutIfNeeded()
+    XCTAssertEqual(title.convert(title.bounds, to: titleLine).maxX, titleLine.bounds.width, accuracy: 1)
+  }
 }

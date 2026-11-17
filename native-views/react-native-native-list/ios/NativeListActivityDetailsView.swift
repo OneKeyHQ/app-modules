@@ -9,6 +9,9 @@ final class NativeListActivityDetailsView: UIStackView {
   private let identity = UIStackView()
   private let titleLine = UIStackView()
   private let title = NativeListTextLabel()
+  // Absorbs the title line's slack so the title keeps its intrinsic width and the
+  // badges follow the text (OK-67497), matching the identity title row (OK-66041).
+  private let titleLineFiller = UIView()
   private let descriptionLabel = NativeListTextLabel()
   private let status = NativeListTextLabel()
   private let amounts = UIStackView()
@@ -32,6 +35,9 @@ final class NativeListActivityDetailsView: UIStackView {
     identity.axis = .vertical; identity.alignment = .fill
     titleLine.axis = .horizontal; titleLine.alignment = .center; titleLine.spacing = 4
     titleLine.addArrangedSubview(title)
+    titleLine.addArrangedSubview(titleLineFiller)
+    titleLineFiller.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    titleLineFiller.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
     [titleLine, descriptionLabel, status].forEach(identity.addArrangedSubview)
     amounts.axis = .vertical; amounts.alignment = .fill; amounts.spacing = 2
     fee.axis = .vertical; fee.alignment = .trailing
@@ -216,9 +222,10 @@ final class NativeListActivityDetailsView: UIStackView {
       label.backgroundColor = tint.withAlphaComponent(0.1)
       label.layer.cornerRadius = 4; label.clipsToBounds = true
       label.setContentCompressionResistancePriority(.required, for: .horizontal)
-      titleLine.addArrangedSubview(label)
+      titleLine.insertArrangedSubview(label, at: titleLine.arrangedSubviews.count - 1)
       return label
     }
+    settleTitleLineFillerSpacing()
     let descriptors = data.dictionaries("amounts")
     while amountViews.count > descriptors.count {
       let view = amountViews.removeLast(); view.recycle(); amounts.removeArrangedSubview(view); view.removeFromSuperview()
@@ -269,6 +276,14 @@ final class NativeListActivityDetailsView: UIStackView {
     actions.arrangedSubviews.filter { !($0 is UIButton) }.forEach { actions.removeArrangedSubview($0); $0.removeFromSuperview() }
     actions.addArrangedSubview(spacer)
   }
+  /// The filler is the title line's last arranged view; the stack's spacing before it
+  /// would shave `titleBadgeGap` off the title's width, so that gap is zero. The title
+  /// is reset first because it is the last visible view only while there are no badges.
+  private func settleTitleLineFillerSpacing() {
+    titleLine.setCustomSpacing(UIStackView.spacingUseDefault, after: title)
+    titleLine.setCustomSpacing(0, after: badgeViews.last ?? title)
+  }
+
   @objc private func descriptionPressed() { onAction?(descriptionKey, descriptionLabel, "description", 0) }
   @objc private func actionPressed(_ button: UIButton) {
     guard button.tag < actionKeys.count else { return }
