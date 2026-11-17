@@ -2,6 +2,7 @@ package com.onekey.nativeoverlay
 
 import android.app.Activity
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.FrameLayout
@@ -101,6 +102,26 @@ internal class NativeOverlayHost private constructor(
       container.addView(entry, index, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
     onEntriesChanged()
+  }
+
+  /**
+   * Adds the message-toast layer under every entry of the `toast` level: the
+   * cards are plain views, drawn by the platform rather than hosted React
+   * content, and custom toast entries stay above them.
+   */
+  fun attachToastLayer(layer: View) {
+    val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+    if (parent !== content) {
+      (parent as? ViewGroup)?.removeView(this)
+      content.addView(this, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    } else if (content.getChildAt(content.childCount - 1) !== this) {
+      bringToFront()
+    }
+    val container = levelContainer(NativeOverlayLevel.TOAST)
+    if (layer.parent !== container) {
+      (layer.parent as? ViewGroup)?.removeView(layer)
+      container.addView(layer, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
   }
 
   fun detach(entry: NativeOverlayEntryRootView) {
