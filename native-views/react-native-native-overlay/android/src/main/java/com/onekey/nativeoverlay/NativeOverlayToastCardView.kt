@@ -638,6 +638,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     this.spec = spec
     surface.setColor(cardColor)
     spec.testID?.let { tag = it }
+    isClickable = spec.pressable
     isFocusable = spec.pressable
     importantForAccessibility = if (spec.pressable) {
       IMPORTANT_FOR_ACCESSIBILITY_YES

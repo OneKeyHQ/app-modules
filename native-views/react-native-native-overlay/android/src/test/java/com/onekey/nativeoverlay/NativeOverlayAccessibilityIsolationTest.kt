@@ -258,12 +258,27 @@ class NativeOverlayAccessibilityIsolationTest {
     card.apply(spec, 0xffffffff.toInt())
     val info = android.view.accessibility.AccessibilityNodeInfo.obtain()
     card.onInitializeAccessibilityNodeInfo(info)
+    assertTrue(card.isClickable)
+    assertTrue(card.isFocusable)
     assertTrue(info.isClickable)
     assertEquals("Hello", info.contentDescription.toString())
     assertTrue(card.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK, null))
     assertEquals(1, pressed)
     assertTrue(card.performClick())
     assertEquals(2, pressed)
+    assertTrue(
+      card.onKeyDown(
+        android.view.KeyEvent.KEYCODE_ENTER,
+        android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER),
+      ),
+    )
+    assertTrue(
+      card.onKeyUp(
+        android.view.KeyEvent.KEYCODE_ENTER,
+        android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER),
+      ),
+    )
+    assertEquals(3, pressed)
     assertEquals(emptyList<String>(), actions)
   }
 }
