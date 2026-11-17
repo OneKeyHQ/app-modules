@@ -449,10 +449,10 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
       val width = NativeListScale.dp(activity.resources, 390)
       fun bind(title: String, badges: Boolean, alignment: String? = null) {
         val data = JSONObject().put("type", "activity").put("key", "receive").put("title", title)
-        if (alignment != null) data.put("style", JSONObject().put("title", JSONObject().put("alignment", alignment)))
           .put("description", "0xc168f7...62f46d")
           .put("leading", JSONObject().put("kind", "icon").put("name", "ArrowBottomOutline"))
           .put("amounts", JSONArray().put(JSONObject().put("key", "usdt").put("text", "+1,250 USDT").put("secondaryText", "$1,250.13")))
+        if (alignment != null) data.put("style", JSONObject().put("title", JSONObject().put("alignment", alignment)))
         if (badges) data.put("badges", JSONArray().put(JSONObject().put("key", "risk").put("text", "High risk").put("tone", "warning")))
         details.bind(NativeListItem("receive", "activity", null, 0, data), null, false)
         details.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
