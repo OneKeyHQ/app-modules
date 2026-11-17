@@ -128,9 +128,14 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
       titleLine.addView(label, LayoutParams(-2, -2).apply { marginStart = if (style.has("titleBadgeGap")) px(style.optDouble("titleBadgeGap")) else dp(4) })
       badges.add(label)
     }
-    // PackedTitleLineLayout only re-caps the title while it has accessories; a recycled
-    // row whose badges were removed must not keep the previous cap.
-    if (badges.isEmpty()) title.maxWidth = Int.MAX_VALUE
+    // PackedTitleLineLayout rewrites the title's params and cap only while badges follow it.
+    // Without badges, restore the fresh-row state so the title keeps the whole line and its
+    // `alignment` (center/end) behaves the same on a recycled row as on a new one.
+    if (badges.isEmpty()) {
+      (title.layoutParams as LayoutParams).apply { width = 0; weight = 1f }
+      title.maxWidth = Int.MAX_VALUE
+      title.requestLayout()
+    }
     val amountData = data.optJSONArray("amounts")
     val count = amountData?.length() ?: 0
     while (amountViews.size > count) { val child = amountViews.removeAt(amountViews.lastIndex); child.recycle(); amounts.removeView(child) }

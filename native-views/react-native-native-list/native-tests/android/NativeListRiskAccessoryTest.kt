@@ -447,8 +447,9 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
       val details = NativeListActivityDetailsView(context, NativeListFonts())
       activity.setContentView(details)
       val width = NativeListScale.dp(activity.resources, 390)
-      fun bind(title: String, badges: Boolean) {
+      fun bind(title: String, badges: Boolean, alignment: String? = null) {
         val data = JSONObject().put("type", "activity").put("key", "receive").put("title", title)
+        if (alignment != null) data.put("style", JSONObject().put("title", JSONObject().put("alignment", alignment)))
           .put("description", "0xc168f7...62f46d")
           .put("leading", JSONObject().put("kind", "icon").put("name", "ArrowBottomOutline"))
           .put("amounts", JSONArray().put(JSONObject().put("key", "usdt").put("text", "+1,250 USDT").put("secondaryText", "$1,250.13")))
@@ -474,6 +475,13 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
 
       bind(longTitle, false)
       assertEquals("no stale cap after badges are removed", Int.MAX_VALUE, title.maxWidth)
+
+      // A recycled row without badges matches a fresh one, so a centered title keeps the line.
+      bind("Receive", false, "center")
+      val params = title.layoutParams as LinearLayout.LayoutParams
+      assertEquals(0, params.width)
+      assertEquals(1f, params.weight)
+      assertEquals("centered title spans the line", titleLine.width, title.width)
     }
   }
 

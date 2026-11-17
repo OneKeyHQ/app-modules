@@ -573,5 +573,27 @@ final class NativeListActivityPresentationTests: XCTestCase {
       theme: nil, fonts: NativeListFontFamilies())
     container.layoutIfNeeded()
     XCTAssertEqual(title.convert(title.bounds, to: titleLine).maxX, titleLine.bounds.width, accuracy: 1)
+
+    // Without badges a short title still spans the line, so `alignment: center` keeps
+    // centering it on a recycled row exactly as on a fresh one.
+    var centered = data(title: "Receive", badges: false)
+    centered["style"] = ["title": ["alignment": "center"]]
+    details.bind(try NativeListItem(data: centered), theme: nil, fonts: NativeListFontFamilies())
+    container.layoutIfNeeded()
+    XCTAssertEqual(title.bounds.width, titleLine.bounds.width, accuracy: 1)
+    XCTAssertEqual(title.textAlignment, .center)
+    let fresh = NativeListActivityDetailsView()
+    let freshContainer = UIView(frame: container.frame)
+    fresh.translatesAutoresizingMaskIntoConstraints = false
+    freshContainer.addSubview(fresh)
+    NSLayoutConstraint.activate([
+      fresh.leadingAnchor.constraint(equalTo: freshContainer.leadingAnchor),
+      fresh.trailingAnchor.constraint(equalTo: freshContainer.trailingAnchor),
+      fresh.topAnchor.constraint(equalTo: freshContainer.topAnchor),
+    ])
+    fresh.bind(try NativeListItem(data: centered), theme: nil, fonts: NativeListFontFamilies())
+    freshContainer.layoutIfNeeded()
+    let freshTitle = try XCTUnwrap(Mirror(reflecting: fresh).children.first { $0.label == "title" }?.value as? UILabel)
+    XCTAssertEqual(title.frame, freshTitle.frame, "recycled and fresh rows lay out the title the same way")
   }
 }

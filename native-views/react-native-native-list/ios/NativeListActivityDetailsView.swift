@@ -276,12 +276,13 @@ final class NativeListActivityDetailsView: UIStackView {
     actions.arrangedSubviews.filter { !($0 is UIButton) }.forEach { actions.removeArrangedSubview($0); $0.removeFromSuperview() }
     actions.addArrangedSubview(spacer)
   }
-  /// The filler is the title line's last arranged view; the stack's spacing before it
-  /// would shave `titleBadgeGap` off the title's width, so that gap is zero. The title
-  /// is reset first because it is the last visible view only while there are no badges.
+  /// The filler only packs the title while badges follow it. Without badges it is
+  /// hidden so the title keeps the whole line and its `alignment` (center/end) still
+  /// applies, exactly as before badges existed. With badges, the stack's spacing
+  /// before the filler would shave `titleBadgeGap` off the title, so that gap is zero.
   private func settleTitleLineFillerSpacing() {
-    titleLine.setCustomSpacing(UIStackView.spacingUseDefault, after: title)
-    titleLine.setCustomSpacing(0, after: badgeViews.last ?? title)
+    titleLineFiller.isHidden = badgeViews.isEmpty
+    if let last = badgeViews.last { titleLine.setCustomSpacing(0, after: last) }
   }
 
   @objc private func descriptionPressed() { onAction?(descriptionKey, descriptionLabel, "description", 0) }
