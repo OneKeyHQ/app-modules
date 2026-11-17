@@ -10,6 +10,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       stopAnimation()
       removeFadeSnapshot()
       stableOpen = false
+      hapticTarget = nil
       setProgress(0)
       if enabled && open { settle(to: true, velocity: 0, user: false) }
     }
@@ -84,10 +85,14 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private var fadeSnapshot: UIView?
   private var fadeTarget = false
   private var fadeUser = false
-  // Hooks for native tests: they set Reduce Motion, and run without an app
-  // host, where UIKit cannot snapshot a view.
+  // The state a user's release or tap has already confirmed with a haptic,
+  // so the transition plays it once, when it is decided rather than landed.
+  private var hapticTarget: Bool?
+  // Hooks for native tests: they set Reduce Motion, run without an app host,
+  // where UIKit cannot snapshot a view, and count haptics.
   var isReduceMotionEnabled: () -> Bool = { UIAccessibility.isReduceMotionEnabled }
   var makeFadeSnapshot: (UIView) -> UIView? = { $0.snapshotView(afterScreenUpdates: false) }
+  var playHaptic: () -> Void = { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
 
   // Measured frame by frame from the reference recording: the page travels
   // 80% of the width, keeps a fixed display-like corner, washes toward the
@@ -203,6 +208,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
       interruptGesture()
       stopAnimation()
       removeFadeSnapshot()
+      hapticTarget = nil
       setProgress(stableOpen && enabled ? 1 : 0)
     } else if enabled && stableOpen != open {
       settle(to: open, velocity: 0, user: false)
@@ -231,21 +237,30 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     guard start.y < bounds.height - CGFloat(max(0, bottomBarHeight)) else { return false }
     guard !isInsideNativeTabBar(touch.view) else { return false }
     touchTarget = touch.view
-    if progress > 0 { return start.x >= menuWidth * progress }
+    // While open, the page beside the menu and the menu itself both take the
+    // drag; controls inside the menu keep theirs.
+    if progress > 0 { return start.x >= menuWidth * progress || !touchPathContainsExclusiveControl() }
     return swipeEnabled && !touchPathContainsExclusiveControl()
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     guard enabled, bounds.width > 0 else { return false }
     let velocity = pan.velocity(in: self)
-    guard abs(velocity.x) > abs(velocity.y) else { return false }
     let location = pan.location(in: self)
     let translation = pan.translation(in: self)
     let start = CGPoint(x: location.x - translation.x, y: location.y - translation.y)
     guard start.y < bounds.height - CGFloat(max(0, bottomBarHeight)) else { return false }
-    if progress > 0 {
-      return start.x >= menuWidth * progress
+    if progress > 0 && start.x < menuWidth * progress {
+      // Inside the menu a sideways swipe is never a tap on the row under it,
+      // so its press is cancelled either way; only a leftward one closes.
+      // The distance so far reads the direction more steadily than the speed
+      // at this instant.
+      guard abs(translation.x) > abs(translation.y) || abs(velocity.x) > abs(velocity.y) else { return false }
+      cancelReactTouches()
+      return translation.x < 0 || velocity.x < 0
     }
+    guard abs(velocity.x) > abs(velocity.y) else { return false }
+    if progress > 0 { return true }
     return swipeEnabled && velocity.x > 0 && !touchPathCanScrollRight()
   }
 
@@ -256,7 +271,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     guard gestureRecognizer === pan,
           let scroll = other.view as? UIScrollView,
           other === scroll.panGestureRecognizer else { return false }
-    return scroll.isDescendant(of: foregroundContent)
+    return scroll.isDescendant(of: foregroundContent) || scroll.isDescendant(of: menu)
   }
 
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
@@ -338,6 +353,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
     switch recognizer.state {
     case .began:
+      cancelReactTouches()
       // The drag takes over a settle or cross-fade in flight and drops its
       // completion. Cancelling returns to a programmatic target, else to the
       // stable state.
@@ -364,6 +380,24 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     case .cancelled, .failed:
       if !suppressCancellation { settle(to: gestureReturnOpen, velocity: 0, user: false) }
     default: break
+    }
+  }
+
+  // React Native's touch handler sits on the surface above this view, so the
+  // drag cannot prevent it, and a row the drag started on would still fire
+  // its press on release. Toggling the handler cancels its touches, as a
+  // native scroll taking over does.
+  private func cancelReactTouches() {
+    let handlerClasses = ["RCTSurfaceTouchHandler", "RCTTouchHandler"].compactMap(NSClassFromString)
+    guard !handlerClasses.isEmpty else { return }
+    var view = superview
+    while let current = view {
+      for recognizer in current.gestureRecognizers ?? []
+      where handlerClasses.contains(where: { recognizer.isKind(of: $0) }) {
+        recognizer.isEnabled = false
+        recognizer.isEnabled = true
+      }
+      view = current.superview
     }
   }
 
@@ -453,6 +487,12 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   // keeps its finger velocity through a slightly underdamped spring.
   private func settle(to requested: Bool, velocity: CGFloat, user: Bool, tween: Bool = true) {
     let target = enabled && requested
+    // The haptic marks the decision: it plays as a user's release or tap
+    // commits to the other state, not when the drawer lands there.
+    if user && target != stableOpen && hapticTarget != target {
+      hapticTarget = target
+      if hapticFeedbackEnabled { playHaptic() }
+    }
     // An animation already heading there keeps running; the newer request
     // still decides whether its completion is a user event.
     if displayLink != nil && animationTarget == target {
@@ -468,6 +508,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     guard bounds.width > 0, window != nil else {
       removeFadeSnapshot()
       stableOpen = target
+      hapticTarget = nil
       setProgress(target ? 1 : 0)
       return
     }
@@ -515,7 +556,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     fadeTarget = target
     fadeUser = user
     // The final state shows now, under the snapshot. The transition completes
-    // (stable state, callback and haptic) only when the fade does.
+    // (stable state and callback) only when the fade does.
     setProgress(target ? 1 : 0)
     UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut], animations: {
       snapshot.alpha = 0
@@ -593,13 +634,13 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
   private func finish(target: Bool, user: Bool) {
     let changed = stableOpen != target
     stableOpen = target
+    hapticTarget = nil
     setProgress(target ? 1 : 0)
     if user { reportCompletion(target: target, changed: changed) }
   }
 
   private func reportCompletion(target: Bool, changed: Bool) {
     guard changed || target != open else { return }
-    if hapticFeedbackEnabled && changed { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     onDrawerOpenChange?(target)
   }
 

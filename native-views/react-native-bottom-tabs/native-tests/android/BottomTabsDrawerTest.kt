@@ -200,6 +200,46 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
   }
 
+  fun testLeftSwipeInsideTheOpenMenuClosesItAndARightOneOnlyCancelsReactTouches() {
+    onMain { drawer.setDrawerOpen(true) }
+    settle()
+    onMain {
+      val menuWidth = drawer.width * .8f
+      // A rightward swipe in the menu leaves it open, but is not a tap either.
+      // React gets its touch input back when the finger lifts.
+      drag(menuWidth * .2f, 150f, menuWidth * .7f, 150f)
+      assertTrue(events.isEmpty())
+      assertEquals(1, root.started)
+      assertEquals(1, root.ended)
+      assertEquals(menuWidth, drawer.getChildAt(1).translationX, 1f)
+      drag(menuWidth * .7f, 150f, menuWidth * .05f, 150f)
+    }
+    settle()
+    onMain {
+      assertEquals(listOf(false), events)
+      assertEquals(2, root.started)
+      assertEquals(2, root.ended)
+      assertEquals(0f, drawer.getChildAt(1).translationX)
+    }
+  }
+
+  fun testARightSwipeInTheMenuCutShortStillEndsItsNativeGesture() {
+    onMain { drawer.setDrawerOpen(true) }
+    settle()
+    onMain {
+      val menuWidth = drawer.width * .8f
+      drag(menuWidth * .2f, 150f, menuWidth * .7f, 150f, lift = false)
+      assertEquals(1, root.started)
+      assertEquals(0, root.ended)
+      // A prop update before the finger lifts ends it, and only once.
+      drawer.setDrawerEnabled(false)
+      assertEquals(1, root.ended)
+      drag(menuWidth * .2f, 150f, menuWidth * .7f, 150f)
+      assertEquals(1, root.started)
+      assertEquals(1, root.ended)
+    }
+  }
+
   fun testCancellationAndNewPropCancelStaleUserCompletion() {
     onMain { drag(drawer.width * .3f, 150f, drawer.width * .95f, 150f, cancel = true) }
     settle()
@@ -448,7 +488,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     main.layout(0, 0, drawer.width, drawer.height)
   }
 
-  private fun drag(x0: Float, y0: Float, x1: Float, y1: Float, cancel: Boolean = false) {
+  private fun drag(x0: Float, y0: Float, x1: Float, y1: Float, cancel: Boolean = false, lift: Boolean = true) {
     val start = SystemClock.uptimeMillis()
     fun send(action: Int, x: Float, y: Float, offset: Long) {
       val event = MotionEvent.obtain(start, start + offset, action, x, y, 0)
@@ -459,7 +499,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     for (step in 1..8) {
       send(MotionEvent.ACTION_MOVE, x0 + (x1 - x0) * step / 8, y0 + (y1 - y0) * step / 8, step * 50L)
     }
-    send(if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP, x1, y1, 450)
+    if (lift) send(if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP, x1, y1, 450)
   }
   fun testSharedSvgDecoderUsesRealCoilAndTabIconPipeline() {
     val loader = coil3.ImageLoader.Builder(activity).components { add(SharedSvgDecoder.Factory()) }.build()

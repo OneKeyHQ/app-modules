@@ -150,10 +150,19 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
   private var downProgress = 0f
   private var gestureReturnOpen = false
   private var eligible = false
+  // The touch started inside the open menu, where only a leftward drag moves it.
+  private var downInMenu = false
+  // The state a user's release or tap has already confirmed with a haptic,
+  // so the transition plays it once, when it is decided rather than landed.
+  private var hapticTarget: Boolean? = null
   private var touchedView: WeakReference<View>? = null
   private val touchMatrix = Matrix()
   private val touchPoint = FloatArray(2)
   private var dragging = false
+  // A native gesture start sent to React (by a drag, or by a rightward swipe
+  // in the menu that only cancels the row's touch), owed its end however the
+  // touch stops. React's pointer dispatcher drops input until it gets one.
+  private var nativeGestureStarted = false
   private var tracker: VelocityTracker? = null
   private var lastNativeEvent: MotionEvent? = null
   private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -205,6 +214,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     stopAnimation()
     drawerEnabled = value
     stableOpen = false
+    hapticTarget = null
     setProgress(0f)
     if (value && requestedOpen) settle(true, 0f, false)
   }
@@ -287,8 +297,11 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
         touchedView = touchedViewAt(this, event.x, event.y)?.let(::WeakReference)
         val systemLeft = ViewCompat.getRootWindowInsets(this)
           ?.getInsets(WindowInsetsCompat.Type.systemGestures())?.left ?: 0
+        downInMenu = progress > 0f && event.x < menuWidth * progress
+        // While open, the page beside the menu and the menu itself both take
+        // the drag; controls inside the menu keep theirs.
         eligible = drawerEnabled && event.y < height - bottomBarHeight * density &&
-          (if (progress > 0f) event.x >= menuWidth * progress
+          (if (progress > 0f) !downInMenu || !touchPathHasExclusiveControl()
           else swipeEnabled && event.x >= systemLeft && !touchPathHasExclusiveControl())
         if (eligible) tracker = VelocityTracker.obtain().also { it.addMovement(event) }
       }
@@ -313,14 +326,20 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
           eligible = false
           return false
         }
+        // Inside the open menu only a leftward drag moves it, which closes it.
+        // A rightward one is still a swipe, not a tap on the row under it.
+        if (abs(dx) > touchSlop && abs(dx) > abs(dy) && downInMenu && dx > 0f) {
+          eligible = false
+          startNativeGesture(event)
+          return false
+        }
         if (abs(dx) > touchSlop && abs(dx) > abs(dy) && (progress > 0f || dx > 0f)) {
           gestureReturnOpen = if (animator != null && !animationUser) animationTarget else stableOpen
           stopAnimation()
           downProgress = progress
           dragging = true
           parent?.requestDisallowInterceptTouchEvent(true)
-          NativeGestureUtil.notifyNativeGestureStarted(this, event)
-          rememberNativeEvent(event)
+          startNativeGesture(event)
           return true
         }
       }
@@ -433,11 +452,18 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     lastNativeEvent = MotionEvent.obtain(event)
   }
 
+  private fun startNativeGesture(event: MotionEvent) {
+    NativeGestureUtil.notifyNativeGestureStarted(this, event)
+    nativeGestureStarted = true
+    rememberNativeEvent(event)
+  }
+
   private fun cancelTouch() {
-    if (dragging) {
+    if (nativeGestureStarted) {
       lastNativeEvent?.let { NativeGestureUtil.notifyNativeGestureEnded(this, it) }
-      parent?.requestDisallowInterceptTouchEvent(false)
     }
+    if (dragging) parent?.requestDisallowInterceptTouchEvent(false)
+    nativeGestureStarted = false
     dragging = false
     eligible = false
     touchedView = null
@@ -572,6 +598,12 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
   // keeps its finger velocity through a slightly underdamped spring.
   private fun settle(open: Boolean, velocity: Float, user: Boolean, tween: Boolean = true) {
     val target = drawerEnabled && open
+    // The haptic marks the decision: it plays as a user's release or tap
+    // commits to the other state, not when the drawer lands there.
+    if (user && target != stableOpen && hapticTarget != target) {
+      hapticTarget = target
+      if (drawerHapticFeedbackEnabled) performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    }
     // An animation already heading there keeps running; the newer request
     // still decides whether its completion is a user event.
     if (animator != null && animationTarget == target) {
@@ -586,6 +618,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     stopAnimation()
     if (width == 0 || !isAttachedToWindow) {
       stableOpen = target
+      hapticTarget = null
       setProgress(if (target) 1f else 0f)
       return
     }
@@ -650,9 +683,9 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
   private fun finish(target: Boolean, user: Boolean) {
     val changed = stableOpen != target
     stableOpen = target
+    hapticTarget = null
     setProgress(if (target) 1f else 0f)
     if (user && (changed || target != requestedOpen)) {
-      if (drawerHapticFeedbackEnabled && changed) performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
       onDrawerOpenChange?.invoke(target)
     }
   }
@@ -711,6 +744,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     detached = true
     cancelTouch()
     stopAnimation()
+    hapticTarget = null
     backCallback.remove()
     backRegistered = false
     setProgress(if (stableOpen && drawerEnabled) 1f else 0f)
