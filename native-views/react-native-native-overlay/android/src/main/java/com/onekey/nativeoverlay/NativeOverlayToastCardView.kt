@@ -40,8 +40,14 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.facebook.react.common.assets.ReactFontManager
+import java.lang.ref.WeakReference
+import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLConnection
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -67,8 +73,51 @@ private object ToastMetrics {
   const val ACTIONS_PADDING_BOTTOM = 2f
 }
 
-private val imageExecutor = Executors.newCachedThreadPool()
+private const val IMAGE_POOL_THREADS = 4
+private const val IMAGE_TIMEOUT_MS = 5_000
+
+private val imageExecutor = Executors.newFixedThreadPool(IMAGE_POOL_THREADS) { runnable ->
+  Thread(runnable, "onekey-toast-image").apply { isDaemon = true }
+}
 private val mainHandler = Handler(Looper.getMainLooper())
+
+private fun fetchBitmap(
+  uri: String,
+  cancelled: AtomicBoolean,
+  connectionRef: AtomicReference<URLConnection?>,
+  targetRef: WeakReference<ImageView>,
+) {
+  if (cancelled.get() || Thread.currentThread().isInterrupted) return
+  val bitmap = runCatching {
+    if (uri.startsWith("data:")) {
+      val bytes = Base64.decode(uri.substringAfter(","), Base64.DEFAULT)
+      BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    } else {
+      val connection = URL(uri).openConnection().apply {
+        connectTimeout = IMAGE_TIMEOUT_MS
+        readTimeout = IMAGE_TIMEOUT_MS
+      }
+      connectionRef.set(connection)
+      try {
+        if (cancelled.get() || Thread.currentThread().isInterrupted) {
+          (connection as? HttpURLConnection)?.disconnect()
+          null
+        } else {
+          connection.getInputStream().use(BitmapFactory::decodeStream)
+        }
+      } finally {
+        connectionRef.compareAndSet(connection, null)
+      }
+    }
+  }.getOrNull()
+  if (!cancelled.get() && !Thread.currentThread().isInterrupted) {
+    mainHandler.post {
+      if (!cancelled.get()) {
+        targetRef.get()?.setImageBitmap(bitmap)
+      }
+    }
+  }
+}
 
 private fun Context.dp(value: Float): Int = (value * resources.displayMetrics.density).roundToInt()
 
@@ -115,7 +164,7 @@ private class TypefaceSpan(private val typeface: Typeface) : MetricAffectingSpan
   }
 }
 
-private object ToastFont {
+internal object ToastFont {
   /**
    * The face for a weight: a per-weight font name when the typeface ships one
    * (resolved from `assets/fonts`), the family at that weight otherwise.
@@ -129,7 +178,11 @@ private object ToastFont {
     if (!family.isNullOrEmpty()) {
       return ReactFontManager.getInstance().getTypeface(family, numeric, false, assets)
     }
-    return Typeface.create(Typeface.DEFAULT, numeric, false)
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      Typeface.create(Typeface.DEFAULT, numeric, false)
+    } else {
+      Typeface.create(Typeface.DEFAULT, if (numeric >= 600) Typeface.BOLD else Typeface.NORMAL)
+    }
   }
 }
 
@@ -185,11 +238,14 @@ private object ToastNamedIcon {
 }
 
 @SuppressLint("ViewConstructor")
-private class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayout(context) {
+internal class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayout(context) {
   private val owner = Any()
   private val imageView = ImageView(context)
   /** The size the named icon was last drawn at; it renders at its frame. */
   private var requestedSize: Pair<Int, Int>? = null
+  private var imageFuture: Future<*>? = null
+  private var cancelled = AtomicBoolean(false)
+  private val activeConnection = AtomicReference<URLConnection?>(null)
 
   init {
     when (icon) {
@@ -220,6 +276,9 @@ private class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayout
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    if (icon is ToastIcon.Image && cancelled.get() && imageView.drawable == null) {
+      load(icon.uri)
+    }
     requestIcon()
   }
 
@@ -240,23 +299,30 @@ private class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayout
     ) { bitmap -> imageView.setImageBitmap(bitmap) }
   }
 
-  override fun onDetachedFromWindow() {
+  fun cancelLoad() {
     ToastNamedIcon.cancel(owner)
     requestedSize = null
+    cancelled.set(true)
+    imageFuture?.cancel(true)
+    imageFuture = null
+    (activeConnection.getAndSet(null) as? HttpURLConnection)?.let { conn ->
+      Thread { runCatching { conn.disconnect() } }.apply { isDaemon = true }.start()
+    }
+  }
+
+  override fun onDetachedFromWindow() {
+    cancelLoad()
     super.onDetachedFromWindow()
   }
 
   private fun load(uri: String) {
-    imageExecutor.execute {
-      val bitmap = runCatching {
-        if (uri.startsWith("data:")) {
-          val bytes = Base64.decode(uri.substringAfter(","), Base64.DEFAULT)
-          BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        } else {
-          URL(uri).openStream().use(BitmapFactory::decodeStream)
-        }
-      }.getOrNull()
-      mainHandler.post { imageView.setImageBitmap(bitmap) }
+    cancelLoad()
+    val token = AtomicBoolean(false)
+    cancelled = token
+    val targetRef = WeakReference(imageView)
+    val connectionRef = activeConnection
+    imageFuture = imageExecutor.submit {
+      fetchBitmap(uri, token, connectionRef, targetRef)
     }
   }
 }
@@ -559,10 +625,17 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     clipToPadding = true
   }
 
+  fun cancelLoads() {
+    iconView?.cancelLoad()
+    imageView?.cancelLoad()
+    buttons.forEach { it.iconView?.cancelLoad() }
+  }
+
   fun apply(spec: ToastSpec, cardColor: Int) {
     this.spec = spec
     surface.setColor(cardColor)
     spec.testID?.let { tag = it }
+    cancelLoads()
     removeAllViews()
     val link: (String) -> Unit = { onLink?.invoke(it) }
     badge = if (spec.isNotification) {

@@ -226,11 +226,21 @@ export interface IOverlayToastItem {
 }
 
 export type IOverlayToastEvent =
-  | { id: string; type: 'dismiss'; reason: IOverlayToastDismissReason }
-  | { id: string; type: 'close'; reason: IOverlayToastDismissReason }
-  | { id: string; type: 'action'; actionId: string }
-  | { id: string; type: 'link'; link: string }
-  | { id: string; type: 'press' };
+  | {
+      id: string;
+      generation?: number;
+      type: 'dismiss';
+      reason: IOverlayToastDismissReason;
+    }
+  | {
+      id: string;
+      generation?: number;
+      type: 'close';
+      reason: IOverlayToastDismissReason;
+    }
+  | { id: string; generation?: number; type: 'action'; actionId: string }
+  | { id: string; generation?: number; type: 'link'; link: string }
+  | { id: string; generation?: number; type: 'press' };
 
 export interface IOverlayToastRenderer {
   sync: (

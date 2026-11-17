@@ -65,6 +65,28 @@ enum NativeOverlayToastColor {
     let m = l - chroma / 2
     return UIColor(red: r + m, green: g + m, blue: b + m, alpha: a)
   }
+
+  /// Formats a colour into the strict `rgba(r,g,b,a)` string the named-icon
+  /// registry accepts.
+  static func rgba(_ color: UIColor) -> String {
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+    color.getRed(&r, green: &g, blue: &b, alpha: &a)
+    let ri = Int((min(max(r, 0), 1) * 255).rounded())
+    let gi = Int((min(max(g, 0), 1) * 255).rounded())
+    let bi = Int((min(max(b, 0), 1) * 255).rounded())
+    let clampedA = min(max(a, 0), 1)
+    let alpha: String
+    if clampedA >= 1 {
+      alpha = "1"
+    } else if clampedA <= 0 {
+      alpha = "0"
+    } else {
+      alpha = String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), Double(clampedA))
+        .replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression)
+        .replacingOccurrences(of: #"\.$"#, with: "", options: .regularExpression)
+    }
+    return "rgba(\(ri),\(gi),\(bi),\(alpha))"
+  }
 }
 
 private func toastNumber(_ value: Any?) -> CGFloat? {
@@ -131,10 +153,10 @@ enum NativeOverlayToastIcon {
     switch kind {
     case "icon":
       guard let name = dict["name"] as? String else { return nil }
-      let colorString = dict["color"] as? String ?? "#000000"
+      let color = NativeOverlayToastColor.parse(dict["color"]) ?? .black
       self = .named(
-        name: name, colorString: colorString,
-        color: NativeOverlayToastColor.parse(colorString) ?? .label, size: size
+        name: name, colorString: NativeOverlayToastColor.rgba(color),
+        color: color, size: size
       )
     case "spinner":
       self = .spinner(color: NativeOverlayToastColor.parse(dict["color"]) ?? .gray, size: size)

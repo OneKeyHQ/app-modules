@@ -75,6 +75,20 @@ internal object ToastColor {
       else -> null
     }
   }
+
+  /** Formats a colour into the strict `rgba(r,g,b,a)` string the named-icon registry accepts. */
+  fun rgba(color: Int): String {
+    val r = Color.red(color)
+    val g = Color.green(color)
+    val b = Color.blue(color)
+    val a = Color.alpha(color)
+    val alpha = when (a) {
+      255 -> "1"
+      0 -> "0"
+      else -> String.format(java.util.Locale.US, "%.4f", a / 255.0).trimEnd('0').trimEnd('.')
+    }
+    return "rgba($r,$g,$b,$alpha)"
+  }
 }
 
 private fun JSONObject.float(key: String, fallback: Float): Float =
@@ -164,8 +178,8 @@ internal sealed class ToastIcon {
       val size = json.float("size", 20f)
       return when (json.optString("kind")) {
         "icon" -> {
-          val colorString = json.optString("color", "#000000")
-          Named(json.optString("name"), colorString, ToastColor.parse(colorString) ?: Color.BLACK, size)
+          val color = ToastColor.parse(json.stringOrNull("color")) ?: Color.BLACK
+          Named(json.optString("name"), ToastColor.rgba(color), color, size)
         }
         "spinner" -> Spinner(ToastColor.parse(json.stringOrNull("color")) ?: Color.GRAY, size)
         "image" -> Image(json.optString("uri"), size, json.float("borderRadius", 0f))

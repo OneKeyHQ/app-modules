@@ -122,6 +122,12 @@ internal class NativeOverlayHost private constructor(
       (layer.parent as? ViewGroup)?.removeView(layer)
       container.addView(layer, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
+    updateAccessibility()
+  }
+
+  fun detachToastLayer(layer: View) {
+    (layer.parent as? ViewGroup)?.removeView(layer)
+    updateAccessibility()
   }
 
   fun detach(entry: NativeOverlayEntryRootView) {
@@ -149,10 +155,13 @@ internal class NativeOverlayHost private constructor(
       container
     }
 
-  private fun orderedEntries(): List<NativeOverlayEntryRootView> =
+  private fun orderedViews(): List<View> =
     levelContainers.values.flatMap { container ->
-      (0 until container.childCount).mapNotNull { container.getChildAt(it) as? NativeOverlayEntryRootView }
+      (0 until container.childCount).map { container.getChildAt(it) }
     }
+
+  private fun orderedEntries(): List<NativeOverlayEntryRootView> =
+    orderedViews().filterIsInstance<NativeOverlayEntryRootView>()
 
   /** Global overlays win; otherwise the topmost visible page overlay. */
   private fun topBackEntry(): NativeOverlayEntryRootView? =
@@ -170,11 +179,13 @@ internal class NativeOverlayHost private constructor(
 
   /** TalkBack only reads the topmost blocking overlay and what is above it. */
   private fun updateAccessibility() {
-    val entries = orderedEntries()
-    val topIndex = entries.indexOfLast { it.blocking && it.isShownForInput }
+    val views = orderedViews()
+    val topIndex = views.indexOfLast {
+      it is NativeOverlayEntryRootView && it.blocking && it.isShownForInput
+    }
     val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
     if (topIndex >= 0) {
-      accessibilityIsolation.update(content, this, entries.take(topIndex), this)
+      accessibilityIsolation.update(content, this, views.take(topIndex), this)
       return
     }
     val pageEntry = shownPageHosts().flatMap { it.shownEntries() }.lastOrNull { it.blocking }

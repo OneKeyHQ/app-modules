@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { overlayStore } from '../OverlayStore';
 import { OverlayToastStore } from '../toast/OverlayToastStore';
 import { createToastDomRenderer } from '../toast/toastDomRenderer.web';
 import { serializeToastItems, toToastEvent } from '../toast/toastBridge';
@@ -140,6 +141,41 @@ test('hovering the stack pauses every timer and leaving restarts them', () => {
   expect(cards().every((card) => card.dataset.removed === 'true')).toBe(true);
 });
 
+test('hovering a single toast pauses its timer without fanning out', () => {
+  store.show(message('a', { duration: 1000 }));
+  jest.advanceTimersByTime(900);
+  const list = document.querySelector('[data-onekey-toast-toaster]');
+  list?.dispatchEvent(new MouseEvent('mouseenter'));
+  expect(cards()[0]?.getAttribute('data-expanded')).toBe('false');
+  jest.advanceTimersByTime(5000);
+  expect(cards()[0]?.getAttribute('data-removed')).toBe('false');
+  list?.dispatchEvent(new MouseEvent('mouseleave'));
+  jest.advanceTimersByTime(999);
+  expect(cards()[0]?.getAttribute('data-removed')).toBe('false');
+  jest.advanceTimersByTime(1);
+  expect(cards()[0]?.getAttribute('data-removed')).toBe('true');
+});
+
+test('pointercancel clears interaction state and resumes timers without swipe dismissal', () => {
+  store.show(message('a', { duration: 1000 }));
+  const card = cards()[0]!;
+  card.dispatchEvent(
+    new MouseEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 })
+  );
+  card.dispatchEvent(
+    new MouseEvent('pointermove', { bubbles: true, clientX: 0, clientY: 40 })
+  );
+  jest.advanceTimersByTime(2000);
+  expect(card.getAttribute('data-removed')).toBe('false');
+  card.dispatchEvent(new MouseEvent('pointercancel', { bubbles: true }));
+  expect(card.getAttribute('data-removed')).toBe('false');
+  expect(card.getAttribute('data-swiping')).toBe('false');
+  jest.advanceTimersByTime(999);
+  expect(card.getAttribute('data-removed')).toBe('false');
+  jest.advanceTimersByTime(1);
+  expect(card.getAttribute('data-removed')).toBe('true');
+});
+
 test('the close button dismisses with the close reason', () => {
   const onClose = jest.fn();
   store.show(message('a'), { onClose });
@@ -224,6 +260,59 @@ test('a toast with its own position gets its own group', () => {
   ]);
 });
 
+test('changing position keeps newest-first order across configuration and per-card moves', () => {
+  ['a', 'b', 'c', 'd'].forEach((id) => store.show(message(id)));
+  store.configure({ position: 'top-center' });
+  expect(cards().map((card) => card.textContent)).toEqual([
+    'Title d',
+    'Title c',
+    'Title b',
+    'Title a',
+  ]);
+  expect(cards().map((card) => card.getAttribute('data-front'))).toEqual([
+    'true',
+    'false',
+    'false',
+    'false',
+  ]);
+  expect(cards().map((card) => card.getAttribute('data-visible'))).toEqual([
+    'true',
+    'true',
+    'true',
+    'false',
+  ]);
+  store.update(message('c', { position: 'bottom-right' }));
+  store.update(message('c', { position: 'top-center' }));
+  expect(cards().map((card) => card.textContent)).toEqual([
+    'Title d',
+    'Title c',
+    'Title b',
+    'Title a',
+  ]);
+});
+
+test('a toast mounted after a lock overlay inherits inert isolation', () => {
+  overlayStore.request({ id: 'lock-entry', level: 'lock', blocking: true });
+  try {
+    store.show(message('a'));
+    const layer = document.querySelector<HTMLElement>(
+      '[data-onekey-overlay-layer="toast"]'
+    );
+    expect(layer?.inert).toBe(true);
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { altKey: true, code: 'KeyT' })
+    );
+    expect(cards()[0]?.getAttribute('data-expanded')).toBe('false');
+  } finally {
+    overlayStore.dismiss('lock-entry', 'programmatic');
+    overlayStore.finalize('lock-entry');
+  }
+  const layer = document.querySelector<HTMLElement>(
+    '[data-onekey-overlay-layer="toast"]'
+  );
+  expect(layer?.inert).toBe(false);
+});
+
 test('top toasts rest under a top obstruction', () => {
   store.configure({ position: 'top-center', topObstruction: 120 });
   store.show(message('a'));
@@ -254,6 +343,91 @@ test('the bridge encodes infinite durations and decodes events', () => {
     toToastEvent({ toastId: 'a', type: 'dismiss', value: 'swipe' })
   ).toEqual({ id: 'a', type: 'dismiss', reason: 'swipe' });
   expect(
+    toToastEvent({
+      toastId: 'a',
+      generation: 3,
+      type: 'dismiss',
+      value: 'swipe',
+    })
+  ).toEqual({ id: 'a', generation: 3, type: 'dismiss', reason: 'swipe' });
+  expect(
     toToastEvent({ toastId: 'a', type: 'nope', value: '' })
   ).toBeUndefined();
+});
+
+test('stale events from a previous generation are ignored after showing the same id again', () => {
+  const lone = new OverlayToastStore();
+  const detachLone = lone.attachRenderer();
+  const firstDismiss = jest.fn();
+  const firstClose = jest.fn();
+  const firstAction = jest.fn();
+  lone.show(message('a'), {
+    onDismiss: firstDismiss,
+    onClose: firstClose,
+    onAction: firstAction,
+  });
+  const firstGen = lone.getSnapshot().items[0]!.generation;
+
+  const secondDismiss = jest.fn();
+  const secondClose = jest.fn();
+  const secondAction = jest.fn();
+  lone.show(message('a', { title: text('Second') }), {
+    onDismiss: secondDismiss,
+    onClose: secondClose,
+    onAction: secondAction,
+  });
+  const secondGen = lone.getSnapshot().items[0]!.generation;
+  expect(secondGen).toBeGreaterThan(firstGen);
+
+  lone.handleEvent({
+    id: 'a',
+    generation: firstGen,
+    type: 'action',
+    actionId: 'retry',
+  });
+  lone.handleEvent({
+    id: 'a',
+    generation: firstGen,
+    type: 'dismiss',
+    reason: 'timeout',
+  });
+  lone.handleEvent({
+    id: 'a',
+    generation: firstGen,
+    type: 'close',
+    reason: 'timeout',
+  });
+
+  expect(firstAction).not.toHaveBeenCalled();
+  expect(secondAction).not.toHaveBeenCalled();
+  expect(secondDismiss).not.toHaveBeenCalled();
+  expect(secondClose).not.toHaveBeenCalled();
+  expect(lone.getSnapshot().items).toHaveLength(1);
+  expect(lone.getSnapshot().items[0]?.visible).toBe(true);
+
+  lone.handleEvent({
+    id: 'a',
+    generation: secondGen,
+    type: 'dismiss',
+    reason: 'swipe',
+  });
+  expect(secondDismiss).toHaveBeenCalledWith('swipe');
+  lone.handleEvent({
+    id: 'a',
+    generation: firstGen,
+    type: 'close',
+    reason: 'timeout',
+  });
+  expect(secondClose).not.toHaveBeenCalled();
+  expect(lone.getSnapshot().items).toHaveLength(1);
+
+  lone.handleEvent({
+    id: 'a',
+    generation: secondGen,
+    type: 'close',
+    reason: 'swipe',
+  });
+  expect(secondClose).toHaveBeenCalledWith('swipe');
+  expect(lone.getSnapshot().items).toHaveLength(0);
+  detachLone();
 });

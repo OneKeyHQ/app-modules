@@ -137,7 +137,7 @@ private final class ToastIconView: UIView {
 /// A paragraph of styled runs, laid out and drawn with TextKit the way the
 /// text engine this replaces did, so line boxes, glyph positions and
 /// truncation match it. Link runs report taps through the `onLink` closure.
-private final class ToastTextLabel: UIView {
+final class ToastTextLabel: UIView {
   var onLink: ((String) -> Void)?
   private var links: [(range: NSRange, link: String)] = []
   private let storage = NSTextStorage()
@@ -225,15 +225,23 @@ private final class ToastTextLabel: UIView {
     layoutManager.drawGlyphs(forGlyphRange: glyphs, at: .zero)
   }
 
-  @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+  private func link(at point: CGPoint) -> String? {
+    guard storage.length > 0 else { return nil }
     _ = layout(width: bounds.width)
-    let point = gesture.location(in: self)
     let glyph = layoutManager.glyphIndex(for: point, in: container)
     guard layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
-      .insetBy(dx: -4, dy: -4).contains(point) else { return }
+      .insetBy(dx: -4, dy: -4).contains(point) else { return nil }
     let index = layoutManager.characterIndexForGlyph(at: glyph)
-    if let hit = links.first(where: { NSLocationInRange(index, $0.range) }) {
-      onLink?(hit.link)
+    return links.first { NSLocationInRange(index, $0.range) }?.link
+  }
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    link(at: point) != nil
+  }
+
+  @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+    if let hit = link(at: gesture.location(in: self)) {
+      onLink?(hit)
     }
   }
 }

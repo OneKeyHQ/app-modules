@@ -36,21 +36,26 @@ function toDismissReason(value: string): IOverlayToastDismissReason {
 
 export function toToastEvent(native: {
   toastId: string;
+  generation?: number;
   type: string;
   value: string;
 }): IOverlayToastEvent | undefined {
-  const { toastId: id, type, value } = native;
+  const { toastId: id, generation, type, value } = native;
+  const base =
+    typeof generation === 'number' && Number.isFinite(generation)
+      ? { id, generation }
+      : { id };
   switch (type) {
     case 'dismiss':
-      return { id, type, reason: toDismissReason(value) };
+      return { ...base, type, reason: toDismissReason(value) };
     case 'close':
-      return { id, type, reason: toDismissReason(value) };
+      return { ...base, type, reason: toDismissReason(value) };
     case 'action':
-      return { id, type, actionId: value };
+      return { ...base, type, actionId: value };
     case 'link':
-      return { id, type, link: value };
+      return { ...base, type, link: value };
     case 'press':
-      return { id, type };
+      return { ...base, type };
     default:
       return undefined;
   }

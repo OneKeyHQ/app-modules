@@ -1,5 +1,5 @@
 /* cspell:ignore dasharray dashoffset */
-import { getOverlayLayerRoot } from '../web/overlayLayers';
+import { getOverlayLayerRoot, syncOverlayInert } from '../web/overlayLayers';
 
 import { buildToastContent } from './toastDomContent.web';
 import { ensureOverlayToastStyles } from './toastStyles.web';
@@ -130,6 +130,7 @@ export function createToastDomRenderer(
   let config: IOverlayToasterConfig = {};
   let section: HTMLElement | null = null;
   let expanded = false;
+  let hovered = false;
   let interacting = false;
   let destroyed = false;
 
@@ -148,7 +149,8 @@ export function createToastDomRenderer(
       section.setAttribute('data-testid', config.testID);
     }
     if (section.parentElement !== root) {
-      root.append(section);
+      root.prepend(section);
+      syncOverlayInert();
     }
     return section;
   }
@@ -163,6 +165,9 @@ export function createToastDomRenderer(
   function setInteracting(value: boolean) {
     if (interacting !== value) {
       interacting = value;
+      if (!value && !hovered) {
+        expanded = false;
+      }
       update();
     }
   }
@@ -173,16 +178,29 @@ export function createToastDomRenderer(
       const ol = document.createElement('ol');
       ol.tabIndex = -1;
       ol.setAttribute('data-onekey-toast-toaster', '');
-      ol.addEventListener('mouseenter', () => setExpanded(true));
-      ol.addEventListener('mousemove', () => setExpanded(true));
+      ol.addEventListener('mouseenter', () => {
+        hovered = true;
+        expanded = nodes.size > 1;
+        update();
+      });
+      ol.addEventListener('mousemove', () => {
+        if (!hovered || (nodes.size > 1 && !expanded)) {
+          hovered = true;
+          expanded = nodes.size > 1;
+          update();
+        }
+      });
       ol.addEventListener('mouseleave', () => {
+        hovered = false;
         // Keep the stack open while a card is being dragged.
         if (!interacting) {
-          setExpanded(false);
+          expanded = false;
         }
+        update();
       });
       ol.addEventListener('pointerdown', () => setInteracting(true));
       ol.addEventListener('pointerup', () => setInteracting(false));
+      ol.addEventListener('pointercancel', () => setInteracting(false));
       group = { position, ol, toasts: [], heights: [] };
       groups.set(position, group);
     }
@@ -237,7 +255,7 @@ export function createToastDomRenderer(
   }
 
   function syncTimers() {
-    const paused = expanded || interacting;
+    const paused = expanded || hovered || interacting;
     nodes.forEach((node) => {
       if (node.removed || !Number.isFinite(node.spec.duration)) {
         clearCloseTimer(node);
@@ -272,7 +290,12 @@ export function createToastDomRenderer(
     if (nodes.get(node.id) === node) {
       nodes.delete(node.id);
     }
-    onEvent({ id: node.id, type: 'close', reason });
+    onEvent({
+      id: node.id,
+      generation: node.generation,
+      type: 'close',
+      reason,
+    });
   }
 
   function deleteToast(
@@ -292,7 +315,12 @@ export function createToastDomRenderer(
     }
     clearCloseTimer(node);
     if (notify) {
-      onEvent({ id: node.id, type: 'dismiss', reason });
+      onEvent({
+        id: node.id,
+        generation: node.generation,
+        type: 'dismiss',
+        reason,
+      });
     }
     node.unmountTimer = setTimeout(() => {
       node.unmountTimer = undefined;
@@ -312,16 +340,16 @@ export function createToastDomRenderer(
       const group = groups.get(node.position);
       node.offsetBeforeRemove = group ? offsetOf(group, node) : 0;
       const target = event.target as HTMLElement;
-      // Keep the pointer while it travels outside the card.
-      target.setPointerCapture?.(event.pointerId);
-      if (target.tagName === 'BUTTON') {
+      if (target.closest?.('button, [data-okt-link]')) {
         return;
       }
+      // Keep the pointer while it travels outside the card.
+      target.setPointerCapture?.(event.pointerId);
       node.swiping = true;
       node.pointerStart = { x: event.clientX, y: event.clientY };
       update();
     });
-    const release = () => {
+    li.addEventListener('pointerup', () => {
       if (node.swipeOut || node.removed) {
         return;
       }
@@ -342,9 +370,16 @@ export function createToastDomRenderer(
       li.style.setProperty('--swipe-amount', '0px');
       node.swiping = false;
       update();
-    };
-    li.addEventListener('pointerup', release);
-    li.addEventListener('pointercancel', release);
+    });
+    li.addEventListener('pointercancel', () => {
+      if (node.swipeOut || node.removed) {
+        return;
+      }
+      node.pointerStart = null;
+      li.style.setProperty('--swipe-amount', '0px');
+      node.swiping = false;
+      update();
+    });
     li.addEventListener('pointermove', (event) => {
       if (!node.pointerStart) {
         return;
@@ -367,7 +402,11 @@ export function createToastDomRenderer(
   function renderContent(node: IToastNode) {
     const next = buildToastContent(node.spec, (event) => {
       if (!node.removed) {
-        onEvent({ ...event, id: node.id } as IOverlayToastEvent);
+        onEvent({
+          ...event,
+          id: node.id,
+          generation: node.generation,
+        } as IOverlayToastEvent);
       }
     });
     if (node.content.parentElement === node.li) {
@@ -509,6 +548,8 @@ export function createToastDomRenderer(
     if (nodes.size <= 1 && expanded) {
       // One card has nothing to fan out.
       expanded = false;
+    } else if (nodes.size > 1 && hovered && !expanded) {
+      expanded = true;
     }
     groups.forEach((group, position) => {
       if (group.toasts.length === 0) {
@@ -520,12 +561,16 @@ export function createToastDomRenderer(
     });
     if (nodes.size === 0) {
       section?.remove();
+      hovered = false;
       interacting = false;
     }
     syncTimers();
   }
 
-  function moveNode(node: IToastNode, position: IOverlayToastPosition) {
+  function moveNode(
+    node: IToastNode,
+    position: IOverlayToastPosition
+  ): IToastGroup {
     const previous = groups.get(node.position);
     if (previous) {
       previous.toasts = previous.toasts.filter((entry) => entry !== node);
@@ -535,16 +580,29 @@ export function createToastDomRenderer(
     }
     node.position = position;
     const group = ensureGroup(position);
-    // Keep the newest-first order of the list the card joins.
     group.toasts.push(node);
     group.ol.append(node.li);
     if (!node.removed) {
       group.heights.push({ id: node.id, height: node.initialHeight });
     }
+    return group;
+  }
+
+  function reconcileGroupOrder(
+    group: IToastGroup,
+    order: ReadonlyMap<string, number>
+  ) {
+    group.toasts.sort(
+      (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
+    );
+    group.toasts.forEach((node) => group.ol.append(node.li));
+    group.heights.sort(
+      (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
+    );
   }
 
   function onKeyDown(event: KeyboardEvent) {
-    if (nodes.size === 0) {
+    if (nodes.size === 0 || section?.inert || section?.parentElement?.inert) {
       return;
     }
     const lists = [...groups.values()].map((group) => group.ol);
@@ -587,6 +645,7 @@ export function createToastDomRenderer(
           unmount(node, 'programmatic');
         }
       });
+      const movedGroups = new Set<IToastGroup>();
       // Oldest first, so each new card lands in front of the previous one.
       [...items].reverse().forEach((item) => {
         let node = nodes.get(item.spec.id);
@@ -601,6 +660,7 @@ export function createToastDomRenderer(
           } else {
             onEvent({
               id: item.spec.id,
+              generation: item.generation,
               type: 'close',
               reason: 'programmatic',
             });
@@ -620,12 +680,18 @@ export function createToastDomRenderer(
         }
         const position = positionOf(node.spec);
         if (position !== node.position) {
-          moveNode(node, position);
+          movedGroups.add(moveNode(node, position));
         }
         if (!item.visible) {
           deleteToast(node, 'programmatic', false);
         }
       });
+      if (movedGroups.size > 0) {
+        const order = new Map(
+          items.map((item, index) => [item.spec.id, index])
+        );
+        movedGroups.forEach((group) => reconcileGroupOrder(group, order));
+      }
       update();
       syncing = false;
       pendingEvents.splice(0).forEach(report);

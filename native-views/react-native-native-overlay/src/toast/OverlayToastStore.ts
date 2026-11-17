@@ -41,6 +41,8 @@ export class OverlayToastStore {
 
   private nextId = 0;
 
+  private nextGeneration = 0;
+
   getSnapshot = (): IOverlayToastSnapshot => this.snapshot;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -79,6 +81,8 @@ export class OverlayToastStore {
     handlers: IOverlayToastHandlers = {}
   ): IOverlayToastHandle {
     const { id } = spec;
+    const generation = this.nextGeneration;
+    this.nextGeneration += 1;
     const existing = this.items.find((item) => item.spec.id === id);
     this.handlers.set(id, handlers);
     if (existing) {
@@ -88,13 +92,13 @@ export class OverlayToastStore {
               spec,
               visible: true,
               revision: item.revision + 1,
-              generation: item.generation + 1,
+              generation,
             }
           : item
       );
     } else {
       this.items = [
-        { spec, visible: true, revision: 0, generation: 0 },
+        { spec, visible: true, revision: 0, generation },
         ...this.items,
       ];
       // Past the limit the oldest toasts leave without an animation, as the
@@ -156,11 +160,17 @@ export class OverlayToastStore {
 
   /** Renderer → store. */
   handleEvent(event: IOverlayToastEvent): void {
+    const item = this.items.find((entry) => entry.spec.id === event.id);
+    if (
+      !item ||
+      (event.generation !== undefined && event.generation !== item.generation)
+    ) {
+      return;
+    }
     const handlers = this.handlers.get(event.id);
     switch (event.type) {
       case 'dismiss': {
-        const item = this.items.find((entry) => entry.spec.id === event.id);
-        if (!item || !item.visible) {
+        if (!item.visible) {
           // A caller already dismissed it and was told so.
           return;
         }
@@ -172,29 +182,45 @@ export class OverlayToastStore {
         return;
       }
       case 'close':
-        this.remove(event.id, event.reason);
+        this.remove(event.id, event.reason, event.generation);
         return;
       case 'action':
+        if (!item.visible) {
+          return;
+        }
         handlers?.onAction?.(event.actionId);
         return;
       case 'link':
+        if (!item.visible) {
+          return;
+        }
         handlers?.onLink?.(event.link);
         return;
       case 'press':
+        if (!item.visible) {
+          return;
+        }
         handlers?.onPress?.();
         return;
       default:
     }
   }
 
-  private remove(id: string, reason: IOverlayToastDismissReason): void {
+  private remove(
+    id: string,
+    reason: IOverlayToastDismissReason,
+    generation?: number
+  ): void {
     const item = this.items.find((entry) => entry.spec.id === id);
     if (!item) {
       return;
     }
     // A toast shown again under the same id while its predecessor was
     // leaving stays: the renderer's `close` belongs to the old card.
-    if (item.visible) {
+    if (
+      item.visible ||
+      (generation !== undefined && generation !== item.generation)
+    ) {
       return;
     }
     const handlers = this.handlers.get(id);

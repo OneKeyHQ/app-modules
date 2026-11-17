@@ -4,6 +4,7 @@ import type { CodegenTypes, HostComponent, ViewProps } from 'react-native';
 
 type INativeOverlayToastEvent = Readonly<{
   toastId: string;
+  generation: CodegenTypes.Int32;
   /** `dismiss` | `close` | `action` | `link` | `press`. */
   type: string;
   /** The dismiss reason, action id or link of the event; empty otherwise. */

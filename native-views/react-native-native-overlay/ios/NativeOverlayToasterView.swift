@@ -69,7 +69,7 @@ private final class ToastEntry {
 /// Draws the message toasts in the `toast` overlay level: stacking, timers,
 /// swipe and motion all live here, on the main thread.
 final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIGestureRecognizerDelegate {
-  var onEvent: ((_ id: String, _ type: String, _ value: String) -> Void)?
+  var onEvent: ((_ id: String, _ generation: Int, _ type: String, _ value: String) -> Void)?
 
   private weak var hostView: UIView?
   private var window: UIWindow?
@@ -125,7 +125,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
         if item.visible {
           add(item)
         } else {
-          onEvent?(item.spec.id, "close", "programmatic")
+          onEvent?(item.spec.id, item.generation, "close", "programmatic")
         }
         continue
       }
@@ -207,11 +207,11 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     entry.remaining = lifetime(of: item.spec)
     entry.card.onAction = { [weak self, weak entry] actionId in
       guard let entry, !entry.leaving else { return }
-      self?.onEvent?(entry.id, "action", actionId)
+      self?.onEvent?(entry.id, entry.item.generation, "action", actionId)
     }
     entry.card.onLink = { [weak self, weak entry] link in
       guard let entry, !entry.leaving else { return }
-      self?.onEvent?(entry.id, "link", link)
+      self?.onEvent?(entry.id, entry.item.generation, "link", link)
     }
     let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
     pan.maximumNumberOfTouches = 1
@@ -223,11 +223,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     press.cancelsTouchesInView = false
     press.delegate = self
     entry.card.addGestureRecognizer(press)
-    if item.spec.pressable {
-      let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-      tap.delegate = self
-      entry.card.addGestureRecognizer(tap)
-    }
+    let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+    tap.delegate = self
+    entry.card.addGestureRecognizer(tap)
     entries.insert(entry, at: 0)
     attach(entry)
   }
@@ -250,7 +248,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     entry.timer?.invalidate()
     entry.timer = nil
     if report {
-      onEvent?(entry.id, "dismiss", reason)
+      onEvent?(entry.id, entry.item.generation, "dismiss", reason)
     }
     entry.removal = Timer.scheduledTimer(
       withTimeInterval: ToasterMetrics.removeDelay, repeats: false
@@ -268,7 +266,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     entry.slot.removeFromSuperview()
     entries.removeAll { $0 === entry }
     if report {
-      onEvent?(entry.id, "close", entry.reason)
+      onEvent?(entry.id, entry.item.generation, "close", entry.reason)
     }
     if entries.isEmpty {
       pressedCount = 0
@@ -340,9 +338,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       if !entry.entered {
         entry.entered = true
         entry.slot.frame = CGRect(x: x, y: top + hidden, width: size.width, height: size.height)
-        entry.card.frame = entry.slot.bounds
       }
       entry.slot.bounds.size = size
+      entry.card.center = CGPoint(x: size.width / 2, y: size.height / 2)
       let apply = {
         entry.slot.frame = frame
         entry.card.alpha = targetAlpha
@@ -393,6 +391,14 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     gestureRecognizer is UILongPressGestureRecognizer || other is UILongPressGestureRecognizer
   }
 
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if gestureRecognizer is UITapGestureRecognizer {
+      guard let entry = entry(for: gestureRecognizer), entry.item.spec.pressable else { return false }
+      if touch.view is UIControl || touch.view is ToastTextLabel { return false }
+    }
+    return true
+  }
+
   @objc private func handlePress(_ gesture: UILongPressGestureRecognizer) {
     switch gesture.state {
     case .began:
@@ -406,8 +412,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   }
 
   @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-    guard let entry = entry(for: gesture), !entry.leaving, !entry.dragged else { return }
-    onEvent?(entry.id, "press", "")
+    guard let entry = entry(for: gesture), !entry.leaving, !entry.dragged,
+          entry.item.spec.pressable else { return }
+    onEvent?(entry.id, entry.item.generation, "press", "")
   }
 
   @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -467,8 +474,10 @@ public final class NativeOverlayToasterView: UIView {
 
   private lazy var presenter: NativeOverlayToastPresenter = {
     let presenter = NativeOverlayToastPresenter(hostView: self)
-    presenter.onEvent = { [weak self] id, type, value in
-      self?.onToastEvent?(["toastId": id, "type": type, "value": value])
+    presenter.onEvent = { [weak self] id, generation, type, value in
+      self?.onToastEvent?([
+        "toastId": id, "generation": generation, "type": type, "value": value,
+      ])
     }
     return presenter
   }()

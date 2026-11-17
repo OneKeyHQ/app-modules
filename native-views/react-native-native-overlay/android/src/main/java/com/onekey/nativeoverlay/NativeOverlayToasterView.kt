@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -58,6 +59,7 @@ internal class NativeOverlayToastEvent(
   surfaceId: Int,
   viewTag: Int,
   private val toastId: String,
+  private val generation: Int,
   private val type: String,
   private val value: String,
 ) : Event<NativeOverlayToastEvent>(surfaceId, viewTag) {
@@ -68,6 +70,7 @@ internal class NativeOverlayToastEvent(
 
   override fun getEventData(): WritableMap = Arguments.createMap().apply {
     putString("toastId", toastId)
+    putInt("generation", generation)
     putString("type", type)
     putString("value", value)
   }
@@ -180,7 +183,7 @@ private class ToastEntry(val id: String, var item: ToastItem, val slot: ToastSlo
  * timers, swipe and motion all live here, on the main thread.
  */
 internal class NativeOverlayToastPresenter(private val hostView: View) {
-  var onEvent: ((id: String, type: String, value: String) -> Unit)? = null
+  var onEvent: ((id: String, generation: Int, type: String, value: String) -> Unit)? = null
 
   private val handler = Handler(Looper.getMainLooper())
   private val context: Context get() = hostView.context
@@ -193,7 +196,9 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private var obstructionShift = 0f
 
   private val reduceMotion: Boolean
-    get() = config.respectReducedMotion && !ValueAnimator.areAnimatorsEnabled()
+    get() = config.respectReducedMotion &&
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      !ValueAnimator.areAnimatorsEnabled()
 
   private fun dp(value: Float): Int = (value * density).roundToInt()
 
@@ -217,7 +222,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
         entry = null
       }
       if (entry == null) {
-        if (item.visible) add(item) else onEvent?.invoke(item.spec.id, "close", "programmatic")
+        if (item.visible) add(item) else onEvent?.invoke(item.spec.id, item.generation, "close", "programmatic")
         continue
       }
       if (entry.item.revision != item.revision || configChanged) {
@@ -239,6 +244,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     entries.forEach { entry ->
       cancelTimer(entry)
       entry.removal?.let(handler::removeCallbacks)
+      entry.slot.card.cancelLoads()
     }
     entries.clear()
     releaseStage()
@@ -276,7 +282,8 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private fun releaseStage() {
     val layer = stage ?: return
     layer.removeAllViews()
-    (layer.parent as? ViewGroup)?.removeView(layer)
+    activity?.let { NativeOverlayHost.of(it).detachToastLayer(layer) }
+      ?: (layer.parent as? ViewGroup)?.removeView(layer)
     obstructionShift = 0f
     layer.translationY = 0f
   }
@@ -299,8 +306,8 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     val slot = ToastSlot(context, card)
     val entry = ToastEntry(item.spec.id, item, slot)
     entry.remaining = lifetime(item.spec)
-    card.onAction = { actionId -> if (!entry.leaving) onEvent?.invoke(entry.id, "action", actionId) }
-    card.onLink = { link -> if (!entry.leaving) onEvent?.invoke(entry.id, "link", link) }
+    card.onAction = { actionId -> if (!entry.leaving) onEvent?.invoke(entry.id, entry.item.generation, "action", actionId) }
+    card.onLink = { link -> if (!entry.leaving) onEvent?.invoke(entry.id, entry.item.generation, "link", link) }
     card.apply(item.spec, config.cardColor)
     slot.onPressChanged = { down ->
       pressed = if (down) pressed + 1 else max(0, pressed - 1)
@@ -324,7 +331,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       }
     }
     slot.onTap = {
-      if (!entry.leaving && entry.item.spec.pressable) onEvent?.invoke(entry.id, "press", "")
+      if (!entry.leaving && entry.item.spec.pressable) onEvent?.invoke(entry.id, entry.item.generation, "press", "")
     }
     entries.add(0, entry)
     ensureStage()?.let { attach(entry, it) }
@@ -336,7 +343,9 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       entry.slot,
       FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT),
     )
-    entry.slot.announceForAccessibility(entry.slot.card.announcement)
+    if (layer.importantForAccessibility != View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS) {
+      entry.slot.announceForAccessibility(entry.slot.card.announcement)
+    }
   }
 
   private fun settle(card: View) {
@@ -353,7 +362,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     entry.leaving = true
     entry.reason = reason
     cancelTimer(entry)
-    if (report) onEvent?.invoke(entry.id, "dismiss", reason)
+    if (report) onEvent?.invoke(entry.id, entry.item.generation, "dismiss", reason)
     val removal = Runnable {
       remove(entry, report = true)
       layout(animated = true)
@@ -366,10 +375,11 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private fun remove(entry: ToastEntry, report: Boolean) {
     cancelTimer(entry)
     entry.removal?.let(handler::removeCallbacks)
+    entry.slot.card.cancelLoads()
     entry.slot.animate().cancel()
     (entry.slot.parent as? ViewGroup)?.removeView(entry.slot)
     entries.remove(entry)
-    if (report) onEvent?.invoke(entry.id, "close", entry.reason)
+    if (report) onEvent?.invoke(entry.id, entry.item.generation, "close", entry.reason)
     if (entries.isEmpty()) {
       pressed = 0
       releaseStage()
@@ -513,10 +523,10 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
  */
 @SuppressLint("ViewConstructor")
 class NativeOverlayToasterView(context: ThemedReactContext) : View(context) {
-  var onToastEvent: ((id: String, type: String, value: String) -> Unit)? = null
+  var onToastEvent: ((id: String, generation: Int, type: String, value: String) -> Unit)? = null
 
   private val presenter = NativeOverlayToastPresenter(this).also { presenter ->
-    presenter.onEvent = { id, type, value -> onToastEvent?.invoke(id, type, value) }
+    presenter.onEvent = { id, generation, type, value -> onToastEvent?.invoke(id, generation, type, value) }
   }
   private var toasts: String? = null
   private var config: String? = null

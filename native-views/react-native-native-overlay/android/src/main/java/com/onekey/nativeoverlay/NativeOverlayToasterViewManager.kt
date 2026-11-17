@@ -22,9 +22,9 @@ class NativeOverlayToasterViewManager :
 
   override fun createViewInstance(context: ThemedReactContext): NativeOverlayToasterView {
     val view = NativeOverlayToasterView(context)
-    view.onToastEvent = { id, type, value ->
+    view.onToastEvent = { id, generation, type, value ->
       UIManagerHelper.getEventDispatcherForReactTag(context, view.id)?.dispatchEvent(
-        NativeOverlayToastEvent(UIManagerHelper.getSurfaceId(context), view.id, id, type, value),
+        NativeOverlayToastEvent(UIManagerHelper.getSurfaceId(context), view.id, id, generation, type, value),
       )
     }
     return view

@@ -38,6 +38,7 @@ export function OverlayToastHost() {
     (
       event: NativeSyntheticEvent<{
         toastId: string;
+        generation: number;
         type: string;
         value: string;
       }>

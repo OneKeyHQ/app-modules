@@ -42,10 +42,12 @@ using namespace facebook::react;
       auto emitter =
           std::static_pointer_cast<const RNCNativeOverlayToasterEventEmitter>(strongSelf->_eventEmitter);
       NSString *toastId = body[@"toastId"] ?: @"";
+      NSNumber *generation = body[@"generation"];
       NSString *type = body[@"type"] ?: @"";
       NSString *value = body[@"value"] ?: @"";
       emitter->onToastEvent({
           .toastId = std::string(toastId.UTF8String),
+          .generation = generation ? generation.intValue : 0,
           .type = std::string(type.UTF8String),
           .value = std::string(value.UTF8String),
       });
