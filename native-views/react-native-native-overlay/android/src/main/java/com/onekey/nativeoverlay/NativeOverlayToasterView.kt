@@ -164,6 +164,12 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
     // Claim the gesture so a press on the card's own surface can become a drag.
     return true
   }
+
+  override fun performClick(): Boolean {
+    super.performClick()
+    onTap?.invoke()
+    return true
+  }
 }
 
 private class ToastEntry(val id: String, var item: ToastItem, val slot: ToastSlot) {
@@ -330,9 +336,13 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
         if (dismissed) dismiss(entry, "swipe", report = true) else settle(card)
       }
     }
-    slot.onTap = {
-      if (!entry.leaving && entry.item.spec.pressable) onEvent?.invoke(entry.id, entry.item.generation, "press", "")
+    val press = {
+      if (!entry.leaving && entry.item.spec.pressable) {
+        onEvent?.invoke(entry.id, entry.item.generation, "press", "")
+      }
     }
+    card.onPress = press
+    slot.onTap = press
     entries.add(0, entry)
     ensureStage()?.let { attach(entry, it) }
   }

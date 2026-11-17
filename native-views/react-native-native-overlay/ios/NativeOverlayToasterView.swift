@@ -213,6 +213,10 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       guard let entry, !entry.leaving else { return }
       self?.onEvent?(entry.id, entry.item.generation, "link", link)
     }
+    entry.card.onPress = { [weak self, weak entry] in
+      guard let entry, !entry.leaving, entry.item.spec.pressable else { return }
+      self?.onEvent?(entry.id, entry.item.generation, "press", "")
+    }
     let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
     pan.maximumNumberOfTouches = 1
     pan.delegate = self

@@ -213,4 +213,57 @@ class NativeOverlayAccessibilityIsolationTest {
     }
     card.cancelLoads()
   }
+
+  @Test
+  fun pressableNotificationCardExposesAccessibilityClickActionSeparatelyFromButtons() {
+    val card = NativeOverlayToastCardView(context)
+    var pressed = 0
+    val actions = mutableListOf<String>()
+    card.onPress = { pressed += 1 }
+    card.onAction = { actions.add(it) }
+    val spec = ToastSpec.parse(
+      JSONObject()
+        .put("id", "press-notif")
+        .put("layout", "notification")
+        .put("duration", 5000)
+        .put("pressable", true)
+        .put("badgeSize", 36)
+        .put("badgeColor", "#eeeeee")
+        .put(
+          "title",
+          JSONObject()
+            .put("color", "#111111")
+            .put("fontSize", 14)
+            .put("lineHeight", 20)
+            .put("fontWeight", "600")
+            .put("paragraphs", org.json.JSONArray().put(org.json.JSONArray().put(JSONObject().put("text", "Hello")))),
+        )
+        .put(
+          "actions",
+          org.json.JSONArray().put(
+            JSONObject()
+              .put("id", "view")
+              .put("label", "View")
+              .put("color", "#ffffff")
+              .put("backgroundColor", "#000000")
+              .put("fontSize", 14)
+              .put("lineHeight", 20)
+              .put("fontWeight", "500")
+              .put("paddingHorizontal", 10)
+              .put("paddingVertical", 4)
+              .put("borderRadius", 8),
+          ),
+        ),
+    )
+    card.apply(spec, 0xffffffff.toInt())
+    val info = android.view.accessibility.AccessibilityNodeInfo.obtain()
+    card.onInitializeAccessibilityNodeInfo(info)
+    assertTrue(info.isClickable)
+    assertEquals("Hello", info.contentDescription.toString())
+    assertTrue(card.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK, null))
+    assertEquals(1, pressed)
+    assertTrue(card.performClick())
+    assertEquals(2, pressed)
+    assertEquals(emptyList<String>(), actions)
+  }
 }

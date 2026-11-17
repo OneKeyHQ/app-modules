@@ -17,6 +17,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Layout
@@ -35,6 +36,7 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ProgressBar
@@ -599,6 +601,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     private set
   var onAction: ((String) -> Unit)? = null
   var onLink: ((String) -> Unit)? = null
+  var onPress: (() -> Unit)? = null
   /** Width of the content box in dp; the card adds its padding around it. */
   var contentWidth = 0f
   /** Tallest the content box grows, in dp; zero leaves it unbounded. */
@@ -635,6 +638,12 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     this.spec = spec
     surface.setColor(cardColor)
     spec.testID?.let { tag = it }
+    isFocusable = spec.pressable
+    importantForAccessibility = if (spec.pressable) {
+      IMPORTANT_FOR_ACCESSIBILITY_YES
+    } else {
+      IMPORTANT_FOR_ACCESSIBILITY_AUTO
+    }
     cancelLoads()
     removeAllViews()
     val link: (String) -> Unit = { onLink?.invoke(it) }
@@ -669,6 +678,34 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   /** What TalkBack reads when the card appears. */
   val announcement: String
     get() = (titles + messages).map { it.text.toString() }.filter { it.isNotEmpty() }.joinToString(". ")
+
+  override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+    super.onInitializeAccessibilityNodeInfo(info)
+    if (spec?.pressable == true) {
+      info.isClickable = true
+      info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
+      if (info.contentDescription.isNullOrEmpty()) {
+        info.contentDescription = announcement
+      }
+    }
+  }
+
+  override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+    if (action == AccessibilityNodeInfo.ACTION_CLICK && spec?.pressable == true) {
+      onPress?.invoke()
+      return true
+    }
+    return super.performAccessibilityAction(action, arguments)
+  }
+
+  override fun performClick(): Boolean {
+    super.performClick()
+    if (spec?.pressable == true) {
+      onPress?.invoke()
+      return true
+    }
+    return false
+  }
 
   private val density: Double get() = resources.displayMetrics.density.toDouble()
 

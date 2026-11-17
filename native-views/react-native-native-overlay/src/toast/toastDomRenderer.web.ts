@@ -466,6 +466,22 @@ export function createToastDomRenderer(
     closeButton.addEventListener('click', () =>
       deleteToast(node, 'close', true)
     );
+    li.addEventListener('keydown', (event) => {
+      if (
+        !node.removed &&
+        node.spec.layout === 'notification' &&
+        node.spec.pressable &&
+        event.target === li &&
+        (event.key === 'Enter' || event.key === ' ')
+      ) {
+        event.preventDefault();
+        onEvent({
+          id: node.id,
+          generation: node.generation,
+          type: 'press',
+        });
+      }
+    });
     renderContent(node);
     attachSwipe(node);
     return node;

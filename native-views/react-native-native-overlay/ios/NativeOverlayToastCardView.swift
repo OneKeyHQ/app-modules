@@ -139,12 +139,13 @@ private final class ToastIconView: UIView {
 /// truncation match it. Link runs report taps through the `onLink` closure.
 final class ToastTextLabel: UIView {
   var onLink: ((String) -> Void)?
+  var onPress: (() -> Void)?
   private var links: [(range: NSRange, link: String)] = []
   private let storage = NSTextStorage()
   private let layoutManager = NSLayoutManager()
   private let container = NSTextContainer(size: .zero)
 
-  init(text: NativeOverlayToastText, runs: [NativeOverlayToastTextRun]) {
+  init(text: NativeOverlayToastText, runs: [NativeOverlayToastTextRun], pressable: Bool = false) {
     super.init(frame: .zero)
     backgroundColor = .clear
     isOpaque = false
@@ -193,7 +194,13 @@ final class ToastTextLabel: UIView {
     storage.setAttributedString(attributed)
     isAccessibilityElement = attributed.length > 0
     accessibilityLabel = attributed.string
-    accessibilityTraits = links.isEmpty ? .staticText : .link
+    if !links.isEmpty {
+      accessibilityTraits = .link
+    } else if pressable {
+      accessibilityTraits = [.staticText, .button]
+    } else {
+      accessibilityTraits = .staticText
+    }
     if !links.isEmpty {
       addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
     } else {
@@ -243,6 +250,18 @@ final class ToastTextLabel: UIView {
     if let hit = link(at: gesture.location(in: self)) {
       onLink?(hit)
     }
+  }
+
+  override func accessibilityActivate() -> Bool {
+    if let firstLink = links.first?.link, let onLink {
+      onLink(firstLink)
+      return true
+    }
+    if let onPress {
+      onPress()
+      return true
+    }
+    return super.accessibilityActivate()
   }
 }
 
@@ -330,6 +349,7 @@ final class NativeOverlayToastCardView: UIView {
   private(set) var spec: NativeOverlayToastSpec
   var onAction: ((String) -> Void)?
   var onLink: ((String) -> Void)?
+  var onPress: (() -> Void)?
 
   private let surface = UIView()
   private let content = UIView()
@@ -362,6 +382,29 @@ final class NativeOverlayToastCardView: UIView {
     case .message: buildMessage()
     case .notification: buildNotification()
     }
+    if spec.pressable {
+      accessibilityCustomActions = [
+        UIAccessibilityCustomAction(
+          name: announcement.isEmpty ? "Activate" : announcement,
+          target: self,
+          selector: #selector(handleAccessibilityPressAction)
+        ),
+      ]
+    } else {
+      accessibilityCustomActions = nil
+    }
+  }
+
+  @objc private func handleAccessibilityPressAction() -> Bool {
+    guard spec.pressable, let onPress else { return false }
+    onPress()
+    return true
+  }
+
+  override func accessibilityActivate() -> Bool {
+    guard spec.pressable, let onPress else { return super.accessibilityActivate() }
+    onPress()
+    return true
   }
 
   /// What VoiceOver reads when the card appears.
@@ -374,8 +417,11 @@ final class NativeOverlayToastCardView: UIView {
   private func makeLabels(_ text: NativeOverlayToastText?) -> [ToastTextLabel] {
     guard let text else { return [] }
     return text.paragraphs.map { runs in
-      let label = ToastTextLabel(text: text, runs: runs)
+      let label = ToastTextLabel(text: text, runs: runs, pressable: spec.pressable)
       label.onLink = { [weak self] link in self?.onLink?(link) }
+      if spec.pressable {
+        label.onPress = { [weak self] in self?.onPress?() }
+      }
       content.addSubview(label)
       return label
     }

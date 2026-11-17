@@ -257,7 +257,29 @@ export function buildToastContent(
     row.style.gap = `${NOTIFICATION_GAP}px`;
     if (spec.pressable) {
       row.setAttribute('data-okt-pressable', '');
-      row.addEventListener('click', () => emit({ type: 'press' }));
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      row.addEventListener('click', (event) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest?.('button, [data-okt-link]')) {
+          return;
+        }
+        emit({ type: 'press' });
+      });
+      row.addEventListener('keydown', (event) => {
+        const target = event.target as HTMLElement | null;
+        if (
+          target &&
+          target !== row &&
+          target.closest?.('button, [data-okt-link]')
+        ) {
+          return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          emit({ type: 'press' });
+        }
+      });
     }
     const badge = element('div', 'data-okt-badge');
     badge.style.width = `${spec.badgeSize}px`;

@@ -486,3 +486,71 @@ test('removing a hovered position group releases hover and resumes remaining gro
   expect(onBottomClose).toHaveBeenCalledWith('timeout');
   expect(cards()).toHaveLength(0);
 });
+
+test('pressable notification row is keyboard-focusable and activates on Enter and Space without intercepting links or buttons', () => {
+  const onPress = jest.fn();
+  const onAction = jest.fn();
+  const onLink = jest.fn();
+  store.show(
+    {
+      id: 'notif',
+      layout: 'notification',
+      duration: Infinity,
+      pressable: true,
+      badgeSize: 36,
+      badgeColor: '#eee',
+      icon: {
+        kind: 'icon',
+        name: 'BellOutline',
+        color: '#111',
+        size: 20,
+      },
+      title: text('Notification title'),
+      message: {
+        ...text(''),
+        paragraphs: [[{ text: 'Read ' }, { text: 'more', link: 'https://x' }]],
+      },
+      actions: [
+        {
+          id: 'open',
+          label: 'Open',
+          testID: 'open-btn',
+          color: '#fff',
+          backgroundColor: '#000',
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: '500',
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          borderRadius: 8,
+        },
+      ],
+    },
+    { onPress, onAction, onLink }
+  );
+
+  const row = document.querySelector<HTMLElement>('[data-okt-pressable]');
+  expect(row).not.toBeNull();
+  expect(row?.getAttribute('role')).toBe('button');
+  expect(row?.tabIndex).toBe(0);
+
+  row?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+  );
+  row?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+  expect(onPress).toHaveBeenCalledTimes(2);
+
+  const link = document.querySelector<HTMLElement>('[data-okt-link]');
+  link?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+  );
+  expect(onLink).toHaveBeenCalledWith('https://x');
+  expect(onPress).toHaveBeenCalledTimes(2);
+
+  const button = document.querySelector<HTMLElement>(
+    '[data-testid="open-btn"]'
+  );
+  button?.click();
+  expect(onAction).toHaveBeenCalledWith('open');
+  expect(onPress).toHaveBeenCalledTimes(2);
+});
