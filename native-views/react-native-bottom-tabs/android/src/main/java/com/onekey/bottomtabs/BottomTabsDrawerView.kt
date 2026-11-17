@@ -159,6 +159,10 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
   private val touchMatrix = Matrix()
   private val touchPoint = FloatArray(2)
   private var dragging = false
+  // A native gesture start sent to React (by a drag, or by a rightward swipe
+  // in the menu that only cancels the row's touch), owed its end however the
+  // touch stops. React's pointer dispatcher drops input until it gets one.
+  private var nativeGestureStarted = false
   private var tracker: VelocityTracker? = null
   private var lastNativeEvent: MotionEvent? = null
   private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -326,7 +330,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
         // A rightward one is still a swipe, not a tap on the row under it.
         if (abs(dx) > touchSlop && abs(dx) > abs(dy) && downInMenu && dx > 0f) {
           eligible = false
-          NativeGestureUtil.notifyNativeGestureStarted(this, event)
+          startNativeGesture(event)
           return false
         }
         if (abs(dx) > touchSlop && abs(dx) > abs(dy) && (progress > 0f || dx > 0f)) {
@@ -335,8 +339,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
           downProgress = progress
           dragging = true
           parent?.requestDisallowInterceptTouchEvent(true)
-          NativeGestureUtil.notifyNativeGestureStarted(this, event)
-          rememberNativeEvent(event)
+          startNativeGesture(event)
           return true
         }
       }
@@ -449,11 +452,18 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     lastNativeEvent = MotionEvent.obtain(event)
   }
 
+  private fun startNativeGesture(event: MotionEvent) {
+    NativeGestureUtil.notifyNativeGestureStarted(this, event)
+    nativeGestureStarted = true
+    rememberNativeEvent(event)
+  }
+
   private fun cancelTouch() {
-    if (dragging) {
+    if (nativeGestureStarted) {
       lastNativeEvent?.let { NativeGestureUtil.notifyNativeGestureEnded(this, it) }
-      parent?.requestDisallowInterceptTouchEvent(false)
     }
+    if (dragging) parent?.requestDisallowInterceptTouchEvent(false)
+    nativeGestureStarted = false
     dragging = false
     eligible = false
     touchedView = null

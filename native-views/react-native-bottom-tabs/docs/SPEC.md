@@ -191,7 +191,8 @@ speed, and a horizontal swipe in either direction cancels React touches under
 it, so the row under the finger never fires its press. Whenever a drawer pan
 takes ownership it cancels React touches the same way (iOS cycles the surface
 touch handler, which a descendant recognizer cannot prevent; Android notifies
-the native gesture start). Vertical gestures fail before taking ownership. Active touches interrupted by
+the native gesture start, and its end once the touch stops however it stops,
+since React's pointer dispatcher drops input until it does). Vertical gestures fail before taking ownership. Active touches interrupted by
 a second finger, system cancellation, disabling, detach or a newer prop update
 cannot later emit an event. Cancellation returns to the previous stable state,
 or resumes an external target whose programmatic animation the gesture interrupted.
