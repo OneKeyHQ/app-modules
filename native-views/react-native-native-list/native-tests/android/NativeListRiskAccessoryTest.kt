@@ -466,7 +466,9 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
 
       bind("Receive", true)
       assertEquals("badge follows the title with titleBadgeGap", title.right + gap, badges.first().left)
-      assertTrue("badge stays beside the title", badges.first().right < titleLine.width / 2)
+      // Before the fix the title took the line's slack and the badge ended flush with it.
+      assertTrue("the line's slack stays after the badge",
+        titleLine.width - badges.first().right > NativeListScale.dp(activity.resources, 20))
 
       val longTitle = "Contract interaction ".repeat(6)
       bind(longTitle, true)

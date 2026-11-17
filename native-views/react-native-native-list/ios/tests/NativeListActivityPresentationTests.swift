@@ -556,7 +556,9 @@ final class NativeListActivityPresentationTests: XCTestCase {
     var titleFrame = title.convert(title.bounds, to: titleLine)
     var badgeFrame = try badge().convert(try badge().bounds, to: titleLine)
     XCTAssertEqual(badgeFrame.minX, titleFrame.maxX + 4, accuracy: 1, "badge follows the title with titleBadgeGap")
-    XCTAssertLessThan(badgeFrame.maxX, titleLine.bounds.width / 2, "badge stays beside the title, not at the amount column")
+    // Before the fix the title stretched across the line and the badge ended flush with it.
+    XCTAssertGreaterThan(titleLine.bounds.width - badgeFrame.maxX, 20,
+      "the line's slack stays after the badge instead of before it")
 
     // A long title truncates in front of the badge; the badge stays whole inside the line.
     details.bind(try NativeListItem(data: data(title: String(repeating: "Contract interaction ", count: 6), badges: true)),
