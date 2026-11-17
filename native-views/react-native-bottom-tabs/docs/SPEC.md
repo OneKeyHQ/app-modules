@@ -87,8 +87,11 @@ initial layout and cancellation emit no event. A user transition returning to
 the previous stable state emits only when it overrides an in-flight external
 target, so the consumer can reconcile that target. `drawerSwipeEnabled?: boolean`
 defaults to false; callers MUST enable it only where drawer navigation is appropriate (normally a root
-screen). Existing `hapticFeedbackEnabled` enables one light native haptic after
-a completed user transition changes the stable state. Programmatic updates and
+screen). Existing `hapticFeedbackEnabled` enables one light native haptic when a
+user's release, dim tap or Back/escape commits to the other stable state: it
+plays at that decision, not when the drawer lands, and once per transition, so
+a drag that takes over and releases toward the same target does not repeat it.
+Releases that return to the current stable state, programmatic updates and
 cancelled gestures do not vibrate.
 
 `onDrawerProgress?: (event) => void` receives `{ progress }`, the displayed
@@ -179,9 +182,16 @@ pending direction even when a nested pager initially disallows interception,
 but stops overriding that request after the child wins. Sliders and editing controls,
 web/graphics surfaces, system back gestures and starts in the bottom tab-bar
 footprint take priority. When open, closing gestures
-remain enabled even if opening swipes are disabled. Only the exposed
-foreground accepts a closing pan; menu scrolling remains the consumer's own.
-Vertical gestures fail before taking ownership. Active touches interrupted by
+remain enabled even if opening swipes are disabled. The exposed foreground
+accepts a closing pan in either direction; inside the menu a leftward
+horizontal pan closes it too, while sliders and editing controls keep their
+touches and vertical menu scrolling remains the consumer's own. Inside the
+menu the direction is read from the distance moved as well as the current
+speed, and a horizontal swipe in either direction cancels React touches under
+it, so the row under the finger never fires its press. Whenever a drawer pan
+takes ownership it cancels React touches the same way (iOS cycles the surface
+touch handler, which a descendant recognizer cannot prevent; Android notifies
+the native gesture start). Vertical gestures fail before taking ownership. Active touches interrupted by
 a second finger, system cancellation, disabling, detach or a newer prop update
 cannot later emit an event. Cancellation returns to the previous stable state,
 or resumes an external target whose programmatic animation the gesture interrupted.
@@ -207,8 +217,8 @@ close or prop change from rest then cross-fades from a snapshot to the final
 state over 200 ms instead of moving, and a released drag settles critically
 damped (damping ratio 1) without travelling past its target. A cross-fade is
 an in-flight transition like an animation: its final state shows at once under
-the snapshot, but the stable state, `onDrawerOpenChange` and the haptic follow
-only when the fade ends. A newer cross-fade replaces the previous snapshot
+the snapshot, but the stable state and `onDrawerOpenChange` follow only when
+the fade ends. A newer cross-fade replaces the previous snapshot
 (capturing it as currently shown). A request for the target already being
 faded to leaves the fade running and only replaces whether its completion is a
 user transition. A touch, an animated settle, a newer cross-fade, disabling or

@@ -145,6 +145,63 @@ final class BottomTabsDrawerReduceMotionTests: XCTestCase {
     XCTAssertEqual(detached.progress, 1)
     XCTAssertEqual(detached.events, [])
   }
+
+  // The haptic marks a user's decision; the faded close reports only later.
+  func testHapticPlaysWhenAUserCloseIsDecidedNotWhenItLands() throws {
+    let fixture = Fixture(open: true, haptics: true)
+    defer { fixture.close() }
+
+    XCTAssertTrue(fixture.drawer.accessibilityPerformEscape())
+    try fixture.requireFade()
+    XCTAssertEqual(fixture.hapticCount, 1, "the close is decided, so it plays now")
+    XCTAssertEqual(fixture.events, [])
+
+    XCTAssertTrue(fixture.waitUntil { !fixture.isFading })
+    XCTAssertEqual(fixture.events, [false])
+    XCTAssertEqual(fixture.hapticCount, 1, "landing does not play it again")
+  }
+
+  func testDragReleasedTowardTheSameTargetDoesNotRepeatTheHaptic() throws {
+    let fixture = Fixture(open: true, haptics: true)
+    defer { fixture.close() }
+    XCTAssertTrue(fixture.drawer.accessibilityPerformEscape())
+    try fixture.requireFade()
+
+    fixture.pan(.began)
+    fixture.pan(.changed, dx: fixture.menuWidth * 0.2)
+    fixture.pan(.ended)
+    XCTAssertTrue(fixture.waitUntil { !fixture.isAnimating })
+
+    XCTAssertEqual(fixture.events, [false])
+    XCTAssertEqual(fixture.hapticCount, 1)
+  }
+
+  func testReleaseBackToTheStableStateDoesNotVibrate() throws {
+    let fixture = Fixture(open: true, haptics: true)
+    defer { fixture.close() }
+
+    fixture.pan(.began)
+    fixture.pan(.changed, dx: -fixture.menuWidth * 0.1)
+    fixture.pan(.ended)
+    XCTAssertTrue(fixture.waitUntil { !fixture.isAnimating })
+
+    XCTAssertEqual(fixture.progress, 1)
+    XCTAssertEqual(fixture.events, [])
+    XCTAssertEqual(fixture.hapticCount, 0)
+  }
+
+  func testDetachingAfterADecidedCloseLetsTheNextCloseVibrate() throws {
+    let fixture = Fixture(open: true, haptics: true)
+    defer { fixture.close() }
+    XCTAssertTrue(fixture.drawer.accessibilityPerformEscape())
+    try fixture.requireFade()
+    fixture.drawer.removeFromSuperview()
+    fixture.window.addSubview(fixture.drawer)
+    XCTAssertEqual(fixture.progress, 1)
+
+    XCTAssertTrue(fixture.drawer.accessibilityPerformEscape())
+    XCTAssertEqual(fixture.hapticCount, 2, "the dropped close does not mute the next one")
+  }
 }
 
 @MainActor
@@ -155,12 +212,15 @@ private final class Fixture {
   let page = UIView()
   private(set) var events: [Bool] = []
   private(set) var fadingAtEvent: [Bool] = []
+  private(set) var hapticCount = 0
   private let recognizer = FakePan(target: nil, action: nil)
 
   /// An enabled drawer that already rests at `open`, as the prop echo leaves it.
-  init(open: Bool) {
+  init(open: Bool, haptics: Bool = false) {
     drawer.isReduceMotionEnabled = { true }
     drawer.makeFadeSnapshot = { _ in UIView() }
+    drawer.hapticFeedbackEnabled = haptics
+    drawer.playHaptic = { [unowned self] in self.hapticCount += 1 }
     drawer.insertChild(menu, atIndex: 0)
     drawer.insertChild(page, atIndex: 1)
     drawer.swipeEnabled = true

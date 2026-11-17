@@ -200,6 +200,26 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
   }
 
+  fun testLeftSwipeInsideTheOpenMenuClosesItAndARightOneOnlyCancelsReactTouches() {
+    onMain { drawer.setDrawerOpen(true) }
+    settle()
+    onMain {
+      val menuWidth = drawer.width * .8f
+      // A rightward swipe in the menu leaves it open, but is not a tap either.
+      drag(menuWidth * .2f, 150f, menuWidth * .7f, 150f)
+      assertTrue(events.isEmpty())
+      assertEquals(1, root.started)
+      assertEquals(menuWidth, drawer.getChildAt(1).translationX, 1f)
+      drag(menuWidth * .7f, 150f, menuWidth * .05f, 150f)
+    }
+    settle()
+    onMain {
+      assertEquals(listOf(false), events)
+      assertEquals(2, root.started)
+      assertEquals(0f, drawer.getChildAt(1).translationX)
+    }
+  }
+
   fun testCancellationAndNewPropCancelStaleUserCompletion() {
     onMain { drag(drawer.width * .3f, 150f, drawer.width * .95f, 150f, cancel = true) }
     settle()
