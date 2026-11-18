@@ -13,11 +13,9 @@ import ReactNativeNativeLogger
 final class DualScreenDetector {
     static let shared = DualScreenDetector()
 
-    // v2: iOS 27.3 beta reported a hinge with `.unknown` status on regular
-    // iPhones and the v1 detector cached them as foldable. Entries under the
-    // v1 key cannot be told apart, so they are dropped and re-confirmed.
+    // A new key: entries under the previous key may mark regular iPhones as
+    // foldable, because iOS 27.3 beta reports an `.unknown` hinge on them.
     private static let cacheKey = "1k_dual_screen_device_model_v2"
-    private static let legacyCacheKey = "1k_is_dual_screen_device"
     private static let foldableModelIdentifiers: Set<String> = [
         "iPhone19,4", // iPhone Duo
     ]
@@ -33,7 +31,6 @@ final class DualScreenDetector {
 
     private init() {
         let modelIdentifier = DualScreenDetector.modelIdentifier()
-        UserDefaults.standard.removeObject(forKey: DualScreenDetector.legacyCacheKey)
         let isKnownModel = DualScreenDetector.foldableModelIdentifiers.contains(modelIdentifier)
         let isCached = UserDefaults.standard.string(forKey: DualScreenDetector.cacheKey) == modelIdentifier
         isDualScreen = isKnownModel || isCached

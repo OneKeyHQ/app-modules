@@ -206,7 +206,7 @@ Runtime verified on the iPhone Duo simulator (iOS 27.1, app built with
 Xcode 27.1): `isDualScreenDevice()` returns `true` synchronously at launch via
 the model identifier, on both the outer and the inner display. On an iPhone 19,2
 simulator (iOS 27.3 beta 2) a regular iPhone stays `false` after the
-`unknown` hinge update and a v1 cache entry is dropped. Unverified: the
+`unknown` hinge update. Unverified: the
 hinge path for real fold states (spanning callbacks, detection of an
 unlisted model),
 behavior on hardware, and builds with an iOS 27.0 SDK.
@@ -244,12 +244,11 @@ DeviceUtils HybridObjects; listener IDs are unique per process.
    model. A different model identifier is ignored, so restoring preferences
    onto a regular iPhone cannot carry over foldable detection. Known foldable
    models rewrite mismatched entries immediately; an unlisted model must be
-   confirmed by its hinge before writing a new entry.
-4. The v1 key `1k_is_dual_screen_device` is removed at startup and never read.
-   v1 accepted `unknown` hinges, so its entries may mark regular iPhones as
-   foldable; an unlisted foldable re-confirms through its hinge.
+   confirmed by its hinge before writing a new entry. The previous key
+   `1k_is_dual_screen_device` is never read: it accepted `unknown` hinges, so
+   its entries may mark regular iPhones as foldable.
 
-Builds without the iOS 27.1 SDK compile only steps 1, 3 and 4. An iOS 27.0 SDK
+Builds without the iOS 27.1 SDK compile only steps 1 and 3. An iOS 27.0 SDK
 toolchain that also reports Swift 6.4 is not supported by this guard.
 
 ## Lifecycle and callbacks
