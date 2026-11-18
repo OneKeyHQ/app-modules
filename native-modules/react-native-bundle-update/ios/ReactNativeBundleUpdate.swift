@@ -546,7 +546,7 @@ public class BundleUpdateStore: NSObject {
         return compatible
     }
 
-    private static func fileMetadataEntries(
+    static func fileMetadataEntries(
         from metadata: [String: Any],
     ) -> [String: String] {
         var entries: [String: String] = [:]
@@ -2149,10 +2149,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     private func copyBuiltinBundleFile(relativePath: String, destinationPath: String, expectedHash: String) -> Bool {
         guard let resourcePath = Bundle.main.resourcePath else { return false }
         let fm = FileManager.default
-        var candidateRelativePaths = [relativePath]
-        if relativePath == "main.jsbundle.hbc" {
-            candidateRelativePaths.append("main.jsbundle")
-        }
+        let candidateRelativePaths = BundleDiffReconstruction.builtinCandidateRelativePaths(for: relativePath)
         for candidateRel in candidateRelativePaths {
             guard let sourcePath = BundleDiffReconstruction.confinedExistingFilePath(
                 baseDir: resourcePath,
@@ -2170,6 +2167,27 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 return true
             } catch {
                 try? fm.removeItem(atPath: destinationPath)
+            }
+        }
+        // Fallback for Xcode folder reference `web-embed` resolved via Bundle.main.path(forResource:ofType:)
+        if relativePath.hasPrefix("web-embed/"),
+           let webEmbedBaseDir = Bundle.main.path(forResource: "web-embed", ofType: nil) {
+            let subPath = String(relativePath.dropFirst("web-embed/".count))
+            if let sourcePath = BundleDiffReconstruction.confinedExistingFilePath(
+                baseDir: webEmbedBaseDir,
+                relativePath: subPath
+            ),
+               let actualHash = BundleUpdateStore.calculateSHA256(sourcePath),
+               BundleCryptoCore.secureEqualHex(actualHash, expectedHash) {
+                do {
+                    if fm.fileExists(atPath: destinationPath) {
+                        try fm.removeItem(atPath: destinationPath)
+                    }
+                    try fm.copyItem(atPath: sourcePath, toPath: destinationPath)
+                    return true
+                } catch {
+                    try? fm.removeItem(atPath: destinationPath)
+                }
             }
         }
         return false
@@ -2290,6 +2308,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         guard BundleCryptoCore.secureEqualHex(actualMetadataSha, manifest.targetMetadataSha256) else {
             throw BundleDiffReconstructionError.integrityFailed("metadata.json targetMetadataSha256 mismatch")
         }
+
+        let targetFileEntries = BundleUpdateStore.fileMetadataEntries(from: targetMetadata)
+        try BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
+            manifest: manifest,
+            targetFileEntries: targetFileEntries
+        )
 
         // f & g. Verify changedFiles and reconstruct reusedFiles
         let candidateDirs = collectCandidateOtaDirs(appVersion: appVersion, excludingFolder: folderName)

@@ -78,6 +78,50 @@ internal object BundleDiffReconstruction {
         return diff == 0
     }
 
+    /**
+     * Maps an OTA metadata.json key to ordered built-in Android `context.assets` candidate paths:
+     * 1. `main.jsbundle.hbc` -> `["main.jsbundle.hbc", "index.android.bundle"]`
+     * 2. `assets/<subpath>` -> `["assets/<subpath>", "<subpath>", "assets/assets/<subpath>"]`
+     * 3. `web-embed/<subpath>` -> `["web-embed/<subpath>"]` (packaged from `app/src/main/assets/web-embed`)
+     */
+    fun builtinCandidateAssetPaths(relativePath: String): List<String> {
+        if (!isSafeRelativeBundlePath(relativePath)) return emptyList()
+        if (relativePath == "main.jsbundle.hbc") {
+            return listOf("main.jsbundle.hbc", "index.android.bundle")
+        }
+        if (relativePath.startsWith("assets/")) {
+            val stripped = relativePath.removePrefix("assets/")
+            val nested = "assets/$relativePath"
+            val result = mutableListOf(relativePath)
+            if (isSafeRelativeBundlePath(stripped) && !result.contains(stripped)) {
+                result.add(stripped)
+            }
+            if (isSafeRelativeBundlePath(nested) && !result.contains(nested)) {
+                result.add(nested)
+            }
+            return result
+        }
+        return listOf(relativePath)
+    }
+
+    /**
+     * Maps an OTA `assets/<folder>/<fileName>` key (e.g. `assets/drawable-mdpi/icon.png` or
+     * `assets/raw/sound.mp3`) to built-in APK `res/` zip entry paths inside `applicationInfo.sourceDir`
+     * when Metro assets are packaged as Android resources rather than `context.assets`.
+     */
+    fun builtinCandidateApkResZipEntries(relativePath: String): List<String> {
+        if (!isSafeRelativeBundlePath(relativePath) || !relativePath.startsWith("assets/")) {
+            return emptyList()
+        }
+        val stripped = relativePath.removePrefix("assets/")
+        val parts = stripped.split('/')
+        if (parts.size != 2) return emptyList()
+        val folder = parts[0]
+        val fileName = parts[1]
+        if (!folder.startsWith("drawable") && folder != "raw") return emptyList()
+        return listOf("res/$folder/$fileName", "res/$folder-v4/$fileName")
+    }
+
     fun parseAndValidateManifest(
         jsonContent: String,
         expectedAppType: String,
@@ -209,6 +253,37 @@ internal object BundleDiffReconstruction {
         val resolvedFile = try { current.canonicalPath } catch (_: Exception) { return null }
         if (!resolvedFile.startsWith(resolvedBase + File.separator)) return null
         return current
+    }
+
+    fun validateManifestAgainstTargetMetadata(
+        manifest: BundleDiffManifest,
+        targetFileEntries: Map<String, String>,
+    ) {
+        if (manifest.changedFiles.size + manifest.reusedFiles.size != targetFileEntries.size) {
+            throw BundleDiffReconstructionException.FallbackRequired(
+                "diff-manifest file count (${manifest.changedFiles.size + manifest.reusedFiles.size}) != metadata.json file count (${targetFileEntries.size})",
+            )
+        }
+        for ((relPath, expectedHash) in targetFileEntries) {
+            if (!isSafeRelativeBundlePath(relPath)) {
+                throw BundleDiffReconstructionException.SecurityRejected("unsafe relative path in metadata.json: $relPath")
+            }
+            if (!isHex64(expectedHash)) {
+                throw BundleDiffReconstructionException.FallbackRequired("invalid sha256 in metadata.json for $relPath")
+            }
+            val manifestHash = manifest.changedFiles[relPath] ?: manifest.reusedFiles[relPath]
+            if (manifestHash == null || !constantTimeEqualHex(manifestHash, expectedHash)) {
+                throw BundleDiffReconstructionException.FallbackRequired("diff-manifest partition mismatch for $relPath")
+            }
+        }
+        for (deletedPath in manifest.deletedFiles) {
+            if (targetFileEntries.containsKey(deletedPath) ||
+                manifest.changedFiles.containsKey(deletedPath) ||
+                manifest.reusedFiles.containsKey(deletedPath)
+            ) {
+                throw BundleDiffReconstructionException.FallbackRequired("deletedFiles entry present in target bundle: $deletedPath")
+            }
+        }
     }
 
     fun reconstruct(

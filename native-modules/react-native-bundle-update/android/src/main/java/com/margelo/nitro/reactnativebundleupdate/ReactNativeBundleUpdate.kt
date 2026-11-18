@@ -529,7 +529,7 @@ object BundleUpdateStoreAndroid {
             key == BundleStorageSchemaPolicy.METADATA_KEY
     }
 
-    private fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
+    internal fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
         return metadata.filterKeys { key -> !isReservedMetadataKey(key) }
     }
 
@@ -2045,11 +2045,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         destinationFile: File,
         expectedHash: String,
     ): Boolean {
-        val candidateAssetPaths = if (relativePath == "main.jsbundle.hbc") {
-            listOf(relativePath, "index.android.bundle")
-        } else {
-            listOf(relativePath)
-        }
+        val candidateAssetPaths = BundleDiffReconstruction.builtinCandidateAssetPaths(relativePath)
         for (assetPath in candidateAssetPaths) {
             val ok = try {
                 context.assets.open(assetPath).use { input ->
@@ -2074,6 +2070,45 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 false
             }
             if (ok) return true
+        }
+
+        val apkResEntries = BundleDiffReconstruction.builtinCandidateApkResZipEntries(relativePath)
+        if (apkResEntries.isNotEmpty()) {
+            val sourceApkPath = try { context.applicationInfo?.sourceDir } catch (_: Exception) { null }
+            if (!sourceApkPath.isNullOrEmpty() && File(sourceApkPath).isFile) {
+                try {
+                    java.util.zip.ZipFile(sourceApkPath).use { zipFile ->
+                        for (entryName in apkResEntries) {
+                            val entry = zipFile.getEntry(entryName) ?: continue
+                            val ok = try {
+                                zipFile.getInputStream(entry).use { input ->
+                                    FileOutputStream(destinationFile).use { output ->
+                                        val buffer = ByteArray(8192)
+                                        while (true) {
+                                            val count = input.read(buffer)
+                                            if (count <= 0) break
+                                            output.write(buffer, 0, count)
+                                        }
+                                    }
+                                }
+                                val hash = BundleUpdateStoreAndroid.calculateSHA256(destinationFile.absolutePath)
+                                if (hash != null && BundleDiffReconstruction.constantTimeEqualHex(hash, expectedHash)) {
+                                    true
+                                } else {
+                                    if (destinationFile.exists()) destinationFile.delete()
+                                    false
+                                }
+                            } catch (_: Exception) {
+                                if (destinationFile.exists()) destinationFile.delete()
+                                false
+                            }
+                            if (ok) return true
+                        }
+                    }
+                } catch (_: Exception) {
+                    if (destinationFile.exists()) destinationFile.delete()
+                }
+            }
         }
         return false
     }
@@ -2199,6 +2234,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw BundleDiffReconstructionException.IntegrityFailed("metadata.json targetMetadataSha256 mismatch")
             }
 
+            val targetMetadata = try {
+                BundleUpdateStoreAndroid.parseMetadataJson(
+                    BundleUpdateStoreAndroid.readFileContent(stagedMetadataFile),
+                )
+            } catch (e: Exception) {
+                throw BundleDiffReconstructionException.FallbackRequired("failed to parse staged metadata.json: ${e.message}")
+            }
+            val targetFileEntries = BundleUpdateStoreAndroid.getFileMetadataEntries(targetMetadata)
+            BundleDiffReconstruction.validateManifestAgainstTargetMetadata(manifest, targetFileEntries)
+
             // f & g. Verify changedFiles and reconstruct reusedFiles
             val candidateDirs = collectCandidateOtaDirs(context, appVersion, folderName)
             BundleDiffReconstruction.reconstruct(
@@ -2218,9 +2263,6 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (!BundleCryptoCore.validateExtractedPathSafety(stagingPath)) {
                 throw BundleDiffReconstructionException.SecurityRejected("path safety check failed after reconstruction")
             }
-            val targetMetadata = BundleUpdateStoreAndroid.parseMetadataJson(
-                BundleUpdateStoreAndroid.readFileContent(stagedMetadataFile)
-            )
             if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, stagingPath, targetMetadata, appVersion, bundleVersion, allowStaging = true)) {
                 throw BundleDiffReconstructionException.FallbackRequired("final diff-staging file verification failed")
             }

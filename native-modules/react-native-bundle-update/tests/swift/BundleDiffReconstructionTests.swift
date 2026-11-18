@@ -231,4 +231,126 @@ final class BundleDiffReconstructionTests: XCTestCase {
             }
         }
     }
+
+    func testValidateManifestAgainstTargetMetadataAndFull8CategoryReconstruction() throws {
+        try withTempDir { root in
+            let fm = FileManager.default
+            let staging = root.appendingPathComponent("staging", isDirectory: true)
+            let builtin = root.appendingPathComponent("builtin", isDirectory: true)
+            try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+            try fm.createDirectory(at: builtin, withIntermediateDirectories: true)
+
+            let baseFiles: [String: Data] = [
+                "common.bundle": Data("common-v680".utf8),
+                "main.jsbundle.hbc": Data("main-v680".utf8),
+                "background.bundle": Data("bg-v680".utf8),
+                "module-id-map.json": Data("{}".utf8),
+                "segments/seg_1.seg.hbc": Data("seg-1".utf8),
+                "segments-background/seg_bg_1.seg.hbc": Data("seg-bg-1".utf8),
+                "assets/node_modules/icon.png": Data("icon".utf8),
+                "web-embed/index.html": Data("<html></html>".utf8),
+            ]
+            for (rel, data) in baseFiles {
+                let builtinRel = rel == "main.jsbundle.hbc" ? "main.jsbundle" : rel
+                let url = builtin.appendingPathComponent(builtinRel)
+                try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url)
+            }
+
+            let changedSegmentData = Data("seg-1-hotfix".utf8)
+            let changedSegmentUrl = staging.appendingPathComponent("segments/seg_1.seg.hbc")
+            try fm.createDirectory(at: changedSegmentUrl.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try changedSegmentData.write(to: changedSegmentUrl)
+
+            var targetFileEntries: [String: String] = [:]
+            var reusedFiles: [String: String] = [:]
+            for (rel, data) in baseFiles {
+                if rel == "segments/seg_1.seg.hbc" {
+                    targetFileEntries[rel] = sha256Hex(data: changedSegmentData)
+                } else {
+                    let h = sha256Hex(data: data)
+                    targetFileEntries[rel] = h
+                    reusedFiles[rel] = h
+                }
+            }
+            let changedFiles = ["segments/seg_1.seg.hbc": sha256Hex(data: changedSegmentData)]
+
+            let manifest = BundleDiffManifest(
+                schemaVersion: 1,
+                appType: "ios",
+                appVersion: "6.8.0",
+                baseAppVersion: "6.8.0",
+                baseMetadataSha256: String(repeating: "a", count: 64),
+                targetBundleVersion: "7701200",
+                targetMetadataSha256: String(repeating: "b", count: 64),
+                hashAlgorithm: "sha256",
+                changedFiles: changedFiles,
+                reusedFiles: reusedFiles,
+                deletedFiles: ["segments/removed.seg.hbc"]
+            )
+
+            // 1. Valid bijective partition passes
+            try BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
+                manifest: manifest,
+                targetFileEntries: targetFileEntries
+            )
+
+            // 2. Omitting a file from targetFileEntries or mismatching hash throws fallbackRequired
+            var incompleteTarget = targetFileEntries
+            incompleteTarget.removeValue(forKey: "web-embed/index.html")
+            XCTAssertThrowsError(try BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
+                manifest: manifest,
+                targetFileEntries: incompleteTarget
+            ))
+
+            var tamperedTarget = targetFileEntries
+            tamperedTarget["web-embed/index.html"] = String(repeating: "f", count: 64)
+            XCTAssertThrowsError(try BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
+                manifest: manifest,
+                targetFileEntries: tamperedTarget
+            ))
+
+            // 3. Reconstruct all 8 categories (including main.jsbundle.hbc -> main.jsbundle builtin fallback)
+            try BundleDiffReconstruction.reconstruct(
+                stagingDir: staging.path,
+                manifest: manifest,
+                candidateBundleDirs: [],
+                sha256OfFile: { self.sha256OfFile($0) },
+                builtinCopy: { relPath, destPath, expectedHash in
+                    let candidates = relPath == "main.jsbundle.hbc" ? [relPath, "main.jsbundle"] : [relPath]
+                    for candidate in candidates {
+                        let src = builtin.appendingPathComponent(candidate)
+                        if let h = self.sha256OfFile(src.path), h == expectedHash {
+                            try? fm.copyItem(at: src, to: URL(fileURLWithPath: destPath))
+                            return true
+                        }
+                    }
+                    return false
+                }
+            )
+
+            for (rel, expectedHash) in targetFileEntries {
+                let reconstructedPath = staging.appendingPathComponent(rel).path
+                XCTAssertEqual(sha256OfFile(reconstructedPath), expectedHash, "Mismatch for \(rel)")
+            }
+
+            // 4. Verify builtinCandidateRelativePaths for special iOS locations
+            XCTAssertEqual(
+                BundleDiffReconstruction.builtinCandidateRelativePaths(for: "main.jsbundle.hbc"),
+                ["main.jsbundle.hbc", "main.jsbundle"]
+            )
+            XCTAssertEqual(
+                BundleDiffReconstruction.builtinCandidateRelativePaths(for: "assets/assets/packages/icon.png"),
+                ["assets/assets/packages/icon.png", "assets/packages/icon.png", "packages/icon.png"]
+            )
+            XCTAssertEqual(
+                BundleDiffReconstruction.builtinCandidateRelativePaths(for: "assets/node_modules/icon.png"),
+                ["assets/node_modules/icon.png", "assets/assets/node_modules/icon.png", "node_modules/icon.png"]
+            )
+            XCTAssertEqual(
+                BundleDiffReconstruction.builtinCandidateRelativePaths(for: "web-embed/index.html"),
+                ["web-embed/index.html"]
+            )
+        }
+    }
 }

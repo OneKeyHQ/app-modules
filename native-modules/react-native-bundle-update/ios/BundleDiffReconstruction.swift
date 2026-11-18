@@ -78,6 +78,35 @@ enum BundleDiffReconstruction {
         return diff == 0
     }
 
+    /// Maps an OTA metadata.json key to ordered built-in iOS Bundle.main candidate relative paths:
+    /// 1. `main.jsbundle.hbc` -> `["main.jsbundle.hbc", "main.jsbundle"]` (Xcode renames HBC entry to main.jsbundle)
+    /// 2. `assets/assets/<subpath>` -> `["assets/assets/<subpath>", "assets/<subpath>"]` (dist/assets moves assets/ dir, while standard RN bundle outputs single assets/<subpath>)
+    /// 3. `assets/<subpath>` -> `["assets/<subpath>", "assets/assets/<subpath>", "<subpath>"]`
+    /// 4. `web-embed/<subpath>` -> `["web-embed/<subpath>"]` (Xcode folder reference `OneKeyWallet/web-embed` in Bundle.main)
+    static func builtinCandidateRelativePaths(for relativePath: String) -> [String] {
+        guard isSafeRelativeBundlePath(relativePath) else { return [] }
+        if relativePath == "main.jsbundle.hbc" {
+            return ["main.jsbundle.hbc", "main.jsbundle"]
+        }
+        if relativePath.hasPrefix("assets/assets/") {
+            let strippedOne = String(relativePath.dropFirst("assets/".count))
+            let strippedTwo = String(relativePath.dropFirst("assets/assets/".count))
+            var result = [relativePath]
+            if isSafeRelativeBundlePath(strippedOne) { result.append(strippedOne) }
+            if isSafeRelativeBundlePath(strippedTwo) { result.append(strippedTwo) }
+            return result
+        }
+        if relativePath.hasPrefix("assets/") {
+            let nested = "assets/" + relativePath
+            let stripped = String(relativePath.dropFirst("assets/".count))
+            var result = [relativePath]
+            if isSafeRelativeBundlePath(nested) { result.append(nested) }
+            if isSafeRelativeBundlePath(stripped) { result.append(stripped) }
+            return result
+        }
+        return [relativePath]
+    }
+
     static func parseAndValidateManifest(
         jsonData: Data,
         expectedAppType: String,
@@ -228,6 +257,36 @@ enum BundleDiffReconstruction {
             return nil
         }
         return fullPath
+    }
+
+    static func validateManifestAgainstTargetMetadata(
+        manifest: BundleDiffManifest,
+        targetFileEntries: [String: String]
+    ) throws {
+        if manifest.changedFiles.count + manifest.reusedFiles.count != targetFileEntries.count {
+            throw BundleDiffReconstructionError.fallbackRequired(
+                "diff-manifest file count (\(manifest.changedFiles.count + manifest.reusedFiles.count)) != metadata.json file count (\(targetFileEntries.count))"
+            )
+        }
+        for (relPath, expectedHash) in targetFileEntries {
+            guard isSafeRelativeBundlePath(relPath) else {
+                throw BundleDiffReconstructionError.securityRejected("unsafe relative path in metadata.json: \(relPath)")
+            }
+            guard isHex64(expectedHash) else {
+                throw BundleDiffReconstructionError.fallbackRequired("invalid sha256 in metadata.json for \(relPath)")
+            }
+            let manifestHash = manifest.changedFiles[relPath] ?? manifest.reusedFiles[relPath]
+            guard let manifestHash, constantTimeEqualHex(manifestHash, expectedHash) else {
+                throw BundleDiffReconstructionError.fallbackRequired("diff-manifest partition mismatch for \(relPath)")
+            }
+        }
+        for deletedPath in manifest.deletedFiles {
+            if targetFileEntries[deletedPath] != nil ||
+               manifest.changedFiles[deletedPath] != nil ||
+               manifest.reusedFiles[deletedPath] != nil {
+                throw BundleDiffReconstructionError.fallbackRequired("deletedFiles entry present in target bundle: \(deletedPath)")
+            }
+        }
     }
 
     static func reconstruct(

@@ -201,6 +201,58 @@ fun main() {
             )
         }.exceptionOrNull()
         expect(missingErr is BundleDiffReconstructionException.FallbackRequired, "missing reused file -> FallbackRequired")
+
+        // 4. validateManifestAgainstTargetMetadata + full 8-category Android reconstruction
+        val targetFileEntries = mapOf(
+            "main.jsbundle.hbc" to changedHash,
+            "segments/a.seg.hbc" to segHash,
+            "common.bundle" to commonHash,
+        )
+        BundleDiffReconstruction.validateManifestAgainstTargetMetadata(manifest, targetFileEntries)
+        assertions += 1
+
+        val omittedErr = runCatching {
+            BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
+                manifest,
+                mapOf("main.jsbundle.hbc" to changedHash),
+            )
+        }.exceptionOrNull()
+        expect(omittedErr is BundleDiffReconstructionException.FallbackRequired, "partition count mismatch rejected")
+
+        val hashMismatchErr = runCatching {
+            BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
+                manifest,
+                targetFileEntries + ("common.bundle" to "e".repeat(64)),
+            )
+        }.exceptionOrNull()
+        expect(hashMismatchErr is BundleDiffReconstructionException.FallbackRequired, "partition hash mismatch rejected")
+
+        // 5. Verify special Android built-in path mappings (main.jsbundle.hbc, assets/drawable-*, assets/raw/*, web-embed/*)
+        expect(
+            BundleDiffReconstruction.builtinCandidateAssetPaths("main.jsbundle.hbc") ==
+                listOf("main.jsbundle.hbc", "index.android.bundle"),
+            "Android main.jsbundle.hbc maps to index.android.bundle",
+        )
+        expect(
+            BundleDiffReconstruction.builtinCandidateAssetPaths("assets/drawable-xhdpi/icon.png") ==
+                listOf("assets/drawable-xhdpi/icon.png", "drawable-xhdpi/icon.png", "assets/assets/drawable-xhdpi/icon.png"),
+            "Android assets/drawable-xhdpi candidate asset paths",
+        )
+        expect(
+            BundleDiffReconstruction.builtinCandidateApkResZipEntries("assets/drawable-xhdpi/icon.png") ==
+                listOf("res/drawable-xhdpi/icon.png", "res/drawable-xhdpi-v4/icon.png"),
+            "Android APK res zip entries for drawable",
+        )
+        expect(
+            BundleDiffReconstruction.builtinCandidateApkResZipEntries("assets/raw/sound.mp3") ==
+                listOf("res/raw/sound.mp3", "res/raw-v4/sound.mp3"),
+            "Android APK res zip entries for raw",
+        )
+        expect(
+            BundleDiffReconstruction.builtinCandidateAssetPaths("web-embed/index.html") ==
+                listOf("web-embed/index.html"),
+            "Android web-embed stays at web-embed/index.html",
+        )
     } finally {
         tempRoot.deleteRecursively()
     }
