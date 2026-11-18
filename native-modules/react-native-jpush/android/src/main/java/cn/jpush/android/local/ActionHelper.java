@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -43,13 +42,12 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public class ActionHelper {
     public static final String ACTION_RECEIVER_MESSAGE = "cn.jpush.android.intent.RECEIVER_MESSAGE";
     public static final String ACTION_RECEIVE_MESSAGE = "cn.jpush.android.intent.RECEIVE_MESSAGE";
-    public static final String DEFAULT_CHANNEL_ID = "jpush_default_channel";
-    public static final String DEFAULT_SILENT_CHANNEL_ID = "jpush_silent_channel";
 
     private static final String KEY_CONTENT_GENERATION = "jpush_content_generation";
     private static final String KEY_EVENT_TYPE = "jpush_event_type";
@@ -388,27 +386,9 @@ public class ActionHelper {
             if (nm == null) {
                 return;
             }
-            String channelId = (message.notificationChannelId != null && !message.notificationChannelId.isEmpty())
-                ? message.notificationChannelId
-                : (silenceActive ? DEFAULT_SILENT_CHANNEL_ID : DEFAULT_CHANNEL_ID);
-            if (Build.VERSION.SDK_INT >= 26) {
-                String channelName = JCoreStorage.getChannel(app);
-                if (channelName == null || channelName.isEmpty()) {
-                    channelName = "Notifications";
-                }
-                int importance = silenceActive
-                    ? NotificationManager.IMPORTANCE_LOW
-                    : NotificationManager.IMPORTANCE_HIGH;
-                NotificationChannel channel = new NotificationChannel(channelId, channelName, importance);
-                if (silenceActive) {
-                    channel.setSound(null, null);
-                    channel.enableVibration(false);
-                }
-                nm.createNotificationChannel(channel);
-            }
-
             Notification.Builder builder;
             if (Build.VERSION.SDK_INT >= 26) {
+                String channelId = LegacyNotificationChannel.resolve(app, nm, message, silenceActive);
                 builder = new Notification.Builder(app, channelId);
             } else {
                 builder = new Notification.Builder(app);
@@ -457,9 +437,11 @@ public class ActionHelper {
             return;
         }
         String content = rawContent != null ? rawContent : "";
-        int lastNewline = content.lastIndexOf('\n');
-        if (lastNewline >= 0 && lastNewline + 1 < content.length()) {
-            content = content.substring(lastNewline + 1).trim();
+        if (!content.trim().startsWith("{")) {
+            int lastNewline = content.lastIndexOf('\n');
+            if (lastNewline >= 0 && lastNewline + 1 < content.length()) {
+                content = content.substring(lastNewline + 1).trim();
+            }
         }
         String msgId = String.valueOf(messageId);
         String parsedMsgId = JCoreWireCodec.extractJsonString(content, "_j_msgid");
@@ -504,6 +486,13 @@ public class ActionHelper {
                 JCoreWireCodec.extractJsonInt(content, "notificaion_type", 0)
             );
             notification.platform = JCoreWireCodec.extractJsonInt(content, "platform", 0);
+            try {
+                JSONObject payload = new JSONObject(content);
+                JSONObject nested = payload.optJSONObject("m_content");
+                LegacyNotificationChannel.readOptions(notification, nested != null ? nested : payload);
+            } catch (JSONException ignored) {
+                // Keep the default channel options for payloads received without a JSON object.
+            }
             if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(context)) {
                 return;
             }

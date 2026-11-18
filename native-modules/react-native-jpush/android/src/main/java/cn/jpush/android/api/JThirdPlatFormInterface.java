@@ -9,6 +9,7 @@ import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.helper.JCoreHelper;
 import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.local.LegacyNotificationChannel;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -206,7 +207,7 @@ public abstract class JThirdPlatFormInterface {
                     extras = json.opt("extras");
                 }
                 message.notificationExtras = extras != null ? extras.toString() : "";
-                message.notificationChannelId = json.optString("n_channel_id", "");
+                LegacyNotificationChannel.readOptions(message, json);
                 if (!JCoreStorage.isPushStopped(context) && JCoreStorage.isCollectionAuth(context)) {
                     message.displayForeground = json.optString("n_foreground", "1");
                 }

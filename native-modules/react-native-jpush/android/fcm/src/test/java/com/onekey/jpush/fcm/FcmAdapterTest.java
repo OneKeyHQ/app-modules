@@ -7,12 +7,17 @@ import static org.mockito.Mockito.*;
 import android.app.ActivityManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.ResolveInfo;
+import android.content.res.Resources;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
 import android.os.Process;
@@ -563,6 +568,116 @@ public class FcmAdapterTest {
     }
 
     @Test
+    public void legacyBlockedTcpChannelIsUsedWithoutRecreationOrFallback() {
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Legacy blocked channel", NotificationManager.IMPORTANCE_NONE
+        ));
+        NotificationManager manager = spy(notifications);
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        ActionHelper.getInstance().handleDownlinkPushMessage(wrapped, (byte) 0, 7301,
+            "package\nappKey\n{\"m_content\":{\"n_title\":\"TCP\",\"n_content\":\"body\"}}");
+
+        ArgumentCaptor<Notification> posted = ArgumentCaptor.forClass(Notification.class);
+        verify(manager).notify(eq(7301), posted.capture());
+        assertEquals("JPush_3_7", posted.getValue().getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_NONE, notifications.getNotificationChannel("JPush_3_7").getImportance());
+        verify(manager, never()).createNotificationChannel(any(NotificationChannel.class));
+    }
+
+    @Test
+    public void fcmReusesMutedLegacyChannelAndItsUserSettings() {
+        NotificationChannel legacy = new NotificationChannel(
+            "JPush_3_7", "Legacy muted channel", NotificationManager.IMPORTANCE_LOW
+        );
+        legacy.setSound(null, null);
+        legacy.enableVibration(false);
+        notifications.createNotificationChannel(legacy);
+
+        service.onMessageReceived(new RemoteMessage(metadata(
+            "{\"msg_id\":\"7302\",\"n_title\":\"FCM\",\"n_content\":\"body\"}"
+        )));
+        int id = JThirdPlatFormInterface.getNofiticationID("7302", 0);
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(id).getChannelId());
+        NotificationChannel reused = notifications.getNotificationChannel("JPush_3_7");
+        assertEquals("Legacy muted channel", reused.getName());
+        assertEquals(NotificationManager.IMPORTANCE_LOW, reused.getImportance());
+        assertNull(reused.getSound());
+        assertFalse(reused.shouldVibrate());
+        assertEquals(1, notifications.getNotificationChannels().size());
+    }
+
+    @Test
+    public void localNotificationCreatesDefaultLegacyChannel() {
+        JPushLocalNotification local = new JPushLocalNotification();
+        local.setNotificationId(7303);
+        local.setTitle("Local notification");
+        ActionHelper.getInstance().dispatchLocalNotification(context, local);
+
+        NotificationChannel channel = notifications.getNotificationChannel("JPush_3_7");
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7303).getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_DEFAULT, channel.getImportance());
+        assertNotNull(channel.getSound());
+        assertTrue(channel.shouldVibrate());
+        assertTrue(channel.shouldShowLights());
+        assertEquals("JIGUANG_CHANNEL_GROUP", channel.getGroup());
+    }
+
+    @Test
+    public void explicitChannelAndLegacyPriorityAndAlertMaskSelectTheirOwnChannels() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7304,
+            "{\"m_content\":{\"n_title\":\"TCP\",\"n_priority\":2,\"n_alert_type\":13}}");
+        String originalManufacturer = Build.MANUFACTURER;
+        try {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", "Google");
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7305,
+                "{\"n_title\":\"TCP\",\"n_priority\":2,\"n_importance\":{\"fc\":1}}");
+        } finally {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", originalManufacturer);
+        }
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7306,
+            "{\"n_title\":\"TCP\",\"n_channel_id\":\"orders\",\"n_alert_type\":0}");
+
+        assertEquals("JPush_4_5", Shadows.shadowOf(notifications).getNotification(7304).getChannelId());
+        assertEquals("JPush_1_0", Shadows.shadowOf(notifications).getNotification(7305).getChannelId());
+        assertEquals("orders", Shadows.shadowOf(notifications).getNotification(7306).getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_LOW, notifications.getNotificationChannel("orders").getImportance());
+    }
+
+    @Test
+    public void customRawSoundChangesLegacyIdentityUntilSdkSilenceHours() {
+        Resources resources = spy(context.getResources());
+        doReturn(1).when(resources).getIdentifier("chime", "raw", context.getPackageName());
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Resources getResources() {
+                return resources;
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7307,
+            "{\"n_title\":\"TCP\",\"n_sound\":\"chime\"}");
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7308,
+            "{\"n_title\":\"TCP\",\"n_sound\":\"missing\"}");
+        JCoreStorage.setSilenceTime(context, 0, 0, 23, 59);
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7309,
+            "{\"n_title\":\"TCP\",\"n_channel_id\":\"orders\",\"n_sound\":\"chime\"}");
+
+        assertEquals("JPush_3_6_chime", Shadows.shadowOf(notifications).getNotification(7307).getChannelId());
+        assertEquals(Uri.parse("android.resource://" + context.getPackageName() + "/raw/chime"),
+            notifications.getNotificationChannel("JPush_3_6_chime").getSound());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7308).getChannelId());
+        assertEquals("JPush_2_0", Shadows.shadowOf(notifications).getNotification(7309).getChannelId());
+        assertNull(notifications.getNotificationChannel("JPush_2_0").getSound());
+        assertNull(notifications.getNotificationChannel("orders"));
+    }
+
+    @Test
     public void revokedConstructionCannotMutateAnExistingClickIntentOrNotificationTracking() {
         ActionHelper helper = ActionHelper.getInstance();
         helper.clearActiveNotificationIds();
@@ -586,8 +701,8 @@ public class FcmAdapterTest {
         ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
         doAnswer(call -> {
             JCoreStorage.setCollectionAuth(wrapped, false);
-            return null;
-        }).when(manager).createNotificationChannel(any(android.app.NotificationChannel.class));
+            return call.callRealMethod();
+        }).when(manager).getNotificationChannel("JPush_3_7");
         for (int id : new int[]{7105, 7107}) {
             JCoreStorage.setCollectionAuth(wrapped, true);
             NotificationMessage rejected = new NotificationMessage();
