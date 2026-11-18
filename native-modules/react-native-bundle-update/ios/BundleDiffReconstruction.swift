@@ -23,12 +23,198 @@ struct BundleDiffManifest: Equatable {
 enum BundleDiffReconstruction {
     static let expectedSchemaVersion = 1
     static let expectedHashAlgorithm = "sha256"
+    static let maxBundleEntries = 4096
+    static let maxBundleUncompressedBytes: UInt64 = 512 * 1024 * 1024
+    static let maxControlJsonBytes: UInt64 = 16 * 1024 * 1024
+    static let stagingRootDirName = ".diff-staging"
+    static let diffZipExtension = ".diff.zip"
+    static let diffMetaExtension = ".diff.zip.meta.json"
+
+    struct DiffArchiveDescriptor: Equatable {
+        let appVersion: String
+        let bundleVersion: String
+        let downloadUrl: String
+        let fileSize: Double
+        let sha256: String
+        let diffSha256: String
+        let signature: String?
+    }
 
     static func isHex64(_ value: String?) -> Bool {
         guard let value = value, value.count == 64 else { return false }
         return value.unicodeScalars.allSatisfy {
             ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f") || ($0 >= "A" && $0 <= "F")
         }
+    }
+
+    static func normalizeSha256(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              isHex64(trimmed) else {
+            return nil
+        }
+        return trimmed.lowercased()
+    }
+
+    static func isSafeVersionComponent(_ version: String) -> Bool {
+        let allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+        guard !version.isEmpty,
+              !version.hasPrefix("."),
+              !version.hasSuffix("."),
+              version.unicodeScalars.allSatisfy({ allowedChars.contains($0) }) else {
+            return false
+        }
+        let lower = version.lowercased()
+        if lower.hasSuffix(".diff") ||
+           lower.hasSuffix("-diff") ||
+           lower.hasSuffix(".diff-staging") ||
+           lower.hasSuffix("-diff-staging") {
+            return false
+        }
+        return true
+    }
+
+    static func writeDescriptor(_ descriptor: DiffArchiveDescriptor, toPath path: String) {
+        var dict: [String: Any] = [
+            "appVersion": descriptor.appVersion,
+            "bundleVersion": descriptor.bundleVersion,
+            "downloadUrl": descriptor.downloadUrl,
+            "fileSize": descriptor.fileSize,
+            "sha256": descriptor.sha256.lowercased(),
+            "diffSha256": descriptor.diffSha256.lowercased(),
+        ]
+        if let sig = descriptor.signature, !sig.isEmpty {
+            dict["signature"] = sig
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return }
+        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+
+    static func readDescriptor(
+        fromPath path: String,
+        expectedAppVersion: String,
+        expectedBundleVersion: String
+    ) -> DiffArchiveDescriptor? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path),
+              let attrs = try? fm.attributesOfItem(atPath: path),
+              let fileSize = attrs[.size] as? UInt64,
+              fileSize <= 256 * 1024,
+              let data = fm.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        guard let appVersion = obj["appVersion"] as? String,
+              let bundleVersion = obj["bundleVersion"] as? String,
+              appVersion == expectedAppVersion,
+              bundleVersion == expectedBundleVersion,
+              let downloadUrl = obj["downloadUrl"] as? String,
+              downloadUrl.hasPrefix("https://"),
+              let sha256 = normalizeSha256(obj["sha256"] as? String),
+              let diffSha256 = normalizeSha256(obj["diffSha256"] as? String) else {
+            return nil
+        }
+        let sizeNum = (obj["fileSize"] as? NSNumber)?.doubleValue ?? 0
+        let signature = obj["signature"] as? String
+        return DiffArchiveDescriptor(
+            appVersion: appVersion,
+            bundleVersion: bundleVersion,
+            downloadUrl: downloadUrl,
+            fileSize: sizeNum,
+            sha256: sha256,
+            diffSha256: diffSha256,
+            signature: (signature?.isEmpty == false) ? signature : nil
+        )
+    }
+
+    static func resolveExpectedDiffSha256ForPackageVerify(
+        suppliedFullSha256: String,
+        suppliedDiffSha256: String?,
+        descriptor: DiffArchiveDescriptor?
+    ) -> String? {
+        guard let normalizedFull = normalizeSha256(suppliedFullSha256) else { return nil }
+        if let descriptor {
+            guard constantTimeEqualHex(descriptor.sha256, normalizedFull) else {
+                return nil
+            }
+        }
+        if let rawDiff = suppliedDiffSha256, !rawDiff.isEmpty {
+            guard let normalizedDiff = normalizeSha256(rawDiff) else { return nil }
+            if let descriptor, !constantTimeEqualHex(descriptor.diffSha256, normalizedDiff) {
+                return nil
+            }
+            return normalizedDiff
+        }
+        return descriptor?.diffSha256
+    }
+
+    static func resolveTrustedMetadataSha256ForPackageVerify(
+        suppliedFullSha256: String,
+        suppliedSignature: String?,
+        inMemoryVerified: (fullSha256: String, metadataSha256: String)?,
+        descriptor: DiffArchiveDescriptor?,
+        persistedAscSignature: String?,
+        verifySignatureAndExtractMetadataSha256: (String) -> String?
+    ) -> String? {
+        guard let normalizedFull = normalizeSha256(suppliedFullSha256) else { return nil }
+        if let inMemoryVerified {
+            guard constantTimeEqualHex(inMemoryVerified.fullSha256, normalizedFull),
+                  let metaSha = normalizeSha256(inMemoryVerified.metadataSha256) else {
+                return nil
+            }
+            return metaSha
+        }
+        if let descriptor, !constantTimeEqualHex(descriptor.sha256, normalizedFull) {
+            return nil
+        }
+        let candidateSignatures: [String] = [
+            suppliedSignature,
+            descriptor?.signature,
+            persistedAscSignature,
+        ].compactMap { sig in
+            guard let sig, !sig.isEmpty else { return nil }
+            return sig
+        }
+        // If no in-memory verified record and no explicit signature was passed,
+        // require the descriptor bound to `normalizedFull` to be present so an
+        // unverified fullSha256 parameter cannot be ignored.
+        if (suppliedSignature == nil || suppliedSignature?.isEmpty == true) && descriptor == nil {
+            return nil
+        }
+        for sig in candidateSignatures {
+            if let extracted = normalizeSha256(verifySignatureAndExtractMetadataSha256(sig)) {
+                return extracted
+            }
+        }
+        return nil
+    }
+
+    static func resolveFallbackDownloadParams(
+        expectedFullSha256: String,
+        expectedDiffSha256: String,
+        explicitDownloadUrl: String?,
+        explicitFileSize: Double?,
+        inMemoryFullParams: (downloadUrl: String, fileSize: Double, sha256: String)?,
+        descriptor: DiffArchiveDescriptor?
+    ) -> (downloadUrl: String, fileSize: Double)? {
+        guard let normFull = normalizeSha256(expectedFullSha256),
+              let normDiff = normalizeSha256(expectedDiffSha256) else {
+            return nil
+        }
+        if let url = explicitDownloadUrl, url.hasPrefix("https://") {
+            return (downloadUrl: url, fileSize: explicitFileSize ?? 0)
+        }
+        if let inMem = inMemoryFullParams,
+           inMem.downloadUrl.hasPrefix("https://"),
+           constantTimeEqualHex(inMem.sha256, normFull) {
+            return (downloadUrl: inMem.downloadUrl, fileSize: inMem.fileSize)
+        }
+        if let desc = descriptor,
+           desc.downloadUrl.hasPrefix("https://"),
+           constantTimeEqualHex(desc.sha256, normFull),
+           constantTimeEqualHex(desc.diffSha256, normDiff) {
+            return (downloadUrl: desc.downloadUrl, fileSize: desc.fileSize)
+        }
+        return nil
     }
 
     static func isUsableDiffParams(
@@ -261,11 +447,18 @@ enum BundleDiffReconstruction {
 
     static func validateManifestAgainstTargetMetadata(
         manifest: BundleDiffManifest,
-        targetFileEntries: [String: String]
+        targetFileEntries: [String: String],
+        maxEntries: Int = maxBundleEntries
     ) throws {
-        if manifest.changedFiles.count + manifest.reusedFiles.count != targetFileEntries.count {
+        let totalFiles = manifest.changedFiles.count + manifest.reusedFiles.count
+        if totalFiles > maxEntries || targetFileEntries.count > maxEntries {
+            throw BundleDiffReconstructionError.securityRejected(
+                "bundle entry count exceeds maximum allowed (\(maxEntries))"
+            )
+        }
+        if totalFiles != targetFileEntries.count {
             throw BundleDiffReconstructionError.fallbackRequired(
-                "diff-manifest file count (\(manifest.changedFiles.count + manifest.reusedFiles.count)) != metadata.json file count (\(targetFileEntries.count))"
+                "diff-manifest file count (\(totalFiles)) != metadata.json file count (\(targetFileEntries.count))"
             )
         }
         for (relPath, expectedHash) in targetFileEntries {
@@ -294,14 +487,60 @@ enum BundleDiffReconstruction {
         manifest: BundleDiffManifest,
         candidateBundleDirs: [String],
         sha256OfFile: (String) -> String?,
-        builtinCopy: (_ relativePath: String, _ destinationPath: String, _ expectedHash: String) -> Bool
+        builtinCopy: (_ relativePath: String, _ destinationPath: String, _ expectedHash: String) -> Bool,
+        maxEntries: Int = maxBundleEntries,
+        maxTotalBytes: UInt64 = maxBundleUncompressedBytes
     ) throws {
         let fm = FileManager.default
+        let totalDeclaredEntries = manifest.changedFiles.count + manifest.reusedFiles.count
+        if totalDeclaredEntries > maxEntries {
+            throw BundleDiffReconstructionError.securityRejected(
+                "reconstructed entry count exceeds maximum allowed (\(maxEntries))"
+            )
+        }
+
+        var cumulativeEntries = 0
+        var cumulativeBytes: UInt64 = 0
+
+        let metadataPath = (stagingDir as NSString).appendingPathComponent("metadata.json")
+        if fm.fileExists(atPath: metadataPath),
+           let attrs = try? fm.attributesOfItem(atPath: metadataPath),
+           let metaSize = attrs[.size] as? UInt64 {
+            cumulativeEntries += 1
+            if cumulativeEntries > maxEntries {
+                throw BundleDiffReconstructionError.securityRejected(
+                    "reconstructed entry count exceeds maximum allowed (\(maxEntries))"
+                )
+            }
+            let (nextBytes, overflow) = cumulativeBytes.addingReportingOverflow(metaSize)
+            if overflow || nextBytes > maxTotalBytes {
+                throw BundleDiffReconstructionError.securityRejected(
+                    "reconstructed bundle size exceeds maximum allowed (\(maxTotalBytes))"
+                )
+            }
+            cumulativeBytes = nextBytes
+        }
 
         // 1. Verify every changedFile exists in stagingDir and matches expected sha256.
         for (relPath, expectedHash) in manifest.changedFiles {
+            cumulativeEntries += 1
+            if cumulativeEntries > maxEntries {
+                throw BundleDiffReconstructionError.securityRejected(
+                    "reconstructed entry count exceeds maximum allowed (\(maxEntries))"
+                )
+            }
             guard let stagedPath = confinedExistingFilePath(baseDir: stagingDir, relativePath: relPath) else {
                 throw BundleDiffReconstructionError.fallbackRequired("changed file missing or unsafe: \(relPath)")
+            }
+            if let attrs = try? fm.attributesOfItem(atPath: stagedPath),
+               let fileSize = attrs[.size] as? UInt64 {
+                let (nextBytes, overflow) = cumulativeBytes.addingReportingOverflow(fileSize)
+                if overflow || nextBytes > maxTotalBytes {
+                    throw BundleDiffReconstructionError.securityRejected(
+                        "reconstructed bundle size exceeds maximum allowed (\(maxTotalBytes))"
+                    )
+                }
+                cumulativeBytes = nextBytes
             }
             guard let actualHash = sha256OfFile(stagedPath),
                   constantTimeEqualHex(actualHash, expectedHash) else {
@@ -311,6 +550,12 @@ enum BundleDiffReconstruction {
 
         // 2. Reconstruct every reusedFile from local OTA dirs or built-in app bundle.
         for (relPath, expectedHash) in manifest.reusedFiles {
+            cumulativeEntries += 1
+            if cumulativeEntries > maxEntries {
+                throw BundleDiffReconstructionError.securityRejected(
+                    "reconstructed entry count exceeds maximum allowed (\(maxEntries))"
+                )
+            }
             guard let destPath = confinedDestinationFilePath(baseDir: stagingDir, relativePath: relPath) else {
                 throw BundleDiffReconstructionError.securityRejected("unsafe destination path for reused file: \(relPath)")
             }
@@ -328,6 +573,15 @@ enum BundleDiffReconstruction {
             for candidateDir in candidateBundleDirs {
                 guard let sourcePath = confinedExistingFilePath(baseDir: candidateDir, relativePath: relPath) else {
                     continue
+                }
+                if let attrs = try? fm.attributesOfItem(atPath: sourcePath),
+                   let sourceSize = attrs[.size] as? UInt64 {
+                    let (projectedBytes, overflow) = cumulativeBytes.addingReportingOverflow(sourceSize)
+                    if overflow || projectedBytes > maxTotalBytes {
+                        throw BundleDiffReconstructionError.securityRejected(
+                            "reconstructed bundle size exceeds maximum allowed (\(maxTotalBytes))"
+                        )
+                    }
                 }
                 guard let sourceHash = sha256OfFile(sourcePath),
                       constantTimeEqualHex(sourceHash, expectedHash) else {
@@ -358,6 +612,18 @@ enum BundleDiffReconstruction {
 
             if !copied {
                 throw BundleDiffReconstructionError.fallbackRequired("reused file unavailable or hash mismatch: \(relPath)")
+            }
+
+            if let attrs = try? fm.attributesOfItem(atPath: destPath),
+               let copiedSize = attrs[.size] as? UInt64 {
+                let (nextBytes, overflow) = cumulativeBytes.addingReportingOverflow(copiedSize)
+                if overflow || nextBytes > maxTotalBytes {
+                    try? fm.removeItem(atPath: destPath)
+                    throw BundleDiffReconstructionError.securityRejected(
+                        "reconstructed bundle size exceeds maximum allowed (\(maxTotalBytes))"
+                    )
+                }
+                cumulativeBytes = nextBytes
             }
         }
     }

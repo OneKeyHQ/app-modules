@@ -253,6 +253,136 @@ fun main() {
                 listOf("web-embed/index.html"),
             "Android web-embed stays at web-embed/index.html",
         )
+
+        // 6. Version sanitization rejects reserved diff/staging suffixes and leading/trailing dots
+        expect(BundleDiffReconstruction.isSafeVersionComponent("6.8.0"), "valid appVersion accepted")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent(".diff-staging"), "leading dot rejected")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent("123.diff-staging"), ".diff-staging suffix rejected")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent("123-diff-staging"), "-diff-staging suffix rejected")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent("123.diff"), ".diff suffix rejected")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent("123-diff"), "-diff suffix rejected")
+
+        // 7. Uppercase sha256 normalization
+        val upperHex = "A1B2C3D4".repeat(8)
+        expect(BundleDiffReconstruction.normalizeSha256(upperHex) == upperHex.lowercase(), "uppercase sha256 normalized to lowercase")
+        expect(BundleDiffReconstruction.normalizeSha256("invalid") == null, "invalid sha256 returns null")
+
+        // 8. Cumulative entry count and byte limits across changedFiles + reusedFiles
+        val entryLimitErr = runCatching {
+            BundleDiffReconstruction.reconstruct(
+                stagingDir = staging,
+                manifest = manifest,
+                candidateBundleDirs = listOf(activeOta, olderOta),
+                sha256OfFile = ::sha256OfFile,
+                builtinCopy = { _, _, _ -> false },
+                maxEntries = 2,
+                maxTotalBytes = 1024L * 1024L,
+            )
+        }.exceptionOrNull()
+        expect(
+            entryLimitErr is BundleDiffReconstructionException.SecurityRejected,
+            "entry count limit exceeded -> SecurityRejected",
+        )
+
+        val byteLimitErr = runCatching {
+            BundleDiffReconstruction.reconstruct(
+                stagingDir = staging,
+                manifest = manifest,
+                candidateBundleDirs = listOf(activeOta, olderOta),
+                sha256OfFile = ::sha256OfFile,
+                builtinCopy = { _, _, _ -> false },
+                maxEntries = 10,
+                maxTotalBytes = 15L,
+            )
+        }.exceptionOrNull()
+        expect(
+            byteLimitErr is BundleDiffReconstructionException.SecurityRejected,
+            "cumulative byte limit exceeded -> SecurityRejected",
+        )
+
+        // 9. Descriptor persistence, pre-ASC verifyBundle, post-restart fail-closed verifyBundle, and fallback resolution
+        val fullSha = "1".repeat(64)
+        val diffSha = "2".repeat(64)
+        val metaSha = "3".repeat(64)
+        val wrongSha = "9".repeat(64)
+        val metaFile = File(tempRoot, "6.8.0-20260103.diff.zip.meta.json")
+        val desc = BundleDiffReconstruction.DiffArchiveDescriptor(
+            appVersion = "6.8.0",
+            bundleVersion = "20260103",
+            downloadUrl = "https://cdn.onekey.so/full.zip",
+            fileSize = 4096.0,
+            sha256 = fullSha,
+            diffSha256 = diffSha.uppercase(),
+            signature = null,
+        )
+        BundleDiffReconstruction.writeDescriptor(desc, metaFile)
+        val loadedDesc = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
+        expect(loadedDesc != null && loadedDesc.diffSha256 == diffSha, "descriptor persisted and normalized")
+
+        expect(
+            BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                suppliedFullSha256 = fullSha.uppercase(),
+                suppliedDiffSha256 = null,
+                descriptor = loadedDesc,
+            ) == diffSha,
+            "pre-ASC verifyBundle resolves diffSha256 from descriptor",
+        )
+        expect(
+            BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                suppliedFullSha256 = wrongSha,
+                suppliedDiffSha256 = null,
+                descriptor = loadedDesc,
+            ) == null,
+            "pre-ASC verifyBundle rejects mismatched fullSha256",
+        )
+        expect(
+            BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                suppliedFullSha256 = fullSha,
+                suppliedSignature = null,
+                inMemoryVerified = null,
+                descriptor = loadedDesc,
+                persistedAscSignature = null,
+                verifySignatureAndExtractMetadataSha256 = { metaSha },
+            ) == null,
+            "post-restart verifyBundle fails closed without verified signature",
+        )
+
+        val signedDesc = desc.copy(signature = "VALID_PGP_SIGNATURE")
+        expect(
+            BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                suppliedFullSha256 = fullSha,
+                suppliedSignature = null,
+                inMemoryVerified = null,
+                descriptor = signedDesc,
+                persistedAscSignature = null,
+                verifySignatureAndExtractMetadataSha256 = { sig -> if (sig == "VALID_PGP_SIGNATURE") metaSha else null },
+            ) == metaSha,
+            "post-restart verifyBundle re-establishes trust from verified signature",
+        )
+        expect(
+            BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                suppliedFullSha256 = wrongSha,
+                suppliedSignature = null,
+                inMemoryVerified = fullSha to metaSha,
+                descriptor = signedDesc,
+                persistedAscSignature = null,
+                verifySignatureAndExtractMetadataSha256 = { metaSha },
+            ) == null,
+            "verifyBundle rejects mismatched suppliedFullSha256",
+        )
+
+        val fallback = BundleDiffReconstruction.resolveFallbackDownloadParams(
+            expectedFullSha256 = fullSha,
+            expectedDiffSha256 = diffSha,
+            explicitDownloadUrl = null,
+            explicitFileSize = null,
+            inMemoryFullParams = null,
+            descriptor = loadedDesc,
+        )
+        expect(
+            fallback == ("https://cdn.onekey.so/full.zip" to 4096.0),
+            "fallback download params recovered from persisted descriptor after restart",
+        )
     } finally {
         tempRoot.deleteRecursively()
     }

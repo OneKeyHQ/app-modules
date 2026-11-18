@@ -353,4 +353,184 @@ final class BundleDiffReconstructionTests: XCTestCase {
             )
         }
     }
+
+    func testVersionIsolationPayloadLimitsAndLifecycleTrustResolvers() throws {
+        // 1. Version sanitization rejects reserved diff/staging suffixes and leading/trailing dots
+        XCTAssertTrue(BundleDiffReconstruction.isSafeVersionComponent("6.8.0"))
+        XCTAssertTrue(BundleDiffReconstruction.isSafeVersionComponent("2026041801"))
+        XCTAssertFalse(BundleDiffReconstruction.isSafeVersionComponent(".diff-staging"))
+        XCTAssertFalse(BundleDiffReconstruction.isSafeVersionComponent("123.diff-staging"))
+        XCTAssertFalse(BundleDiffReconstruction.isSafeVersionComponent("123-diff-staging"))
+        XCTAssertFalse(BundleDiffReconstruction.isSafeVersionComponent("123.diff"))
+        XCTAssertFalse(BundleDiffReconstruction.isSafeVersionComponent("123-diff"))
+        XCTAssertFalse(BundleDiffReconstruction.isSafeVersionComponent("123."))
+
+        // 2. Uppercase sha256 normalization
+        let upper = String(repeating: "A1B2C3D4", count: 8)
+        XCTAssertEqual(BundleDiffReconstruction.normalizeSha256(upper), upper.lowercased())
+        XCTAssertNil(BundleDiffReconstruction.normalizeSha256("not-a-hash"))
+
+        // 3. Cumulative entry count and byte limits across changedFiles + reusedFiles
+        try withTempDir { root in
+            let fm = FileManager.default
+            let staging = root.appendingPathComponent("staging", isDirectory: true)
+            let candidate = root.appendingPathComponent("candidate", isDirectory: true)
+            try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+            try fm.createDirectory(at: candidate, withIntermediateDirectories: true)
+
+            let dataA = Data("hello-world".utf8)
+            let hashA = sha256Hex(data: dataA)
+            try dataA.write(to: staging.appendingPathComponent("main.jsbundle.hbc"))
+            try dataA.write(to: candidate.appendingPathComponent("common.bundle"))
+            try dataA.write(to: candidate.appendingPathComponent("background.bundle"))
+
+            let manifest = BundleDiffManifest(
+                schemaVersion: 1,
+                appType: "ios",
+                appVersion: "6.8.0",
+                baseAppVersion: "6.8.0",
+                baseMetadataSha256: hashA,
+                targetBundleVersion: "20260103",
+                targetMetadataSha256: hashA,
+                hashAlgorithm: "sha256",
+                changedFiles: ["main.jsbundle.hbc": hashA],
+                reusedFiles: [
+                    "common.bundle": hashA,
+                    "background.bundle": hashA,
+                ],
+                deletedFiles: []
+            )
+
+            // Entry count limit exceeded -> securityRejected
+            XCTAssertThrowsError(try BundleDiffReconstruction.reconstruct(
+                stagingDir: staging.path,
+                manifest: manifest,
+                candidateBundleDirs: [candidate.path],
+                sha256OfFile: { self.sha256OfFile($0) },
+                builtinCopy: { _, _, _ in false },
+                maxEntries: 2,
+                maxTotalBytes: 1024 * 1024
+            )) { error in
+                XCTAssertEqual(
+                    error as? BundleDiffReconstructionError,
+                    .securityRejected("reconstructed entry count exceeds maximum allowed (2)")
+                )
+            }
+
+            // Cumulative byte budget exceeded while copying reusedFiles -> securityRejected
+            XCTAssertThrowsError(try BundleDiffReconstruction.reconstruct(
+                stagingDir: staging.path,
+                manifest: manifest,
+                candidateBundleDirs: [candidate.path],
+                sha256OfFile: { self.sha256OfFile($0) },
+                builtinCopy: { _, _, _ in false },
+                maxEntries: 10,
+                maxTotalBytes: 20
+            )) { error in
+                XCTAssertEqual(
+                    error as? BundleDiffReconstructionError,
+                    .securityRejected("reconstructed bundle size exceeds maximum allowed (20)")
+                )
+            }
+
+            // 4. Descriptor persistence, pre-ASC verifyBundle, post-restart fail-closed verifyBundle, and fallback resolution
+            let fullSha = String(repeating: "1", count: 64)
+            let diffSha = String(repeating: "2", count: 64)
+            let metaSha = String(repeating: "3", count: 64)
+            let wrongSha = String(repeating: "9", count: 64)
+            let metaPath = root.appendingPathComponent("6.8.0-20260103.diff.zip.meta.json").path
+
+            let desc = BundleDiffReconstruction.DiffArchiveDescriptor(
+                appVersion: "6.8.0",
+                bundleVersion: "20260103",
+                downloadUrl: "https://cdn.onekey.so/full.zip",
+                fileSize: 4096,
+                sha256: fullSha,
+                diffSha256: diffSha.uppercased(),
+                signature: nil
+            )
+            BundleDiffReconstruction.writeDescriptor(desc, toPath: metaPath)
+            let loadedDesc = BundleDiffReconstruction.readDescriptor(
+                fromPath: metaPath,
+                expectedAppVersion: "6.8.0",
+                expectedBundleVersion: "20260103"
+            )
+            XCTAssertNotNil(loadedDesc)
+            XCTAssertEqual(loadedDesc?.diffSha256, diffSha)
+
+            // Pre-ASC verifyBundle resolves diffSha256 from persisted descriptor or explicit param
+            XCTAssertEqual(
+                BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                    suppliedFullSha256: fullSha.uppercased(),
+                    suppliedDiffSha256: nil,
+                    descriptor: loadedDesc
+                ),
+                diffSha
+            )
+            XCTAssertNil(
+                BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                    suppliedFullSha256: wrongSha,
+                    suppliedDiffSha256: nil,
+                    descriptor: loadedDesc
+                )
+            )
+
+            // Post-restart verifyBundle fails closed when neither in-memory digest nor verified signature exists
+            XCTAssertNil(
+                BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                    suppliedFullSha256: fullSha,
+                    suppliedSignature: nil,
+                    inMemoryVerified: nil,
+                    descriptor: loadedDesc,
+                    persistedAscSignature: nil,
+                    verifySignatureAndExtractMetadataSha256: { _ in metaSha }
+                )
+            )
+
+            // Post-restart verifyBundle succeeds when descriptor carries verified signature and fullSha256 matches
+            let signedDesc = BundleDiffReconstruction.DiffArchiveDescriptor(
+                appVersion: "6.8.0",
+                bundleVersion: "20260103",
+                downloadUrl: "https://cdn.onekey.so/full.zip",
+                fileSize: 4096,
+                sha256: fullSha,
+                diffSha256: diffSha,
+                signature: "VALID_PGP_SIGNATURE"
+            )
+            XCTAssertEqual(
+                BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                    suppliedFullSha256: fullSha,
+                    suppliedSignature: nil,
+                    inMemoryVerified: nil,
+                    descriptor: signedDesc,
+                    persistedAscSignature: nil,
+                    verifySignatureAndExtractMetadataSha256: { sig in sig == "VALID_PGP_SIGNATURE" ? metaSha : nil }
+                ),
+                metaSha
+            )
+            // Mismatched suppliedFullSha256 is rejected even if signature is valid
+            XCTAssertNil(
+                BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                    suppliedFullSha256: wrongSha,
+                    suppliedSignature: nil,
+                    inMemoryVerified: (fullSha256: fullSha, metadataSha256: metaSha),
+                    descriptor: signedDesc,
+                    persistedAscSignature: nil,
+                    verifySignatureAndExtractMetadataSha256: { _ in metaSha }
+                )
+            )
+
+            // Fallback download params survive restart via descriptor
+            let resolvedFallback = BundleDiffReconstruction.resolveFallbackDownloadParams(
+                expectedFullSha256: fullSha,
+                expectedDiffSha256: diffSha,
+                explicitDownloadUrl: nil,
+                explicitFileSize: nil,
+                inMemoryFullParams: nil,
+                descriptor: loadedDesc
+            )
+            XCTAssertEqual(resolvedFallback?.downloadUrl, "https://cdn.onekey.so/full.zip")
+            XCTAssertEqual(resolvedFallback?.fileSize, 4096)
+        }
+    }
 }

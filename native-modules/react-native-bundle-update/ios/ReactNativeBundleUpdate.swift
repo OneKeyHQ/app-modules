@@ -960,8 +960,7 @@ public class BundleUpdateStore: NSObject {
 // Version string sanitization
 private extension String {
     var isSafeVersionString: Bool {
-        let allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
-        return !self.isEmpty && self.unicodeScalars.allSatisfy { allowedChars.contains($0) }
+        BundleDiffReconstruction.isSafeVersionComponent(self)
     }
 }
 
@@ -1271,7 +1270,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     // diff reconstruction failed, so retries immediately download the full bundle.
     private var diffFallbackVersions = Set<String>()
     private var fullBundleParamsByKey: [String: (downloadUrl: String, fileSize: Double, sha256: String)] = [:]
-    private var diffVerifiedMetadataSha256ByKey: [String: String] = [:]
+    private var diffVerifiedMetadataSha256ByKey: [String: (fullSha256: String, metadataSha256: String)] = [:]
+    private var activeVerifications = Set<String>()
 
     private func isDiffFallbackMarked(_ key: String) -> Bool {
         stateQueue.sync { diffFallbackVersions.contains(key) }
@@ -1283,7 +1283,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     private func recordFullBundleParams(key: String, downloadUrl: String, fileSize: Double, sha256: String) {
         stateQueue.sync {
-            fullBundleParamsByKey[key] = (downloadUrl: downloadUrl, fileSize: fileSize, sha256: sha256)
+            fullBundleParamsByKey[key] = (downloadUrl: downloadUrl, fileSize: fileSize, sha256: sha256.lowercased())
         }
     }
 
@@ -1291,12 +1291,33 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         stateQueue.sync { fullBundleParamsByKey[key] }
     }
 
-    private func recordDiffVerifiedMetadataSha256(key: String, sha256: String) {
-        stateQueue.sync { diffVerifiedMetadataSha256ByKey[key] = sha256 }
+    private func recordDiffVerifiedMetadataSha256(key: String, fullSha256: String, metadataSha256: String) {
+        stateQueue.sync {
+            diffVerifiedMetadataSha256ByKey[key] = (
+                fullSha256: fullSha256.lowercased(),
+                metadataSha256: metadataSha256.lowercased()
+            )
+        }
     }
 
-    private func recordedDiffVerifiedMetadataSha256(key: String) -> String? {
+    private func recordedDiffVerifiedMetadataSha256(key: String) -> (fullSha256: String, metadataSha256: String)? {
         stateQueue.sync { diffVerifiedMetadataSha256ByKey[key] }
+    }
+
+    private func acquireVerificationSlot(_ key: String) -> Bool {
+        stateQueue.sync {
+            if clearingDownloads || activeVerifications.contains(key) {
+                return false
+            }
+            activeVerifications.insert(key)
+            return true
+        }
+    }
+
+    private func releaseVerificationSlot(_ key: String) {
+        stateQueue.sync {
+            _ = activeVerifications.remove(key)
+        }
     }
 
     private func createURLSession() -> URLSession {
@@ -1770,7 +1791,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let downloadUrl = params.downloadUrl
-            let sha256 = params.sha256
+            let sha256 = BundleDiffReconstruction.normalizeSha256(params.sha256) ?? params.sha256.lowercased()
 
             OneKeyLog.info("BundleUpdate", "downloadBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion), fileSize=\(params.fileSize), url=\(downloadUrl)")
 
@@ -1835,11 +1856,21 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             )
             if usableDiff,
                let diffUrl = params.diffDownloadUrl,
-               let diffSha256 = params.diffSha256,
+               let diffSha256 = BundleDiffReconstruction.normalizeSha256(params.diffSha256),
                let diffSignature = params.diffSignature {
-                let diffFileName = "\(bundleKey)-diff.zip"
+                let diffFileName = "\(bundleKey)\(BundleDiffReconstruction.diffZipExtension)"
                 let diffFilePath = (downloadDir as NSString).appendingPathComponent(diffFileName)
+                let diffMetaPath = (downloadDir as NSString).appendingPathComponent("\(bundleKey)\(BundleDiffReconstruction.diffMetaExtension)")
                 let diffResumeDataPath = "\(diffFilePath).resume"
+                let diffDescriptor = BundleDiffReconstruction.DiffArchiveDescriptor(
+                    appVersion: appVersion,
+                    bundleVersion: bundleVersion,
+                    downloadUrl: downloadUrl,
+                    fileSize: params.fileSize,
+                    sha256: sha256,
+                    diffSha256: diffSha256,
+                    signature: nil
+                )
                 let diffResult = BundleDownloadResult(
                     downloadUrl: downloadUrl,
                     latestVersion: appVersion,
@@ -1855,6 +1886,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     if self.verifyBundleSHA256(diffFilePath, sha256: diffSha256) {
                         OneKeyLog.info("BundleUpdate", "downloadBundle: existing diff file SHA256 valid, skipping download")
                         try? FileManager.default.removeItem(atPath: diffResumeDataPath)
+                        BundleDiffReconstruction.writeDescriptor(diffDescriptor, toPath: diffMetaPath)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                             guard !runDelegate.wasCancelledByClear else { return }
                             self?.sendEvent(type: "update/complete")
@@ -1866,6 +1898,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     } else {
                         try? FileManager.default.removeItem(atPath: diffFilePath)
                         try? FileManager.default.removeItem(atPath: diffResumeDataPath)
+                        try? FileManager.default.removeItem(atPath: diffMetaPath)
                     }
                 }
 
@@ -1874,12 +1907,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                         downloadUrl: diffUrl,
                         filePath: diffFilePath,
                         sha256: diffSha256,
-                        rangeTaskId: "\(bundleKey)-diff",
+                        rangeTaskId: "\(bundleKey).diff",
                         runDelegate: runDelegate,
                         runSession: runSession,
                         step: .download,
                         emitErrorEvents: false
                     )
+                    BundleDiffReconstruction.writeDescriptor(diffDescriptor, toPath: diffMetaPath)
                     OneKeyLog.info("BundleUpdate", "downloadBundle: diff download completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
                     return diffResult
                 } catch {
@@ -1893,6 +1927,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     self.markDiffFallback(bundleKey)
                     try? FileManager.default.removeItem(atPath: diffFilePath)
                     try? FileManager.default.removeItem(atPath: diffResumeDataPath)
+                    try? FileManager.default.removeItem(atPath: diffMetaPath)
                     RangeDownloader.shared.discardArtifacts(filePath: diffFilePath)
                     runDelegate.resetForAttempt()
                 }
@@ -1966,9 +2001,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
         var payloadError: NSError?
         let payloadSize = SSZipArchive.payloadSizeForArchive(atPath: zipPath, error: &payloadError)
-        if payloadError != nil || payloadSize.uint64Value == 0 || payloadSize.uint64Value > maxUncompressedSize {
-            OneKeyLog.error("BundleUpdate", "\(step.rawValue): zip payload size invalid or exceeds limit (payloadSize=\(payloadSize), error=\(String(describing: payloadError)))")
+        if payloadSize.uint64Value > maxUncompressedSize {
+            OneKeyLog.error("BundleUpdate", "\(step.rawValue): zip payload size exceeds limit (payloadSize=\(payloadSize), max=\(maxUncompressedSize))")
             throw BundleUpdateError(.security, step)
+        }
+        if payloadError != nil || payloadSize.uint64Value == 0 {
+            OneKeyLog.error("BundleUpdate", "\(step.rawValue): zip payload size invalid or empty (payloadSize=\(payloadSize), error=\(String(describing: payloadError)))")
+            throw BundleUpdateError(.integrity, step)
         }
 
         if FileManager.default.fileExists(atPath: destination) {
@@ -2129,7 +2168,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
         if let contents = try? fm.contentsOfDirectory(atPath: bundleDir) {
             for name in contents.sorted(by: >) {
-                if name == "asc" || name == excludingFolder || name.hasSuffix(".diff-staging") || seen.contains(name) {
+                if name == "asc" ||
+                   name == BundleDiffReconstruction.stagingRootDirName ||
+                   name == excludingFolder ||
+                   name.hasSuffix(".diff-staging") ||
+                   seen.contains(name) {
                     continue
                 }
                 guard BundleUpdateStore.bundleVersion(inFolder: name, appVersion: appVersion) != nil else {
@@ -2195,18 +2238,25 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     private func reconstructAndVerifyDiffZip(
         diffFilePath: String,
+        diffMetaPath: String,
         stagingDir: String,
         destination: String,
         appVersion: String,
         bundleVersion: String,
+        fullSha256: String,
         diffSha256: String,
         diffSignature: String,
         signature: String,
         isInstalled: Bool,
-        skipGPG: Bool
+        skipGPG: Bool,
+        runDelegate: DownloadDelegate?
     ) throws {
         let fm = FileManager.default
         let folderName = "\(appVersion)-\(bundleVersion)"
+
+        if runDelegate?.wasCancelledByClear == true {
+            throw BundleUpdateError(.cancelled, .verifyASC)
+        }
 
         var expectedDiffManifestSha256: String?
         var expectedMetadataSha256: String?
@@ -2231,20 +2281,49 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: metadata signature GPG verification failed")
                 throw BundleUpdateError(.integrity, .verifyASC)
             }
-            expectedDiffManifestSha256 = diffSha
-            expectedMetadataSha256 = metaSha
+            expectedDiffManifestSha256 = diffSha.lowercased()
+            expectedMetadataSha256 = metaSha.lowercased()
+        }
+
+        // a. Verify .diff.zip SHA-256 before checking isInstalled so a corrupted
+        // managed diff archive cannot pass ASC verification.
+        if !skipGPG {
+            guard let actualDiffZipSha = BundleUpdateStore.calculateSHA256(diffFilePath),
+                  BundleCryptoCore.secureEqualHex(actualDiffZipSha.lowercased(), diffSha256.lowercased()) else {
+                throw BundleDiffReconstructionError.fallbackRequired("diff zip sha256 mismatch")
+            }
         }
 
         if isInstalled {
             if !skipGPG && !BundleUpdateStore.validateMetadataFileSha256(folderName, signature: signature, expectedAppVersion: appVersion, expectedBundleVersion: bundleVersion) {
                 throw BundleUpdateError(.integrity, .verifyASC)
             }
-            guard let metadata = BundleUpdateStore.getMetadataFileContent(folderName),
+            let installedMetaPath = (destination as NSString).appendingPathComponent("metadata.json")
+            guard let installedMetaSha = BundleUpdateStore.calculateSHA256(installedMetaPath),
+                  let metadata = BundleUpdateStore.getMetadataFileContent(folderName),
                   BundleCryptoCore.validateExtractedPathSafety(destination),
                   BundleUpdateStore.validateAllFilesInDir(destination, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion),
                   BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: destination, metadata: metadata) else {
                 throw BundleUpdateError(.integrity, .verifyASC)
             }
+            recordDiffVerifiedMetadataSha256(key: folderName, fullSha256: fullSha256, metadataSha256: installedMetaSha)
+            let existingDesc = BundleDiffReconstruction.readDescriptor(
+                fromPath: diffMetaPath,
+                expectedAppVersion: appVersion,
+                expectedBundleVersion: bundleVersion
+            )
+            BundleDiffReconstruction.writeDescriptor(
+                BundleDiffReconstruction.DiffArchiveDescriptor(
+                    appVersion: appVersion,
+                    bundleVersion: bundleVersion,
+                    downloadUrl: existingDesc?.downloadUrl ?? "https://onekey.so",
+                    fileSize: existingDesc?.fileSize ?? 0,
+                    sha256: fullSha256,
+                    diffSha256: diffSha256,
+                    signature: signature
+                ),
+                toPath: diffMetaPath
+            )
             return
         }
 
@@ -2254,14 +2333,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
         }
 
-        // a. Verify -diff.zip SHA-256
-        guard let actualDiffZipSha = BundleUpdateStore.calculateSHA256(diffFilePath),
-              BundleCryptoCore.secureEqualHex(actualDiffZipSha, diffSha256) else {
-            throw BundleDiffReconstructionError.fallbackRequired("diff zip sha256 mismatch")
-        }
-
-        // b. Extract -diff.zip into .diff-staging with full zip safety checks
+        // b. Extract .diff.zip into isolated staging directory with full zip safety checks
         do {
+            let stagingParent = (stagingDir as NSString).deletingLastPathComponent
+            if !fm.fileExists(atPath: stagingParent) {
+                try fm.createDirectory(atPath: stagingParent, withIntermediateDirectories: true)
+            }
             try extractZipWithSafetyChecks(zipPath: diffFilePath, to: stagingDir, step: .verifyASC)
         } catch let err as BundleUpdateError where err.code == .security {
             throw err
@@ -2269,20 +2346,33 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             throw BundleDiffReconstructionError.fallbackRequired("diff zip extraction failed: \(error)")
         }
 
-        // c. Verify diff-manifest.json against diffSignature
+        if runDelegate?.wasCancelledByClear == true {
+            throw BundleUpdateError(.cancelled, .verifyASC)
+        }
+
+        // c. Verify diff-manifest.json byte cap and streaming SHA-256 BEFORE reading into memory
         let diffManifestPath = (stagingDir as NSString).appendingPathComponent("diff-manifest.json")
-        guard fm.fileExists(atPath: diffManifestPath),
-              let diffManifestData = fm.contents(atPath: diffManifestPath) else {
+        var isManifestDir: ObjCBool = false
+        guard fm.fileExists(atPath: diffManifestPath, isDirectory: &isManifestDir),
+              !isManifestDir.boolValue,
+              let manifestAttrs = try? fm.attributesOfItem(atPath: diffManifestPath),
+              let manifestSize = manifestAttrs[.size] as? UInt64 else {
             throw BundleDiffReconstructionError.fallbackRequired("diff-manifest.json missing")
+        }
+        guard manifestSize <= BundleDiffReconstruction.maxControlJsonBytes else {
+            throw BundleDiffReconstructionError.securityRejected("diff-manifest.json exceeds size cap (\(manifestSize))")
         }
         if !skipGPG, let expectedDiffManifestSha256 {
             guard let actualManifestSha = BundleUpdateStore.calculateSHA256(diffManifestPath),
-                  BundleCryptoCore.secureEqualHex(actualManifestSha, expectedDiffManifestSha256) else {
+                  BundleCryptoCore.secureEqualHex(actualManifestSha.lowercased(), expectedDiffManifestSha256) else {
                 throw BundleDiffReconstructionError.integrityFailed("diff-manifest.json sha256 mismatch")
             }
         }
+        guard let diffManifestData = fm.contents(atPath: diffManifestPath) else {
+            throw BundleDiffReconstructionError.fallbackRequired("diff-manifest.json unreadable")
+        }
 
-        // d & e. Parse & validate diff-manifest.json and verify metadata.json against both signature & targetMetadataSha256
+        // d & e. Parse & validate diff-manifest.json and verify metadata.json streaming SHA-256 BEFORE reading into memory
         let manifest = try BundleDiffReconstruction.parseAndValidateManifest(
             jsonData: diffManifestData,
             expectedAppType: "ios",
@@ -2291,13 +2381,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         )
 
         let stagedMetadataPath = (stagingDir as NSString).appendingPathComponent("metadata.json")
-        guard fm.fileExists(atPath: stagedMetadataPath),
-              let metadataData = fm.contents(atPath: stagedMetadataPath),
-              let targetMetadata = try? JSONSerialization.jsonObject(with: metadataData) as? [String: Any] else {
-            throw BundleDiffReconstructionError.fallbackRequired("staged metadata.json missing or invalid")
+        var isMetaDir: ObjCBool = false
+        guard fm.fileExists(atPath: stagedMetadataPath, isDirectory: &isMetaDir),
+              !isMetaDir.boolValue,
+              let metaAttrs = try? fm.attributesOfItem(atPath: stagedMetadataPath),
+              let metaSize = metaAttrs[.size] as? UInt64 else {
+            throw BundleDiffReconstructionError.fallbackRequired("staged metadata.json missing")
         }
-
-        guard let actualMetadataSha = BundleUpdateStore.calculateSHA256(stagedMetadataPath) else {
+        guard metaSize <= BundleDiffReconstruction.maxControlJsonBytes else {
+            throw BundleDiffReconstructionError.securityRejected("staged metadata.json exceeds size cap (\(metaSize))")
+        }
+        guard let actualMetadataSha = BundleUpdateStore.calculateSHA256(stagedMetadataPath)?.lowercased() else {
             throw BundleDiffReconstructionError.fallbackRequired("failed to hash staged metadata.json")
         }
         if !skipGPG, let expectedMetadataSha256 {
@@ -2308,12 +2402,20 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         guard BundleCryptoCore.secureEqualHex(actualMetadataSha, manifest.targetMetadataSha256) else {
             throw BundleDiffReconstructionError.integrityFailed("metadata.json targetMetadataSha256 mismatch")
         }
+        guard let metadataData = fm.contents(atPath: stagedMetadataPath),
+              let targetMetadata = try? JSONSerialization.jsonObject(with: metadataData) as? [String: Any] else {
+            throw BundleDiffReconstructionError.fallbackRequired("staged metadata.json invalid JSON")
+        }
 
         let targetFileEntries = BundleUpdateStore.fileMetadataEntries(from: targetMetadata)
         try BundleDiffReconstruction.validateManifestAgainstTargetMetadata(
             manifest: manifest,
             targetFileEntries: targetFileEntries
         )
+
+        if runDelegate?.wasCancelledByClear == true {
+            throw BundleUpdateError(.cancelled, .verifyASC)
+        }
 
         // f & g. Verify changedFiles and reconstruct reusedFiles
         let candidateDirs = collectCandidateOtaDirs(appVersion: appVersion, excludingFolder: folderName)
@@ -2326,6 +2428,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 self.copyBuiltinBundleFile(relativePath: relPath, destinationPath: destPath, expectedHash: expectedHash)
             }
         )
+
+        if runDelegate?.wasCancelledByClear == true {
+            throw BundleUpdateError(.cancelled, .verifyASC)
+        }
 
         // h. Delete diff-manifest.json before full directory validation
         try? fm.removeItem(atPath: diffManifestPath)
@@ -2341,21 +2447,38 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             throw BundleUpdateError(.incompatible, .verifyASC)
         }
 
-        // j. Move .diff-staging to final OTA path
+        // j. Move isolated staging directory to final OTA path
         do {
             try BundleCryptoCore.safeRename(fromPath: stagingDir, toPath: destination)
         } catch {
             throw BundleDiffReconstructionError.fallbackRequired("failed to promote diff-staging to destination: \(error)")
         }
 
-        recordDiffVerifiedMetadataSha256(key: folderName, sha256: actualMetadataSha)
+        recordDiffVerifiedMetadataSha256(key: folderName, fullSha256: fullSha256, metadataSha256: actualMetadataSha)
+        let existingDesc = BundleDiffReconstruction.readDescriptor(
+            fromPath: diffMetaPath,
+            expectedAppVersion: appVersion,
+            expectedBundleVersion: bundleVersion
+        )
+        BundleDiffReconstruction.writeDescriptor(
+            BundleDiffReconstruction.DiffArchiveDescriptor(
+                appVersion: appVersion,
+                bundleVersion: bundleVersion,
+                downloadUrl: existingDesc?.downloadUrl ?? "https://onekey.so",
+                fileSize: existingDesc?.fileSize ?? 0,
+                sha256: fullSha256,
+                diffSha256: diffSha256,
+                signature: signature
+            ),
+            toPath: diffMetaPath
+        )
         OneKeyLog.info("BundleUpdate", "verifyBundleASC: diff reconstruction succeeded for \(folderName)")
     }
 
     func verifyBundleASC(params: BundleVerifyASCParams) throws -> Promise<Void> {
         return updatePromise(step: .verifyASC) { [weak self] in
             guard let self = self else { throw BundleUpdateError(.unknown, .verifyASC) }
-            let sha256 = params.sha256
+            let sha256 = BundleDiffReconstruction.normalizeSha256(params.sha256) ?? params.sha256.lowercased()
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let signature = params.signature
@@ -2366,6 +2489,14 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
 
             let folderName = "\(appVersion)-\(bundleVersion)"
+            guard self.acquireVerificationSlot(folderName) else {
+                OneKeyLog.warn("BundleUpdate", "verifyBundleASC: concurrent verification rejected for \(folderName)")
+                throw BundleUpdateError(.invalidArgument, .verifyASC)
+            }
+            defer {
+                self.releaseVerificationSlot(folderName)
+            }
+
             let downloadDir = BundleUpdateStore.downloadBundleDir()
             let baseDownloadDir = (downloadDir as NSString).resolvingSymlinksInPath
 
@@ -2376,7 +2507,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw BundleUpdateError(.security, .verifyASC)
             }
 
-            let diffFilePath = (downloadDir as NSString).appendingPathComponent("\(folderName)-diff.zip")
+            let diffFilePath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffZipExtension)")
+            let diffMetaPath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
             let resolvedDiffPath = (diffFilePath as NSString).resolvingSymlinksInPath
             guard resolvedDiffPath.hasPrefix(baseDownloadDir + "/") else {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: diff ZIP outside download directory: \(resolvedDiffPath)")
@@ -2394,7 +2526,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: destination outside bundle directory: \(resolvedDestination)")
                 throw BundleUpdateError(.security, .verifyASC)
             }
-            let stagingDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent("\(folderName).diff-staging")
+            let stagingRootDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(BundleDiffReconstruction.stagingRootDirName)
+            let stagingDir = (stagingRootDir as NSString).appendingPathComponent("\(folderName)-\(UUID().uuidString)")
             let resolvedStagingDir = (stagingDir as NSString).resolvingSymlinksInPath
             guard resolvedStagingDir.hasPrefix(baseBundleDir + "/") else {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: staging outside bundle directory: \(resolvedStagingDir)")
@@ -2423,25 +2556,57 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 return
             }
 
-            let hasDiffSha = BundleDiffReconstruction.isHex64(params.diffSha256)
+            let normalizedDiffSha256 = BundleDiffReconstruction.normalizeSha256(params.diffSha256)
             let hasDiffSig = !(params.diffSignature ?? "").isEmpty
             if fm.fileExists(atPath: resolvedDiffPath),
-               hasDiffSha,
-               let diffSha256 = params.diffSha256,
+               let diffSha256 = normalizedDiffSha256,
                (skipGPG || hasDiffSig) {
+                // Register active cancellation tracking up-front across the entire
+                // diff reconstruction + potential full-bundle fallback so clearDownload
+                // waits for or cancels the run before deleting download artifacts.
+                let (busyOrClearing, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, DownloadDelegate?, URLSession?) in
+                    if self.isDownloading || self.clearingDownloads { return (true, nil, nil) }
+                    self.isDownloading = true
+                    self.downloadDelegate?.reset()
+                    self.activeRunDelegate = self.downloadDelegate
+                    return (false, self.downloadDelegate, self.urlSession)
+                }
+                guard !busyOrClearing, let runDelegate, let runSession else {
+                    throw BundleUpdateError(.cancelled, .verifyASC)
+                }
+                defer {
+                    self.stateQueue.sync {
+                        runDelegate.finishRun()
+                        if self.activeRunDelegate === runDelegate {
+                            self.isDownloading = false
+                            self.activeDownloadFilePath = nil
+                            self.activeRunDelegate = nil
+                        }
+                    }
+                }
+
+                let persistedDesc = BundleDiffReconstruction.readDescriptor(
+                    fromPath: diffMetaPath,
+                    expectedAppVersion: appVersion,
+                    expectedBundleVersion: bundleVersion
+                )
+
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: attempting incremental diff reconstruction for \(folderName)")
                 do {
                     try self.reconstructAndVerifyDiffZip(
                         diffFilePath: diffFilePath,
+                        diffMetaPath: diffMetaPath,
                         stagingDir: stagingDir,
                         destination: destination,
                         appVersion: appVersion,
                         bundleVersion: bundleVersion,
+                        fullSha256: sha256,
                         diffSha256: diffSha256,
                         diffSignature: params.diffSignature ?? "",
                         signature: signature,
                         isInstalled: isInstalled,
-                        skipGPG: skipGPG
+                        skipGPG: skipGPG,
+                        runDelegate: runDelegate
                     )
                     return
                 } catch let error as BundleUpdateError {
@@ -2455,54 +2620,49 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                         OneKeyLog.error("BundleUpdate", "verifyBundleASC: diff security rejected (\(reason))")
                         throw BundleUpdateError(.security, .verifyASC)
                     case .fallbackRequired(let reason):
+                        if runDelegate.wasCancelledByClear {
+                            throw BundleUpdateError(.cancelled, .verifyASC)
+                        }
                         OneKeyLog.warn("BundleUpdate", "verifyBundleASC: diff reconstruction failed (\(reason)), falling back to full bundle")
                         self.markDiffFallback(folderName)
                         try? fm.removeItem(atPath: diffFilePath)
                         try? fm.removeItem(atPath: "\(diffFilePath).resume")
+                        try? fm.removeItem(atPath: diffMetaPath)
                         RangeDownloader.shared.discardArtifacts(filePath: diffFilePath)
 
-                        if let recorded = self.recordedFullBundleParams(key: folderName),
-                           recorded.downloadUrl.hasPrefix("https://") {
-                            let (alreadyDownloading, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, DownloadDelegate?, URLSession?) in
-                                if self.isDownloading || self.clearingDownloads { return (true, nil, nil) }
-                                self.isDownloading = true
-                                self.downloadDelegate?.reset()
-                                self.activeRunDelegate = self.downloadDelegate
-                                return (false, self.downloadDelegate, self.urlSession)
+                        if let fallbackParams = BundleDiffReconstruction.resolveFallbackDownloadParams(
+                            expectedFullSha256: sha256,
+                            expectedDiffSha256: diffSha256,
+                            explicitDownloadUrl: params.downloadUrl,
+                            explicitFileSize: params.fileSize,
+                            inMemoryFullParams: self.recordedFullBundleParams(key: folderName),
+                            descriptor: persistedDesc
+                        ) {
+                            if runDelegate.wasCancelledByClear {
+                                throw BundleUpdateError(.cancelled, .verifyASC)
                             }
-                            if !alreadyDownloading, let runDelegate, let runSession {
-                                defer {
-                                    self.stateQueue.sync {
-                                        runDelegate.finishRun()
-                                        if self.activeRunDelegate === runDelegate {
-                                            self.isDownloading = false
-                                            self.activeDownloadFilePath = nil
-                                            self.activeRunDelegate = nil
-                                        }
-                                    }
-                                }
-                                try await self.downloadVerifiedFile(
-                                    downloadUrl: recorded.downloadUrl,
-                                    filePath: fullFilePath,
-                                    sha256: sha256,
-                                    rangeTaskId: folderName,
-                                    runDelegate: runDelegate,
-                                    runSession: runSession,
-                                    step: .verifyASC,
-                                    emitErrorEvents: true
-                                )
-                                try self.verifyAndExtractFullZip(
-                                    filePath: fullFilePath,
-                                    destination: destination,
-                                    appVersion: appVersion,
-                                    bundleVersion: bundleVersion,
-                                    sha256: sha256,
-                                    signature: signature,
-                                    isInstalled: isInstalled,
-                                    skipGPG: skipGPG
-                                )
-                                return
-                            }
+                            runDelegate.resetForAttempt()
+                            try await self.downloadVerifiedFile(
+                                downloadUrl: fallbackParams.downloadUrl,
+                                filePath: fullFilePath,
+                                sha256: sha256,
+                                rangeTaskId: folderName,
+                                runDelegate: runDelegate,
+                                runSession: runSession,
+                                step: .verifyASC,
+                                emitErrorEvents: true
+                            )
+                            try self.verifyAndExtractFullZip(
+                                filePath: fullFilePath,
+                                destination: destination,
+                                appVersion: appVersion,
+                                bundleVersion: bundleVersion,
+                                sha256: sha256,
+                                signature: signature,
+                                isInstalled: isInstalled,
+                                skipGPG: skipGPG
+                            )
+                            return
                         }
                         throw BundleUpdateError(.missing, .verifyASC)
                     }
@@ -2515,7 +2675,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func verifyBundle(params: BundleVerifyParams) throws -> Promise<Void> {
         return updatePromise(step: .verifyPackage) { [weak self] in
-            let sha256 = params.sha256
+            let sha256 = BundleDiffReconstruction.normalizeSha256(params.sha256) ?? params.sha256.lowercased()
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
 
@@ -2541,7 +2701,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=\(filePath)")
                     throw BundleUpdateError(.storage, .verifyPackage)
                 }
-                guard BundleCryptoCore.secureEqualHex(calculated, sha256) else {
+                guard BundleCryptoCore.secureEqualHex(calculated.lowercased(), sha256) else {
                     OneKeyLog.error("BundleUpdate", "verifyBundle: SHA256 mismatch, expected=\(sha256.prefix(16))..., got=\(calculated.prefix(16))...")
                     throw BundleUpdateError(.integrity, .verifyPackage)
                 }
@@ -2550,18 +2710,52 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 return
             }
 
-            // Support diff-reconstructed bundles where <appVersion>-<bundleVersion>-diff.zip
-            // was used and the reconstructed bundle directory already exists.
-            let diffFilePath = (downloadDir as NSString).appendingPathComponent("\(folderName)-diff.zip")
+            let diffFilePath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffZipExtension)")
+            let diffMetaPath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
             let resolvedDiffPath = (diffFilePath as NSString).resolvingSymlinksInPath
+            guard resolvedDiffPath.hasPrefix(baseDownloadDir + "/") else {
+                throw BundleUpdateError(.security, .verifyPackage)
+            }
+
+            let descriptor = BundleDiffReconstruction.readDescriptor(
+                fromPath: diffMetaPath,
+                expectedAppVersion: appVersion,
+                expectedBundleVersion: bundleVersion
+            )
             let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
             let metadataPath = (bundleDirPath as NSString).appendingPathComponent("metadata.json")
-            if resolvedDiffPath.hasPrefix(baseDownloadDir + "/"),
-               FileManager.default.fileExists(atPath: resolvedDiffPath),
+
+            #if ALLOW_SKIP_GPG_VERIFICATION
+            let skipGPG = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
+            #else
+            let skipGPG = false
+            #endif
+
+            // Case 2: Reconstructed bundle directory exists on disk.
+            if FileManager.default.fileExists(atPath: resolvedDiffPath),
                FileManager.default.fileExists(atPath: metadataPath) {
-                if let expectedMetaSha = self?.recordedDiffVerifiedMetadataSha256(key: folderName) {
+                if !skipGPG {
+                    guard let expectedMetaSha = BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                        suppliedFullSha256: sha256,
+                        suppliedSignature: params.signature,
+                        inMemoryVerified: self?.recordedDiffVerifiedMetadataSha256(key: folderName),
+                        descriptor: descriptor,
+                        persistedAscSignature: BundleUpdateStore.readSignatureFile(folderName),
+                        verifySignatureAndExtractMetadataSha256: { sig in
+                            BundleUpdateStore.readMetadataFileSha256(
+                                sig,
+                                expectedAppVersion: appVersion,
+                                expectedBundleVersion: bundleVersion,
+                                expectedAppType: "ios",
+                                expectedFileName: "metadata.json"
+                            )
+                        }
+                    ) else {
+                        OneKeyLog.error("BundleUpdate", "verifyBundle: missing or invalid trust anchor for reconstructed bundle \(folderName)")
+                        throw BundleUpdateError(.integrity, .verifyPackage)
+                    }
                     guard let actualMetaSha = BundleUpdateStore.calculateSHA256(metadataPath),
-                          BundleCryptoCore.secureEqualHex(actualMetaSha, expectedMetaSha) else {
+                          BundleCryptoCore.secureEqualHex(actualMetaSha.lowercased(), expectedMetaSha) else {
                         throw BundleUpdateError(.integrity, .verifyPackage)
                     }
                 }
@@ -2574,6 +2768,26 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     throw BundleUpdateError(.incompatible, .verifyPackage)
                 }
                 OneKeyLog.info("BundleUpdate", "verifyBundle: diff-reconstructed bundle verified OK for appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                return
+            }
+
+            // Case 3: Downloaded diff archive exists on disk before verifyBundleASC reconstruction.
+            if FileManager.default.fileExists(atPath: resolvedDiffPath) {
+                guard let expectedDiffSha = BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                    suppliedFullSha256: sha256,
+                    suppliedDiffSha256: params.diffSha256,
+                    descriptor: descriptor
+                ) else {
+                    OneKeyLog.error("BundleUpdate", "verifyBundle: missing or mismatched expected diffSha256 for \(folderName)")
+                    throw BundleUpdateError(.integrity, .verifyPackage)
+                }
+                guard let calculatedDiffSha = BundleUpdateStore.calculateSHA256(diffFilePath) else {
+                    throw BundleUpdateError(.storage, .verifyPackage)
+                }
+                guard BundleCryptoCore.secureEqualHex(calculatedDiffSha.lowercased(), expectedDiffSha) else {
+                    throw BundleUpdateError(.integrity, .verifyPackage)
+                }
+                OneKeyLog.info("BundleUpdate", "verifyBundle: downloaded diff archive verified OK for \(folderName)")
                 return
             }
 
@@ -2745,6 +2959,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         if FileManager.default.fileExists(atPath: downloadDir) {
             try FileManager.default.removeItem(atPath: downloadDir)
         }
+        let stagingRootDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(BundleDiffReconstruction.stagingRootDirName)
+        if FileManager.default.fileExists(atPath: stagingRootDir) {
+            try? FileManager.default.removeItem(atPath: stagingRootDir)
+        }
         if includeInstalled {
             let bundleDir = BundleUpdateStore.bundleDir()
             if FileManager.default.fileExists(atPath: bundleDir) {
@@ -2820,6 +3038,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     let fullPath = (bundleDir as NSString).appendingPathComponent(name)
                     var isDir: ObjCBool = false
                     guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                    if name == BundleDiffReconstruction.stagingRootDirName {
+                        if let stageEntries = try? fm.contentsOfDirectory(atPath: fullPath) {
+                            for stageEntry in stageEntries {
+                                let stagePath = (fullPath as NSString).appendingPathComponent(stageEntry)
+                                if let dashRange = stageEntry.range(of: "-", options: .backwards) {
+                                    let stem = String(stageEntry[stageEntry.startIndex..<dashRange.lowerBound])
+                                    if shouldKeep(stem: stem) { continue }
+                                }
+                                try? fm.removeItem(atPath: stagePath)
+                            }
+                        }
+                        continue
+                    }
                     let stagingSuffix = ".diff-staging"
                     let stem = name.hasSuffix(stagingSuffix) ? String(name.dropLast(stagingSuffix.count)) : name
                     if shouldKeep(stem: stem) { continue }
@@ -2835,14 +3066,14 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
-            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume)
+            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume / diff.zip / meta.json)
             let downloadDir = BundleUpdateStore.downloadBundleDir()
             if let contents = try? fm.contentsOfDirectory(atPath: downloadDir) {
                 for name in contents {
                     // Strip the trailing extension chain to recover the
-                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial" or "6.3.0-123-diff.zip").
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial" or "6.3.0-123.diff.zip").
                     var stem = name
-                    for suffix in [".resume", ".progress", ".partial", ".zip"] {
+                    for suffix in [".meta.json", ".resume", ".progress", ".partial", ".diff.zip", ".zip"] {
                         if stem.hasSuffix(suffix) {
                             stem = String(stem.dropLast(suffix.count))
                         }
@@ -3232,7 +3463,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             var results: [LocalBundleInfo] = []
             for name in contents {
-                if name.hasSuffix(".diff-staging") { continue }
+                if name == BundleDiffReconstruction.stagingRootDirName || name.hasSuffix(".diff-staging") { continue }
                 let fullPath = (bundleDir as NSString).appendingPathComponent(name)
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }

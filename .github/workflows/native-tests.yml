@@ -425,6 +425,15 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/bundle-verification-path-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-verification-path-tests.jar" | tee "$RUNNER_TEMP/bundle-verification-path-tests.log"
           grep -Eq 'BundleVerificationPath: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/bundle-verification-path-tests.log"
+      - name: Run bundle-update diff reconstruction tests
+        working-directory: native-modules/react-native-bundle-update
+        run: |
+          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleDiffReconstruction.kt \
+            tests/kotlin/BundleDiffReconstructionTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/bundle-diff-reconstruction-tests.jar"
+          java -jar "$RUNNER_TEMP/bundle-diff-reconstruction-tests.jar" | tee "$RUNNER_TEMP/bundle-diff-reconstruction-tests.log"
+          grep -Eq 'BundleDiffReconstruction: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/bundle-diff-reconstruction-tests.log"
       - name: Run pager weak-padding snapshot regression
         working-directory: native-views/react-native-pager-view
         shell: bash

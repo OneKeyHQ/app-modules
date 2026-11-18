@@ -28,10 +28,216 @@ internal data class BundleDiffManifest(
 internal object BundleDiffReconstruction {
     const val EXPECTED_SCHEMA_VERSION = 1
     const val EXPECTED_HASH_ALGORITHM = "sha256"
+    const val MAX_BUNDLE_ENTRIES = 4096
+    const val MAX_BUNDLE_UNCOMPRESSED_BYTES = 512L * 1024 * 1024
+    const val MAX_CONTROL_JSON_BYTES = 16L * 1024 * 1024
+    const val STAGING_ROOT_DIR_NAME = ".diff-staging"
+    const val DIFF_ZIP_EXTENSION = ".diff.zip"
+    const val DIFF_META_EXTENSION = ".diff.zip.meta.json"
+
+    internal data class DiffArchiveDescriptor(
+        val appVersion: String,
+        val bundleVersion: String,
+        val downloadUrl: String,
+        val fileSize: Double,
+        val sha256: String,
+        val diffSha256: String,
+        val signature: String? = null,
+    )
 
     fun isHex64(value: String?): Boolean {
         if (value == null || value.length != 64) return false
         return value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+    }
+
+    fun normalizeSha256(value: String?): String? {
+        val trimmed = value?.trim() ?: return null
+        if (!isHex64(trimmed)) return null
+        return trimmed.lowercase()
+    }
+
+    fun isSafeVersionComponent(version: String): Boolean {
+        if (version.isEmpty() || version.startsWith(".") || version.endsWith(".")) {
+            return false
+        }
+        if (!version.all { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' }) {
+            return false
+        }
+        val lower = version.lowercase()
+        if (lower.endsWith(".diff") ||
+            lower.endsWith("-diff") ||
+            lower.endsWith(".diff-staging") ||
+            lower.endsWith("-diff-staging")
+        ) {
+            return false
+        }
+        return true
+    }
+
+    private fun jsonEscape(value: String): String {
+        val sb = StringBuilder(value.length + 16)
+        sb.append('"')
+        for (ch in value) {
+            when (ch) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> {
+                    if (ch.code < 0x20) {
+                        sb.append("\\u%04x".format(ch.code))
+                    } else {
+                        sb.append(ch)
+                    }
+                }
+            }
+        }
+        sb.append('"')
+        return sb.toString()
+    }
+
+    fun writeDescriptor(descriptor: DiffArchiveDescriptor, file: File) {
+        try {
+            val parent = file.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
+            val tmpFile = File(file.parentFile, "${file.name}.tmp")
+            val json = buildString {
+                append('{')
+                append("\"appVersion\":").append(jsonEscape(descriptor.appVersion)).append(',')
+                append("\"bundleVersion\":").append(jsonEscape(descriptor.bundleVersion)).append(',')
+                append("\"downloadUrl\":").append(jsonEscape(descriptor.downloadUrl)).append(',')
+                append("\"fileSize\":").append(descriptor.fileSize.toLong()).append(',')
+                append("\"sha256\":").append(jsonEscape(descriptor.sha256.lowercase())).append(',')
+                append("\"diffSha256\":").append(jsonEscape(descriptor.diffSha256.lowercase()))
+                if (!descriptor.signature.isNullOrEmpty()) {
+                    append(",\"signature\":").append(jsonEscape(descriptor.signature))
+                }
+                append('}')
+            }
+            FileOutputStream(tmpFile).use { fos ->
+                fos.write(json.toByteArray(Charsets.UTF_8))
+                fos.fd.sync()
+            }
+            if (file.exists()) file.delete()
+            if (!tmpFile.renameTo(file)) {
+                tmpFile.delete()
+            }
+        } catch (_: Exception) {
+            // Best-effort sidecar persistence
+        }
+    }
+
+    fun readDescriptor(
+        file: File,
+        expectedAppVersion: String,
+        expectedBundleVersion: String,
+    ): DiffArchiveDescriptor? {
+        if (!file.exists() || !file.isFile || file.length() > 256L * 1024) return null
+        val root = try {
+            StrictJsonParser(file.readText(Charsets.UTF_8)).parseRootObject()
+        } catch (_: Exception) {
+            return null
+        }
+        val appVersion = root["appVersion"] as? String ?: return null
+        val bundleVersion = root["bundleVersion"] as? String ?: return null
+        if (appVersion != expectedAppVersion || bundleVersion != expectedBundleVersion) return null
+        val downloadUrl = root["downloadUrl"] as? String ?: return null
+        if (!downloadUrl.startsWith("https://")) return null
+        val sha256 = normalizeSha256(root["sha256"] as? String) ?: return null
+        val diffSha256 = normalizeSha256(root["diffSha256"] as? String) ?: return null
+        val fileSize = (root["fileSize"] as? Number)?.toDouble() ?: 0.0
+        val signature = (root["signature"] as? String)?.takeIf { it.isNotEmpty() }
+        return DiffArchiveDescriptor(
+            appVersion = appVersion,
+            bundleVersion = bundleVersion,
+            downloadUrl = downloadUrl,
+            fileSize = fileSize,
+            sha256 = sha256,
+            diffSha256 = diffSha256,
+            signature = signature,
+        )
+    }
+
+    fun resolveExpectedDiffSha256ForPackageVerify(
+        suppliedFullSha256: String,
+        suppliedDiffSha256: String?,
+        descriptor: DiffArchiveDescriptor?,
+    ): String? {
+        val normalizedFull = normalizeSha256(suppliedFullSha256) ?: return null
+        if (descriptor != null && !constantTimeEqualHex(descriptor.sha256, normalizedFull)) {
+            return null
+        }
+        if (!suppliedDiffSha256.isNullOrEmpty()) {
+            val normalizedDiff = normalizeSha256(suppliedDiffSha256) ?: return null
+            if (descriptor != null && !constantTimeEqualHex(descriptor.diffSha256, normalizedDiff)) {
+                return null
+            }
+            return normalizedDiff
+        }
+        return descriptor?.diffSha256
+    }
+
+    fun resolveTrustedMetadataSha256ForPackageVerify(
+        suppliedFullSha256: String,
+        suppliedSignature: String?,
+        inMemoryVerified: Pair<String, String>?,
+        descriptor: DiffArchiveDescriptor?,
+        persistedAscSignature: String?,
+        verifySignatureAndExtractMetadataSha256: (String) -> String?,
+    ): String? {
+        val normalizedFull = normalizeSha256(suppliedFullSha256) ?: return null
+        if (inMemoryVerified != null) {
+            if (!constantTimeEqualHex(inMemoryVerified.first, normalizedFull)) return null
+            return normalizeSha256(inMemoryVerified.second)
+        }
+        if (descriptor != null && !constantTimeEqualHex(descriptor.sha256, normalizedFull)) {
+            return null
+        }
+        if (suppliedSignature.isNullOrEmpty() && descriptor == null) {
+            return null
+        }
+        val candidateSignatures = listOfNotNull(
+            suppliedSignature?.takeIf { it.isNotEmpty() },
+            descriptor?.signature?.takeIf { it.isNotEmpty() },
+            persistedAscSignature?.takeIf { it.isNotEmpty() },
+        )
+        for (sig in candidateSignatures) {
+            val extracted = normalizeSha256(verifySignatureAndExtractMetadataSha256(sig))
+            if (extracted != null) return extracted
+        }
+        return null
+    }
+
+    fun resolveFallbackDownloadParams(
+        expectedFullSha256: String,
+        expectedDiffSha256: String,
+        explicitDownloadUrl: String?,
+        explicitFileSize: Double?,
+        inMemoryFullParams: Triple<String, Double, String>?,
+        descriptor: DiffArchiveDescriptor?,
+    ): Pair<String, Double>? {
+        val normFull = normalizeSha256(expectedFullSha256) ?: return null
+        val normDiff = normalizeSha256(expectedDiffSha256) ?: return null
+        if (!explicitDownloadUrl.isNullOrEmpty() && explicitDownloadUrl.startsWith("https://")) {
+            return explicitDownloadUrl to (explicitFileSize ?: 0.0)
+        }
+        if (inMemoryFullParams != null &&
+            inMemoryFullParams.first.startsWith("https://") &&
+            constantTimeEqualHex(inMemoryFullParams.third, normFull)
+        ) {
+            return inMemoryFullParams.first to inMemoryFullParams.second
+        }
+        if (descriptor != null &&
+            descriptor.downloadUrl.startsWith("https://") &&
+            constantTimeEqualHex(descriptor.sha256, normFull) &&
+            constantTimeEqualHex(descriptor.diffSha256, normDiff)
+        ) {
+            return descriptor.downloadUrl to descriptor.fileSize
+        }
+        return null
     }
 
     fun isUsableDiffParams(
@@ -258,10 +464,17 @@ internal object BundleDiffReconstruction {
     fun validateManifestAgainstTargetMetadata(
         manifest: BundleDiffManifest,
         targetFileEntries: Map<String, String>,
+        maxEntries: Int = MAX_BUNDLE_ENTRIES,
     ) {
-        if (manifest.changedFiles.size + manifest.reusedFiles.size != targetFileEntries.size) {
+        val totalFiles = manifest.changedFiles.size + manifest.reusedFiles.size
+        if (totalFiles > maxEntries || targetFileEntries.size > maxEntries) {
+            throw BundleDiffReconstructionException.SecurityRejected(
+                "bundle entry count exceeds maximum allowed ($maxEntries)",
+            )
+        }
+        if (totalFiles != targetFileEntries.size) {
             throw BundleDiffReconstructionException.FallbackRequired(
-                "diff-manifest file count (${manifest.changedFiles.size + manifest.reusedFiles.size}) != metadata.json file count (${targetFileEntries.size})",
+                "diff-manifest file count ($totalFiles) != metadata.json file count (${targetFileEntries.size})",
             )
         }
         for ((relPath, expectedHash) in targetFileEntries) {
@@ -292,11 +505,53 @@ internal object BundleDiffReconstruction {
         candidateBundleDirs: List<File>,
         sha256OfFile: (String) -> String?,
         builtinCopy: (relativePath: String, destinationFile: File, expectedHash: String) -> Boolean,
+        maxEntries: Int = MAX_BUNDLE_ENTRIES,
+        maxTotalBytes: Long = MAX_BUNDLE_UNCOMPRESSED_BYTES,
     ) {
+        val totalDeclaredEntries = manifest.changedFiles.size + manifest.reusedFiles.size
+        if (totalDeclaredEntries > maxEntries) {
+            throw BundleDiffReconstructionException.SecurityRejected(
+                "reconstructed entry count exceeds maximum allowed ($maxEntries)",
+            )
+        }
+
+        var cumulativeEntries = 0
+        var cumulativeBytes = 0L
+
+        val metadataFile = File(stagingDir, "metadata.json")
+        if (metadataFile.exists() && metadataFile.isFile) {
+            cumulativeEntries += 1
+            if (cumulativeEntries > maxEntries) {
+                throw BundleDiffReconstructionException.SecurityRejected(
+                    "reconstructed entry count exceeds maximum allowed ($maxEntries)",
+                )
+            }
+            val metaSize = metadataFile.length().coerceAtLeast(0L)
+            if (metaSize > maxTotalBytes - cumulativeBytes) {
+                throw BundleDiffReconstructionException.SecurityRejected(
+                    "reconstructed bundle size exceeds maximum allowed ($maxTotalBytes)",
+                )
+            }
+            cumulativeBytes += metaSize
+        }
+
         // 1. Verify every changedFile exists in stagingDir and matches expected sha256.
         for ((relPath, expectedHash) in manifest.changedFiles) {
+            cumulativeEntries += 1
+            if (cumulativeEntries > maxEntries) {
+                throw BundleDiffReconstructionException.SecurityRejected(
+                    "reconstructed entry count exceeds maximum allowed ($maxEntries)",
+                )
+            }
             val stagedFile = confinedExistingFile(stagingDir, relPath)
                 ?: throw BundleDiffReconstructionException.FallbackRequired("changed file missing or unsafe: $relPath")
+            val fileSize = stagedFile.length().coerceAtLeast(0L)
+            if (fileSize > maxTotalBytes - cumulativeBytes) {
+                throw BundleDiffReconstructionException.SecurityRejected(
+                    "reconstructed bundle size exceeds maximum allowed ($maxTotalBytes)",
+                )
+            }
+            cumulativeBytes += fileSize
             val actualHash = sha256OfFile(stagedFile.absolutePath)
             if (actualHash == null || !constantTimeEqualHex(actualHash, expectedHash)) {
                 throw BundleDiffReconstructionException.FallbackRequired("changed file sha256 mismatch: $relPath")
@@ -305,6 +560,12 @@ internal object BundleDiffReconstruction {
 
         // 2. Reconstruct every reusedFile from local OTA dirs or built-in app bundle.
         for ((relPath, expectedHash) in manifest.reusedFiles) {
+            cumulativeEntries += 1
+            if (cumulativeEntries > maxEntries) {
+                throw BundleDiffReconstructionException.SecurityRejected(
+                    "reconstructed entry count exceeds maximum allowed ($maxEntries)",
+                )
+            }
             val destFile = confinedDestinationFile(stagingDir, relPath)
                 ?: throw BundleDiffReconstructionException.SecurityRejected(
                     "unsafe destination path for reused file: $relPath",
@@ -320,6 +581,12 @@ internal object BundleDiffReconstruction {
             var copied = false
             for (candidateDir in candidateBundleDirs) {
                 val sourceFile = confinedExistingFile(candidateDir, relPath) ?: continue
+                val sourceSize = sourceFile.length().coerceAtLeast(0L)
+                if (sourceSize > maxTotalBytes - cumulativeBytes) {
+                    throw BundleDiffReconstructionException.SecurityRejected(
+                        "reconstructed bundle size exceeds maximum allowed ($maxTotalBytes)",
+                    )
+                }
                 val sourceHash = sha256OfFile(sourceFile.absolutePath) ?: continue
                 if (!constantTimeEqualHex(sourceHash, expectedHash)) continue
                 if (copyFileAndVerify(sourceFile, destFile, expectedHash, sha256OfFile)) {
@@ -346,6 +613,15 @@ internal object BundleDiffReconstruction {
                     "reused file unavailable or hash mismatch: $relPath",
                 )
             }
+
+            val copiedSize = destFile.length().coerceAtLeast(0L)
+            if (copiedSize > maxTotalBytes - cumulativeBytes) {
+                destFile.delete()
+                throw BundleDiffReconstructionException.SecurityRejected(
+                    "reconstructed bundle size exceeds maximum allowed ($maxTotalBytes)",
+                )
+            }
+            cumulativeBytes += copiedSize
         }
     }
 

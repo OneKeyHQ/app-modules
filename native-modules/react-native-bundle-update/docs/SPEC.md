@@ -14,15 +14,28 @@ files and preferences are shared resources.
 ## Public API and identity
 
 `downloadBundle` takes an HTTPS `downloadUrl`, `latestVersion`, `bundleVersion`,
-`fileSize`, and `sha256`. Its result returns the URL, versions, and SHA-256, with
-no local path. `downloadBundleASC` takes the release identity and signature.
-`verifyBundle` takes the versions and SHA-256; `verifyBundleASC` also takes the
-signature. `installBundle` takes the versions and signature. These methods use
-`latestVersion` and `bundleVersion` to locate the ZIP at
-`onekey-bundle-download/<latestVersion>-<bundleVersion>.zip` and the extracted
-bundle at `onekey-bundle/<latestVersion>-<bundleVersion>` under iOS Documents
-or Android `context.filesDir`. Version strings must pass each platform's
-safe-version validation before path construction.
+`fileSize`, `sha256`, and optional incremental diff parameters
+(`diffDownloadUrl`, `diffFileSize`, `diffSha256`, `diffSignature`). Its result
+returns the full URL, versions, full SHA-256, and (when a diff archive was
+downloaded or reused) the normalized diff parameters, with no local path.
+`downloadBundleASC` takes the release identity, signature, and optional diff
+parameters. `verifyBundle` takes the versions, `sha256`, and optional
+`signature`, `diffSha256`, and `diffSignature`. `verifyBundleASC` takes the
+versions, `sha256`, `signature`, optional full fallback `downloadUrl` /
+`fileSize`, and optional diff parameters. `installBundle` takes the versions and
+signature. These methods use `latestVersion` and `bundleVersion` to locate the
+full ZIP at `onekey-bundle-download/<latestVersion>-<bundleVersion>.zip`, the
+diff ZIP at `onekey-bundle-download/<latestVersion>-<bundleVersion>.diff.zip`,
+its sidecar descriptor at
+`onekey-bundle-download/<latestVersion>-<bundleVersion>.diff.zip.meta.json`,
+isolated per-run diff staging directories under
+`onekey-bundle/.diff-staging/<latestVersion>-<bundleVersion>-<runId>`, and the
+extracted bundle at `onekey-bundle/<latestVersion>-<bundleVersion>` under iOS
+Documents or Android `context.filesDir`. Version strings must pass each
+platform's safe-version validation before path construction (rejecting empty
+strings, leading/trailing dots, and reserved `.diff`, `-diff`, `.diff-staging`,
+and `-diff-staging` suffixes so valid bundle identities never collide with diff
+or staging artifacts).
 Signed metadata binds the supplied app and bundle versions as separate fields;
 verification never recovers them by splitting the combined directory name.
 Startup derives the bundle version only by removing the exact running native
@@ -32,7 +45,87 @@ not mistake a hyphen in the current app or bundle version for that separator.
 Listing returns only bundles for the running native app version; older-version
 artifacts remain subject to the existing best-effort prune rules.
 `downloadBundleASC` validates the signature and its managed destination; the
-signature sidecar is committed only when installation succeeds.
+installed signature sidecar (`asc/<latestVersion>-<bundleVersion>-signature.asc`)
+is committed only when installation succeeds.
+
+## Incremental diff update contract
+
+Status: Implemented in source. Focused Swift XCTest (`BundleDiffReconstructionTests`)
+and Kotlin JVM (`BundleDiffReconstructionTest`) suites verify manifest parsing,
+partition validation, built-in path mapping, cumulative payload limits, and
+restart/fallback descriptor resolution. Full Nitro bridge and real-device
+lifecycle acceptance remain pending.
+
+1. **Download selection and fallback**:
+   - When `diffDownloadUrl` (HTTPS), `diffSha256` (64-char hex, normalized to
+     lowercase), and `diffSignature` (non-empty) are provided and the target
+     identity is not marked for session fallback, `downloadBundle` downloads (or
+     reuses after SHA-256 verification) `<latestVersion>-<bundleVersion>.diff.zip`
+     and writes `<latestVersion>-<bundleVersion>.diff.zip.meta.json` binding the
+     target versions, full `downloadUrl`, `fileSize`, normalized `sha256`, and
+     normalized `diffSha256`.
+   - Full fallback parameters are recorded only after single-flight download
+     registration succeeds so a rejected duplicate call cannot overwrite an
+     in-flight download's fallback parameters.
+   - If the diff download fails for any non-cancellation reason, the module
+     marks the target identity for session fallback, deletes partial diff
+     artifacts, and immediately downloads the full `<latestVersion>-<bundleVersion>.zip`.
+2. **Dual GPG verification and local reconstruction (`verifyBundleASC`)**:
+   - `verifyBundleASC` coordinates per-target single-flight execution and
+     registers cancellation tracking before starting diff verification so
+     `clearDownload` / `clearBundle` cancels and waits for both reconstruction
+     and any fallback download before removing files.
+   - When verifying a diff archive, `verifyBundleASC` first verifies two PGP
+     cleartext signatures against the embedded OneKey public key:
+     `diffSignature` bound to `fileName == "diff-manifest.json"` and `signature`
+     bound to `fileName == "metadata.json"`, both bound to `appType`,
+     `appVersion`, and `bundleVersion`.
+   - Next, it verifies the streaming SHA-256 of `.diff.zip` against `diffSha256`
+     (including when `isInstalled` is true, so a corrupted managed diff archive
+     never passes ASC verification).
+   - It extracts `.diff.zip` into a unique per-run directory
+     `onekey-bundle/.diff-staging/<latestVersion>-<bundleVersion>-<runId>`.
+   - Both `diff-manifest.json` and staged `metadata.json` are capped at 16 MiB
+     and their streaming SHA-256 hashes are verified against the GPG-signed
+     digests (and `manifest.targetMetadataSha256`) before reading their bytes
+     into memory or parsing JSON.
+   - `changedFiles` and `reusedFiles` must form a bijective partition of the
+     file entries in `metadata.json`. Cumulative entry count (`<= 4,096`) and
+     cumulative uncompressed byte size (`<= 512 MiB`) are enforced across all
+     `changedFiles` plus `reusedFiles`.
+   - Each `reusedFiles` entry is copied and SHA-256 verified from candidate
+     same-`appVersion` local OTA directories (active first, then newest) or from
+     the built-in app package (`Bundle.main` on iOS mapping `main.jsbundle.hbc`
+     -> `main.jsbundle`, `assets/**`, and `web-embed/**`; `context.assets` and
+     APK `res/drawable*` / `res/raw*` entries on Android mapping
+     `main.jsbundle.hbc` -> `index.android.bundle`, `assets/**`, and
+     `web-embed/**`).
+   - After deleting `diff-manifest.json` from staging, the module validates path
+     safety, every file's SHA-256 against `metadata.json`, and bundle-pair /
+     storage-schema compatibility before promoting the staging directory to
+     `onekey-bundle/<latestVersion>-<bundleVersion>` and recording the verified
+     `signature` in `.diff.zip.meta.json`.
+   - If diff extraction (including an empty or corrupt archive, whereas zip-bomb
+     size/entry violations and symlink/traversal escapes remain hard
+     `SECURITY_REJECTED` failures) or local file reuse fails with
+     `FallbackRequired`, `verifyBundleASC` deletes the diff archive and downloads
+     + verifies the full `.zip` using explicit `params.downloadUrl`, in-memory
+     fallback parameters, or the persisted `.diff.zip.meta.json` descriptor
+     (surviving process restarts).
+3. **Package verification (`verifyBundle`) ordering and trust anchor**:
+   - If the full `.zip` exists on disk, `verifyBundle` checks its streaming
+     SHA-256 against `params.sha256`.
+   - If the reconstructed directory `onekey-bundle/<latestVersion>-<bundleVersion>`
+     exists on disk alongside `.diff.zip`, `verifyBundle` requires an
+     authenticated `metadata.json` digest bound to `params.sha256` — either from
+     the current module instance's verified-ASC cache or by re-verifying the
+     version-bound PGP `signature` (from `params.signature`, `.diff.zip.meta.json`,
+     or `asc/`). If no authenticated digest can be established or `params.sha256`
+     does not match, `verifyBundle` fails closed with `INTEGRITY_FAILED`.
+   - If `verifyBundle` is called after `downloadBundle` before `verifyBundleASC`
+     has reconstructed the target directory, it verifies the downloaded
+     `.diff.zip` streaming SHA-256 against `params.diffSha256` or the
+     `.diff.zip.meta.json` descriptor bound to `params.sha256`.
 
 ## Lifecycle and data
 
