@@ -557,6 +557,16 @@ final class NativeListActivityPresentationTests: XCTestCase {
 
     details.bind(try NativeListItem(data: data(title: "Receive", badges: true)), theme: nil, fonts: NativeListFontFamilies())
     layout(container)
+    let amountsColumn = try XCTUnwrap(details.arrangedSubviews.first as? UIStackView).arrangedSubviews[2]
+    func widestText(_ view: UIView) -> CGFloat {
+      if view.isHidden { return 0 }
+      let own = (view as? UILabel).map {
+        ($0.text ?? "").isEmpty ? 0 : $0.intrinsicContentSize.width
+      } ?? 0
+      return view.subviews.reduce(own) { max($0, widestText($1)) }
+    }
+    XCTAssertEqual(amountsColumn.bounds.width, widestText(amountsColumn), accuracy: 1,
+      "stacked amounts keep their text width and leave the row's slack to the identity column")
     XCTAssertEqual(title.bounds.width, title.intrinsicContentSize.width, accuracy: 1,
       "title must keep its intrinsic width instead of stretching across the title line")
     var titleFrame = title.convert(title.bounds, to: titleLine)

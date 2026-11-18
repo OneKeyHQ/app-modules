@@ -1776,7 +1776,10 @@ secondary text and subscript text segments. Segments are caller-formatted and
 never interpreted as numbers by NativeList. Omission preserves the legacy tree.
 
 `presentation: stacked` places the amount lines after the identity column and
-right-aligns them. In `table`, the identity column includes its leading visual
+right-aligns them. In stacked presentation the amount and fee columns stay at
+the width of their text; the identity column receives the remaining row width.
+That is the width measure uses for the description, on iOS and Android.
+In `table`, the identity column includes its leading visual
 and gap; identity, amounts and an optional fee use stable widths in the ratio
 `1:1:0.6` after inter-column gaps. Without fee, identity and amounts split the
 remaining width equally. Amount content stays start-aligned within its column;
