@@ -95,6 +95,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var snapTapToSegment: Bool = false
   // Gates the per-step tick only; no visual change.
   var hapticStep: Double = 0
+  /// Test seam (not a Nitro prop): receives "mark" or "step" for each tick.
+  var hapticTickRecorder: ((String) -> Void)?
 
   var fillColor: String = "" {
     didSet { cFill = parse(fillColor); fillLayer.backgroundColor = cFill; scheduleLayout() }
@@ -363,6 +365,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       setHalo(visible: true, index: best)
       haptic.impactOccurred(intensity: 0.6)
       haptic.prepare()
+      hapticTickRecorder?("mark")
       markTickedThisCommit = true
     }
   }
@@ -492,6 +495,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     guard !markTickedThisCommit else { return }
     stepHaptic.selectionChanged()
     stepHaptic.prepare()
+    hapticTickRecorder?("step")
   }
 
   // MARK: - Imperative methods

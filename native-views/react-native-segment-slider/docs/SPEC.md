@@ -17,9 +17,17 @@ caller.
 The package exports one component, `SegmentSlider`, with the same props on every
 platform (`src/types.ts`). It is controlled: `value` is the current value and
 `onChange` reports integer-rounded interaction values. While the user is
-dragging, an incoming `value` is ignored so the thumb follows the finger; after
-the interaction ends, a `value` different from the last reported value moves
-the thumb without emitting `onChange`.
+dragging, an incoming `value` is deferred so the thumb follows the finger; when
+the interaction ends, the latest `value` is applied if it differs from the last
+reported value (for example a value the caller clamped or reset mid-drag), and
+afterwards any new `value` moves the thumb immediately. Neither path emits
+`onChange`.
+
+An interaction is one drag or tap (one pointer; extra pointers are ignored
+until it ends) or one accepted Web key press. Each interaction fires
+`onSlideStart` once and `onSlideComplete` once. Setting `disabled` during a Web
+drag cancels it: the bubble hides, `onSlideComplete` fires, and later moves or
+the release change nothing.
 
 Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
 `sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
@@ -94,7 +102,7 @@ track for a 20-point bubble and its 8-point gap.
 | Stacking (bottom to top) | Track, fill, halo, marks, thumb, bubble | Track, fill, halo, marks, thumb, bubble | Track, fill, marks, thumb, bubble; marks stay clickable under the thumb |
 | Mark tick | `UIImpactFeedbackGenerator(.light)`, intensity 0.6 | `CLOCK_TICK` | None |
 | Step tick (`hapticStep`) | `UISelectionFeedbackGenerator` | `TEXT_HANDLE_MOVE` (API 27+), else `CLOCK_TICK` | None |
-| Keyboard | None | None | Arrow keys move one segment (1 unit without marks), Home / End jump to the ends |
+| Keyboard | None | None | Arrow keys move to the next mark value (1 unit without marks), Home / End jump to the ends |
 | Pressed thumb | Scales to 18.4 points, plain thumb colors; the node halo stays under it | Scales to 18.4 dp, plain thumb colors; the node halo stays under it | Stays 16 px; plain thumb colors |
 | Mark hover | None (no pointer) | None (no pointer) | Ring while the pointer hovers a mark |
 
@@ -119,8 +127,11 @@ rectangle to only the touch view cannot display the bubble.
 
 Web: `src/SegmentSlider.web.tsx` implements rendering, pointer and keyboard
 interaction. `src/__tests__/SegmentSlider.web.test.tsx` (jsdom) covers the
-controlled value contract, keyboard stepping, integer-aligned marks, the color
-props and thumb stacking. jsdom does not lay out, so pointer-to-value mapping
+controlled value contract (including mid-drag changes), keyboard stepping and
+callbacks, integer-aligned marks, the color props, thumb stacking, tap
+snapping, disabling mid-drag and multi-pointer input.
+`src/__tests__/SegmentSlider.native.test.tsx` covers the native wrapper's value
+sync and prop pass-through with the Nitro view mocked. jsdom does not lay out, so pointer-to-value mapping
 and rendered appearance need a browser check: on desktop Perps, drag through
 0%, 50% and 100%, click each mark and confirm the thumb covers the mark it sits
 on, in light and dark themes.
@@ -136,7 +147,11 @@ build below with `tests/style-gallery/StyleGallery.swift`; Android uses
 Like the other harnesses, this does not exercise the React Native / Nitro
 integration.
 
-Haptics (`hapticStep`): acceptance needs a physical iPhone and Android phone
+Haptics (`hapticStep`): `hapticTickRecorder` (a test seam on both native
+classes, not a Nitro prop) records each tick. The iOS and Android harnesses
+drag across 0, 1, 2, 25 and 26 and assert `mark, step, step, mark, step` with
+`hapticStep = 1` and `mark, mark` with `0`. Feel and strength still need
+acceptance on a physical iPhone and Android phone
 (simulators have no haptics). Drag slowly across 0..100 with `hapticStep = 1`
 and confirm one light tick per percent and the stronger tick on each mark.
 

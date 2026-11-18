@@ -119,6 +119,26 @@ enum BubbleLayoutTests {
     verify(signed, value: 100, label: "signed maximum")
     signedControl.onTouchEnded?()
 
+    // Per-step haptics: one tick per value bucket during a drag; entering a
+    // mark fires the mark tick instead of the step tick; 0 keeps mark-only.
+    func hapticTicks(step: Double) -> [String] {
+      var ticks: [String] = []
+      let sample = makeSlider(width: 320, value: 0)
+      sample.hapticStep = step
+      sample.hapticTickRecorder = { ticks.append($0) }
+      let control = sample.view as! SegmentSliderUIView
+      func x(_ v: Double) -> CGFloat { 12 + CGFloat(v / 100) * 296 }
+      control.onTouchBegan?(x(0))
+      for v in [1.0, 1.2, 2.0, 25.0, 26.0] { control.onTouchMoved?(x(v)) }
+      control.onTouchEnded?()
+      return ticks
+    }
+    let stepTicks = hapticTicks(step: 1)
+    check(stepTicks == ["mark", "step", "step", "mark", "step"],
+          "hapticStep 1 ticks: \(stepTicks)")
+    let markTicks = hapticTicks(step: 0)
+    check(markTicks == ["mark", "mark"], "hapticStep 0 ticks: \(markTicks)")
+
     // Render with a horizontally clipping ancestor, matching the failing sheet.
     // This is a UIKit layer preview, not a React Native or iPhone screenshot.
     if CommandLine.arguments.count > 1 {

@@ -1,6 +1,7 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -159,6 +160,7 @@ function SegmentSliderComponent({
   bubbleColor = DEFAULT_SEGMENT_SLIDER_COLORS.bubbleColor,
   bubbleTextColor = DEFAULT_SEGMENT_SLIDER_COLORS.bubbleTextColor,
 }: ISegmentSliderProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
@@ -167,6 +169,9 @@ function SegmentSliderComponent({
   const draggingRef = useRef(false);
   const pointerIdRef = useRef<number | null>(null);
   const lastEmittedRef = useRef<number>(value);
+  // Latest `value` from the parent, reconciled when an interaction ends so a
+  // value the parent clamped or reset mid-drag is not lost.
+  const latestValueRef = useRef<number>(value);
   // Set by SegmentMark's pointerdown, which runs before the container's, so
   // the container can snap to that exact step.
   const markOriginRef = useRef<number | null>(null);
@@ -175,6 +180,8 @@ function SegmentSliderComponent({
   const pressLastXRef = useRef(0);
   const pressStartTimeRef = useRef(0);
   const hasDraggedRef = useRef(false);
+  // True when the active press started on a mark (already snapped to it).
+  const pressedMarkRef = useRef(false);
   const [focusVisible, setFocusVisible] = useState(false);
 
   const range = max - min;
@@ -291,6 +298,7 @@ function SegmentSliderComponent({
   // thumb is in place on first paint. Skipped while dragging so the thumb
   // doesn't fight the pointer.
   useLayoutEffect(() => {
+    latestValueRef.current = value;
     if (draggingRef.current) return;
     lastEmittedRef.current = value;
     applyVisual(value);
@@ -366,9 +374,34 @@ function SegmentSliderComponent({
     bubble.style.opacity = visible ? '1' : '0';
   }, []);
 
+  /**
+   * Ends the active pointer interaction: releases capture, hides the bubble,
+   * reconciles a value the parent changed during the drag (without emitting
+   * `onChange`) and fires `onSlideComplete`.
+   */
+  const endInteraction = useCallback(() => {
+    const pointerId = pointerIdRef.current;
+    pointerIdRef.current = null;
+    draggingRef.current = false;
+    if (pointerId !== null) {
+      try {
+        containerRef.current?.releasePointerCapture(pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+    setBubbleVisible(false);
+    if (latestValueRef.current !== lastEmittedRef.current) {
+      lastEmittedRef.current = latestValueRef.current;
+      applyVisual(latestValueRef.current);
+    }
+    onSlideComplete?.();
+  }, [applyVisual, onSlideComplete, setBubbleVisible]);
+
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (disabled) return;
+      // One pointer per interaction: ignore extra fingers during a drag.
+      if (disabled || draggingRef.current) return;
       const target = e.currentTarget;
       let captured = false;
       try {
@@ -387,6 +420,7 @@ function SegmentSliderComponent({
       // A press on a mark always lands exactly on that mark.
       const markIdx = markOriginRef.current;
       markOriginRef.current = null;
+      pressedMarkRef.current = markIdx !== null && hasSegments;
       if (markIdx !== null && hasSegments) {
         snapToStep(markIdx);
       } else if (!snapTapsActive) {
@@ -423,7 +457,7 @@ function SegmentSliderComponent({
 
   const handlePointerMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (!draggingRef.current) return;
+      if (!draggingRef.current || e.pointerId !== pointerIdRef.current) return;
       pressLastXRef.current = e.clientX;
       if (
         !hasDraggedRef.current &&
@@ -440,33 +474,23 @@ function SegmentSliderComponent({
 
   const finishDrag = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (!draggingRef.current) return;
-      const target = e.currentTarget;
-      if (pointerIdRef.current !== null) {
-        try {
-          target.releasePointerCapture(pointerIdRef.current);
-        } catch {
-          /* ignore */
-        }
-      }
-      pointerIdRef.current = null;
-      draggingRef.current = false;
+      if (!draggingRef.current || e.pointerId !== pointerIdRef.current) return;
       // A quick tap (no drag) in snap mode lands on the nearest mark; a long
-      // press does nothing; a drag keeps its free value.
+      // press does nothing; a drag keeps its free value. A press that started
+      // on a mark already landed on it.
       if (
         snapTapsActive &&
+        !pressedMarkRef.current &&
         !hasDraggedRef.current &&
         e.type === 'pointerup' &&
         Date.now() - pressStartTimeRef.current <= TAP_MAX_DURATION_MS
       ) {
         snapToStep(nearestMarkIndex(valueFromClientX(pressLastXRef.current)));
       }
-      setBubbleVisible(false);
-      onSlideComplete?.();
+      endInteraction();
     },
     [
-      onSlideComplete,
-      setBubbleVisible,
+      endInteraction,
       snapTapsActive,
       snapToStep,
       nearestMarkIndex,
@@ -474,47 +498,67 @@ function SegmentSliderComponent({
     ]
   );
 
-  const handleKeyDown = useCallback(
-    (e: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (disabled) return;
-      // Step by segment when segmented; by 1 unit when continuous.
-      const keyboardStep = hasSegments ? stepValue : 1;
-      let delta = 0;
-      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') delta = keyboardStep;
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown')
-        delta = -keyboardStep;
-      else if (e.key === 'Home') {
-        e.preventDefault();
-        emit(min);
-        return;
-      } else if (e.key === 'End') {
-        e.preventDefault();
-        emit(max);
-        return;
-      }
-      if (delta !== 0) {
-        e.preventDefault();
-        if (alignSegmentMarksToIntegerValues && hasSegments) {
-          const currentIndex = Math.round(
-            (lastEmittedRef.current - min) / stepValue
-          );
-          const nextIndex = currentIndex + (delta > 0 ? 1 : -1);
-          emit(min + nextIndex * stepValue);
-        } else {
-          emit(lastEmittedRef.current + delta);
+  // Next segment index strictly above (dir 1) or below (dir -1) `v`, derived
+  // from the mark values so repeated steps never drift off the marks.
+  const adjacentSegmentIndex = useCallback(
+    (v: number, dir: 1 | -1) => {
+      if (dir > 0) {
+        for (let i = 0; i <= segments; i += 1) {
+          if (segmentIndexToValue(i) > v) return i;
+        }
+      } else {
+        for (let i = segments; i >= 0; i -= 1) {
+          if (segmentIndexToValue(i) < v) return i;
         }
       }
+      return null;
+    },
+    [segments, segmentIndexToValue]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (disabled || draggingRef.current) return;
+      let dir: 1 | -1 | 0 = 0;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') dir = 1;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') dir = -1;
+      else if (e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      // Each accepted key press is one complete interaction.
+      onSlideStart?.();
+      const current = lastEmittedRef.current;
+      if (e.key === 'Home') {
+        emit(min);
+      } else if (e.key === 'End') {
+        emit(max);
+      } else if (hasSegments && dir !== 0) {
+        // Step by segment when segmented.
+        const idx = adjacentSegmentIndex(current, dir);
+        if (idx !== null) snapToStep(idx);
+      } else {
+        // Step by 1 unit when continuous.
+        emit(current + dir);
+      }
+      onSlideComplete?.();
     },
     [
       disabled,
-      alignSegmentMarksToIntegerValues,
+      onSlideStart,
+      onSlideComplete,
       hasSegments,
-      stepValue,
+      adjacentSegmentIndex,
+      snapToStep,
       emit,
       min,
       max,
     ]
   );
+
+  // Disabling mid-drag cancels the interaction so later moves or a pending
+  // tap release cannot change the value.
+  useEffect(() => {
+    if (disabled && draggingRef.current) endInteraction();
+  }, [disabled, endInteraction]);
 
   const handleFocus = useCallback((e: ReactFocusEvent<HTMLDivElement>) => {
     // Focus ring only for keyboard focus, not mouse clicks.
@@ -645,6 +689,7 @@ function SegmentSliderComponent({
 
   return (
     <div
+      ref={containerRef}
       role="slider"
       aria-valuemin={min}
       aria-valuemax={max}

@@ -208,6 +208,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) { field = v }
 
+  /** Test seam (not a Nitro prop): receives "mark" or "step" for each tick. */
+  internal var hapticTickRecorder: ((String) -> Unit)? = null
+
   override var fillColor: String = ""
     get() = field
     set(v) { field = v; cFill = parse(v); fillPaint.color = cFill; invalidateIfAlive() }
@@ -345,6 +348,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       hoverMarkIndex = best
       if (best != -1) {
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        hapticTickRecorder?.invoke("mark")
         markTickedThisCommit = true
       }
     }
@@ -368,6 +372,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       HapticFeedbackConstants.CLOCK_TICK
     }
     view.performHapticFeedback(constant)
+    hapticTickRecorder?.invoke("step")
   }
 
   private fun animateThumbScale(target: Float) {

@@ -68,11 +68,12 @@ function render(props: IRenderProps = {}) {
 function pointer(
   el: Element,
   type: 'pointerdown' | 'pointermove' | 'pointerup',
-  clientX: number
+  clientX: number,
+  pointerId = 1
 ) {
   // jsdom has no PointerEvent constructor; React listens by event name.
   const event = new MouseEvent(type, { bubbles: true, clientX });
-  Object.defineProperty(event, 'pointerId', { value: 1 });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
   act(() => {
     el.dispatchEvent(event);
   });
@@ -165,4 +166,113 @@ it('lets a drag stay free with snapTapToSegment', () => {
   pointer(slider, 'pointermove', TRACK_LEFT + 66);
   pointer(slider, 'pointerup', TRACK_LEFT + 66);
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([33]);
+});
+
+it('applies a value the parent changed during the drag once it ends', () => {
+  const onSlideComplete = jest.fn();
+  const { slider, onChange, rerender } = render({
+    value: 0,
+    segments: 0,
+    onSlideComplete,
+  });
+  pointer(slider, 'pointerdown', TRACK_LEFT + 120);
+  // The parent clamps the emitted 60 to 40 while the pointer is still down.
+  rerender({ value: 40, onSlideComplete });
+  expect(thumb().style.left).toBe('60%');
+  pointer(slider, 'pointerup', TRACK_LEFT + 120);
+  expect(thumb().style.left).toBe('40%');
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([60]);
+  expect(onSlideComplete).toHaveBeenCalledTimes(1);
+});
+
+it('steps the keyboard through the mark values without drifting', () => {
+  const { slider, onChange } = render({ value: 0, segments: 3 });
+  ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'].forEach((k) =>
+    key(slider, k)
+  );
+  ['ArrowLeft', 'ArrowLeft', 'ArrowLeft'].forEach((k) => key(slider, k));
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([33, 67, 100, 67, 33, 0]);
+});
+
+it('steps one unit by keyboard without marks', () => {
+  const { slider, onChange } = render({ value: 5, segments: 0 });
+  key(slider, 'ArrowRight');
+  key(slider, 'ArrowLeft');
+  key(slider, 'ArrowLeft');
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([6, 5, 4]);
+});
+
+it('treats each keyboard action as one complete interaction', () => {
+  const onSlideStart = jest.fn();
+  const onSlideComplete = jest.fn();
+  const { slider, onChange } = render({
+    value: 0,
+    onSlideStart,
+    onSlideComplete,
+  });
+  key(slider, 'ArrowRight');
+  key(slider, 'End');
+  key(slider, 'Home');
+  key(slider, 'a');
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([25, 100, 0]);
+  expect(onSlideStart).toHaveBeenCalledTimes(3);
+  expect(onSlideComplete).toHaveBeenCalledTimes(3);
+});
+
+it('ignores keyboard input while disabled', () => {
+  const onSlideStart = jest.fn();
+  const { slider, onChange } = render({
+    value: 0,
+    disabled: true,
+    onSlideStart,
+  });
+  key(slider, 'ArrowRight');
+  key(slider, 'End');
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onSlideStart).not.toHaveBeenCalled();
+});
+
+it('cancels an active drag when the slider becomes disabled', () => {
+  const onSlideComplete = jest.fn();
+  const { slider, onChange, rerender } = render({
+    value: 0,
+    segments: 0,
+    onSlideComplete,
+  });
+  pointer(slider, 'pointerdown', TRACK_LEFT + 20);
+  rerender({ value: 10, disabled: true, onSlideComplete });
+  expect(onSlideComplete).toHaveBeenCalledTimes(1);
+  pointer(slider, 'pointermove', TRACK_LEFT + 150);
+  pointer(slider, 'pointerup', TRACK_LEFT + 150);
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([10]);
+  expect(onSlideComplete).toHaveBeenCalledTimes(1);
+});
+
+it('keeps a drag bound to the pointer that started it', () => {
+  const onSlideStart = jest.fn();
+  const onSlideComplete = jest.fn();
+  const { slider, onChange } = render({
+    value: 0,
+    segments: 0,
+    onSlideStart,
+    onSlideComplete,
+  });
+  pointer(slider, 'pointerdown', TRACK_LEFT + 20, 1);
+  pointer(slider, 'pointerdown', TRACK_LEFT + 180, 2);
+  pointer(slider, 'pointermove', TRACK_LEFT + 160, 2);
+  pointer(slider, 'pointerup', TRACK_LEFT + 160, 2);
+  pointer(slider, 'pointermove', TRACK_LEFT + 40, 1);
+  pointer(slider, 'pointerup', TRACK_LEFT + 40, 1);
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([10, 20]);
+  expect(onSlideStart).toHaveBeenCalledTimes(1);
+  expect(onSlideComplete).toHaveBeenCalledTimes(1);
+});
+
+it('keeps a tap on a mark on that mark with snapTapToSegment', () => {
+  const { onChange } = render({ value: 0, snapTapToSegment: true });
+  // The press lands in mark 1's hit area but nearer mark 2 (40% vs 25%/50%
+  // would pick 50 if recomputed from the position).
+  pointer(mark(1), 'pointerdown', TRACK_LEFT + 76);
+  pointer(mark(1), 'pointerup', TRACK_LEFT + 76);
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([25]);
 });

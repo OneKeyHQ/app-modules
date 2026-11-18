@@ -123,6 +123,13 @@ function SegmentSliderComponent({
 
   const handleSlideComplete = useCallback(() => {
     draggingRef.current = false;
+    // The value sync skips updates during a drag; apply a value the parent
+    // clamped or reset meanwhile now, without emitting `onChange`.
+    const node = sliderRef.current;
+    if (node && latestValueRef.current !== lastValueRef.current) {
+      lastValueRef.current = latestValueRef.current;
+      node.setValue(latestValueRef.current);
+    }
     onSlideComplete?.();
   }, [onSlideComplete]);
 

@@ -71,6 +71,7 @@ class BubbleLayoutActivity : Activity() {
       handler.postDelayed({
         for ((index, slider) in sliders.withIndex()) verify(slider, index * 50.0)
         runInteractionCases()
+        runHapticCases()
         runLayoutCases {
           File(filesDir, "result.json").writeText(JSONObject().apply {
             put("checks", checks); put("failures", org.json.JSONArray(failures))
@@ -155,6 +156,30 @@ class BubbleLayoutActivity : Activity() {
       }
       onComplete()
     }, 250)
+  }
+
+  // Per-step haptics: one tick per value bucket during a drag; entering a mark
+  // fires the mark tick instead of the step tick; 0 keeps mark-only ticks.
+  private fun runHapticCases() {
+    fun ticks(step: Double): List<String> {
+      val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
+        segments = 4.0; defaultValue = 0.0; hapticStep = step
+        view.layout(0, 0, px(320), px(24))
+      }
+      val ticks = mutableListOf<String>()
+      slider.hapticTickRecorder = { ticks.add(it) }
+      val inset = field(slider, "insetPx") as Float
+      fun x(v: Double) = inset + (v / 100).toFloat() * (slider.view.width - 2 * inset)
+      touch(slider, MotionEvent.ACTION_DOWN, x(0.0))
+      for (v in listOf(1.0, 1.2, 2.0, 25.0, 26.0)) touch(slider, MotionEvent.ACTION_MOVE, x(v))
+      touch(slider, MotionEvent.ACTION_UP, x(26.0))
+      slider.dispose()
+      return ticks
+    }
+    val stepTicks = ticks(1.0)
+    check(stepTicks == listOf("mark", "step", "step", "mark", "step"), "hapticStep 1 ticks: $stepTicks")
+    val markTicks = ticks(0.0)
+    check(markTicks == listOf("mark", "mark"), "hapticStep 0 ticks: $markTicks")
   }
 
   private fun runInteractionCases() {
