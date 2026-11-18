@@ -203,7 +203,26 @@ public enum BundleCryptoCore {
     _ signedMessage: String,
     expectedAppVersion: String? = nil,
     expectedBundleVersion: String? = nil,
-    expectedAppType: String? = nil
+    expectedAppType: String? = nil,
+    expectedFileName: String = "metadata.json"
+  ) -> (valid: Bool, sha256: String?, reason: String?) {
+    return verifyGpgCleartextWithKey(
+      signedMessage,
+      expectedAppVersion: expectedAppVersion,
+      expectedBundleVersion: expectedBundleVersion,
+      expectedAppType: expectedAppType,
+      expectedFileName: expectedFileName,
+      publicKeyArmored: GPG_PUBLIC_KEY
+    )
+  }
+
+  internal static func verifyGpgCleartextWithKey(
+    _ signedMessage: String,
+    expectedAppVersion: String? = nil,
+    expectedBundleVersion: String? = nil,
+    expectedAppType: String? = nil,
+    expectedFileName: String = "metadata.json",
+    publicKeyArmored: String
   ) -> (valid: Bool, sha256: String?, reason: String?) {
     // Check if this looks like a PGP signed message
     guard signedMessage.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
@@ -211,7 +230,7 @@ public enum BundleCryptoCore {
     }
 
     // 1. Load public key
-    guard let pubKey = CryptoKey(fromArmored: GPG_PUBLIC_KEY) else {
+    guard let pubKey = CryptoKey(fromArmored: publicKeyArmored) else {
       OneKeyLog.error("BundleCrypto", "Failed to parse GPG public key")
       return (false, nil, "PUBKEY_PARSE_FAILED")
     }
@@ -280,7 +299,7 @@ public enum BundleCryptoCore {
       return (false, nil, "JSON_PARSE_FAILED")
     }
 
-    if json["fileName"] as? String != "metadata.json" {
+    if expectedFileName.isEmpty || json["fileName"] as? String != expectedFileName {
       OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName")
       return (false, nil, "INVALID_METADATA_FILENAME")
     }

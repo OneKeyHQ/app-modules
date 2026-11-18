@@ -237,6 +237,23 @@ object BundleCryptoCore {
     expectedAppVersion: String? = null,
     expectedBundleVersion: String? = null,
     expectedAppType: String? = null,
+    expectedFileName: String = "metadata.json",
+  ): VerifyResult = verifyGpgCleartextWithKey(
+    signedMessage = signedMessage,
+    expectedAppVersion = expectedAppVersion,
+    expectedBundleVersion = expectedBundleVersion,
+    expectedAppType = expectedAppType,
+    expectedFileName = expectedFileName,
+    publicKeyArmored = GPG_PUBLIC_KEY,
+  )
+
+  internal fun verifyGpgCleartextWithKey(
+    signedMessage: String,
+    expectedAppVersion: String? = null,
+    expectedBundleVersion: String? = null,
+    expectedAppType: String? = null,
+    expectedFileName: String = "metadata.json",
+    publicKeyArmored: String,
   ): VerifyResult {
     if (!signedMessage.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
       return VerifyResult(false, null, "NOT_PGP_SIGNED_MESSAGE")
@@ -244,7 +261,7 @@ object BundleCryptoCore {
 
     return try {
       // Parse the public key
-      val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
+      val pubKeyStream = PGPUtil.getDecoderStream(publicKeyArmored.byteInputStream())
       val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
 
       // Extract cleartext and signature from the PGP signed message manually
@@ -293,8 +310,8 @@ object BundleCryptoCore {
       }
 
       val signedFileName = fields["fileName"].orEmpty()
-      if (signedFileName != "metadata.json") {
-        OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: $signedFileName")
+      if (expectedFileName.isEmpty() || signedFileName != expectedFileName) {
+        OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: $signedFileName (expected=$expectedFileName)")
         return VerifyResult(false, null, "INVALID_METADATA_FILENAME")
       }
 

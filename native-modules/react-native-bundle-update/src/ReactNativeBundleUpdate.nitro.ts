@@ -6,6 +6,10 @@ export interface BundleDownloadParams {
   bundleVersion: string;
   fileSize: number;
   sha256: string;
+  diffDownloadUrl?: string;
+  diffFileSize?: number;
+  diffSha256?: string;
+  diffSignature?: string;
 }
 
 export interface BundleDownloadResult {
@@ -13,6 +17,10 @@ export interface BundleDownloadResult {
   latestVersion: string;
   bundleVersion: string;
   sha256: string;
+  diffDownloadUrl?: string;
+  diffFileSize?: number;
+  diffSha256?: string;
+  diffSignature?: string;
 }
 
 export interface BundleVerifyParams {
@@ -26,6 +34,10 @@ export interface BundleVerifyASCParams {
   latestVersion: string;
   bundleVersion: string;
   signature: string;
+  diffDownloadUrl?: string;
+  diffFileSize?: number;
+  diffSha256?: string;
+  diffSignature?: string;
 }
 
 export interface BundleDownloadASCParams {
@@ -34,6 +46,10 @@ export interface BundleDownloadASCParams {
   latestVersion: string;
   bundleVersion: string;
   sha256: string;
+  diffDownloadUrl?: string;
+  diffFileSize?: number;
+  diffSha256?: string;
+  diffSignature?: string;
 }
 
 export interface BundleInstallParams {

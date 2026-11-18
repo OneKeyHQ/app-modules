@@ -1,5 +1,5 @@
 import Foundation
-import ReactNativeBundleCrypto
+@testable import ReactNativeBundleCrypto
 import XCTest
 
 final class BundleCryptoCoreTests: XCTestCase {
@@ -91,6 +91,84 @@ final class BundleCryptoCoreTests: XCTestCase {
     XCTAssertFalse(unsigned.valid)
     XCTAssertNil(unsigned.sha256)
     XCTAssertEqual(unsigned.reason, "NOT_PGP_SIGNED_MESSAGE")
+  }
+
+  func testExpectedFileNameValidationForDiffManifest() {
+    let rejectedByDefaultMismatch = BundleCryptoCore.verifyGpgCleartext(
+      signedMetadata,
+      expectedFileName: "diff-manifest.json"
+    )
+    XCTAssertFalse(rejectedByDefaultMismatch.valid)
+    XCTAssertNil(rejectedByDefaultMismatch.sha256)
+    XCTAssertEqual(rejectedByDefaultMismatch.reason, "INVALID_METADATA_FILENAME")
+
+    let testPublicKey = """
+      -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+      mQENBGr9TcEBCADqhPZEGynHy8F6Zs0n/ayUQZgTTocdnZupAbatptQDf4ajCYNk
+      AmE44GUZhaoUaRepBDlrEr4aEjkcfL1Zx9iGoRu1jbiEBSJnZAdhN8wMQZsG7usG
+      ydg/H9XparEPyHq6aqYu5Eq5OIJ99Vbe5sY0fEYVnBJHQSRpuH09B/RZYj+Up3aj
+      Vs84InZGAlpRABsjW6cKDGxI4qqxd6lcuPzzqKZBp0NqeEzIE/I24GbGA4BJTd8S
+      9gaJXB9Totuxy/uv+4+NLcAG4BDrQz0H0KXMrU9UmSUl4ZWp/iA13aHoZdoEsdv2
+      aA8HQ3yb5qHElwEAvRapspzYL8MFZm2ak3NHABEBAAG0HlRlc3QgU2lnbmVyIDx0
+      ZXN0QGV4YW1wbGUuY29tPokBUgQTAQgAPBYhBJtb/2ZyaVZpVQloADBHSIn7JD1z
+      BQJq/U3BAxsvBAULCQgHAgIiAgYVCgkICwIEFgIDAQIeBwIXgAAKCRAwR0iJ+yQ9
+      c2xACADEewfGtSOEtSkNCx1r23tfx2iBmAPy5sd0cuIszgg4qlbF01pU9OXJM9/d
+      slQd+DGFbE2fKSnO0Zu1K84pRULcDCKETf0uXEYYH/K+t4k4PSFnyq3bA5DOHX7w
+      xPq8jV/4CNcKwpQ40mhmv85q46mJO4ll/NQEN4ZFQliJswyZodfpjzVKz695usOp
+      W0FD+Sgy2x6iauNrxBtm7ILNWWFCRW9J7+Y7Uc/RMNRpj9BuHk/xkh2QQt9twd95
+      r2i2Fzn8IuFa2budqTzwea87p9VQdYnzmthHGt6Xzety4frFUBThwix85VIpoROj
+      DCy0Hhtw6dfpxwWXGeFERjK0xCbs
+      =ITXe
+      -----END PGP PUBLIC KEY BLOCK-----
+      """
+
+    let signedDiffManifest = """
+      -----BEGIN PGP SIGNED MESSAGE-----
+      Hash: SHA256
+
+      {
+        "fileName": "diff-manifest.json",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appType": "ios",
+        "appVersion": "6.8.0",
+        "bundleVersion": "20260101"
+      }
+      -----BEGIN PGP SIGNATURE-----
+
+      iQEzBAEBCAAdFiEEm1v/ZnJpVmlVCWgAMEdIifskPXMFAmr9TcIACgkQMEdIifsk
+      PXML3Af/VKdIMeq/vP6i5dfv8SpjQcDwuNlYuQD9pFGqXtG2AADSmufv/9ojc3LZ
+      QvGzd8Q9EVl+l1AfKSLTV/3kgsVUsEQP+iJCQVXN4OCZvrfEQiXX9VxMM2Rkevmu
+      XaIoQlURsGOBuLyTZS4ECm/iFUaEp8s0ajCKUNAHcKiXBzwgqYThGF+FM3ahbIb0
+      5u5IvfVdRnxHBPf9Nd+lH6EFnzIvKHuDMyIR7J9PAfuMnt0AZ1dZ8bHpj6A5yDIu
+      2/vYjpGvHnqMzobhznsEEty5yLxP57SatrF0FXgRe6hM41MNQlLDKY1QiHn9Sqsg
+      XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
+      =vF1w
+      -----END PGP SIGNATURE-----
+      """
+
+    let acceptedDiff = BundleCryptoCore.verifyGpgCleartextWithKey(
+      signedDiffManifest,
+      expectedAppVersion: "6.8.0",
+      expectedBundleVersion: "20260101",
+      expectedAppType: "ios",
+      expectedFileName: "diff-manifest.json",
+      publicKeyArmored: testPublicKey
+    )
+    XCTAssertTrue(acceptedDiff.valid)
+    XCTAssertEqual(acceptedDiff.sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    XCTAssertNil(acceptedDiff.reason)
+
+    let rejectedDefault = BundleCryptoCore.verifyGpgCleartextWithKey(
+      signedDiffManifest,
+      expectedAppVersion: "6.8.0",
+      expectedBundleVersion: "20260101",
+      expectedAppType: "ios",
+      publicKeyArmored: testPublicKey
+    )
+    XCTAssertFalse(rejectedDefault.valid)
+    XCTAssertNil(rejectedDefault.sha256)
+    XCTAssertEqual(rejectedDefault.reason, "INVALID_METADATA_FILENAME")
   }
 
   func testDirectoryHashesRejectChangedMissingAndUnlistedFiles() throws {
