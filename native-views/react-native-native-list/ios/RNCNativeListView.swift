@@ -900,7 +900,10 @@ final class NativeListView: UIView {
         return cell
       }
       cell.onAction = { [weak self] item, action, target, origin in
-        self?.handleAction(item: item, actionKey: action, target: target, origin: origin)
+        // A child renderer can emit a different key than the collection row that owns it.
+        guard let self, self.itemsByKey[key] != nil,
+              !self.isInertPresentationKey(key) else { return }
+        self.handleAction(item: item, actionKey: action, target: target, origin: origin)
       }
       cell.onBindingInvalidated = { [weak self] cell, epoch in
         self?.handleBindingInvalidated(cell: cell, epoch: epoch)
@@ -2698,7 +2701,7 @@ final class NativeListView: UIView {
     if item.key == interactiveReorderCompactKey {
       cell.setWalletGroupReorderCompact(true)
     }
-    let retiring = structuralRemovedItems[item.key] != nil
+    let retiring = cell !== footerCell && structuralRemovedItems[item.key] != nil
     cell.structuralContentHeight = retiring
       ? rowHeight(item, allocatedWidth: cell.bounds.width) : nil
     if retiring { cell.clipsToBounds = true }
@@ -2714,7 +2717,7 @@ final class NativeListView: UIView {
 
   private func handleRowPress(_ item: NativeListItem, origin: NativeListActionOrigin?) {
     // OneKey patch: missing-address rows keep accessory actions available.
-    guard let config, item.isRowPressEnabled, !isInertPresentationKey(item.key) else { return }
+    guard let config, item.isRowPressEnabled else { return }
     if config.rowPressToggles && item.isSelectable && config.selectionMode != "none" {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
@@ -2750,7 +2753,7 @@ final class NativeListView: UIView {
     target: NativeSelectionTarget?,
     origin: NativeListActionOrigin?
   ) {
-    guard !item.data.bool("disabled"), !isInertPresentationKey(item.key) else { return }
+    guard !item.data.bool("disabled") else { return }
     if let target, config?.selectionMode != "none" {
       updateSelection(target: target, sourceKey: item.key)
       return
@@ -2759,8 +2762,7 @@ final class NativeListView: UIView {
   }
 
   private func updateSelection(target: NativeSelectionTarget, sourceKey: String) {
-    guard var current = config, current.selectionMode != "none",
-          !isInertPresentationKey(sourceKey) else { return }
+    guard var current = config, current.selectionMode != "none" else { return }
     let keys = selectionKeys(target: target, items: current.items)
     guard !keys.isEmpty else { return }
     let before = current.selectedKeys
