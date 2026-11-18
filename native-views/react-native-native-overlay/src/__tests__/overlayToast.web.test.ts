@@ -68,6 +68,7 @@ beforeEach(() => {
 afterEach(() => {
   renderer.destroy();
   detach();
+  delete (document as { elementFromPoint?: unknown }).elementFromPoint;
   jest.useRealTimers();
 });
 
@@ -553,4 +554,140 @@ test('pressable notification row is keyboard-focusable and activates on Enter an
   button?.click();
   expect(onAction).toHaveBeenCalledWith('open');
   expect(onPress).toHaveBeenCalledTimes(2);
+});
+
+function dispatchPointer(
+  target: EventTarget,
+  type: string,
+  init: Record<string, unknown> = {}
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, {
+    pointerId: 1,
+    pointerType: 'mouse',
+    clientX: 0,
+    clientY: 0,
+    ...init,
+  });
+  target.dispatchEvent(event);
+}
+
+test('dragging out of a toast and releasing clears hover after resetting data-swiping so timers resume', () => {
+  const onClose = jest.fn();
+  store.show(message('a', { duration: 1000 }), { onClose });
+  const list = document.querySelector<HTMLElement>(
+    '[data-onekey-toast-toaster]'
+  )!;
+  const card = cards()[0]!;
+  const outside = document.createElement('div');
+  document.body.appendChild(outside);
+  // While data-swiping="true", the scaled ::before pseudo-element covers 3x
+  // the card height; once data-swiping="false" is restored on release, hit
+  // testing lands on the page behind the card.
+  document.elementFromPoint = jest.fn(() =>
+    card.getAttribute('data-swiping') === 'true' ? card : outside
+  );
+
+  list.dispatchEvent(new MouseEvent('mouseenter'));
+  dispatchPointer(card, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(card, 'pointermove', { clientX: 200, clientY: 140 });
+  list.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+  dispatchPointer(card, 'pointerup', { clientX: 200, clientY: 140 });
+
+  expect(card.getAttribute('data-swiping')).toBe('false');
+  expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
+
+  jest.advanceTimersByTime(1000);
+  expect(card.getAttribute('data-removed')).toBe('true');
+  jest.advanceTimersByTime(200);
+  expect(onClose).toHaveBeenCalledWith('timeout');
+});
+
+test('single-direction swipe dismisses away from the anchored edge on wide and narrow positions', () => {
+  const onWideClose = jest.fn();
+  store.configure({ position: 'bottom-right' });
+  store.show(message('wide', { duration: 5000 }), { onClose: onWideClose });
+  const wideCard = cards()[0]!;
+
+  // Upward drag on bottom-right does not move or dismiss.
+  dispatchPointer(wideCard, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 200, clientY: 150 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  dispatchPointer(wideCard, 'pointerup', { clientX: 200, clientY: 150 });
+  expect(wideCard.getAttribute('data-removed')).toBe('false');
+
+  // Downward swipe after initial horizontal jitter still dismisses.
+  dispatchPointer(wideCard, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 196, clientY: 201 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  dispatchPointer(wideCard, 'pointermove', { clientX: 196, clientY: 228 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('28px');
+  dispatchPointer(wideCard, 'pointerup', { clientX: 196, clientY: 228 });
+  jest.advanceTimersByTime(200);
+  expect(onWideClose).toHaveBeenCalledWith('swipe');
+
+  const onNarrowClose = jest.fn();
+  store.configure({ position: 'top-center' });
+  store.show(message('narrow-1', { duration: 1000 }));
+  store.show(message('narrow-2', { duration: 1000 }), {
+    onClose: onNarrowClose,
+  });
+  const narrowFront = cards()[0]!;
+
+  // Touch tap expands a multi-card stack on narrow screen and tapping outside collapses it.
+  dispatchPointer(narrowFront, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 40,
+  });
+  dispatchPointer(narrowFront, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 40,
+  });
+  expect(narrowFront.getAttribute('data-expanded')).toBe('true');
+  dispatchPointer(document.body, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 10,
+    clientY: 500,
+  });
+  expect(narrowFront.getAttribute('data-expanded')).toBe('false');
+
+  // Downward drag on top-center does not move or dismiss; upward swipe dismisses.
+  dispatchPointer(narrowFront, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 40,
+  });
+  dispatchPointer(narrowFront, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 90,
+  });
+  expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  dispatchPointer(narrowFront, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 90,
+  });
+  expect(narrowFront.getAttribute('data-removed')).toBe('false');
+
+  dispatchPointer(narrowFront, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 60,
+  });
+  dispatchPointer(narrowFront, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 30,
+  });
+  expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('-30px');
+  dispatchPointer(narrowFront, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 30,
+  });
+  jest.advanceTimersByTime(200);
+  expect(onNarrowClose).toHaveBeenCalledWith('swipe');
 });

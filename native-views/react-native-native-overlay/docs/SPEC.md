@@ -1363,8 +1363,8 @@ Each platform keeps the look and motion of the renderer it replaced.
 | Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
 | Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
 | `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
-| Timer pause | While the stack is hovered or pressed; resuming restarts the full lifetime | While a card is pressed; resuming continues the remaining time |
-| Swipe | Away from the anchored edge; 20 px or 0.11 px/ms | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
+| Timer pause | While the stack is hovered or pressed; releasing a drag outside the stack reconciles hover from the resting card bounds so timers restart | While a card is pressed; resuming continues the remaining time |
+| Swipe | Single-direction away from the anchored edge (down on bottom groups, up on top groups); 20 px or 0.11 px/ms | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
 | Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
 
