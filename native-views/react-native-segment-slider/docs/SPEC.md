@@ -23,11 +23,20 @@ reported value (for example a value the caller clamped or reset mid-drag), and
 afterwards any new `value` moves the thumb immediately. Neither path emits
 `onChange`.
 
-An interaction is one drag or tap (one pointer; extra pointers are ignored
-until it ends) or one accepted Web key press. Each interaction fires
-`onSlideStart` once and `onSlideComplete` once. Setting `disabled` during a Web
-drag cancels it: the bubble hides, `onSlideComplete` fires, and later moves or
-the release change nothing.
+An interaction is one drag or tap (one pointer and, on Web, only the primary
+button; extra pointers are ignored until it ends) or one accepted Web key
+press. Each interaction fires `onSlideStart` once and `onSlideComplete` once.
+Setting `disabled` during a drag cancels it on every platform: the bubble and
+pressed thumb reset, ancestor gestures are restored, `onSlideComplete` fires,
+and later moves or the release change nothing.
+
+`onChange` values are integers inside the range. When a bound is fractional the
+value stays within `[ceil(min), floor(max)]` (for 0.5..10.5 the values are
+1..10); integer bounds are unaffected.
+
+`aria-label` and `aria-labelledby` name the slider. Web sets them on the
+`role="slider"` element; iOS and Android forward them to the host view as React
+Native accessibility props (native screen-reader behavior is not yet verified).
 
 Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
 `sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
@@ -43,8 +52,9 @@ optional and falls back to the package's neutral light palette:
 reached), `markInactiveColor` and `markBorderColor` (other marks),
 `bubbleColor` and `bubbleTextColor`.
 
-`hapticStep` requests a light haptic tick each time a drag moves the value into
-a new `hapticStep`-sized bucket from `min` (for a 0..100 range, `1` ticks on
+`hapticStep` requests a light haptic tick each time finger movement during a
+drag moves the value into a new `hapticStep`-sized bucket from `min` (the
+touch-down jump of a tap never ticks) (for a 0..100 range, `1` ticks on
 every 1%). Entering a segment mark keeps its own, stronger tick; at most one
 tick fires per value change, and the mark tick wins. `0` keeps the mark-only
 tick. Haptics only fire during a drag, never from a `value` update. Web has no
@@ -150,7 +160,9 @@ integration.
 Haptics (`hapticStep`): `hapticTickRecorder` (a test seam on both native
 classes, not a Nitro prop) records each tick. The iOS and Android harnesses
 drag across 0, 1, 2, 25 and 26 and assert `mark, step, step, mark, step` with
-`hapticStep = 1` and `mark, mark` with `0`. Feel and strength still need
+`hapticStep = 1` and `mark, mark` with `0`, and assert that a tap without
+movement fires no step tick. The same harnesses cover disabling mid-drag (one
+completion, no later values) and fractional bounds (0.5..10.5 emits 10 and 1). Feel and strength still need
 acceptance on a physical iPhone and Android phone
 (simulators have no haptics). Drag slowly across 0..100 with `hapticStep = 1`
 and confirm one light tick per percent and the stronger tick on each mark.

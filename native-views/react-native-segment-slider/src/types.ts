@@ -39,39 +39,47 @@ export const DEFAULT_SEGMENT_SLIDER_COLORS: ISegmentSliderColors = {
 
 export interface ISegmentSliderProps extends Partial<ISegmentSliderColors> {
   /** Current value (controlled). */
-  value: number;
-  /** Fired with the integer-rounded value when an interaction changes it. */
-  onChange: (value: number) => void;
+  'value': number;
+  /**
+   * Fired with the integer-rounded value when an interaction changes it. The
+   * value stays inside the range; with fractional bounds it stays within
+   * [ceil(min), floor(max)].
+   */
+  'onChange': (value: number) => void;
   /** Number of segment intervals; below 1 renders no marks. */
-  segments: number;
+  'segments': number;
   /** Range minimum. Default 0. */
-  min?: number;
+  'min'?: number;
   /** Range maximum. Default 100. */
-  max?: number;
+  'max'?: number;
   /** Track thickness. Default 4. */
-  sliderHeight?: number;
+  'sliderHeight'?: number;
   /** Dims the slider and blocks interaction. Default false. */
-  disabled?: boolean;
+  'disabled'?: boolean;
   /** Shows a `${value}%` bubble above the thumb while interacting. Default true. */
-  showBubble?: boolean;
+  'showBubble'?: boolean;
   /** Fills from the value-0 origin instead of the left edge. Default false. */
-  centerOrigin?: boolean;
+  'centerOrigin'?: boolean;
   /**
    * A quick tap snaps to the nearest mark while a drag stays free. No effect
    * without marks. Default false.
    */
-  snapTapToSegment?: boolean;
+  'snapTapToSegment'?: boolean;
   /**
    * iOS / Android: light haptic tick each time a drag moves the value into a
    * new `hapticStep`-sized bucket from `min`. Mark ticks stay stronger. 0 (the
    * default) keeps mark-only ticks. Web has no haptics.
    */
-  hapticStep?: number;
+  'hapticStep'?: number;
   /**
    * Web only: places marks on the integer values the slider emits, so keyboard
    * steps and marks agree when the range does not divide evenly. Default false.
    */
-  alignSegmentMarksToIntegerValues?: boolean;
-  onSlideStart?: () => void;
-  onSlideComplete?: () => void;
+  'alignSegmentMarksToIntegerValues'?: boolean;
+  /** Accessible name for the slider. */
+  'aria-label'?: string;
+  /** Id of the element that names the slider, such as a visible field title. */
+  'aria-labelledby'?: string;
+  'onSlideStart'?: () => void;
+  'onSlideComplete'?: () => void;
 }

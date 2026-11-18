@@ -139,6 +139,44 @@ enum BubbleLayoutTests {
     let markTicks = hapticTicks(step: 0)
     check(markTicks == ["mark", "mark"], "hapticStep 0 ticks: \(markTicks)")
 
+    // A tap that never moves fires no step tick (20% is away from any mark).
+    var tapTicks: [String] = []
+    let tap = makeSlider(width: 320, value: 0)
+    tap.hapticStep = 1
+    tap.hapticTickRecorder = { tapTicks.append($0) }
+    let tapControl = tap.view as! SegmentSliderUIView
+    tapControl.onTouchBegan?(12 + 0.2 * 296)
+    tapControl.onTouchEnded?()
+    check(tapTicks.isEmpty, "tap without movement ticked: \(tapTicks)")
+
+    // Disabling mid-drag ends the interaction once and ignores later moves.
+    var cancelChanges: [Double] = []
+    var cancelCompletes = 0
+    let cancel = makeSlider(width: 320, value: 0)
+    cancel.onChange = { cancelChanges.append($0) }
+    cancel.onSlideComplete = { cancelCompletes += 1 }
+    let cancelControl = cancel.view as! SegmentSliderUIView
+    cancelControl.onTouchBegan?(12 + 0.3 * 296)
+    cancel.disabled = true
+    cancelControl.onTouchMoved?(12 + 0.8 * 296)
+    cancelControl.onTouchEnded?()
+    check(cancelCompletes == 1, "disable mid-drag completions: \(cancelCompletes)")
+    check(cancelChanges == [30], "disable mid-drag values: \(cancelChanges)")
+
+    // Fractional bounds never emit a value past them.
+    var boundChanges: [Double] = []
+    let bounded = makeSlider(width: 320, value: 0.5)
+    bounded.min = 0.5
+    bounded.max = 10.5
+    bounded.segments = 0
+    bounded.view.layoutIfNeeded()
+    bounded.onChange = { boundChanges.append($0) }
+    let boundedControl = bounded.view as! SegmentSliderUIView
+    boundedControl.onTouchBegan?(320)
+    boundedControl.onTouchMoved?(0)
+    boundedControl.onTouchEnded?()
+    check(boundChanges == [10, 1], "fractional bound values: \(boundChanges)")
+
     // Render with a horizontally clipping ancestor, matching the failing sheet.
     // This is a UIKit layer preview, not a React Native or iPhone screenshot.
     if CommandLine.arguments.count > 1 {

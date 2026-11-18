@@ -158,6 +158,18 @@ class BubbleLayoutActivity : Activity() {
     }, 250)
   }
 
+  // Reflection keeps `run.py --source` able to compile implementations that
+  // predate the recorder; their haptic checks then fail instead of the build.
+  private fun recordTicks(slider: HybridSegmentSlider, ticks: MutableList<String>) {
+    val setter = slider.javaClass.methods.firstOrNull { it.name.startsWith("setHapticTickRecorder") }
+    if (setter == null) {
+      check(false, "hapticTickRecorder is missing")
+      return
+    }
+    val sink: (String) -> Unit = { ticks.add(it) }
+    setter.invoke(slider, sink)
+  }
+
   // Per-step haptics: one tick per value bucket during a drag; entering a mark
   // fires the mark tick instead of the step tick; 0 keeps mark-only ticks.
   private fun runHapticCases() {
@@ -167,7 +179,7 @@ class BubbleLayoutActivity : Activity() {
         view.layout(0, 0, px(320), px(24))
       }
       val ticks = mutableListOf<String>()
-      slider.hapticTickRecorder = { ticks.add(it) }
+      recordTicks(slider, ticks)
       val inset = field(slider, "insetPx") as Float
       fun x(v: Double) = inset + (v / 100).toFloat() * (slider.view.width - 2 * inset)
       touch(slider, MotionEvent.ACTION_DOWN, x(0.0))
@@ -180,6 +192,49 @@ class BubbleLayoutActivity : Activity() {
     check(stepTicks == listOf("mark", "step", "step", "mark", "step"), "hapticStep 1 ticks: $stepTicks")
     val markTicks = ticks(0.0)
     check(markTicks == listOf("mark", "mark"), "hapticStep 0 ticks: $markTicks")
+
+    fun make(configure: HybridSegmentSlider.() -> Unit) =
+      HybridSegmentSlider(ThemedReactContext(this)).apply {
+        configure()
+        view.layout(0, 0, px(320), px(24))
+      }
+    fun xAt(slider: HybridSegmentSlider, frac: Double): Float {
+      val inset = field(slider, "insetPx") as Float
+      return inset + frac.toFloat() * (slider.view.width - 2 * inset)
+    }
+
+    // A tap that never moves fires no step tick (20% is away from any mark).
+    val tapTicks = mutableListOf<String>()
+    val tap = make { segments = 4.0; defaultValue = 0.0; hapticStep = 1.0 }
+    recordTicks(tap, tapTicks)
+    touch(tap, MotionEvent.ACTION_DOWN, xAt(tap, 0.2))
+    touch(tap, MotionEvent.ACTION_UP, xAt(tap, 0.2))
+    check(tapTicks.isEmpty(), "tap without movement ticked: $tapTicks")
+    tap.dispose()
+
+    // Disabling mid-drag ends the interaction once and ignores later moves.
+    val cancelChanges = mutableListOf<Double>()
+    var cancelCompletes = 0
+    val cancel = make { segments = 4.0; defaultValue = 0.0 }
+    cancel.onChange = { cancelChanges.add(it) }
+    cancel.onSlideComplete = { cancelCompletes++ }
+    touch(cancel, MotionEvent.ACTION_DOWN, xAt(cancel, 0.3))
+    cancel.disabled = true
+    touch(cancel, MotionEvent.ACTION_MOVE, xAt(cancel, 0.8))
+    touch(cancel, MotionEvent.ACTION_UP, xAt(cancel, 0.8))
+    check(cancelCompletes == 1, "disable mid-drag completions: $cancelCompletes")
+    check(cancelChanges == listOf(30.0), "disable mid-drag values: $cancelChanges")
+    cancel.dispose()
+
+    // Fractional bounds never emit a value past them.
+    val boundChanges = mutableListOf<Double>()
+    val bounded = make { min = 0.5; max = 10.5; segments = 0.0; defaultValue = 0.5 }
+    bounded.onChange = { boundChanges.add(it) }
+    touch(bounded, MotionEvent.ACTION_DOWN, bounded.view.width.toFloat())
+    touch(bounded, MotionEvent.ACTION_MOVE, 0f)
+    touch(bounded, MotionEvent.ACTION_UP, 0f)
+    check(boundChanges == listOf(10.0, 1.0), "fractional bound values: $boundChanges")
+    bounded.dispose()
   }
 
   private fun runInteractionCases() {

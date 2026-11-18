@@ -39,8 +39,11 @@ env["JAVA_HOME"] = subprocess.check_output(
 
 base = "package com.margelo.nitro.segmentslider\nabstract class HybridSegmentSliderSpec {\n"
 base += "abstract val view: android.view.View\n"
-for name in ["defaultValue", "min", "max", "segments", "sliderHeight", "hapticStep"]:
+for name in ["defaultValue", "min", "max", "segments", "sliderHeight"]:
     base += f"abstract var {name}: Double\n"
+# Open with a default so `--source` can still compile implementations that
+# predate `hapticStep`.
+base += "open var hapticStep: Double = 0.0\n"
 for name in ["disabled", "showBubble", "centerOrigin", "snapTapToSegment"]:
     base += f"abstract var {name}: Boolean\n"
 for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markActiveColor",

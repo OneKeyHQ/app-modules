@@ -64,6 +64,8 @@ function SegmentSliderComponent({
   hapticStep = 0,
   onSlideStart,
   onSlideComplete,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
   fillColor = DEFAULT_SEGMENT_SLIDER_COLORS.fillColor,
   trackColor = DEFAULT_SEGMENT_SLIDER_COLORS.trackColor,
   thumbColor = DEFAULT_SEGMENT_SLIDER_COLORS.thumbColor,
@@ -149,6 +151,8 @@ function SegmentSliderComponent({
   return (
     <SegmentSliderNativeView
       style={styles.slider}
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
       hybridRef={hybridRef}
       defaultValue={initialValueRef.current}
       min={min}

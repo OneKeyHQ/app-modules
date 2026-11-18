@@ -74,6 +74,8 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // mark tick in the same commit replaces the step tick.
   private var lastHapticBucket = Double.NaN
   private var markTickedThisCommit = false
+  // Step ticks only follow real finger movement, never the touch-down jump.
+  private var stepTicksArmed = false
   // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
   // candidate; once the finger travels past `tapMoveThresholdPx` it becomes a
   // drag and the release no longer snaps.
@@ -101,12 +103,13 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
           hasDragged = false
           touchStartX = event.x
           lastTouchX = event.x
-          lastHapticBucket = hapticBucket(currentValue)
+          stepTicksArmed = false
           onSlideStart?.invoke()
           animateThumbScale(activeThumbScale)
           // Tap-snap mode: defer the value commit until we know this is a tap or
           // a drag, so a tap never jumps to the raw touch point first.
           if (!snapTapsActive) commitDragValue(valueFromX(event.x))
+          lastHapticBucket = hapticBucket(currentValue)
           parent?.requestDisallowInterceptTouchEvent(true)
           return true
         }
@@ -117,7 +120,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
               hasDragged = true
             }
             // Still a tap candidate in snap mode → keep the thumb put.
-            if (!(snapTapsActive && !hasDragged)) commitDragValue(valueFromX(event.x))
+            if (!(snapTapsActive && !hasDragged)) {
+              stepTicksArmed = true
+              commitDragValue(valueFromX(event.x))
+            }
           }
           return true
         }
@@ -187,6 +193,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     set(v) {
       field = v
       view.alpha = if (v) 0.5f else 1f
+      // Touch events stop reaching onTouchEvent once disabled, so end an
+      // active drag here.
+      if (v) cancelInteraction()
       invalidateIfAlive()
     }
 
@@ -314,7 +323,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   }
 
   private fun commitDragValue(raw: Double) {
-    val rounded = raw.coerceIn(min, max).let { Math.round(it).toDouble() }
+    val rounded = roundToRange(raw)
     currentValue = rounded
     markTickedThisCommit = false
     updateHover()
@@ -354,6 +363,30 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     }
   }
 
+  /// Rounds to an integer inside the range. With fractional bounds the result
+  /// stays within [ceil(min), floor(max)] so it never passes a bound.
+  private fun roundToRange(raw: Double): Double {
+    val rounded = Math.round(raw.coerceIn(min, max)).toDouble()
+    val lo = Math.ceil(min)
+    val hi = Math.floor(max)
+    if (lo > hi) return rounded
+    return rounded.coerceIn(lo, hi)
+  }
+
+  /// Ends an active drag without a release (e.g. the view became disabled):
+  /// no tap snap, visuals reset, parent interception restored, and
+  /// onSlideComplete fires so the JS wrapper resumes value sync.
+  private fun cancelInteraction() {
+    if (!isDragging) return
+    isDragging = false
+    stepTicksArmed = false
+    hoverMarkIndex = -1
+    animateThumbScale(1f)
+    view.parent?.requestDisallowInterceptTouchEvent(false)
+    view.invalidate()
+    onSlideComplete?.invoke()
+  }
+
   /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.
   private fun hapticBucket(v: Double): Double =
     if (hapticStep > 0) Math.floor((v - min) / hapticStep) else Double.NaN
@@ -361,7 +394,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   /// One light tick when a drag moves the value into a new step bucket. Skipped
   /// when the mark tick already fired for this value (the mark tick wins).
   private fun tickStepIfNeeded(v: Double) {
-    if (!isDragging || hapticStep <= 0) return
+    if (!isDragging || !stepTicksArmed || hapticStep <= 0) return
     val bucket = hapticBucket(v)
     if (bucket == lastHapticBucket) return
     lastHapticBucket = bucket

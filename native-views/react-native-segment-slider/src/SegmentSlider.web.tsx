@@ -32,6 +32,15 @@ const THUMB_Z_INDEX = 4;
 const TAP_MOVE_THRESHOLD = 8;
 const TAP_MAX_DURATION_MS = 300;
 
+// Clamps an integer result into [ceil(min), floor(max)] so fractional bounds
+// never produce a value past them.
+function clampToIntegerRange(value: number, min: number, max: number) {
+  const lo = Math.ceil(min);
+  const hi = Math.floor(max);
+  if (lo > hi) return value;
+  return Math.max(lo, Math.min(hi, value));
+}
+
 // Keep half-step marks symmetric when the slider emits integer values.
 function roundHalfToEven(value: number) {
   const lower = Math.floor(value);
@@ -66,13 +75,17 @@ const SegmentMark = memo(
       [index, registerRef]
     );
 
-    const handlePointerDown = useCallback(() => {
-      // Don't stop propagation: the container still needs pointer capture so a
-      // drag that starts on a mark keeps working. Only hand off the index so
-      // the container snaps to the exact step instead of the raw clientX.
-      if (disabled) return;
-      reportPointerDown(index);
-    }, [index, reportPointerDown, disabled]);
+    const handlePointerDown = useCallback(
+      (e: ReactPointerEvent<HTMLDivElement>) => {
+        // Don't stop propagation: the container still needs pointer capture
+        // so a drag that starts on a mark keeps working. Only hand off the
+        // index so the container snaps to the exact step instead of the raw
+        // clientX. Secondary buttons never select.
+        if (disabled || e.button !== 0) return;
+        reportPointerDown(index);
+      },
+      [index, reportPointerDown, disabled]
+    );
 
     const handleMouseEnter = useCallback(() => {
       if (!disabled) setHovered(true);
@@ -150,6 +163,8 @@ function SegmentSliderComponent({
   alignSegmentMarksToIntegerValues = false,
   onSlideStart,
   onSlideComplete,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
   fillColor = DEFAULT_SEGMENT_SLIDER_COLORS.fillColor,
   trackColor = DEFAULT_SEGMENT_SLIDER_COLORS.trackColor,
   thumbColor = DEFAULT_SEGMENT_SLIDER_COLORS.thumbColor,
@@ -204,11 +219,15 @@ function SegmentSliderComponent({
   const segmentIndexToValue = useCallback(
     (index: number) => {
       const segmentValue = min + index * stepValue;
-      return alignSegmentMarksToIntegerValues
-        ? roundHalfToEven(segmentValue)
-        : Math.round(segmentValue);
+      return clampToIntegerRange(
+        alignSegmentMarksToIntegerValues
+          ? roundHalfToEven(segmentValue)
+          : Math.round(segmentValue),
+        min,
+        max
+      );
     },
-    [alignSegmentMarksToIntegerValues, min, stepValue]
+    [alignSegmentMarksToIntegerValues, min, max, stepValue]
   );
 
   const segmentIndexToPct = useCallback(
@@ -320,9 +339,13 @@ function SegmentSliderComponent({
   const roundValue = useCallback(
     (v: number) => {
       const clamped = Math.max(min, Math.min(max, v));
-      return alignSegmentMarksToIntegerValues
-        ? roundHalfToEven(clamped)
-        : Math.round(clamped);
+      return clampToIntegerRange(
+        alignSegmentMarksToIntegerValues
+          ? roundHalfToEven(clamped)
+          : Math.round(clamped),
+        min,
+        max
+      );
     },
     [alignSegmentMarksToIntegerValues, min, max]
   );
@@ -400,8 +423,9 @@ function SegmentSliderComponent({
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      // One pointer per interaction: ignore extra fingers during a drag.
-      if (disabled || draggingRef.current) return;
+      // Primary button only, and one pointer per interaction: secondary
+      // buttons and extra fingers during a drag are ignored.
+      if (disabled || draggingRef.current || e.button !== 0) return;
       const target = e.currentTarget;
       let captured = false;
       try {
@@ -691,6 +715,8 @@ function SegmentSliderComponent({
     <div
       ref={containerRef}
       role="slider"
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={Math.round(value)}

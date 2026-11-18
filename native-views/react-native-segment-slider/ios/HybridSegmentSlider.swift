@@ -66,6 +66,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private lazy var stepHaptic = UISelectionFeedbackGenerator()
   private var lastHapticBucket = Double.nan
   private var markTickedThisCommit = false
+  // Step ticks only follow real finger movement, never the touch-down jump.
+  private var stepTicksArmed = false
 
   // MARK: - Props (required props are non-optional in the generated spec)
   // Guards the apply-once semantics of `defaultValue`: only the first prop
@@ -87,6 +89,9 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     didSet {
       view.alpha = disabled ? 0.5 : 1
       view.isUserInteractionEnabled = !disabled
+      // UIKit may not deliver the end of a touch to a view that stopped
+      // accepting interaction, so end an active drag here.
+      if disabled { cancelInteraction() }
     }
   }
   var showBubble: Bool = true { didSet { scheduleLayout() } }
@@ -399,7 +404,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     lastTouchX = x
     touchStartTime = CACurrentMediaTime()
     haptic.prepare()
-    lastHapticBucket = hapticBucket(currentValue)
+    stepTicksArmed = false
     if hapticStep > 0 { stepHaptic.prepare() }
     onSlideStart?()
     animateThumbScale(activeThumbScale)
@@ -409,6 +414,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if !snapTapsActive {
       commitDragValue(valueFromX(x))
     }
+    lastHapticBucket = hapticBucket(currentValue)
   }
 
   private func handleTouchMoved(_ x: CGFloat) {
@@ -419,7 +425,23 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     }
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
+    stepTicksArmed = true
     commitDragValue(valueFromX(x))
+  }
+
+  /// Ends an active drag without a release (e.g. the view became disabled):
+  /// no tap snap, visuals reset, ancestor gestures restored, and
+  /// `onSlideComplete` fires so the JS wrapper resumes value sync.
+  private func cancelInteraction() {
+    guard isDragging else { return }
+    isDragging = false
+    stepTicksArmed = false
+    hoverMarkIndex = -1
+    setHalo(visible: false, index: 0)
+    animateThumbScale(1.0)
+    setBubbleVisible(false)
+    (view as? SegmentSliderUIView)?.unlockAncestorGestures()
+    onSlideComplete?()
   }
 
   private func handleTouchEnded() {
@@ -467,8 +489,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
 
   private func commitDragValue(_ raw: Double) {
-    let clamped = Swift.max(min, Swift.min(max, raw))
-    let rounded = clamped.rounded()
+    let rounded = roundToRange(raw)
     currentValue = rounded
     markTickedThisCommit = false
     applyVisual(rounded)
@@ -477,6 +498,16 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       lastEmitted = rounded
       onChange?(rounded)
     }
+  }
+
+  /// Rounds to an integer inside the range. With fractional bounds the
+  /// result stays within [ceil(min), floor(max)] so it never passes a bound.
+  private func roundToRange(_ raw: Double) -> Double {
+    let rounded = Swift.max(min, Swift.min(max, raw)).rounded()
+    let lo = min.rounded(.up)
+    let hi = max.rounded(.down)
+    guard lo <= hi else { return rounded }
+    return Swift.max(lo, Swift.min(hi, rounded))
   }
 
   /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.
@@ -488,7 +519,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   /// One light tick when a drag moves the value into a new step bucket. Skipped
   /// when the mark tick already fired for this value (the mark tick wins).
   private func tickStepIfNeeded(_ v: Double) {
-    guard isDragging, hapticStep > 0 else { return }
+    guard isDragging, stepTicksArmed, hapticStep > 0 else { return }
     let bucket = hapticBucket(v)
     guard bucket != lastHapticBucket else { return }
     lastHapticBucket = bucket

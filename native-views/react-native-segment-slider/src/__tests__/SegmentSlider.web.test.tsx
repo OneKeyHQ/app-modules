@@ -69,10 +69,11 @@ function pointer(
   el: Element,
   type: 'pointerdown' | 'pointermove' | 'pointerup',
   clientX: number,
-  pointerId = 1
+  pointerId = 1,
+  button = 0
 ) {
   // jsdom has no PointerEvent constructor; React listens by event name.
-  const event = new MouseEvent(type, { bubbles: true, clientX });
+  const event = new MouseEvent(type, { bubbles: true, clientX, button });
   Object.defineProperty(event, 'pointerId', { value: pointerId });
   act(() => {
     el.dispatchEvent(event);
@@ -275,4 +276,38 @@ it('keeps a tap on a mark on that mark with snapTapToSegment', () => {
   pointer(mark(1), 'pointerdown', TRACK_LEFT + 76);
   pointer(mark(1), 'pointerup', TRACK_LEFT + 76);
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([25]);
+});
+
+it('ignores secondary mouse buttons on the track and on marks', () => {
+  const onSlideStart = jest.fn();
+  const { slider, onChange } = render({ value: 0, onSlideStart });
+  pointer(slider, 'pointerdown', TRACK_LEFT + 160, 1, 2);
+  pointer(slider, 'pointerup', TRACK_LEFT + 160, 1, 2);
+  pointer(mark(2), 'pointerdown', TRACK_LEFT + 100, 1, 1);
+  pointer(mark(2), 'pointerup', TRACK_LEFT + 100, 1, 1);
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onSlideStart).not.toHaveBeenCalled();
+  expect(thumb().style.left).toBe('0%');
+});
+
+it('exposes the accessible name', () => {
+  const { slider } = render({
+    'aria-label': 'Amount',
+    'aria-labelledby': 'amount-title',
+  });
+  expect(slider.getAttribute('aria-label')).toBe('Amount');
+  expect(slider.getAttribute('aria-labelledby')).toBe('amount-title');
+});
+
+it('never emits a value past fractional bounds', () => {
+  const { slider, onChange } = render({
+    value: 0.5,
+    min: 0.5,
+    max: 10.5,
+    segments: 0,
+  });
+  key(slider, 'End');
+  pointer(slider, 'pointerdown', TRACK_LEFT);
+  pointer(slider, 'pointerup', TRACK_LEFT);
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([10, 1]);
 });
