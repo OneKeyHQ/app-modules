@@ -367,10 +367,19 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     func getAppleAdsAttributionToken() throws -> Promise<String?> {
-        return Promise.parallel(.global(qos: .utility)) {
-            guard #available(iOS 14.3, *) else { return nil }
+        guard #available(iOS 14.3, *) else {
+            return .resolved(withResult: nil)
+        }
+        return Self.requestAppleAdsAttributionToken {
+            try AAAttribution.attributionToken()
+        }
+    }
 
-            let token = try AAAttribution.attributionToken()
+    static func requestAppleAdsAttributionToken(
+        using provider: @escaping @Sendable () throws -> String
+    ) -> Promise<String?> {
+        return Promise.parallel(.global(qos: .utility)) {
+            let token = try provider()
             guard !token.isEmpty else {
                 throw RuntimeError.error(withMessage: "AdServices returned an empty attribution token")
             }

@@ -11,6 +11,7 @@ require Pod::Executable.execute_command('node', ['-p',
     "react-native/scripts/react_native_pods.rb",
     {paths: [process.argv[1]]},
   )', __dir__]).strip
+require_relative 'pods-project-script-phase'
 
 # Match the OneKey app's minimum deployment target for the RN 0.88 upgrade.
 minimum_ios_version = '16.4'
@@ -43,6 +44,7 @@ target 'example' do
   pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
 
   # CocoaPods does not install test specs unless they are requested explicitly.
+  pod 'ReactNativeDeviceUtils', :path => '../../../node_modules/@onekeyfe/react-native-device-utils', :testspecs => ['Tests']
   pod 'OneKeyImage', :path => '../../../node_modules/@onekeyfe/react-native-image', :testspecs => ['Tests']
   pod 'react-native-pager-view', :path => '../../../node_modules/@onekeyfe/react-native-pager-view', :testspecs => ['Tests']
   pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
@@ -80,8 +82,7 @@ SH
     fixture_targets.each do |name|
       target = installer.pods_project.targets.find { |candidate| candidate.name == name }
       raise "Missing SDK icon fixture test target: #{name}" unless target
-      phase = target.shell_script_build_phases.find { |candidate| candidate.name == 'Bundle SDK icon fixtures' } ||
-        target.new_shell_script_build_phase('Bundle SDK icon fixtures')
+      phase = ensure_pods_script_phase(target, 'Bundle SDK icon fixtures')
       phase.shell_script = 'sh "${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle"'
       phase.input_paths = ['${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh', '${PODS_ROOT}/../../icon-fixtures/native/icons/manifest.json']
       phase.output_paths = ['${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle/manifest.json']

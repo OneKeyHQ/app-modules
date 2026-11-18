@@ -472,6 +472,9 @@ exchange, retries, and attribution reporting.
 ## Conformance and acceptance
 
 The contract is defined in `src/ReactNativeDeviceUtils.nitro.ts` and implemented
-in `ios/ReactNativeDeviceUtils.swift` and `ReactNativeDeviceUtils.kt`. The
-consumer's Apple Ads tests exercise token forwarding, rejection, and missing
-tokens. Real AdServices token issuance requires an on-device check.
+in `ios/ReactNativeDeviceUtils.swift` and `ReactNativeDeviceUtils.kt`. The iOS
+pod's XCTest suite injects a provider and exercises the Nitro Promise with a
+non-empty string, an empty string, and a thrown error. Android native CI builds
+the Kotlin implementation and generated JNI bindings. The consumer's Android
+native harness verifies the result is JavaScript `undefined`. Real AdServices
+token issuance requires an on-device check.
