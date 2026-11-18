@@ -412,16 +412,8 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       canvas.drawRoundRect(rect, radius, radius, fillPaint)
     }
 
-    // Thumb (drawn BELOW the marks so a node under the thumb shows through its
-    // centre — the "white ring + dark centre" bullseye, matching web where the
-    // mark zIndex 3 sits above the thumb zIndex 2).
-    val thumbX = insetPx + frac * tw
-    val thumbR = thumbSizePx / 2f * thumbScale
-    canvas.drawCircle(thumbX, midY, thumbR, thumbFillPaint)
-    canvas.drawCircle(thumbX, midY, thumbR - density / 2f, thumbStrokePaint)
-
-    // Node halo (drag-time highlight) — drawn under the marks so the node dot
-    // stays crisp on top. Translucent markActive color (25% alpha).
+    // Node halo (drag-time highlight) under the marks and thumb, so the pressed
+    // thumb stays plain (web parity). Translucent markActive color (25% alpha).
     if (isDragging && hoverMarkIndex in 0 until markCount) {
       val mf = if (markCount > 1) hoverMarkIndex.toFloat() / (markCount - 1) else 0f
       val hx = insetPx + mf * tw
@@ -429,7 +421,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       canvas.drawCircle(hx, midY, markSizePx / 2f + haloRingPx, markHaloPaint)
     }
 
-    // Marks (on top of the thumb).
+    // Marks (under the thumb).
     val centerFrac = valueToFrac(0.0)
     val markR = markSizePx / 2f
     for (i in 0 until markCount) {
@@ -446,6 +438,13 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       canvas.drawCircle(cx, midY, markR - density / 2f, markFillPaint)
       canvas.drawCircle(cx, midY, markR - density / 2f, markStrokePaint)
     }
+
+    // Thumb (drawn ABOVE the marks so it covers the node it sits on, matching
+    // web where the thumb zIndex 4 sits above the mark zIndex 3).
+    val thumbX = insetPx + frac * tw
+    val thumbR = thumbSizePx / 2f * thumbScale
+    canvas.drawCircle(thumbX, midY, thumbR, thumbFillPaint)
+    canvas.drawCircle(thumbX, midY, thumbR - density / 2f, thumbStrokePaint)
 
     // Bubble.
     if (isDragging && showBubble) {

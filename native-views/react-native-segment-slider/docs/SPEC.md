@@ -91,15 +91,17 @@ track for a 20-point bubble and its 8-point gap.
 | Bubble text | Rounded value plus `%` | Rounded value plus `%` | Rounded value plus `%` |
 | Endpoint inset | 12 points; contains the 18.4-point active thumb and 18-point halo | 12 dp; contains the 18.4-dp active thumb and 18-dp halo | 8 px (half the 16-px thumb) |
 | Bubble horizontal position | Centered on thumb, clamped inside view width | Background and text move together, clamped inside view width | Centered on thumb, not clamped |
-| Thumb stacking | Drawn above marks | Drawn above marks | Drawn above marks; marks stay clickable under it |
+| Stacking (bottom to top) | Track, fill, halo, marks, thumb, bubble | Track, fill, halo, marks, thumb, bubble | Track, fill, marks, thumb, bubble; marks stay clickable under the thumb |
 | Mark tick | `UIImpactFeedbackGenerator(.light)`, intensity 0.6 | `CLOCK_TICK` | None |
 | Step tick (`hapticStep`) | `UISelectionFeedbackGenerator` | `TEXT_HANDLE_MOVE` (API 27+), else `CLOCK_TICK` | None |
 | Keyboard | None | None | Arrow keys move one segment (1 unit without marks), Home / End jump to the ends |
-| Mark hover | Halo while the thumb is on a mark | Halo while the thumb is on a mark | Halo while the pointer hovers a mark |
+| Pressed thumb | Scales to 18.4 points, plain thumb colors; the node halo stays under it | Scales to 18.4 dp, plain thumb colors; the node halo stays under it | Stays 16 px; plain thumb colors |
+| Mark hover | None (no pointer) | None (no pointer) | Ring while the pointer hovers a mark |
 
-Accepted Web divergences: the endpoint inset and bubble clamping differ because
-desktop pointers do not need the enlarged touch thumb; there is no haptic
-hardware to drive.
+Accepted Web divergences: the endpoint inset, pressed thumb size and bubble
+clamping differ because desktop pointers do not need the enlarged touch thumb;
+there is no haptic hardware to drive. Bubble text uses each platform's system
+font.
 
 On both platforms, when the view is at least as wide as the measured bubble, the entire
 bubble must stay within the view's horizontal bounds at both endpoints and
@@ -122,6 +124,17 @@ props and thumb stacking. jsdom does not lay out, so pointer-to-value mapping
 and rendered appearance need a browser check: on desktop Perps, drag through
 0%, 50% and 100%, click each mark and confirm the thumb covers the mark it sits
 on, in light and dark themes.
+
+Style parity: `tests/style-gallery/` renders the same rows (`scenarios.json`:
+4 and 0 segments at 0 / 48 / 100, pressed rows, light and dark OneKey theme
+colors) with the production code on each platform and `compose.py` combines
+them into `docs/screenshots/style-gallery.png`. iOS uses the Mac Catalyst
+build below with `tests/style-gallery/StyleGallery.swift`; Android uses
+`tests/android/run.py --gallery tests/style-gallery/scenarios.json` (run with
+`adb shell wm density 320` for 2x output); Web uses
+`tests/style-gallery/render-web.cjs` (headless Chromium, real mouse press).
+Like the other harnesses, this does not exercise the React Native / Nitro
+integration.
 
 Haptics (`hapticStep`): acceptance needs a physical iPhone and Android phone
 (simulators have no haptics). Drag slowly across 0..100 with `hapticStep = 1`

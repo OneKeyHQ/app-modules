@@ -160,8 +160,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
     view.layer.addSublayer(trackLayer)
     view.layer.addSublayer(fillLayer)
-    view.layer.addSublayer(thumbLayer)
+    // Halo under the thumb: the pressed thumb stays plain (web parity) and
+    // covers the node highlight.
     view.layer.addSublayer(haloLayer)
+    view.layer.addSublayer(thumbLayer)
     view.layer.addSublayer(bubbleLayer)
 
     if let v = view as? SegmentSliderUIView {
@@ -247,12 +249,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       for _ in markLayers.count..<count {
         let l = CALayer()
         l.borderWidth = 1
-        // Marks render ABOVE the thumb + halo (web parity: mark zIndex 3 >
-        // thumb 2). So when the thumb sits on a segment node the node's dot
-        // shows through the thumb's centre — the "white ring + dark centre"
-        // bullseye look. Inserting above the halo keeps order
-        // track < fill < thumb < halo < marks < bubble.
-        view.layer.insertSublayer(l, above: haloLayer)
+        // Marks render BELOW the thumb (web parity: mark zIndex 3 < thumb 4),
+        // so the thumb covers the node it sits on. Inserting below the thumb
+        // keeps order track < fill < halo < marks < thumb < bubble.
+        view.layer.insertSublayer(l, below: thumbLayer)
         markLayers.append(l)
       }
     } else if markLayers.count > count {
