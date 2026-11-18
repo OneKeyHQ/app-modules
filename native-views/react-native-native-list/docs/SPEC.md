@@ -553,6 +553,29 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### iOS cell requests during snapshot replacement
+
+Status: implemented, unreleased. On iOS 17.5, a focused UIKit fixture
+reproduced the assertion on version 6.7.0-62 and completed the same layout
+with the fix. The focused XCTest also passes with the fix. Consuming-app
+acceptance of the fix remains pending.
+
+When a snapshot removes rows, UIKit may request cells from its outgoing
+snapshot while the new logical rows are already active. The iOS host MUST
+provide a valid reusable cell for such requests. Until UIKit completes the
+removal, the host retains only the removed row descriptors needed for pending
+snapshot applications. These descriptors are presentation-only and cannot
+emit actions, expose accessibility elements, or become selectable. Repeated
+updates must preserve the descriptors still needed by in-flight applications
+and must release them on completion or host disposal. A request with no
+available descriptor receives an inert empty cell. The accepted snapshot,
+patch validation, row identity, and structural-transition behavior retain
+their existing contracts.
+
+Conformance exercises a real collection-view layout during removal, followed
+by normal rendering of the filtered snapshot. A separate consuming-app check
+covers address input in the Send recipient picker.
+
 ### Android vertical-drag React touch cancellation
 
 Status: implemented; four real Android MotionEvent/JSTouchDispatcher regressions

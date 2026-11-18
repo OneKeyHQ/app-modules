@@ -1,9 +1,77 @@
+import ObjectiveC
 import UIKit
 import XCTest
 @testable import NativeListModule
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testFilteredSnapshotSuppliesCellsDuringOutgoingUIKitLayout() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 390, height: 697))
+    let window = UIWindow(frame: view.frame)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    controller.view.addSubview(view)
+    defer {
+      view.dispose()
+      window.isHidden = true
+    }
+
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let dataSource = try XCTUnwrap(collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
+    collection.contentInsetAdjustmentBehavior = .never
+    collection.contentInset = UIEdgeInsets(top: 190, left: 0, bottom: 449, right: 0)
+    func snapshot(_ indices: Range<Int>) throws -> String {
+      let rows: [[String: Any]] = indices.map { index in
+        ["key": "account-\(index)", "type": "identity", "title": "Account \(index)",
+          "height": 64, "leading": ["kind": "icon", "name": "Circle"]]
+      }
+      let value: [String: Any] = ["schemaVersion": 1, "generation": 1,
+        "layout": ["kind": "linear"], "rows": rows]
+      return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+    view.applySnapshotJson(try snapshot(0..<18))
+    view.layoutIfNeeded()
+    collection.layoutIfNeeded()
+    XCTAssertEqual(dataSource.snapshot().numberOfItems, 18)
+
+    // Force a real UIKit layout at the invalidation inside applySnapshotJson,
+    // while UIKit still owns the old snapshot. Scope the hook to this layout.
+    let layout = collection.collectionViewLayout
+    let layoutClass: AnyClass = type(of: layout)
+    let selector = NSSelectorFromString("invalidateLayout")
+    let method = try XCTUnwrap(class_getInstanceMethod(layoutClass, selector))
+    let encoding = try XCTUnwrap(method_getTypeEncoding(method))
+    let original = method_getImplementation(method)
+    let callOriginal = unsafeBitCast(original, to: (@convention(c) (AnyObject, Selector) -> Void).self)
+    var didLayoutOutgoingSnapshot = false
+    let invalidate: @convention(block) (UICollectionViewLayout) -> Void = { current in
+      callOriginal(current, selector)
+      guard current === layout, !didLayoutOutgoingSnapshot,
+            dataSource.snapshot().numberOfItems == 18 else { return }
+      didLayoutOutgoingSnapshot = true
+      let outgoingIndexPath = IndexPath(item: 8, section: 0)
+      let size = view.collectionView(collection, layout: current, sizeForItemAt: outgoingIndexPath)
+      XCTAssertEqual(size.height, 64, "UIKit still needs the outgoing row’s geometry")
+      collection.contentOffset.y = -190
+      collection.setNeedsLayout()
+      collection.layoutIfNeeded()
+      XCTAssertFalse(view.collectionView(collection, shouldSelectItemAt: outgoingIndexPath))
+    }
+    let replacement = imp_implementationWithBlock(invalidate)
+    class_replaceMethod(layoutClass, selector, replacement, encoding)
+    defer {
+      class_replaceMethod(layoutClass, selector, original, encoding)
+      imp_removeBlock(replacement)
+    }
+
+    view.applySnapshotJson(try snapshot(12..<15))
+    collection.layoutIfNeeded()
+    XCTAssertTrue(didLayoutOutgoingSnapshot)
+    XCTAssertEqual(dataSource.snapshot().itemIdentifiers, ["account-12", "account-13", "account-14"])
+    XCTAssertFalse(collection.cellForItem(at: IndexPath(item: 0, section: 0))?.isHidden ?? true)
+  }
+
   func testCanonicalNullPatchRemovesStoredOptionalFields() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     let row: [String: Any] = ["key": "token", "type": "identity", "title": "Token",
