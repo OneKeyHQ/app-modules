@@ -454,3 +454,24 @@ config is harmless elsewhere.
 - No automated native test covers this API. Runtime acceptance: see the
   consumer verification; remaining: localization switches at runtime,
   keyboard shortcuts with a hardware keyboard, and iOS 26.
+
+# DeviceUtils: Apple Ads attribution token
+
+## Scope and platform contract
+
+`getAppleAdsAttributionToken(): Promise<string | undefined>` requests an Apple
+Ads token from AdServices on iOS 14.3 and later. It resolves to a non-empty
+string or rejects if AdServices fails or returns an empty token. Android and
+older iOS versions resolve to `undefined`.
+
+Each call runs independently. The iOS request runs off the main thread and
+returns only to the calling JS runtime. DeviceUtils does not retain or log the
+token. The OneKey app owns main-runtime and App Store eligibility, the server
+exchange, retries, and attribution reporting.
+
+## Conformance and acceptance
+
+The contract is defined in `src/ReactNativeDeviceUtils.nitro.ts` and implemented
+in `ios/ReactNativeDeviceUtils.swift` and `ReactNativeDeviceUtils.kt`. The
+consumer's Apple Ads tests exercise token forwarding, rejection, and missing
+tokens. Real AdServices token issuance requires an on-device check.

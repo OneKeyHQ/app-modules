@@ -18,6 +18,7 @@ Pod::Spec.new do |s|
     "ios/**/*.{m,mm}",
     "cpp/**/*.{hpp,cpp}",
   ]
+  s.frameworks   = "AdServices"
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
