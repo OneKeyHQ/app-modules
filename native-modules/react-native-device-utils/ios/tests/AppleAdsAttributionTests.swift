@@ -7,7 +7,9 @@ final class AppleAdsAttributionTests: XCTestCase {
         case unavailable
     }
 
+    @MainActor
     func testResolvesNonEmptyTokenOffMainThread() async throws {
+        XCTAssertTrue(Thread.isMainThread)
         let promise = ReactNativeDeviceUtils.requestAppleAdsAttributionToken {
             XCTAssertFalse(Thread.isMainThread)
             return "test-token"
