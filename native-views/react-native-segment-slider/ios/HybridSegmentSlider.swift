@@ -61,6 +61,11 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
   private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
+  // Lighter per-step tick for `hapticStep`. The bucket is the step index the
+  // value last ticked in; a mark tick in the same commit replaces the step tick.
+  private lazy var stepHaptic = UISelectionFeedbackGenerator()
+  private var lastHapticBucket = Double.nan
+  private var markTickedThisCommit = false
 
   // MARK: - Props (required props are non-optional in the generated spec)
   // Guards the apply-once semantics of `defaultValue`: only the first prop
@@ -88,6 +93,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.
   var snapTapToSegment: Bool = false
+  // Gates the per-step tick only; no visual change.
+  var hapticStep: Double = 0
 
   var fillColor: String = "" {
     didSet { cFill = parse(fillColor); fillLayer.backgroundColor = cFill; scheduleLayout() }
@@ -356,6 +363,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       setHalo(visible: true, index: best)
       haptic.impactOccurred(intensity: 0.6)
       haptic.prepare()
+      markTickedThisCommit = true
     }
   }
 
@@ -388,6 +396,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     lastTouchX = x
     touchStartTime = CACurrentMediaTime()
     haptic.prepare()
+    lastHapticBucket = hapticBucket(currentValue)
+    if hapticStep > 0 { stepHaptic.prepare() }
     onSlideStart?()
     animateThumbScale(activeThumbScale)
     setBubbleVisible(true)
@@ -457,11 +467,31 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     let clamped = Swift.max(min, Swift.min(max, raw))
     let rounded = clamped.rounded()
     currentValue = rounded
+    markTickedThisCommit = false
     applyVisual(rounded)
+    tickStepIfNeeded(rounded)
     if rounded != lastEmitted {
       lastEmitted = rounded
       onChange?(rounded)
     }
+  }
+
+  /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.
+  private func hapticBucket(_ v: Double) -> Double {
+    guard hapticStep > 0 else { return .nan }
+    return ((v - min) / hapticStep).rounded(.down)
+  }
+
+  /// One light tick when a drag moves the value into a new step bucket. Skipped
+  /// when the mark tick already fired for this value (the mark tick wins).
+  private func tickStepIfNeeded(_ v: Double) {
+    guard isDragging, hapticStep > 0 else { return }
+    let bucket = hapticBucket(v)
+    guard bucket != lastHapticBucket else { return }
+    lastHapticBucket = bucket
+    guard !markTickedThisCommit else { return }
+    stepHaptic.selectionChanged()
+    stepHaptic.prepare()
   }
 
   // MARK: - Imperative methods

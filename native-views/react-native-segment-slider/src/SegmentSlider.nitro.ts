@@ -9,8 +9,7 @@ import type {
  * N+1 segment marks, the draggable thumb and the value bubble are all drawn on
  * the native UI thread (CALayer on iOS, Canvas onDraw on Android) and the pan
  * gesture is handled natively — there is NO JS round-trip per frame during a
- * drag. This mirrors the web variant
- * (`packages/components/src/composite/SegmentSlider/index.tsx`) which avoids
+ * drag. This mirrors the web variant (`./SegmentSlider.web.tsx`) which avoids
  * React state per frame by mutating the DOM imperatively.
  *
  * Geometry contract (points):
@@ -56,6 +55,12 @@ export interface SegmentSliderProps extends HybridViewProps {
    * callers keep the free-tap behavior.
    */
   snapTapToSegment: boolean;
+  /**
+   * Light haptic tick each time a drag moves the value into a new
+   * `hapticStep`-sized bucket from `min`. Mark ticks stay stronger and win when
+   * both apply. 0 = mark-only ticks.
+   */
+  hapticStep: number;
 
   // --- Resolved theme colors (hex `#rgb`/`#rrggbb`/`#rrggbbaa` or rgba()) ---
   /** Active fill bar color (Tamagui `bgPrimary`). */

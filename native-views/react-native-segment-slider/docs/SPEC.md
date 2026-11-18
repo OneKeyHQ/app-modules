@@ -2,15 +2,49 @@
 
 ## Scope and ownership
 
-SegmentSlider renders a track, fill, marks, thumb and optional value bubble on
-iOS and Android. The native view owns its current value and handles interaction
-on the UI thread. The React wrapper forwards props and callbacks through Nitro;
-it does not round-trip through JavaScript for each drag frame. Trading amounts,
-account state and order submission belong to the caller.
+SegmentSlider is the only slider implementation for OneKey apps. It renders a
+track, fill, marks, thumb and optional value bubble on iOS, Android and Web
+(desktop, web and browser extension). On iOS and Android the native view owns
+its current value and handles interaction on the UI thread; the React wrapper
+forwards props and callbacks through Nitro and does not round-trip through
+JavaScript for each drag frame. On Web a DOM implementation mutates styles
+imperatively during a drag instead of re-rendering React per frame. Trading
+amounts, account state, order submission and theme resolution belong to the
+caller.
 
 ## Public API and defaults
 
-`src/SegmentSlider.nitro.ts` defines the required props and methods.
+The package exports one component, `SegmentSlider`, with the same props on every
+platform (`src/types.ts`). It is controlled: `value` is the current value and
+`onChange` reports integer-rounded interaction values. While the user is
+dragging, an incoming `value` is ignored so the thumb follows the finger; after
+the interaction ends, a `value` different from the last reported value moves
+the thumb without emitting `onChange`.
+
+Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
+`sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
+(false), `snapTapToSegment` (false), `hapticStep` (0), the nine color props
+below, `onSlideStart` and `onSlideComplete`. `alignSegmentMarksToIntegerValues`
+(false) is accepted everywhere and only changes mark placement on Web.
+
+Colors are resolved CSS color strings (`#rgb`, `#rrggbb`, `#rrggbbaa` or
+`rgba()`); the package never reads an application theme. Each color prop is
+optional and falls back to the package's neutral light palette:
+`fillColor` (filled track), `trackColor` (unfilled track), `thumbColor` and
+`thumbBorderColor`, `markActiveColor` (fill and border of marks the value has
+reached), `markInactiveColor` and `markBorderColor` (other marks),
+`bubbleColor` and `bubbleTextColor`.
+
+`hapticStep` requests a light haptic tick each time a drag moves the value into
+a new `hapticStep`-sized bucket from `min` (for a 0..100 range, `1` ticks on
+every 1%). Entering a segment mark keeps its own, stronger tick; at most one
+tick fires per value change, and the mark tick wins. `0` keeps the mark-only
+tick. Haptics only fire during a drag, never from a `value` update. Web has no
+haptics.
+
+`src/SegmentSlider.nitro.ts` defines the native view's required props and
+methods. The component above is the only public entry point; the Nitro view and
+its `setValue` method are internal.
 
 - `defaultValue` seeds the value once. Later prop commits do not reset it.
 - `min` / `max` define the range (native defaults 0 / 100); callers provide a
@@ -24,7 +58,9 @@ account state and order submission belong to the caller.
   (native default true). It does not change the value or callback behavior.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
-  (default false). It has no effect without marks.
+  (default false). It has no effect without marks. On Web a press on a mark
+  always lands exactly on that mark.
+- `hapticStep` adds the per-step tick described above (native default 0).
 - Color props supply resolved theme colors. Invalid colors fall back according
   to the platform color parser; the view does not resolve application themes.
 - `onChange` reports changed, integer-rounded interaction values.
@@ -49,13 +85,21 @@ track for a 20-point bubble and its 8-point gap.
 
 ## Platform behavior
 
-| Behavior | iOS | Android |
-| --- | --- | --- |
-| Rendering | CALayer / CATextLayer | Canvas / Paint |
-| Bubble text | Rounded value plus `%` | Rounded value plus `%` |
-| Endpoint inset | 12 points; contains the 18.4-point active thumb and 18-point halo | 12 dp; contains the 18.4-dp active thumb and 18-dp halo |
-| Bubble horizontal position | Centered on thumb, clamped inside view width | Background and text move together, clamped inside view width |
-| Web | Not implemented by this package | App supplies its own DOM slider |
+| Behavior | iOS | Android | Web |
+| --- | --- | --- | --- |
+| Rendering | CALayer / CATextLayer | Canvas / Paint | DOM elements, styles mutated during drag |
+| Bubble text | Rounded value plus `%` | Rounded value plus `%` | Rounded value plus `%` |
+| Endpoint inset | 12 points; contains the 18.4-point active thumb and 18-point halo | 12 dp; contains the 18.4-dp active thumb and 18-dp halo | 8 px (half the 16-px thumb) |
+| Bubble horizontal position | Centered on thumb, clamped inside view width | Background and text move together, clamped inside view width | Centered on thumb, not clamped |
+| Thumb stacking | Drawn above marks | Drawn above marks | Drawn above marks; marks stay clickable under it |
+| Mark tick | `UIImpactFeedbackGenerator(.light)`, intensity 0.6 | `CLOCK_TICK` | None |
+| Step tick (`hapticStep`) | `UISelectionFeedbackGenerator` | `TEXT_HANDLE_MOVE` (API 27+), else `CLOCK_TICK` | None |
+| Keyboard | None | None | Arrow keys move one segment (1 unit without marks), Home / End jump to the ends |
+| Mark hover | Halo while the thumb is on a mark | Halo while the thumb is on a mark | Halo while the pointer hovers a mark |
+
+Accepted Web divergences: the endpoint inset and bubble clamping differ because
+desktop pointers do not need the enlarged touch thumb; there is no haptic
+hardware to drive.
 
 On both platforms, when the view is at least as wide as the measured bubble, the entire
 bubble must stay within the view's horizontal bounds at both endpoints and
@@ -70,6 +114,18 @@ space above it. A clipping ancestor must include that space; setting its clippin
 rectangle to only the touch view cannot display the bubble.
 
 ## Conformance and acceptance
+
+Web: `src/SegmentSlider.web.tsx` implements rendering, pointer and keyboard
+interaction. `src/__tests__/SegmentSlider.web.test.tsx` (jsdom) covers the
+controlled value contract, keyboard stepping, integer-aligned marks, the color
+props and thumb stacking. jsdom does not lay out, so pointer-to-value mapping
+and rendered appearance need a browser check: on desktop Perps, drag through
+0%, 50% and 100%, click each mark and confirm the thumb covers the mark it sits
+on, in light and dark themes.
+
+Haptics (`hapticStep`): acceptance needs a physical iPhone and Android phone
+(simulators have no haptics). Drag slowly across 0..100 with `hapticStep = 1`
+and confirm one light tick per percent and the stronger tick on each mark.
 
 Status: iOS endpoint containment implemented for OK-65961. The Mac Catalyst
 UIKit harness passes 440/440 checks, including transformed thumb and halo
@@ -87,6 +143,8 @@ GPU screenshots confirmed complete circles and `0%` / `100%` text while held.
 This harness stubs the Nitro base and React context; it does not validate the
 complete OneKey Perps screen or the production Nitro/Fabric integration.
 
+- `src/SegmentSlider.tsx`: native controlled wrapper (value sync via `setValue`).
+- `src/types.ts`: shared props and default colors.
 - `ios/HybridSegmentSlider.swift`: value mapping, interaction, CALayer layout.
 - `ios/SegmentSliderColorParser.swift`: colors and native touch forwarding.
 - `android/src/main/java/com/margelo/nitro/segmentslider/HybridSegmentSlider.kt`:

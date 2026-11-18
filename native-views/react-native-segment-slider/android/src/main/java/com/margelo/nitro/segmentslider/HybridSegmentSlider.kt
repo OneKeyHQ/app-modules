@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -69,6 +70,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // Segment node the thumb currently sits on (-1 = none). Drives the halo +
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
+  // Per-step tick for `hapticStep`: the step index the value last ticked in. A
+  // mark tick in the same commit replaces the step tick.
+  private var lastHapticBucket = Double.NaN
+  private var markTickedThisCommit = false
   // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
   // candidate; once the finger travels past `tapMoveThresholdPx` it becomes a
   // drag and the release no longer snaps.
@@ -96,6 +101,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
           hasDragged = false
           touchStartX = event.x
           lastTouchX = event.x
+          lastHapticBucket = hapticBucket(currentValue)
           onSlideStart?.invoke()
           animateThumbScale(activeThumbScale)
           // Tap-snap mode: defer the value commit until we know this is a tap or
@@ -194,6 +200,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   // Gates tap snapping only; no visual change on its own.
   override var snapTapToSegment: Boolean = false
+    get() = field
+    set(v) { field = v }
+
+  // Gates the per-step tick only; no visual change.
+  override var hapticStep: Double = 0.0
     get() = field
     set(v) { field = v }
 
@@ -302,7 +313,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private fun commitDragValue(raw: Double) {
     val rounded = raw.coerceIn(min, max).let { Math.round(it).toDouble() }
     currentValue = rounded
+    markTickedThisCommit = false
     updateHover()
+    tickStepIfNeeded(rounded)
     view.invalidate()
     if (rounded != lastEmitted) {
       lastEmitted = rounded
@@ -332,8 +345,29 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       hoverMarkIndex = best
       if (best != -1) {
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        markTickedThisCommit = true
       }
     }
+  }
+
+  /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.
+  private fun hapticBucket(v: Double): Double =
+    if (hapticStep > 0) Math.floor((v - min) / hapticStep) else Double.NaN
+
+  /// One light tick when a drag moves the value into a new step bucket. Skipped
+  /// when the mark tick already fired for this value (the mark tick wins).
+  private fun tickStepIfNeeded(v: Double) {
+    if (!isDragging || hapticStep <= 0) return
+    val bucket = hapticBucket(v)
+    if (bucket == lastHapticBucket) return
+    lastHapticBucket = bucket
+    if (markTickedThisCommit) return
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+      HapticFeedbackConstants.TEXT_HANDLE_MOVE
+    } else {
+      HapticFeedbackConstants.CLOCK_TICK
+    }
+    view.performHapticFeedback(constant)
   }
 
   private fun animateThumbScale(target: Float) {
