@@ -204,8 +204,11 @@ and `0` and ignored listeners. The behavior below is Implemented.
 
 Runtime verified on the iPhone Duo simulator (iOS 27.1, app built with
 Xcode 27.1): `isDualScreenDevice()` returns `true` synchronously at launch via
-the model identifier, on both the outer and the inner display. Unverified: the
-hinge path (status values, spanning callbacks, detection of an unlisted model),
+the model identifier, on both the outer and the inner display. On an iPhone 19,2
+simulator (iOS 27.3 beta 2) a regular iPhone stays `false` after the
+`unknown` hinge update. Unverified: the
+hinge path for real fold states (spanning callbacks, detection of an
+unlisted model),
 behavior on hardware, and builds with an iOS 27.0 SDK.
 
 `getWindowRects()` and `getHingeBounds()` keep their existing iOS results (an
@@ -230,15 +233,20 @@ DeviceUtils HybridObjects; listener IDs are unique per process.
 2. On iOS 27.1+ in builds with the iOS 27.1 SDK (Swift 6.4), a
    `UIHingeInteraction` is attached to the key window on the main thread. If no
    key window exists yet, it waits for `UIWindow.didBecomeKeyNotification`. A
-   non-nil hinge marks the device as dual-screen. A nil hinge clears spanning
+   hinge whose status is `closed`, `partiallyOpen` or `fullyOpen` marks the
+   device as dual-screen. A hinge with `unknown` status is not evidence:
+   iOS 27.3 beta 2 reports one (status `unknown`, angle 0) on regular iPhones
+   once the key window changes. A nil or `unknown` hinge clears spanning
    without clearing the detected device identity.
 3. A positive result stores the current model identifier as a string in
-   `UserDefaults` key `1k_is_dual_screen_device`. Later launches accept the
-   cached positive only when that identifier equals the current device model.
-   A legacy Boolean or a different model identifier is ignored, so restoring
-   preferences onto a regular iPhone cannot carry over foldable detection.
-   Known foldable models rewrite legacy/mismatched entries immediately; an
-   unlisted model must be confirmed by its hinge before writing a new entry.
+   `UserDefaults` key `1k_dual_screen_device_model_v2`. Later launches accept
+   the cached positive only when that identifier equals the current device
+   model. A different model identifier is ignored, so restoring preferences
+   onto a regular iPhone cannot carry over foldable detection. Known foldable
+   models rewrite mismatched entries immediately; an unlisted model must be
+   confirmed by its hinge before writing a new entry. The previous key
+   `1k_is_dual_screen_device` is never read: it accepted `unknown` hinges, so
+   its entries may mark regular iPhones as foldable.
 
 Builds without the iOS 27.1 SDK compile only steps 1 and 3. An iOS 27.0 SDK
 toolchain that also reports Swift 6.4 is not supported by this guard.
