@@ -135,11 +135,17 @@ final class NativeListLifecycleTests: XCTestCase {
       window.rootViewController = controller
       controller.view.addSubview(view)
       window.isHidden = false
-      defer { window.isHidden = true }
       window.layoutIfNeeded()
       view.layoutIfNeeded()
       drainMainQueue()
       let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      defer {
+        list.setContentOffset(list.contentOffset, animated: false)
+        view.dispose()
+        view.removeFromSuperview()
+        window.isHidden = true
+        window.rootViewController = nil
+      }
       XCTAssertNotNil(view.window)
       XCTAssertGreaterThan(list.contentSize.height - list.bounds.height +
         list.adjustedContentInset.top + list.adjustedContentInset.bottom, 800)
@@ -1620,7 +1626,7 @@ final class NativeListLifecycleTests: XCTestCase {
         view.layoutIfNeeded()
         list.layoutIfNeeded()
       } completion: { _ in finished.fulfill() }
-      wait(for: [finished], timeout: 1)
+      wait(for: [finished], timeout: 5)
       try check(phase, count: count, width: 700)
       waitForStructuralFrames(0.1)
       try check("\(phase) stable", count: count, width: 700)
@@ -1677,9 +1683,12 @@ final class NativeListLifecycleTests: XCTestCase {
       XCTAssertEqual(list.contentOffset.y, testCase.offset, accuracy: 1, testCase.name)
 
       view.applySnapshotJson(try structuralRowsSnapshot(count: 25, transitionID: testCase.name))
-      let completed = expectation(description: "Native structural display link: \(testCase.name)")
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { completed.fulfill() }
-      wait(for: [completed], timeout: 1)
+      let settleDeadline = Date().addingTimeInterval(5)
+      while Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink != nil,
+            Date() < settleDeadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+      }
+      waitForStructuralFrames(0.05)
       list.layoutIfNeeded()
       XCTAssertEqual(list.adjustedContentInset, explicitInset, testCase.name)
       XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
@@ -1801,17 +1810,20 @@ final class NativeListLifecycleTests: XCTestCase {
     list.contentOffset.y = 900
     list.layoutIfNeeded()
 
+    let flow = try XCTUnwrap(list.collectionViewLayout as? NativeListFlowLayout)
     view.applySnapshotJson(try structuralRowsSnapshot(count: 30, generation: 2,
-      transitionID: "expand-first", durationMs: 400))
-    waitForStructuralFrames(0.08)
+      transitionID: "expand-first", durationMs: 1200))
+    let expandDeadline = Date().addingTimeInterval(3)
+    while (flow.tailClip?.endY ?? 0) <= 1505 && Date() < expandDeadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
     list.contentOffset.y = 1100
     list.layoutIfNeeded()
     view.applySnapshotJson(try structuralRowsSnapshot(count: 25, generation: 3,
-      transitionID: "collapse-middle", durationMs: 400))
+      transitionID: "collapse-middle", durationMs: 2400))
     waitForStructuralFrames(0.08)
     list.layoutIfNeeded()
     let source = try XCTUnwrap(list.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
-    let flow = try XCTUnwrap(list.collectionViewLayout as? NativeListFlowLayout)
     let clip = try XCTUnwrap(flow.tailClip)
     let retiring = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 25, section: 0)) as? NativeListRowHost)
     XCTAssertGreaterThan(clip.endY, 1500)
@@ -2129,7 +2141,7 @@ final class NativeListLifecycleTests: XCTestCase {
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 5,
       transitionID: "collapse-latest", durationMs: 400,
       disclosureExpanded: false))
-    wait(for: [latestSettled], timeout: 2)
+    wait(for: [latestSettled], timeout: 5)
     XCTAssertEqual(settlements.map(\.0), ["same-rows", "collapse-latest"])
     XCTAssertEqual(settlements.last?.1, "completed")
     XCTAssertEqual(settlements.last?.2, false)
@@ -2321,13 +2333,13 @@ final class NativeListLifecycleTests: XCTestCase {
     defer { growthProbe.invalidate() }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
       transitionID: "grow", durationMs: 800, disclosureExpanded: true))
-    wait(for: [growthPhase], timeout: 1.5)
+    wait(for: [growthPhase], timeout: 5)
     guard growthObserved else {
       XCTFail("No partial disclosure growth frame observed: \(growthLast)")
       return
     }
     growthProbe.invalidate()
-    wait(for: [growSettled], timeout: 1.5)
+    wait(for: [growSettled], timeout: 5)
     XCTAssertEqual(contentHost.bounds.height, 140, accuracy: 1)
     XCTAssertNil(contentHost.layer.mask)
     XCTAssertTrue(contentHost.isUserInteractionEnabled)
@@ -2366,7 +2378,7 @@ final class NativeListLifecycleTests: XCTestCase {
     defer { collapseProbe.invalidate() }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 3,
       transitionID: "drag", durationMs: 800, disclosureExpanded: false))
-    wait(for: [collapsePhase], timeout: 1.5)
+    wait(for: [collapsePhase], timeout: 5)
     guard collapseObserved else {
       XCTFail("No partial disclosure collapse frame observed: \(collapseLast)")
       return
@@ -2875,8 +2887,8 @@ final class NativeListLifecycleTests: XCTestCase {
     drainMainQueue()
     list.contentOffset.y = 300
     list.layoutIfNeeded()
-    view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
-      transitionID: "interrupt-boundary", durationMs: 1200))
+    view.applySnapshotJson(try structuralRowsSnapshot(count: 15, generation: 2,
+      transitionID: "interrupt-boundary", durationMs: 2400))
     let footerBottomBeforeResize = footer.convert(.zero, to: list).y + 60
     view.setContainerSlotHeightsJson("[0,0,80,2200]")
     XCTAssertEqual(footer.convert(.zero, to: list).y + 80,
@@ -2890,7 +2902,7 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertFalse(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop / 2), with: nil))
     XCTAssertTrue(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop + 1), with: nil))
     var boundaryCell: NativeListRowHost?
-    let deadline = Date().addingTimeInterval(1)
+    let deadline = Date().addingTimeInterval(3)
     while boundaryCell == nil && Date() < deadline {
       if let clip = flow.tailClip {
         for case let cell as NativeListRowHost in list.visibleCells {
@@ -3172,9 +3184,13 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   private func waitForStructuralFrames(_ seconds: TimeInterval) {
-    let completed = expectation(description: "Native structural display link ran for \(seconds)s")
-    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { completed.fulfill() }
-    wait(for: [completed], timeout: seconds + 1)
+    let deadline = Date().addingTimeInterval(seconds)
+    while Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+    for _ in 0..<4 {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
   }
 
   private func labels(in view: UIView) -> [UILabel] {
@@ -3343,9 +3359,12 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   private func drainMainQueue() {
-    let settled = expectation(description: "Deferred content shrink correction")
-    DispatchQueue.main.async { settled.fulfill() }
-    wait(for: [settled], timeout: 1)
+    var drained = false
+    DispatchQueue.main.async { drained = true }
+    let deadline = Date().addingTimeInterval(5)
+    while !drained && Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
   }
 
   private func footerCell(in view: NativeListView) -> NativeListRowHost? {

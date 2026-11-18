@@ -5,6 +5,7 @@ module.exports = {
         componentDescriptors: [
           'RNCNativeOverlayComponentDescriptor',
           'RNCNativeOverlayPageHostComponentDescriptor',
+          'RNCNativeOverlayToasterComponentDescriptor',
         ],
         cmakeListsPath: '../android/src/main/jni/CMakeLists.txt',
         packageImportPath:

@@ -79,8 +79,9 @@ final class OneKeyIconTests: XCTestCase {
     let mode = entry["recolorMode"] as? String ?? "raster"
     let colorKey = mode == "raster" ? color : mode == "multiple" ? "1.0" : ""
     let key = "\(name)|\(digest)|37|29|\(scale)|\(mode)|\(colorKey)"
-    let disk = SDImageCache(namespace: "onekey-named-svg-raster-v1")
+    let disk = OneKeyNamedSVG.shared.rasterDiskCacheForTesting
     let original = try XCTUnwrap(resolve(name, color: color, width: 37, height: 29, scale: scale))
+    OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: false)
     eventually("Worker output is persisted as a PNG") { disk.diskImageData(forKey: key) != nil }
     let persisted = try XCTUnwrap(disk.imageFromDiskCache(forKey: key))
     XCTAssertEqual(persisted.cgImage?.width, 37)
