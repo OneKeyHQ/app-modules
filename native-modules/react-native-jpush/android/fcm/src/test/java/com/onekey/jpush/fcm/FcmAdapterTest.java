@@ -624,6 +624,60 @@ public class FcmAdapterTest {
     }
 
     @Test
+    public void rejectedReplacementCannotChangeTheVisibleNotificationTap() {
+        installHostLauncher();
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Blocked", NotificationManager.IMPORTANCE_NONE
+        ));
+        NotificationManager manager = spy(notifications);
+        int notificationId = 7331;
+        doAnswer(call -> {
+            Notification candidate = call.getArgument(1);
+            return "JPush_3_7".equals(candidate.getChannelId()) ? null : call.callRealMethod();
+        }).when(manager).notify(eq(notificationId), any(Notification.class));
+        useNotificationManager(manager);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7401,
+            "{\"notification_id\":7331,\"n_title\":\"Visible\",\"n_priority\":2,\"n_extras\":{\"route\":\"original\"}}");
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7402,
+            "{\"notification_id\":7331,\"n_title\":\"Blocked\",\"n_extras\":{\"route\":\"blocked\"}}");
+
+        Notification visible = Shadows.shadowOf(notifications).getNotification(notificationId);
+        assertEquals("Visible", visible.extras.getCharSequence(Notification.EXTRA_TITLE));
+        Robolectric.buildActivity(JNotifyActivity.class, Shadows.shadowOf(visible.contentIntent).getSavedIntent()).create();
+        assertEquals(1, opened.size());
+        assertEquals("7401", opened.get(0).msgId);
+        assertEquals("{\"route\":\"original\"}", opened.get(0).notificationExtras);
+
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7403,
+            "{\"notification_id\":7331,\"n_title\":\"Replacement\",\"n_priority\":2}");
+        Notification replacement = Shadows.shadowOf(notifications).getNotification(notificationId);
+        assertEquals("Replacement", replacement.extras.getCharSequence(Notification.EXTRA_TITLE));
+        Robolectric.buildActivity(JNotifyActivity.class,
+            Shadows.shadowOf(replacement.contentIntent).getSavedIntent()).create();
+        assertEquals(2, opened.size());
+        assertEquals("7403", opened.get(1).msgId);
+    }
+
+    @Test
+    public void nullChannelReusesTheBlockedDefaultForTcpAndFcm() {
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Blocked", NotificationManager.IMPORTANCE_NONE
+        ));
+        ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7332,
+            "{\"n_title\":\"TCP\",\"n_channel_id\":null}");
+        service.onMessageReceived(new RemoteMessage(metadata(
+            "{\"msg_id\":\"7333\",\"n_title\":\"FCM\",\"n_channel_id\":null}"
+        )));
+        int fcmId = JThirdPlatFormInterface.getNofiticationID("7333", 0);
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7332).getChannelId());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(fcmId).getChannelId());
+        assertNull(notifications.getNotificationChannel("null"));
+        assertEquals(NotificationManager.IMPORTANCE_NONE, notifications.getNotificationChannel("JPush_3_7").getImportance());
+    }
+
+    @Test
     public void upgradesReuseSourceChannelsUntilTheMatchingBinaryChannelExists() {
         notifications.createNotificationChannel(new NotificationChannel(
             "jpush_default_channel", "Source blocked", NotificationManager.IMPORTANCE_NONE
@@ -738,13 +792,17 @@ public class FcmAdapterTest {
     @Test
     public void framedMultilineTcpPreservesContentAndTheExplicitChannel() {
         ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7323,
-            "package\r\nappKey\r\n{\r\n  \"m_content\": {\r\n    \"n_title\":\"Title\",\r\n"
-                + "    \"n_content\":\"Body\",\r\n    \"n_channel_id\":\"orders\"\r\n  }\r\n}\r\n");
+            "package\r\nappKey\r\n{\r\n  \"m_content\": {\r\n    \"n_title\": \"Title\",\r\n"
+                + "    \"n_content\": \"Body\",\r\n    \"n_channel_id\": \"orders\",\r\n"
+                + "    \"n_extras\": { \"message\": \"business payload\" }\r\n  }\r\n}\r\n");
 
         Notification posted = Shadows.shadowOf(notifications).getNotification(7323);
         assertEquals("orders", posted.getChannelId());
         assertEquals("Title", posted.extras.getCharSequence(Notification.EXTRA_TITLE));
         assertEquals("Body", posted.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertEquals(1, arrived.size());
+        assertEquals("{\"message\":\"business payload\"}", arrived.get(0).notificationExtras);
+        assertTrue(custom.isEmpty());
     }
 
     @Test

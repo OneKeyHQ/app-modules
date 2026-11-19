@@ -27,7 +27,8 @@ public final class LegacyNotificationChannel {
     private LegacyNotificationChannel() {}
 
     public static void readOptions(NotificationMessage message, JSONObject payload) {
-        message.notificationChannelId = payload.optString("n_channel_id", "");
+        Object channelId = payload.opt("n_channel_id");
+        message.notificationChannelId = channelId instanceof String ? (String) channelId : "";
         message.notificationPriority = payload.optInt("n_priority", Notification.PRIORITY_DEFAULT);
         message.notificationAlertType = payload.optInt("n_alert_type", Notification.DEFAULT_ALL);
         message.notificationSound = payload.optString("n_sound", "");

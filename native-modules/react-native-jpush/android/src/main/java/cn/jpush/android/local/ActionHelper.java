@@ -9,6 +9,7 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import cn.jiguang.core.JCoreStorage;
@@ -34,6 +35,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -420,16 +422,18 @@ public class ActionHelper {
 
             Intent clickIntent = new Intent(app, JNotifyActivity.class);
             clickIntent.setAction("cn.jpush.android.intent.JNotifyActivity");
+            // The system may reject a replacement after the PendingIntent is created.
+            clickIntent.setData(Uri.fromParts("jpush-notification", UUID.randomUUID().toString(), null));
             clickIntent.putExtra("multi_notification_msg", message);
             clickIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            int flags = 0;
             if (Build.VERSION.SDK_INT >= 23) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
             Notification notification = builder.build();
             synchronized (JCoreStorage.class) {
                 if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(app)) return;
-                PendingIntent pendingIntent = PendingIntent.getActivity(app, message.notificationId, clickIntent, flags);
+                PendingIntent pendingIntent = PendingIntent.getActivity(app, notifyId, clickIntent, flags);
                 if (pendingIntent != null) notification.contentIntent = pendingIntent;
                 nm.notify(notifyId, notification);
                 if (!channelBlocked) {
@@ -446,55 +450,31 @@ public class ActionHelper {
             return;
         }
         String content = extractDownlinkContent(rawContent);
-        String msgId = String.valueOf(messageId);
-        String parsedMsgId = JCoreWireCodec.extractJsonString(content, "_j_msgid");
-        if (parsedMsgId.isEmpty()) {
-            parsedMsgId = JCoreWireCodec.extractJsonString(content, "msg_id");
-        }
-        if (!parsedMsgId.isEmpty()) {
-            msgId = parsedMsgId;
+        JSONObject envelope = parseDownlinkObject(content);
+        JSONObject body = envelope == null ? null : envelope.optJSONObject("m_content");
+        String msgId = downlinkString(envelope, body, content, "_j_msgid", "msg_id");
+        if (msgId.isEmpty()) {
+            msgId = String.valueOf(messageId);
         }
 
-        String nTitle = JCoreWireCodec.extractJsonString(content, "n_title");
-        if (nTitle.isEmpty()) {
-            nTitle = JCoreWireCodec.extractJsonString(content, "notificationTitle");
-        }
-        String nContent = JCoreWireCodec.extractJsonString(content, "n_content");
-        if (nContent.isEmpty()) {
-            nContent = JCoreWireCodec.extractJsonString(content, "notificationContent");
-        }
-        if (nContent.isEmpty()) {
-            nContent = JCoreWireCodec.extractJsonString(content, "alert");
-        }
-
-        boolean isCustom = (messageType == 2) || (nTitle.isEmpty() && nContent.isEmpty() && content.contains("\"message\""));
-        if (!isCustom && (!nTitle.isEmpty() || !nContent.isEmpty() || messageType == 0 || messageType == 1)) {
+        String title = downlinkString(envelope, body, content, "n_title", "notificationTitle");
+        String message = downlinkString(envelope, body, content, "n_content", "notificationContent", "alert");
+        boolean notificationType = messageType == 0 || messageType == 1
+            || (messageType != 2 && (!title.isEmpty() || !message.isEmpty()));
+        if (notificationType) {
             NotificationMessage notification = new NotificationMessage();
             notification.msgId = msgId;
-            notification.notificationId = JCoreWireCodec.extractJsonInt(
-                content,
-                "notification_id",
-                (int) (messageId & 0x7FFFFFFFL)
-            );
-            notification.notificationTitle = !nTitle.isEmpty()
-                ? nTitle
-                : JCoreWireCodec.extractJsonString(content, "title");
-            notification.notificationContent = !nContent.isEmpty()
-                ? nContent
-                : JCoreWireCodec.extractJsonString(content, "content");
-            notification.notificationExtras = extractJsonObjectAsString(content, "n_extras", "extras");
-            notification.notificationType = JCoreWireCodec.extractJsonInt(
-                content,
-                "notification_type",
-                JCoreWireCodec.extractJsonInt(content, "notificaion_type", 0)
-            );
-            notification.platform = JCoreWireCodec.extractJsonInt(content, "platform", 0);
-            try {
-                JSONObject payload = new JSONObject(content);
-                JSONObject nested = payload.optJSONObject("m_content");
-                LegacyNotificationChannel.readOptions(notification, nested != null ? nested : payload);
-            } catch (JSONException ignored) {
-                // Keep the default channel options for payloads received without a JSON object.
+            notification.notificationId = downlinkInt(envelope, body, content, "notification_id",
+                (int) (messageId & 0x7FFFFFFFL));
+            notification.notificationTitle = !title.isEmpty() ? title : downlinkString(envelope, body, content, "title");
+            notification.notificationContent = !message.isEmpty()
+                ? message : downlinkString(envelope, body, content, "content");
+            notification.notificationExtras = extractDownlinkExtras(envelope, body, content, "n_extras", "extras");
+            notification.notificationType = downlinkInt(envelope, body, content, "notification_type",
+                downlinkInt(envelope, body, content, "notificaion_type", 0));
+            notification.platform = downlinkInt(envelope, body, content, "platform", 0);
+            if (envelope != null) {
+                LegacyNotificationChannel.readOptions(notification, body != null ? body : envelope);
             }
             if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(context)) {
                 return;
@@ -508,18 +488,15 @@ public class ActionHelper {
 
         CustomMessage custom = new CustomMessage();
         custom.messageId = msgId;
-        custom.title = JCoreWireCodec.extractJsonString(content, "title");
-        String msgBody = JCoreWireCodec.extractJsonString(content, "message");
-        if (msgBody.isEmpty()) {
-            msgBody = JCoreWireCodec.extractJsonString(content, "content");
-        }
-        if (msgBody.isEmpty() && !content.startsWith("{")) {
+        custom.title = downlinkString(envelope, body, content, "title");
+        String msgBody = downlinkString(envelope, body, content, "message", "content");
+        if (msgBody.isEmpty() && !content.trim().startsWith("{")) {
             msgBody = content;
         }
         custom.message = msgBody;
-        custom.contentType = JCoreWireCodec.extractJsonString(content, "content_type");
-        custom.extra = extractJsonObjectAsString(content, "extras", "n_extras");
-        custom.platform = (byte) JCoreWireCodec.extractJsonInt(content, "platform", 0);
+        custom.contentType = downlinkString(envelope, body, content, "content_type");
+        custom.extra = extractDownlinkExtras(envelope, body, content, "extras", "n_extras");
+        custom.platform = (byte) downlinkInt(envelope, body, content, "platform", 0);
         if (contentGeneration == JCoreStorage.getContentGeneration()) {
             dispatchCustomMessageEvent(context, custom);
         }
@@ -545,33 +522,46 @@ public class ActionHelper {
         return lastNewline + 1 < content.length() ? content.substring(lastNewline + 1).trim() : content;
     }
 
-    private static String extractJsonObjectAsString(String json, String primaryKey, String fallbackKey) {
-        if (json == null || json.isEmpty()) {
-            return "{}";
-        }
+    private static JSONObject parseDownlinkObject(String content) {
         try {
-            JSONObject obj = new JSONObject(json);
-            JSONObject nested = obj.optJSONObject(primaryKey);
-            if (nested == null && fallbackKey != null) {
-                nested = obj.optJSONObject(fallbackKey);
+            return new JSONObject(content);
+        } catch (JSONException | RuntimeException invalidObject) {
+            return null;
+        }
+    }
+
+    private static String downlinkString(JSONObject envelope, JSONObject body, String raw, String... keys) {
+        for (String key : keys) {
+            if (envelope == null) {
+                String value = JCoreWireCodec.extractJsonString(raw, key);
+                if (!value.isEmpty()) return value;
+                continue;
             }
-            if (nested != null) {
-                return nested.toString();
-            }
-            JSONObject mContent = obj.optJSONObject("m_content");
-            if (mContent != null) {
-                nested = mContent.optJSONObject(primaryKey);
-                if (nested == null && fallbackKey != null) {
-                    nested = mContent.optJSONObject(fallbackKey);
-                }
-                if (nested != null) {
-                    return nested.toString();
-                }
-            }
-        } catch (Throwable ignored) {
+            Object nested = body == null ? null : body.opt(key);
+            if (nested instanceof String && !((String) nested).isEmpty()) return (String) nested;
+            Object value = envelope.opt(key);
+            if (value instanceof String && !((String) value).isEmpty()) return (String) value;
+        }
+        return "";
+    }
+
+    private static int downlinkInt(JSONObject envelope, JSONObject body, String raw, String key, int fallback) {
+        if (envelope == null) return JCoreWireCodec.extractJsonInt(raw, key, fallback);
+        int value = envelope.optInt(key, fallback);
+        return body == null ? value : body.optInt(key, value);
+    }
+
+    private static String extractDownlinkExtras(JSONObject envelope, JSONObject body, String json,
+        String primaryKey, String fallbackKey) {
+        if (envelope != null) {
+            JSONObject extras = envelope.optJSONObject(primaryKey);
+            if (extras == null) extras = envelope.optJSONObject(fallbackKey);
+            if (extras == null && body != null) extras = body.optJSONObject(primaryKey);
+            if (extras == null && body != null) extras = body.optJSONObject(fallbackKey);
+            return extras == null ? "{}" : extras.toString();
         }
         Map<String, String> map = JCoreWireCodec.extractJsonStringMap(json, primaryKey);
-        if (map.isEmpty() && fallbackKey != null) {
+        if (map.isEmpty()) {
             map = JCoreWireCodec.extractJsonStringMap(json, fallbackKey);
         }
         if (map.isEmpty()) {
