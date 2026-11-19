@@ -140,4 +140,25 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
     XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
 }
 
+- (void)testLoginV27AndPushControlCmd40WireFormatAlignment {
+    NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd_unit_01" appKey:kDemoTestAppKey];
+    const uint8_t *lb = loginBody.bytes;
+    XCTAssertTrue(loginBody.length > 40);
+    XCTAssertEqual(lb[0], 0x69);
+    XCTAssertEqual(lb[1], 0x00);
+    XCTAssertEqual(lb[2], 0x00);
+    XCTAssertEqual(lb[3], 0x00);
+    NSString *ascii = [[NSString alloc] initWithData:loginBody encoding:NSISOLatin1StringEncoding];
+    XCTAssertTrue([ascii containsString:@"5.2.0|6.0.0||||||"]);
+    XCTAssertTrue([ascii containsString:kDemoTestAppKey]);
+
+    XCTAssertEqual(JCOREWireCommandPushCtrl, 40);
+    NSData *stopPayload = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
+    NSData *resumePayload = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
+    XCTAssertEqual(stopPayload.length, 1u);
+    XCTAssertEqual(((const uint8_t *)stopPayload.bytes)[0], 0);
+    XCTAssertEqual(resumePayload.length, 1u);
+    XCTAssertEqual(((const uint8_t *)resumePayload.bytes)[0], 1);
+}
+
 @end

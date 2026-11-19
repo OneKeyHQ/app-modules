@@ -774,10 +774,13 @@ callbackSelector:(SEL)cbSelector
 }
 
 + (void)turnONPush {
+    BOOL wasStopped = [JCOREConfiguration shared].pushStopped;
     [JCOREConfiguration shared].pushStopped = NO;
     [[JCORETcpSession shared] startIfNeeded];
-    NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
+    if (wasStopped) {
+        NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
+        [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
+    }
 }
 
 + (void)turnOnPush {

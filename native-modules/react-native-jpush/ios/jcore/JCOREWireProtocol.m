@@ -1119,12 +1119,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 }
 
 + (NSData *)buildPushControlPayloadWithStopped:(BOOL)stopped {
-    NSDictionary *dict = @{
-        @"type": @"notif_state",
-        @"enabled": @(!stopped),
-        @"itime": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
-    };
-    return [self buildJsonCommandPayload:dict];
+    uint8_t action = stopped ? 0 : 1;
+    return [NSData dataWithBytes:&action length:1];
 }
 
 @end

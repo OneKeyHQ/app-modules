@@ -371,14 +371,61 @@ static void testWireProtocolFraming(void) {
         ASSERT_TRUE(decodedServer.count == 1 && serverBuf.length == 0, "Failed decoding server frame (alg=%u)", alg);
     }
 
-    // Verify Login payload starts with 0x69, 0x00, 0x00, 0x00 (uint8(105) + reserved) followed by MD5(password) and sdkVerInfo string
+    // Verify Login (cmd=1, ver=27) field-by-field binary layout matching libJCore.a(JCORELogin.o)
     NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd123" appKey:@"appkey123"];
     const uint8_t *lb = loginBody.bytes;
     ASSERT_TRUE(loginBody.length > 40 && lb[0] == 0x69 && lb[1] == 0x00 && lb[2] == 0x00 && lb[3] == 0x00,
                 "Login payload must start with uint8(105) + 3 zero reserved bytes (0x69000000)");
-    NSString *loginAscii = [[NSString alloc] initWithData:loginBody encoding:NSISOLatin1StringEncoding];
-    ASSERT_TRUE([loginAscii containsString:@"5.2.0|6.0.0||||||"] && [loginAscii containsString:@"appkey123"],
-                "Login payload must encode sdkVerInfo string and appKey");
+    NSUInteger loginCursor = 4;
+    auto NSString *(^readWireStr)(NSData *, NSUInteger *) = ^NSString *(NSData *d, NSUInteger *cur) {
+        ASSERT_TRUE(*cur + 2 <= d.length, "Unexpected EOF reading string length");
+        const uint8_t *p = (const uint8_t *)d.bytes + *cur;
+        uint16_t sLen = ((uint16_t)p[0] << 8) | p[1];
+        *cur += 2;
+        ASSERT_TRUE(*cur + sLen <= d.length, "Unexpected EOF reading string bytes");
+        NSString *s = [[NSString alloc] initWithBytes:(const uint8_t *)d.bytes + *cur length:sLen encoding:NSUTF8StringEncoding];
+        *cur += sLen;
+        return s ?: @"";
+    };
+    NSString *parsedPwdMd5 = readWireStr(loginBody, &loginCursor);
+    NSString *parsedSdkVerInfo = readWireStr(loginBody, &loginCursor);
+    NSString *parsedAppKey = readWireStr(loginBody, &loginCursor);
+    ASSERT_TRUE([parsedPwdMd5 isEqualToString:[JCORECrypto md5Hex:@"pwd123"]], "Login passwordMd5 mismatch: %@", parsedPwdMd5);
+    ASSERT_TRUE([parsedSdkVerInfo isEqualToString:@"5.2.0|6.0.0||||||"], "Login sdkVerInfo mismatch: %@", parsedSdkVerInfo);
+    ASSERT_TRUE([parsedAppKey isEqualToString:@"appkey123"], "Login appKey mismatch: %@", parsedAppKey);
+    ASSERT_TRUE(loginCursor + 7 <= loginBody.length, "Login fixed platform/flags truncated");
+    uint8_t parsedPlatform = lb[loginCursor++];
+    uint32_t parsedLoginFlag = ((uint32_t)lb[loginCursor] << 24) | ((uint32_t)lb[loginCursor + 1] << 16) |
+                               ((uint32_t)lb[loginCursor + 2] << 8) | lb[loginCursor + 3];
+    loginCursor += 4;
+    uint8_t parsedThirdType = lb[loginCursor++];
+    uint8_t parsedNetType = lb[loginCursor++];
+    ASSERT_TRUE(parsedPlatform == 1 && parsedLoginFlag == 1 && parsedThirdType == 0 && parsedNetType == 1,
+                "Login platform/loginFlag/thirdType/netType mismatch");
+    NSString *parsedDeviceId = readWireStr(loginBody, &loginCursor);
+    NSString *parsedLocInfo = readWireStr(loginBody, &loginCursor);
+    NSString *parsedCountry = readWireStr(loginBody, &loginCursor);
+    NSString *parsedAccountId = readWireStr(loginBody, &loginCursor);
+    ASSERT_TRUE(parsedDeviceId.length > 0 && [parsedLocInfo isEqualToString:@""] &&
+                parsedCountry.length > 0 && [parsedAccountId isEqualToString:@""],
+                "Login deviceId/locInfo/countryCode/accountId mismatch");
+    ASSERT_TRUE(loginCursor + 2 <= loginBody.length, "Login appState/isSdkInit truncated");
+    uint8_t parsedAppState = lb[loginCursor++];
+    uint8_t parsedIsSdkInit = lb[loginCursor++];
+    NSString *parsedSdkTypes = readWireStr(loginBody, &loginCursor);
+    ASSERT_TRUE(parsedAppState == 1 && parsedIsSdkInit == 1 && [parsedSdkTypes isEqualToString:@"1"],
+                "Login appState/isSdkInit/sdkTypes mismatch");
+    ASSERT_TRUE(loginCursor == loginBody.length, "Login payload must have 0 trailing bytes (cursor=%lu len=%lu)",
+                (unsigned long)loginCursor, (unsigned long)loginBody.length);
+
+    // Verify PushCtrl (cmd=40, ver=1) 1-byte payload matching libJPush.a(JPUSHStopPushOperation.o)
+    ASSERT_TRUE(JCOREWireCommandPushCtrl == 40, "JCOREWireCommandPushCtrl must be 40 (0x28)");
+    NSData *stopBody = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
+    NSData *resumeBody = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
+    ASSERT_TRUE(stopBody.length == 1 && ((const uint8_t *)stopBody.bytes)[0] == 0,
+                "Stop push payload must be 1-byte 0x00");
+    ASSERT_TRUE(resumeBody.length == 1 && ((const uint8_t *)resumeBody.bytes)[0] == 1,
+                "Resume push payload must be 1-byte 0x01");
 
     // Verify Heartbeat payload is 8 bytes
     NSData *hbBody = [JCOREWireProtocol buildHeartbeatPayloadWithPushStopped:NO];
@@ -492,8 +539,9 @@ static void testEndToEndMockServerHandshake(void) {
                                                                         bodyData:loginRespBody];
         ASSERT_TRUE(writeExactBytes(clientFd, loginRespFrame.bytes, loginRespFrame.length), "Failed writing Login response");
 
-        // 3. Process 9 client commands: DeviceToken(13), VoIP(33), Tag(28), Alias(29), Properties(38), MobileNumber(26), LiveActivity x2 (39), PushCtrl(18)
-        for (int i = 0; i < 9; i++) {
+        // 3. Process 8 client commands: DeviceToken(13), VoIP(33), Tag(28), Alias(29), Properties(38), MobileNumber(26), LiveActivity x2 (39)
+        // Cold-start turnONPush when pushStopped == NO must NOT enqueue a spurious PushCtrl(cmd=40) command.
+        for (int i = 0; i < 8; i++) {
             JCOREWireFrame *req = readSingleClientFrameOnServer(clientFd);
             ASSERT_TRUE(req != nil, "Failed reading client command #%d", i);
             ASSERT_TRUE(req.sessionId == assignedSessionId, "Expected sessionId=0x%x in client header, got 0x%x", assignedSessionId, req.sessionId);
@@ -823,8 +871,14 @@ static void testEndToEndMockServerHandshake(void) {
                 "Server received unexpected mobile number: %@", serverMobileNumber);
     ASSERT_TRUE(serverSawLiveActivityStart && serverSawLiveActivityUpdate,
                 "Server did not receive both LiveActivity start (flag=0) and update (flag=1)");
-    ASSERT_TRUE(serverSawPushCtrlResume,
-                "Server did not receive queued PushCtrl(stopped=NO) from turnONPush after login");
+    ASSERT_TRUE(!serverSawPushCtrlResume,
+                "Cold-start turnONPush when not stopped must not send redundant PushCtrl(cmd=40)");
+    NSString *suite4Logs = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([suite4Logs containsString:@"APNs device token reported code=0"] &&
+                [suite4Logs containsString:@"VoIP token reported code=0"] &&
+                ![suite4Logs containsString:serverDeviceToken] &&
+                ![suite4Logs containsString:serverVoipToken],
+                "OneKeyLog must record DeviceToken/VoIP report success without leaking raw token hex: %@", suite4Logs);
     ASSERT_TRUE([receivedMessagePayload[@"title"] isEqualToString:@"OneKey Alert"] &&
                 [receivedMessagePayload[@"_j_msgid"] unsignedLongLongValue] == expectedMsgId,
                 "PushMessage payload mismatch: %@", receivedMessagePayload);
@@ -1661,6 +1715,9 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
                                 "Failed/timeout token must retry once; successful token must deduplicate");
                 } else if (request.command == JCOREWireCommandPushCtrl) {
                     ASSERT_TRUE(connectionIndex == 1, "Stop control must use the resumed connection");
+                    ASSERT_TRUE(request.command == 40 && request.version == 1 && request.bodyData.length == 1 &&
+                                ((const uint8_t *)request.bodyData.bytes)[0] == 0,
+                                "Stop control must send cmd=40, ver=1 with 1-byte action=0 (stopPush)");
                     uint8_t byte = 0;
                     ASSERT_TRUE(recv(fd, &byte, 1, 0) == 0, "Stop control must be followed by connection close");
                     break;
@@ -1750,6 +1807,142 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
     printf("[PASS] Suite 8: Token failed-ACK/timeout retry, successful ACK deduplication, connected revocation/regrant, and stop control close verified\n");
 }
 
+static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    [OneKeyLog clearCapturedLogs];
+    config.deviceTokenHex = nil;
+    config.voipTokenHex = nil;
+    config.collectionAuthorized = YES;
+    config.pushStopped = YES;
+    [config updateRegistrationWithUid:900100255 password:@"hb-pwd-2026" registrationID:@"hb-rid-2026"];
+    config.requestTimeoutInterval = 0.25;
+    config.requestResendInterval = 0.1;
+    config.reconnectBaseInterval = 0.1;
+
+    int listenFd = socket(AF_INET, SOCK_STREAM, 0);
+    int reuse = 1;
+    setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT_TRUE(bind(listenFd, (struct sockaddr *)&addr, sizeof(addr)) == 0 && listen(listenFd, 4) == 0,
+                "Suite 9 listener failed");
+    socklen_t addrLen = sizeof(addr);
+    getsockname(listenFd, (struct sockaddr *)&addr, &addrLen);
+    [[JCORESisResolver shared] setCustomConnectHost:@"127.0.0.1" port:ntohs(addr.sin_port) useSSL:NO];
+
+    dispatch_semaphore_t resumeCtrlReceived = dispatch_semaphore_create(0);
+    dispatch_semaphore_t firstHeartbeatGeneralAcked = dispatch_semaphore_create(0);
+    dispatch_semaphore_t reconnectedAfterHbTimeout = dispatch_semaphore_create(0);
+    __block BOOL sawPushCtrlActionOne = NO;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Connection #1: Fast-Login -> PushCtrl(cmd=40, body={1}) -> Heartbeat #1 (reply cmd=0, ver=0) -> Heartbeat #2 (withhold ACK to trigger timeout)
+        int fd1 = accept(listenFd, NULL, NULL);
+        ASSERT_TRUE(fd1 >= 0, "Suite 9 accept #1 failed");
+        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+        setsockopt(fd1, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+        JCOREWireFrame *login1 = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(login1 != nil && login1.command == JCOREWireCommandLogin && login1.version == 27,
+                    "Suite 9 expected Fast-Login on connection #1");
+        NSData *loginAck1 = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
+                                                                    version:27
+                                                                  requestId:login1.requestId
+                                                                        uid:config.uid
+                                                                  algorithm:login1.algorithm
+                                                                 statusCode:0
+                                                                   bodyData:[JCOREWireProtocol buildLoginResponsePayloadWithSessionId:301 serverVersion:600 serverTimestamp:1]];
+        ASSERT_TRUE(writeExactBytes(fd1, loginAck1.bytes, loginAck1.length), "Suite 9 loginAck1 failed");
+
+        // Expect queued PushCtrl(cmd=40, ver=1, body={1}) from turnONPush when pushStopped was YES
+        JCOREWireFrame *pushCtrl = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(pushCtrl != nil && pushCtrl.command == JCOREWireCommandPushCtrl && pushCtrl.version == 1,
+                    "Expected PushCtrl(cmd=40, ver=1) after turnONPush from stopped state, got cmd=%u", pushCtrl.command);
+        ASSERT_TRUE(pushCtrl.bodyData.length == 1 && ((const uint8_t *)pushCtrl.bodyData.bytes)[0] == 1,
+                    "PushCtrl resume payload must be 1-byte 0x01");
+        sawPushCtrlActionOne = YES;
+        NSData *ctrlAck = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandPushCtrl
+                                                                  version:1
+                                                                requestId:pushCtrl.requestId
+                                                                      uid:config.uid
+                                                                algorithm:pushCtrl.algorithm
+                                                               statusCode:0
+                                                                 bodyData:nil];
+        ASSERT_TRUE(writeExactBytes(fd1, ctrlAck.bytes, ctrlAck.length), "Suite 9 ctrlAck failed");
+        dispatch_semaphore_signal(resumeCtrlReceived);
+
+        // Expect Heartbeat #1 (cmd=2, ver=8) and reply with general ACK (cmd=0, ver=0) like real Jiguang servers
+        JCOREWireFrame *hb1 = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(hb1 != nil && hb1.command == JCOREWireCommandHeartbeat && hb1.version == 8 && hb1.bodyData.length == 8,
+                    "Expected Heartbeat(cmd=2, ver=8)");
+        NSData *generalAck = [JCOREWireProtocol encodeServerFrameWithCommand:0
+                                                                     version:0
+                                                                   requestId:hb1.requestId
+                                                                         uid:config.uid
+                                                                   algorithm:hb1.algorithm
+                                                                  statusCode:0
+                                                                    bodyData:nil];
+        ASSERT_TRUE(writeExactBytes(fd1, generalAck.bytes, generalAck.length), "Suite 9 generalAck failed");
+        dispatch_semaphore_signal(firstHeartbeatGeneralAcked);
+
+        // Expect Heartbeat #2 and withhold ACK so client times out and reconnects
+        JCOREWireFrame *hb2 = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(hb2 != nil && hb2.command == JCOREWireCommandHeartbeat,
+                    "Expected second Heartbeat(cmd=2, ver=8)");
+
+        int fd2 = accept(listenFd, NULL, NULL);
+        ASSERT_TRUE(fd2 >= 0, "Suite 9 accept #2 (reconnect after heartbeat timeout) failed");
+        setsockopt(fd2, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        JCOREWireFrame *login2 = readSingleClientFrameOnServer(fd2);
+        ASSERT_TRUE(login2 != nil && login2.command == JCOREWireCommandLogin && login2.uid == config.uid,
+                    "Expected Fast-Login on connection #2 after heartbeat timeout");
+        NSData *loginAck2 = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
+                                                                    version:27
+                                                                  requestId:login2.requestId
+                                                                        uid:config.uid
+                                                                  algorithm:login2.algorithm
+                                                                 statusCode:0
+                                                                   bodyData:[JCOREWireProtocol buildLoginResponsePayloadWithSessionId:302 serverVersion:600 serverTimestamp:2]];
+        ASSERT_TRUE(writeExactBytes(fd2, loginAck2.bytes, loginAck2.length), "Suite 9 loginAck2 failed");
+        dispatch_semaphore_signal(reconnectedAfterHbTimeout);
+
+        close(fd1);
+        close(fd2);
+        close(listenFd);
+    });
+
+    [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:NO];
+    [JPUSHService turnONPush];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(resumeCtrlReceived, DISPATCH_TIME_NOW) == 0; }, 3, @"Did not receive PushCtrl(cmd=40, body={1}) on resume from stopped");
+    ASSERT_TRUE(sawPushCtrlActionOne, "Expected 1-byte 0x01 PushCtrl resume payload");
+
+    // Trigger foreground heartbeat #1 (server replies with cmd=0, ver=0 general ACK)
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"UIApplicationWillEnterForegroundNotification" object:nil];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(firstHeartbeatGeneralAcked, DISPATCH_TIME_NOW) == 0; }, 3, @"Heartbeat #1 was not received");
+    NSDate *settle = [NSDate dateWithTimeIntervalSinceNow:0.35];
+    while ([settle timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    NSString *logsAfterHb1 = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE(![logsAfterHb1 containsString:@"TCP heartbeat timed out"],
+                "General ACK (cmd=0, ver=0) must satisfy heartbeat probe without timeout, got logs: %@", logsAfterHb1);
+
+    // Trigger foreground heartbeat #2 (server withholds ACK -> timeout -> OneKeyLog WARN + auto-reconnect)
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"UIApplicationWillEnterForegroundNotification" object:nil];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(reconnectedAfterHbTimeout, DISPATCH_TIME_NOW) == 0; }, 3, @"Session did not reconnect after heartbeat ACK timeout");
+    NSString *logsAfterHb2 = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([logsAfterHb2 containsString:@"TCP heartbeat timed out, reconnecting"],
+                "Expected OneKeyLog WARN on heartbeat timeout, got: %@", logsAfterHb2);
+
+    config.requestTimeoutInterval = 20;
+    config.requestResendInterval = 10;
+    config.reconnectBaseInterval = 3.0;
+    [[JCORETcpSession shared] disconnect];
+    [[JCORESisResolver shared] clearCustomConnectEndpoint];
+    printf("[PASS] Suite 9: PushCtrl(cmd=40, body={1}) resume, Heartbeat cmd=0/ver=0 general ACK, and Heartbeat timeout auto-reconnect verified\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -1760,6 +1953,7 @@ int main(int argc, const char * argv[]) {
         testRctJPushModuleMultiRuntimeAndBridgelessEvents();
         testPolicyAndPendingContentCleanup();
         testTokenAcknowledgementAndConnectedPolicy();
+        testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume();
     }
     return 0;
 }

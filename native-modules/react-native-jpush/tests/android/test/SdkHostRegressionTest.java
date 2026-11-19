@@ -2609,43 +2609,126 @@ public final class SdkHostRegressionTest {
             && !JCoreWireCodec.parsePushControlPayload(new byte[] { 1 }),
             "parsePushControlPayload must treat action=0 as stopped");
 
+        // 1. Verify first-call JLogger reflection resolution does not drop the initial log entry
+        java.lang.reflect.Field resolvedField = JLogger.class.getDeclaredField("sOneKeyLogResolved");
+        resolvedField.setAccessible(true);
+        resolvedField.setBoolean(null, false);
+        for (String fieldName : new String[] { "sDebugMethod", "sInfoMethod", "sWarnMethod", "sErrorMethod" }) {
+            java.lang.reflect.Field mField = JLogger.class.getDeclaredField(fieldName);
+            mField.setAccessible(true);
+            mField.set(null, null);
+        }
+        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
+        JLogger.setLoggerEnable(true);
+        JLogger.i("first_log_after_cold_start_01");
+        check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("first_log_after_cold_start_01"),
+            "Very first JLogger call before reflection cache initialization must not be dropped");
+        check(JLogger.getRecentLogs().isEmpty() && JCoreStorage.readNewLogs(null).isEmpty(),
+            "JLogger and JCoreStorage must not retain logs in memory buffers");
+
         Context context = new Context();
         JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
         JCoreStorage.setPushStopped(context, false);
         engine.stop(context);
-        engine.setAutoReconnectEnabled(false);
-        engine.setDefaultRequestTimeoutMs(1000L);
+        engine.setAutoReconnectEnabled(true);
+        engine.setReconnectBaseDelayMs(120L);
+        engine.setHeartbeatIntervalMs(250L);
+        engine.setDefaultRequestTimeoutMs(250L);
         JCoreStorage.setCollectionAuth(context, true);
         JCoreStorage.setAppKey(context, "hb-ack-and-resume-noop");
         JCoreStorage.updateRegistration(context, 870001L, "hb-password", "hb-rid", "hb-device");
         JCoreStorage.setServerRegistered(context, true);
 
-        CountDownLatch finish = new CountDownLatch(1);
+        CountDownLatch thirdTokenAcked = new CountDownLatch(1);
+        CountDownLatch stopCtrlReceived = new CountDownLatch(1);
+        CountDownLatch resumeCtrlReceived = new CountDownLatch(1);
+        CountDownLatch reconnectedAfterHbTimeout = new CountDownLatch(1);
         AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
         try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
-            listener.setSoTimeout(3000);
+            listener.setSoTimeout(5000);
             Thread server = new Thread(() -> {
-                try (Socket socket = listener.accept()) {
-                    socket.setSoTimeout(3000);
-                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 870001L);
-                    check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login");
-                    writeLoopbackAck(socket, login, 870001L, 8701, 0, JCoreWireCodec.buildLoginResponsePayload(8701, 520, "", 1700000000));
-                    JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 870001L);
-                    check(initialHb != null && initialHb.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
-                    // Reply with Jiguang server cmd=0, ver=0 20-byte heartbeat ACK frame
-                    socket.getOutputStream().write(JCoreWireCodec.encodeServerFrame(
-                        0, 0, initialHb.algorithm, 0, initialHb.requestId, 870001L, 8701L, new byte[0]
-                    ));
-                    socket.getOutputStream().flush();
+                try {
+                    // Connection #1: Cold start (Fast-Login -> Heartbeat cmd=0,ver=0 -> CMD_THIRD_TOKEN cmd=27 -> Heartbeat cmd=19 -> StopPush cmd=40,body={0})
+                    try (Socket socket1 = listener.accept()) {
+                        socket1.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame login1 = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
+                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #1");
+                        writeLoopbackAck(socket1, login1, 870001L, 8701, 0, JCoreWireCodec.buildLoginResponsePayload(8701, 520, "", 1700000000));
 
-                    JCoreWireCodec.DecodedFrame secondHb = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 870001L);
-                    check(secondHb != null && secondHb.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected second heartbeat");
-                    // Reply with Jiguang server cmd=19 general ACK frame
-                    socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(
-                        19, 0, secondHb.requestId, 8701, 870001L, 0, new byte[0]
-                    ));
-                    socket.getOutputStream().flush();
-                    check(finish.await(3000L, TimeUnit.MILLISECONDS), "Fixture finish missing");
+                        JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
+                        check(initialHb != null && initialHb.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
+                        // Reply with Jiguang server cmd=0, ver=0 20-byte heartbeat ACK frame
+                        socket1.getOutputStream().write(JCoreWireCodec.encodeServerFrame(
+                            0, 0, initialHb.algorithm, 0, initialHb.requestId, 870001L, 8701L, new byte[0]
+                        ));
+                        socket1.getOutputStream().flush();
+
+                        // Expect CMD_THIRD_TOKEN (cmd=27, ver=2) WITHOUT any preceding CMD_PUSH_CTRL (cmd=40)
+                        while (!socket1.isClosed()) {
+                            JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
+                            check(frame != null, "Unexpected EOF on connection #1");
+                            if (frame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                                // Reply with cmd=19 general ACK
+                                socket1.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(
+                                    19, 0, frame.requestId, 8701, 870001L, 0, new byte[0]
+                                ));
+                                socket1.getOutputStream().flush();
+                            } else if (frame.command == JCoreWireCodec.CMD_THIRD_TOKEN) {
+                                JCoreWireCodec.DeviceTokenPayload tokenPayload = JCoreWireCodec.parseDeviceTokenPayload(frame.body);
+                                check(tokenPayload != null && "fcm_cold_start_token_01".equals(tokenPayload.token)
+                                    && tokenPayload.platform == 8 && !tokenPayload.unbind,
+                                    "Expected FCM third-party token upload on cold start");
+                                writeLoopbackAck(socket1, frame, 870001L, 8701, 0, new byte[0]);
+                                thirdTokenAcked.countDown();
+                            } else if (frame.command == JCoreWireCodec.CMD_PUSH_CTRL) {
+                                check(thirdTokenAcked.getCount() == 0,
+                                    "Cold-start resumePush must not send CMD_PUSH_CTRL before stopPush is called");
+                                check(frame.body != null && frame.body.length == 1 && frame.body[0] == 0,
+                                    "stopPush must send CMD_PUSH_CTRL with 1-byte action=0");
+                                stopCtrlReceived.countDown();
+                                break;
+                            } else {
+                                check(false, "Unexpected command on connection #1: " + frame.command);
+                            }
+                        }
+                    }
+
+                    // Connection #2: Resume from stopped (Fast-Login -> Heartbeat cmd=0,ver=0 -> CMD_PUSH_CTRL cmd=40,body={1} -> withhold next Heartbeat ACK to trigger timeout reconnect)
+                    try (Socket socket2 = listener.accept()) {
+                        socket2.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame login2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
+                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #2");
+                        writeLoopbackAck(socket2, login2, 870001L, 8702, 0, JCoreWireCodec.buildLoginResponsePayload(8702, 520, "", 1700000001));
+
+                        JCoreWireCodec.DecodedFrame hb2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
+                        check(hb2 != null && hb2.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat on connection #2");
+                        socket2.getOutputStream().write(JCoreWireCodec.encodeServerFrame(
+                            0, 0, hb2.algorithm, 0, hb2.requestId, 870001L, 8702L, new byte[0]
+                        ));
+                        socket2.getOutputStream().flush();
+
+                        JCoreWireCodec.DecodedFrame resumeFrame = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
+                        check(resumeFrame != null && resumeFrame.command == JCoreWireCodec.CMD_PUSH_CTRL
+                            && resumeFrame.body != null && resumeFrame.body.length == 1 && resumeFrame.body[0] == 1,
+                            "resumePush from stopped state must send CMD_PUSH_CTRL with 1-byte action=1");
+                        writeLoopbackAck(socket2, resumeFrame, 870001L, 8702, 0, new byte[0]);
+                        resumeCtrlReceived.countDown();
+
+                        // Read periodic heartbeat and withhold ACK so client times out and reconnects
+                        JCoreWireCodec.DecodedFrame periodicHb = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
+                        check(periodicHb != null && periodicHb.command == JCoreWireCodec.CMD_HEARTBEAT,
+                            "Expected periodic heartbeat on connection #2");
+
+                        // Connection #3: Auto-reconnect after periodic heartbeat timeout
+                        try (Socket socket3 = listener.accept()) {
+                            socket3.setSoTimeout(3000);
+                            JCoreWireCodec.DecodedFrame login3 = JCoreWireCodec.readClientFrameFromStream(socket3.getInputStream(), 870001L);
+                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN,
+                                "Expected fast login on connection #3 after heartbeat timeout");
+                            writeLoopbackAck(socket3, login3, 870001L, 8703, 0, JCoreWireCodec.buildLoginResponsePayload(8703, 520, "", 1700000002));
+                            reconnectedAfterHbTimeout.countDown();
+                        }
+                    }
                 } catch (Throwable error) {
                     serverError.set(error);
                 }
@@ -2653,21 +2736,42 @@ public final class SdkHostRegressionTest {
             server.setDaemon(true);
             server.start();
             try {
+                com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
                 engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
-                // Calling resumePush when push is NOT stopped must not enqueue CMD_PUSH_CTRL
+                // Simulate OneKey cold start: two resumePush calls while push is not stopped + FCM third-party token upload
                 JPushInterface.resumePush(context);
-                check(engine.getPreLoginQueueSize() == 0, "resumePush when not stopped must not queue CMD_PUSH_CTRL");
+                JPushInterface.resumePush(context);
+                check(engine.getPreLoginQueueSize() == 0, "Cold-start resumePush when not stopped must not queue CMD_PUSH_CTRL");
+                ActionHelper.getInstance().setThirdTokenWithCallBack(context, "fcm_cold_start_token_01", (byte) 8, false);
                 long startMs = System.currentTimeMillis();
                 check(engine.awaitHandshake(1500L) && engine.isLoggedIn(), "Handshake must complete rapidly on cmd=0,ver=0 heartbeat ACK");
-                check(System.currentTimeMillis() - startMs < 800L, "Initial heartbeat ACK (cmd=0,ver=0) must not wait for 1000ms timeout");
-                JCoreWireCodec.DecodedFrame hbAck = engine.sendRequest(JCoreWireCodec.CMD_HEARTBEAT, JCoreWireCodec.VER_HEARTBEAT,
-                    JCoreWireCodec.buildHeartbeatPayload(false), 1000L);
-                check(hbAck != null && hbAck.command == 19, "Heartbeat request must accept cmd=19 general ACK response");
+                check(System.currentTimeMillis() - startMs < 700L, "Initial heartbeat ACK (cmd=0,ver=0) must not wait for request timeout");
+                check(thirdTokenAcked.await(1500L, TimeUnit.MILLISECONDS), "FCM third-party token must flush and succeed on cold start");
+                for (int i = 0; i < 30 && !com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("Third token result platform=8 code=0"); i++) {
+                    Thread.sleep(20L);
+                }
+                check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("Third token result platform=8 code=0"),
+                    "OneKeyLog must record third token upload success code=0");
+
+                // Now test stopPush -> sends CMD_PUSH_CTRL (cmd=40, body={0}) and closes connection
+                JPushInterface.stopPush(context);
+                check(stopCtrlReceived.await(1500L, TimeUnit.MILLISECONDS), "stopPush must send CMD_PUSH_CTRL action=0");
+
+                // Now test resumePush from stopped state -> reconnects and sends CMD_PUSH_CTRL (cmd=40, body={1})
+                JPushInterface.resumePush(context);
+                check(resumeCtrlReceived.await(2000L, TimeUnit.MILLISECONDS), "resumePush from stopped state must send CMD_PUSH_CTRL action=1");
+
+                // Wait for periodic heartbeat timeout on connection #2 -> OneKeyLog WARN + auto-reconnect to connection #3
+                check(reconnectedAfterHbTimeout.await(2500L, TimeUnit.MILLISECONDS),
+                    "Engine must auto-reconnect when periodic heartbeat ACK times out");
+                check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("TCP heartbeat timed out, scheduling reconnect"),
+                    "OneKeyLog must record WARN when periodic heartbeat ACK times out");
             } finally {
-                finish.countDown();
                 engine.stop(context);
                 server.join(3000L);
                 engine.setAutoReconnectEnabled(true);
+                engine.setReconnectBaseDelayMs(3000L);
+                engine.setHeartbeatIntervalMs(290000L);
                 engine.setDefaultRequestTimeoutMs(5000L);
             }
             check(serverError.get() == null && !server.isAlive(), "Heartbeat general ACK fixture failed: " + serverError.get());
