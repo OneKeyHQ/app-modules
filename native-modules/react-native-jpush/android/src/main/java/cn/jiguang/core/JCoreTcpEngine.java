@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
@@ -95,7 +97,9 @@ public final class JCoreTcpEngine {
         volatile Socket socket;
         volatile OutputStream output;
         final Object writerLock = new Object();
+        final AtomicBoolean heartbeatProbePending = new AtomicBoolean();
         boolean stopScheduled;
+        boolean requestsReady;
         Attempt(long generation, CountDownLatch latch, String configuration) {
             this.generation = generation; this.latch = latch; this.configuration = configuration;
         }
@@ -244,9 +248,10 @@ public final class JCoreTcpEngine {
                     if (!loggedIn || activeSocket != targetSocket || targetSocket == null || targetSocket.isClosed()) {
                         return;
                     }
+                    if (!owner.heartbeatProbePending.compareAndSet(false, true)) return;
                     ioExecutor.execute(() -> {
-                        if (!owns(owner, context)) return;
                         try {
+                            if (!owns(owner, context)) return;
                             long currentUid = JCoreStorage.getUid(context);
                             byte[] hbPayload = JCoreWireCodec.buildHeartbeatPayload(JCoreStorage.isPushStopped(context));
                             JCoreWireCodec.DecodedFrame ack = sendRequestOnSocket(
@@ -273,6 +278,8 @@ public final class JCoreTcpEngine {
                                 }
                             }
                         } catch (Throwable ignored) {
+                        } finally {
+                            owner.heartbeatProbePending.set(false);
                         }
                     });
                 }
@@ -675,6 +682,7 @@ public final class JCoreTcpEngine {
                 return;
             }
             drainingToken = null;
+            owner.requestsReady = false;
             synchronized (socketLock) {
                 if (activeSocket == owner.socket) {
                     if (activeSocket != null) try { activeSocket.close(); } catch (Exception ignored) {}
@@ -899,8 +907,12 @@ public final class JCoreTcpEngine {
                 defaultRequestTimeoutMs
             );
 
-            if (!owns(owner, context)) return false;
+            synchronized (this) {
+                if (!owns(owner, context) || !loggedIn) return false;
+                owner.requestsReady = true;
+            }
             startHeartbeatTimer(context, connectedSocket, owner);
+            ActionHelper.getInstance().sendPendingPushResume(context);
             flushPreLoginQueue(context, owner);
             if (owns(owner, context)) cn.jpush.android.api.JThirdPlatFormInterface.initializeFcm(context);
             return true;
@@ -968,7 +980,8 @@ public final class JCoreTcpEngine {
     private void flushPreLoginQueue(final Context context, final Attempt expectedOwner) {
         final Object token;
         synchronized (this) {
-            if (!owns(expectedOwner, context) || !loggedIn || drainingToken != null || preLoginQueue.isEmpty()) return;
+            if (!owns(expectedOwner, context) || !expectedOwner.requestsReady
+                || drainingToken != null || preLoginQueue.isEmpty()) return;
             token = new Object();
             drainingToken = token;
         }
@@ -978,7 +991,8 @@ public final class JCoreTcpEngine {
                     final QueuedRequest req;
                     synchronized (JCoreTcpEngine.this) {
                         if (drainingToken != token) return;
-                        if (!owns(expectedOwner, context) || !loggedIn || (req = preLoginQueue.poll()) == null) {
+                        if (!owns(expectedOwner, context) || !expectedOwner.requestsReady
+                            || (req = preLoginQueue.poll()) == null) {
                             drainingToken = null;
                             return;
                         }
@@ -1017,7 +1031,7 @@ public final class JCoreTcpEngine {
             terminal = terminalConfiguration.equals(configurationIdentity(context));
             rejected = queueFull || terminal || !JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context);
             if (!rejected) {
-                if (loggedIn && owns(activeAttempt, context)) req.owner = activeAttempt;
+                if (owns(activeAttempt, context) && activeAttempt.requestsReady) req.owner = activeAttempt;
                 preLoginQueue.offer(req);
             }
             owner = activeAttempt;
@@ -1128,22 +1142,27 @@ public final class JCoreTcpEngine {
         }
 
         ResponseSlot slot = pendingRequests.get(frame.requestId);
+        boolean genericHeartbeatAck = (frame.command == 0 && frame.version == 0) || frame.command == 19;
         if (slot != null && slot.owner == owner && slot.socket == socket
-            && (slot.command == frame.command || (frame.command == 0 && frame.version == 0) || frame.command == 19)
+            && (slot.command == frame.command || (genericHeartbeatAck && slot.command == JCoreWireCodec.CMD_HEARTBEAT))
             && pendingRequests.remove(frame.requestId, slot)) {
             slot.complete(frame);
             return;
         }
-        if ((frame.command == 0 && frame.version == 0) || frame.command == 19 || frame.command == JCoreWireCodec.CMD_HEARTBEAT) {
-            for (java.util.Map.Entry<Long, ResponseSlot> entry : pendingRequests.entrySet()) {
-                ResponseSlot candidate = entry.getValue();
-                if (candidate.owner == owner && candidate.socket == socket
-                    && candidate.command == JCoreWireCodec.CMD_HEARTBEAT
-                    && pendingRequests.remove(entry.getKey(), candidate)) {
-                    candidate.complete(frame);
-                    return;
-                }
+        if (frame.requestId != 0 || (!genericHeartbeatAck && frame.command != JCoreWireCodec.CMD_HEARTBEAT)) {
+            return;
+        }
+        Map.Entry<Long, ResponseSlot> heartbeat = null;
+        for (Map.Entry<Long, ResponseSlot> entry : pendingRequests.entrySet()) {
+            ResponseSlot candidate = entry.getValue();
+            if (candidate.owner != owner || candidate.socket != socket || candidate.command != JCoreWireCodec.CMD_HEARTBEAT) {
+                continue;
             }
+            if (heartbeat != null) return;
+            heartbeat = entry;
+        }
+        if (heartbeat != null && pendingRequests.remove(heartbeat.getKey(), heartbeat.getValue())) {
+            heartbeat.getValue().complete(frame);
         }
     }
 

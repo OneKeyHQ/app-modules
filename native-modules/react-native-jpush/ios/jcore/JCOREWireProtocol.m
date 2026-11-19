@@ -643,28 +643,48 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 #pragma mark - Login (cmd = 1, ver = 27)
 
 + (NSData *)buildLoginPayloadWithPassword:(NSString *)password
-                                   appKey:(NSString *)appKey {
+                                  appKey:(NSString *)appKey {
+    uint8_t appState = 1;
+#if __has_include(<UIKit/UIKit.h>)
+    __block UIApplicationState state;
+    void (^readState)(void) = ^{
+        state = UIApplication.sharedApplication.applicationState;
+    };
+    if (NSThread.isMainThread) {
+        readState();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), readState);
+    }
+    if (state == UIApplicationStateInactive) {
+        appState = 0;
+    } else if (state == UIApplicationStateBackground) {
+        appState = 2;
+    }
+#endif
+    return [self buildLoginPayloadWithPassword:password appKey:appKey appState:appState];
+}
+
++ (NSData *)buildLoginPayloadWithPassword:(NSString *)password
+                                  appKey:(NSString *)appKey
+                                appState:(uint8_t)appState {
     JCOREConfiguration *config = [JCOREConfiguration shared];
     NSString *passwordMd5 = [JCORECrypto md5Hex:password ?: @""];
     NSString *deviceId = [config resolveDeviceIDWithOutHasExisting:NULL] ?: @"";
-    NSString *countryCode = [[NSLocale currentLocale] objectForKey:NSLocaleCountryCode] ?: @"CN";
-    uint8_t appState = config.pushStopped ? 0 : 1;
 
     NSMutableData *body = [NSMutableData data];
     JCoreAppendUInt8(body, 105);                        // Fixed iOS login magic 0x69
     JCoreAppendUInt8(body, 0);                          // Reserved
     JCoreAppendUInt16(body, 0);                         // Reserved
     JCoreAppendString(body, passwordMd5);               // MD5(password)
-    JCoreAppendString(body, @"5.2.0|6.0.0||||||");      // sdkVerInfo
+    // JCore 5.2.0 (0x50200) and JPush 6.0.0 (0x60000), formatted as decimal SDK version codes.
+    JCoreAppendString(body, @"328192|393216||||||");    // sdkVerInfo
     JCoreAppendString(body, appKey ?: @"");             // appKey
     JCoreAppendUInt8(body, 1);                          // platform = 1 (iOS)
     JCoreAppendUInt32(body, 1);                         // loginFlag = 1 (JPush)
-    JCoreAppendUInt8(body, 0);                          // thirdPlatformType = 0
-    JCoreAppendUInt8(body, 1);                          // netType = 1
+    JCoreAppendUInt8(body, 0);                          // cellular generation unknown
     JCoreAppendString(body, deviceId);                  // deviceId
-    JCoreAppendString(body, @"");                       // locInfo
-    JCoreAppendString(body, countryCode);               // countryCode
-    JCoreAppendString(body, @"");                       // accountId
+    JCoreAppendUInt16(body, 0);                         // empty location data
+    JCoreAppendString(body, config.accountID);          // accountId
     JCoreAppendUInt8(body, appState);                  // appState
     JCoreAppendUInt8(body, 1);                          // isSdkInit = 1
     JCoreAppendString(body, @"1");                      // sdkTypes = "1"

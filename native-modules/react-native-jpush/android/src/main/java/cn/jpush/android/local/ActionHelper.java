@@ -15,6 +15,7 @@ import android.os.Bundle;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.core.JCoreWireCodec;
+import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.api.CmdMessage;
 import cn.jpush.android.api.CustomMessage;
 import cn.jpush.android.api.JPushInterface;
@@ -951,18 +952,8 @@ public class ActionHelper {
 
     public void setPushStatusWithCallBack(Context context, int protoType, int action) {
         boolean stopped = (action == 0);
-        byte[] wireBody = JCoreWireCodec.buildPushControlPayload(stopped);
         if (!stopped) {
-            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
-                context,
-                JCoreWireCodec.CMD_PUSH_CTRL,
-                JCoreWireCodec.VER_PUSH_CTRL,
-                JCoreStorage.nextRid(),
-                wireBody,
-                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
-                0,
-                null
-            );
+            enqueueResumeControl(context, null);
             return;
         }
         JCoreTcpEngine.getInstance().sendFrameRaw(
@@ -971,7 +962,26 @@ public class ActionHelper {
             JCoreStorage.nextRid(),
             JCoreTcpEngine.getInstance().getSessionId(),
             JCoreStorage.getUid(context),
-            wireBody
+            JCoreWireCodec.buildPushControlPayload(true)
+        );
+    }
+
+    public void sendPendingPushResume(Context context) {
+        long request = JCoreStorage.claimPendingPushResume(context);
+        if (request == 0) return;
+        JLogger.i("Push resume requested");
+        enqueueResumeControl(context, (frame, code) -> {
+            boolean acknowledged = frame != null && code == 0;
+            JCoreStorage.completePushResume(context, request, acknowledged);
+            if (!acknowledged) JLogger.w("Push resume not acknowledged code=" + code);
+        });
+    }
+
+    private void enqueueResumeControl(Context context, JCoreTcpEngine.RequestCallback callback) {
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.enqueueOrSendRequest(
+            context, JCoreWireCodec.CMD_PUSH_CTRL, JCoreWireCodec.VER_PUSH_CTRL, JCoreStorage.nextRid(),
+            JCoreWireCodec.buildPushControlPayload(false), engine.getDefaultRequestTimeoutMs(), 0, callback
         );
     }
 

@@ -33,6 +33,8 @@ public final class JCoreStorage {
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_SERVER_REGISTERED = "server_registered";
     private static final String KEY_PUSH_STOPPED = "push_stopped";
+    private static final String KEY_PENDING_RESUME_APP_KEY = "pending_push_resume_app_key";
+    private static final String UNCONFIGURED_RESUME_APP_KEY = "__jpush_unconfigured__";
     private static final String KEY_COLLECTION_AUTH = "collection_auth";
     private static final String KEY_DEBUG_MODE = "debug_mode";
     private static final String KEY_TAGS = "tags";
@@ -69,6 +71,9 @@ public final class JCoreStorage {
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
     private static volatile Context sAppContext;
     private static volatile boolean sDebugMode = false;
+    private static long resumeRequestCounter;
+    private static long inFlightResumeRequest;
+    private static long inFlightResumeGeneration;
 
     private JCoreStorage() {
     }
@@ -272,8 +277,14 @@ public final class JCoreStorage {
         return "";
     }
 
-    public static void setAppKey(Context context, String appKey) {
+    public static synchronized void setAppKey(Context context, String appKey) {
         if (!isEmpty(appKey)) {
+            String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
+            if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
+                putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
+            } else if (!pending.isEmpty() && !pending.equals(appKey)) {
+                clearPendingPushResume(context);
+            }
             putStringPref(context, KEY_APP_KEY, appKey);
         }
     }
@@ -417,7 +428,52 @@ public final class JCoreStorage {
     public static synchronized void setPushStopped(Context context, boolean stopped) {
         putBooleanPref(context, KEY_PUSH_STOPPED, stopped);
         if (stopped) {
+            clearPendingPushResume(context);
             CONTENT_GENERATION.incrementAndGet();
+        }
+    }
+
+    public static synchronized void resumePushLocally(Context context) {
+        if (isPushStopped(context)) {
+            String appKey = getAppKey(context);
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY,
+                appKey.isEmpty() ? UNCONFIGURED_RESUME_APP_KEY : appKey);
+            setPushStopped(context, false);
+        }
+    }
+
+    public static synchronized long claimPendingPushResume(Context context) {
+        String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
+        long generation = getContentGeneration();
+        if (pending.isEmpty() || !isCollectionAuth(context) || isPushStopped(context)
+            || (inFlightResumeRequest != 0 && inFlightResumeGeneration == generation)) {
+            return 0;
+        }
+        String appKey = getAppKey(context);
+        if (appKey.isEmpty() || (!pending.equals(appKey) && !UNCONFIGURED_RESUME_APP_KEY.equals(pending))) {
+            return 0;
+        }
+        if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
+        }
+        inFlightResumeGeneration = generation;
+        inFlightResumeRequest = ++resumeRequestCounter;
+        return inFlightResumeRequest;
+    }
+
+    public static synchronized void completePushResume(Context context, long request, boolean acknowledged) {
+        if (request != inFlightResumeRequest) return;
+        inFlightResumeRequest = 0;
+        if (acknowledged && inFlightResumeGeneration == getContentGeneration()
+            && isCollectionAuth(context) && !isPushStopped(context)) {
+            clearPendingPushResume(context);
+        }
+    }
+
+    private static void clearPendingPushResume(Context context) {
+        inFlightResumeRequest = 0;
+        if (!getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "").isEmpty()) {
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
         }
     }
 

@@ -12,7 +12,6 @@ import cn.jiguang.api.JCoreManager;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.core.JCoreWireCodec;
-import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.data.JPushCollectControl;
 import cn.jpush.android.data.JPushConfig;
 import cn.jpush.android.data.JPushLocalNotification;
@@ -103,14 +102,10 @@ public class JPushInterface {
     }
 
     public static void resumePush(Context context) {
-        boolean wasStopped = JCoreStorage.isPushStopped(context);
-        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.resumePushLocally(context);
         JCoreManager.init(context);
         JThirdPlatFormInterface.initializeFcm(context);
-        if (wasStopped) {
-            JLogger.i("Push resume requested");
-            ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 1);
-        }
+        ActionHelper.getInstance().sendPendingPushResume(context);
     }
 
     public static boolean isPushStopped(Context context) {

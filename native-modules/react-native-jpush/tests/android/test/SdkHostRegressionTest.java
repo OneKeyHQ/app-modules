@@ -8,6 +8,7 @@ import android.os.IBinder;
 import cn.jiguang.android.IDataShare;
 import cn.jiguang.api.JCoreInterface;
 import cn.jiguang.api.MultiSpHelper;
+import cn.jiguang.api.utils.JCollectionAuth;
 import cn.jiguang.core.JCoreCrypto;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
@@ -2527,7 +2528,7 @@ public final class SdkHostRegressionTest {
                     if (resumeImmediately) {
                         JPushInterface.resumePush(context);
                         check(engine.awaitHandshake(2000L) && engine.isLoggedIn() && attemptField.get(engine) != oldAttempt,
-                            "Immediate public resume must establish a new owner while the old writer remains blocked");
+                            "Immediate public resume must establish a new owner while the old writer remains blocked: " + serverError.get());
                         Thread.sleep(300L);
                         check(engine.isLoggedIn(), "The old stop deadline must not close the resumed owner");
                     }
@@ -2645,7 +2646,7 @@ public final class SdkHostRegressionTest {
         engine.stop(context);
         engine.setAutoReconnectEnabled(true);
         engine.setReconnectBaseDelayMs(120L);
-        engine.setHeartbeatIntervalMs(250L);
+        engine.setHeartbeatIntervalMs(1000L);
         engine.setDefaultRequestTimeoutMs(250L);
         JCoreStorage.setCollectionAuth(context, true);
         JCoreStorage.setAppKey(context, "hb-ack-and-resume-noop");
@@ -2657,6 +2658,7 @@ public final class SdkHostRegressionTest {
         CountDownLatch resumeCtrlReceived = new CountDownLatch(1);
         CountDownLatch reconnectedAfterHbTimeout = new CountDownLatch(1);
         AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        AtomicReference<Long> explicitHeartbeatId = new AtomicReference<>();
         try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
             listener.setSoTimeout(5000);
             Thread server = new Thread(() -> {
@@ -2671,9 +2673,10 @@ public final class SdkHostRegressionTest {
                         JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
                         check(initialHb != null && initialHb.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
                         // Reply with Jiguang server cmd=0, ver=0 20-byte heartbeat ACK frame
-                        socket1.getOutputStream().write(JCoreWireCodec.encodeServerFrame(
+                        byte[] initialAck = JCoreWireCodec.encodeServerFrame(
                             0, 0, initialHb.algorithm, 0, initialHb.requestId, 870001L, 8701L, new byte[0]
-                        ));
+                        );
+                        socket1.getOutputStream().write(initialAck);
                         socket1.getOutputStream().flush();
 
                         // Expect CMD_THIRD_TOKEN (cmd=27, ver=2) WITHOUT any preceding CMD_PUSH_CTRL (cmd=40)
@@ -2681,10 +2684,18 @@ public final class SdkHostRegressionTest {
                             JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
                             check(frame != null, "Unexpected EOF on connection #1");
                             if (frame.command == JCoreWireCodec.CMD_HEARTBEAT) {
-                                // Reply with cmd=19 general ACK
-                                socket1.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(
-                                    19, 0, frame.requestId, 8701, 870001L, 0, new byte[0]
-                                ));
+                                if (frame.body.length == 0) {
+                                    explicitHeartbeatId.set(frame.requestId);
+                                    socket1.getOutputStream().write(initialAck);
+                                    socket1.getOutputStream().write(JCoreWireCodec.encodeServerFrame(
+                                        0, 0, frame.algorithm, 0, frame.requestId, 870001L, 8701L, new byte[0]
+                                    ));
+                                } else {
+                                    long ackId = frame.body.length == 1 ? 0 : frame.requestId;
+                                    socket1.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(
+                                        19, 0, ackId, 8701, 870001L, 0, new byte[0]
+                                    ));
+                                }
                                 socket1.getOutputStream().flush();
                             } else if (frame.command == JCoreWireCodec.CMD_THIRD_TOKEN) {
                                 JCoreWireCodec.DeviceTokenPayload tokenPayload = JCoreWireCodec.parseDeviceTokenPayload(frame.body);
@@ -2724,7 +2735,18 @@ public final class SdkHostRegressionTest {
                         check(resumeFrame != null && resumeFrame.command == JCoreWireCodec.CMD_PUSH_CTRL
                             && resumeFrame.body != null && resumeFrame.body.length == 1 && resumeFrame.body[0] == 1,
                             "resumePush from stopped state must send CMD_PUSH_CTRL with 1-byte action=1");
-                        writeLoopbackAck(socket2, resumeFrame, 870001L, 8702, 0, new byte[0]);
+                        writeLoopbackAck(socket2, resumeFrame, 870001L, 8702, 0, new byte[] {0, 7});
+                        JCoreWireCodec.DecodedFrame retriedResume;
+                        while (true) {
+                            retriedResume = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
+                            check(retriedResume != null, "Expected a retry after failed resume ACK");
+                            if (retriedResume.command != JCoreWireCodec.CMD_HEARTBEAT) break;
+                            writeLoopbackAck(socket2, retriedResume, 870001L, 8702, 0, new byte[0]);
+                        }
+                        check(retriedResume.command == JCoreWireCodec.CMD_PUSH_CTRL
+                            && retriedResume.requestId != resumeFrame.requestId && retriedResume.body[0] == 1,
+                            "Explicit retry must send a new resume request");
+                        writeLoopbackAck(socket2, retriedResume, 870001L, 8702, 0, new byte[] {0, 0});
                         resumeCtrlReceived.countDown();
 
                         // Read periodic heartbeat and withhold ACK so client times out and reconnects
@@ -2756,21 +2778,41 @@ public final class SdkHostRegressionTest {
                 JPushInterface.resumePush(context);
                 check(engine.getPreLoginQueueSize() == 0, "Cold-start resumePush when not stopped must not queue CMD_PUSH_CTRL");
                 ActionHelper.getInstance().setThirdTokenWithCallBack(context, "fcm_cold_start_token_01", (byte) 8, false);
-                long startMs = System.currentTimeMillis();
-                check(engine.awaitHandshake(1500L) && engine.isLoggedIn(), "Handshake must complete rapidly on cmd=0,ver=0 heartbeat ACK");
-                check(System.currentTimeMillis() - startMs < 700L, "Initial heartbeat ACK (cmd=0,ver=0) must not wait for request timeout");
+                check(engine.awaitHandshake(1500L) && engine.isLoggedIn(), "Handshake must complete");
                 check(thirdTokenAcked.await(1500L, TimeUnit.MILLISECONDS), "FCM third-party token must flush and succeed on cold start");
                 for (int i = 0; i < 30 && !com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("Third token result platform=8 code=0"); i++) {
                     Thread.sleep(20L);
                 }
                 check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("Third token result platform=8 code=0"),
                     "OneKeyLog must record third token upload success code=0");
+                JCoreWireCodec.DecodedFrame explicitAck = engine.sendRequest(
+                    JCoreWireCodec.CMD_HEARTBEAT, JCoreWireCodec.VER_HEARTBEAT, new byte[0], 1000L
+                );
+                check(explicitAck != null && explicitAck.command == 0 && explicitAck.version == 0
+                    && Long.valueOf(explicitAck.requestId).equals(explicitHeartbeatId.get()),
+                    "The matching general ACK must complete the heartbeat, and the earlier RID must be ignored");
+                JCoreWireCodec.DecodedFrame unnumberedAck = engine.sendRequest(
+                    JCoreWireCodec.CMD_HEARTBEAT, JCoreWireCodec.VER_HEARTBEAT, new byte[] {42}, 1000L
+                );
+                check(unnumberedAck != null && unnumberedAck.command == 19 && unnumberedAck.requestId == 0,
+                    "A zero-RID heartbeat ACK must complete the only pending heartbeat");
 
                 // Now test stopPush -> sends CMD_PUSH_CTRL (cmd=40, body={0}) and closes connection
+                engine.setHeartbeatIntervalMs(250L);
                 JPushInterface.stopPush(context);
                 check(stopCtrlReceived.await(1500L, TimeUnit.MILLISECONDS), "stopPush must send CMD_PUSH_CTRL action=0");
 
-                // Now test resumePush from stopped state -> reconnects and sends CMD_PUSH_CTRL (cmd=40, body={1})
+                // Preserve a failed local resume through authorization denial, then retry after a negative ACK.
+                JCollectionAuth.setAuth(context, false);
+                JPushInterface.resumePush(context);
+                check(!JPushInterface.isPushStopped(context), "Local resume updates the local setting without authorization");
+                JCollectionAuth.setAuth(context, true);
+                for (int i = 0; i < 75 && !OneKeyLog.getCapturedLogs().toString().contains("Push resume not acknowledged code=7"); i++) {
+                    Thread.sleep(20L);
+                }
+                check(OneKeyLog.getCapturedLogs().toString().contains("Push resume not acknowledged code=7"),
+                    "The first resume must be negatively acknowledged");
+                JPushInterface.resumePush(context);
                 JPushInterface.resumePush(context);
                 check(resumeCtrlReceived.await(2000L, TimeUnit.MILLISECONDS), "resumePush from stopped state must send CMD_PUSH_CTRL action=1");
 

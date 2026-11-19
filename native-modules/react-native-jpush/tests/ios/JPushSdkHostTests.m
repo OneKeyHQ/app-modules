@@ -371,52 +371,32 @@ static void testWireProtocolFraming(void) {
         ASSERT_TRUE(decodedServer.count == 1 && serverBuf.length == 0, "Failed decoding server frame (alg=%u)", alg);
     }
 
-    // Verify Login (cmd=1, ver=27) field-by-field binary layout matching libJCore.a(JCORELogin.o)
-    NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd123" appKey:@"appkey123"];
-    const uint8_t *lb = loginBody.bytes;
-    ASSERT_TRUE(loginBody.length > 40 && lb[0] == 0x69 && lb[1] == 0x00 && lb[2] == 0x00 && lb[3] == 0x00,
-                "Login payload must start with uint8(105) + 3 zero reserved bytes (0x69000000)");
-    NSUInteger loginCursor = 4;
-    auto NSString *(^readWireStr)(NSData *, NSUInteger *) = ^NSString *(NSData *d, NSUInteger *cur) {
-        ASSERT_TRUE(*cur + 2 <= d.length, "Unexpected EOF reading string length");
-        const uint8_t *p = (const uint8_t *)d.bytes + *cur;
-        uint16_t sLen = ((uint16_t)p[0] << 8) | p[1];
-        *cur += 2;
-        ASSERT_TRUE(*cur + sLen <= d.length, "Unexpected EOF reading string bytes");
-        NSString *s = [[NSString alloc] initWithBytes:(const uint8_t *)d.bytes + *cur length:sLen encoding:NSUTF8StringEncoding];
-        *cur += sLen;
-        return s ?: @"";
+    // Fixed JCore 5.2.0 layout from JCORELogin bodyData and the append helpers in JCORETcpObject.
+    // Inputs: pwd123, appkey123, fixture-device, acct, unknown cellular generation and empty location.
+    uint8_t goldenLogin[] = {
+        0x69, 0x00, 0x00, 0x00, 0x00, 0x20, 0x34, 0x35, 0x63, 0x62, 0x34, 0x31,
+        0x62, 0x33, 0x32, 0x64, 0x63, 0x66, 0x62, 0x39, 0x31, 0x37, 0x63, 0x63,
+        0x64, 0x38, 0x36, 0x31, 0x34, 0x66, 0x31, 0x35, 0x33, 0x36, 0x64, 0x36,
+        0x64, 0x61, 0x00, 0x13, 0x33, 0x32, 0x38, 0x31, 0x39, 0x32, 0x7c, 0x33,
+        0x39, 0x33, 0x32, 0x31, 0x36, 0x7c, 0x7c, 0x7c, 0x7c, 0x7c, 0x7c, 0x00,
+        0x09, 0x61, 0x70, 0x70, 0x6b, 0x65, 0x79, 0x31, 0x32, 0x33, 0x01, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x0e, 0x66, 0x69, 0x78, 0x74, 0x75, 0x72,
+        0x65, 0x2d, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x00, 0x00, 0x00, 0x04,
+        0x61, 0x63, 0x63, 0x74, 0x01, 0x01, 0x00, 0x01, 0x31,
     };
-    NSString *parsedPwdMd5 = readWireStr(loginBody, &loginCursor);
-    NSString *parsedSdkVerInfo = readWireStr(loginBody, &loginCursor);
-    NSString *parsedAppKey = readWireStr(loginBody, &loginCursor);
-    ASSERT_TRUE([parsedPwdMd5 isEqualToString:[JCORECrypto md5Hex:@"pwd123"]], "Login passwordMd5 mismatch: %@", parsedPwdMd5);
-    ASSERT_TRUE([parsedSdkVerInfo isEqualToString:@"5.2.0|6.0.0||||||"], "Login sdkVerInfo mismatch: %@", parsedSdkVerInfo);
-    ASSERT_TRUE([parsedAppKey isEqualToString:@"appkey123"], "Login appKey mismatch: %@", parsedAppKey);
-    ASSERT_TRUE(loginCursor + 7 <= loginBody.length, "Login fixed platform/flags truncated");
-    uint8_t parsedPlatform = lb[loginCursor++];
-    uint32_t parsedLoginFlag = ((uint32_t)lb[loginCursor] << 24) | ((uint32_t)lb[loginCursor + 1] << 16) |
-                               ((uint32_t)lb[loginCursor + 2] << 8) | lb[loginCursor + 3];
-    loginCursor += 4;
-    uint8_t parsedThirdType = lb[loginCursor++];
-    uint8_t parsedNetType = lb[loginCursor++];
-    ASSERT_TRUE(parsedPlatform == 1 && parsedLoginFlag == 1 && parsedThirdType == 0 && parsedNetType == 1,
-                "Login platform/loginFlag/thirdType/netType mismatch");
-    NSString *parsedDeviceId = readWireStr(loginBody, &loginCursor);
-    NSString *parsedLocInfo = readWireStr(loginBody, &loginCursor);
-    NSString *parsedCountry = readWireStr(loginBody, &loginCursor);
-    NSString *parsedAccountId = readWireStr(loginBody, &loginCursor);
-    ASSERT_TRUE(parsedDeviceId.length > 0 && [parsedLocInfo isEqualToString:@""] &&
-                parsedCountry.length > 0 && [parsedAccountId isEqualToString:@""],
-                "Login deviceId/locInfo/countryCode/accountId mismatch");
-    ASSERT_TRUE(loginCursor + 2 <= loginBody.length, "Login appState/isSdkInit truncated");
-    uint8_t parsedAppState = lb[loginCursor++];
-    uint8_t parsedIsSdkInit = lb[loginCursor++];
-    NSString *parsedSdkTypes = readWireStr(loginBody, &loginCursor);
-    ASSERT_TRUE(parsedAppState == 1 && parsedIsSdkInit == 1 && [parsedSdkTypes isEqualToString:@"1"],
-                "Login appState/isSdkInit/sdkTypes mismatch");
-    ASSERT_TRUE(loginCursor == loginBody.length, "Login payload must have 0 trailing bytes (cursor=%lu len=%lu)",
-                (unsigned long)loginCursor, (unsigned long)loginBody.length);
+    JCOREConfiguration *loginConfig = [JCOREConfiguration shared];
+    NSString *previousDeviceID = loginConfig.deviceID;
+    NSString *previousAccountID = loginConfig.accountID;
+    loginConfig.deviceID = @"fixture-device";
+    loginConfig.accountID = @"acct";
+    for (uint8_t state = 0; state <= 2; state++) {
+        goldenLogin[100] = state;
+        NSData *expected = [NSData dataWithBytes:goldenLogin length:sizeof(goldenLogin)];
+        NSData *encoded = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd123" appKey:@"appkey123" appState:state];
+        ASSERT_TRUE([encoded isEqualToData:expected], "iOS login wire fixture differs for app state %u: %@", state, encoded);
+    }
+    loginConfig.deviceID = previousDeviceID;
+    loginConfig.accountID = previousAccountID;
 
     // Verify PushCtrl (cmd=40, ver=1) 1-byte payload matching libJPush.a(JPUSHStopPushOperation.o)
     ASSERT_TRUE(JCOREWireCommandPushCtrl == 40, "JCOREWireCommandPushCtrl must be 40 (0x28)");
@@ -1810,9 +1790,10 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
 static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
     JCOREConfiguration *config = [JCOREConfiguration shared];
     [OneKeyLog clearCapturedLogs];
+    config.appKey = nil;
     config.deviceTokenHex = nil;
     config.voipTokenHex = nil;
-    config.collectionAuthorized = YES;
+    config.collectionAuthorized = NO;
     config.pushStopped = YES;
     [config updateRegistrationWithUid:900100255 password:@"hb-pwd-2026" registrationID:@"hb-rid-2026"];
     config.requestTimeoutInterval = 0.25;
@@ -1867,9 +1848,16 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
                                                                 requestId:pushCtrl.requestId
                                                                       uid:config.uid
                                                                 algorithm:pushCtrl.algorithm
-                                                               statusCode:0
+                                                               statusCode:7
                                                                  bodyData:nil];
-        ASSERT_TRUE(writeExactBytes(fd1, ctrlAck.bytes, ctrlAck.length), "Suite 9 ctrlAck failed");
+        ASSERT_TRUE(writeExactBytes(fd1, ctrlAck.bytes, ctrlAck.length), "Suite 9 negative ctrlAck failed");
+        JCOREWireFrame *retry = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(retry != nil && retry.command == JCOREWireCommandPushCtrl && retry.requestId != pushCtrl.requestId &&
+                    retry.bodyData.length == 1 && ((const uint8_t *)retry.bodyData.bytes)[0] == 1,
+                    "Suite 9 expected a new explicit resume request after negative ACK");
+        NSData *retryAck = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandPushCtrl version:1
+            requestId:retry.requestId uid:config.uid algorithm:retry.algorithm statusCode:0 bodyData:nil];
+        ASSERT_TRUE(writeExactBytes(fd1, retryAck.bytes, retryAck.length), "Suite 9 retry ACK failed");
         dispatch_semaphore_signal(resumeCtrlReceived);
 
         // Expect Heartbeat #1 (cmd=2, ver=8) and reply with general ACK (cmd=0, ver=0) like real Jiguang servers
@@ -1890,6 +1878,8 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
         JCOREWireFrame *hb2 = readSingleClientFrameOnServer(fd1);
         ASSERT_TRUE(hb2 != nil && hb2.command == JCOREWireCommandHeartbeat,
                     "Expected second Heartbeat(cmd=2, ver=8)");
+        ASSERT_TRUE(hb2.requestId != hb1.requestId && writeExactBytes(fd1, generalAck.bytes, generalAck.length),
+                    "Expected only the old heartbeat ACK before timeout");
 
         int fd2 = accept(listenFd, NULL, NULL);
         ASSERT_TRUE(fd2 >= 0, "Suite 9 accept #2 (reconnect after heartbeat timeout) failed");
@@ -1912,10 +1902,29 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
         close(listenFd);
     });
 
+    NSMutableArray<NSNumber *> *connectEvents = [NSMutableArray array];
+    NSInteger connectListener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        if ([name isEqualToString:@"ConnectEvent"]) {
+            NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
+                                                                     options:0 error:nil];
+            if (payload[@"connectEnable"] != nil) [connectEvents addObject:payload[@"connectEnable"]];
+        }
+    }];
+    [connectEvents removeAllObjects];
+    [JPUSHService turnONPush];
+    ASSERT_TRUE(!config.pushStopped && !config.policyAllowsPush, "Resume must preserve denied authorization");
     [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:NO];
+    config.collectionAuthorized = YES;
+    [JPUSHService turnONPush];
+    runUntil(^BOOL{
+        return [[[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"] containsString:@"Push resume not acknowledged code=7"];
+    }, 3, @"Did not handle the negative resume ACK");
+    [JPUSHService turnONPush];
     [JPUSHService turnONPush];
     runUntil(^BOOL{ return dispatch_semaphore_wait(resumeCtrlReceived, DISPATCH_TIME_NOW) == 0; }, 3, @"Did not receive PushCtrl(cmd=40, body={1}) on resume from stopped");
     ASSERT_TRUE(sawPushCtrlActionOne, "Expected 1-byte 0x01 PushCtrl resume payload");
+    runUntil(^BOOL{ return ![config hasPendingPushResumeForAppKey:config.appKey]; },
+             1, @"A successful ACK must clear the pending resume");
 
     // Trigger foreground heartbeat #1 (server replies with cmd=0, ver=0 general ACK)
     [[NSNotificationCenter defaultCenter] postNotificationName:@"UIApplicationWillEnterForegroundNotification" object:nil];
@@ -1931,6 +1940,11 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
     // Trigger foreground heartbeat #2 (server withholds ACK -> timeout -> OneKeyLog WARN + auto-reconnect)
     [[NSNotificationCenter defaultCenter] postNotificationName:@"UIApplicationWillEnterForegroundNotification" object:nil];
     runUntil(^BOOL{ return dispatch_semaphore_wait(reconnectedAfterHbTimeout, DISPATCH_TIME_NOW) == 0; }, 3, @"Session did not reconnect after heartbeat ACK timeout");
+    runUntil(^BOOL{ return connectEvents.count >= 3; }, 1, @"Did not deliver the heartbeat close and reconnect events");
+    NSArray<NSNumber *> *expectedEvents = @[@YES, @NO, @YES];
+    ASSERT_TRUE([[connectEvents subarrayWithRange:NSMakeRange(0, 3)] isEqualToArray:expectedEvents],
+                "Expected connected, disconnected, reconnected; got %@", connectEvents);
+    [RCTJPushModule unregisterNitroEventListener:connectListener];
     NSString *logsAfterHb2 = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
     ASSERT_TRUE([logsAfterHb2 containsString:@"TCP heartbeat timed out, reconnecting"],
                 "Expected OneKeyLog WARN on heartbeat timeout, got: %@", logsAfterHb2);
