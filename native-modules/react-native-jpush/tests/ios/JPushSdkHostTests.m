@@ -23,6 +23,42 @@
 #import "RCTJPushModule.h"
 #import <React/RCTBridge.h>
 
+@interface OneKeyLog : NSObject
++ (NSMutableArray<NSString *> *)capturedLogs;
++ (void)clearCapturedLogs;
++ (void)debug:(NSString *)tag :(NSString *)message;
++ (void)info:(NSString *)tag :(NSString *)message;
++ (void)warn:(NSString *)tag :(NSString *)message;
++ (void)error:(NSString *)tag :(NSString *)message;
+@end
+
+@implementation OneKeyLog
++ (NSMutableArray<NSString *> *)capturedLogs {
+    static NSMutableArray<NSString *> *logs = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        logs = [NSMutableArray array];
+    });
+    return logs;
+}
++ (void)clearCapturedLogs {
+    NSMutableArray<NSString *> *logs = [self capturedLogs];
+    @synchronized (logs) {
+        [logs removeAllObjects];
+    }
+}
++ (void)record:(NSString *)level tag:(NSString *)tag message:(NSString *)message {
+    NSMutableArray<NSString *> *logs = [self capturedLogs];
+    @synchronized (logs) {
+        [logs addObject:[NSString stringWithFormat:@"[%@] [%@] %@", level, tag ?: @"", message ?: @""]];
+    }
+}
++ (void)debug:(NSString *)tag :(NSString *)message { [self record:@"DEBUG" tag:tag message:message]; }
++ (void)info:(NSString *)tag :(NSString *)message { [self record:@"INFO" tag:tag message:message]; }
++ (void)warn:(NSString *)tag :(NSString *)message { [self record:@"WARN" tag:tag message:message]; }
++ (void)error:(NSString *)tag :(NSString *)message { [self record:@"ERROR" tag:tag message:message]; }
+@end
+
 #define ASSERT_TRUE(cond, msg, ...) do { \
     if (!(cond)) { \
         NSLog(@"[FAIL] %s:%d: " @msg, __FUNCTION__, __LINE__, ##__VA_ARGS__); \
@@ -335,11 +371,41 @@ static void testWireProtocolFraming(void) {
         ASSERT_TRUE(decodedServer.count == 1 && serverBuf.length == 0, "Failed decoding server frame (alg=%u)", alg);
     }
 
-    // Verify Login payload starts with 0x00, 0x00, 0x00, 0x69 (uint32(105))
-    NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd123" appKey:@"appkey123"];
-    const uint8_t *lb = loginBody.bytes;
-    ASSERT_TRUE(loginBody.length > 40 && lb[0] == 0x00 && lb[1] == 0x00 && lb[2] == 0x00 && lb[3] == 0x69,
-                "Login payload must start with uint32(105) 0x00000069");
+    // Fixed JCore 5.2.0 layout from JCORELogin bodyData and the append helpers in JCORETcpObject.
+    // Inputs: pwd123, appkey123, fixture-device, acct, unknown cellular generation and empty location.
+    uint8_t goldenLogin[] = {
+        0x69, 0x00, 0x00, 0x00, 0x00, 0x20, 0x34, 0x35, 0x63, 0x62, 0x34, 0x31,
+        0x62, 0x33, 0x32, 0x64, 0x63, 0x66, 0x62, 0x39, 0x31, 0x37, 0x63, 0x63,
+        0x64, 0x38, 0x36, 0x31, 0x34, 0x66, 0x31, 0x35, 0x33, 0x36, 0x64, 0x36,
+        0x64, 0x61, 0x00, 0x13, 0x33, 0x32, 0x38, 0x31, 0x39, 0x32, 0x7c, 0x33,
+        0x39, 0x33, 0x32, 0x31, 0x36, 0x7c, 0x7c, 0x7c, 0x7c, 0x7c, 0x7c, 0x00,
+        0x09, 0x61, 0x70, 0x70, 0x6b, 0x65, 0x79, 0x31, 0x32, 0x33, 0x01, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x0e, 0x66, 0x69, 0x78, 0x74, 0x75, 0x72,
+        0x65, 0x2d, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x00, 0x00, 0x00, 0x04,
+        0x61, 0x63, 0x63, 0x74, 0x01, 0x01, 0x00, 0x01, 0x31,
+    };
+    JCOREConfiguration *loginConfig = [JCOREConfiguration shared];
+    NSString *previousDeviceID = loginConfig.deviceID;
+    NSString *previousAccountID = loginConfig.accountID;
+    loginConfig.deviceID = @"fixture-device";
+    loginConfig.accountID = @"acct";
+    for (uint8_t state = 0; state <= 2; state++) {
+        goldenLogin[100] = state;
+        NSData *expected = [NSData dataWithBytes:goldenLogin length:sizeof(goldenLogin)];
+        NSData *encoded = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd123" appKey:@"appkey123" appState:state];
+        ASSERT_TRUE([encoded isEqualToData:expected], "iOS login wire fixture differs for app state %u: %@", state, encoded);
+    }
+    loginConfig.deviceID = previousDeviceID;
+    loginConfig.accountID = previousAccountID;
+
+    // Verify PushCtrl (cmd=40, ver=1) 1-byte payload matching libJPush.a(JPUSHStopPushOperation.o)
+    ASSERT_TRUE(JCOREWireCommandPushCtrl == 40, "JCOREWireCommandPushCtrl must be 40 (0x28)");
+    NSData *stopBody = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
+    NSData *resumeBody = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
+    ASSERT_TRUE(stopBody.length == 1 && ((const uint8_t *)stopBody.bytes)[0] == 0,
+                "Stop push payload must be 1-byte 0x00");
+    ASSERT_TRUE(resumeBody.length == 1 && ((const uint8_t *)resumeBody.bytes)[0] == 1,
+                "Resume push payload must be 1-byte 0x01");
 
     // Verify Heartbeat payload is 8 bytes
     NSData *hbBody = [JCOREWireProtocol buildHeartbeatPayloadWithPushStopped:NO];
@@ -437,8 +503,8 @@ static void testEndToEndMockServerHandshake(void) {
                     "Expected Login(cmd=1, ver=27), got cmd=%u ver=%u", loginFrame.command, loginFrame.version);
         ASSERT_TRUE(loginFrame.uid == assignedUid, "Login frame UID mismatch: %llu", loginFrame.uid);
         const uint8_t *loginBytes = loginFrame.bodyData.bytes;
-        ASSERT_TRUE(loginFrame.bodyData.length > 20 && loginBytes[0] == 0 && loginBytes[1] == 0 && loginBytes[2] == 0 && loginBytes[3] == 0x69,
-                    "Login payload missing 0x00000069 magic");
+        ASSERT_TRUE(loginFrame.bodyData.length > 20 && loginBytes[0] == 0x69 && loginBytes[1] == 0 && loginBytes[2] == 0 && loginBytes[3] == 0,
+                    "Login payload missing 0x69000000 header");
         serverLoggedIn = YES;
 
         NSData *loginRespBody = [JCOREWireProtocol buildLoginResponsePayloadWithSessionId:assignedSessionId
@@ -453,8 +519,9 @@ static void testEndToEndMockServerHandshake(void) {
                                                                         bodyData:loginRespBody];
         ASSERT_TRUE(writeExactBytes(clientFd, loginRespFrame.bytes, loginRespFrame.length), "Failed writing Login response");
 
-        // 3. Process 9 client commands: DeviceToken(13), VoIP(33), Tag(28), Alias(29), Properties(38), MobileNumber(26), LiveActivity x2 (39), PushCtrl(18)
-        for (int i = 0; i < 9; i++) {
+        // 3. Process 8 client commands: DeviceToken(13), VoIP(33), Tag(28), Alias(29), Properties(38), MobileNumber(26), LiveActivity x2 (39)
+        // Cold-start turnONPush when pushStopped == NO must NOT enqueue a spurious PushCtrl(cmd=40) command.
+        for (int i = 0; i < 8; i++) {
             JCOREWireFrame *req = readSingleClientFrameOnServer(clientFd);
             ASSERT_TRUE(req != nil, "Failed reading client command #%d", i);
             ASSERT_TRUE(req.sessionId == assignedSessionId, "Expected sessionId=0x%x in client header, got 0x%x", assignedSessionId, req.sessionId);
@@ -784,8 +851,14 @@ static void testEndToEndMockServerHandshake(void) {
                 "Server received unexpected mobile number: %@", serverMobileNumber);
     ASSERT_TRUE(serverSawLiveActivityStart && serverSawLiveActivityUpdate,
                 "Server did not receive both LiveActivity start (flag=0) and update (flag=1)");
-    ASSERT_TRUE(serverSawPushCtrlResume,
-                "Server did not receive queued PushCtrl(stopped=NO) from turnONPush after login");
+    ASSERT_TRUE(!serverSawPushCtrlResume,
+                "Cold-start turnONPush when not stopped must not send redundant PushCtrl(cmd=40)");
+    NSString *suite4Logs = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([suite4Logs containsString:@"APNs device token reported code=0"] &&
+                [suite4Logs containsString:@"VoIP token reported code=0"] &&
+                ![suite4Logs containsString:serverDeviceToken] &&
+                ![suite4Logs containsString:serverVoipToken],
+                "OneKeyLog must record DeviceToken/VoIP report success without leaking raw token hex: %@", suite4Logs);
     ASSERT_TRUE([receivedMessagePayload[@"title"] isEqualToString:@"OneKey Alert"] &&
                 [receivedMessagePayload[@"_j_msgid"] unsignedLongLongValue] == expectedMsgId,
                 "PushMessage payload mismatch: %@", receivedMessagePayload);
@@ -1066,13 +1139,16 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     ASSERT_TRUE([decryptedBadge[@"badge"] integerValue] == 7 && [decryptedBadge[@"uid"] unsignedLongLongValue] == newAssignedUid,
                 "Badge report x-jg-sign verification & AES-128-CBC decryption failed: %@", decryptedBadge);
 
-    // 3. Verify default logging and non-sensitive log redaction on iOS
+    // 3. Verify direct OneKeyLog forwarding with zero in-memory recentLogs buffering and non-sensitive log redaction on iOS
+    [OneKeyLog clearCapturedLogs];
     [JCOREConfiguration clearRecentLogs];
     [JCOREConfiguration logInfo:@"onNotifyMessage type=notificationArrived notificationType=remote msgId=msg_99001"];
     [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP register success uid=%llu registrationId=%@", newAssignedUid, newRegId]];
-    NSString *joinedIosLogs = [[JCOREConfiguration recentLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
+                "JCOREConfiguration must not buffer logs in memory");
+    NSString *joinedIosLogs = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
     ASSERT_TRUE([joinedIosLogs containsString:@"notificationType=remote"] && [joinedIosLogs containsString:newRegId],
-                "Expected non-sensitive notificationType and registrationId in iOS logs: %@", joinedIosLogs);
+                "Expected non-sensitive notificationType and registrationId forwarded to OneKeyLog: %@", joinedIosLogs);
 
     printf("[PASS] Suite 5: Multi-IP failover (fail_ips), Fast-Login, statusCode=108 re-register, auto-reconnect, & HTTP reports (/v3/report + setBadge:) verified\n");
 }
@@ -1325,23 +1401,23 @@ static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
     [RCTJPushModule unregisterNitroEventListener:arrivedListenerId];
     [RCTJPushModule clearActiveModules];
 
-    // 6c. Verify JCOREConfiguration.setLocalLogEnabled buffers logs even when logOff == YES and clears when disabled
+    // 6c. Verify JCOREConfiguration.setLocalLogEnabled is a deprecated no-op and never buffers logs in memory
+    [OneKeyLog clearCapturedLogs];
     [JCOREConfiguration clearRecentLogs];
     [JCOREConfiguration shared].logOff = YES;
     [JCOREConfiguration setLocalLogEnabled:YES];
     [JCOREConfiguration logInfo:@"local_log_while_off_01"];
-    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 1 &&
-                [[JCOREConfiguration recentLogs].firstObject containsString:@"local_log_while_off_01"],
-                "setLocalLogEnabled(YES) must buffer logs into recentLogs even when logOff == YES");
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0 && [OneKeyLog capturedLogs].count == 0,
+                "setLocalLogEnabled(YES) must not buffer logs into recentLogs or emit when logOff == YES");
     [JCOREConfiguration setLocalLogEnabled:NO];
     ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
-                "setLocalLogEnabled(NO) must clear recentLogs");
-    [JCOREConfiguration logInfo:@"local_log_disabled_02"];
-    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
-                "setLocalLogEnabled(NO) must prevent buffering into recentLogs");
-    [JCOREConfiguration setLocalLogEnabled:YES];
+                "recentLogs must remain empty");
     [JCOREConfiguration shared].logOff = NO;
-    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration logInfo:@"onekey_direct_log_02"];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0 &&
+                [[OneKeyLog capturedLogs].firstObject containsString:@"onekey_direct_log_02"],
+                "Logs must output directly to OneKeyLog without storing in recentLogs");
+    [OneKeyLog clearCapturedLogs];
 
     // 7. Verify [JPUSHService setupWithOption:@{UIApplicationLaunchOptionsRemoteNotificationKey: ...}]
     //    registers RCTJPushModule native observers at cold start and queues the launch notification into RCTJPushEventQueue
@@ -1619,6 +1695,9 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
                                 "Failed/timeout token must retry once; successful token must deduplicate");
                 } else if (request.command == JCOREWireCommandPushCtrl) {
                     ASSERT_TRUE(connectionIndex == 1, "Stop control must use the resumed connection");
+                    ASSERT_TRUE(request.command == 40 && request.version == 1 && request.bodyData.length == 1 &&
+                                ((const uint8_t *)request.bodyData.bytes)[0] == 0,
+                                "Stop control must send cmd=40, ver=1 with 1-byte action=0 (stopPush)");
                     uint8_t byte = 0;
                     ASSERT_TRUE(recv(fd, &byte, 1, 0) == 0, "Stop control must be followed by connection close");
                     break;
@@ -1708,6 +1787,176 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
     printf("[PASS] Suite 8: Token failed-ACK/timeout retry, successful ACK deduplication, connected revocation/regrant, and stop control close verified\n");
 }
 
+static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    [OneKeyLog clearCapturedLogs];
+    config.appKey = nil;
+    config.deviceTokenHex = nil;
+    config.voipTokenHex = nil;
+    config.collectionAuthorized = NO;
+    config.pushStopped = YES;
+    [config updateRegistrationWithUid:900100255 password:@"hb-pwd-2026" registrationID:@"hb-rid-2026"];
+    config.requestTimeoutInterval = 0.25;
+    config.requestResendInterval = 0.1;
+    config.reconnectBaseInterval = 0.1;
+
+    int listenFd = socket(AF_INET, SOCK_STREAM, 0);
+    int reuse = 1;
+    setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT_TRUE(bind(listenFd, (struct sockaddr *)&addr, sizeof(addr)) == 0 && listen(listenFd, 4) == 0,
+                "Suite 9 listener failed");
+    socklen_t addrLen = sizeof(addr);
+    getsockname(listenFd, (struct sockaddr *)&addr, &addrLen);
+    [[JCORESisResolver shared] setCustomConnectHost:@"127.0.0.1" port:ntohs(addr.sin_port) useSSL:NO];
+
+    dispatch_semaphore_t resumeCtrlReceived = dispatch_semaphore_create(0);
+    dispatch_semaphore_t firstHeartbeatGeneralAcked = dispatch_semaphore_create(0);
+    dispatch_semaphore_t reconnectedAfterHbTimeout = dispatch_semaphore_create(0);
+    __block BOOL sawPushCtrlActionOne = NO;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Connection #1: Fast-Login -> PushCtrl(cmd=40, body={1}) -> Heartbeat #1 (reply cmd=0, ver=0) -> Heartbeat #2 (withhold ACK to trigger timeout)
+        int fd1 = accept(listenFd, NULL, NULL);
+        ASSERT_TRUE(fd1 >= 0, "Suite 9 accept #1 failed");
+        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+        setsockopt(fd1, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+        JCOREWireFrame *login1 = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(login1 != nil && login1.command == JCOREWireCommandLogin && login1.version == 27,
+                    "Suite 9 expected Fast-Login on connection #1");
+        NSData *loginAck1 = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
+                                                                    version:27
+                                                                  requestId:login1.requestId
+                                                                        uid:config.uid
+                                                                  algorithm:login1.algorithm
+                                                                 statusCode:0
+                                                                   bodyData:[JCOREWireProtocol buildLoginResponsePayloadWithSessionId:301 serverVersion:600 serverTimestamp:1]];
+        ASSERT_TRUE(writeExactBytes(fd1, loginAck1.bytes, loginAck1.length), "Suite 9 loginAck1 failed");
+
+        // Expect queued PushCtrl(cmd=40, ver=1, body={1}) from turnONPush when pushStopped was YES
+        JCOREWireFrame *pushCtrl = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(pushCtrl != nil && pushCtrl.command == JCOREWireCommandPushCtrl && pushCtrl.version == 1,
+                    "Expected PushCtrl(cmd=40, ver=1) after turnONPush from stopped state, got cmd=%u", pushCtrl.command);
+        ASSERT_TRUE(pushCtrl.bodyData.length == 1 && ((const uint8_t *)pushCtrl.bodyData.bytes)[0] == 1,
+                    "PushCtrl resume payload must be 1-byte 0x01");
+        sawPushCtrlActionOne = YES;
+        NSData *ctrlAck = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandPushCtrl
+                                                                  version:1
+                                                                requestId:pushCtrl.requestId
+                                                                      uid:config.uid
+                                                                algorithm:pushCtrl.algorithm
+                                                               statusCode:7
+                                                                 bodyData:nil];
+        ASSERT_TRUE(writeExactBytes(fd1, ctrlAck.bytes, ctrlAck.length), "Suite 9 negative ctrlAck failed");
+        JCOREWireFrame *retry = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(retry != nil && retry.command == JCOREWireCommandPushCtrl && retry.requestId != pushCtrl.requestId &&
+                    retry.bodyData.length == 1 && ((const uint8_t *)retry.bodyData.bytes)[0] == 1,
+                    "Suite 9 expected a new explicit resume request after negative ACK");
+        NSData *retryAck = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandPushCtrl version:1
+            requestId:retry.requestId uid:config.uid algorithm:retry.algorithm statusCode:0 bodyData:nil];
+        ASSERT_TRUE(writeExactBytes(fd1, retryAck.bytes, retryAck.length), "Suite 9 retry ACK failed");
+        dispatch_semaphore_signal(resumeCtrlReceived);
+
+        // Expect Heartbeat #1 (cmd=2, ver=8) and reply with general ACK (cmd=0, ver=0) like real Jiguang servers
+        JCOREWireFrame *hb1 = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(hb1 != nil && hb1.command == JCOREWireCommandHeartbeat && hb1.version == 8 && hb1.bodyData.length == 8,
+                    "Expected Heartbeat(cmd=2, ver=8)");
+        NSData *generalAck = [JCOREWireProtocol encodeServerFrameWithCommand:0
+                                                                     version:0
+                                                                   requestId:hb1.requestId
+                                                                         uid:config.uid
+                                                                   algorithm:hb1.algorithm
+                                                                  statusCode:0
+                                                                    bodyData:nil];
+        ASSERT_TRUE(writeExactBytes(fd1, generalAck.bytes, generalAck.length), "Suite 9 generalAck failed");
+        dispatch_semaphore_signal(firstHeartbeatGeneralAcked);
+
+        // Expect Heartbeat #2 and withhold ACK so client times out and reconnects
+        JCOREWireFrame *hb2 = readSingleClientFrameOnServer(fd1);
+        ASSERT_TRUE(hb2 != nil && hb2.command == JCOREWireCommandHeartbeat,
+                    "Expected second Heartbeat(cmd=2, ver=8)");
+        ASSERT_TRUE(hb2.requestId != hb1.requestId && writeExactBytes(fd1, generalAck.bytes, generalAck.length),
+                    "Expected only the old heartbeat ACK before timeout");
+
+        int fd2 = accept(listenFd, NULL, NULL);
+        ASSERT_TRUE(fd2 >= 0, "Suite 9 accept #2 (reconnect after heartbeat timeout) failed");
+        setsockopt(fd2, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        JCOREWireFrame *login2 = readSingleClientFrameOnServer(fd2);
+        ASSERT_TRUE(login2 != nil && login2.command == JCOREWireCommandLogin && login2.uid == config.uid,
+                    "Expected Fast-Login on connection #2 after heartbeat timeout");
+        NSData *loginAck2 = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
+                                                                    version:27
+                                                                  requestId:login2.requestId
+                                                                        uid:config.uid
+                                                                  algorithm:login2.algorithm
+                                                                 statusCode:0
+                                                                   bodyData:[JCOREWireProtocol buildLoginResponsePayloadWithSessionId:302 serverVersion:600 serverTimestamp:2]];
+        ASSERT_TRUE(writeExactBytes(fd2, loginAck2.bytes, loginAck2.length), "Suite 9 loginAck2 failed");
+        dispatch_semaphore_signal(reconnectedAfterHbTimeout);
+
+        close(fd1);
+        close(fd2);
+        close(listenFd);
+    });
+
+    NSMutableArray<NSNumber *> *connectEvents = [NSMutableArray array];
+    NSInteger connectListener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        if ([name isEqualToString:@"ConnectEvent"]) {
+            NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
+                                                                     options:0 error:nil];
+            if (payload[@"connectEnable"] != nil) [connectEvents addObject:payload[@"connectEnable"]];
+        }
+    }];
+    [connectEvents removeAllObjects];
+    [JPUSHService turnONPush];
+    ASSERT_TRUE(!config.pushStopped && !config.policyAllowsPush, "Resume must preserve denied authorization");
+    [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:NO];
+    config.collectionAuthorized = YES;
+    [JPUSHService turnONPush];
+    runUntil(^BOOL{
+        return [[[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"] containsString:@"Push resume not acknowledged code=7"];
+    }, 3, @"Did not handle the negative resume ACK");
+    [JPUSHService turnONPush];
+    [JPUSHService turnONPush];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(resumeCtrlReceived, DISPATCH_TIME_NOW) == 0; }, 3, @"Did not receive PushCtrl(cmd=40, body={1}) on resume from stopped");
+    ASSERT_TRUE(sawPushCtrlActionOne, "Expected 1-byte 0x01 PushCtrl resume payload");
+    runUntil(^BOOL{ return ![config hasPendingPushResumeForAppKey:config.appKey]; },
+             1, @"A successful ACK must clear the pending resume");
+
+    // Trigger foreground heartbeat #1 (server replies with cmd=0, ver=0 general ACK)
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"UIApplicationWillEnterForegroundNotification" object:nil];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(firstHeartbeatGeneralAcked, DISPATCH_TIME_NOW) == 0; }, 3, @"Heartbeat #1 was not received");
+    NSDate *settle = [NSDate dateWithTimeIntervalSinceNow:0.35];
+    while ([settle timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    NSString *logsAfterHb1 = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE(![logsAfterHb1 containsString:@"TCP heartbeat timed out"],
+                "General ACK (cmd=0, ver=0) must satisfy heartbeat probe without timeout, got logs: %@", logsAfterHb1);
+
+    // Trigger foreground heartbeat #2 (server withholds ACK -> timeout -> OneKeyLog WARN + auto-reconnect)
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"UIApplicationWillEnterForegroundNotification" object:nil];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(reconnectedAfterHbTimeout, DISPATCH_TIME_NOW) == 0; }, 3, @"Session did not reconnect after heartbeat ACK timeout");
+    runUntil(^BOOL{ return connectEvents.count >= 3; }, 1, @"Did not deliver the heartbeat close and reconnect events");
+    NSArray<NSNumber *> *expectedEvents = @[@YES, @NO, @YES];
+    ASSERT_TRUE([[connectEvents subarrayWithRange:NSMakeRange(0, 3)] isEqualToArray:expectedEvents],
+                "Expected connected, disconnected, reconnected; got %@", connectEvents);
+    [RCTJPushModule unregisterNitroEventListener:connectListener];
+    NSString *logsAfterHb2 = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([logsAfterHb2 containsString:@"TCP heartbeat timed out, reconnecting"],
+                "Expected OneKeyLog WARN on heartbeat timeout, got: %@", logsAfterHb2);
+
+    config.requestTimeoutInterval = 20;
+    config.requestResendInterval = 10;
+    config.reconnectBaseInterval = 3.0;
+    [[JCORETcpSession shared] disconnect];
+    [[JCORESisResolver shared] clearCustomConnectEndpoint];
+    printf("[PASS] Suite 9: PushCtrl(cmd=40, body={1}) resume, Heartbeat cmd=0/ver=0 general ACK, and Heartbeat timeout auto-reconnect verified\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -1718,6 +1967,7 @@ int main(int argc, const char * argv[]) {
         testRctJPushModuleMultiRuntimeAndBridgelessEvents();
         testPolicyAndPendingContentCleanup();
         testTokenAcknowledgementAndConnectedPolicy();
+        testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume();
     }
     return 0;
 }

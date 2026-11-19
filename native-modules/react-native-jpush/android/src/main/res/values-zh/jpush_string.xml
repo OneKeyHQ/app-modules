@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="jg_channel_name_p_min">最低优先级通知</string>
+    <string name="jg_channel_name_p_low">低优先级通知</string>
+    <string name="jg_channel_name_p_default">普通通知</string>
+    <string name="jg_channel_name_p_high">高优先级通知</string>
+</resources>

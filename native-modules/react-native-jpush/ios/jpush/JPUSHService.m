@@ -774,10 +774,9 @@ callbackSelector:(SEL)cbSelector
 }
 
 + (void)turnONPush {
-    [JCOREConfiguration shared].pushStopped = NO;
+    [[JCOREConfiguration shared] resumePushLocally];
     [[JCORETcpSession shared] startIfNeeded];
-    NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
+    [[JCORETcpSession shared] retryPendingPushResume];
 }
 
 + (void)turnOnPush {

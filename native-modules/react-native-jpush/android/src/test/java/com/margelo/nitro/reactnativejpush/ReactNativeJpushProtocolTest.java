@@ -311,21 +311,20 @@ public class ReactNativeJpushProtocolTest {
         assertTrue(receiverEvents.get(3).startsWith("TagAliasEvent:") && receiverEvents.get(3).contains("user_alias_01"));
         assertTrue(receiverEvents.get(4).startsWith("TagAliasEvent:") && receiverEvents.get(4).contains("vip"));
 
-        // 2c. Verify JCoreStorage.appendLocalLog cap and JLogger -> JCoreInterface.readNewLogs forwarding
+        // 2c. Verify JCoreStorage local log buffer is deprecated/disabled and JLogger outputs directly to OneKeyLog without in-memory storage
+        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
         JCoreInterface.enableSDKLocalLog(null, true, false);
         JCoreInterface.readNewLogs(null);
-        StringBuilder longLine = new StringBuilder();
-        for (int i = 0; i < 600; i++) {
-            longLine.append("0123456789");
-        }
         for (int i = 0; i < 10; i++) {
-            JCoreStorage.appendLocalLog("line_" + i + "_" + longLine.toString());
+            JCoreStorage.appendLocalLog("line_" + i);
         }
         JLogger.i("jlogger_forwarded_marker_01");
         String cappedLogs = JCoreInterface.readNewLogs(null);
-        assertTrue(cappedLogs.length() <= 32768);
-        assertTrue(cappedLogs.contains("jlogger_forwarded_marker_01"));
+        assertEquals("", cappedLogs);
+        assertTrue(JLogger.getRecentLogs().isEmpty());
+        assertTrue(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("jlogger_forwarded_marker_01"));
         JCoreInterface.enableSDKLocalLog(null, false, false);
+        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
 
         // 2d. Verify JCoreInterface.setHeartbeatInterval and JCoreManager.unRegister
         JCoreInterface.setHeartbeatInterval(null, 120);

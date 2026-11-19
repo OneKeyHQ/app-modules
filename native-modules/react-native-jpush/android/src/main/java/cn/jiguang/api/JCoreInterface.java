@@ -55,8 +55,7 @@ public class JCoreInterface {
     }
 
     public static void stop(Context context, String sdkType, Bundle bundle) {
-        JCoreStorage.setPushStopped(context, true);
-        JCoreTcpEngine.getInstance().stop(context);
+        JCoreTcpEngine.getInstance().stopPush(context);
     }
 
     public static void restart(Context context, String sdkType, Bundle bundle, boolean force) {

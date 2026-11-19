@@ -1,5 +1,6 @@
 package cn.jpush.android.api;
 
+import android.app.Notification;
 import android.content.Context;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -11,7 +12,7 @@ public class NotificationMessage implements Serializable {
     public String msgId;
     public transient Context context;
     public String notificationContent;
-    public int notificationAlertType;
+    public int notificationAlertType = Notification.DEFAULT_ALL;
     public String notificationTitle;
     public String notificationSmallIcon;
     public String notificationLargeIcon;
@@ -23,7 +24,8 @@ public class NotificationMessage implements Serializable {
     public String notificationBigPicPath;
     public String notificationInbox;
     public int notificationPriority;
-    public int notificationImportance;
+    public int notificationImportance = -1;
+    public String notificationSound;
     public String notificationCategory;
     public int notificationId;
     public String developerArg0;
