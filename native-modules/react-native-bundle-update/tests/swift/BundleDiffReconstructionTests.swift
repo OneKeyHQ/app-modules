@@ -571,6 +571,21 @@ final class BundleDiffReconstructionTests: XCTestCase {
             )
             XCTAssertEqual(resolvedFallback?.downloadUrl, "https://cdn.onekey.so/full.zip")
             XCTAssertEqual(resolvedFallback?.fileSize, 4096)
+
+            // 5. Disjoint RangeDownloader task IDs for diff vs full (even when bundleVersion ends in ".diff")
+            let diffTask42 = BundleDiffReconstruction.rangeTaskId(bundleKey: "6.8.0-42", isDiff: true)
+            let fullTask42Diff = BundleDiffReconstruction.rangeTaskId(bundleKey: "6.8.0-42.diff", isDiff: false)
+            XCTAssertEqual(diffTask42, "diff:6.8.0-42")
+            XCTAssertEqual(fullTask42Diff, "full:6.8.0-42.diff")
+            XCTAssertNotEqual(diffTask42, fullTask42Diff)
+            XCTAssertEqual(
+                BundleDiffReconstruction.rangeTaskId(forFilePath: "/tmp/onekey-bundle-download/.diff/6.8.0-42.diff.zip"),
+                diffTask42
+            )
+            XCTAssertEqual(
+                BundleDiffReconstruction.rangeTaskId(forFilePath: "/tmp/onekey-bundle-download/6.8.0-42.diff.zip"),
+                fullTask42Diff
+            )
         }
     }
 }

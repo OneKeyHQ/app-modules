@@ -1359,7 +1359,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             if clearingDownloads {
                 throw BundleUpdateError(.cancelled, .verifyASC)
             }
-            if activeVerifications[key] != nil {
+            if activeVerifications[key] != nil || activeDownloadTargetKey == key {
                 throw BundleUpdateError(.invalidArgument, .verifyASC)
             }
             let ctx = VerificationContext()
@@ -1378,6 +1378,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     private func acquireDownloadSlotForFallback(
+        targetKey: String,
         verificationContext: VerificationContext
     ) throws -> (DownloadDelegate, URLSession) {
         try stateQueue.sync {
@@ -1391,6 +1392,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw BundleUpdateError(.unknown, .verifyASC)
             }
             isDownloading = true
+            activeDownloadTargetKey = targetKey
             delegate.reset()
             activeRunDelegate = delegate
             return (delegate, session)
@@ -1402,7 +1404,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             runDelegate.finishRun()
             if activeRunDelegate === runDelegate {
                 isDownloading = false
+                activeDownloadTargetKey = nil
                 activeDownloadFilePath = nil
+                activeRangeTaskId = nil
                 activeRunDelegate = nil
             }
         }
@@ -1421,7 +1425,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     /// isDownloading enforces at most one in-flight download per process.
     /// Read by the background-snapshot handler so it knows where to drop the
     /// `.resume` sidecar.
+    private var activeDownloadTargetKey: String?
     private var activeDownloadFilePath: String?
+    private var activeRangeTaskId: String?
     /// OCDS §5.7: the highest progress percent already reported to JS for the
     /// in-flight download. Used to floor single-stream progress so the bar never
     /// moves backward at the concurrent→single-stream seam. Guarded by
@@ -1606,6 +1612,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         // single-stream fallback keeps it.
         self.stateQueue.sync {
             self.activeDownloadFilePath = filePath
+            self.activeRangeTaskId = rangeTaskId
             self.lastReportedProgress = 0
         }
         if runDelegate.wasCancelledByClear {
@@ -1740,7 +1747,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             self.sendEvent(type: "update/downloading", progress: floored)
         }
 
-        self.stateQueue.sync { self.activeDownloadFilePath = filePath }
+        self.stateQueue.sync {
+            self.activeDownloadFilePath = filePath
+            self.activeRangeTaskId = rangeTaskId
+        }
         if runDelegate.wasCancelledByClear {
             throw BundleUpdateError(.cancelled, step)
         }
@@ -1851,35 +1861,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return updatePromise(step: .download) { [weak self] in
             guard let self = self else { throw BundleUpdateError(.unknown, .download) }
 
-            let (isClearing, alreadyDownloading, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, Bool, DownloadDelegate?, URLSession?) in
-                if self.clearingDownloads { return (true, false, nil, nil) }
-                if self.isDownloading { return (false, true, nil, nil) }
-                self.isDownloading = true
-                self.downloadDelegate?.reset()
-                self.activeRunDelegate = self.downloadDelegate
-                return (false, false, self.downloadDelegate, self.urlSession)
-            }
-            if isClearing {
-                throw BundleUpdateError(.cancelled, .download)
-            }
-            guard !alreadyDownloading else {
-                OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading")
-                throw BundleUpdateError(.invalidArgument, .download)
-            }
-            guard let runDelegate, let runSession else {
-                throw BundleUpdateError(.unknown, .download)
-            }
-            defer {
-                self.stateQueue.sync {
-                    runDelegate.finishRun()
-                    if self.activeRunDelegate === runDelegate {
-                        self.isDownloading = false
-                        self.activeDownloadFilePath = nil
-                        self.activeRunDelegate = nil
-                    }
-                }
-            }
-
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let downloadUrl = params.downloadUrl
@@ -1898,6 +1879,41 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
 
             let bundleKey = "\(appVersion)-\(bundleVersion)"
+
+            let (isClearing, alreadyBusy, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, Bool, DownloadDelegate?, URLSession?) in
+                if self.clearingDownloads { return (true, false, nil, nil) }
+                if self.isDownloading || self.activeVerifications[bundleKey] != nil {
+                    return (false, true, nil, nil)
+                }
+                self.isDownloading = true
+                self.activeDownloadTargetKey = bundleKey
+                self.downloadDelegate?.reset()
+                self.activeRunDelegate = self.downloadDelegate
+                return (false, false, self.downloadDelegate, self.urlSession)
+            }
+            if isClearing {
+                throw BundleUpdateError(.cancelled, .download)
+            }
+            guard !alreadyBusy else {
+                OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, download or same-target verification already active for \(bundleKey)")
+                throw BundleUpdateError(.invalidArgument, .download)
+            }
+            guard let runDelegate, let runSession else {
+                throw BundleUpdateError(.unknown, .download)
+            }
+            defer {
+                self.stateQueue.sync {
+                    runDelegate.finishRun()
+                    if self.activeRunDelegate === runDelegate {
+                        self.isDownloading = false
+                        self.activeDownloadTargetKey = nil
+                        self.activeDownloadFilePath = nil
+                        self.activeRangeTaskId = nil
+                        self.activeRunDelegate = nil
+                    }
+                }
+            }
+
             self.recordFullBundleParams(key: bundleKey, downloadUrl: downloadUrl, fileSize: params.fileSize, sha256: sha256)
 
             let downloadDir = BundleUpdateStore.downloadBundleDir()
@@ -2015,7 +2031,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                         downloadUrl: diffUrl,
                         filePath: diffFilePath,
                         sha256: diffSha256,
-                        rangeTaskId: "\(bundleKey).diff",
+                        rangeTaskId: BundleDiffReconstruction.rangeTaskId(bundleKey: bundleKey, isDiff: true),
                         runDelegate: runDelegate,
                         runSession: runSession,
                         step: .download,
@@ -2053,7 +2069,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 downloadUrl: downloadUrl,
                 filePath: filePath,
                 sha256: sha256,
-                rangeTaskId: bundleKey,
+                rangeTaskId: BundleDiffReconstruction.rangeTaskId(bundleKey: bundleKey, isDiff: false),
                 runDelegate: runDelegate,
                 runSession: runSession,
                 step: .download,
@@ -2716,6 +2732,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 RangeDownloader.shared.discardArtifacts(filePath: diffFilePath)
 
                 let (runDelegate, runSession) = try self.acquireDownloadSlotForFallback(
+                    targetKey: folderName,
                     verificationContext: verificationContext
                 )
                 defer {
@@ -2729,7 +2746,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     downloadUrl: fallbackParams.downloadUrl,
                     filePath: fullFilePath,
                     sha256: sha256,
-                    rangeTaskId: folderName,
+                    rangeTaskId: BundleDiffReconstruction.rangeTaskId(bundleKey: folderName, isDiff: false),
                     runDelegate: runDelegate,
                     runSession: runSession,
                     step: .verifyASC,
@@ -3065,13 +3082,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     private func clearManagedFiles(includeInstalled: Bool) async throws {
-        let (alreadyClearing, oldSession, activeDelegate, activePath, activeVerifs) = stateQueue.sync { () -> (Bool, URLSession?, DownloadDelegate?, String?, [VerificationContext]) in
-            if clearingDownloads { return (true, nil, nil, nil, []) }
+        let (alreadyClearing, oldSession, activeDelegate, activePath, activeTaskId, activeVerifs) = stateQueue.sync { () -> (Bool, URLSession?, DownloadDelegate?, String?, String?, [VerificationContext]) in
+            if clearingDownloads { return (true, nil, nil, nil, nil, []) }
             clearingDownloads = true
             activeRunDelegate?.markCancelledByClear()
             let verifs = Array(activeVerifications.values)
             verifs.forEach { $0.markCancelledByClear() }
-            return (false, urlSession, activeRunDelegate, activeDownloadFilePath, verifs)
+            return (false, urlSession, activeRunDelegate, activeDownloadFilePath, activeRangeTaskId, verifs)
         }
         guard !alreadyClearing else { throw BundleUpdateError(.invalidArgument, .cleanup) }
         defer {
@@ -3082,7 +3099,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
         oldSession?.invalidateAndCancel()
         if let activePath {
-            let taskId = URL(fileURLWithPath: activePath).deletingPathExtension().lastPathComponent
+            let taskId = activeTaskId ?? BundleDiffReconstruction.rangeTaskId(forFilePath: activePath)
             await RangeDownloader.shared.cancel(channel: .bundle, taskId: taskId, filePath: activePath)
         }
         if let activeDelegate, !(await activeDelegate.waitForRunCompletion(timeout: 65)) {

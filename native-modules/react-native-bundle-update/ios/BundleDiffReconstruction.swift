@@ -66,6 +66,25 @@ enum BundleDiffReconstruction {
         return code == "NETWORK_ERROR" || code == "TIMEOUT"
     }
 
+    static func rangeTaskId(bundleKey: String, isDiff: Bool) -> String {
+        return isDiff ? "diff:\(bundleKey)" : "full:\(bundleKey)"
+    }
+
+    static func rangeTaskId(forFilePath filePath: String) -> String {
+        let url = URL(fileURLWithPath: filePath)
+        let fileName = url.lastPathComponent
+        let parentName = url.deletingLastPathComponent().lastPathComponent
+        if parentName == diffDownloadDirName && fileName.hasSuffix(diffZipExtension) {
+            let bundleKey = String(fileName.dropLast(diffZipExtension.count))
+            return rangeTaskId(bundleKey: bundleKey, isDiff: true)
+        }
+        if fileName.hasSuffix(".zip") {
+            let bundleKey = String(fileName.dropLast(4))
+            return rangeTaskId(bundleKey: bundleKey, isDiff: false)
+        }
+        return rangeTaskId(bundleKey: url.deletingPathExtension().lastPathComponent, isDiff: false)
+    }
+
     static func descriptorPreservingVerifiedSignature(
         newDescriptor: DiffArchiveDescriptor,
         existingDescriptor: DiffArchiveDescriptor?

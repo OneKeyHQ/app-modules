@@ -51,6 +51,44 @@ internal object BundleDiffReconstruction {
         return code == "NETWORK_ERROR" || code == "TIMEOUT"
     }
 
+    fun isRetryableNetworkIOException(error: Throwable): Boolean {
+        if (error is java.net.SocketTimeoutException ||
+            error is java.net.UnknownHostException ||
+            error is java.net.ConnectException ||
+            error is java.net.ProtocolException ||
+            error is java.net.SocketException ||
+            error is java.io.EOFException ||
+            error is java.io.InterruptedIOException
+        ) {
+            return true
+        }
+        val className = error.javaClass.name
+        if (className.endsWith(".StreamResetException") || className == "StreamResetException") {
+            return true
+        }
+        val msg = error.message.orEmpty()
+        return error is java.io.IOException && msg.startsWith("stream was reset:", ignoreCase = true)
+    }
+
+    fun rangeTaskId(bundleKey: String, isDiff: Boolean): String {
+        return if (isDiff) "diff:$bundleKey" else "full:$bundleKey"
+    }
+
+    fun rangeTaskIdForFilePath(filePath: String): String {
+        val file = File(filePath)
+        val fileName = file.name
+        val parentName = file.parentFile?.name.orEmpty()
+        if (parentName == DIFF_DOWNLOAD_DIR_NAME && fileName.endsWith(DIFF_ZIP_EXTENSION)) {
+            val bundleKey = fileName.removeSuffix(DIFF_ZIP_EXTENSION)
+            return rangeTaskId(bundleKey, isDiff = true)
+        }
+        if (fileName.endsWith(".zip")) {
+            val bundleKey = fileName.removeSuffix(".zip")
+            return rangeTaskId(bundleKey, isDiff = false)
+        }
+        return rangeTaskId(file.nameWithoutExtension, isDiff = false)
+    }
+
     fun descriptorPreservingVerifiedSignature(
         newDescriptor: DiffArchiveDescriptor,
         existingDescriptor: DiffArchiveDescriptor?,

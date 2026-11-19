@@ -55,19 +55,17 @@ private fun bundleUpdateError(error: Exception, step: String): BundleUpdateError
     if (error is BundleUpdateError) {
         return if (error.step == step) error else BundleUpdateError(error.code, step, error.httpStatus)
     }
-    val code = when (error) {
-        is ConcurrentRangeDownloader.PermanentHttpException,
-        is ConcurrentRangeDownloader.TransientHttpException -> "HTTP_ERROR"
-        is java.net.SocketTimeoutException -> "TIMEOUT"
-        is java.net.UnknownHostException,
-        is java.net.ConnectException,
-        is java.net.ProtocolException,
-        is java.net.SocketException -> "NETWORK_ERROR"
-        is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
-        is java.io.FileNotFoundException,
-        is java.nio.file.AccessDeniedException -> "STORAGE_ERROR"
-        is IllegalArgumentException -> "INVALID_ARGUMENT"
-        is SecurityException -> "SECURITY_REJECTED"
+    val code = when {
+        error is ConcurrentRangeDownloader.PermanentHttpException ||
+            error is ConcurrentRangeDownloader.TransientHttpException -> "HTTP_ERROR"
+        error is java.net.SocketTimeoutException ||
+            error is java.io.InterruptedIOException -> "TIMEOUT"
+        error is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
+        error is java.io.FileNotFoundException ||
+            error is java.nio.file.AccessDeniedException -> "STORAGE_ERROR"
+        BundleDiffReconstruction.isRetryableNetworkIOException(error) -> "NETWORK_ERROR"
+        error is IllegalArgumentException -> "INVALID_ARGUMENT"
+        error is SecurityException -> "SECURITY_REJECTED"
         else -> "UNKNOWN"
     }
     val status = when (error) {

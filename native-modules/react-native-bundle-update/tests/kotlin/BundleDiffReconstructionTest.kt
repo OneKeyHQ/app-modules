@@ -451,6 +451,34 @@ fun main() {
             fallback == ("https://cdn.onekey.so/full.zip" to 4096.0),
             "fallback download params recovered from persisted descriptor on verifyBundleASC retry",
         )
+
+        val diffTask42 = BundleDiffReconstruction.rangeTaskId("6.8.0-42", isDiff = true)
+        val fullTask42Diff = BundleDiffReconstruction.rangeTaskId("6.8.0-42.diff", isDiff = false)
+        expect(diffTask42 == "diff:6.8.0-42", "diff rangeTaskId prefix")
+        expect(fullTask42Diff == "full:6.8.0-42.diff", "full rangeTaskId prefix")
+        expect(diffTask42 != fullTask42Diff, "diff task 42 and full task 42.diff do not collide")
+        expect(
+            BundleDiffReconstruction.rangeTaskIdForFilePath("/tmp/onekey-bundle-download/.diff/6.8.0-42.diff.zip") == diffTask42,
+            "rangeTaskIdForFilePath resolves diff task id",
+        )
+        expect(
+            BundleDiffReconstruction.rangeTaskIdForFilePath("/tmp/onekey-bundle-download/6.8.0-42.diff.zip") == fullTask42Diff,
+            "rangeTaskIdForFilePath resolves full task id",
+        )
+
+        class StreamResetException(message: String) : java.io.IOException(message)
+        expect(
+            BundleDiffReconstruction.isRetryableNetworkIOException(StreamResetException("stream was reset: CANCEL")),
+            "HTTP/2 StreamResetException classified as retryable network error",
+        )
+        expect(
+            BundleDiffReconstruction.isRetryableNetworkIOException(java.io.EOFException("unexpected end of stream")),
+            "EOFException classified as retryable network error",
+        )
+        expect(
+            !BundleDiffReconstruction.isRetryableNetworkIOException(java.io.FileNotFoundException("missing")),
+            "FileNotFoundException is not classified as network error",
+        )
     } finally {
         tempRoot.deleteRecursively()
     }
