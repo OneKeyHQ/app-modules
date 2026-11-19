@@ -473,6 +473,8 @@ jobs:
           cat > "$RUNNER_TEMP/rerun-native-tests.gradle" <<'GRADLE'
           allprojects {
             tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+              // Robolectric resolves its Android SDK jars separately from Gradle.
+              systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
               outputs.upToDateWhen { false }
               outputs.cacheIf { false }
             }
