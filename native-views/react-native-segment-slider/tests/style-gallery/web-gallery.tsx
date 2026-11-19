@@ -3,7 +3,7 @@
 import { createRoot } from 'react-dom/client';
 
 import spec from './scenarios.json';
-import { SegmentSlider } from '../../src/SegmentSlider.web';
+import { SegmentSlider } from '@onekeyfe/react-native-segment-slider';
 
 type IPalette = Record<string, string>;
 

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { ComponentProps, ComponentType } from 'react';
 
 import { StyleSheet } from 'react-native';
@@ -83,6 +83,7 @@ function SegmentSliderComponent({
   const lastValueRef = useRef(value);
   // True between onSlideStart/onSlideComplete; gates the value sync.
   const draggingRef = useRef(false);
+  const lastCompletedInteractionIdRef = useRef(0);
 
   const sliderRef = useRef<ISegmentSliderHybridRef | null>(null);
   const hybridRef = useMemo(
@@ -90,7 +91,7 @@ function SegmentSliderComponent({
       callback((node: ISegmentSliderHybridRef) => {
         // Android's generated Nitro updater never clears hybridRef.isDirty, so
         // this re-fires on every props commit there (iOS only on attach). A
-        // same-node re-fire must be a no-op or it would kill a live drag.
+        // same-node re-fire must be a no-op to preserve interaction state.
         if (sliderRef.current === node) {
           return;
         }
@@ -98,11 +99,12 @@ function SegmentSliderComponent({
         // A fresh view cannot be mid-drag, and a teardown during a drag never
         // delivers onSlideComplete, so clear the flag here.
         draggingRef.current = false;
+        lastCompletedInteractionIdRef.current = 0;
         // `defaultValue` only captures the first value; a rebuilt native view
         // (remount, Fabric recycling) may sit at a stale position. Push the
         // latest value unconditionally — `setValue` is idempotent.
         lastValueRef.current = latestValueRef.current;
-        node.setValue(latestValueRef.current);
+        node.setValue(latestValueRef.current, 0);
       }),
     []
   );
@@ -123,19 +125,25 @@ function SegmentSliderComponent({
     onSlideStart?.();
   }, [onSlideStart]);
 
-  const handleSlideComplete = useCallback(() => {
-    draggingRef.current = false;
-    // The value sync skips updates during a drag; apply a value the parent
-    // clamped or reset meanwhile now, without emitting `onChange`.
-    const node = sliderRef.current;
-    if (node && latestValueRef.current !== lastValueRef.current) {
-      lastValueRef.current = latestValueRef.current;
-      node.setValue(latestValueRef.current);
-    }
-    onSlideComplete?.();
-  }, [onSlideComplete]);
+  const handleSlideComplete = useCallback(
+    (interactionId: number, finalValue: number) => {
+      draggingRef.current = false;
+      lastCompletedInteractionIdRef.current = interactionId;
+      // Native reports the actual value because an earlier sync could have
+      // arrived during a newer gesture and been dropped.
+      lastValueRef.current = finalValue;
+      const node = sliderRef.current;
+      const acceptedValue = latestValueRef.current;
+      if (node && acceptedValue !== finalValue) {
+        lastValueRef.current = acceptedValue;
+        node.setValue(acceptedValue, interactionId);
+      }
+      onSlideComplete?.();
+    },
+    [onSlideComplete]
+  );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     latestValueRef.current = value;
     if (draggingRef.current) return;
     if (value === lastValueRef.current) return;
@@ -145,7 +153,7 @@ function SegmentSliderComponent({
       return;
     }
     lastValueRef.current = value;
-    node.setValue(value);
+    node.setValue(value, lastCompletedInteractionIdRef.current);
   }, [value]);
 
   return (

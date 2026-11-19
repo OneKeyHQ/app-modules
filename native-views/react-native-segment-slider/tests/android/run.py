@@ -20,7 +20,7 @@ def run(*args, **kwargs):
 parser = argparse.ArgumentParser()
 parser.add_argument("--serial", required=True)
 parser.add_argument("--out", default=".tmp/segment-slider-android")
-parser.add_argument("--source", type=Path)
+parser.add_argument("--source", type=Path, help="alternative Kotlin implementation with the same Nitro interface")
 parser.add_argument("--gallery", type=Path,
                     help="scenarios.json; render the style gallery instead of the bubble checks")
 args = parser.parse_args()
@@ -41,9 +41,7 @@ base = "package com.margelo.nitro.segmentslider\nabstract class HybridSegmentSli
 base += "abstract val view: android.view.View\n"
 for name in ["defaultValue", "min", "max", "segments", "sliderHeight"]:
     base += f"abstract var {name}: Double\n"
-# Open with a default so `--source` can still compile implementations that
-# predate `hapticStep`.
-base += "open var hapticStep: Double = 0.0\n"
+base += "abstract var hapticStep: Double\n"
 for name in ["disabled", "showBubble", "centerOrigin", "snapTapToSegment"]:
     base += f"abstract var {name}: Boolean\n"
 for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markActiveColor",
@@ -51,8 +49,8 @@ for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markA
     base += f"abstract var {name}: String\n"
 base += """abstract var onChange: ((Double) -> Unit)?
 abstract var onSlideStart: (() -> Unit)?
-abstract var onSlideComplete: (() -> Unit)?
-abstract fun setValue(value: Double)
+abstract var onSlideComplete: ((Double, Double) -> Unit)?
+abstract fun setValue(value: Double, interactionId: Double)
 open fun afterUpdate() {}
 open fun dispose() {}
 }

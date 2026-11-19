@@ -47,21 +47,24 @@ afterEach(() => {
 
 type IRenderProps = Partial<Omit<ISegmentSliderProps, 'onChange'>>;
 
-function render(props: IRenderProps = {}) {
-  const onChange = jest.fn<void, [number]>();
+function render(props: IRenderProps = {}, { acceptChanges = false } = {}) {
+  const onChange = jest.fn<void, [number]>((value) => {
+    if (acceptChanges) rerender({ value });
+  });
   const all: ISegmentSliderProps = {
     value: 0,
     segments: 4,
     ...props,
     onChange,
   };
-  act(() => root.render(<SegmentSlider {...all} />));
+  const rerender = (next: IRenderProps) =>
+    root.render(<SegmentSlider {...all} {...next} />);
+  act(() => rerender({}));
   const slider = container.querySelector<HTMLDivElement>('[role="slider"]')!;
   return {
     slider,
     onChange,
-    rerender: (next: IRenderProps) =>
-      act(() => root.render(<SegmentSlider {...all} {...next} />)),
+    rerender: (next: IRenderProps) => act(() => rerender(next)),
   };
 }
 
@@ -93,12 +96,15 @@ const mark = (i: number) =>
 const markDot = (i: number) => mark(i).firstElementChild as HTMLDivElement;
 
 it('moves through the integer values used by integer-aligned marks', () => {
-  const { slider, onChange } = render({
-    value: 10,
-    min: 10,
-    max: 100,
-    alignSegmentMarksToIntegerValues: true,
-  });
+  const { slider, onChange } = render(
+    {
+      value: 10,
+      min: 10,
+      max: 100,
+      alignSegmentMarksToIntegerValues: true,
+    },
+    { acceptChanges: true }
+  );
   ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'].forEach((k) =>
     key(slider, k)
   );
@@ -187,7 +193,10 @@ it('applies a value the parent changed during the drag once it ends', () => {
 });
 
 it('steps the keyboard through the mark values without drifting', () => {
-  const { slider, onChange } = render({ value: 0, segments: 3 });
+  const { slider, onChange } = render(
+    { value: 0, segments: 3 },
+    { acceptChanges: true }
+  );
   ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'].forEach((k) =>
     key(slider, k)
   );
@@ -196,7 +205,10 @@ it('steps the keyboard through the mark values without drifting', () => {
 });
 
 it('steps one unit by keyboard without marks', () => {
-  const { slider, onChange } = render({ value: 5, segments: 0 });
+  const { slider, onChange } = render(
+    { value: 5, segments: 0 },
+    { acceptChanges: true }
+  );
   key(slider, 'ArrowRight');
   key(slider, 'ArrowLeft');
   key(slider, 'ArrowLeft');
@@ -206,11 +218,14 @@ it('steps one unit by keyboard without marks', () => {
 it('treats each keyboard action as one complete interaction', () => {
   const onSlideStart = jest.fn();
   const onSlideComplete = jest.fn();
-  const { slider, onChange } = render({
-    value: 0,
-    onSlideStart,
-    onSlideComplete,
-  });
+  const { slider, onChange } = render(
+    {
+      value: 0,
+      onSlideStart,
+      onSlideComplete,
+    },
+    { acceptChanges: true }
+  );
   key(slider, 'ArrowRight');
   key(slider, 'End');
   key(slider, 'Home');
@@ -218,6 +233,38 @@ it('treats each keyboard action as one complete interaction', () => {
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([25, 100, 0]);
   expect(onSlideStart).toHaveBeenCalledTimes(3);
   expect(onSlideComplete).toHaveBeenCalledTimes(3);
+});
+
+it('steps from the accepted value after the parent rejects a key change', () => {
+  const onSlideComplete = jest.fn();
+  const { slider, onChange } = render({
+    value: 40,
+    segments: 0,
+    onSlideComplete,
+  });
+  key(slider, 'End');
+  expect(thumb().style.left).toBe('40%');
+  expect(slider.getAttribute('aria-valuenow')).toBe('40');
+  key(slider, 'ArrowLeft');
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([100, 39]);
+  expect(thumb().style.left).toBe('40%');
+  expect(onSlideComplete).toHaveBeenCalledTimes(2);
+});
+
+it('paints marks added mid-drag even when the parent accepts the drag value', () => {
+  const { slider, onChange, rerender } = render({
+    value: 0,
+    segments: 0,
+    markActiveColor: '#00aa00',
+    markInactiveColor: '#ffffff',
+  });
+  pointer(slider, 'pointerdown', TRACK_LEFT + 100);
+  rerender({ value: 50, segments: 4 });
+  pointer(slider, 'pointerup', TRACK_LEFT + 100);
+  expect(thumb().style.left).toBe('50%');
+  expect(markDot(2).style.background).toBe('rgb(0, 170, 0)');
+  expect(markDot(3).style.background).toBe('rgb(255, 255, 255)');
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([50]);
 });
 
 it('ignores keyboard input while disabled', () => {
@@ -267,6 +314,17 @@ it('keeps a drag bound to the pointer that started it', () => {
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([10, 20]);
   expect(onSlideStart).toHaveBeenCalledTimes(1);
   expect(onSlideComplete).toHaveBeenCalledTimes(1);
+});
+
+it('ignores a second pointer on a mark without affecting the next press', () => {
+  const { slider, onChange } = render({ value: 0 });
+  pointer(slider, 'pointerdown', TRACK_LEFT + 20, 1);
+  pointer(markDot(3), 'pointerdown', TRACK_LEFT + 150, 2);
+  pointer(markDot(3), 'pointerup', TRACK_LEFT + 150, 2);
+  pointer(slider, 'pointerup', TRACK_LEFT + 20, 1);
+  pointer(slider, 'pointerdown', TRACK_LEFT + 80, 3);
+  pointer(slider, 'pointerup', TRACK_LEFT + 80, 3);
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([10, 40]);
 });
 
 it('keeps a tap on a mark on that mark with snapTapToSegment', () => {

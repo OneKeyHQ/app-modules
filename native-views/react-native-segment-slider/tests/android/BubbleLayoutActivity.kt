@@ -73,13 +73,50 @@ class BubbleLayoutActivity : Activity() {
         runInteractionCases()
         runHapticCases()
         runLayoutCases {
-          File(filesDir, "result.json").writeText(JSONObject().apply {
-            put("checks", checks); put("failures", org.json.JSONArray(failures))
-          }.toString(2))
-          title.text = "${checks - failures.size}/$checks native Android checks passed"
-          android.util.Log.i("SliderBubbleTest", title.text.toString())
+          verifyDelayedValueSync(root) {
+            File(filesDir, "result.json").writeText(JSONObject().apply {
+              put("checks", checks); put("failures", org.json.JSONArray(failures))
+            }.toString(2))
+            title.text = "${checks - failures.size}/$checks native Android checks passed"
+            android.util.Log.i("SliderBubbleTest", title.text.toString())
+          }
         }
       }, 250)
+    }
+  }
+
+  private fun verifyDelayedValueSync(root: FrameLayout, done: () -> Unit) {
+    val slider = HybridSegmentSlider(ThemedReactContext(this)).apply { defaultValue = 0.0 }
+    root.addView(slider.view, FrameLayout.LayoutParams(px(320), px(24)))
+    slider.view.layout(0, 0, px(320), px(24))
+    val inset = field(slider, "insetPx") as Float
+    fun x(fraction: Float) = inset + fraction * (slider.view.width - 2 * inset)
+    val changes = mutableListOf<Double>()
+    val completed = mutableListOf<Pair<Double, Double>>()
+    slider.onChange = { changes.add(it) }
+    slider.onSlideComplete = { id, value -> completed.add(id to value) }
+
+    touch(slider, MotionEvent.ACTION_DOWN, x(0.6f))
+    touch(slider, MotionEvent.ACTION_UP, x(0.6f))
+    slider.setValue(40.0, 1.0)
+    touch(slider, MotionEvent.ACTION_DOWN, x(0.7f))
+    handler.post {
+      check(field(slider, "currentValue") == 70.0, "delayed sync leaves newer drag alone")
+      touch(slider, MotionEvent.ACTION_MOVE, x(0.8f))
+      touch(slider, MotionEvent.ACTION_UP, x(0.8f))
+      check(completed == listOf(1.0 to 60.0, 2.0 to 80.0), "final native values: $completed")
+      slider.setValue(40.0, 1.0)
+      handler.post {
+        check(field(slider, "currentValue") == 80.0, "sync from old interaction stays stale after release")
+        slider.setValue(50.0, 2.0)
+        handler.post {
+          check(field(slider, "currentValue") == 50.0, "sync applies for latest completed interaction")
+          check(changes == listOf(60.0, 70.0, 80.0), "only touches emitted changes: $changes")
+          root.removeView(slider.view)
+          slider.dispose()
+          done()
+        }
+      }
     }
   }
 
@@ -217,7 +254,7 @@ class BubbleLayoutActivity : Activity() {
     var cancelCompletes = 0
     val cancel = make { segments = 4.0; defaultValue = 0.0 }
     cancel.onChange = { cancelChanges.add(it) }
-    cancel.onSlideComplete = { cancelCompletes++ }
+    cancel.onSlideComplete = { _, _ -> cancelCompletes++ }
     touch(cancel, MotionEvent.ACTION_DOWN, xAt(cancel, 0.3))
     cancel.disabled = true
     touch(cancel, MotionEvent.ACTION_MOVE, xAt(cancel, 0.8))
@@ -247,7 +284,7 @@ class BubbleLayoutActivity : Activity() {
     var completes = 0
     slider.onChange = { changes.add(it) }
     slider.onSlideStart = { starts++ }
-    slider.onSlideComplete = { completes++ }
+    slider.onSlideComplete = { _, _ -> completes++ }
     val inset = field(slider, "insetPx") as Float
     touch(slider, MotionEvent.ACTION_DOWN, slider.view.width / 2f)
     for (value in listOf(0.0, 50.0, 100.0)) {

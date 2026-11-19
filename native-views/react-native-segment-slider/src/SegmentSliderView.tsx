@@ -42,9 +42,12 @@ export function SegmentSliderView({
   const stableOnSlideStart = useCallback(() => {
     onSlideStartRef.current?.();
   }, []);
-  const stableOnSlideComplete = useCallback(() => {
-    onSlideCompleteRef.current?.();
-  }, []);
+  const stableOnSlideComplete = useCallback(
+    (interactionId: number, finalValue: number) => {
+      onSlideCompleteRef.current?.(interactionId, finalValue);
+    },
+    []
+  );
   const onChangeCallback = useMemo(
     () => callback(stableOnChange),
     [stableOnChange]

@@ -25,13 +25,9 @@ import type {
  */
 export interface SegmentSliderProps extends HybridViewProps {
   /**
-   * Initial value, applied ONCE when the view mounts. The slider is
-   * UNCONTROLLED: after mount the native view owns the value (driven by the
-   * pan gesture and reported via `onChange`). To set the value imperatively
-   * from JS — e.g. a leverage / coin reset — call the `setValue` method on the
-   * hybrid ref instead of re-rendering with a new prop. This keeps reset (and
-   * any high-rate) updates off the Fabric prop-commit path (REACT-NATIVE-1JZ)
-   * and removes the controlled-value-vs-drag conflict entirely.
+   * Seeds the native view on the first prop commit. Later updates use
+   * `setValue` with the last completed interaction ID, keeping value sync
+   * off the Fabric prop-commit path (REACT-NATIVE-1JZ).
    */
   defaultValue: number;
   /** Range minimum (default range 0..100). */
@@ -86,19 +82,16 @@ export interface SegmentSliderProps extends HybridViewProps {
   onChange?: (value: number) => void;
   /** Fired once when a drag/tap begins. */
   onSlideStart?: () => void;
-  /** Fired once when a drag/tap ends. */
-  onSlideComplete?: () => void;
+  /** Reports the interaction ID and final native value when a drag/tap ends. */
+  onSlideComplete?: (interactionId: number, finalValue: number) => void;
 }
 
 export interface SegmentSliderMethods extends HybridViewMethods {
   /**
-   * Imperatively set the slider value (clamped to `min..max`). Hard-snaps the
-   * thumb to the new value, cancelling any in-flight drag, and does NOT fire
-   * `onChange` (the JS caller already knows the value, so re-emitting would
-   * loop). This is the supported way to update the value after mount — see
-   * `defaultValue`.
+   * Sets a controlled value silently while idle, provided the given ID is
+   * still the latest native interaction (0 before the first interaction).
    */
-  setValue(value: number): void;
+  setValue(value: number, interactionId: number): void;
 }
 
 export type SegmentSlider = HybridView<

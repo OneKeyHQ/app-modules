@@ -63,7 +63,48 @@ enum BubbleLayoutTests {
     }
   }
 
-  static func main() throws {
+  @MainActor
+  static func flushQueuedValueSync() async {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.main.async { continuation.resume() }
+    }
+  }
+
+  @MainActor
+  static func verifyDelayedValueSync() async throws {
+    let slider = makeSlider(width: 320, value: 0)
+    let control = slider.view as! SegmentSliderUIView
+    var changes: [Double] = []
+    var completedIds: [Double] = []
+    var completedValues: [Double] = []
+    slider.onChange = { changes.append($0) }
+    slider.onSlideComplete = { id, value in
+      completedIds.append(id)
+      completedValues.append(value)
+    }
+
+    control.onTouchBegan?(12 + 0.6 * 296)
+    control.onTouchEnded?()
+    try slider.setValue(value: 40, interactionId: completedIds[0])
+    control.onTouchBegan?(12 + 0.7 * 296)
+    await flushQueuedValueSync()
+    verify(slider, value: 70, label: "new drag after delayed sync")
+    control.onTouchMoved?(12 + 0.8 * 296)
+    control.onTouchEnded?()
+    check(completedIds == [1, 2], "both interactions completed")
+    check(completedValues == [60, 80], "completions report the final native values")
+
+    try slider.setValue(value: 40, interactionId: completedIds[0])
+    await flushQueuedValueSync()
+    verify(slider, value: 80, label: "stale sync after newer completion")
+    try slider.setValue(value: 50, interactionId: completedIds[1])
+    await flushQueuedValueSync()
+    verify(slider, value: 50, label: "accepted sync for latest completion")
+    check(changes == [60, 70, 80], "only touch changes emit callbacks")
+  }
+
+  @MainActor
+  static func main() async throws {
     for width: CGFloat in [160, 320, 600] {
       for value: Double in [0, 1, 25, 50, 75, 99, 100] {
         let slider = makeSlider(width: width, value: value)
@@ -82,7 +123,7 @@ enum BubbleLayoutTests {
     var completions = 0
     slider.onChange = { changes.append($0) }
     slider.onSlideStart = { starts += 1 }
-    slider.onSlideComplete = { completions += 1 }
+    slider.onSlideComplete = { _, _ in completions += 1 }
     slider.snapTapToSegment = true
     control.onTouchBegan?(160)
     for value: Double in [0, 50, 100] {
@@ -154,7 +195,7 @@ enum BubbleLayoutTests {
     var cancelCompletes = 0
     let cancel = makeSlider(width: 320, value: 0)
     cancel.onChange = { cancelChanges.append($0) }
-    cancel.onSlideComplete = { cancelCompletes += 1 }
+    cancel.onSlideComplete = { _, _ in cancelCompletes += 1 }
     let cancelControl = cancel.view as! SegmentSliderUIView
     cancelControl.onTouchBegan?(12 + 0.3 * 296)
     cancel.disabled = true
@@ -176,6 +217,8 @@ enum BubbleLayoutTests {
     boundedControl.onTouchMoved?(0)
     boundedControl.onTouchEnded?()
     check(boundChanges == [10, 1], "fractional bound values: \(boundChanges)")
+
+    try await verifyDelayedValueSync()
 
     // Render with a horizontally clipping ancestor, matching the failing sheet.
     // This is a UIKit layer preview, not a React Native or iPhone screenshot.

@@ -64,6 +64,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private var currentValue = 0.0
   private var lastEmitted = Double.NaN
   private var isDragging = false
+  private var interactionId = 0.0
   private var thumbScale = 1f
   private var thumbScaleAnimator: ValueAnimator? = null
   private var isDisposed = false
@@ -99,6 +100,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       // the drag state or the disallow-intercept flag.
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+          interactionId += 1
           isDragging = true
           hasDragged = false
           touchStartX = event.x
@@ -142,7 +144,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
             hoverMarkIndex = -1
             animateThumbScale(1f)
             view.invalidate()
-            onSlideComplete?.invoke()
+            onSlideComplete?.invoke(interactionId, currentValue)
           }
           parent?.requestDisallowInterceptTouchEvent(false)
           return true
@@ -259,7 +261,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // MARK: - Callbacks
   override var onChange: ((value: Double) -> Unit)? = null
   override var onSlideStart: (() -> Unit)? = null
-  override var onSlideComplete: (() -> Unit)? = null
+  override var onSlideComplete: ((interactionId: Double, finalValue: Double) -> Unit)? = null
 
   // MARK: - Imperative methods
   // Set the value from JS without a Fabric prop commit. Called on the JS
@@ -267,9 +269,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // (mirrors react-native-perp-depth-bar's imperative methods). Does NOT fire
   // onChange — syncToValue updates lastEmitted so the caller's own value never
   // echoes back.
-  override fun setValue(value: Double) {
+  override fun setValue(value: Double, interactionId: Double) {
     view.post {
-      if (!isDisposed) syncToValue(value)
+      if (!isDisposed && !isDragging && this.interactionId == interactionId) {
+        syncToValue(value)
+      }
     }
   }
 
@@ -308,14 +312,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     return min + snappedFrac * (max - min)
   }
 
-  /** Hard re-sync: snap the thumb to [v], overriding any in-flight drag. */
+  /** Updates the idle view without emitting an interaction callback. */
   private fun syncToValue(v: Double) {
     if (isDisposed) return
-    // An imperative setValue (or the initial defaultValue) wins over the
-    // current gesture: drop the drag so a queued ACTION_MOVE can't immediately
-    // re-overwrite the thumb, and clear the transient hover/halo so the snapped
-    // position renders clean.
-    isDragging = false
     hoverMarkIndex = -1
     currentValue = v
     lastEmitted = v
@@ -384,7 +383,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     animateThumbScale(1f)
     view.parent?.requestDisallowInterceptTouchEvent(false)
     view.invalidate()
-    onSlideComplete?.invoke()
+    onSlideComplete?.invoke(interactionId, currentValue)
   }
 
   /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.

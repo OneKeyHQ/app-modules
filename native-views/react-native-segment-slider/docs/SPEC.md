@@ -20,8 +20,9 @@ platform (`src/types.ts`). It is controlled: `value` is the current value and
 dragging, an incoming `value` is deferred so the thumb follows the finger; when
 the interaction ends, the latest `value` is applied if it differs from the last
 reported value (for example a value the caller clamped or reset mid-drag), and
-afterwards any new `value` moves the thumb immediately. Neither path emits
-`onChange`.
+afterwards any new `value` moves the thumb immediately. Web reconciles after
+every pointer or keyboard interaction and paints with the latest configuration,
+including marks added during a drag. Reconciliation never emits `onChange`.
 
 An interaction is one drag or tap (one pointer and, on Web, only the primary
 button; extra pointers are ignored until it ends) or one accepted Web key
@@ -62,7 +63,9 @@ haptics.
 
 `src/SegmentSlider.nitro.ts` defines the native view's required props and
 methods. The component above is the only public entry point; the Nitro view and
-its `setValue` method are internal.
+its `setValue` method are internal. The package root resolves to the DOM
+implementation under the `browser` export condition and to the Nitro wrapper
+under the default condition. Both export the same public API.
 
 - `defaultValue` seeds the value once. Later prop commits do not reset it.
 - `min` / `max` define the range (native defaults 0 / 100); callers provide a
@@ -83,8 +86,9 @@ its `setValue` method are internal.
   to the platform color parser; the view does not resolve application themes.
 - `onChange` reports changed, integer-rounded interaction values.
   `onSlideStart` / `onSlideComplete` delimit an interaction.
-- `setValue(value)` updates the native view without emitting `onChange` and
-  cancels an in-flight drag. Callers supply a finite value within their range.
+- `setValue(value, interactionId)` updates the native view without emitting
+  `onChange`. Callers supply a finite value within their range and the last
+  completed interaction ID (0 before the first interaction).
 
 ## Lifecycle, resources and safety
 
@@ -93,9 +97,16 @@ There is no persistence, network request, deserialized application data or cache
 Each mounted view owns its resources; separate JavaScript runtimes do not share
 the view's interaction state. Initialization does not depend on another runtime.
 
-The iOS imperative method dispatches to the main queue. User interaction runs
-on the UI thread. The iOS control temporarily disables ancestor pan gestures
-during a touch and restores them on completion, cancellation or detachment.
+User interaction and queued imperative value updates run on the UI thread.
+Each native touch begins a new view-local interaction ID. The internal
+completion callback reports its ID and final value to JS. The UI thread
+applies a value update only while idle and only if its ID matches the most
+recent interaction, so a delayed update cannot alter or interrupt a newer
+interaction. On the newer interaction's completion, JS compares the latest
+controlled value with the value reported by that completion.
+
+The iOS control temporarily disables ancestor pan gestures during a touch and
+restores them on completion, cancellation or detachment.
 Android prevents parent touch interception during interaction. Layer/paint work
 stays native; no new bridge calls or resources are required for bubble layout.
 The caller controls the number of marks and must leave vertical room above the
@@ -139,9 +150,12 @@ Web: `src/SegmentSlider.web.tsx` implements rendering, pointer and keyboard
 interaction. `src/__tests__/SegmentSlider.web.test.tsx` (jsdom) covers the
 controlled value contract (including mid-drag changes), keyboard stepping and
 callbacks, integer-aligned marks, the color props, thumb stacking, tap
-snapping, disabling mid-drag and multi-pointer input.
+snapping, disabling mid-drag, mid-drag mark changes and multi-pointer input.
 `src/__tests__/SegmentSlider.native.test.tsx` covers the native wrapper's value
-sync and prop pass-through with the Nitro view mocked. jsdom does not lay out, so pointer-to-value mapping
+sync and prop pass-through with the Nitro view mocked. The native harnesses
+queue a value update for a completed drag and verify that a newer drag can
+move and complete, that the old update stays stale after release and that
+an update for the newer completion applies. jsdom does not lay out, so pointer-to-value mapping
 and rendered appearance need a browser check: on desktop Perps, drag through
 0%, 50% and 100%, click each mark and confirm the thumb covers the mark it sits
 on, in light and dark themes.
@@ -153,7 +167,8 @@ them into `docs/screenshots/style-gallery.png`. iOS uses the Mac Catalyst
 build below with `tests/style-gallery/StyleGallery.swift`; Android uses
 `tests/android/run.py --gallery tests/style-gallery/scenarios.json` (run with
 `adb shell wm density 320` for 2x output); Web uses
-`tests/style-gallery/render-web.cjs` (headless Chromium, real mouse press).
+`tests/style-gallery/render-web.cjs` (the built package root in headless
+Chromium with real mouse presses).
 Like the other harnesses, this does not exercise the React Native / Nitro
 integration.
 

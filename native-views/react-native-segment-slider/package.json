@@ -3,11 +3,16 @@
   "version": "6.8.0-1",
   "description": "react-native-segment-slider",
   "main": "./lib/module/index.js",
+  "browser": "./lib/module/index.web.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
     ".": {
-      "source": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
+      "browser": {
+        "source": "./src/index.web.tsx",
+        "default": "./lib/module/index.web.js"
+      },
+      "source": "./src/index.tsx",
       "default": "./lib/module/index.js"
     },
     "./package.json": "./package.json"

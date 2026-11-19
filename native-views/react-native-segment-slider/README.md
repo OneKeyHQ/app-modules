@@ -40,8 +40,8 @@ yarn add @onekeyfe/react-native-segment-slider react-native-nitro-modules
 
 `react-native-nitro-modules` is a required peer dependency at the version pinned
 by the package. Install the app's iOS pods and rebuild the native application
-after adding the package; Android links through autolinking. Web needs no extra
-setup.
+after adding the package; Android links through autolinking. Web bundlers that
+resolve the `browser` export condition load the DOM slider from the package root.
 
 ## Usage
 

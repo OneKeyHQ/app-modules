@@ -45,6 +45,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var currentValue: Double = 0
   private var lastEmitted: Double = .nan
   private var isDragging = false
+  private var interactionId: Double = 0
   private var hasLaidOut = false
   // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
   // candidate; once the finger travels past `tapMoveThreshold` it becomes a
@@ -134,7 +135,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // MARK: - Callbacks
   var onChange: ((Double) -> Void)?
   var onSlideStart: (() -> Void)?
-  var onSlideComplete: (() -> Void)?
+  var onSlideComplete: ((Double, Double) -> Void)?
 
   // MARK: - Init
   override init() {
@@ -398,6 +399,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
   private func handleTouchBegan(_ x: CGFloat) {
     guard !disabled else { return }
+    interactionId += 1
     isDragging = true
     hasDragged = false
     touchStartX = x
@@ -441,7 +443,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     animateThumbScale(1.0)
     setBubbleVisible(false)
     (view as? SegmentSliderUIView)?.unlockAncestorGestures()
-    onSlideComplete?()
+    onSlideComplete?(interactionId, currentValue)
   }
 
   private func handleTouchEnded() {
@@ -461,7 +463,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
     setBubbleVisible(false)
-    onSlideComplete?()
+    onSlideComplete?(interactionId, currentValue)
   }
 
   /// Snaps a value to the value of the nearest segment mark. Caller guarantees
@@ -473,12 +475,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     return min + snappedFrac * (max - min)
   }
 
-  /// Hard re-sync: snap the thumb to `v`, overriding any in-flight drag. An
-  /// imperative `setValue` (or the initial `defaultValue`) wins over the current
-  /// gesture, so drop the drag (a queued touchesMoved can't then re-overwrite
-  /// the thumb) and clear the transient hover/halo before re-rendering.
+  /// Updates the idle view without emitting an interaction callback.
   private func syncToValue(_ v: Double) {
-    isDragging = false
     if hoverMarkIndex != -1 {
       hoverMarkIndex = -1
       setHalo(visible: false, index: 0)
@@ -534,9 +532,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   /// thread, so hop to the main thread before touching the view / layers. Does
   /// NOT fire `onChange` — `syncToValue` updates `lastEmitted` so the caller's
   /// own value never echoes back.
-  func setValue(value: Double) throws {
+  func setValue(value: Double, interactionId: Double) throws {
     DispatchQueue.main.async { [weak self] in
-      self?.syncToValue(value)
+      guard let self, !self.isDragging, self.interactionId == interactionId else { return }
+      self.syncToValue(value)
     }
   }
 

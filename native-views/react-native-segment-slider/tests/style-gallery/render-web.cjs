@@ -3,7 +3,8 @@
 // Pressed rows are captured one at a time while a real mouse button is held.
 //
 // esbuild, playwright-core, react and react-dom are resolved from NODE_PATH
-// (this repository does not install esbuild or Playwright), e.g.:
+// (this repository does not install esbuild or Playwright). Build the package
+// with `yarn prepare` before running this against its public browser export, e.g.:
 //   NODE_PATH=<app-monorepo>/node_modules:<app-modules>/node_modules \
 //     node tests/style-gallery/render-web.cjs <out-dir>
 const fs = require('fs');
@@ -19,6 +20,7 @@ async function main() {
   const bundle = await esbuild.build({
     entryPoints: [path.join(__dirname, 'web-gallery.tsx')],
     bundle: true,
+    platform: 'browser',
     write: false,
     minify: true,
     jsx: 'automatic',

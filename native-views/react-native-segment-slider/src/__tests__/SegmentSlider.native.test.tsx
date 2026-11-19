@@ -21,7 +21,7 @@ jest.mock('react-native', () => ({
 function setup(initial: Partial<ISegmentSliderProps> = {}) {
   const onChange = jest.fn<void, [number]>();
   const onSlideComplete = jest.fn();
-  const node = { setValue: jest.fn<void, [number]>() };
+  const node = { setValue: jest.fn<void, [number, number]>() };
   const base: ISegmentSliderProps = {
     value: 0,
     segments: 4,
@@ -51,8 +51,8 @@ it('applies a value the parent changed during the drag once it ends', () => {
   // The parent clamps the emitted 60 to 40 mid-drag; the sync waits.
   rerender({ value: 40 });
   expect(node.setValue).not.toHaveBeenCalled();
-  act(() => viewProps.onSlideComplete());
-  expect(node.setValue).toHaveBeenCalledWith(40);
+  act(() => viewProps.onSlideComplete(1, 60));
+  expect(node.setValue).toHaveBeenCalledWith(40, 1);
   expect(onSlideComplete).toHaveBeenCalledTimes(1);
 });
 
@@ -61,15 +61,33 @@ it('does not push the echoed drag value back after the drag', () => {
   act(() => viewProps.onSlideStart());
   act(() => viewProps.onChange(60));
   rerender({ value: 60 });
-  act(() => viewProps.onSlideComplete());
+  act(() => viewProps.onSlideComplete(1, 60));
   expect(node.setValue).not.toHaveBeenCalled();
 });
 
 it('pushes external value changes outside a drag', () => {
   const { node, onChange, rerender } = setup();
   rerender({ value: 75 });
-  expect(node.setValue).toHaveBeenCalledWith(75);
+  expect(node.setValue).toHaveBeenCalledWith(75, 0);
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it('retries a rejected value sync using the newer interaction and its final value', () => {
+  const { node, onSlideComplete, rerender } = setup();
+  act(() => viewProps.onSlideStart());
+  act(() => viewProps.onChange(60));
+  rerender({ value: 40 });
+  act(() => viewProps.onSlideComplete(1, 60));
+
+  // Native dropped the first sync while interaction 2 was active. A long
+  // press there can end without emitting a new value.
+  act(() => viewProps.onSlideStart());
+  act(() => viewProps.onSlideComplete(2, 60));
+  expect(node.setValue.mock.calls).toEqual([
+    [40, 1],
+    [40, 2],
+  ]);
+  expect(onSlideComplete.mock.calls).toEqual([[], []]);
 });
 
 it('passes hapticStep and colors through to the native view', () => {
