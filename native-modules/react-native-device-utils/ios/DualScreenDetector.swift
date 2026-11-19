@@ -13,7 +13,9 @@ import ReactNativeNativeLogger
 final class DualScreenDetector {
     static let shared = DualScreenDetector()
 
-    private static let cacheKey = "1k_is_dual_screen_device"
+    // A new key: entries under the previous key may mark regular iPhones as
+    // foldable, because iOS 27.3 beta reports an `.unknown` hinge on them.
+    private static let cacheKey = "1k_dual_screen_device_model_v2"
     private static let foldableModelIdentifiers: Set<String> = [
         "iPhone19,4", // iPhone Duo
     ]
@@ -136,11 +138,12 @@ final class DualScreenDetector {
 
     @available(iOS 27.1, *)
     private func handleHingeUpdate(_ hinge: UIHinge?) {
+        let hasHinge = hinge.map { DualScreenDetector.isPhysicalHinge($0.status) } ?? false
         let nextSpanning = hinge?.status == .fullyOpen || hinge?.status == .partiallyOpen
 
         lock.lock()
-        let isNewlyDetected = hinge != nil && !isDualScreen
-        if hinge != nil { isDualScreen = true }
+        let isNewlyDetected = hasHinge && !isDualScreen
+        if hasHinge { isDualScreen = true }
         let didChangeSpanning = spanning != nextSpanning
         spanning = nextSpanning
         let callbacks = Array(listeners.values)
@@ -157,6 +160,20 @@ final class DualScreenDetector {
         // waiting for the next fold.
         if didChangeSpanning || isNewlyDetected {
             callbacks.forEach { $0(nextSpanning) }
+        }
+    }
+
+    /// Only a reported fold position proves a hinge. iOS 27.3 beta delivers a
+    /// non-nil hinge with `.unknown` status on iPhones without one.
+    @available(iOS 27.1, *)
+    private static func isPhysicalHinge(_ status: UIHinge.Status) -> Bool {
+        switch status {
+        case .closed, .partiallyOpen, .fullyOpen:
+            return true
+        case .unknown:
+            return false
+        @unknown default:
+            return false
         }
     }
     #endif

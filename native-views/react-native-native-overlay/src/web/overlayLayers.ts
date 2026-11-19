@@ -70,6 +70,12 @@ function siblingsOutside(host: HTMLElement, root: HTMLElement) {
 }
 
 function inertEntriesBelow(container: ParentNode, top?: IOverlayEntry) {
+  const toastSection = container.querySelector<HTMLElement>(
+    '[data-onekey-toast-section]'
+  );
+  if (toastSection) {
+    setInert(toastSection, !!top);
+  }
   container
     .querySelectorAll<HTMLElement>(`[${ENTRY_ATTRIBUTE}]`)
     .forEach((node) => {
@@ -160,6 +166,7 @@ export function getOverlayLayerRoot(level: IOverlayLevel): HTMLDivElement {
   if (!root || !root.isConnected) {
     root = createLayerRoot(level);
     layerRoots.set(level, root);
+    syncOverlayInert();
   }
   return root;
 }

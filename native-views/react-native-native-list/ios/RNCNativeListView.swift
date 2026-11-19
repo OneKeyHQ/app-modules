@@ -199,8 +199,10 @@ final class NativeListView: UIView {
     if !tail.retiringKeys.isEmpty {
       var snapshot = dataSource.snapshot()
       snapshot.deleteItems(Array(tail.retiringKeys))
-      dataSource.apply(snapshot, animatingDifferences: false)
-      itemsByKey = Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) })
+      let finishRetiringCells = replaceCellItems(
+        with: Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) }),
+        outgoingKeys: tail.retiringKeys)
+      dataSource.apply(snapshot, animatingDifferences: false, completion: finishRetiringCells)
     }
     clearStructuralTail()
     structuralSpacerHeight = 0
@@ -701,6 +703,9 @@ final class NativeListView: UIView {
   private var config: NativeListConfig?
   private var acceptedRowIndex: AcceptedRowIndex?
   private var itemsByKey: [String: NativeListItem] = [:]
+  private static let emptyCellReuseIdentifier = "NativeList.EmptyCell"
+  private var retiringCellItems: [String: (item: NativeListItem, update: UInt64)] = [:]
+  private var cellUpdate: UInt64 = 0
   private var endReachedGeneration: Int?
   private var lastVisibleRange: (first: Int, last: Int, firstKey: String?, lastKey: String?)?
   private var visibleEventScheduled = false
@@ -777,6 +782,8 @@ final class NativeListView: UIView {
       self.collectionView.setContentOffset(self.collectionView.contentOffset, animated: false)
     }
     NativeListRendererRegistry.register(in: collectionView)
+    collectionView.register(UICollectionViewCell.self,
+      forCellWithReuseIdentifier: Self.emptyCellReuseIdentifier)
     collectionView.backgroundColor = .clear
     collectionView.delegate = self
     collectionView.dragDelegate = self
@@ -873,14 +880,30 @@ final class NativeListView: UIView {
     footerCell.addGestureRecognizer(footerHighlight)
     dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collectionView) {
       [weak self] collectionView, indexPath, key in
-      guard let self,
-            let item = self.itemsByKey[key],
-            let cell = collectionView.dequeueReusableCell(
-              withReuseIdentifier: NativeListRendererRegistry.reuseIdentifier(for: item.rendererKey),
-              for: indexPath
-            ) as? NativeListRowHost else { return nil }
+      guard let self, let item = self.itemsByKey[key] ?? self.retiringCellItems[key]?.item else {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: NativeListView.emptyCellReuseIdentifier, for: indexPath)
+        cell.isUserInteractionEnabled = false
+        cell.accessibilityElementsHidden = true
+        return cell
+      }
+      let reusableCell = collectionView.dequeueReusableCell(
+        withReuseIdentifier: NativeListRendererRegistry.reuseIdentifier(for: item.rendererKey),
+        for: indexPath)
+      guard let cell = reusableCell as? NativeListRowHost else { return reusableCell }
+      if self.itemsByKey[key] == nil {
+        cell.onAction = nil
+        cell.onBindingInvalidated = nil
+        cell.isHidden = true
+        cell.isUserInteractionEnabled = false
+        cell.accessibilityElementsHidden = true
+        return cell
+      }
       cell.onAction = { [weak self] item, action, target, origin in
-        self?.handleAction(item: item, actionKey: action, target: target, origin: origin)
+        // A child renderer can emit a different key than the collection row that owns it.
+        guard let self, self.itemsByKey[key] != nil,
+              !self.isInertPresentationKey(key) else { return }
+        self.handleAction(item: item, actionKey: action, target: target, origin: origin)
       }
       cell.onBindingInvalidated = { [weak self] cell, epoch in
         self?.handleBindingInvalidated(cell: cell, epoch: epoch)
@@ -1052,6 +1075,29 @@ final class NativeListView: UIView {
       return
     }
     acceptedRowIndex = AcceptedRowIndex(items: next.items)
+  }
+
+  // Layout can ask UIKit's outgoing snapshot for cells before apply starts or while it settles.
+  // Keep those descriptors outside the accepted row lookup and release each at its own commit.
+  private func replaceCellItems(
+    with nextItems: [String: NativeListItem], outgoingKeys: some Sequence<String>
+  ) -> (() -> Void)? {
+    cellUpdate &+= 1
+    let update = cellUpdate
+    var retiringKeys: [String] = []
+    for key in outgoingKeys where nextItems[key] == nil {
+      guard let item = itemsByKey[key] ?? retiringCellItems[key]?.item else { continue }
+      retiringCellItems[key] = (item, update)
+      retiringKeys.append(key)
+    }
+    itemsByKey = nextItems
+    guard !retiringKeys.isEmpty else { return nil }
+    return { [weak self] in
+      guard let self else { return }
+      for key in retiringKeys where self.retiringCellItems[key]?.update == update {
+        self.retiringCellItems.removeValue(forKey: key)
+      }
+    }
   }
 
   func applySnapshotJson(_ json: String) {
@@ -1244,13 +1290,14 @@ final class NativeListView: UIView {
       disclosureInset = next.disclosure?.expanded == true
         ? next.disclosure?.expandedTrailingInset ?? 0 : 0
     }
-    itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
-    itemsByKey.merge(structuralRemovedItems) { current, _ in current }
+    var nextItemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
+    nextItemsByKey.merge(structuralRemovedItems) { current, _ in current }
     if let tail = structuralTail, !tail.retiringKeys.isEmpty {
-      itemsByKey.merge(presentationItems.filter { tail.retiringKeys.contains($0.key) }) {
+      nextItemsByKey.merge(presentationItems.filter { tail.retiringKeys.contains($0.key) }) {
         current, _ in current
       }
     }
+    let finishRetiringCells = replaceCellItems(with: nextItemsByKey, outgoingKeys: oldKeys)
     if !animateStructure, let tail = structuralTail {
       if themeChanged || tailGeometryChanged {
         if !newDisclosureCommand { interruptedPendingID = activePendingID }
@@ -1341,7 +1388,8 @@ final class NativeListView: UIView {
     let explicitScrollPendingAtApply = pendingScrollRequest != nil
     dataSource.apply(snapshot, animatingDifferences: animateStructure && structuralRemovedItems.isEmpty
       && structuralTail == nil) { [weak self] in
-      guard let self else { return }
+      finishRetiringCells?()
+      guard let self, !self.disposed else { return }
       self.collectionView.layoutIfNeeded()
       self.updateStructuralTailWindow()
       self.layoutContainerSlots()
@@ -1510,11 +1558,14 @@ final class NativeListView: UIView {
     if progress >= 1 {
       if !structuralRemovedItems.isEmpty {
         var snapshot = dataSource.snapshot()
-        snapshot.deleteItems(Array(structuralRemovedItems.keys))
+        let outgoingKeys = Array(structuralRemovedItems.keys)
+        snapshot.deleteItems(outgoingKeys)
         structuralRemovedItems.removeAll()
         structuralRemovedHeights.removeAll()
-        dataSource.apply(snapshot, animatingDifferences: false)
-        itemsByKey = Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) })
+        let finishRetiringCells = replaceCellItems(
+          with: Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) }),
+          outgoingKeys: outgoingKeys)
+        dataSource.apply(snapshot, animatingDifferences: false, completion: finishRetiringCells)
         collectionView.layoutIfNeeded()
         if !structuralScrollInterrupted && !collectionView.isTracking
           && !collectionView.isDragging && !collectionView.isDecelerating {
@@ -2280,7 +2331,9 @@ final class NativeListView: UIView {
   // while the diffable snapshot and cell index paths keep the pre-drag order until
   // the move commits. Resolving sizes from the snapshot swaps row heights.
   private func layoutItem(at indexPath: IndexPath) -> NativeListItem? {
-    guard let keys = interactiveMovementKeys else { return item(at: indexPath) }
+    guard let keys = interactiveMovementKeys else {
+      return item(at: indexPath, includeRetiringCell: true)
+    }
     return keys[safe: indexPath.item].flatMap { itemsByKey[$0] }
   }
 
@@ -2293,15 +2346,16 @@ final class NativeListView: UIView {
     interactiveMovementKeys = keys
   }
 
-  private func item(at indexPath: IndexPath) -> NativeListItem? {
-    if let key = dataSource.itemIdentifier(for: indexPath), let item = itemsByKey[key] {
-      return item
+  private func item(at indexPath: IndexPath, includeRetiringCell: Bool = false) -> NativeListItem? {
+    if let key = dataSource.itemIdentifier(for: indexPath) {
+      return itemsByKey[key] ?? (includeRetiringCell ? retiringCellItems[key]?.item : nil)
     }
     return config?.items[safe: indexPath.item]
   }
 
   private func isInertPresentationKey(_ key: String) -> Bool {
     structuralTail?.indexByKey[key] != nil || structuralRemovedItems[key] != nil
+      || (itemsByKey[key] == nil && retiringCellItems[key] != nil)
   }
 
   private func updateAtomicReorderTarget(to targetIndex: Int, key targetKey: String, animated: Bool) {
@@ -2647,7 +2701,7 @@ final class NativeListView: UIView {
     if item.key == interactiveReorderCompactKey {
       cell.setWalletGroupReorderCompact(true)
     }
-    let retiring = structuralRemovedItems[item.key] != nil
+    let retiring = cell !== footerCell && structuralRemovedItems[item.key] != nil
     cell.structuralContentHeight = retiring
       ? rowHeight(item, allocatedWidth: cell.bounds.width) : nil
     if retiring { cell.clipsToBounds = true }
@@ -2663,7 +2717,7 @@ final class NativeListView: UIView {
 
   private func handleRowPress(_ item: NativeListItem, origin: NativeListActionOrigin?) {
     // OneKey patch: missing-address rows keep accessory actions available.
-    guard let config, item.isRowPressEnabled, !isInertPresentationKey(item.key) else { return }
+    guard let config, item.isRowPressEnabled else { return }
     if config.rowPressToggles && item.isSelectable && config.selectionMode != "none" {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
@@ -2699,7 +2753,7 @@ final class NativeListView: UIView {
     target: NativeSelectionTarget?,
     origin: NativeListActionOrigin?
   ) {
-    guard !item.data.bool("disabled"), !isInertPresentationKey(item.key) else { return }
+    guard !item.data.bool("disabled") else { return }
     if let target, config?.selectionMode != "none" {
       updateSelection(target: target, sourceKey: item.key)
       return
@@ -2708,8 +2762,7 @@ final class NativeListView: UIView {
   }
 
   private func updateSelection(target: NativeSelectionTarget, sourceKey: String) {
-    guard var current = config, current.selectionMode != "none",
-          !isInertPresentationKey(sourceKey) else { return }
+    guard var current = config, current.selectionMode != "none" else { return }
     let keys = selectionKeys(target: target, items: current.items)
     guard !keys.isEmpty else { return }
     let before = current.selectedKeys
@@ -3133,6 +3186,7 @@ final class NativeListView: UIView {
     structuralSpacerHeight = 0
     structuralFooterStartY = nil
     itemsByKey.removeAll()
+    retiringCellItems.removeAll()
     sectionIndexEntries.removeAll()
     if let pagerCommandCancelObserver {
       NotificationCenter.default.removeObserver(pagerCommandCancelObserver)

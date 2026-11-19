@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+- **image / native-overlay (Android)**: Keep the named-icon registry for the native toaster in release builds. Native-overlay resolves `com.margelo.nitro.onekeyimage.OneKeyNamedSVG` by reflection, but no R8 rule kept it, so minified App builds removed the class and every native toast (success / error / info / warning / action) drew a blank icon; debug builds were unaffected. The image package's consumer rules now keep `OneKeyNamedSVG.INSTANCE`, `request` and `cancel`, checked against R8 output. Native-overlay also drops its `setCacheDirIfNeeded` lookup, which could never match the Kotlin `internal` (name-mangled) method; the image startup provider already sets the cache directory.
+
 ## [6.7.0-46] - 2026-11-11
 
 ### Bug Fixes

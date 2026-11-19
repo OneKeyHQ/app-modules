@@ -70,8 +70,9 @@ password verify, DialogLoading, app lock, Spotlight, in-app notification.
 
 Non-goals:
 
-- Business UI. Titles, buttons, forms, toast cards, the hardware stage morph and
-  the lock screen UI stay React content owned by components and kit.
+- Business UI. Titles, buttons, forms, the hardware stage morph and the lock
+  screen UI stay React content owned by components and kit. Message toast
+  cards are the exception: the platform draws them from data (§5.14).
 - Navigation. Screens and navigation modals stay in react-navigation and
   react-native-screens.
 - Third-party windows such as RN `Modal`, WalletConnect, and system dialogs.
@@ -949,10 +950,9 @@ P2 sheet notes:
 
 P4a toast notes:
 
-- Message toasts (`Toast.success` / `message` / `error` …) keep their
-  libraries (sonner on web, `@backpackapp-io/react-native-toast` on native)
-  and render inside one persistent, non-blocking `toast`-level fullscreen
-  entry (kit `ToastOverlayContainer`). The iOS raise tokens are gone.
+- Message toasts (`Toast.success` / `message` / `error` …) are drawn by the
+  platform from data; see §5.14. The React toast libraries and the persistent
+  `toast`-level fullscreen entry that hosted them are gone.
 - Custom toasts (`Toast.show` / `ShowCustom`) are their own `toast` entries:
   transparent blocking backdrop (tap closes when `dismissOnOverlayPress`),
   `scale 0.8 + offsetY -20 + fade` on `quick`, PanResponder swipe up to
@@ -1256,13 +1256,13 @@ Accepted limitations:
   scroll views. Page sheets should keep scrollable content short or pass
   `dismissOnPanDown={false}`.
 - Custom toasts stack by request order and overlap at the top, as before;
-  message toasts stack inside their libraries.
+  message toasts stack in the platform toaster (§5.14).
 
 Future work (better to have):
 
 - VoiceOver / TalkBack cross-window modality, verified on device.
-- Screen-reader toasts: the native toast library renders nothing under a
-  screen reader today; the toast host should announce content and extend
+- Screen-reader toasts: the native toaster announces each card's text when
+  it appears (§5.14); the lifetime is not yet extended, and the host should
   its timer instead.
 
 Known gaps:
@@ -1307,3 +1307,129 @@ staged version). Following the repository's verification guidance, the entire
 batch advances to `3.0.162-alpha.270`. Existing versions are never overwritten.
 The iOS lockfile failure was only local CocoaPods 1.17.0 versus the Gemfile's
 locked 1.16.2; the actual CI lockfile was adopted, preserving semantic checks.
+
+## 5.14 Message toasts
+
+Message toasts are plain data. `overlayToastStore.show(spec, handlers)` takes
+an `IOverlayToastSpec` (`src/toast/types.ts`) and the platform draws the card:
+DOM on Web, UIKit on iOS, Android views on Android. React draws nothing; the
+only React piece is `OverlayToastHost`, which attaches the renderer.
+
+### Contract
+
+- A spec holds resolved values only: CSS colour strings, points, font sizes,
+  icon names. The package carries no design tokens.
+- Two layouts: `message` (status icon, title, message, action row) and
+  `notification` (round badge, clamped title and message, trailing image,
+  pressable row).
+- Text is paragraphs of runs. A run may set colour, weight, size, underline
+  and `link`; a link is opaque and comes back through `onLink`.
+- Actions are small buttons described by data and report `onAction(id)`.
+  Pressing one does not dismiss the toast.
+- `show` with an id that is on screen updates that card and restarts its
+  lifetime; `update` redraws it (theme or layout change) without restarting.
+- A toast leaves the list when its renderer reports `close`, after the exit.
+  With no renderer attached a dismissal removes it at once. At most 20 toasts
+  are kept; older ones are dropped without animation.
+- Events: `dismiss(reason)` when the card starts leaving (`timeout`, `swipe`,
+  `close`, `programmatic`), `close(reason)` when it is gone, `action`,
+  `link`, `press`.
+- `configure` sets toaster-wide values: position and theme (Web), card colour
+  and content box (native), and the top obstruction the stack rests under.
+
+### Bridge
+
+iOS and Android use one zero-size Fabric component, `RNCNativeOverlayToaster`,
+with two string props (`toasts`, `config`: JSON) and one direct event
+(`onToastEvent { toastId, type, value }`). An infinite duration crosses as
+`-1`. The cards are not children of this view: iOS draws them in a `toast`
+level window from `NativeOverlayWindowManager`, Android in a layer at the
+bottom of the host's `toast` level container, so custom toast entries stay
+above them. Web has no bridge: the DOM renderer subscribes to the store.
+
+Named icons come from `@onekeyfe/react-native-image`'s native registry,
+reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
+package takes no dependency on it; without the registry an icon stays blank.
+On Android the lookup is `OneKeyNamedSVG.INSTANCE` plus its `request` (8
+arguments) and `cancel` methods; the image package's consumer R8 rules keep
+those names, since release app builds minify and would otherwise rename them.
+Web draws an SVG `<use>` of the `href` the caller supplies.
+
+### Platform behaviour
+
+Each platform keeps the look and motion of the renderer it replaced.
+
+| Behaviour | Web | iOS / Android |
+| --- | --- | --- |
+| Position | Per toast or toaster; default bottom-right | Always top-centre |
+| Stack | Newest in front, 3 visible. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Oldest at the top, newest under it, 8 pt apart, all visible |
+| Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
+| Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
+| `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
+| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed; resuming continues the remaining time |
+| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
+| Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
+| Reduced motion | Transitions off (media query) | Every animation is instant |
+
+On Web, the card captures the pointer after recognizing a swipe. Ordinary
+clicks and taps activate the pressable row, buttons, or links through their
+own handlers. Each press ends independently on release or cancellation.
+Card removal, reuse, or repositioning clears its presses, and window blur
+clears all presses and expansion. A touch drag that did not dismiss the card
+ends the press without creating hover or tap expansion.
+
+Divergences from the renderers replaced:
+
+- Web measures a card's own height. The previous renderer could record a
+  scaled height when several toasts arrived in one tick, which put about 4 px
+  less between cards of an expanded stack.
+- Web starts the enter transition synchronously, so a toast shown while the
+  page is hidden still appears.
+- Native shows toasts under a screen reader and announces their text; the
+  previous renderer drew nothing while a screen reader was on.
+
+### Verification
+
+- Web: `src/__tests__/overlayToast.web.test.ts` covers the store and the DOM
+  renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
+  dark, wide light) matched the previous renderer's card boxes, text line
+  rects, icon and button boxes and computed styles within 0.5 px.
+- Web pointer regression: `tests/browser/overlayToast.test.cjs` exercises
+  browser-generated mouse clicks, touch taps, mixed input, and swipes in
+  Chromium. Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
+  Make `esbuild` and `playwright-core` available via `NODE_PATH` or the local
+  install, and set `CHROMIUM_EXECUTABLE_PATH` if using a system Chrome.
+- iOS: built into app-monorepo and run on an iPhone 17 Pro simulator (iOS
+  26.0) beside the previous renderer. In 13 scenarios the card frames and
+  every text line box matched to the pixel; the only differing pixels were
+  corner anti-aliasing against a differently lit backdrop. Timeout, close
+  callback, action press, notification press, swipe up, press-to-pause with
+  resume, programmatic close, id de-duplication and dismiss by id were
+  exercised with injected touches. Not exercised there: the top obstruction
+  shift, the keyboard limit, dark theme, rotation, iPad and VoiceOver.
+- Android: built into app-monorepo and run on a Pixel 7 emulator (API 35,
+  420 dpi) beside the previous renderer, both with the brand typeface. In 13
+  scenarios, light and dark, every card, text, icon and button frame matched
+  to the pixel; inside the cards the remaining pixel differences were at most
+  12 of 255 (anti-aliasing), apart from the spinner's animation frame. The
+  spinner box is 2 px shorter than before (53x52 against 53x54). Timeout and
+  close callback, action press, notification press, swipe up, a short drag
+  that settles back, press-to-pause with resume, programmatic close, id
+  de-duplication, dismiss by id and stacking order were exercised with
+  injected touches. Not exercised there: the top obstruction shift, the
+  keyboard limit, rotation, tablets, foldables and TalkBack.
+
+iOS text is laid out and drawn with TextKit (no font leading, glyphs centred
+in a fixed line box) because that is what the previous text engine did. Two
+of its habits are kept on purpose: a text box is one pixel taller than its
+lines, and an explicit letter spacing, zero included, turns the font's pair
+kerning off.
+
+Android cards follow the previous layout engine's pixel rounding (Yoga): an
+offset from the parent is rounded half up, a text offset is floored, and a
+size is the difference of the rounded absolute edges, so the card keeps its
+unrounded window position. Text is drawn unhinted at subpixel positions with
+the font size and line height rounded up to whole pixels, underlines are
+stroked at baseline + thickness + 1 px, and a bordered pill's fill is inset
+by 0.8 px, all as React Native draws them. Named icons render at their
+rounded frame size.
