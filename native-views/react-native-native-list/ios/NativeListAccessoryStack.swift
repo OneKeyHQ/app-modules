@@ -443,6 +443,8 @@ final class NativeListAccessoryStack: UIStackView {
       case "drag":
         var icon = accessory
         icon["name"] = "DragOutline"
+        // ListItem draws the handle as a medium tertiary IconButton (38-point frame).
+        icon["buttonStyle"] = "tertiary"
         if icon["tintColor"] == nil {
           icon["tintColor"] = theme?["iconSubdued"] as? String ?? "#8D8D8D"
         }
@@ -696,6 +698,8 @@ final class NativeListAccessoryStack: UIStackView {
       button.layer.cornerRadius = size / 2
     }
     if isAccountIcon { contentGap = 5 }
+    // A leading tertiary button's m=-7 also pulls the text column 7 points closer.
+    if isTertiary && index == 0 && contentGap == nil { contentGap = 5 }
     button.accessibilityIdentifier = data["testID"] as? String
     button.accessibilityLabel = data["accessibilityLabel"] as? String
     if !isDrillIn, !data.string("actionKey").isEmpty {

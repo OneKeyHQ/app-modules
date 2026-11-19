@@ -639,6 +639,13 @@ and never begins a reorder. Validation rejects any other value.
 - **Handle appearance:** every platform tints the `DragOutline` glyph
   `iconSubdued`, matching `ListItem.IconButton`; Web centers it in a 24-point
   box so it lines up with neighbouring icon buttons instead of the text line.
+  iOS draws the handle as a medium tertiary button (38-point frame, glyph inset
+  7), like the source `IconButton`, so a `PencilOutline` + `drag` pair keeps
+  24 points between glyphs; Web applies the same 24-point gap to that pair.
+- **Tertiary text gap (iOS):** when the first trailing accessory is a tertiary
+  icon, the text column ends 12 points before its glyph (the button's m=-7
+  absorbed), as `ListItem` lays it out; Web already does this through CSS
+  margins.
 - **Leading action geometry:** an identity `leadingAction` reproduces
   `ListItem.IconButton` (medium tertiary: 6-point padding plus a 1-point
   border, m=-7) on all three platforms, so its glyph sits on a 24-point slot at

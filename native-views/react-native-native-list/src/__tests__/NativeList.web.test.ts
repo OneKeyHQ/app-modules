@@ -7357,6 +7357,49 @@ describe('ListItem parity styles', () => {
         linear([siteRow({ style: { title: { letterSpacing: 12 } } })])
       )
     ).toThrow(/letterSpacing/);
+    expect(() =>
+      validateSnapshot(
+        linear([
+          siteRow({
+            style: {
+              title: { tabularNumbers: 'yes' as unknown as boolean },
+            },
+          }),
+        ])
+      )
+    ).toThrow(/tabularNumbers/);
+    expect(() =>
+      validateSnapshot(
+        linear([siteRow({ style: { title: { tabularNumbers: true } } })])
+      )
+    ).not.toThrow();
+  });
+
+  it('spaces the rename + drag pair like ListItem on Web', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      linear([
+        siteRow({
+          trailing: [
+            { kind: 'icon', name: 'PencilOutline', actionKey: 'rename' },
+            { kind: 'drag' },
+          ],
+        }),
+      ]),
+      {},
+      false
+    );
+    try {
+      const accessories = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="site"] .ok-native-list-accessories'
+      );
+      expect(accessories?.style.gap).toBe('24px');
+    } finally {
+      engine.destroy();
+    }
   });
 
   it('insets a bordered leading image by the border on Web', () => {
@@ -7411,6 +7454,8 @@ describe('ListItem parity styles', () => {
       const slot = document.createElement('span');
       applyTextStyleToSlot(slot, { letterSpacing: -0.5 });
       expect(slot.style.letterSpacing).toBe('-0.5px');
+      applyTextStyleToSlot(slot, { tabularNumbers: true });
+      expect(slot.style.fontVariantNumeric).toBe('tabular-nums');
     } finally {
       engine.destroy();
     }

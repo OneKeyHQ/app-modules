@@ -68,6 +68,8 @@ export type NativeListTextStyle = Readonly<{
   offsetY?: number;
   /** Extra spacing between glyphs in logical units. An explicit 0 turns off the platform's pair kerning on iOS, matching React Native `letterSpacing: 0`. */
   letterSpacing?: number;
+  /** Equal-width (tabular) digits, matching the App's `SizableText` default. Omission keeps each template's current digits. */
+  tabularNumbers?: boolean;
 }>;
 
 /** Retained alias: Market shipped this name before the style surface was shared. */

@@ -44,6 +44,16 @@ function appendAccessories(
     'ok-native-list-accessories'
   );
 
+  // ListItem's rename + drag pair sits in <XStack gap="$6">; iOS and Android
+  // lay the same pair out natively.
+  if (
+    accessories.length === 2 &&
+    accessories[0].kind === 'icon' &&
+    accessories[0].name === 'PencilOutline' &&
+    accessories[1].kind === 'drag'
+  )
+    container.style.gap = '24px';
+
   if (
     row &&
     hasExplicitRowHeight(row) &&

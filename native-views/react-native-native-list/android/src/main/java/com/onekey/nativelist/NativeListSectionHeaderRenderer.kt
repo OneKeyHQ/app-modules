@@ -773,6 +773,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    if (style.optBoolean("tabularNumbers")) view.fontFeatureSettings = "tnum"
     if (style.has("letterSpacing") && view.textSize > 0f)
       // TextView takes em; the protocol value is logical units.
       view.letterSpacing =

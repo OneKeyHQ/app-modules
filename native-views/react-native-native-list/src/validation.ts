@@ -283,6 +283,7 @@ function assertTextStyle(
       'verticalAlignment',
       'offsetY',
       'letterSpacing',
+      'tabularNumbers',
       ...additionalKeys,
     ],
     path,
@@ -340,6 +341,11 @@ function assertTextStyle(
     -4,
     10
   );
+  if (
+    style.tabularNumbers !== undefined &&
+    typeof style.tabularNumbers !== 'boolean'
+  )
+    fail(`${path}.tabularNumbers`, 'must be a boolean');
 }
 
 function assertBoxStyle(style: RowBoxStyle, path: string): void {
@@ -3269,6 +3275,7 @@ const TEXT_STYLE_FIELDS = [
   'verticalAlignment',
   'offsetY',
   'letterSpacing',
+  'tabularNumbers',
 ];
 const ACCESSORY_FIELDS: Readonly<Record<string, readonly string[]>> = {
   value: ['kind', 'text', 'secondary', 'textSegments'],

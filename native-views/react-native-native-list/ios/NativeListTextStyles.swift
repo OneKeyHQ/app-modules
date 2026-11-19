@@ -56,6 +56,7 @@ enum NativeListTextStyles {
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
+    if style.bool("tabularNumbers") { applyTabularNumbers(attributed, fallback: baseFont) }
     if style["color"] != nil { attributes[.foregroundColor] = color }
     // An explicit 0 still sets kern, which disables pair kerning like React Native.
     if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
@@ -123,6 +124,7 @@ enum NativeListTextStyles {
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
+    if style.bool("tabularNumbers") { applyTabularNumbers(attributed, fallback: baseFont) }
     if style["color"] != nil { attributes[.foregroundColor] = color }
     if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
     if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
@@ -219,6 +221,16 @@ enum NativeListTextStyles {
       }
     }
     label.attributedText = result
+  }
+
+  /// Swaps every run's font for its tabular-digit variant (`tabularNumbers`).
+  static func applyTabularNumbers(_ text: NSMutableAttributedString, fallback: UIFont) {
+    let range = NSRange(location: 0, length: text.length)
+    var runs: [(NSRange, UIFont)] = []
+    text.enumerateAttribute(.font, in: range) { value, run, _ in
+      runs.append((run, (value as? UIFont) ?? fallback))
+    }
+    for (run, font) in runs { text.addAttribute(.font, value: tabularDigitsFont(font), range: run) }
   }
 
   static func tabularDigitsFont(_ font: UIFont) -> UIFont {
