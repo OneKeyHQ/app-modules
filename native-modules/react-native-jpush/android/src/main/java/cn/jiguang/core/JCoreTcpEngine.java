@@ -128,6 +128,7 @@ public final class JCoreTcpEngine {
     }
 
     private static final JCoreTcpEngine INSTANCE = new JCoreTcpEngine();
+    private static final int MAX_QUEUED_ORDINARY_REQUESTS = 128;
     private static final long STOP_CONTROL_GRACE_MS = 200L;
     // Only the captured final stop control may send after local ownership is disabled.
     private static final long STOP_CONTROL_POLICY = Long.MIN_VALUE;
@@ -1035,7 +1036,12 @@ public final class JCoreTcpEngine {
             req = new QueuedRequest(command, version, rid > 0L ? rid : JCoreStorage.nextRid(), body,
                 timeoutMs > 0L ? timeoutMs : defaultRequestTimeoutMs, maxRetries, callback,
                 JCoreStorage.getContentGeneration(), configurationIdentity(context), null);
-            queueFull = preLoginQueue.size() >= 128;
+            int queueCapacity = MAX_QUEUED_ORDINARY_REQUESTS;
+            if (activeAttempt != null && activeAttempt.pendingResume != null
+                && preLoginQueue.contains(activeAttempt.pendingResume)) {
+                queueCapacity++; // The connection-owned resume has its own FIFO slot.
+            }
+            queueFull = preLoginQueue.size() >= queueCapacity;
             terminal = terminalConfiguration.equals(configurationIdentity(context));
             rejected = queueFull || terminal || !JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context);
             if (!rejected) {
@@ -1061,7 +1067,6 @@ public final class JCoreTcpEngine {
                     if (JCoreStorage.isPushResumeClaimCurrent(context, owner.pendingResume.resumeClaim)) return;
                     releasePendingPushResumeLocked(context, owner);
                 }
-                if (preLoginQueue.size() >= 128) return;
                 PushResumeClaim claim = JCoreStorage.claimPendingPushResume(context);
                 if (claim == null) return;
                 QueuedRequest request = new QueuedRequest(

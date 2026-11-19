@@ -2865,6 +2865,91 @@ public final class SdkHostRegressionTest {
     }
 
     @org.junit.Test
+    public void testResumeAfterLoginWithFullBusinessQueue() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "resume-full-queue-fixture");
+        JPushInterface.stopPush(context);
+        final int queueCapacity = 128;
+        final long firstRid = 65000L;
+        CountDownLatch releaseLogin = new CountDownLatch(1);
+        CountDownLatch releaseFirstBusinessAck = new CountDownLatch(1);
+        CountDownLatch firstBusinessReceived = new CountDownLatch(1);
+        CountDownLatch businessAcked = new CountDownLatch(queueCapacity + 1);
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicInteger overflowCode = new AtomicInteger(-1);
+        AtomicReference<Throwable> serverError = new AtomicReference<>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(5000);
+            Thread server = new Thread(() -> {
+                try (Socket socket = listener.accept()) {
+                    check(releaseLogin.await(4000L, TimeUnit.MILLISECONDS), "Login was not released");
+                    acknowledgeResumeFixtureLogin(socket, 8803);
+                    for (int i = 0; i < queueCapacity; i++) {
+                        JCoreWireCodec.DecodedFrame request =
+                            JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), RESUME_FIXTURE_UID);
+                        check(request != null && request.command == JCoreWireCodec.CMD_PROPERTY_OP
+                            && request.requestId == firstRid + i, "Queued business requests must keep FIFO order");
+                        if (i == 0) {
+                            firstBusinessReceived.countDown();
+                            check(releaseFirstBusinessAck.await(4000L, TimeUnit.MILLISECONDS), "First business ACK was not released");
+                        }
+                        writeLoopbackAck(socket, request, RESUME_FIXTURE_UID, 8803, 0, new byte[0]);
+                    }
+                    JCoreWireCodec.DecodedFrame resume =
+                        JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), RESUME_FIXTURE_UID);
+                    check(resume != null && resume.command == JCoreWireCodec.CMD_PUSH_CTRL
+                        && Arrays.equals(resume.body, JCoreWireCodec.buildPushControlPayload(false)),
+                        "A full business queue must still send one resume command after login");
+                    writeLoopbackAck(socket, resume, RESUME_FIXTURE_UID, 8803, 0, new byte[] {0, 0});
+                    JCoreWireCodec.DecodedFrame lastRequest =
+                        JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), RESUME_FIXTURE_UID);
+                    check(lastRequest != null && lastRequest.command == JCoreWireCodec.CMD_PROPERTY_OP
+                        && lastRequest.requestId == firstRid + queueCapacity,
+                        "A later business request must fit in the freed slot and follow the resume");
+                    writeLoopbackAck(socket, lastRequest, RESUME_FIXTURE_UID, 8803, 0, new byte[0]);
+                    check(finish.await(4000L, TimeUnit.MILLISECONDS), "Full queue fixture did not finish");
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            }, "test-resume-full-business-queue");
+            server.setDaemon(true);
+            server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                JPushInterface.resumePush(context);
+                JCoreTcpEngine.RequestCallback acknowledged = (frame, code) -> {
+                    if (frame != null && code == 0) businessAcked.countDown();
+                };
+                for (int i = 0; i < queueCapacity; i++) {
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                        firstRid + i, new byte[0], 4000L, 0, acknowledged);
+                }
+                check(engine.getPreLoginQueueSize() == queueCapacity, "All ordinary slots must fill before login");
+                releaseLogin.countDown();
+                check(firstBusinessReceived.await(4000L, TimeUnit.MILLISECONDS), "First queued business request did not arrive");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                    firstRid + queueCapacity, new byte[0], 4000L, 0, acknowledged);
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                    firstRid + queueCapacity + 1, new byte[0], 4000L, 0, (frame, code) -> overflowCode.set(code));
+                check(overflowCode.get() == 6002, "The reserved slot must not admit a 129th ordinary queued request");
+                releaseFirstBusinessAck.countDown();
+                check(businessAcked.await(5000L, TimeUnit.MILLISECONDS),
+                    "All accepted business requests and the interleaved resume must be acknowledged: " + serverError.get());
+            } finally {
+                releaseLogin.countDown();
+                releaseFirstBusinessAck.countDown();
+                finish.countDown();
+                engine.stop(context);
+                server.join(5000L);
+                engine.setAutoReconnectEnabled(true);
+                engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Full queue fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
     public void testReconnectReclaimsResumeQueuedBehindAnOldRequest() throws Exception {
         Context context = new Context();
         JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
