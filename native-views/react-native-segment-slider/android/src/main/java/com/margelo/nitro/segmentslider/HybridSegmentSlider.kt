@@ -5,9 +5,16 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Build
+import android.os.Bundle
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
+import android.widget.SeekBar
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
 
@@ -87,10 +94,82 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // A tap only snaps when it's quick. Holding longer (without dragging) is a
   // long-press and does nothing — matching the competitor's tap window.
   private val tapMaxDurationMs = 300L
+  private var accessibilityUpdatePending = false
+  private val dispatchAccessibilityUpdate = Runnable {
+    accessibilityUpdatePending = false
+    if (!isDisposed && view.isAttachedToWindow) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
+      } else if (context.getSystemService(AccessibilityManager::class.java)?.isEnabled == true) {
+        // TalkBack reads the focused SeekBar's RangeInfo for state-description changes.
+        val event = AccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+        event.contentChangeTypes = AccessibilityEvent.CONTENT_CHANGE_TYPE_STATE_DESCRIPTION
+        view.sendAccessibilityEventUnchecked(event)
+      }
+    }
+  }
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
       drawSlider(canvas)
+    }
+
+    override fun getAccessibilityClassName(): CharSequence = SeekBar::class.java.name
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+      super.onInitializeAccessibilityNodeInfo(info)
+      val lower = Math.ceil(min)
+      val upper = Math.floor(max)
+      if (lower > upper) return
+
+      val value = currentValue.coerceIn(lower, upper)
+      info.rangeInfo = AccessibilityNodeInfo.RangeInfo.obtain(
+        AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_INT,
+        lower.toFloat(),
+        upper.toFloat(),
+        value.toFloat()
+      )
+      if (disabled || isDisposed) return
+
+      if (value < upper) info.addAction(AccessibilityAction.ACTION_SCROLL_FORWARD)
+      if (value > lower) info.addAction(AccessibilityAction.ACTION_SCROLL_BACKWARD)
+      if (lower < upper) info.addAction(AccessibilityAction.ACTION_SET_PROGRESS)
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+      val value = when (action) {
+        AccessibilityAction.ACTION_SCROLL_FORWARD.id -> return stepValue(forward = true)
+        AccessibilityAction.ACTION_SCROLL_BACKWARD.id -> return stepValue(forward = false)
+        AccessibilityAction.ACTION_SET_PROGRESS.id ->
+          arguments?.getFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, Float.NaN)
+            ?.toDouble() ?: return false
+        else -> return super.performAccessibilityAction(action, arguments)
+      }
+      return adjustValue(value)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+      if (event.hasNoModifiers()) {
+        val adjusted = when (keyCode) {
+          KeyEvent.KEYCODE_DPAD_LEFT -> stepValue(forward = isRtl)
+          KeyEvent.KEYCODE_DPAD_RIGHT -> stepValue(forward = !isRtl)
+          KeyEvent.KEYCODE_MOVE_HOME -> adjustValue(min)
+          KeyEvent.KEYCODE_MOVE_END -> adjustValue(max)
+          else -> false
+        }
+        if (adjusted) return true
+      }
+      return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onRtlPropertiesChanged(layoutDirection: Int) {
+      super.onRtlPropertiesChanged(layoutDirection)
+      invalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+      cancelAccessibilityUpdate()
+      super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -153,8 +232,8 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       return super.onTouchEvent(event)
     }
   }.apply {
-    isClickable = true
-    isFocusable = false
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+    isFocusable = true
     isHapticFeedbackEnabled = true
   }
 
@@ -176,11 +255,21 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   override var min: Double = 0.0
     get() = field
-    set(v) { field = v; invalidateIfAlive() }
+    set(v) {
+      if (field == v) return
+      field = v
+      invalidateIfAlive()
+      scheduleAccessibilityUpdate()
+    }
 
   override var max: Double = 100.0
     get() = field
-    set(v) { field = v; invalidateIfAlive() }
+    set(v) {
+      if (field == v) return
+      field = v
+      invalidateIfAlive()
+      scheduleAccessibilityUpdate()
+    }
 
   override var segments: Double = 0.0
     get() = field
@@ -195,10 +284,17 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     set(v) {
       field = v
       view.alpha = if (v) 0.5f else 1f
+      view.isEnabled = !v
       // Touch events stop reaching onTouchEvent once disabled, so end an
       // active drag here.
       if (v) cancelInteraction()
       invalidateIfAlive()
+    }
+
+  override var sliderAccessibilityLabel: String = ""
+    set(value) {
+      field = value
+      view.contentDescription = value.ifEmpty { null }
     }
 
   override var showBubble: Boolean = true
@@ -284,6 +380,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   }
 
   // MARK: - Geometry helpers
+  private val isRtl: Boolean get() = view.layoutDirection == View.LAYOUT_DIRECTION_RTL
   private val trackWidth: Float get() = (view.width - insetPx * 2f).coerceAtLeast(0f)
   private val rangeSafe: Double get() = (max - min).let { if (it == 0.0) 1.0 else it }
   private val markCount: Int get() = if (segments >= 1) segments.toInt() + 1 else 0
@@ -296,12 +393,15 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     return ((clamped - min) / rangeSafe).toFloat()
   }
 
+  private fun xFromFraction(fraction: Float): Float =
+    insetPx + (if (isRtl) 1f - fraction else fraction) * trackWidth
+
   private fun valueFromX(x: Float): Double {
     val w = trackWidth
     if (w <= 0f) return currentValue
     val clampedX = x.coerceIn(insetPx, insetPx + w)
     val frac = ((clampedX - insetPx) / w).toDouble()
-    return min + frac * (max - min)
+    return min + (if (isRtl) 1.0 - frac else frac) * (max - min)
   }
 
   /** Snaps a value to the value of the nearest segment mark. Caller guarantees `markCount > 1`. */
@@ -312,18 +412,52 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     return min + snappedFrac * (max - min)
   }
 
+  private fun scheduleAccessibilityUpdate() {
+    if (isDisposed || !view.isAttachedToWindow || accessibilityUpdatePending) return
+    accessibilityUpdatePending = view.postDelayed(dispatchAccessibilityUpdate, 100L)
+  }
+
+  private fun cancelAccessibilityUpdate() {
+    view.removeCallbacks(dispatchAccessibilityUpdate)
+    accessibilityUpdatePending = false
+  }
+
   /** Updates the idle view without emitting an interaction callback. */
   private fun syncToValue(v: Double) {
     if (isDisposed) return
     hoverMarkIndex = -1
+    val changed = currentValue != v
     currentValue = v
     lastEmitted = v
     view.invalidate()
+    if (changed) scheduleAccessibilityUpdate()
+  }
+
+  private fun stepValue(forward: Boolean): Boolean {
+    val next = if (forward) Math.floor(currentValue) + 1 else Math.ceil(currentValue) - 1
+    if (next < Math.ceil(min) || next > Math.floor(max)) return false
+    return adjustValue(next)
+  }
+
+  private fun adjustValue(raw: Double): Boolean {
+    if (disabled || isDisposed || isDragging || !raw.isFinite() ||
+      Math.ceil(min) > Math.floor(max)
+    ) return false
+
+    val value = roundToRange(raw)
+    if (value == currentValue) return false
+    interactionId += 1
+    onSlideStart?.invoke()
+    commitDragValue(value)
+    onSlideComplete?.invoke(interactionId, currentValue)
+    return true
   }
 
   private fun commitDragValue(raw: Double) {
     val rounded = roundToRange(raw)
+    val changed = currentValue != rounded
     currentValue = rounded
+    if (changed) scheduleAccessibilityUpdate()
     markTickedThisCommit = false
     updateHover()
     tickStepIfNeeded(rounded)
@@ -342,13 +476,13 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       hoverMarkIndex = -1
       return
     }
-    val thumbX = insetPx + valueToFrac(currentValue) * tw
+    val thumbX = xFromFraction(valueToFrac(currentValue))
     val threshold = 12f * density // half of the 24dp mark hit area
     var best = -1
     var bestDist = threshold
     for (i in 0 until markCount) {
       val mf = if (markCount > 1) i.toFloat() / (markCount - 1) else 0f
-      val mx = insetPx + mf * tw
+      val mx = xFromFraction(mf)
       val d = Math.abs(thumbX - mx)
       if (d <= bestDist) { bestDist = d; best = i }
     }
@@ -436,16 +570,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     canvas.drawRoundRect(rect, radius, radius, trackPaint)
 
     // Fill.
-    if (centerOrigin) {
-      if (currentValue != 0.0) {
-        val centerFrac = valueToFrac(0.0)
-        val leftFrac = minOf(frac, centerFrac)
-        val widthFrac = Math.abs(frac - centerFrac)
-        rect.set(insetPx + leftFrac * tw, trackTop, insetPx + (leftFrac + widthFrac) * tw, trackTop + h)
-        canvas.drawRoundRect(rect, radius, radius, fillPaint)
-      }
-    } else if (frac > 0f) {
-      rect.set(insetPx, trackTop, insetPx + frac * tw, trackTop + h)
+    val thumbX = xFromFraction(frac)
+    val originX = xFromFraction(if (centerOrigin) valueToFrac(0.0) else 0f)
+    if (originX != thumbX) {
+      rect.set(minOf(originX, thumbX), trackTop, maxOf(originX, thumbX), trackTop + h)
       canvas.drawRoundRect(rect, radius, radius, fillPaint)
     }
 
@@ -453,7 +581,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     // thumb stays plain (web parity). Translucent markActive color (25% alpha).
     if (isDragging && hoverMarkIndex in 0 until markCount) {
       val mf = if (markCount > 1) hoverMarkIndex.toFloat() / (markCount - 1) else 0f
-      val hx = insetPx + mf * tw
+      val hx = xFromFraction(mf)
       markHaloPaint.color = (cMarkActive and 0x00FFFFFF) or (0x3F shl 24)
       canvas.drawCircle(hx, midY, markSizePx / 2f + haloRingPx, markHaloPaint)
     }
@@ -463,7 +591,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     val markR = markSizePx / 2f
     for (i in 0 until markCount) {
       val markFrac = if (markCount > 1) i.toFloat() / (markCount - 1) else 0f
-      val cx = insetPx + markFrac * tw
+      val cx = xFromFraction(markFrac)
       val active = when {
         centerOrigin && currentValue == 0.0 -> false
         centerOrigin && currentValue > 0 -> markFrac > centerFrac && markFrac <= frac
@@ -478,7 +606,6 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
     // Thumb (drawn ABOVE the marks so it covers the node it sits on, matching
     // web where the thumb zIndex 4 sits above the mark zIndex 3).
-    val thumbX = insetPx + frac * tw
     val thumbR = thumbSizePx / 2f * thumbScale
     canvas.drawCircle(thumbX, midY, thumbR, thumbFillPaint)
     canvas.drawCircle(thumbX, midY, thumbR - density / 2f, thumbStrokePaint)
@@ -506,6 +633,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   override fun dispose() {
     isDisposed = true
+    cancelAccessibilityUpdate()
     thumbScaleAnimator?.cancel()
     thumbScaleAnimator = null
   }

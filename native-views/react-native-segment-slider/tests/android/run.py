@@ -42,6 +42,7 @@ base += "abstract val view: android.view.View\n"
 for name in ["defaultValue", "min", "max", "segments", "sliderHeight"]:
     base += f"abstract var {name}: Double\n"
 base += "abstract var hapticStep: Double\n"
+base += "abstract var sliderAccessibilityLabel: String\n"
 for name in ["disabled", "showBubble", "centerOrigin", "snapTapToSegment"]:
     base += f"abstract var {name}: Boolean\n"
 for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markActiveColor",
@@ -74,10 +75,13 @@ run(tools / "d8", "--min-api", "26", "--lib", android, "--output", dex,
     output / "classes.jar", env=env)
 (output / "AndroidManifest.xml").write_text("""<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.onekey.sliderbubbletest">
 <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
-<application android:debuggable="true" android:label="Slider Bubble Test" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+<application android:supportsRtl="true" android:debuggable="true" android:label="Slider Bubble Test" android:theme="@android:style/Theme.Material.Light.NoActionBar">
 <activity android:name="com.margelo.nitro.segmentslider.BubbleLayoutActivity" android:exported="true"/>
 <activity android:name="com.margelo.nitro.segmentslider.StyleGalleryActivity" android:exported="true"/>
-</application></manifest>""")
+</application>
+<instrumentation android:name="com.margelo.nitro.segmentslider.BubbleLayoutInstrumentation"
+    android:targetPackage="com.onekey.sliderbubbletest"/>
+</manifest>""")
 unsigned = output / "unsigned.apk"
 assets = output / "assets"
 assets.mkdir(exist_ok=True)
@@ -94,10 +98,14 @@ run(tools / "apksigner", "sign", "--ks", Path.home() / ".android/debug.keystore"
 run(adb, "-s", args.serial, "install", "-r", output / "test.apk")
 run(adb, "-s", args.serial, "shell", "am", "force-stop", "com.onekey.sliderbubbletest")
 run(adb, "-s", args.serial, "shell", "run-as", "com.onekey.sliderbubbletest",
-    "rm", "-f", "files/result.json")
-activity = "StyleGalleryActivity" if args.gallery else "BubbleLayoutActivity"
-run(adb, "-s", args.serial, "shell", "am", "start", "-W", "-n",
-    f"com.onekey.sliderbubbletest/com.margelo.nitro.segmentslider.{activity}")
+    "rm", "-f", "files/result.json", "files/screenshot.png")
+if args.gallery:
+    run(adb, "-s", args.serial, "shell", "am", "start", "-W", "-n",
+        "com.onekey.sliderbubbletest/com.margelo.nitro.segmentslider.StyleGalleryActivity")
+else:
+    run(adb, "-s", args.serial, "shell", "am", "instrument", "-w",
+        "com.onekey.sliderbubbletest/com.margelo.nitro.segmentslider.BubbleLayoutInstrumentation",
+        timeout=40)
 for _ in range(30):
     result = subprocess.run([str(adb), "-s", args.serial, "exec-out", "run-as",
         "com.onekey.sliderbubbletest", "cat", "files/result.json"], capture_output=True)
@@ -108,13 +116,17 @@ for _ in range(30):
             time.sleep(0.5)
             continue
         (output / "result.json").write_text(json.dumps(data, indent=2))
-        time.sleep(0.5)
         with (output / "screenshot.png").open("wb") as screenshot:
-            run(adb, "-s", args.serial, "exec-out", "screencap", "-p", stdout=screenshot)
+            if args.gallery:
+                time.sleep(0.5)
+                run(adb, "-s", args.serial, "exec-out", "screencap", "-p", stdout=screenshot)
+            else:
+                run(adb, "-s", args.serial, "exec-out", "run-as", "com.onekey.sliderbubbletest",
+                    "cat", "files/screenshot.png", stdout=screenshot)
         if args.gallery:
             with (output / "android.png").open("wb") as gallery:
-                run(adb, "-s", args.serial, "exec-out", "run-as",
-                    "com.onekey.sliderbubbletest", "cat", "files/gallery.png", stdout=gallery)
+                run(adb, "-s", args.serial, "exec-out", "run-as", "com.onekey.sliderbubbletest",
+                    "cat", "files/gallery.png", stdout=gallery)
         print(json.dumps(data, indent=2))
         raise SystemExit(1 if data["failures"] else 0)
     time.sleep(0.5)

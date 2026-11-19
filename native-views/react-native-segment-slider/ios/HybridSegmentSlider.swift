@@ -95,6 +95,12 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       if disabled { cancelInteraction() }
     }
   }
+  var sliderAccessibilityLabel: String = "" {
+    didSet {
+      view.accessibilityLabel = sliderAccessibilityLabel.isEmpty ? nil : sliderAccessibilityLabel
+    }
+  }
+
   var showBubble: Bool = true { didSet { scheduleLayout() } }
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.

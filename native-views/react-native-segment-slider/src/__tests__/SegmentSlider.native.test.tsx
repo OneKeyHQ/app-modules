@@ -96,3 +96,14 @@ it('passes hapticStep and colors through to the native view', () => {
   expect(viewProps.fillColor).toBe('#00ff00');
   expect(viewProps.trackColor).toBe('#E3E3E3');
 });
+
+it('maps the public ARIA label to the native host and updates it with the caller', () => {
+  const { rerender } = setup({ 'aria-label': 'Adjust leverage' });
+  expect(viewProps.sliderAccessibilityLabel).toBe('Adjust leverage');
+
+  rerender({ 'aria-label': 'Position size' });
+  expect(viewProps.sliderAccessibilityLabel).toBe('Position size');
+
+  rerender({ 'aria-label': undefined });
+  expect(viewProps.sliderAccessibilityLabel).toBe('');
+});

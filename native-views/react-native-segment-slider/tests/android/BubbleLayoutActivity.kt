@@ -1,22 +1,61 @@
 package com.margelo.nitro.segmentslider
 
 import android.app.Activity
+import android.app.Instrumentation
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.widget.FrameLayout
 import android.widget.TextView
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.abs
+
+class BubbleLayoutInstrumentation : Instrumentation() {
+  override fun onCreate(arguments: Bundle?) {
+    super.onCreate(arguments)
+    start()
+  }
+
+  override fun onStart() {
+    val automation = uiAutomation
+    val result = File(targetContext.filesDir, "result.json")
+    startActivitySync(
+      Intent(targetContext, BubbleLayoutActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+    val deadline = SystemClock.uptimeMillis() + 15_000
+    while (!result.isFile && SystemClock.uptimeMillis() < deadline) {
+      SystemClock.sleep(50)
+    }
+    if (!result.isFile) {
+      finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "Slider harness timed out") })
+      return
+    }
+    waitForIdleSync()
+    automation.takeScreenshot()?.let { screenshot ->
+      File(targetContext.filesDir, "screenshot.png").outputStream().use {
+        screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
+      }
+    }
+    finish(Activity.RESULT_OK, Bundle())
+  }
+}
 
 /** Runs the production View/Canvas code; only the RN context and Nitro base are stubbed. */
 class BubbleLayoutActivity : Activity() {
@@ -72,13 +111,17 @@ class BubbleLayoutActivity : Activity() {
         for ((index, slider) in sliders.withIndex()) verify(slider, index * 50.0)
         runInteractionCases()
         runHapticCases()
-        runLayoutCases {
-          verifyDelayedValueSync(root) {
-            File(filesDir, "result.json").writeText(JSONObject().apply {
-              put("checks", checks); put("failures", org.json.JSONArray(failures))
-            }.toString(2))
-            title.text = "${checks - failures.size}/$checks native Android checks passed"
-            android.util.Log.i("SliderBubbleTest", title.text.toString())
+        runAdjustableCases(root)
+        runFractionalEndpointCases()
+        runAccessibilityNotificationCases(root) {
+          runLayoutCases {
+            verifyDelayedValueSync(root) {
+              File(filesDir, "result.json").writeText(JSONObject().apply {
+                put("checks", checks); put("failures", org.json.JSONArray(failures))
+              }.toString(2))
+              title.text = "${checks - failures.size}/$checks native Android checks passed"
+              android.util.Log.i("SliderBubbleTest", title.text.toString())
+            }
           }
         }
       }, 250)
@@ -272,6 +315,200 @@ class BubbleLayoutActivity : Activity() {
     touch(bounded, MotionEvent.ACTION_UP, 0f)
     check(boundChanges == listOf(10.0, 1.0), "fractional bound values: $boundChanges")
     bounded.dispose()
+  }
+
+  private fun runAdjustableCases(root: FrameLayout) {
+    val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
+      min = 1.0
+      max = 20.0
+      defaultValue = 10.0
+      segments = 4.0
+      fillColor = "#ff0000"
+      trackColor = "#dddddd"
+      thumbColor = "#00ff00"
+    }
+    val view = slider.view
+    root.addView(view, FrameLayout.LayoutParams(px(320), px(24)))
+    view.layout(0, 0, px(320), px(24))
+
+    val events = mutableListOf<String>()
+    slider.onSlideStart = { events.add("start") }
+    slider.onChange = { events.add("change:$it") }
+    slider.onSlideComplete = { id, value -> events.add("complete:$id:$value") }
+    val forward = AccessibilityAction.ACTION_SCROLL_FORWARD
+    val backward = AccessibilityAction.ACTION_SCROLL_BACKWARD
+    val setProgress = AccessibilityAction.ACTION_SET_PROGRESS
+    fun press(key: Int) = view.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, key))
+    fun range() = view.createAccessibilityNodeInfo().rangeInfo
+
+    val node = view.createAccessibilityNodeInfo()
+    check(node.className == "android.widget.SeekBar", "adjustable node uses SeekBar role")
+    check(node.isFocusable && node.isEnabled, "enabled slider is focusable")
+    check(range()?.let { it.min == 1f && it.max == 20f && it.current == 10f } == true,
+      "adjustable node exposes range and current value")
+    check(node.actionList.containsAll(listOf(forward, backward, setProgress)),
+      "adjustable node exposes both steps and set progress")
+    check(view.performAccessibilityAction(forward.id, null) && range()?.current == 11f,
+      "accessibility increment changes the slider")
+    check(view.performAccessibilityAction(backward.id, null) && range()?.current == 10f,
+      "accessibility decrement changes the slider")
+    check(!view.performAccessibilityAction(setProgress.id, Bundle()),
+      "missing progress leaves the slider unchanged")
+    val progress = Bundle().apply {
+      putFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, 17f)
+    }
+    check(view.performAccessibilityAction(setProgress.id, progress) && range()?.current == 17f,
+      "accessibility set progress changes the slider")
+    check(events == listOf("start", "change:11.0", "complete:1.0:11.0",
+      "start", "change:10.0", "complete:2.0:10.0",
+      "start", "change:17.0", "complete:3.0:17.0"), "discrete callback order: $events")
+    check(press(KeyEvent.KEYCODE_DPAD_RIGHT) && range()?.current == 18f,
+      "LTR right arrow increases the slider")
+
+    view.layoutDirection = View.LAYOUT_DIRECTION_RTL
+    check(press(KeyEvent.KEYCODE_DPAD_RIGHT) && range()?.current == 17f,
+      "RTL right arrow decreases the slider")
+    check(press(KeyEvent.KEYCODE_DPAD_LEFT) && range()?.current == 18f,
+      "RTL left arrow increases the slider")
+    check(press(KeyEvent.KEYCODE_MOVE_HOME) && range()?.current == 1f,
+      "RTL Home selects minimum")
+    check(!view.createAccessibilityNodeInfo().actionList.contains(backward) &&
+      !view.performAccessibilityAction(backward.id, null), "minimum does not decrement")
+    check(press(KeyEvent.KEYCODE_MOVE_END) && range()?.current == 20f,
+      "RTL End selects maximum")
+
+    for ((x, expected) in listOf(view.width.toFloat() to 1f, 0f to 20f)) {
+      touch(slider, MotionEvent.ACTION_DOWN, x)
+      touch(slider, MotionEvent.ACTION_UP, x)
+      check(range()?.current == expected, "RTL tap $x selects $expected")
+    }
+
+    fun draw(direction: Int): IntArray {
+      view.layoutDirection = direction
+      val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+      view.draw(Canvas(bitmap))
+      return IntArray(view.width) { bitmap.getPixel(it, view.height / 2) }
+    }
+    view.performAccessibilityAction(setProgress.id, progress)
+    val ltr = draw(View.LAYOUT_DIRECTION_LTR)
+    val rtl = draw(View.LAYOUT_DIRECTION_RTL)
+    for (color in listOf(Color.RED, Color.GREEN)) {
+      val ltrPixels = ltr.indices.filter { ltr[it] == color }
+      val rtlPixels = rtl.indices.filter { rtl[it] == color }
+      check(ltrPixels.isNotEmpty() && rtlPixels.isNotEmpty() &&
+        abs(ltrPixels.first() + rtlPixels.last() - (view.width - 1)) <= 1 &&
+        abs(ltrPixels.last() + rtlPixels.first() - (view.width - 1)) <= 1,
+        "RTL drawing mirrors color $color with the touch mapping")
+    }
+
+    slider.disabled = true
+    val disabled = view.createAccessibilityNodeInfo()
+    check(!disabled.isEnabled && disabled.actionList.none { it in listOf(forward, backward, setProgress) },
+      "disabled node exposes no adjustment actions")
+    check(!view.performAccessibilityAction(backward.id, null) &&
+      !press(KeyEvent.KEYCODE_DPAD_LEFT) && range()?.current == 17f,
+      "disabled slider rejects accessibility and key adjustments")
+    root.removeView(view)
+    slider.dispose()
+  }
+
+  private fun runFractionalEndpointCases() {
+    for ((endpoint, outsideKey, outsideAction) in listOf(
+      Triple(0.5, KeyEvent.KEYCODE_DPAD_LEFT, AccessibilityAction.ACTION_SCROLL_BACKWARD),
+      Triple(10.5, KeyEvent.KEYCODE_DPAD_RIGHT, AccessibilityAction.ACTION_SCROLL_FORWARD),
+    )) {
+      val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
+        min = 0.5
+        max = 10.5
+        defaultValue = endpoint
+      }
+      val changes = mutableListOf<Double>()
+      slider.onChange = { changes.add(it) }
+      check(!slider.view.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, outsideKey)),
+        "outward key is ignored at fractional endpoint $endpoint")
+      check(!slider.view.performAccessibilityAction(outsideAction.id, null),
+        "outward accessibility step is ignored at fractional endpoint $endpoint")
+      check(field(slider, "currentValue") == endpoint && changes.isEmpty(),
+        "outward steps preserve fractional endpoint $endpoint without callbacks")
+      slider.dispose()
+    }
+  }
+
+  private fun runAccessibilityNotificationCases(root: FrameLayout, done: () -> Unit) {
+    data class ProgressEvent(val type: Int, val flags: Int, val min: Float, val max: Float, val value: Float)
+    data class Case(val name: String, val expected: List<ProgressEvent>, val act: () -> Unit)
+
+    val manager = getSystemService(AccessibilityManager::class.java)
+    check(manager?.isEnabled == true, "accessibility is enabled for the notification tests")
+    val slider = HybridSegmentSlider(ThemedReactContext(this)).apply { defaultValue = 25.0 }
+    val view = slider.view
+    view.layout(0, 0, px(320), px(24))
+    root.addView(view, FrameLayout.LayoutParams(px(320), px(24)))
+    val snapshots = mutableListOf<ProgressEvent>()
+    view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+      override fun sendAccessibilityEventUnchecked(host: View, event: AccessibilityEvent) {
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+          event.eventType == AccessibilityEvent.TYPE_VIEW_SELECTED
+        ) {
+          host.createAccessibilityNodeInfo().rangeInfo?.let {
+            snapshots.add(ProgressEvent(event.eventType, event.contentChangeTypes, it.min, it.max, it.current))
+          }
+        }
+        super.sendAccessibilityEventUnchecked(host, event)
+      }
+    }
+
+    val modern = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    val expectedType = if (modern) AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED else AccessibilityEvent.TYPE_VIEW_SELECTED
+    val expectedFlags = if (modern) AccessibilityEvent.CONTENT_CHANGE_TYPE_STATE_DESCRIPTION else 0
+    fun event(value: Float, min: Float = 0f, max: Float = 100f) =
+      listOf(ProgressEvent(expectedType, expectedFlags, min, max, value))
+    val inset = field(slider, "insetPx") as Float
+    fun x(value: Float) = inset + (view.width - 2 * inset) * value / 100f
+
+    val cases = listOf(
+      Case("drag coalesces into one progress event", event(75f)) {
+        touch(slider, MotionEvent.ACTION_DOWN, x(30f))
+        touch(slider, MotionEvent.ACTION_MOVE, x(60f))
+        touch(slider, MotionEvent.ACTION_MOVE, x(75f))
+        touch(slider, MotionEvent.ACTION_UP, x(75f))
+      },
+      Case("controlled update sends a progress event", event(50f)) {
+        slider.setValue(50.0, 1.0)
+      },
+      Case("range changes coalesce into one progress event", event(50f, 20f, 80f)) {
+        slider.min = 20.0
+        slider.max = 80.0
+      },
+      Case("same-value update sends no progress event", emptyList()) {
+        slider.setValue(50.0, 1.0)
+      },
+      Case("accessibility increment announces the new progress", event(51f, 20f, 80f)) {
+        check(view.performAccessibilityAction(AccessibilityAction.ACTION_SCROLL_FORWARD.id, null),
+          "accessibility increment is accepted")
+      },
+      Case("accessibility decrement announces the new progress", event(50f, 20f, 80f)) {
+        check(view.performAccessibilityAction(AccessibilityAction.ACTION_SCROLL_BACKWARD.id, null),
+          "accessibility decrement is accepted")
+      },
+    )
+
+    fun runCase(index: Int) {
+      if (index == cases.size) {
+        root.removeView(view)
+        slider.dispose()
+        done()
+        return
+      }
+      val case = cases[index]
+      snapshots.clear()
+      case.act()
+      handler.postDelayed({
+        check(snapshots == case.expected, "${case.name}: expected ${case.expected}, got $snapshots")
+        runCase(index + 1)
+      }, 200)
+    }
+    runCase(0)
   }
 
   private fun runInteractionCases() {

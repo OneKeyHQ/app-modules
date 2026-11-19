@@ -25,8 +25,9 @@ every pointer or keyboard interaction and paints with the latest configuration,
 including marks added during a drag. Reconciliation never emits `onChange`.
 
 An interaction is one drag or tap (one pointer and, on Web, only the primary
-button; extra pointers are ignored until it ends) or one accepted Web key
-press. Each interaction fires `onSlideStart` once and `onSlideComplete` once.
+button; extra pointers are ignored until it ends), an accepted Android or Web
+key press, or an Android accessibility action that changes the value. Each
+interaction fires `onSlideStart` once and `onSlideComplete` once.
 Setting `disabled` during a drag cancels it on every platform: the bubble and
 pressed thumb reset, ancestor gestures are restored, `onSlideComplete` fires,
 and later moves or the release change nothing.
@@ -35,9 +36,10 @@ and later moves or the release change nothing.
 value stays within `[ceil(min), floor(max)]` (for 0.5..10.5 the values are
 1..10); integer bounds are unaffected.
 
-`aria-label` and `aria-labelledby` name the slider. Web sets them on the
-`role="slider"` element; iOS and Android forward them to the host view as React
-Native accessibility props (native screen-reader behavior is not yet verified).
+`aria-label` names the slider. Web sets it on the `role="slider"` element,
+which also accepts `aria-labelledby`. On iOS and Android the wrapper sends the
+label through Nitro. The native view exposes it as Android's SeekBar content
+description or UIKit's accessibility label. An absent or empty label clears it.
 
 Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
 `sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
@@ -63,9 +65,14 @@ haptics.
 
 `src/SegmentSlider.nitro.ts` defines the native view's required props and
 methods. The component above is the only public entry point; the Nitro view and
-its `setValue` method are internal. The package root resolves to the DOM
-implementation under the `browser` export condition and to the Nitro wrapper
-under the default condition. Both export the same public API.
+its `setValue` method are internal. The package root resolves to the Nitro
+wrapper under the `react-native` export condition and the default condition,
+and to the DOM implementation under the `browser` condition. Both export the
+same public API. React Native bundlers must reach the Nitro wrapper even with
+package exports disabled: Metro then reads the top-level fields in the order
+`react-native`, `browser`, `main`, so the top-level `react-native` field points
+at the Nitro entry and takes precedence over the Web `browser` field.
+`src/__tests__/packageEntry.test.ts` resolves both ways.
 
 - `defaultValue` seeds the value once. Later prop commits do not reset it.
 - `min` / `max` define the range (native defaults 0 / 100); callers provide a
@@ -123,9 +130,25 @@ track for a 20-point bubble and its 8-point gap.
 | Stacking (bottom to top) | Track, fill, halo, marks, thumb, bubble | Track, fill, halo, marks, thumb, bubble | Track, fill, marks, thumb, bubble; marks stay clickable under the thumb |
 | Mark tick | `UIImpactFeedbackGenerator(.light)`, intensity 0.6 | `CLOCK_TICK` | None |
 | Step tick (`hapticStep`) | `UISelectionFeedbackGenerator` | `TEXT_HANDLE_MOVE` (API 27+), else `CLOCK_TICK` | None |
-| Keyboard | None | None | Arrow keys move to the next mark value (1 unit without marks), Home / End jump to the ends |
+| Keyboard | None | Left / Right move by 1 unit following layout direction; Home / End select minimum / maximum | Arrow keys move to the next mark value (1 unit without marks), Home / End jump to the ends |
+| Adjustable accessibility range | — | SeekBar role with integer range and progress, one-unit forward/backward actions and direct progress setting | DOM slider role with range and current value |
+| RTL layout | Minimum at left | Minimum at right, with mirrored fill, marks, thumb and touch mapping | Minimum at left |
 | Pressed thumb | Scales to 18.4 points, plain thumb colors; the node halo stays under it | Scales to 18.4 dp, plain thumb colors; the node halo stays under it | Stays 16 px; plain thumb colors |
 | Mark hover | None (no pointer) | None (no pointer) | Ring while the pointer hovers a mark |
+
+Android accessibility actions and keyboard adjustments emit the same start,
+change and completion callbacks as a touch interaction, without drag haptics.
+A step selects the next integer in its direction. At a bound, a step past it
+leaves the current value unchanged, including a controlled fractional
+endpoint. While disabled or mid-drag, discrete adjustments leave the active
+value alone. Android exposes the numeric accessibility range only when it
+contains a selectable integer. When the current value or range changes, an
+attached view schedules an accessibility progress event. Multiple updates
+within 100 ms share one event reporting the latest state. Android 11 and later
+send `TYPE_WINDOW_CONTENT_CHANGED` with
+`CONTENT_CHANGE_TYPE_STATE_DESCRIPTION` so TalkBack can read the range value
+of the focused slider. Earlier Android versions send `TYPE_VIEW_SELECTED`.
+Detachment or disposal cancels pending notifications.
 
 Accepted Web divergences: the endpoint inset, pressed thumb size and bubble
 clamping differ because desktop pointers do not need the enlarged touch thumb;
@@ -202,6 +225,11 @@ Injected Android pointer DOWN/MOVE/UP events also reached both endpoints;
 GPU screenshots confirmed complete circles and `0%` / `100%` text while held.
 This harness stubs the Nitro base and React context; it does not validate the
 complete OneKey Perps screen or the production Nitro/Fabric integration.
+The same harness verifies Android range metadata, accessibility actions,
+keyboard adjustments, fractional endpoints, and mirrored touch and drawing.
+The notification tests enable accessibility via Android UI automation and
+check the type, change flags, and current range in events produced by
+adjustment actions, dragging, controlled value updates, and range updates.
 
 - `src/SegmentSlider.tsx`: native controlled wrapper (value sync via `setValue`).
 - `src/types.ts`: shared props and default colors.
@@ -216,12 +244,15 @@ complete OneKey Perps screen or the production Nitro/Fabric integration.
   signed ranges. Mac Catalyst execution does not
   establish React Native/Fabric or iPhone acceptance.
 - `tests/android/BubbleLayoutActivity.kt`: Android View/Canvas rendering,
-  text raster bounds and touch-event regression coverage. An RN-like wrapper
+  text raster bounds, touch events, keyboard adjustments, accessibility actions
+  and RTL regression coverage. An RN-like wrapper
   allows child overflow within a horizontally clipping sheet with headroom.
 - `tests/android/run.py`: builds a local test APK from the production Kotlin
   sources and runs it on an explicitly selected, already booted emulator.
   Requires JDK 17, kotlinc, Android platform 34 and build-tools 37. It installs
-  only `com.onekey.sliderbubbletest`; it does not build or replace OneKey App.
+  only `com.onekey.sliderbubbletest` and runs the regression activity under
+  instrumentation so Android can dispatch real accessibility events. It does
+  not build or replace OneKey App.
 
 ```sh
 python3 native-views/react-native-segment-slider/tests/android/run.py \
@@ -229,6 +260,17 @@ python3 native-views/react-native-segment-slider/tests/android/run.py \
 ```
 
 The Android runner saves `result.json` and `screenshot.png` in the output folder.
+
+For the Android accessibility name regression, open **Segment Slider Test**
+in the React Native example app on the emulator and run:
+
+```sh
+python3 native-views/react-native-segment-slider/tests/android/check_accessibility_label.py \
+  --serial <emulator-serial>
+```
+
+The test reads Android's accessibility hierarchy and verifies that the
+example's `aria-label` appears on the actual SeekBar node.
 
 Run the focused harness on an Apple Silicon Mac with Xcode, from the repository
 root (no React Native dependency installation required):
