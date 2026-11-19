@@ -490,14 +490,13 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   }
 
   func enableSDKLocalLog(enable: Bool, uploadJgToServer: Bool) throws {
-    localLogEnabled = enable
-    JCOREConfiguration.setLocalLogEnabled(enable)
+    // Deprecated: logs are forwarded directly to OneKeyLog without in-memory buffering.
+    localLogEnabled = false
+    JCOREConfiguration.setLocalLogEnabled(false)
   }
 
   func readNewLogs() throws -> String {
-    let logs = JCOREConfiguration.recentLogs().joined(separator: "\n")
-    JCOREConfiguration.clearRecentLogs()
-    return logs
+    return ""
   }
 
   func addEventListener(

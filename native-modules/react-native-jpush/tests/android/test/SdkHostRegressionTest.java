@@ -845,7 +845,7 @@ public final class SdkHostRegressionTest {
         logCfg.putBoolean("enable", true);
         logCfg.putBoolean("uploadJgToServer", false);
         jcoreModule.enableSDKLocalLog(logCfg);
-        final AtomicReference<String> readLogsRef = new AtomicReference<String>("");
+        final AtomicReference<String> readLogsRef = new AtomicReference<String>(null);
         jcoreModule.readNewLogs(new Callback() {
             @Override
             public void invoke(Object... args) {
@@ -854,7 +854,7 @@ public final class SdkHostRegressionTest {
                 }
             }
         });
-        check(readLogsRef.get() != null && readLogsRef.get().contains("SDKLocalLog"), "JCoreModule.readNewLogs");
+        check("".equals(readLogsRef.get()), "JCoreModule.readNewLogs must return empty string without in-memory buffering");
 
         jpushModule.setLinkMergeEnable(false);
         WritableMap tagMap = Arguments.createMap();
@@ -1468,8 +1468,9 @@ public final class SdkHostRegressionTest {
         }
         check(rejectedCrossUid, "DataShare must throw SecurityException when callingUid != myUid");
 
-        // 4. Verify default logging is enabled and never logs sensitive notification content or PII
+        // 4. Verify default logging forwards directly to OneKeyLog without in-memory storage and never logs sensitive notification content or PII
         check(JLogger.isLoggerEnable(), "JLogger must be enabled by default");
+        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
         JLogger.clearRecentLogs();
         JPushModuleReceiver receiver = new JPushModuleReceiver();
 
@@ -1503,7 +1504,8 @@ public final class SdkHostRegressionTest {
         receiver.onMobileNumberOperatorResult(context, secretOp);
         receiver.onRegister(context, "1a0018970a900100200");
 
-        String joinedLogs = String.join("\n", JLogger.getRecentLogs());
+        check(JLogger.getRecentLogs().isEmpty(), "JLogger must not store logs in memory");
+        String joinedLogs = String.join("\n", com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs());
         check(joinedLogs.contains("notificationArrived") && joinedLogs.contains("notificationType=0"), "Must log notification type");
         check(joinedLogs.contains("msg_99001") && joinedLogs.contains("1a0018970a900100200"), "Must allow msgId and registrationId");
         check(!joinedLogs.contains("SECRET_WALLET_TITLE"), "Must never log notificationTitle");
@@ -2594,6 +2596,81 @@ public final class SdkHostRegressionTest {
             JCoreTcpEngine.getInstance().stop(null);
             JCoreTcpEngine.getInstance().setAutoReconnectEnabled(true);
             JCoreTcpEngine.getInstance().setDefaultRequestTimeoutMs(5000L);
+        }
+    }
+
+    @org.junit.Test
+    public void testHeartbeatGeneralAckAndResumeNoOpWhenNotStopped() throws Exception {
+        check(Arrays.equals(new byte[] { 0 }, JCoreWireCodec.buildPushControlPayload(true)),
+            "stopPush CMD_PUSH_CTRL payload must encode action=0");
+        check(Arrays.equals(new byte[] { 1 }, JCoreWireCodec.buildPushControlPayload(false)),
+            "resumePush CMD_PUSH_CTRL payload must encode action=1");
+        check(JCoreWireCodec.parsePushControlPayload(new byte[] { 0 })
+            && !JCoreWireCodec.parsePushControlPayload(new byte[] { 1 }),
+            "parsePushControlPayload must treat action=0 as stopped");
+
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        JCoreStorage.setPushStopped(context, false);
+        engine.stop(context);
+        engine.setAutoReconnectEnabled(false);
+        engine.setDefaultRequestTimeoutMs(1000L);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setAppKey(context, "hb-ack-and-resume-noop");
+        JCoreStorage.updateRegistration(context, 870001L, "hb-password", "hb-rid", "hb-device");
+        JCoreStorage.setServerRegistered(context, true);
+
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket socket = listener.accept()) {
+                    socket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 870001L);
+                    check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login");
+                    writeLoopbackAck(socket, login, 870001L, 8701, 0, JCoreWireCodec.buildLoginResponsePayload(8701, 520, "", 1700000000));
+                    JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 870001L);
+                    check(initialHb != null && initialHb.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
+                    // Reply with Jiguang server cmd=0, ver=0 20-byte heartbeat ACK frame
+                    socket.getOutputStream().write(JCoreWireCodec.encodeServerFrame(
+                        0, 0, initialHb.algorithm, 0, initialHb.requestId, 870001L, 8701L, new byte[0]
+                    ));
+                    socket.getOutputStream().flush();
+
+                    JCoreWireCodec.DecodedFrame secondHb = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 870001L);
+                    check(secondHb != null && secondHb.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected second heartbeat");
+                    // Reply with Jiguang server cmd=19 general ACK frame
+                    socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(
+                        19, 0, secondHb.requestId, 8701, 870001L, 0, new byte[0]
+                    ));
+                    socket.getOutputStream().flush();
+                    check(finish.await(3000L, TimeUnit.MILLISECONDS), "Fixture finish missing");
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            }, "test-hb-general-ack");
+            server.setDaemon(true);
+            server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                // Calling resumePush when push is NOT stopped must not enqueue CMD_PUSH_CTRL
+                JPushInterface.resumePush(context);
+                check(engine.getPreLoginQueueSize() == 0, "resumePush when not stopped must not queue CMD_PUSH_CTRL");
+                long startMs = System.currentTimeMillis();
+                check(engine.awaitHandshake(1500L) && engine.isLoggedIn(), "Handshake must complete rapidly on cmd=0,ver=0 heartbeat ACK");
+                check(System.currentTimeMillis() - startMs < 800L, "Initial heartbeat ACK (cmd=0,ver=0) must not wait for 1000ms timeout");
+                JCoreWireCodec.DecodedFrame hbAck = engine.sendRequest(JCoreWireCodec.CMD_HEARTBEAT, JCoreWireCodec.VER_HEARTBEAT,
+                    JCoreWireCodec.buildHeartbeatPayload(false), 1000L);
+                check(hbAck != null && hbAck.command == 19, "Heartbeat request must accept cmd=19 general ACK response");
+            } finally {
+                finish.countDown();
+                engine.stop(context);
+                server.join(3000L);
+                engine.setAutoReconnectEnabled(true);
+                engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Heartbeat general ACK fixture failed: " + serverError.get());
         }
     }
 

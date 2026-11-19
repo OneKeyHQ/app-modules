@@ -102,10 +102,13 @@ public class JPushInterface {
     }
 
     public static void resumePush(Context context) {
+        boolean wasStopped = JCoreStorage.isPushStopped(context);
         JCoreStorage.setPushStopped(context, false);
         JCoreManager.init(context);
         JThirdPlatFormInterface.initializeFcm(context);
-        ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 1);
+        if (wasStopped) {
+            ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 1);
+        }
     }
 
     public static boolean isPushStopped(Context context) {

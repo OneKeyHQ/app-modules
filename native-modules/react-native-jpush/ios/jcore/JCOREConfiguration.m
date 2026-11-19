@@ -647,22 +647,11 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     return rid;
 }
 
-+ (NSMutableArray<NSString *> *)recentLogsStorage {
-    static NSMutableArray<NSString *> *storage = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        storage = [NSMutableArray array];
-    });
-    return storage;
-}
-
 + (void)setLocalLogEnabled:(BOOL)enabled {
     JCOREConfiguration *config = [self shared];
-    config.localLogEnabled = enabled;
-    config.forceLocalLogWhenLogOff = enabled;
-    if (!enabled) {
-        [self clearRecentLogs];
-    }
+    config.localLogEnabled = NO;
+    config.forceLocalLogWhenLogOff = NO;
+    (void)enabled;
 }
 
 + (void)dispatchLogWithLevel:(NSString *)level selectorName:(NSString *)selectorName message:(NSString *)message {
@@ -670,16 +659,6 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         return;
     }
     JCOREConfiguration *config = [self shared];
-    NSString *entry = [NSString stringWithFormat:@"[%@] %@", level, message];
-    if (config.localLogEnabled && (!config.logOff || config.forceLocalLogWhenLogOff)) {
-        NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-        @synchronized (storage) {
-            if (storage.count >= 200) {
-                [storage removeObjectAtIndex:0];
-            }
-            [storage addObject:entry];
-        }
-    }
     if (config.logOff) {
         return;
     }
@@ -692,7 +671,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         return;
     }
     if (config.debugEnabled) {
-        NSLog(@"[RN-JPush] %@", entry);
+        NSLog(@"[RN-JPush] [%@] %@", level, message);
     }
 }
 
@@ -713,17 +692,10 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 }
 
 + (NSArray<NSString *> *)recentLogs {
-    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-    @synchronized (storage) {
-        return [storage copy];
-    }
+    return @[];
 }
 
 + (void)clearRecentLogs {
-    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-    @synchronized (storage) {
-        [storage removeAllObjects];
-    }
 }
 
 - (void)log:(NSString *)format, ... {

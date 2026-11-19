@@ -93,6 +93,7 @@ public class FcmAdapterTest {
         ReflectionHelpers.<java.util.Queue<String>>getStaticField(FirebaseMessagingService.class, "recentlyReceivedMessageIds").clear();
         JLogger.setLoggerEnable(true);
         JLogger.clearRecentLogs();
+        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
         notifications = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         notifications.cancelAll();
         setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
@@ -209,7 +210,8 @@ public class FcmAdapterTest {
             google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
             tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
             JThirdPlatFormInterface.initializeFcm(context);
-            assertTrue(JLogger.getRecentLogs().toString().contains("FCM registration unavailable"));
+            assertTrue(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("FCM registration unavailable"));
+            assertTrue(JLogger.getRecentLogs().isEmpty());
             assertLogsExclude("private_configuration_details");
         }
     }
@@ -310,7 +312,8 @@ public class FcmAdapterTest {
             new FcmPushManager().getToken(context);
             Shadows.shadowOf(Looper.getMainLooper()).idle();
             verifyNoInteractions(dispatcher);
-            assertTrue(JLogger.getRecentLogs().toString().contains("IOException"));
+            assertTrue(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("IOException"));
+            assertTrue(JLogger.getRecentLogs().isEmpty());
             assertLogsExclude("secret_provider_error");
         }
     }
@@ -1197,7 +1200,7 @@ public class FcmAdapterTest {
     }
 
     private static void assertLogsExclude(String... values) {
-        String logs = JLogger.getRecentLogs().toString();
+        String logs = com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString();
         for (String value : values) assertFalse("Sensitive payload appeared in native logger", logs.contains(value));
     }
 }

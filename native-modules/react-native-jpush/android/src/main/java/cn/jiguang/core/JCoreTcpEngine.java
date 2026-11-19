@@ -249,14 +249,29 @@ public final class JCoreTcpEngine {
                         try {
                             long currentUid = JCoreStorage.getUid(context);
                             byte[] hbPayload = JCoreWireCodec.buildHeartbeatPayload(JCoreStorage.isPushStopped(context));
-                            sendFrameOwned(owner, targetSocket,
+                            JCoreWireCodec.DecodedFrame ack = sendRequestOnSocket(
+                                owner,
                                 JCoreWireCodec.CMD_HEARTBEAT,
                                 JCoreWireCodec.VER_HEARTBEAT,
-                                JCoreStorage.nextRid(),
                                 sessionId,
                                 currentUid,
-                                hbPayload
+                                hbPayload,
+                                defaultRequestTimeoutMs
                             );
+                            if (ack == null) {
+                                boolean shouldReconnect = false;
+                                synchronized (JCoreTcpEngine.this) {
+                                    if (owns(owner, context) && activeSocket == targetSocket && loggedIn) {
+                                        closeOwnedSocket(owner);
+                                        JCoreStorage.setConnected(context, false);
+                                        shouldReconnect = true;
+                                    }
+                                }
+                                if (shouldReconnect) {
+                                    JLogger.w("TCP heartbeat timed out, scheduling reconnect");
+                                    scheduleReconnect(context, owner);
+                                }
+                            }
                         } catch (Throwable ignored) {
                         }
                     });
@@ -836,6 +851,7 @@ public final class JCoreTcpEngine {
                 }
             }
             if (loginResp == null || loginResp.statusCode != 0) {
+                JLogger.w("TCP login failed code=" + (loginResp != null ? loginResp.statusCode : -1));
                 closeOwnedSocket(owner);
                 return false;
             }
@@ -1054,7 +1070,10 @@ public final class JCoreTcpEngine {
                     JCoreStorage.setConnected(context, false);
                 }
             }
-            if (reconnect) scheduleReconnect(context, owner);
+            if (reconnect) {
+                JLogger.w("TCP connection closed, scheduling reconnect");
+                scheduleReconnect(context, owner);
+            }
         }
     }
 
@@ -1109,8 +1128,22 @@ public final class JCoreTcpEngine {
         }
 
         ResponseSlot slot = pendingRequests.get(frame.requestId);
-        if (slot != null && slot.owner == owner && slot.socket == socket && slot.command == frame.command && pendingRequests.remove(frame.requestId, slot)) {
+        if (slot != null && slot.owner == owner && slot.socket == socket
+            && (slot.command == frame.command || (frame.command == 0 && frame.version == 0) || frame.command == 19)
+            && pendingRequests.remove(frame.requestId, slot)) {
             slot.complete(frame);
+            return;
+        }
+        if ((frame.command == 0 && frame.version == 0) || frame.command == 19 || frame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+            for (java.util.Map.Entry<Long, ResponseSlot> entry : pendingRequests.entrySet()) {
+                ResponseSlot candidate = entry.getValue();
+                if (candidate.owner == owner && candidate.socket == socket
+                    && candidate.command == JCoreWireCodec.CMD_HEARTBEAT
+                    && pendingRequests.remove(entry.getKey(), candidate)) {
+                    candidate.complete(frame);
+                    return;
+                }
+            }
         }
     }
 

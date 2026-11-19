@@ -646,25 +646,28 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
                                    appKey:(NSString *)appKey {
     JCOREConfiguration *config = [JCOREConfiguration shared];
     NSString *passwordMd5 = [JCORECrypto md5Hex:password ?: @""];
-    NSString *modelName = [config modelNameString];
-    NSString *appVersion = [config appVersionString];
-    NSString *systemVersion = [config osVersionString];
+    NSString *deviceId = [config resolveDeviceIDWithOutHasExisting:NULL] ?: @"";
     NSString *countryCode = [[NSLocale currentLocale] objectForKey:NSLocaleCountryCode] ?: @"CN";
+    uint8_t appState = config.pushStopped ? 0 : 1;
 
     NSMutableData *body = [NSMutableData data];
-    JCoreAppendUInt32(body, 105);               // Fixed magic 0x00000069
-    JCoreAppendString(body, passwordMd5);       // MD5(password)
-    JCoreAppendUInt32(body, 0x00050200);        // Core SDK version 5.2.0
-    JCoreAppendString(body, appKey ?: @"");     // appKey
-    JCoreAppendUInt8(body, 1);                  // platform = 1 (iOS)
-    JCoreAppendUInt32(body, 0);                 // idc
-    JCoreAppendUInt8(body, config.apsType);     // apsType (1=prod, 0=dev)
-    JCoreAppendUInt8(body, config.buildType);   // buildType (0=debug, 1=release)
-    JCoreAppendString(body, [NSString stringWithFormat:@"$$%@$$%@$$ ", modelName, appVersion]);
-    JCoreAppendString(body, @"5.2.0|6.0.0");    // versions
-    JCoreAppendUInt16(body, 0);                 // connectInfo
-    JCoreAppendString(body, @"|||1$$0$$0$$0");  // extInfo
-    JCoreAppendString(body, [NSString stringWithFormat:@"%@;;%@", systemVersion, countryCode]);
+    JCoreAppendUInt8(body, 105);                        // Fixed iOS login magic 0x69
+    JCoreAppendUInt8(body, 0);                          // Reserved
+    JCoreAppendUInt16(body, 0);                         // Reserved
+    JCoreAppendString(body, passwordMd5);               // MD5(password)
+    JCoreAppendString(body, @"5.2.0|6.0.0||||||");      // sdkVerInfo
+    JCoreAppendString(body, appKey ?: @"");             // appKey
+    JCoreAppendUInt8(body, 1);                          // platform = 1 (iOS)
+    JCoreAppendUInt32(body, 1);                         // loginFlag = 1 (JPush)
+    JCoreAppendUInt8(body, 0);                          // thirdPlatformType = 0
+    JCoreAppendUInt8(body, 1);                          // netType = 1
+    JCoreAppendString(body, deviceId);                  // deviceId
+    JCoreAppendString(body, @"");                       // locInfo
+    JCoreAppendString(body, countryCode);               // countryCode
+    JCoreAppendString(body, @"");                       // accountId
+    JCoreAppendUInt8(body, appState);                  // appState
+    JCoreAppendUInt8(body, 1);                          // isSdkInit = 1
+    JCoreAppendString(body, @"1");                      // sdkTypes = "1"
     return body;
 }
 

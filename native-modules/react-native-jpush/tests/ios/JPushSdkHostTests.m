@@ -23,6 +23,42 @@
 #import "RCTJPushModule.h"
 #import <React/RCTBridge.h>
 
+@interface OneKeyLog : NSObject
++ (NSMutableArray<NSString *> *)capturedLogs;
++ (void)clearCapturedLogs;
++ (void)debug:(NSString *)tag :(NSString *)message;
++ (void)info:(NSString *)tag :(NSString *)message;
++ (void)warn:(NSString *)tag :(NSString *)message;
++ (void)error:(NSString *)tag :(NSString *)message;
+@end
+
+@implementation OneKeyLog
++ (NSMutableArray<NSString *> *)capturedLogs {
+    static NSMutableArray<NSString *> *logs = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        logs = [NSMutableArray array];
+    });
+    return logs;
+}
++ (void)clearCapturedLogs {
+    NSMutableArray<NSString *> *logs = [self capturedLogs];
+    @synchronized (logs) {
+        [logs removeAllObjects];
+    }
+}
++ (void)record:(NSString *)level tag:(NSString *)tag message:(NSString *)message {
+    NSMutableArray<NSString *> *logs = [self capturedLogs];
+    @synchronized (logs) {
+        [logs addObject:[NSString stringWithFormat:@"[%@] [%@] %@", level, tag ?: @"", message ?: @""]];
+    }
+}
++ (void)debug:(NSString *)tag :(NSString *)message { [self record:@"DEBUG" tag:tag message:message]; }
++ (void)info:(NSString *)tag :(NSString *)message { [self record:@"INFO" tag:tag message:message]; }
++ (void)warn:(NSString *)tag :(NSString *)message { [self record:@"WARN" tag:tag message:message]; }
++ (void)error:(NSString *)tag :(NSString *)message { [self record:@"ERROR" tag:tag message:message]; }
+@end
+
 #define ASSERT_TRUE(cond, msg, ...) do { \
     if (!(cond)) { \
         NSLog(@"[FAIL] %s:%d: " @msg, __FUNCTION__, __LINE__, ##__VA_ARGS__); \
@@ -335,11 +371,14 @@ static void testWireProtocolFraming(void) {
         ASSERT_TRUE(decodedServer.count == 1 && serverBuf.length == 0, "Failed decoding server frame (alg=%u)", alg);
     }
 
-    // Verify Login payload starts with 0x00, 0x00, 0x00, 0x69 (uint32(105))
+    // Verify Login payload starts with 0x69, 0x00, 0x00, 0x00 (uint8(105) + reserved) followed by MD5(password) and sdkVerInfo string
     NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd123" appKey:@"appkey123"];
     const uint8_t *lb = loginBody.bytes;
-    ASSERT_TRUE(loginBody.length > 40 && lb[0] == 0x00 && lb[1] == 0x00 && lb[2] == 0x00 && lb[3] == 0x69,
-                "Login payload must start with uint32(105) 0x00000069");
+    ASSERT_TRUE(loginBody.length > 40 && lb[0] == 0x69 && lb[1] == 0x00 && lb[2] == 0x00 && lb[3] == 0x00,
+                "Login payload must start with uint8(105) + 3 zero reserved bytes (0x69000000)");
+    NSString *loginAscii = [[NSString alloc] initWithData:loginBody encoding:NSISOLatin1StringEncoding];
+    ASSERT_TRUE([loginAscii containsString:@"5.2.0|6.0.0||||||"] && [loginAscii containsString:@"appkey123"],
+                "Login payload must encode sdkVerInfo string and appKey");
 
     // Verify Heartbeat payload is 8 bytes
     NSData *hbBody = [JCOREWireProtocol buildHeartbeatPayloadWithPushStopped:NO];
@@ -437,8 +476,8 @@ static void testEndToEndMockServerHandshake(void) {
                     "Expected Login(cmd=1, ver=27), got cmd=%u ver=%u", loginFrame.command, loginFrame.version);
         ASSERT_TRUE(loginFrame.uid == assignedUid, "Login frame UID mismatch: %llu", loginFrame.uid);
         const uint8_t *loginBytes = loginFrame.bodyData.bytes;
-        ASSERT_TRUE(loginFrame.bodyData.length > 20 && loginBytes[0] == 0 && loginBytes[1] == 0 && loginBytes[2] == 0 && loginBytes[3] == 0x69,
-                    "Login payload missing 0x00000069 magic");
+        ASSERT_TRUE(loginFrame.bodyData.length > 20 && loginBytes[0] == 0x69 && loginBytes[1] == 0 && loginBytes[2] == 0 && loginBytes[3] == 0,
+                    "Login payload missing 0x69000000 header");
         serverLoggedIn = YES;
 
         NSData *loginRespBody = [JCOREWireProtocol buildLoginResponsePayloadWithSessionId:assignedSessionId
@@ -1066,13 +1105,16 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     ASSERT_TRUE([decryptedBadge[@"badge"] integerValue] == 7 && [decryptedBadge[@"uid"] unsignedLongLongValue] == newAssignedUid,
                 "Badge report x-jg-sign verification & AES-128-CBC decryption failed: %@", decryptedBadge);
 
-    // 3. Verify default logging and non-sensitive log redaction on iOS
+    // 3. Verify direct OneKeyLog forwarding with zero in-memory recentLogs buffering and non-sensitive log redaction on iOS
+    [OneKeyLog clearCapturedLogs];
     [JCOREConfiguration clearRecentLogs];
     [JCOREConfiguration logInfo:@"onNotifyMessage type=notificationArrived notificationType=remote msgId=msg_99001"];
     [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP register success uid=%llu registrationId=%@", newAssignedUid, newRegId]];
-    NSString *joinedIosLogs = [[JCOREConfiguration recentLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
+                "JCOREConfiguration must not buffer logs in memory");
+    NSString *joinedIosLogs = [[OneKeyLog capturedLogs] componentsJoinedByString:@"\n"];
     ASSERT_TRUE([joinedIosLogs containsString:@"notificationType=remote"] && [joinedIosLogs containsString:newRegId],
-                "Expected non-sensitive notificationType and registrationId in iOS logs: %@", joinedIosLogs);
+                "Expected non-sensitive notificationType and registrationId forwarded to OneKeyLog: %@", joinedIosLogs);
 
     printf("[PASS] Suite 5: Multi-IP failover (fail_ips), Fast-Login, statusCode=108 re-register, auto-reconnect, & HTTP reports (/v3/report + setBadge:) verified\n");
 }
@@ -1325,23 +1367,23 @@ static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
     [RCTJPushModule unregisterNitroEventListener:arrivedListenerId];
     [RCTJPushModule clearActiveModules];
 
-    // 6c. Verify JCOREConfiguration.setLocalLogEnabled buffers logs even when logOff == YES and clears when disabled
+    // 6c. Verify JCOREConfiguration.setLocalLogEnabled is a deprecated no-op and never buffers logs in memory
+    [OneKeyLog clearCapturedLogs];
     [JCOREConfiguration clearRecentLogs];
     [JCOREConfiguration shared].logOff = YES;
     [JCOREConfiguration setLocalLogEnabled:YES];
     [JCOREConfiguration logInfo:@"local_log_while_off_01"];
-    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 1 &&
-                [[JCOREConfiguration recentLogs].firstObject containsString:@"local_log_while_off_01"],
-                "setLocalLogEnabled(YES) must buffer logs into recentLogs even when logOff == YES");
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0 && [OneKeyLog capturedLogs].count == 0,
+                "setLocalLogEnabled(YES) must not buffer logs into recentLogs or emit when logOff == YES");
     [JCOREConfiguration setLocalLogEnabled:NO];
     ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
-                "setLocalLogEnabled(NO) must clear recentLogs");
-    [JCOREConfiguration logInfo:@"local_log_disabled_02"];
-    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
-                "setLocalLogEnabled(NO) must prevent buffering into recentLogs");
-    [JCOREConfiguration setLocalLogEnabled:YES];
+                "recentLogs must remain empty");
     [JCOREConfiguration shared].logOff = NO;
-    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration logInfo:@"onekey_direct_log_02"];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0 &&
+                [[OneKeyLog capturedLogs].firstObject containsString:@"onekey_direct_log_02"],
+                "Logs must output directly to OneKeyLog without storing in recentLogs");
+    [OneKeyLog clearCapturedLogs];
 
     // 7. Verify [JPUSHService setupWithOption:@{UIApplicationLaunchOptionsRemoteNotificationKey: ...}]
     //    registers RCTJPushModule native observers at cold start and queues the launch notification into RCTJPushEventQueue

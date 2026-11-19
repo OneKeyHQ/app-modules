@@ -65,10 +65,8 @@ public final class JCoreStorage {
     private static final String KEY_SILENCE_END_HOUR = "silence_end_hour";
     private static final String KEY_SILENCE_END_MIN = "silence_end_min";
 
-    private static final int MAX_LOCAL_LOG_CHARS = 32768;
     private static final AtomicInteger REQUEST_ID = new AtomicInteger(100);
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
-    private static final StringBuilder LOCAL_LOG_BUFFER = new StringBuilder();
     private static volatile Context sAppContext;
     private static volatile boolean sDebugMode = false;
 
@@ -318,38 +316,19 @@ public final class JCoreStorage {
     }
 
     public static void enableSDKLocalLog(Context context, boolean enable, boolean uploadToServer) {
-        putBooleanPref(context, KEY_LOCAL_LOG_ENABLED, enable);
-        if (enable) {
-            appendLocalLog("SDKLocalLog enabled (upload=" + uploadToServer + ")");
-        }
+        // Deprecated: logs are forwarded directly to OneKeyLog without in-memory buffering.
+        putBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
     }
 
     public static boolean isLocalLogEnabled(Context context) {
-        return getBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
+        return false;
     }
 
-    public static synchronized void appendLocalLog(String line) {
-        if (line != null && !line.isEmpty()) {
-            if (LOCAL_LOG_BUFFER.length() > 0) {
-                LOCAL_LOG_BUFFER.append('\n');
-            }
-            LOCAL_LOG_BUFFER.append(line);
-            if (LOCAL_LOG_BUFFER.length() > MAX_LOCAL_LOG_CHARS) {
-                int excess = LOCAL_LOG_BUFFER.length() - MAX_LOCAL_LOG_CHARS;
-                int newlineIdx = LOCAL_LOG_BUFFER.indexOf("\n", excess);
-                if (newlineIdx >= 0 && newlineIdx + 1 < LOCAL_LOG_BUFFER.length()) {
-                    LOCAL_LOG_BUFFER.delete(0, newlineIdx + 1);
-                } else {
-                    LOCAL_LOG_BUFFER.delete(0, excess);
-                }
-            }
-        }
+    public static void appendLocalLog(String line) {
     }
 
-    public static synchronized String readNewLogs(Context context) {
-        String logs = LOCAL_LOG_BUFFER.toString();
-        LOCAL_LOG_BUFFER.setLength(0);
-        return logs;
+    public static String readNewLogs(Context context) {
+        return "";
     }
 
     public static synchronized void ensureRegistration(Context context) {

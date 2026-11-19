@@ -126,23 +126,18 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
     [RCTJPushModule clearActiveModules];
 }
 
-- (void)testLocalLogEnabledBuffersWhenLogOffAndClearsWhenDisabled {
+- (void)testLocalLogEnabledIsNoOpWithoutInMemoryBuffering {
     [JCOREConfiguration clearRecentLogs];
     [JCOREConfiguration shared].logOff = YES;
     [JCOREConfiguration setLocalLogEnabled:YES];
     [JCOREConfiguration logInfo:@"local_log_while_off_01"];
-    NSArray<NSString *> *logs = [JCOREConfiguration recentLogs];
-    XCTAssertEqual(logs.count, 1u);
-    XCTAssertTrue([logs.firstObject containsString:@"local_log_while_off_01"]);
+    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
 
     [JCOREConfiguration setLocalLogEnabled:NO];
     XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
-    [JCOREConfiguration logInfo:@"local_log_disabled_02"];
-    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
-
-    [JCOREConfiguration setLocalLogEnabled:YES];
     [JCOREConfiguration shared].logOff = NO;
-    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration logInfo:@"local_log_direct_02"];
+    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
 }
 
 @end
