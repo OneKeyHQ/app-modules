@@ -142,9 +142,12 @@ leaves the current value unchanged, including a controlled fractional
 endpoint. While disabled or mid-drag, discrete adjustments leave the active
 value alone. Android exposes the numeric accessibility range only when it
 contains a selectable integer. When the current value or range changes, an
-attached view schedules a content-change event. Multiple updates within 100 ms
-share one event reporting the latest state. Detachment or disposal cancels
-pending notifications.
+attached view schedules an accessibility progress event. Multiple updates
+within 100 ms share one event reporting the latest state. Android 11 and later
+send `TYPE_WINDOW_CONTENT_CHANGED` with
+`CONTENT_CHANGE_TYPE_STATE_DESCRIPTION` so TalkBack can read the range value
+of the focused slider. Earlier Android versions send `TYPE_VIEW_SELECTED`.
+Detachment or disposal cancels pending notifications.
 
 Accepted Web divergences: the endpoint inset, pressed thumb size and bubble
 clamping differ because desktop pointers do not need the enlarged touch thumb;
@@ -222,8 +225,10 @@ GPU screenshots confirmed complete circles and `0%` / `100%` text while held.
 This harness stubs the Nitro base and React context; it does not validate the
 complete OneKey Perps screen or the production Nitro/Fabric integration.
 The same harness verifies Android range metadata, accessibility actions,
-keyboard adjustments, fractional endpoints, coalesced accessibility events,
-and mirrored touch and drawing on API 34.
+keyboard adjustments, fractional endpoints, and mirrored touch and drawing.
+The notification tests enable accessibility via Android UI automation and
+check the type, change flags, and current range in events produced by
+adjustment actions, dragging, controlled value updates, and range updates.
 
 - `src/SegmentSlider.tsx`: native controlled wrapper (value sync via `setValue`).
 - `src/types.ts`: shared props and default colors.
@@ -244,7 +249,9 @@ and mirrored touch and drawing on API 34.
 - `tests/android/run.py`: builds a local test APK from the production Kotlin
   sources and runs it on an explicitly selected, already booted emulator.
   Requires JDK 17, kotlinc, Android platform 34 and build-tools 37. It installs
-  only `com.onekey.sliderbubbletest`; it does not build or replace OneKey App.
+  only `com.onekey.sliderbubbletest` and runs the regression activity under
+  instrumentation so Android can dispatch real accessibility events. It does
+  not build or replace OneKey App.
 
 ```sh
 python3 native-views/react-native-segment-slider/tests/android/run.py \

@@ -11,6 +11,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.widget.SeekBar
@@ -97,10 +98,16 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private val dispatchAccessibilityUpdate = Runnable {
     accessibilityUpdatePending = false
     if (!isDisposed && view.isAttachedToWindow) {
-      view.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
+      } else if (context.getSystemService(AccessibilityManager::class.java)?.isEnabled == true) {
+        // TalkBack reads the focused SeekBar's RangeInfo for state-description changes.
+        val event = AccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+        event.contentChangeTypes = AccessibilityEvent.CONTENT_CHANGE_TYPE_STATE_DESCRIPTION
+        view.sendAccessibilityEventUnchecked(event)
+      }
     }
   }
-
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
