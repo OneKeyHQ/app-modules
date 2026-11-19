@@ -159,7 +159,7 @@ function SegmentSliderComponent({
   return (
     <SegmentSliderNativeView
       style={styles.slider}
-      aria-label={ariaLabel}
+      sliderAccessibilityLabel={ariaLabel ?? ''}
       aria-labelledby={ariaLabelledBy}
       hybridRef={hybridRef}
       defaultValue={initialValueRef.current}

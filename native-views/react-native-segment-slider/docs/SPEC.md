@@ -36,9 +36,10 @@ and later moves or the release change nothing.
 value stays within `[ceil(min), floor(max)]` (for 0.5..10.5 the values are
 1..10); integer bounds are unaffected.
 
-`aria-label` and `aria-labelledby` name the slider. Web sets them on the
-`role="slider"` element; iOS and Android forward them to the host view as React
-Native accessibility props (native screen-reader behavior is not yet verified).
+`aria-label` names the slider. Web sets it on the `role="slider"` element,
+which also accepts `aria-labelledby`. On iOS and Android the wrapper sends the
+label through Nitro. The native view exposes it as Android's SeekBar content
+description or UIKit's accessibility label. An absent or empty label clears it.
 
 Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
 `sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
@@ -259,6 +260,17 @@ python3 native-views/react-native-segment-slider/tests/android/run.py \
 ```
 
 The Android runner saves `result.json` and `screenshot.png` in the output folder.
+
+For the Android accessibility name regression, open **Segment Slider Test**
+in the React Native example app on the emulator and run:
+
+```sh
+python3 native-views/react-native-segment-slider/tests/android/check_accessibility_label.py \
+  --serial <emulator-serial>
+```
+
+The test reads Android's accessibility hierarchy and verifies that the
+example's `aria-label` appears on the actual SeekBar node.
 
 Run the focused harness on an Apple Silicon Mac with Xcode, from the repository
 root (no React Native dependency installation required):

@@ -291,6 +291,12 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       invalidateIfAlive()
     }
 
+  override var sliderAccessibilityLabel: String = ""
+    set(value) {
+      field = value
+      view.contentDescription = value.ifEmpty { null }
+    }
+
   override var showBubble: Boolean = true
     get() = field
     set(v) { field = v; invalidateIfAlive() }

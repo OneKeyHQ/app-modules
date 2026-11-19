@@ -40,6 +40,8 @@ export interface SegmentSliderProps extends HybridViewProps {
   sliderHeight: number;
   /** When true the slider is non-interactive and dimmed. */
   disabled: boolean;
+  /** Accessible name from the public aria-label prop. An empty string clears it. */
+  sliderAccessibilityLabel: string;
   /** When true a `${round(value)}%` bubble appears above the thumb on drag. */
   showBubble: boolean;
   /** When true the fill grows from the value-0 origin instead of the left. */
