@@ -20,6 +20,7 @@ const plans = {
       "ReactNativeBundleCrypto-Unit-Tests",
       "ReactNativeImageCropPicker-Unit-Tests",
       "ReactNativeCaptureProtection-Unit-Tests",
+      "ReactNativeDeviceUtils-Unit-Tests",
       "ReactNativePhotoLibrary-Unit-Tests",
       "ReactNativeJpush-Unit-Tests",
     ],

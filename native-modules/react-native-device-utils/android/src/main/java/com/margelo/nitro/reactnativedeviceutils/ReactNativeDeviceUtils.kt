@@ -1333,6 +1333,10 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         return Promise.resolved(action)
     }
 
+    override fun getAppleAdsAttributionToken(): Promise<String?> {
+        return Promise.resolved(null)
+    }
+
     // MARK: - Android Channel & Installer
 
     override fun getAndroidChannel(): AndroidChannel {
