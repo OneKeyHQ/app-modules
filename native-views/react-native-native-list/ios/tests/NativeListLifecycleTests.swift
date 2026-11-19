@@ -1,9 +1,97 @@
+import ObjectiveC
 import UIKit
 import XCTest
 @testable import NativeListModule
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testFilteredSnapshotSuppliesCellsDuringOutgoingUIKitLayout() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 390, height: 697))
+    let window = UIWindow(frame: view.frame)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    controller.view.addSubview(view)
+    defer {
+      view.dispose()
+      window.isHidden = true
+    }
+
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let dataSource = try XCTUnwrap(collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
+    collection.isPrefetchingEnabled = false
+    collection.contentInsetAdjustmentBehavior = .never
+    collection.contentInset = UIEdgeInsets(top: 190, left: 0, bottom: 449, right: 0)
+    func snapshot(_ indices: Range<Int>) throws -> String {
+      let rows: [[String: Any]] = indices.map { index in
+        ["key": "account-\(index)", "type": "identity", "title": "Account \(index)",
+          "testID": "recipient-\(index)", "height": 64,
+          "leading": ["kind": "icon", "name": "Circle"]]
+      }
+      let value: [String: Any] = ["schemaVersion": 1, "generation": 1,
+        "layout": ["kind": "linear"], "rows": rows]
+      return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+    view.applySnapshotJson(try snapshot(0..<18))
+    view.layoutIfNeeded()
+    let initialOffset = CGPoint(x: 0, y: -190)
+    collection.contentOffset = initialOffset
+    collection.layoutIfNeeded()
+    XCTAssertEqual(dataSource.snapshot().numberOfItems, 18)
+    let outgoingIndexPath = IndexPath(item: 8, section: 0)
+    let outgoingFrame = try XCTUnwrap(collection.layoutAttributesForItem(at: outgoingIndexPath)).frame
+    XCTAssertFalse(collection.bounds.intersects(outgoingFrame))
+    XCTAssertNil(collection.cellForItem(at: outgoingIndexPath))
+
+    // Force a real UIKit layout at the invalidation inside applySnapshotJson,
+    // while UIKit still owns the old snapshot. Scope the hook to this layout.
+    let layout = collection.collectionViewLayout
+    let layoutClass: AnyClass = type(of: layout)
+    let selector = NSSelectorFromString("invalidateLayout")
+    let method = try XCTUnwrap(class_getInstanceMethod(layoutClass, selector))
+    let encoding = try XCTUnwrap(method_getTypeEncoding(method))
+    let original = method_getImplementation(method)
+    let callOriginal = unsafeBitCast(original, to: (@convention(c) (AnyObject, Selector) -> Void).self)
+    var didLayoutOutgoingSnapshot = false
+    let invalidate: @convention(block) (UICollectionViewLayout) -> Void = { current in
+      callOriginal(current, selector)
+      guard current === layout, !didLayoutOutgoingSnapshot,
+            dataSource.snapshot().numberOfItems == 18 else { return }
+      didLayoutOutgoingSnapshot = true
+      let size = view.collectionView(collection, layout: current, sizeForItemAt: outgoingIndexPath)
+      XCTAssertEqual(size.height, 64, "UIKit still needs the outgoing row’s geometry")
+      XCTAssertNil(collection.cellForItem(at: outgoingIndexPath))
+      collection.contentOffset.y = outgoingFrame.midY - collection.bounds.height / 2
+      collection.setNeedsLayout()
+      collection.layoutIfNeeded()
+      XCTAssertTrue(collection.bounds.intersects(outgoingFrame))
+      guard let outgoingCell = collection.cellForItem(at: outgoingIndexPath) else {
+        XCTFail("UIKit must request the previously offscreen outgoing cell")
+        return
+      }
+      XCTAssertEqual(outgoingCell.reuseIdentifier,
+        NativeListRendererRegistry.reuseIdentifier(for: .identity))
+      XCTAssertFalse(outgoingCell.isUserInteractionEnabled)
+      XCTAssertTrue(outgoingCell.accessibilityElementsHidden)
+      XCTAssertFalse(view.collectionView(collection, shouldSelectItemAt: outgoingIndexPath))
+    }
+    let replacement = imp_implementationWithBlock(invalidate)
+    class_replaceMethod(layoutClass, selector, replacement, encoding)
+    defer {
+      class_replaceMethod(layoutClass, selector, original, encoding)
+      imp_removeBlock(replacement)
+    }
+
+    view.applySnapshotJson(try snapshot(12..<15))
+    collection.contentOffset = initialOffset
+    collection.layoutIfNeeded()
+    XCTAssertTrue(didLayoutOutgoingSnapshot)
+    XCTAssertEqual(dataSource.snapshot().itemIdentifiers, ["account-12", "account-13", "account-14"])
+    let first = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
+    XCTAssertFalse(first.isHidden)
+    XCTAssertEqual(first.accessibilityIdentifier, "recipient-12")
+  }
+
   func testCanonicalNullPatchRemovesStoredOptionalFields() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     let row: [String: Any] = ["key": "token", "type": "identity", "title": "Token",
@@ -1051,6 +1139,68 @@ final class NativeListLifecycleTests: XCTestCase {
 
     view.applySnapshotJson(try snapshot(footer: nil))
     XCTAssertTrue(second.isHidden)
+  }
+
+  func testFixedFooterSharesRetiringRowKeyDuringStructuralTransition() throws {
+    try requireStructuralAnimation()
+    let footerData: [String: Any] = [
+      "key": "a", "type": "action", "title": "Continue", "actionKey": "continue",
+    ]
+    func snapshot(_ keys: [String], animate: Bool) throws -> String {
+      let rows: [[String: Any]] = keys.map {
+        ["key": $0, "type": "action", "title": $0, "actionKey": "row-\($0)"]
+      }
+      var value: [String: Any] = ["schemaVersion": 1, "generation": animate ? 2 : 1,
+        "layout": ["kind": "linear"], "rows": rows, "fixedFooter": footerData]
+      if animate { value["structuralTransition"] = ["id": "remove-a", "durationMs": 800] }
+      return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let view = NativeListView(frame: window.bounds)
+    controller.view.addSubview(view)
+    window.isHidden = false
+    defer {
+      view.dispose()
+      window.isHidden = true
+    }
+
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let dataSource = try XCTUnwrap(collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
+    var actions: [String] = []
+    view.onRowAction = { payload in
+      if let action = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+         let key = action["actionKey"] as? String { actions.append(key) }
+    }
+    view.applySnapshotJson(try snapshot(["a", "b", "c"], animate: false))
+    view.layoutIfNeeded()
+    collection.layoutIfNeeded()
+    let outgoingIndex = IndexPath(item: 0, section: 0)
+    let outgoing = try XCTUnwrap(collection.cellForItem(at: outgoingIndex) as? NativeListRowHost)
+    let outgoingAction = try XCTUnwrap(outgoing.onAction)
+
+    view.applySnapshotJson(try snapshot(["b", "c"], animate: true))
+    XCTAssertEqual(dataSource.itemIdentifier(for: outgoingIndex), "a")
+    XCTAssertFalse(view.collectionView(collection, shouldSelectItemAt: outgoingIndex))
+    view.collectionView(collection, didSelectItemAt: outgoingIndex)
+    // Child renderers can emit a different key than the enclosing collection row.
+    let child = try NativeListItem(data: ["key": "child", "type": "action", "title": "Child"])
+    outgoingAction(child, "child-press", nil, outgoing.rowActionOrigin())
+    XCTAssertTrue(actions.isEmpty)
+
+    let footer = try XCTUnwrap(footerCell(in: view))
+    XCTAssertEqual(footer.accessibilityLabel, "Continue")
+    XCTAssertEqual(footer.alpha, 1)
+    XCTAssertTrue(footer.isUserInteractionEnabled)
+    XCTAssertFalse(footer.accessibilityElementsHidden)
+    // Dispatch the gesture's target directly in this hostless XCTest.
+    let footerPress = NSSelectorFromString("footerPressed")
+    XCTAssertTrue(view.responds(to: footerPress))
+    _ = view.perform(footerPress)
+    footer.onAction?(try NativeListItem(data: footerData), "footer-accessory", nil, footer.rowActionOrigin())
+    XCTAssertEqual(actions, ["continue", "footer-accessory"])
   }
 
   func testFontResolversMeasureBindResetAndKeepIndependentInstances() throws {
@@ -3368,8 +3518,8 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   private func footerCell(in view: NativeListView) -> NativeListRowHost? {
-    view.subviews.lazy.compactMap { container in
-      container.subviews.compactMap { $0 as? NativeListRowHost }.first
+    view.subviews.lazy.filter { !($0 is UICollectionView) }.compactMap { container in
+      container.subviews.first { $0 is NativeListRowHost } as? NativeListRowHost
     }.first
   }
 }

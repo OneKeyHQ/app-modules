@@ -553,6 +553,38 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### iOS cell requests during snapshot replacement
+
+Status: implemented, unreleased. On iOS 17.5 and 26.0, a focused UIKit fixture
+reproduced the assertion on version 6.7.0-62 and completed the same layout
+with the fix. Three focused UIKit tests passed on both runtimes, including
+fixed-footer action routing. Consuming-app acceptance of the fix remains
+pending.
+
+When a snapshot removes rows, UIKit may request cells from its outgoing
+snapshot while the new logical rows are already active. The iOS host MUST
+provide a valid reusable cell for such requests. Until UIKit completes the
+removal, the host retains only the removed row descriptors needed for pending
+snapshot applications. These descriptors are presentation-only and cannot
+emit actions, expose accessibility elements, or become selectable. Repeated
+updates must preserve the descriptors still needed by in-flight applications
+and must release them on completion or host disposal. A request with no
+available descriptor receives an inert empty cell. The accepted snapshot,
+patch validation, row identity, and structural-transition behavior retain
+their existing contracts.
+
+The action and interaction restrictions apply to the presenting collection
+row. Its top-level key determines whether its actions can be delivered,
+including actions whose payload comes from a child renderer. The fixed footer
+is a separate host and retains its normal interaction, even when it shares a
+key with a retiring row.
+
+Conformance scrolls an unmaterialized outgoing row into UIKit's viewport
+during removal and checks its renderer, inert state, and the binding of the
+first filtered row. It also covers fixed-footer actions with a shared key
+during a structural transition. A separate consuming-app check covers address
+input in the Send recipient picker.
+
 ### Android vertical-drag React touch cancellation
 
 Status: implemented; four real Android MotionEvent/JSTouchDispatcher regressions
