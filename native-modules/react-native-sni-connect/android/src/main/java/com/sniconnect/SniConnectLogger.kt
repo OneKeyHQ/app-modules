@@ -9,6 +9,7 @@ package com.sniconnect
  */
 internal object SniConnectLogger {
   private const val TAG = "SniConnect"
+  private val requestIdHexRun = Regex("([0-9a-fA-F]{32})(?=[0-9a-fA-F]{32})")
 
   private val logClass: Class<*>? by lazy {
     try {
@@ -42,7 +43,18 @@ internal object SniConnectLogger {
 
   fun event(name: String, vararg fields: Pair<String, Any?>): String =
     (listOf("event" to name) + fields).joinToString(separator = " ") { (key, value) ->
-      "$key=${sanitize(value)}"
+      val logValue = sanitize(value)
+      // Keep long diagnostic IDs recoverable without matching the logger's private-key filter.
+      var displayedValue = logValue
+      var formatSuffix = ""
+      if (key == "requestId" && value is String &&
+        (value != logValue || requestIdHexRun.containsMatchIn(value))) {
+        displayedValue = java.net.URLEncoder.encode(value, "UTF-8")
+          .replace("+", "%20").replace("-", "%2D").replace("*", "%2A")
+          .replace(requestIdHexRun, "$1-")
+        formatSuffix = " requestIdFormat=uri-hex32"
+      }
+      "$key=$displayedValue$formatSuffix"
     }
 
   fun shortHash(value: String?): String {

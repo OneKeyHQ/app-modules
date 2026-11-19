@@ -129,6 +129,24 @@ interface Props<Route extends BaseRoute> {
   /** Reports a completed user target so the external open state can follow it. */
   onDrawerOpenChange?: (open: boolean) => void;
   /**
+   * The drawer's visual progress (0 closed, 1 open) on every frame it moves.
+   * Passed to the drawer host as is, so a Reanimated handler can run it on the
+   * UI thread when `drawerHostComponent` is an animated component. Native sends
+   * no progress events without this handler.
+   */
+  onDrawerProgress?: (
+    event: NativeSyntheticEvent<Readonly<{ progress: number }>>
+  ) => void;
+  /** Host for the native drawer, e.g. `Animated.createAnimatedComponent(BottomTabsDrawerNative)`. */
+  drawerHostComponent?: React.ComponentType<
+    React.ComponentProps<typeof NativeBottomTabsDrawer>
+  >;
+  /**
+   * Palette for the page's overlay, shadow and edge while the drawer is open.
+   * Defaults to the platform appearance; pass the app theme when it can differ.
+   */
+  drawerColorScheme?: "light" | "dark";
+  /**
    * A tab bar style that adapts to each platform.
    *
    * Tab views using the sidebar adaptable style have an appearance
@@ -335,6 +353,24 @@ interface Props<Route extends BaseRoute> {
   onSideAccessoryPress?: () => void;
 }
 
+const defaultGetBadge = ({ route }: { route: BaseRoute }) => route.badge;
+const defaultGetBadgeBackgroundColor = ({ route }: { route: BaseRoute }) =>
+  route.badgeBackgroundColor;
+const defaultGetBadgeTextColor = ({ route }: { route: BaseRoute }) =>
+  route.badgeTextColor;
+const defaultGetLazy = ({ route }: { route: BaseRoute }) => route.lazy;
+const defaultGetLabelText = ({ route }: { route: BaseRoute }) => route.title;
+const defaultGetHidden = ({ route }: { route: BaseRoute }) => route.hidden;
+const defaultGetActiveTintColor = ({ route }: { route: BaseRoute }) =>
+  route.activeTintColor;
+const defaultGetTestID = ({ route }: { route: BaseRoute }) => route.testID;
+const defaultGetRole = ({ route }: { route: BaseRoute }) => route.role;
+const defaultGetSceneStyle = ({ route }: { route: BaseRoute }) => route.style;
+const defaultGetPreventsDefault = ({ route }: { route: BaseRoute }) =>
+  route.preventsDefault;
+const defaultGetFreezeOnBlur = ({ route }: { route: BaseRoute }) =>
+  route.freezeOnBlur;
+
 const defaultGetIcon = ({
   route,
   focused,
@@ -350,6 +386,26 @@ const defaultGetIcon = ({
 
 const ANDROID_MAX_TABS = 100;
 
+type DrawerHostProps = React.ComponentProps<typeof NativeBottomTabsDrawer>;
+
+// Progress events start one commit after mount: during the mount itself the
+// iOS event emitter and an animated host's worklet handler are not attached
+// yet, so the current position native sends on enabling would be lost. The
+// state lives here so that commit re-renders only the host, not the tabs.
+function DrawerHostWithProgress({
+  host: Host,
+  ...props
+}: DrawerHostProps & { host: React.ComponentType<DrawerHostProps> }) {
+  const hasProgressHandler = props.onDrawerProgress != null;
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    if (hasProgressHandler) setMounted(true);
+  }, [hasProgressHandler]);
+  return (
+    <Host {...props} progressEventsEnabled={mounted && hasProgressHandler} />
+  );
+}
+
 const BottomTabs = <Route extends BaseRoute>({
   navigationState,
   renderScene,
@@ -360,25 +416,27 @@ const BottomTabs = <Route extends BaseRoute>({
   drawerOpen = false,
   drawerSwipeEnabled = false,
   onDrawerOpenChange,
+  onDrawerProgress,
+  drawerHostComponent: DrawerHost = NativeBottomTabsDrawer,
+  drawerColorScheme,
   rippleColor,
   tabBarActiveTintColor: activeTintColor,
   tabBarInactiveTintColor: inactiveTintColor,
-  getBadge = ({ route }: { route: Route }) => route.badge,
-  getBadgeBackgroundColor = ({ route }: { route: Route }) =>
-    route.badgeBackgroundColor,
-  getBadgeTextColor = ({ route }: { route: Route }) => route.badgeTextColor,
-  getLazy = ({ route }: { route: Route }) => route.lazy,
-  getLabelText = ({ route }: { route: Route }) => route.title,
+  getBadge = defaultGetBadge,
+  getBadgeBackgroundColor = defaultGetBadgeBackgroundColor,
+  getBadgeTextColor = defaultGetBadgeTextColor,
+  getLazy = defaultGetLazy,
+  getLabelText = defaultGetLabelText,
   getIcon = defaultGetIcon,
-  getHidden = ({ route }: { route: Route }) => route.hidden,
-  getActiveTintColor = ({ route }: { route: Route }) => route.activeTintColor,
-  getTestID = ({ route }: { route: Route }) => route.testID,
-  getRole = ({ route }: { route: Route }) => route.role,
-  getSceneStyle = ({ route }: { route: Route }) => route.style,
-  getPreventsDefault = ({ route }: { route: Route }) => route.preventsDefault,
+  getHidden = defaultGetHidden,
+  getActiveTintColor = defaultGetActiveTintColor,
+  getTestID = defaultGetTestID,
+  getRole = defaultGetRole,
+  getSceneStyle = defaultGetSceneStyle,
+  getPreventsDefault = defaultGetPreventsDefault,
   hapticFeedbackEnabled = false,
   labeled = Platform.OS !== "android" ? true : undefined,
-  getFreezeOnBlur = ({ route }: { route: Route }) => route.freezeOnBlur,
+  getFreezeOnBlur = defaultGetFreezeOnBlur,
   tabBar: renderCustomTabBar,
   tabBarStyle,
   tabLabelStyle,
@@ -441,33 +499,20 @@ const BottomTabs = <Route extends BaseRoute>({
     () => trimmedRoutes.map((route) => getIcon({ route, focused: false })),
     [getIcon, trimmedRoutes]
   );
-  // Focused (solid) icons — also stable; handed to iOS as selectedImage.
+  // Focused (solid) icons — also stable; handed to native as selectedIcons so
+  // both iOS and Android swap focused artwork synchronously on the UI thread
+  // without waiting for a JS round-trip.
   const focusedIcons = React.useMemo(
     () => trimmedRoutes.map((route) => getIcon({ route, focused: true })),
     [getIcon, trimmedRoutes]
   );
-  // Legacy single array driven by focusedKey. Android still swaps the icon in
-  // JS (it has no selectedImage equivalent).
-  const focusKeyedIcons = React.useMemo(
-    () =>
-      trimmedRoutes.map((route) =>
-        getIcon({
-          route,
-          focused: route.key === focusedKey,
-        })
-      ),
-    [focusedKey, getIcon, trimmedRoutes]
-  );
 
-  // iOS hands both states to UIKit (image + selectedImage) so the focused
-  // artwork swaps natively, in sync with the selection animation, instead of
-  // waiting for a JS round-trip. Android keeps the focusedKey-driven array.
-  const icons = isIOS ? unfocusedIcons : focusKeyedIcons;
+  const icons = unfocusedIcons;
 
   const items: BottomTabsItems[number][] = React.useMemo(
     () =>
       trimmedRoutes.map((route, index) => {
-        const icon = icons[index];
+        const icon = unfocusedIcons[index];
         const isSfSymbol = isAppleSymbol(icon);
 
         if (Platform.OS === "android" && isSfSymbol) {
@@ -498,7 +543,7 @@ const BottomTabs = <Route extends BaseRoute>({
       }),
     [
       trimmedRoutes,
-      icons,
+      unfocusedIcons,
       getLabelText,
       getBadge,
       getBadgeBackgroundColor,
@@ -516,8 +561,6 @@ const BottomTabs = <Route extends BaseRoute>({
     [icons]
   );
 
-  // Focused (solid) assets passed to iOS as selectedImage. iOS only — Android
-  // ignores selectedIcons and keeps swapping via the focusedKey array above.
   const resolvedSelectedIconAssets = React.useMemo(
     () => focusedIcons.map((icon) => resolveTabIconSource(icon)),
     [focusedIcons]
@@ -605,16 +648,19 @@ const BottomTabs = <Route extends BaseRoute>({
 
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
-      <NativeBottomTabsDrawer
+      <DrawerHostWithProgress
+        host={DrawerHost}
         style={styles.fullWidth}
         enabled={!!renderDrawerContent}
         open={drawerOpen}
         swipeEnabled={drawerSwipeEnabled}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
         bottomBarHeight={tabBarHeight ?? 0}
+        colorScheme={drawerColorScheme}
         onDrawerOpenChange={(event) =>
           onDrawerOpenChange?.(event.nativeEvent.open)
         }
+        onDrawerProgress={onDrawerProgress}
       >
         <View collapsable={false} style={styles.drawerMenu}>
           {Platform.OS !== "web" ? renderDrawerContent?.() : null}
@@ -628,9 +674,7 @@ const BottomTabs = <Route extends BaseRoute>({
             items={items}
             icons={renderCustomTabBar ? undefined : resolvedIconAssets}
             selectedIcons={
-              isIOS && !renderCustomTabBar
-                ? resolvedSelectedIconAssets
-                : undefined
+              !renderCustomTabBar ? resolvedSelectedIconAssets : undefined
             }
             selectedPage={focusedKey}
             tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
@@ -722,7 +766,7 @@ const BottomTabs = <Route extends BaseRoute>({
             </View>
           ) : null}
         </View>
-      </NativeBottomTabsDrawer>
+      </DrawerHostWithProgress>
     </BottomTabBarHeightContext.Provider>
   );
 };
@@ -735,7 +779,8 @@ const styles = StyleSheet.create({
   },
   drawerMenu: {
     position: "absolute",
-    width: "78%",
+    // Must match the native drawer width so menu descendants lay out to its edge.
+    width: "80%",
     height: "100%",
   },
   screen: {

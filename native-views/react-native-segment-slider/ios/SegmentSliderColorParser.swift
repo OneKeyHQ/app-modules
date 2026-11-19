@@ -133,7 +133,9 @@ final class SegmentSliderUIView: UIControl {
     }
   }
 
-  private func unlockAncestorGestures() {
+  /// Re-enables the ancestor pan recognizers; also called when the slider
+  /// cancels its own interaction (for example on `disabled`).
+  func unlockAncestorGestures() {
     for gr in disabledRecognizers {
       gr.isEnabled = true
     }

@@ -1,92 +1,108 @@
+<div align="center">
+
 # @onekeyfe/react-native-native-list
 
-Nitro View, template-driven native list for React Native 0.86. iOS renders a
-`UICollectionView`; Android renders a `RecyclerView`. JavaScript sends one
-serializable snapshot or batch patch instead of mounting a React subtree for
-every row.
+**Template-driven native lists for OneKey surfaces — UICollectionView on iOS, RecyclerView on Android and a windowed DOM engine on Web.**
 
-## Install
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-native-list?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-native-list)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-native-list?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Web](https://img.shields.io/badge/Web-4285F4?logo=googlechrome&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
 
-Keep NativeList and OneKeyImage on the same release because recycled image
-slots use the native host exported by OneKeyImage.
+</div>
+
+Renders bounded, high-volume row data without mounting a React subtree per row.
+JavaScript sends one serializable snapshot — or an atomic batch of patches — to a
+Nitro view, and the native host owns layout, recycling, selection, reorder and
+scrolling. Rows are a strict discriminated union of thirteen fixed templates, so
+there is no `renderItem`, arbitrary style dictionary or embedded React component
+per cell. Web runs a separate windowed DOM engine behind the same component,
+data model and imperative API.
+
+## Features
+
+- **No React subtree per row** — a snapshot or patch batch is serialized once,
+  and native collection hosts recycle cells.
+- **Thirteen fixed row templates** — identity, wallet group, rail, activity,
+  message, data, market, media tile, metric card, section header, action, button
+  group and system rows cover the OneKey list surfaces.
+- **Four layouts on one model** — `linear`, `sectioned`, `grid` and `table`,
+  with vertical/horizontal orientation, sticky headers, fixed footer, empty
+  state and named container slots.
+- **Native interaction** — single/multiple selection with tri-state checkboxes,
+  reorder with a drag preview, a section index rail, pull to refresh and
+  end-reached events.
+- **Imperative updates and scrolling** — apply snapshots/patches, reconcile
+  selection after native interaction, and scroll by key, index, item, offset or
+  location.
+- **OneKeyImage-backed cells** — row image slots bind through
+  `@onekeyfe/react-native-image` reusable views and keep its shared cache
+  pipeline.
+
+## Installation
 
 ```sh
-yarn add @onekeyfe/react-native-native-list@3.0.101 \
-  @onekeyfe/react-native-image@3.0.101 \
+yarn add @onekeyfe/react-native-native-list \
+  @onekeyfe/react-native-image \
+  @onekeyfe/react-native-native-logger \
   react-native-nitro-modules@0.37.0
+```
+
+Peer dependencies: `react`, `react-native`, `react-native-nitro-modules`
+0.37.0, `@onekeyfe/react-native-image` and `@onekeyfe/react-native-native-logger`.
+Keep NativeList and OneKeyImage on the same release, because recycled image
+slots use the image host's native view.
+
+The package registers a native view, so install the app's iOS pods and rebuild
+the native binary; a JavaScript-only install does not register it:
+
+```sh
 cd ios && pod install
 ```
 
-The package requires the React Native new architecture. Its deployment floors
-are iOS 15.5 and Android API 24.
+Android links through autolinking. The package requires the React Native new
+architecture; its deployment floors are iOS 15.5 and Android API 24.
 
-## Basic usage
+## Usage
 
 ```tsx
-import { useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import {
   NativeList,
-  type NativeListRef,
   type NativeListSnapshot,
-  type SelectionDeltaEvent,
 } from '@onekeyfe/react-native-native-list';
 
+const snapshot: NativeListSnapshot = {
+  schemaVersion: 1,
+  generation: 1,
+  layout: { kind: 'sectioned', stickyHeaders: true, itemSpacing: 1 },
+  rows: [
+    {
+      type: 'sectionHeader',
+      key: 'assets',
+      sectionKey: 'assets',
+      title: 'Assets',
+    },
+    {
+      type: 'identity',
+      key: 'btc',
+      sectionKey: 'assets',
+      leading: { kind: 'icon', name: 'StarOutline' },
+      title: 'Bitcoin',
+      subtitle: 'BTC · Bitcoin',
+      trailing: [{ kind: 'value', text: '$64,230' }],
+    },
+  ],
+};
+
 export function AssetList() {
-  const listRef = useRef<NativeListRef>(null);
-  const [selectedKeys, setSelectedKeys] = useState<readonly string[]>([]);
-  const snapshot = useMemo<NativeListSnapshot>(
-    () => ({
-      schemaVersion: 1,
-      generation: 1,
-      layout: { kind: 'sectioned', stickyHeaders: true, itemSpacing: 1 },
-      selection: {
-        mode: 'multiple',
-        selectedKeys,
-        rowPressToggles: true,
-      },
-      rows: [
-        {
-          type: 'identity',
-          key: 'btc',
-          sectionKey: 'assets',
-          leading: {
-            kind: 'token',
-            image: {
-              uri: 'https://example.com/btc.png',
-              width: 40,
-              height: 40,
-              contentFit: 'cover',
-              cachePolicy: 'memory-disk',
-            },
-            fallbackText: 'BT',
-          },
-          title: 'Bitcoin',
-          subtitle: 'BTC · Bitcoin',
-          trailing: [
-            { kind: 'value', text: '$64,230' },
-            { kind: 'checkbox', state: 'unchecked', target: { scope: 'row' } },
-          ],
-        },
-      ],
-    }),
-    [selectedKeys]
-  );
-
-  const handleSelection = (event: SelectionDeltaEvent) => {
-    setSelectedKeys((current) => {
-      const next = new Set(current);
-      event.removedKeys.forEach((key) => next.delete(key));
-      event.addedKeys.forEach((key) => next.add(key));
-      return [...next];
-    });
-  };
-
+  const stableSnapshot = useMemo(() => snapshot, []);
   return (
     <NativeList
-      ref={listRef}
       style={{ flex: 1 }}
-      snapshot={snapshot}
-      onSelectionDelta={handleSelection}
+      snapshot={stableSnapshot}
       onRowAction={({ rowKey, actionKey }) => {
         console.log(rowKey, actionKey);
       }}
@@ -95,83 +111,172 @@ export function AssetList() {
 }
 ```
 
-Native selection is authoritative for immediate feedback. Persist the emitted
-delta in application state, then pass that state back in a later snapshot or
-call `reconcileSelection(selectedKeys)` once. Reconciliation does not emit a
-second delta.
+The application owns the snapshot and the React chrome around the list; the
+native view owns cells, recycling and gestures. Keep the snapshot referentially
+stable between unrelated renders — a re-render with an older snapshot
+intentionally restores that older state.
+
+## API
+
+### Component
+
+| Prop | Type | Platforms | Description |
+| --- | --- | :-: | --- |
+| `snapshot` | `NativeListSnapshot` | iOS, Android, Web | Required declarative baseline: layout, rows, theme, selection, capabilities. |
+| `listHeader`, `listFooter`, `listEmpty` | `ReactNode` | iOS, Android, Web | Container slots outside the data-row stream. |
+| `listExpandedContent`, `listStructureToggle` | `ReactNode` | iOS, Android, Web | Native disclosure content and its toggle. |
+| `listSidecar`, `sidecarLayout` | `ReactNode`, `NativeListSidecarLayout` | iOS, Android, Web | Scrolling right column for a vertical linear list; both are required together. |
+| `topOverlay`, `topScrollEdgeEffect` | `ReactNode`, `'hard' \| 'soft'` | iOS 26+ | Fixed overlay above scrolling rows and UIKit's top scroll-edge effect; both are required together. |
+| `initialScrollIndex` / `initialScrollKey` | `number` / `string` | iOS, Android, Web | One-shot first position; the two props are mutually exclusive. |
+| `initialScrollViewPosition`, `initialScrollViewOffset` | `number` | iOS, Android, Web | Offset applied to the initial scroll target. |
+| `keyboardDismissMode` | `'none' \| 'on-drag' \| 'interactive'` | iOS, Android | `interactive` behaves as `none` on Android. |
+| `keyboardShouldPersistTaps` | `'never' \| 'always' \| 'handled'` | iOS, Android | Defaults to `never`. |
+| `webVirtualizationEnabled` | `boolean` | Web | Defaults to `true`. |
+| `webScrollHost` | host object or `null` | Web | `undefined` owns scrolling; `null` waits for a host element. |
+| `webStickyInset`, `webSectionIndexContainerRef` | `number`, `RefObject` | Web | Visible sticky chrome inset and the section-index host container. |
+| `scrollPositionThresholds` | `{ start, end, enabled? }` | iOS, Android | Emits initial state and hysteresis transitions, not scroll frames. |
+| `onRowAction`, `onActionAnchorInvalidated` | event callbacks | iOS, Android, Web | Row/accessory actions with anchor metadata, and anchor invalidation. |
+| `onSelectionDelta`, `onReorder` | event callbacks | iOS, Android, Web | Native selection delta and committed reorder range. |
+| `onEndReached`, `onVisibleRangeChanged` | event callbacks | iOS, Android, Web | End-reached fires once per snapshot `generation`; visible-range events are coalesced to one per display frame. |
+| `onRefresh`, `onScrollToIndexFailed` | `() => void`, `(info) => void` | iOS, Android, Web | Pull-to-refresh request and invalid explicit scroll targets. |
+| `onStructuralTransitionSettled` | event callback | iOS, Android | Settled/interrupted structural row animation. |
+
+### Ref methods
+
+All ref methods are available on iOS, Android and Web.
+
+| Method | Description |
+| --- | --- |
+| `applySnapshot(snapshot)` | Replaces the declarative baseline. |
+| `applyPatches(patches)` | Applies a validated, keyed patch batch atomically. |
+| `reconcileSelection(keys)` | Replaces native selection without emitting a second delta. |
+| `scrollToKey`, `scrollToIndex`, `scrollToItem` | Scroll to a row by stable key, index or row model. |
+| `scrollToOffset`, `scrollToEnd`, `scrollToLocation` | Scroll by offset, to the end or to a section/item location. |
+| `setActionAnchorState(state)` | Opens/closes an anchored action for a row control. |
+| `setRefreshing(refreshing)` | Synchronizes the native refresh control. |
+
+See [`src/NativeList.types.ts`](src/NativeList.types.ts) for the full prop, ref
+and scroll-option types.
+
+### Other exports
+
+| Export | Platforms | Description |
+| --- | :-: | --- |
+| `preloadNativeListAvatarImages(sources)` | iOS, Android, Web | Preloads avatar `ImageSource`s through the OneKeyImage cache. |
+| `configureNativeListFonts(families)` | iOS, Android, Web | Maps the regular/medium/semibold/bold faces for mounted lists at runtime. |
+| `ScrollEdgeEffect` | iOS | `hard` / `soft` values for `topScrollEdgeEffect`. |
+| `validateSnapshot`, `validatePatches` | iOS, Android, Web | Validate a snapshot or patch batch before use. |
+| `applyRowPatches`, `planNativeListPatches` | iOS, Android, Web | Apply a patch batch to a snapshot, or plan value-only patches between two snapshots. |
+| `serializeSnapshot`, `serializePatches` | iOS, Android, Web | Produce the JSON payloads the native host consumes. |
+| `reduceSelection`, `isSelectableRow`, `checkboxStateForKeys`, `checkboxStateForSection`, `selectionStateFromSnapshot` | iOS, Android, Web | Selection state helpers shared with the application store. |
+
+## Platform support
+
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Snapshots, patches and the 13 row templates | ✅ | ✅ | ✅ |
+| `linear`, `sectioned`, `grid` and `table` layouts | ✅ | ✅ | ✅ |
+| Selection, row actions and tri-state checkboxes | ✅ | ✅ | ✅ |
+| Reorder with a drag preview | ✅ | ✅ | ✅ |
+| Section index rail | ✅ | ✅ | ✅ DOM overlay |
+| Pull to refresh | ✅ | ✅ | ✅ |
+| Container slots around the row stream | ✅ | ✅ | ✅ |
+| Imperative scrolling and position thresholds | ✅ | ✅ | ✅ scrolling; — thresholds |
+| Fixed top overlay / scroll-edge effect | ✅ iOS 26+ | — | — |
+
+## Caveats
+
+> [!IMPORTANT]
+> Data rows are fixed templates. The public model rejects React children,
+> per-row render functions, arbitrary style dictionaries, nested lists and
+> unbounded self-sizing content. Use a named container slot for React chrome
+> around the row stream.
+
+> [!WARNING]
+> `snapshot` is the declarative baseline. Re-rendering with an older snapshot
+> after imperative patches or a reorder intentionally restores the older state;
+> derive a new snapshot only when the data changes.
+
+> [!NOTE]
+> Web runs a windowed DOM engine behind the same component and data API. It
+> mirrors the mobile data and imperative contracts, but its performance is
+> independent of the native implementations and must be measured separately.
+
+## References
+
+- [Behavioral contract](docs/SPEC.md)
+- [Row templates](docs/ROW_TEMPLATES.md)
+- [Style vocabulary](docs/STYLE_SPEC.md)
+- [Architecture and ownership](docs/DESIGN.md)
+- [Example app page](../../example/react-native/pages/NativeListExamplePage.tsx)
+- [npm package](https://www.npmjs.com/package/@onekeyfe/react-native-native-list)
+- [Changelog](../../CHANGELOG.md)
+
+## License
+
+MIT. The avatar PRNG/HSL algorithms in `src/web/NativeListAvatarWorker.js` are
+adapted from MyCrypto `ethereum-blockies-base64` (MIT); see [LICENSE](LICENSE).
 
 ## Row and layout model
 
-`RowModel` is a strict discriminated union. It intentionally accepts no
-`ReactNode`, render function, arbitrary style object, or native object handle.
+`RowModel` is a strict discriminated union. It intentionally accepts no React
+element, render function, arbitrary style object or native object handle, so the
+same snapshot can be validated and rendered on all three platforms.
 
-| Row type        | Intended template                                          |
-| --------------- | ---------------------------------------------------------- |
-| `identity`      | Asset, account, wallet, network, or settings identity      |
-| `walletGroup`   | Parent and child wallet-sidebar identity rows in one group |
-| `rail`          | Compact horizontal item with optional native drag support  |
-| `activity`      | Transaction/activity with amounts and up to three actions  |
-| `message`       | Notification/message with bounded body lines and thumbnail |
-| `dataRow`       | Two to four fixed table columns, optional index/checkbox   |
-| `market`        | Recycled token, stock, or perpetual quote row              |
-| `mediaTile`     | Gallery or browser-preview tile                            |
-| `metricCard`    | KPI or fixed Activity/Performance portfolio card           |
-| `sectionHeader` | Sticky/group, tri-state, or fixed list-summary header      |
-| `action`        | Fixed action row or fixed footer                           |
-| `system`        | Loading, retry, end marker, or bounded spacer              |
+### Row templates
 
-Snapshots support `linear`, `sectioned`, `grid`, and `table` layout semantics.
-`linear` is a full-width row stream; `sectioned` gives section-header rows a
-native visual break and optional pinning; `grid` uses two to four native spans
-with structural rows spanning every column; and `table` uses compact,
-alternating rows with stable weighted columns and column alignment. Vertical or
-horizontal orientation, stable keys, grouped card geometry, empty state, and a
-fixed footer remain common capabilities.
+| Row type | Intended template |
+| --- | --- |
+| `identity` | Asset, account, wallet, network or settings identity row |
+| `walletGroup` | Parent and child wallet-sidebar identity rows in one group |
+| `rail` | Compact horizontal item with optional native drag support |
+| `activity` | Transaction/activity with amounts and up to three actions |
+| `message` | Notification/message with bounded body lines and thumbnail |
+| `dataRow` | Two to four fixed table columns, optional index/checkbox |
+| `market` | Recycled token, stock or perpetual quote row |
+| `mediaTile` | Gallery or browser-preview tile |
+| `metricCard` | KPI or fixed Activity/Performance portfolio card |
+| `sectionHeader` | Sticky/group, tri-state or fixed list-summary header |
+| `action` | Fixed action row or fixed footer |
+| `buttonGroup` | Bounded horizontal button row |
+| `system` | Loading, retry, end marker or bounded spacer |
 
-The required theme colors cover list, row, selection, text, separator, accent,
-and semantic positive/negative states. The optional `subduedBackground`,
-`strongBackground`, `disabledText`, `icon`, `iconSubdued`,
-`criticalBackground`, `inverseBackground`, and `inverseText` tokens let native
-templates match the OneKey palette without embedding platform-specific style
-objects. Identity-row trailing accessories also accept semantic native icons,
-for example `{ kind: 'icon', name: 'PlusCircleOutline' }`. A `valuePair` can
-independently set `primaryTone` and `secondaryTone` to `primary`, `secondary`,
-`positive`, or `negative`; omitted tones keep the original primary/secondary
-defaults. Token visuals can provide `networkImage` or `cornerIcon`, while media
-tiles can provide `networkImage`, to reproduce OneKey's bottom-right network
-and token-state indicators. `dataRow` supports a two-line asset/volume and
-price/change layout plus fixed leverage/venue badges. `metricCard` supports the
-fixed `activity` and `performance` composite variants used by Portfolio & PnL;
-their metrics and progress remain bounded serializable data.
+[docs/ROW_TEMPLATES.md](docs/ROW_TEMPLATES.md) defines every template with
+structural illustrations, required fields, variants and styling boundaries.
 
-Set a section header's `variant` to `summary` for the fixed 56-point list
-summary template. Its optional `valueActionKey` renders a 16-point secondary
-action beside the 16-point medium primary title; summary headers do not accept
-a checkbox and do not become sticky.
+### Layout kinds
+
+- `linear` is a full-width row stream.
+- `sectioned` gives section-header rows a native visual break and optional
+  pinning.
+- `grid` uses two to seven native spans; structural rows span every column.
+- `table` uses compact, alternating rows with stable weighted columns and column
+  alignment.
+
+Vertical or horizontal orientation, stable keys, grouped card geometry, an empty
+state and a fixed footer are common capabilities. The required theme tokens
+cover list, row, selection, text, separator, accent and semantic
+positive/negative colors; optional tokens let native templates match the OneKey
+palette without embedding platform-specific style objects. Set a section
+header's `variant` to `summary` for the fixed list-summary template.
 
 For a native trailing section index, use a vertical `sectioned` layout, set
 `capabilities.sectionIndex` to `{ enabled: true }`, and add an `indexTitle` to
 each section header that should appear in the index. The index follows snapshot
-order, skips headers without `indexTitle`, and scrolls to the header's existing
-row `key`. Titles must be unique after Unicode NFC normalization, contain no
-leading/trailing whitespace, and be at most eight Unicode code points. Set
-`hapticsEnabled: false` to follow an application-level reduced-haptics setting.
-Set `centeredInWindow: true` to render the interactive index rail against the
-full window and center it on the window's geometric midpoint.
-The web implementation renders the same explicit index entries as a DOM
-overlay, with click and pointer-drag navigation.
+order and scrolls to the header's existing row `key`. Titles must be unique
+after Unicode NFC normalization, contain no leading/trailing whitespace and stay
+within eight Unicode code points. On Web the same entries render as a DOM
+overlay with click and pointer-drag navigation.
 
-The templates distribute and register no font files. Call
+### Fonts
+
+Templates distribute and register no font files. Call
 `configureNativeListFonts` once during UI-runtime startup, after the host loads
-its fonts and before mounting lists. The four optional faces replace the whole
-mapping; omitted faces and `{}` use system fonts. Mounted lists subscribe to
-this runtime's mapping, with an independent native resolver per list. There is
-no public per-list override and no cross-runtime native-global mapping.
+its fonts and before mounting lists:
 
 ```tsx
 import { configureNativeListFonts } from '@onekeyfe/react-native-native-list';
 
-// After the host provisions/registers these faces, before mounting lists:
 configureNativeListFonts({
   regular: 'Roobert-Regular',
   medium: 'Roobert-Medium',
@@ -180,89 +285,41 @@ configureNativeListFonts({
 });
 ```
 
-On iOS these are registered PostScript names; on Android they are React Native
-family keys or matching `fonts/<family>.ttf` host assets. For Web, map each face
-to the host's CSS family (for example, `Roobert` for all four weights) and wait
-for the four weight-specific font loads before rendering. The host remains
-responsible for licensing and provisioning. Changed mappings rebind text and
-invalidate list geometry without replacing snapshots or selection; identical
-normalized mappings do nothing. Active reorders are cancelled. Missing configured
-names use the platform fallback, which on Android may lose the requested weight.
-Names must be nonempty trimmed strings, at most 128 UTF-16 units without control
-characters; invalid keys/values throw before changing any configuration. See
-[SPEC.md](docs/SPEC.md) and [STYLE_SPEC.md](docs/STYLE_SPEC.md) for lifecycle,
-system fallback and text-metric acceptance requirements. Their semantic icons and checkbox marks are
-the same vector paths as the OneKey component
-library, rendered by Core Graphics/UIKit on iOS and Canvas on Android.
+The four optional faces replace the whole mapping; omitted faces and `{}` use
+system fonts. On iOS these are registered PostScript names, on Android they are
+React Native family keys or matching `fonts/<family>.ttf` host assets, and on Web
+they are the host's CSS families. The host remains responsible for licensing and
+provisioning. Changed mappings rebind text and invalidate list geometry without
+replacing snapshots or selection; an active reorder is cancelled. Names must be
+nonempty trimmed strings of at most 128 UTF-16 units without control
+characters — invalid keys or values throw before any configuration changes.
 
 ### Market rows
 
-`market` is a fixed native/DOM template, not a React `renderItem`. Its default
-token/perpetual geometry uses a 32-point leading image with a 16-point network
-corner; stock uses a 40-point image. The trailing change block is 80×32 with an
-8-point radius. All displayed values are already formatted strings; compact
-zero runs can use `priceSegments`, `subtitleSegments`, or
+`market` is a fixed native/DOM template, not a React `renderItem`; all displayed
+values are already formatted strings. Its default token/perpetual geometry uses
+a 32-point leading image with a 16-point network corner, while stock uses a
+40-point image. Compact zero runs can use `priceSegments`, `subtitleSegments` or
 `change.textSegments` with `{ style: 'subscript' }`.
 
-```ts
-const btc = {
-  type: 'market',
-  key: 'btc',
-  variant: 'token',
-  leading: { kind: 'token', image: btcImage, networkImage: bitcoinImage },
-  title: 'BTC',
-  subtitle: '$1.23B',
-  price: '$64,230.00',
-  change: { text: '+2.40%', tone: 'positive' },
-  badges: [
-    {
-      key: 'community',
-      iconName: 'verified',
-      tone: 'success',
-      actionKey: 'market.communityInfo',
-      accessibilityLabel: 'Community recognized',
-    },
-  ],
-  pressInActionKey: 'market.prewarm',
-  pressActionKey: 'market.open',
-  longPressActionKey: 'market.menu',
-  diagnostics: { imageBindActionKey: 'market.imageBind' },
-} satisfies MarketRow;
-```
-
-Badges accept localized text, a bounded remote image, or the single built-in
-`iconName: 'verified'` glyph. A badge `actionKey` emits independently with an
-anchor whose source is `marketBadge`. Market long press fires after 800 ms and
-is cancelled when the pointer moves more than 10 logical pixels or the list
-scrolls. The optional diagnostic action fires when a row binds an image; quote-
-only patches (`price`, `priceSegments`, `change`, `accessibilityLabel`, and
-`revision`) update visible labels without rebinding that image.
+Badges accept localized text, a bounded remote image or the built-in
+`iconName: 'verified'` glyph, and a badge `actionKey` emits with an anchor whose
+source is `marketBadge`. Market long press fires after 800 ms and is cancelled
+when the pointer moves more than 10 logical pixels or the list scrolls.
+Quote-only patches (`price`, `priceSegments`, `change`, `accessibilityLabel`,
+`revision`) update visible labels without rebinding the image.
 
 `style` is deliberately finite and uses the shared row-style vocabulary in
-[docs/STYLE_SPEC.md](docs/STYLE_SPEC.md): `horizontalPadding`,
-`verticalPadding`, `leadingGap`, `lineGap`, `titleBadgeGap`, `trailingGap`,
-the Market-only `titleBadgeLayout: 'inline'`, `contentTrailingGap` and
-`subtitleTrailingPadding`, the primary `image` (width/height/shape/corner
-radius/content fit), `title`/`subtitle`/`price`/`change` text styles (`token`,
-font size, weight, `#RRGGBB`/`#RRGGBBAA` color, line height, 1–3 `lines`,
-`truncate`, alignment, vertical alignment and `offsetY`), the change block's
-`changeWidth`/`changeHeight`/`changeCornerRadius`, and the common
-`style.container` (explicit height, background, opacity, radius, border and
-content alignment). Badge `style` accepts only `fontSize`, `fontWeight`,
-`lineHeight`, `height` and `horizontalPadding`. Unknown keys at any level are
-rejected by `validateSnapshot`/`validatePatches` rather than ignored. Omitting
-`style` preserves the defaults. Loading, empty, retry,
-and pagination states use the existing `system` rows with
-`presentation: 'market'`. Loading rows accept `loadingStyle: 'skeleton'` for
-the 56-point token skeleton or `'spinner'` for the centered 52-point pagination
-indicator. Use `accessibilityLabel` for loading announcements. Omitting
-`loadingStyle` preserves each platform's existing loading rendering.
+[docs/STYLE_SPEC.md](docs/STYLE_SPEC.md); unknown keys at any level are rejected
+by `validateSnapshot`/`validatePatches` rather than ignored. Loading, empty,
+retry and pagination states use the existing `system` rows with
+`presentation: 'market'`.
 
 For native reorder, set `capabilities.reorderable` and mark eligible rail rows
 with `draggable: true`, or add a `drag` trailing accessory to an identity row.
 Reordering never crosses a `sectionKey` boundary.
 
-## OneKeyImage inside cells
+### Images inside cells
 
 Pass an `ImageSource` descriptor in the row model; do not pass a
 `<OneKeyImage />` element:
@@ -283,187 +340,63 @@ const avatar = {
 ```
 
 NativeList defaults `loadingStrategy` to `none`, so source-backed images render
-without a loading background or terminal fallback. Set it to `static` or
-`skeleton` to opt into loading UI; a configured `fallbackText` or
-`fallbackIcon` is shown after a terminal load failure only when loading UI is
-enabled.
+without a loading background or terminal fallback; set it to `static` or
+`skeleton` to opt into loading UI. Image width and height are required and
+bounded to 1–4096 logical pixels. Each cell owns a fixed pool of reusable native
+image slots covering token/network overlays, two activity visuals, a message
+thumbnail and stacks of two or three images. On bind, NativeList forwards the
+URI, headers, content fit, cache policy, autoplay, TOS options, overscan and
+loading strategy, assigns a stable `rowKey:slot` recycling key, and keeps the
+same SDWebImage (iOS) / Glide (Android) cache pipeline as
+`@onekeyfe/react-native-image`.
 
-Each cell owns a fixed pool of native `OneKeyImageReusableView` slots. On bind,
-NativeList forwards the URI, headers, content fit, cache policy, autoplay, TOS
-options, overscan, and loading strategy. A stable `rowKey:slot` recycling key
-is assigned automatically. Reuse cancels stale work before accepting the next
-source, while retaining the same SDWebImage cache/pipeline on iOS and Glide
-cache/pipeline on Android as `@onekeyfe/react-native-image`.
-
-The fixed slots cover token/network overlays, two activity visuals, a message
-thumbnail, and stacks of two or three images. Image width and height are
-required and bounded to 1–4096 logical pixels.
-
-## Batch updates and events
-
-```ts
-listRef.current?.applyPatches([
-  {
-    type: 'identity',
-    key: 'btc',
-    changes: { revision: 2, subtitle: 'Updated in one native command' },
-  },
-]);
-
-listRef.current?.scrollToKey('btc', true, 'center');
-listRef.current?.scrollToIndex({
-  index: 24,
-  animated: true,
-  viewPosition: 0.5,
-  viewOffset: 12,
-});
-listRef.current?.scrollToItem({ item: snapshot.rows[24] });
-listRef.current?.scrollToOffset({ offset: 320, animated: false });
-listRef.current?.scrollToEnd({ animated: true });
-listRef.current?.scrollToLocation({ sectionIndex: 2, itemIndex: 4 });
-listRef.current?.setRefreshing(false);
-```
-
-The ref exposes `applySnapshot`, `applyPatches`, `reconcileSelection`,
-`scrollToKey`, `scrollToIndex`, `scrollToItem`, `scrollToOffset`, `scrollToEnd`,
-`scrollToLocation`, and `setRefreshing`. The legacy
-`scrollToIndex(index, animated, alignment)` and
-`scrollToKey(key, animated, alignment)` signatures remain supported. Object
-parameters follow React Native list semantics: `viewPosition` is from `0`
-(start) through `1` (end), and a positive `viewOffset` leaves space before the
-target row. Web, Android and iOS explicit position alignment also centers/ends
-oversized rows; `nearest` preserves its legacy behavior. See [scrolling contract](docs/SPEC.md#explicit-scroll-alignment-ok-64041)
-for platform status.
-
-Use `initialScrollIndex` or the stable-key extension `initialScrollKey` to set
-the first position. They are mutually exclusive, run once after the first
-snapshot and native layout are ready, and can be combined with
-`initialScrollViewPosition` and `initialScrollViewOffset`. Invalid index and
-location requests call `onScrollToIndexFailed`; native lists do not fail merely
-because a target row has not been mounted yet. `scrollToLocation` counts
-non-summary section headers, then rows carrying that header's `sectionKey`.
+### Patches, events and scrolling
 
 Patches are validated as a batch, keyed by row key, must preserve the row
 discriminator, and are applied atomically. Prefer a new snapshot for insertions,
-removals, layout changes, and section changes; use patches for frequently
+removals, layout changes and section changes; use patches for frequently
 changing fields.
 
-Events are `onRowAction`, `onSelectionDelta`, `onReorder`, `onEndReached`,
-`onVisibleRangeChanged`, and `onRefresh`. Visible-range events are coalesced to
-one per display frame and only fire when the first or last visible item changes.
-End-reached fires once per snapshot `generation`.
+`applyPatches` applies a validated batch to the current snapshot;
+`reconcileSelection` replaces native selection without emitting a second delta. Object scroll parameters follow
+React Native list semantics: `viewPosition` runs from `0` (start) through `1`
+(end), and a positive `viewOffset` leaves space before the target row. Explicit
+position alignment also centers/ends oversized rows on all three platforms.
+`initialScrollIndex` or the stable-key extension `initialScrollKey` sets the
+first position once, after the first snapshot and native layout are ready, and
+can be combined with `initialScrollViewPosition` and
+`initialScrollViewOffset`. `scrollToLocation` counts non-summary section headers,
+then rows carrying that header's `sectionKey`. Invalid index and location
+requests call `onScrollToIndexFailed`; native lists do not fail merely because a
+target row has not been mounted yet.
 
-## Examples and performance checks
+### Example app and native checks
 
-The React Native example application contains:
+The React Native example application contains a categorized native-list entry
+page, a reproducible benchmark page, and an account-selector stress page
+(1,000 wallets × 1,000 accounts) that materializes only the selected wallet's
+rows.
 
-- **Native List**: a categorized entry page. Each of the four containers, ten
-  row templates, and checkbox selection opens its own source-labeled page; no
-  container or row paradigm is hidden behind tabs. The scenarios mirror the
-  corresponding list surfaces in the OneKey application.
-- **Native List Benchmark**: reproducible 1,000/5,000-row load, fast scroll,
-  one-command 500-row patch, and one-command select-all paths.
-- **Native List Account Selector**: two independently scrolling native lists
-  with a fixed Add Wallet footer. The stress fixture exposes 1,000 wallets x
-  1,000 accounts while materializing only the selected wallet's 1,000 account
-  rows and retaining at most three wallets / 3,000 account rows in an LRU cache.
+- [Native list entry page](../../example/react-native/pages/NativeListExamplePage.tsx)
+- [Row style page](../../example/react-native/pages/NativeListRowStylePage.tsx)
+- [Benchmark page](../../example/react-native/pages/NativeListBenchmarkPage.tsx)
+- [Account selector page](../../example/react-native/pages/NativeListAccountSelectorPage.tsx)
 
-### Account Selector performance snapshot (2026-09-05)
+Swift geometry regressions compile the shipping helper directly:
 
-The current acceptance run exercised five page opens, two 101-switch Wallet 1 /
-Wallet 2 batches, 25 downward plus 20 upward account-list drags, a repeated 15
-downward account-list run, and 15 downward plus 15 upward wallet-list drags. It
-also sampled process CPU and memory and verified, after momentum settled, that
-the two lists scroll independently and Add Wallet remains fixed at the bottom.
-Android additionally covered ART `speed` compilation and ten short fast flings.
+```sh
+swift test --package-path tests/swiftpm
+```
 
-| Metric                    | iOS Debug Simulator                                                                                           | Android Release-mode emulator                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Environment               | iPhone 16 Pro, iOS 18.6                                                                                       | API 35 arm64, 1080 x 2400, fixed 60 Hz, non-debuggable Hermes                                                                                    |
-| Page open, 5 runs         | External tap-to-visible median 589 ms; the initial native visible-range callback did not emit                 | 5 / 5 native callbacks; mount-to-first-visible p50 110 ms; external observation p50 202 ms                                                       |
-| Wallet switching          | 202 / 202; mean 135.3 ms, p50 134 ms, p95 143 ms, max 159 ms                                                  | 202 / 202; mean 124.4 ms, p50 118 ms, p95 155 ms, max 213 ms                                                                                     |
-| Account-list frame signal | 113.3 effective FPS; p50/p95 interval 6.67/18.33 ms; 6.6% over 17.5 ms                                        | Repeated drag runs reported 92.09-93.06% deadline-missed frames and p50 450 ms                                                                   |
-| Wallet-list frame signal  | 78.7 effective FPS; p50/p95 interval 13.33/20.00 ms; 17.8% over 17.5 ms                                       | Down/up runs reported 89.39-100% deadline-missed frames and p50 400 ms                                                                           |
-| Process CPU               | Wallet switching mean 48.9%; account scrolling mean 22.9%                                                     | Wallet switching mean 66.8%; account scrolling mean 67.1% on Android's per-core scale                                                            |
-| Retained memory           | Physical footprint 286 MB before, 275 MB after the first batch, 287 MB after the second; lifetime peak 335 MB | PSS 138,459 KiB with one wallet cached, 201,668 KiB after warming three wallets, 192,700 KiB after the second batch, 193,976 KiB after scrolling |
-| Functional checks         | Independent lists and fixed footer pass                                                                       | Independent lists and fixed footer pass, including zero-difference stable screenshot crops                                                       |
+The Android scroll-alignment suite runs against the package's Kotlin helper in a
+configured consumer project:
 
-Across the tested environments, Android Release is faster for page opening and
-median wallet switching: external page-open p50 is 202 ms versus 589 ms on iOS,
-and wallet-switch p50 is 118 ms versus 134 ms. iOS has the tighter switch tail
-at p95 143 ms versus 155 ms, clearly leads both account-list and wallet-list
-frame results, and uses less process CPU in the measured switch and scroll runs.
-Both platforms pass correctness, independent scrolling, the fixed footer,
-switch responsiveness, and the short-run retained-memory check. The current
-cross-platform performance priority is Android continuous scrolling, followed
-by the iOS wallet list's 120 Hz tail behavior.
+```sh
+./gradlew :onekeyfe_react-native-native-list:testDebugUnitTest \
+  --tests com.margelo.nitro.nativelist.NativeListScrollAlignmentTest
+```
 
-### Test Suite source map
-
-| Entry               | OneKey application source                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------- |
-| Linear container    | `AssetList/components/TokenManager/TokenManagerList.tsx`                                     |
-| Sectioned container | `ChainSelector/components/AllNetworksManager/NetworksSectionList.tsx`                        |
-| Grid container      | `Home/components/NFTListView/index.tsx`                                                      |
-| Table container     | `Perp/components/TokenSelector/PerpTokenSelectorRow.tsx`                                     |
-| Identity rows       | `Developer/pages/Gallery/Components/stories/ListItem.tsx`                                    |
-| Rail rows           | `Perp/components/FavoritesBar/FavoriteTokenItem.tsx`                                         |
-| Activity rows       | `components/TxHistoryListView/TxHistoryListItem.tsx`                                         |
-| Message rows        | `Notifications/components/NotificationListView.tsx`                                          |
-| Data rows           | `Perp/components/TokenSelector/PerpTokenSelectorRow.tsx`                                     |
-| Media tile rows     | `Home/components/NFTListView/NFTListItem.tsx`                                                |
-| Metric card rows    | `Perp/components/Portfolio/PerpPortfolioContent.tsx`                                         |
-| Section header rows | `AllNetworksManager/NetworksSectionList.tsx`, `TxHistoryListView/TxHistorySectionHeader.tsx` |
-| Action rows         | `TokenManager/TokenManagerList.tsx`, `Discovery/pages/BookmarkListModal/index.tsx`           |
-| System rows         | `components/Loading/ListLoading.tsx`, `TokenListView/CrossNetworkSearchRows.tsx`             |
-| Checkbox selection  | `components/forms/Checkbox/index.tsx`, `AllNetworksManager/NetworksSectionList.tsx`          |
-
-The checkbox page exercises list, section, and row targets plus checked,
-unchecked, indeterminate, loading, and disabled presentation. The rail page
-keeps horizontal selection and native reorder isolated from the other pages.
-
-Measure a release build on a physical device. Run each scenario at least three
-times, record cold and warm first-visible latency, JS batch-dispatch latency,
-UI-thread frame time/dropped frames, and peak memory. During repeated fast
-scrolls verify that no stale image from a recycled row becomes visible. The
-benchmark page reports deterministic JS timings and visible-range milestones;
-use Instruments or Android Studio Profiler for native frame and memory data.
-
-## Limits
-
-- Nitro View/new architecture only; no Paper component.
-- Fixed templates only. Arbitrary children, per-row render functions, and
-  arbitrary style dictionaries are rejected by the public model.
-- Template heights and text line counts are bounded. There is no unbounded
-  self-sizing content, nested list, or React component embedded in a cell.
-- A snapshot prop is the declarative baseline. Re-rendering with an older
-  snapshot after imperative patches or reorder will intentionally restore the
-  older state.
-- The web implementation uses a pure DOM, windowed, recycled row engine behind
-  the React component. It mirrors the mobile data and imperative APIs, but its
-  performance must still be measured independently from iOS and Android.
-
-Start with [docs/SPEC.md](docs/SPEC.md) for the behavioral contract and migration
-status. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model, and
-[docs/STYLE_SPEC.md](docs/STYLE_SPEC.md) for the shared style vocabulary: design
-tokens, local layout-safety rules, common list capabilities and current implementation
-gaps. [docs/ROW_TEMPLATES.md](docs/ROW_TEMPLATES.md) defines all 12 row types with
-structural illustrations, required fields, variants and styling boundaries.
-
-## Native scrolling regression tests
-
-In a configured React Native example/consumer Android project, run
-`./gradlew :onekeyfe_react-native-native-list:testDebugUnitTest --tests com.margelo.nitro.nativelist.NativeListScrollAlignmentTest`.
-This uses the existing JUnit dependency and compiles the shipping Kotlin helper
-and NativeListView. The Gradle project name may differ in another consumer.
-
-Run `swift test --package-path tests/swiftpm` from this package for the native
-Swift geometry regression suite. Its source symlink compiles the shipping
-helper directly. These are geometry unit tests, not RecyclerView/UICollectionView
-integration tests. Full-app visibility, unmounted/deferred behavior and
+Both are geometry unit tests. Full-app visibility, deferred behavior and
 consumer-owned layout/input cancellation require separate runtime validation;
-see [the scrolling spec](docs/SPEC.md).
-
-`webSectionIndexContainerRef` uses the actual View instance type through
-`React.ElementRef<typeof View>`. RN 0.86.2/0.88.0 declaration checks preserve its
-existing nullable ref API without a consumer declaration patch.
+see [docs/SPEC.md](docs/SPEC.md). [docs/DESIGN.md](docs/DESIGN.md) documents the
+architecture and ownership model.

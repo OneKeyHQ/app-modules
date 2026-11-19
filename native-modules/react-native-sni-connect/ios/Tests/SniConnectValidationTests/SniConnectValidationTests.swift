@@ -3,6 +3,23 @@ import XCTest
 
 final class SniConnectValidationTests: XCTestCase {
 
+  func testUnexpectedResolverHostIsLoggedInPlaintextAndStillRejected() throws {
+    let registry = SniConnectPinnedResolverRegistry()
+    let resolverClass: AnyClass = try registry.resolverClass(hostname: "example.com", ip: "93.184.216.34") {
+      NSObject.self
+    }
+    var messages: [String] = []
+    let previousSink = SniConnectCoreDiagnostics.warnSink
+    SniConnectCoreDiagnostics.warnSink = { messages.append($0) }
+    defer { SniConnectCoreDiagnostics.warnSink = previousSink }
+
+    XCTAssertNil(registry.resolve(domain: "Unexpected.example.com", resolverClass: resolverClass))
+    XCTAssertEqual(messages.count, 1)
+    XCTAssertTrue(messages[0].contains("requestedHost=unexpected.example.com"))
+    XCTAssertTrue(messages[0].contains("result=fail_closed"))
+    XCTAssertFalse(messages[0].contains("requestedHostHash="))
+  }
+
   func testSessionWithoutForwardingDataDelegateAllowsResponse() {
     switch SniConnectSessionDelegatePolicy.responseDispositionWithoutForwardingDelegate {
     case .allow:

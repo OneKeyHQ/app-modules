@@ -227,6 +227,13 @@ When C = D, selection restores the destination's saved B. When C < D, effectiveB
 is zero while the previous saved B remains suspended. Horizontal selection by
 tap, swipe or an existing programmatic command MUST preserve C throughout.
 
+On iOS, a fresh page with no saved body offset and fully expanded shared header
+aligns its raw offset to the newly applied negative top inset even while viewport
+or content size is zero. The full restore remains pending until geometry is ready.
+Deferred identity release and pages with retained body/header offsets keep their
+existing restoration path. This prevents painting a new list at raw offset zero
+before its first content measurement; it does not gate business-data insertion.
+
 Alignment, prefetch, replacement, inset changes and pending restoration MUST NOT
 commit new B. Actual consumed vertical scrolling takes over the visible body
 position; reaching full collapse during that gesture MUST NOT resurrect the old
@@ -1088,6 +1095,24 @@ Status: implemented and verified by production-native UIKit regressions on
 iOS 27.1 for footer insertion, explicit-sibling priority and nested-pager
 delegation. Full App and physical-device visual acceptance are reported separately.
 
+A NativeOverlay host is a discovery boundary on iOS as well. Overlay content
+(popover, sheet, dialog) stays mounted inside its host view until the overlay
+window presents it, and the host can sit anywhere in a page's subtree, including
+beside the page's NativeList. Scroll views inside a host belong to the overlay:
+they MUST NOT be resolved as the page's vertical scroll owner or receive its
+insets, logical offsets or shared header. Without this boundary a staged sheet's
+Fabric scroll view outranks a NativeList sibling, takes the collapsed-header
+offset, and the sheet opens scrolled past its content. The host is recognised by
+its component class; discovery is unchanged when the overlay package is absent,
+and a scroll view outside a host keeps its existing priority. Android owner
+discovery is not changed by this boundary.
+
+Status: implemented on iOS. Verified in the OneKey app on an iPhone SE (3rd
+generation) simulator, iOS 26.5: with the Home header collapsed, a popover opened
+from the History list showed an empty body before this boundary and its content
+from the first frame after it. A UIKit regression covers the boundary; Android
+was not inspected beyond the absence of the symptom.
+
 When the active scroll owner is removed before its replacement becomes usable,
 the pager MUST retain bounded recovery (at most 12 retries per recovery round,
 spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT
@@ -1104,7 +1129,11 @@ header attachment remain deferred until selection settles. Cancelling the drag
 on the same page MUST retain the reopened recovery round. Empty transactions,
 removals and inserts outside the current page MUST NOT reopen the budget. Owned
 `NativeScroller` and `NativeList` hosts additionally emit push readiness
-notifications when their scroll views attach and obtain positive bounds so late
+notifications when their vertical scroll views attach and obtain positive bounds
+and resolve as the page's eligible vertical scroll owner so initial first-layout
+attachment (while a coalesced slot/layout reconcile is still pending on the main
+queue or a verified vertical `NativeList` becomes ready before the current page
+has an observed owner) and late
 replacements recover immediately even without another Fabric insertion or after
 the retry budget expires; static pages with neither an unready scroll host nor a
 released scroll owner do not schedule retry timers.

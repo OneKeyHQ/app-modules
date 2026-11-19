@@ -285,6 +285,10 @@ content; `lineGap` separates content text rows (primary/secondary per data colum
 for activity, the native failure label or rich title badges; Web has no activity
 badge target);
 `trailingGap` separates trailing values/controls (title/badge to status for rail).
+For identity those are the trailing accessories: a `valuePair` is one accessory,
+so the gap sits between it and its neighbours and never between its two lines,
+on every platform. For activity the gap separates `primaryAmount` from
+`secondaryAmount`.
 `walletGroup` padding applies only to the group; it never cascades into members.
 Composite metric-card `lineGap` separates heading/metric blocks and dividers; it
 does not change the typography or inner label/value gap of each metric.

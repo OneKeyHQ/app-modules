@@ -83,6 +83,7 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
 
   func clearDisk() throws -> Promise<Void> {
     Promise.async {
+      OneKeyImageStartupPrewarm.shared.clearDiskCache()
       await withCheckedContinuation { continuation in
         DispatchQueue.main.async {
           OneKeyMediaPreviewCache.shared.clearDisk { continuation.resume() }
@@ -103,6 +104,7 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
       SDImageCache.shared.clearMemory()
       OneKeyAvatarImageLoader.cache.clearMemory()
       OneKeyImageMemoryVariantRegistry.shared.clear()
+      OneKeyImageStartupPrewarm.shared.clearDiskCache()
       await withCheckedContinuation { continuation in
         DispatchQueue.main.async {
           OneKeyMediaPreviewCache.shared.clearDisk { continuation.resume() }

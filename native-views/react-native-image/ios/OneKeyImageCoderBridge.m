@@ -329,6 +329,20 @@ static void OneKeySVGSerialize(OneKeySVGNode *node, NSMutableString *xml) {
 @interface OneKeySVGCoder : SDImageSVGCoder
 @end
 @implementation OneKeySVGCoder
+static CGFloat OneKeySVGCachedScreenScale = 2.0;
+
++ (void)initialize {
+  if (self == [OneKeySVGCoder class]) {
+    if ([NSThread isMainThread]) {
+      OneKeySVGCachedScreenScale = MAX(1.0, UIScreen.mainScreen.scale);
+    } else {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        OneKeySVGCachedScreenScale = MAX(1.0, UIScreen.mainScreen.scale);
+      });
+    }
+  }
+}
+
 + (SDImageSVGCoder *)sharedCoder {
   static OneKeySVGCoder *coder;
   static dispatch_once_t onceToken;
@@ -343,7 +357,8 @@ static void OneKeySVGSerialize(OneKeySVGNode *node, NSMutableString *xml) {
     CGSize pixels = [options[SDImageCoderDecodeThumbnailPixelSize] CGSizeValue];
     if (isfinite(pixels.width) && isfinite(pixels.height) && pixels.width > 0 && pixels.height > 0) {
       CGFloat ratio = MIN(1, sqrt(4194304.0 / pixels.width / pixels.height));
-      CGFloat scale = MAX(1, UIScreen.mainScreen.scale);
+      NSNumber *scaleOption = options[SDWebImageContextImageScaleFactor];
+      CGFloat scale = scaleOption.doubleValue > 0 ? scaleOption.doubleValue : OneKeySVGCachedScreenScale;
       NSMutableDictionary *bounded = [options mutableCopy];
       // Keep point-to-pixel roundoff from making UIGraphics ceil an extra pixel.
       bounded[SDImageCoderDecodeThumbnailPixelSize] = [NSValue valueWithCGSize:
@@ -380,6 +395,32 @@ static void OneKeySVGSerialize(OneKeySVGNode *node, NSMutableString *xml) {
     }
   }
   [manager addCoder:SDImageWebPCoder.sharedCoder];
+}
+
+@end
+
+// Starts the named-icon and image prewarms before main() so the decoded rasters
+// are in memory by the time the first screen mounts. Resolved dynamically because the
+// Swift side is not importable from this Objective-C unit.
+@interface OneKeyNamedSVGStartupLoader : NSObject
+@end
+
+@implementation OneKeyNamedSVGStartupLoader
+
++ (void)load
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    SEL selector = NSSelectorFromString(@"prewarmStartupSet");
+    for (NSString *name in @[@"OneKeyNamedSVGBridge", @"OneKeyImageStartupPrewarmBridge"]) {
+      Class bridge = NSClassFromString(name);
+      if ([bridge respondsToSelector:selector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [bridge performSelector:selector];
+#pragma clang diagnostic pop
+      }
+    }
+  });
 }
 
 @end

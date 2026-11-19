@@ -1,4 +1,5 @@
 import UIKit
+import SDWebImage
 import XCTest
 
 @testable import OneKeyImage
@@ -61,6 +62,40 @@ final class OneKeyIconTests: XCTestCase {
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
     return bytes
+  }
+
+  func testDiskRasterSurvivesDecodedMemoryEviction() throws {
+    let name = "DotVerSolid"
+    let color = "rgba(0,0,0,1)"
+    let scale: CGFloat = 1.375
+    let ownerBundle = Bundle(for: HybridOneKeyIcon.self)
+    let bundleURL = try XCTUnwrap(ownerBundle.url(forResource: "OneKeyIcons", withExtension: "bundle")
+      ?? Bundle.main.url(forResource: "OneKeyIcons", withExtension: "bundle"))
+    let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+    let manifestURL = try XCTUnwrap(bundle.url(forResource: "manifest", withExtension: "json"))
+    let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: [String: Any]])
+    let entry = try XCTUnwrap(manifest[name])
+    let digest = try XCTUnwrap(entry["digest"] as? String)
+    let mode = entry["recolorMode"] as? String ?? "raster"
+    let colorKey = mode == "raster" ? color : mode == "multiple" ? "1.0" : ""
+    let key = "\(name)|\(digest)|37|29|\(scale)|\(mode)|\(colorKey)"
+    let disk = OneKeyNamedSVG.shared.rasterDiskCacheForTesting
+    let original = try XCTUnwrap(resolve(name, color: color, width: 37, height: 29, scale: scale))
+    OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: false)
+    eventually("Worker output is persisted as a PNG") { disk.diskImageData(forKey: key) != nil }
+    let persisted = try XCTUnwrap(disk.imageFromDiskCache(forKey: key))
+    XCTAssertEqual(persisted.cgImage?.width, 37)
+    XCTAssertEqual(persisted.cgImage?.height, 29)
+    XCTAssertEqual(try pixels(persisted), try pixels(original))
+
+    // Exhaust the real decoded LRU; the next request must leave its memory fast path.
+    for width in 122...250 {
+      XCTAssertNotNil(resolve(name, color: color, width: width, height: 25, scale: scale))
+    }
+    XCTAssertNil(OneKeyNamedSVG.shared.cachedRender(name: name, color: color,
+      width: 37, height: 29, scale: scale))
+    let restored = try XCTUnwrap(resolve(name, color: color, width: 37, height: 29, scale: scale))
+    XCTAssertEqual(try pixels(restored), try pixels(original))
   }
 
   func testNamedColorEndpointsRetainCSSAlpha() throws {
@@ -480,5 +515,208 @@ final class OneKeyIconTests: XCTestCase {
     }
     try save(screenshot, name: "ios-production-gallery")
     gallery.forEach { $0.onDropView() }
+  }
+
+  func testStartupPrewarmDiskRenderAndSynchronousBridgeRequest() throws {
+    let tempFile = FileManager.default.temporaryDirectory
+      .appendingPathComponent("onekey-icon-startup-test-\(UUID().uuidString).json")
+    defer {
+      OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: nil)
+      try? FileManager.default.removeItem(at: tempFile)
+    }
+    OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
+    let rasterPath = try XCTUnwrap(
+      OneKeyNamedSVG.shared.rasterDiskCachePathForTesting(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    let rasterURL = URL(fileURLWithPath: rasterPath)
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: rasterPath) {
+      try fileManager.removeItem(at: rasterURL)
+    }
+    defer { try? fileManager.removeItem(at: rasterURL) }
+
+    // Poll for the worker's atomic write independently of the frame decode budget.
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    _ = try XCTUnwrap(resolve("DotVerSolid", color: "rgba(0,0,0,1)", width: 48, height: 48, scale: 2))
+    eventually("Disk raster written for DotVerSolid 48x48") {
+      fileManager.fileExists(atPath: rasterPath)
+    }
+    let originalRasterData = try Data(contentsOf: rasterURL)
+
+    // 1. Synchronous callback from a disk hit on the BottomTabs bridge path.
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    var syncCallbackFired = false
+    let owner = NSObject()
+    OneKeyNamedSVGBridge.request(
+      owner: owner,
+      name: "DotVerSolid",
+      color: "rgba(0,0,0,1)",
+      width: 48,
+      height: 48,
+      scale: 2
+    ) { image in
+      XCTAssertNotNil(image)
+      syncCallbackFired = true
+    }
+    XCTAssertTrue(syncCallbackFired, "Bridge request must invoke completion synchronously on main thread when cached")
+
+    // 2. diskRender size bound (>192px and >32KiB rejected) and metrics recording.
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    XCTAssertNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 200,
+        height: 200,
+        scale: 2
+      )
+    )
+    try Data(repeating: 0, count: OneKeyMainThreadDecode.maximumEncodedBytes + 1024)
+      .write(to: rasterURL, options: .atomic)
+    XCTAssertNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().limitRejections, 1)
+    try originalRasterData.write(to: rasterURL, options: .atomic)
+    OneKeyMainThreadDecode.resetForTesting()
+    XCTAssertNotNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().hits, 1)
+
+    // 2b. Synchronous diskRender must not wait on SDImageCache.ioQueue when a concurrent
+    // write or cache cleanup is occupying ioQueue, and must handle removed files cleanly.
+    if let ioQueue = OneKeyNamedSVG.shared.rasterDiskCacheForTesting.value(forKey: "ioQueue")
+      as? DispatchQueue
+    {
+      OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+      OneKeyMainThreadDecode.resetForTesting()
+      let ioEntered = DispatchSemaphore(value: 0)
+      let ioRelease = DispatchSemaphore(value: 0)
+      let ioFinished = DispatchSemaphore(value: 0)
+      ioQueue.async {
+        ioEntered.signal()
+        _ = ioRelease.wait(timeout: .now() + 2)
+        ioFinished.signal()
+      }
+      XCTAssertEqual(ioEntered.wait(timeout: .now() + 1), .success)
+      let writerDone = DispatchSemaphore(value: 0)
+      DispatchQueue.global(qos: .utility).async {
+        OneKeyNamedSVG.shared.rasterDiskCacheForTesting.storeImageData(
+          toDisk: originalRasterData,
+          forKey: "concurrent-writer-probe"
+        )
+        writerDone.signal()
+      }
+      var finishedWhileIoBlocked = false
+      let hitWhileBusy = OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+      finishedWhileIoBlocked = (ioFinished.wait(timeout: .now()) == .timedOut)
+      ioRelease.signal()
+      _ = ioFinished.wait(timeout: .now() + 2)
+      _ = writerDone.wait(timeout: .now() + 2)
+      OneKeyNamedSVG.shared.rasterDiskCacheForTesting.removeImageFromDisk(
+        forKey: "concurrent-writer-probe"
+      )
+      XCTAssertNotNil(hitWhileBusy)
+      XCTAssertTrue(
+        finishedWhileIoBlocked,
+        "diskRender must read directly without waiting for SDImageCache.ioQueue"
+      )
+    }
+    try? FileManager.default.removeItem(at: rasterURL)
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    XCTAssertNil(
+      OneKeyNamedSVG.shared.diskRender(
+        name: "DotVerSolid",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+    )
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().diskMisses, 1)
+    try originalRasterData.write(to: rasterURL, options: .atomic)
+
+    // 3. App Lock multi-burst window + launch-generation eviction.
+    OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
+    _ = OneKeyNamedSVG.shared.cachedRender(
+      name: "DotVerSolid",
+      color: "rgba(0,0,0,1)",
+      width: 48,
+      height: 48,
+      scale: 2
+    )
+    // Simulate first 3s quiet flush while still on App Lock (< 8 icons): recording stays open.
+    OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: false)
+    _ = OneKeyNamedSVG.shared.cachedRender(
+      name: "BotIllus",
+      color: "rgba(0,0,0,1)",
+      width: 48,
+      height: 48,
+      scale: 2
+    )
+    OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: true)
+
+    let firstLaunchEntries = try JSONDecoder().decode(
+      [OneKeyNamedSVG.StartupEntry].self,
+      from: Data(contentsOf: tempFile)
+    )
+    XCTAssertEqual(firstLaunchEntries.map(\.name), ["DotVerSolid", "BotIllus"])
+    XCTAssertEqual(firstLaunchEntries.map(\.launch), [1, 1])
+
+    // Simulate prewarm on launch 2, then only "BotIllus" is seen for 3 launches.
+    for expectedLaunch in 2...4 {
+      OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+      OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
+      OneKeyNamedSVG.shared.prewarmStartupSet()
+      XCTAssertGreaterThanOrEqual(OneKeyNamedSVG.shared.startupMetricsSnapshot().entryCount, 1)
+      _ = OneKeyNamedSVG.shared.cachedRender(
+        name: "BotIllus",
+        color: "rgba(0,0,0,1)",
+        width: 48,
+        height: 48,
+        scale: 2
+      )
+      OneKeyNamedSVG.shared.flushStartupForTesting(forceClose: true)
+      let currentEntries = try JSONDecoder().decode(
+        [OneKeyNamedSVG.StartupEntry].self,
+        from: Data(contentsOf: tempFile)
+      )
+      if expectedLaunch < 4 {
+        XCTAssertEqual(currentEntries.map(\.name), ["BotIllus", "DotVerSolid"])
+      } else {
+        // Launch 4: DotVerSolid (launch 1) has age 4 - 1 == 3 >= startupMaxLaunchAge(3) and is evicted.
+        XCTAssertEqual(currentEntries.map(\.name), ["BotIllus"])
+        XCTAssertEqual(currentEntries.first?.launch, 4)
+      }
+    }
   }
 }

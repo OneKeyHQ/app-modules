@@ -44,6 +44,7 @@ internal object OneKeyImageGlideRegistry {
   private var registered = false
 
   fun ensureRegistered(context: Context) {
+    OneKeyImageStartupTrigger.startIfNeeded(context)
     if (registered) return
     synchronized(this) {
       if (registered) return

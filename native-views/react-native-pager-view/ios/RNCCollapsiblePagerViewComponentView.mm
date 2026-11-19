@@ -207,6 +207,21 @@ struct RNCScrollCandidateResolution {
 @implementation RNCCollapsiblePagerTransitionEdgeOwner
 @end
 
+// OneKey patch: overlay content (popover, sheet, dialog) stays mounted inside
+// its host view until the overlay window presents it, so a host can sit in a
+// page's subtree. That content is never the page's scroller: adopting its
+// scroll view applies the collapsed-header offset to it, and the sheet then
+// opens scrolled past its content.
+static BOOL RNCIsNativeOverlayHost(UIView *view)
+{
+  // Looked up by name: the overlay package is optional here. Main thread only.
+  static Class overlayHostClass = Nil;
+  if (overlayHostClass == Nil) {
+    overlayHostClass = NSClassFromString(@"RCTNativeOverlayComponentView");
+  }
+  return overlayHostClass != Nil && [view isKindOfClass:overlayHostClass];
+}
+
 static UIView *RNCScrollComponentView(UIScrollView *scrollView)
 {
   for (UIView *view = scrollView; view != nil; view = view.superview) {
@@ -5090,7 +5105,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (RNCScrollCandidateResolution)resolveScrollCandidateInView:(UIView *)view
 {
   RNCScrollCandidateResolution resolution;
-  if (view == nil || view == _sharedHeaderHostView) return resolution;
+  if (view == nil || view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return resolution;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     UIScrollView *nested = [(RNCCollapsiblePagerViewComponentView *)view
@@ -5181,7 +5196,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return nil;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     return [(RNCCollapsiblePagerViewComponentView *)view
@@ -5208,7 +5223,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findFabricScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return nil;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     return [(RNCCollapsiblePagerViewComponentView *)view
@@ -5231,7 +5246,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView ||
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view) ||
       ([view isKindOfClass:UIScrollView.class] &&
        [_mountingRemovedScrollViews containsObject:(UIScrollView *)view])) return nil;
   // A parent pager must follow the nested pager's active page instead of the
@@ -6078,6 +6093,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       restoredLogicalOffset = _headerOffset + (_headerOffset >= _headerHeight ? body : 0);
       if (_transitionPageOffsets != nil) [_transitionCompensatedPages addIndex:pageIndex];
       if (deferredReleasedIdentity || scrollView.bounds.size.height <= 0 || scrollView.contentSize.height <= 0) {
+        // Align a fresh page before content measurement while retaining its pending restore.
+        if (!deferredReleasedIdentity && saved == nil && _headerOffset == 0) {
+          [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, -next.top) animated:NO];
+        }
         [_pendingPageRestoreKeys addObject:pageKey];
         _syntheticPageRestore = previousSyntheticRestore;
         return;
@@ -6233,12 +6252,15 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     }
   }
   if (pageIndex == NSNotFound) return;
+  if ([self verticalScrollViewForPageAtIndex:pageIndex] != scrollView) return;
 
   NSString *pageKey = [self pageKeyForIndex:pageIndex];
   BOOL hasReleasedStateForPage = _releasedPageScrollStates[pageKey] != nil;
   BOOL currentPageNeedsOwner = pageIndex == _currentIndex &&
     (_awaitingScrollOwnerForCurrentPage || _needsScrollObserverReattachAfterMount ||
      hasReleasedStateForPage ||
+     (_observedScrollView == nil &&
+      (_scrollReconcileScheduled || RNCIsMountedNativeListScrollView(scrollView))) ||
      (_observedScrollView != nil &&
       [_observedScrollView isKindOfClass:UICollectionView.class] &&
       !RNCIsMountedNativeListScrollView(_observedScrollView) &&

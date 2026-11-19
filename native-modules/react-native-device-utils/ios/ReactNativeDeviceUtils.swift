@@ -1,3 +1,4 @@
+import AdServices
 import NitroModules
 import UIKit
 import ReactNativeNativeLogger
@@ -363,5 +364,26 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         }
         return hasEmbeddedProvision ? .other : .unknown
         #endif
+    }
+
+    func getAppleAdsAttributionToken() throws -> Promise<String?> {
+        guard #available(iOS 14.3, *) else {
+            return .resolved(withResult: nil)
+        }
+        return Self.requestAppleAdsAttributionToken {
+            try AAAttribution.attributionToken()
+        }
+    }
+
+    static func requestAppleAdsAttributionToken(
+        using provider: @escaping @Sendable () throws -> String
+    ) -> Promise<String?> {
+        return Promise.parallel(.global(qos: .utility)) {
+            let token = try provider()
+            guard !token.isEmpty else {
+                throw RuntimeError.error(withMessage: "AdServices returned an empty attribution token")
+            }
+            return token
+        }
     }
 }

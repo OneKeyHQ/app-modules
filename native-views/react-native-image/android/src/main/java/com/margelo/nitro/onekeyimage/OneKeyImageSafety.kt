@@ -129,6 +129,47 @@ internal object OneKeyImageSafety {
     return decodedBytes.coerceAtLeast(0L)
   }
 
+  /**
+   * Decodes Base64 payloads using `android.util.Base64` (available since API 8,
+   * compatible with minSdkVersion 24). Falls back to a pure-Kotlin MIME Base64
+   * decoder only when running in JVM unit tests where `android.util.Base64.decode`
+   * is stubbed to return `null`.
+   */
+  fun decodeDataUriBase64(payload: String): ByteArray {
+    try {
+      android.util.Base64.decode(payload, android.util.Base64.DEFAULT)?.let { return it }
+    } catch (error: RuntimeException) {
+      if (error is IllegalArgumentException) throw error
+    }
+    return decodeBase64Fallback(payload)
+  }
+
+  private fun decodeBase64Fallback(payload: String): ByteArray {
+    val out = ByteArrayOutputStream((payload.length * 3) / 4)
+    var buffer = 0
+    var bitsCollected = 0
+    for (i in payload.indices) {
+      val c = payload[i]
+      if (c == '=') break
+      val value = when (c) {
+        in 'A'..'Z' -> c.code - 'A'.code
+        in 'a'..'z' -> c.code - 'a'.code + 26
+        in '0'..'9' -> c.code - '0'.code + 52
+        '+', '-' -> 62
+        '/', '_' -> 63
+        ' ', '\t', '\r', '\n' -> continue
+        else -> throw IllegalArgumentException("Invalid Base64 character")
+      }
+      buffer = (buffer shl 6) or value
+      bitsCollected += 6
+      if (bitsCollected >= 8) {
+        bitsCollected -= 8
+        out.write((buffer ushr bitsCollected) and 0xff)
+      }
+    }
+    return out.toByteArray()
+  }
+
   fun isSafetyFailure(error: Throwable?): Boolean {
     if (error == null) return false
     val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())

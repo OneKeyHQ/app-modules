@@ -2414,8 +2414,10 @@ public final class SdkHostRegressionTest {
                     else { engine.closeSocket(); engine.onNetworkConnected(context); }
                     check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Current policy must still log in");
                     awaitCondition(() -> cancelled.get() == 1, "Invalidated request must receive one cancellation callback");
-                    check(cancelCode.get() == 6002 && engine.getPreLoginQueueSize() == 0, "Policy/config/explicit cancellation must remain 6002 with no retained old item");
+                    check(cancelCode.get() == 6002 && cancelled.get() == 1, "Policy/config/explicit cancellation must complete exactly once with 6002");
+                    // The handshake does not wait for the public resume control request to drain.
                     check(quiet.await(2000L, TimeUnit.MILLISECONDS), "Old queue must remain absent after the new login: " + serverError.get());
+                    check(engine.getPreLoginQueueSize() == 0, "No old item may remain after the resume control request drains");
                     engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65202,
                         JCoreWireCodec.buildPropertyOperationPayload(1, 65202, Collections.<String, Object>singletonMap("value", "current")), 1000L, 0,
                         (frame, code) -> { freshCode.set(frame != null ? code : -1); freshDone.countDown(); });

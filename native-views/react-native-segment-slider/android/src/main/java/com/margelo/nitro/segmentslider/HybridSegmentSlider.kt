@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -63,12 +64,19 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private var currentValue = 0.0
   private var lastEmitted = Double.NaN
   private var isDragging = false
+  private var interactionId = 0.0
   private var thumbScale = 1f
   private var thumbScaleAnimator: ValueAnimator? = null
   private var isDisposed = false
   // Segment node the thumb currently sits on (-1 = none). Drives the halo +
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
+  // Per-step tick for `hapticStep`: the step index the value last ticked in. A
+  // mark tick in the same commit replaces the step tick.
+  private var lastHapticBucket = Double.NaN
+  private var markTickedThisCommit = false
+  // Step ticks only follow real finger movement, never the touch-down jump.
+  private var stepTicksArmed = false
   // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
   // candidate; once the finger travels past `tapMoveThresholdPx` it becomes a
   // drag and the release no longer snaps.
@@ -92,15 +100,18 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       // the drag state or the disallow-intercept flag.
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+          interactionId += 1
           isDragging = true
           hasDragged = false
           touchStartX = event.x
           lastTouchX = event.x
+          stepTicksArmed = false
           onSlideStart?.invoke()
           animateThumbScale(activeThumbScale)
           // Tap-snap mode: defer the value commit until we know this is a tap or
           // a drag, so a tap never jumps to the raw touch point first.
           if (!snapTapsActive) commitDragValue(valueFromX(event.x))
+          lastHapticBucket = hapticBucket(currentValue)
           parent?.requestDisallowInterceptTouchEvent(true)
           return true
         }
@@ -111,7 +122,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
               hasDragged = true
             }
             // Still a tap candidate in snap mode → keep the thumb put.
-            if (!(snapTapsActive && !hasDragged)) commitDragValue(valueFromX(event.x))
+            if (!(snapTapsActive && !hasDragged)) {
+              stepTicksArmed = true
+              commitDragValue(valueFromX(event.x))
+            }
           }
           return true
         }
@@ -130,7 +144,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
             hoverMarkIndex = -1
             animateThumbScale(1f)
             view.invalidate()
-            onSlideComplete?.invoke()
+            onSlideComplete?.invoke(interactionId, currentValue)
           }
           parent?.requestDisallowInterceptTouchEvent(false)
           return true
@@ -181,6 +195,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     set(v) {
       field = v
       view.alpha = if (v) 0.5f else 1f
+      // Touch events stop reaching onTouchEvent once disabled, so end an
+      // active drag here.
+      if (v) cancelInteraction()
       invalidateIfAlive()
     }
 
@@ -196,6 +213,14 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   override var snapTapToSegment: Boolean = false
     get() = field
     set(v) { field = v }
+
+  // Gates the per-step tick only; no visual change.
+  override var hapticStep: Double = 0.0
+    get() = field
+    set(v) { field = v }
+
+  /** Test seam (not a Nitro prop): receives "mark" or "step" for each tick. */
+  internal var hapticTickRecorder: ((String) -> Unit)? = null
 
   override var fillColor: String = ""
     get() = field
@@ -236,7 +261,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // MARK: - Callbacks
   override var onChange: ((value: Double) -> Unit)? = null
   override var onSlideStart: (() -> Unit)? = null
-  override var onSlideComplete: (() -> Unit)? = null
+  override var onSlideComplete: ((interactionId: Double, finalValue: Double) -> Unit)? = null
 
   // MARK: - Imperative methods
   // Set the value from JS without a Fabric prop commit. Called on the JS
@@ -244,9 +269,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // (mirrors react-native-perp-depth-bar's imperative methods). Does NOT fire
   // onChange — syncToValue updates lastEmitted so the caller's own value never
   // echoes back.
-  override fun setValue(value: Double) {
+  override fun setValue(value: Double, interactionId: Double) {
     view.post {
-      if (!isDisposed) syncToValue(value)
+      if (!isDisposed && !isDragging && this.interactionId == interactionId) {
+        syncToValue(value)
+      }
     }
   }
 
@@ -285,14 +312,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     return min + snappedFrac * (max - min)
   }
 
-  /** Hard re-sync: snap the thumb to [v], overriding any in-flight drag. */
+  /** Updates the idle view without emitting an interaction callback. */
   private fun syncToValue(v: Double) {
     if (isDisposed) return
-    // An imperative setValue (or the initial defaultValue) wins over the
-    // current gesture: drop the drag so a queued ACTION_MOVE can't immediately
-    // re-overwrite the thumb, and clear the transient hover/halo so the snapped
-    // position renders clean.
-    isDragging = false
     hoverMarkIndex = -1
     currentValue = v
     lastEmitted = v
@@ -300,9 +322,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   }
 
   private fun commitDragValue(raw: Double) {
-    val rounded = raw.coerceIn(min, max).let { Math.round(it).toDouble() }
+    val rounded = roundToRange(raw)
     currentValue = rounded
+    markTickedThisCommit = false
     updateHover()
+    tickStepIfNeeded(rounded)
     view.invalidate()
     if (rounded != lastEmitted) {
       lastEmitted = rounded
@@ -332,8 +356,55 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       hoverMarkIndex = best
       if (best != -1) {
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        hapticTickRecorder?.invoke("mark")
+        markTickedThisCommit = true
       }
     }
+  }
+
+  /// Rounds to an integer inside the range. With fractional bounds the result
+  /// stays within [ceil(min), floor(max)] so it never passes a bound.
+  private fun roundToRange(raw: Double): Double {
+    val rounded = Math.round(raw.coerceIn(min, max)).toDouble()
+    val lo = Math.ceil(min)
+    val hi = Math.floor(max)
+    if (lo > hi) return rounded
+    return rounded.coerceIn(lo, hi)
+  }
+
+  /// Ends an active drag without a release (e.g. the view became disabled):
+  /// no tap snap, visuals reset, parent interception restored, and
+  /// onSlideComplete fires so the JS wrapper resumes value sync.
+  private fun cancelInteraction() {
+    if (!isDragging) return
+    isDragging = false
+    stepTicksArmed = false
+    hoverMarkIndex = -1
+    animateThumbScale(1f)
+    view.parent?.requestDisallowInterceptTouchEvent(false)
+    view.invalidate()
+    onSlideComplete?.invoke(interactionId, currentValue)
+  }
+
+  /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.
+  private fun hapticBucket(v: Double): Double =
+    if (hapticStep > 0) Math.floor((v - min) / hapticStep) else Double.NaN
+
+  /// One light tick when a drag moves the value into a new step bucket. Skipped
+  /// when the mark tick already fired for this value (the mark tick wins).
+  private fun tickStepIfNeeded(v: Double) {
+    if (!isDragging || !stepTicksArmed || hapticStep <= 0) return
+    val bucket = hapticBucket(v)
+    if (bucket == lastHapticBucket) return
+    lastHapticBucket = bucket
+    if (markTickedThisCommit) return
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+      HapticFeedbackConstants.TEXT_HANDLE_MOVE
+    } else {
+      HapticFeedbackConstants.CLOCK_TICK
+    }
+    view.performHapticFeedback(constant)
+    hapticTickRecorder?.invoke("step")
   }
 
   private fun animateThumbScale(target: Float) {
@@ -378,16 +449,8 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       canvas.drawRoundRect(rect, radius, radius, fillPaint)
     }
 
-    // Thumb (drawn BELOW the marks so a node under the thumb shows through its
-    // centre — the "white ring + dark centre" bullseye, matching web where the
-    // mark zIndex 3 sits above the thumb zIndex 2).
-    val thumbX = insetPx + frac * tw
-    val thumbR = thumbSizePx / 2f * thumbScale
-    canvas.drawCircle(thumbX, midY, thumbR, thumbFillPaint)
-    canvas.drawCircle(thumbX, midY, thumbR - density / 2f, thumbStrokePaint)
-
-    // Node halo (drag-time highlight) — drawn under the marks so the node dot
-    // stays crisp on top. Translucent markActive color (25% alpha).
+    // Node halo (drag-time highlight) under the marks and thumb, so the pressed
+    // thumb stays plain (web parity). Translucent markActive color (25% alpha).
     if (isDragging && hoverMarkIndex in 0 until markCount) {
       val mf = if (markCount > 1) hoverMarkIndex.toFloat() / (markCount - 1) else 0f
       val hx = insetPx + mf * tw
@@ -395,7 +458,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       canvas.drawCircle(hx, midY, markSizePx / 2f + haloRingPx, markHaloPaint)
     }
 
-    // Marks (on top of the thumb).
+    // Marks (under the thumb).
     val centerFrac = valueToFrac(0.0)
     val markR = markSizePx / 2f
     for (i in 0 until markCount) {
@@ -412,6 +475,13 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       canvas.drawCircle(cx, midY, markR - density / 2f, markFillPaint)
       canvas.drawCircle(cx, midY, markR - density / 2f, markStrokePaint)
     }
+
+    // Thumb (drawn ABOVE the marks so it covers the node it sits on, matching
+    // web where the thumb zIndex 4 sits above the mark zIndex 3).
+    val thumbX = insetPx + frac * tw
+    val thumbR = thumbSizePx / 2f * thumbScale
+    canvas.drawCircle(thumbX, midY, thumbR, thumbFillPaint)
+    canvas.drawCircle(thumbX, midY, thumbR - density / 2f, thumbStrokePaint)
 
     // Bubble.
     if (isDragging && showBubble) {

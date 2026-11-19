@@ -85,4 +85,5 @@ dependencies {
   implementation project(":react-native-nitro-modules")
   implementation project(":onekeyfe_react-native-skeleton")
   testImplementation "junit:junit:4.13.2"
+  testImplementation "org.json:json:20231013"
 }

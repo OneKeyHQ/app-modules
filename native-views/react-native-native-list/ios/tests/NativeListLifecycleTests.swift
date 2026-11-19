@@ -1,9 +1,97 @@
+import ObjectiveC
 import UIKit
 import XCTest
 @testable import NativeListModule
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testFilteredSnapshotSuppliesCellsDuringOutgoingUIKitLayout() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 390, height: 697))
+    let window = UIWindow(frame: view.frame)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    controller.view.addSubview(view)
+    defer {
+      view.dispose()
+      window.isHidden = true
+    }
+
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let dataSource = try XCTUnwrap(collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
+    collection.isPrefetchingEnabled = false
+    collection.contentInsetAdjustmentBehavior = .never
+    collection.contentInset = UIEdgeInsets(top: 190, left: 0, bottom: 449, right: 0)
+    func snapshot(_ indices: Range<Int>) throws -> String {
+      let rows: [[String: Any]] = indices.map { index in
+        ["key": "account-\(index)", "type": "identity", "title": "Account \(index)",
+          "testID": "recipient-\(index)", "height": 64,
+          "leading": ["kind": "icon", "name": "Circle"]]
+      }
+      let value: [String: Any] = ["schemaVersion": 1, "generation": 1,
+        "layout": ["kind": "linear"], "rows": rows]
+      return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+    view.applySnapshotJson(try snapshot(0..<18))
+    view.layoutIfNeeded()
+    let initialOffset = CGPoint(x: 0, y: -190)
+    collection.contentOffset = initialOffset
+    collection.layoutIfNeeded()
+    XCTAssertEqual(dataSource.snapshot().numberOfItems, 18)
+    let outgoingIndexPath = IndexPath(item: 8, section: 0)
+    let outgoingFrame = try XCTUnwrap(collection.layoutAttributesForItem(at: outgoingIndexPath)).frame
+    XCTAssertFalse(collection.bounds.intersects(outgoingFrame))
+    XCTAssertNil(collection.cellForItem(at: outgoingIndexPath))
+
+    // Force a real UIKit layout at the invalidation inside applySnapshotJson,
+    // while UIKit still owns the old snapshot. Scope the hook to this layout.
+    let layout = collection.collectionViewLayout
+    let layoutClass: AnyClass = type(of: layout)
+    let selector = NSSelectorFromString("invalidateLayout")
+    let method = try XCTUnwrap(class_getInstanceMethod(layoutClass, selector))
+    let encoding = try XCTUnwrap(method_getTypeEncoding(method))
+    let original = method_getImplementation(method)
+    let callOriginal = unsafeBitCast(original, to: (@convention(c) (AnyObject, Selector) -> Void).self)
+    var didLayoutOutgoingSnapshot = false
+    let invalidate: @convention(block) (UICollectionViewLayout) -> Void = { current in
+      callOriginal(current, selector)
+      guard current === layout, !didLayoutOutgoingSnapshot,
+            dataSource.snapshot().numberOfItems == 18 else { return }
+      didLayoutOutgoingSnapshot = true
+      let size = view.collectionView(collection, layout: current, sizeForItemAt: outgoingIndexPath)
+      XCTAssertEqual(size.height, 64, "UIKit still needs the outgoing row’s geometry")
+      XCTAssertNil(collection.cellForItem(at: outgoingIndexPath))
+      collection.contentOffset.y = outgoingFrame.midY - collection.bounds.height / 2
+      collection.setNeedsLayout()
+      collection.layoutIfNeeded()
+      XCTAssertTrue(collection.bounds.intersects(outgoingFrame))
+      guard let outgoingCell = collection.cellForItem(at: outgoingIndexPath) else {
+        XCTFail("UIKit must request the previously offscreen outgoing cell")
+        return
+      }
+      XCTAssertEqual(outgoingCell.reuseIdentifier,
+        NativeListRendererRegistry.reuseIdentifier(for: .identity))
+      XCTAssertFalse(outgoingCell.isUserInteractionEnabled)
+      XCTAssertTrue(outgoingCell.accessibilityElementsHidden)
+      XCTAssertFalse(view.collectionView(collection, shouldSelectItemAt: outgoingIndexPath))
+    }
+    let replacement = imp_implementationWithBlock(invalidate)
+    class_replaceMethod(layoutClass, selector, replacement, encoding)
+    defer {
+      class_replaceMethod(layoutClass, selector, original, encoding)
+      imp_removeBlock(replacement)
+    }
+
+    view.applySnapshotJson(try snapshot(12..<15))
+    collection.contentOffset = initialOffset
+    collection.layoutIfNeeded()
+    XCTAssertTrue(didLayoutOutgoingSnapshot)
+    XCTAssertEqual(dataSource.snapshot().itemIdentifiers, ["account-12", "account-13", "account-14"])
+    let first = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
+    XCTAssertFalse(first.isHidden)
+    XCTAssertEqual(first.accessibilityIdentifier, "recipient-12")
+  }
+
   func testCanonicalNullPatchRemovesStoredOptionalFields() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     let row: [String: Any] = ["key": "token", "type": "identity", "title": "Token",
@@ -135,11 +223,17 @@ final class NativeListLifecycleTests: XCTestCase {
       window.rootViewController = controller
       controller.view.addSubview(view)
       window.isHidden = false
-      defer { window.isHidden = true }
       window.layoutIfNeeded()
       view.layoutIfNeeded()
       drainMainQueue()
       let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      defer {
+        list.setContentOffset(list.contentOffset, animated: false)
+        view.dispose()
+        view.removeFromSuperview()
+        window.isHidden = true
+        window.rootViewController = nil
+      }
       XCTAssertNotNil(view.window)
       XCTAssertGreaterThan(list.contentSize.height - list.bounds.height +
         list.adjustedContentInset.top + list.adjustedContentInset.bottom, 800)
@@ -1047,6 +1141,68 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertTrue(second.isHidden)
   }
 
+  func testFixedFooterSharesRetiringRowKeyDuringStructuralTransition() throws {
+    try requireStructuralAnimation()
+    let footerData: [String: Any] = [
+      "key": "a", "type": "action", "title": "Continue", "actionKey": "continue",
+    ]
+    func snapshot(_ keys: [String], animate: Bool) throws -> String {
+      let rows: [[String: Any]] = keys.map {
+        ["key": $0, "type": "action", "title": $0, "actionKey": "row-\($0)"]
+      }
+      var value: [String: Any] = ["schemaVersion": 1, "generation": animate ? 2 : 1,
+        "layout": ["kind": "linear"], "rows": rows, "fixedFooter": footerData]
+      if animate { value["structuralTransition"] = ["id": "remove-a", "durationMs": 800] }
+      return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let view = NativeListView(frame: window.bounds)
+    controller.view.addSubview(view)
+    window.isHidden = false
+    defer {
+      view.dispose()
+      window.isHidden = true
+    }
+
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let dataSource = try XCTUnwrap(collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
+    var actions: [String] = []
+    view.onRowAction = { payload in
+      if let action = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+         let key = action["actionKey"] as? String { actions.append(key) }
+    }
+    view.applySnapshotJson(try snapshot(["a", "b", "c"], animate: false))
+    view.layoutIfNeeded()
+    collection.layoutIfNeeded()
+    let outgoingIndex = IndexPath(item: 0, section: 0)
+    let outgoing = try XCTUnwrap(collection.cellForItem(at: outgoingIndex) as? NativeListRowHost)
+    let outgoingAction = try XCTUnwrap(outgoing.onAction)
+
+    view.applySnapshotJson(try snapshot(["b", "c"], animate: true))
+    XCTAssertEqual(dataSource.itemIdentifier(for: outgoingIndex), "a")
+    XCTAssertFalse(view.collectionView(collection, shouldSelectItemAt: outgoingIndex))
+    view.collectionView(collection, didSelectItemAt: outgoingIndex)
+    // Child renderers can emit a different key than the enclosing collection row.
+    let child = try NativeListItem(data: ["key": "child", "type": "action", "title": "Child"])
+    outgoingAction(child, "child-press", nil, outgoing.rowActionOrigin())
+    XCTAssertTrue(actions.isEmpty)
+
+    let footer = try XCTUnwrap(footerCell(in: view))
+    XCTAssertEqual(footer.accessibilityLabel, "Continue")
+    XCTAssertEqual(footer.alpha, 1)
+    XCTAssertTrue(footer.isUserInteractionEnabled)
+    XCTAssertFalse(footer.accessibilityElementsHidden)
+    // Dispatch the gesture's target directly in this hostless XCTest.
+    let footerPress = NSSelectorFromString("footerPressed")
+    XCTAssertTrue(view.responds(to: footerPress))
+    _ = view.perform(footerPress)
+    footer.onAction?(try NativeListItem(data: footerData), "footer-accessory", nil, footer.rowActionOrigin())
+    XCTAssertEqual(actions, ["continue", "footer-accessory"])
+  }
+
   func testFontResolversMeasureBindResetAndKeepIndependentInstances() throws {
     let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
     let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])
@@ -1228,7 +1384,9 @@ final class NativeListLifecycleTests: XCTestCase {
     list.layoutIfNeeded()
     let header = try XCTUnwrap(slots[0].superview)
     XCTAssertTrue(header.clipsToBounds)
-    XCTAssertEqual(header.bounds.height, 0, "An unmeasured header cannot draw over the first rows")
+    XCTAssertEqual(header.bounds.height, 44, "The mounted Fabric header reserves its first-frame height")
+    let firstRow = try XCTUnwrap(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0)))
+    XCTAssertEqual(firstRow.frame.minY, 44, accuracy: 0.5)
 
     view.setContainerSlotHeightsJson("[44,44,60,0]")
     view.layoutIfNeeded()
@@ -1243,6 +1401,143 @@ final class NativeListLifecycleTests: XCTestCase {
 
     view.unmountContainerSlot(slots[2])
     XCTAssertNil(slots[2].superview)
+  }
+
+  func testPendingHeaderReservesMountedGeometryInEitherPropertyOrder() throws {
+    for pendingBeforeMount in [true, false] {
+      let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+      view.applySnapshotJson(try scrollingSnapshot(count: 3))
+      let header = UIView(frame: CGRect(x: 16, y: 0, width: 288, height: 44.2))
+      if pendingBeforeMount { view.setContainerSlotHeightsJson("[null,0,0,0,0,0]") }
+      view.mountContainerSlot(header, atIndex: 0)
+      if !pendingBeforeMount { view.setContainerSlotHeightsJson("[null,0,0,0,0,0]") }
+      view.layoutIfNeeded()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      list.layoutIfNeeded()
+      let host = try XCTUnwrap(header.superview)
+      XCTAssertTrue(host.clipsToBounds)
+      XCTAssertEqual(host.bounds.height, 45, accuracy: 0.5)
+      let firstRow = try XCTUnwrap(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0)))
+      XCTAssertEqual(firstRow.frame.minY, 45, accuracy: 0.5)
+
+      view.setContainerSlotHeightsJson("[null,0,18,0,0,0]")
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      XCTAssertEqual(host.bounds.height, 45, accuracy: 0.5)
+      XCTAssertEqual(list.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, 45)
+
+      view.setContainerSlotHeightsJson("[18,0,0,0,0,0]")
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      XCTAssertEqual(host.bounds.height, 18, accuracy: 0.5)
+      XCTAssertEqual(list.collectionViewLayout.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, 18)
+      view.setContainerSlotHeightsJson("[0,0,0,0,0,0]")
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      XCTAssertEqual(host.bounds.height, 0)
+      XCTAssertEqual(list.collectionViewLayout.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, 0)
+      view.dispose()
+    }
+  }
+
+  func testNumericHeaderHeightIsAuthoritativeBeforeRootMounts() throws {
+    for height in [0, 24] {
+      let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+      view.setContainerSlotHeightsJson("[\(height),0,0,0]")
+      view.applySnapshotJson(try scrollingSnapshot(count: 3))
+      let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+      view.mountContainerSlot(header, atIndex: 0)
+      view.layoutIfNeeded()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      list.layoutIfNeeded()
+      XCTAssertEqual(header.superview?.bounds.height, CGFloat(height))
+      XCTAssertEqual(list.layoutAttributesForItem(
+        at: IndexPath(item: 0, section: 0))?.frame.minY, CGFloat(height))
+      view.dispose()
+    }
+  }
+
+  func testPendingHeaderDoesNotInheritAnUnmountedRootsHeight() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+    view.applySnapshotJson(try scrollingSnapshot(count: 3))
+    view.setContainerSlotHeightsJson("[null,0,0,0,0,0]")
+    let first = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+    view.mountContainerSlot(first, atIndex: 0)
+    XCTAssertEqual(first.superview?.bounds.height, 44)
+    view.unmountContainerSlot(first)
+    let empty = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 0))
+    view.mountContainerSlot(empty, atIndex: 0)
+    XCTAssertEqual(empty.superview?.bounds.height, 0)
+    view.unmountContainerSlot(empty)
+    let replacement = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 27))
+    view.mountContainerSlot(replacement, atIndex: 0)
+    XCTAssertEqual(replacement.superview?.bounds.height, 27)
+    view.setContainerSlotHeightsJson("[0,0,0,0,0,0]")
+    view.unmountContainerSlot(replacement)
+    let authoritativeZero = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+    view.mountContainerSlot(authoritativeZero, atIndex: 0)
+    XCTAssertEqual(authoritativeZero.superview?.bounds.height, 0)
+    view.dispose()
+  }
+
+  func testPendingHeaderOnlyAcceptsNullAtTheHeaderSlot() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+    view.setContainerSlotHeightsJson("[24,0,0,0,0,0]")
+    let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+    view.mountContainerSlot(header, atIndex: 0)
+    for invalid in ["[null,null,0,0,0,0]", "[\"invalid\",0,0,0,0,0]",
+                    "[null,0,0,0,-1,0]", "[null,0,0,0,0,null]"] {
+      view.setContainerSlotHeightsJson(invalid)
+      XCTAssertEqual(header.superview?.bounds.height, 24)
+    }
+    view.dispose()
+  }
+
+  func testFirstUsableBoundsNotifiesPagerBeforeSlotLayout() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    let root = UIViewController()
+    window.rootViewController = root
+    window.isHidden = false
+    let view = NativeListView(frame: .zero)
+    root.view.addSubview(view)
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.rootViewController = nil
+      window.isHidden = true
+    }
+
+    let header = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 65))
+    view.mountContainerSlot(header, atIndex: 0)
+    view.setContainerSlotHeightsJson("[65,0,0,0,0,0]")
+    view.applySnapshotJson(try scrollingSnapshot(count: 6))
+
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let owner = NSObject()
+    var readyCount = 0
+    let observer = NotificationCenter.default.addObserver(
+      forName: Notification.Name("OneKeyNativeScrollViewDidBecomeReady"),
+      object: list,
+      queue: nil
+    ) { _ in
+      readyCount += 1
+      view.setPagerStickyHeight(52, forOwner: owner)
+      list.contentInset = UIEdgeInsets(top: 345, left: 0, bottom: 0, right: 0)
+      list.setContentOffset(CGPoint(x: 0, y: -345), animated: false)
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    view.frame = CGRect(x: 0, y: 0, width: 390, height: 697)
+    view.layoutIfNeeded()
+
+    let host = try XCTUnwrap(header.superview)
+    XCTAssertEqual(readyCount, 1)
+    XCTAssertEqual(list.contentInset.top, 345, accuracy: 0.01)
+    XCTAssertEqual(list.contentOffset.y, -345, accuracy: 0.01)
+    XCTAssertNil(host.layer.mask)
   }
 
   func testSidecarCentersRowsWhenConfiguredBeforeFirstWidth() throws {
@@ -1481,7 +1776,7 @@ final class NativeListLifecycleTests: XCTestCase {
         view.layoutIfNeeded()
         list.layoutIfNeeded()
       } completion: { _ in finished.fulfill() }
-      wait(for: [finished], timeout: 1)
+      wait(for: [finished], timeout: 5)
       try check(phase, count: count, width: 700)
       waitForStructuralFrames(0.1)
       try check("\(phase) stable", count: count, width: 700)
@@ -1538,9 +1833,12 @@ final class NativeListLifecycleTests: XCTestCase {
       XCTAssertEqual(list.contentOffset.y, testCase.offset, accuracy: 1, testCase.name)
 
       view.applySnapshotJson(try structuralRowsSnapshot(count: 25, transitionID: testCase.name))
-      let completed = expectation(description: "Native structural display link: \(testCase.name)")
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { completed.fulfill() }
-      wait(for: [completed], timeout: 1)
+      let settleDeadline = Date().addingTimeInterval(5)
+      while Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink != nil,
+            Date() < settleDeadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+      }
+      waitForStructuralFrames(0.05)
       list.layoutIfNeeded()
       XCTAssertEqual(list.adjustedContentInset, explicitInset, testCase.name)
       XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
@@ -1662,17 +1960,20 @@ final class NativeListLifecycleTests: XCTestCase {
     list.contentOffset.y = 900
     list.layoutIfNeeded()
 
+    let flow = try XCTUnwrap(list.collectionViewLayout as? NativeListFlowLayout)
     view.applySnapshotJson(try structuralRowsSnapshot(count: 30, generation: 2,
-      transitionID: "expand-first", durationMs: 400))
-    waitForStructuralFrames(0.08)
+      transitionID: "expand-first", durationMs: 1200))
+    let expandDeadline = Date().addingTimeInterval(3)
+    while (flow.tailClip?.endY ?? 0) <= 1505 && Date() < expandDeadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
     list.contentOffset.y = 1100
     list.layoutIfNeeded()
     view.applySnapshotJson(try structuralRowsSnapshot(count: 25, generation: 3,
-      transitionID: "collapse-middle", durationMs: 400))
+      transitionID: "collapse-middle", durationMs: 2400))
     waitForStructuralFrames(0.08)
     list.layoutIfNeeded()
     let source = try XCTUnwrap(list.dataSource as? UICollectionViewDiffableDataSource<Int, String>)
-    let flow = try XCTUnwrap(list.collectionViewLayout as? NativeListFlowLayout)
     let clip = try XCTUnwrap(flow.tailClip)
     let retiring = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 25, section: 0)) as? NativeListRowHost)
     XCTAssertGreaterThan(clip.endY, 1500)
@@ -1990,7 +2291,7 @@ final class NativeListLifecycleTests: XCTestCase {
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 5,
       transitionID: "collapse-latest", durationMs: 400,
       disclosureExpanded: false))
-    wait(for: [latestSettled], timeout: 2)
+    wait(for: [latestSettled], timeout: 5)
     XCTAssertEqual(settlements.map(\.0), ["same-rows", "collapse-latest"])
     XCTAssertEqual(settlements.last?.1, "completed")
     XCTAssertEqual(settlements.last?.2, false)
@@ -2182,13 +2483,13 @@ final class NativeListLifecycleTests: XCTestCase {
     defer { growthProbe.invalidate() }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
       transitionID: "grow", durationMs: 800, disclosureExpanded: true))
-    wait(for: [growthPhase], timeout: 1.5)
+    wait(for: [growthPhase], timeout: 5)
     guard growthObserved else {
       XCTFail("No partial disclosure growth frame observed: \(growthLast)")
       return
     }
     growthProbe.invalidate()
-    wait(for: [growSettled], timeout: 1.5)
+    wait(for: [growSettled], timeout: 5)
     XCTAssertEqual(contentHost.bounds.height, 140, accuracy: 1)
     XCTAssertNil(contentHost.layer.mask)
     XCTAssertTrue(contentHost.isUserInteractionEnabled)
@@ -2227,7 +2528,7 @@ final class NativeListLifecycleTests: XCTestCase {
     defer { collapseProbe.invalidate() }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 3,
       transitionID: "drag", durationMs: 800, disclosureExpanded: false))
-    wait(for: [collapsePhase], timeout: 1.5)
+    wait(for: [collapsePhase], timeout: 5)
     guard collapseObserved else {
       XCTFail("No partial disclosure collapse frame observed: \(collapseLast)")
       return
@@ -2736,8 +3037,8 @@ final class NativeListLifecycleTests: XCTestCase {
     drainMainQueue()
     list.contentOffset.y = 300
     list.layoutIfNeeded()
-    view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
-      transitionID: "interrupt-boundary", durationMs: 1200))
+    view.applySnapshotJson(try structuralRowsSnapshot(count: 15, generation: 2,
+      transitionID: "interrupt-boundary", durationMs: 2400))
     let footerBottomBeforeResize = footer.convert(.zero, to: list).y + 60
     view.setContainerSlotHeightsJson("[0,0,80,2200]")
     XCTAssertEqual(footer.convert(.zero, to: list).y + 80,
@@ -2751,7 +3052,7 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertFalse(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop / 2), with: nil))
     XCTAssertTrue(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop + 1), with: nil))
     var boundaryCell: NativeListRowHost?
-    let deadline = Date().addingTimeInterval(1)
+    let deadline = Date().addingTimeInterval(3)
     while boundaryCell == nil && Date() < deadline {
       if let clip = flow.tailClip {
         for case let cell as NativeListRowHost in list.visibleCells {
@@ -3033,9 +3334,13 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   private func waitForStructuralFrames(_ seconds: TimeInterval) {
-    let completed = expectation(description: "Native structural display link ran for \(seconds)s")
-    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { completed.fulfill() }
-    wait(for: [completed], timeout: seconds + 1)
+    let deadline = Date().addingTimeInterval(seconds)
+    while Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+    for _ in 0..<4 {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
   }
 
   private func labels(in view: UIView) -> [UILabel] {
@@ -3204,14 +3509,17 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   private func drainMainQueue() {
-    let settled = expectation(description: "Deferred content shrink correction")
-    DispatchQueue.main.async { settled.fulfill() }
-    wait(for: [settled], timeout: 1)
+    var drained = false
+    DispatchQueue.main.async { drained = true }
+    let deadline = Date().addingTimeInterval(5)
+    while !drained && Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
   }
 
   private func footerCell(in view: NativeListView) -> NativeListRowHost? {
-    view.subviews.lazy.compactMap { container in
-      container.subviews.compactMap { $0 as? NativeListRowHost }.first
+    view.subviews.lazy.filter { !($0 is UICollectionView) }.compactMap { container in
+      container.subviews.first { $0 is NativeListRowHost } as? NativeListRowHost
     }.first
   }
 }

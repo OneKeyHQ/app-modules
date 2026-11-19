@@ -20,7 +20,9 @@ def run(*args, **kwargs):
 parser = argparse.ArgumentParser()
 parser.add_argument("--serial", required=True)
 parser.add_argument("--out", default=".tmp/segment-slider-android")
-parser.add_argument("--source", type=Path)
+parser.add_argument("--source", type=Path, help="alternative Kotlin implementation with the same Nitro interface")
+parser.add_argument("--gallery", type=Path,
+                    help="scenarios.json; render the style gallery instead of the bubble checks")
 args = parser.parse_args()
 package = Path(__file__).resolve().parents[2]
 output = Path(args.out).resolve()
@@ -39,6 +41,7 @@ base = "package com.margelo.nitro.segmentslider\nabstract class HybridSegmentSli
 base += "abstract val view: android.view.View\n"
 for name in ["defaultValue", "min", "max", "segments", "sliderHeight"]:
     base += f"abstract var {name}: Double\n"
+base += "abstract var hapticStep: Double\n"
 for name in ["disabled", "showBubble", "centerOrigin", "snapTapToSegment"]:
     base += f"abstract var {name}: Boolean\n"
 for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markActiveColor",
@@ -46,8 +49,8 @@ for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markA
     base += f"abstract var {name}: String\n"
 base += """abstract var onChange: ((Double) -> Unit)?
 abstract var onSlideStart: (() -> Unit)?
-abstract var onSlideComplete: (() -> Unit)?
-abstract fun setValue(value: Double)
+abstract var onSlideComplete: ((Double, Double) -> Unit)?
+abstract fun setValue(value: Double, interactionId: Double)
 open fun afterUpdate() {}
 open fun dispose() {}
 }
@@ -61,6 +64,7 @@ annotation class DoNotStrip
 """)
 run("kotlinc", args.source or native / "HybridSegmentSlider.kt",
     native / "SegmentSliderColorParser.kt", package / "tests/android/BubbleLayoutActivity.kt",
+    package / "tests/style-gallery/StyleGalleryActivity.kt",
     output / "HybridSegmentSliderSpec.kt", output / "ThemedReactContext.kt",
     output / "DoNotStrip.kt", "-classpath", android, "-jvm-target", "1.8",
     "-include-runtime", "-d", output / "classes.jar", env=env)
@@ -72,10 +76,15 @@ run(tools / "d8", "--min-api", "26", "--lib", android, "--output", dex,
 <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
 <application android:debuggable="true" android:label="Slider Bubble Test" android:theme="@android:style/Theme.Material.Light.NoActionBar">
 <activity android:name="com.margelo.nitro.segmentslider.BubbleLayoutActivity" android:exported="true"/>
+<activity android:name="com.margelo.nitro.segmentslider.StyleGalleryActivity" android:exported="true"/>
 </application></manifest>""")
 unsigned = output / "unsigned.apk"
+assets = output / "assets"
+assets.mkdir(exist_ok=True)
+gallery_spec = args.gallery or package / "tests/style-gallery/scenarios.json"
+(assets / "scenarios.json").write_text(gallery_spec.read_text())
 run(tools / "aapt2", "link", "-I", android, "--manifest", output / "AndroidManifest.xml",
-    "-o", unsigned)
+    "-A", assets, "-o", unsigned)
 with zipfile.ZipFile(unsigned, "a") as apk:
     for path in dex.glob("*.dex"):
         apk.write(path, path.name)
@@ -86,8 +95,9 @@ run(adb, "-s", args.serial, "install", "-r", output / "test.apk")
 run(adb, "-s", args.serial, "shell", "am", "force-stop", "com.onekey.sliderbubbletest")
 run(adb, "-s", args.serial, "shell", "run-as", "com.onekey.sliderbubbletest",
     "rm", "-f", "files/result.json")
+activity = "StyleGalleryActivity" if args.gallery else "BubbleLayoutActivity"
 run(adb, "-s", args.serial, "shell", "am", "start", "-W", "-n",
-    "com.onekey.sliderbubbletest/com.margelo.nitro.segmentslider.BubbleLayoutActivity")
+    f"com.onekey.sliderbubbletest/com.margelo.nitro.segmentslider.{activity}")
 for _ in range(30):
     result = subprocess.run([str(adb), "-s", args.serial, "exec-out", "run-as",
         "com.onekey.sliderbubbletest", "cat", "files/result.json"], capture_output=True)
@@ -101,6 +111,10 @@ for _ in range(30):
         time.sleep(0.5)
         with (output / "screenshot.png").open("wb") as screenshot:
             run(adb, "-s", args.serial, "exec-out", "screencap", "-p", stdout=screenshot)
+        if args.gallery:
+            with (output / "android.png").open("wb") as gallery:
+                run(adb, "-s", args.serial, "exec-out", "run-as",
+                    "com.onekey.sliderbubbletest", "cat", "files/gallery.png", stdout=gallery)
         print(json.dumps(data, indent=2))
         raise SystemExit(1 if data["failures"] else 0)
     time.sleep(0.5)

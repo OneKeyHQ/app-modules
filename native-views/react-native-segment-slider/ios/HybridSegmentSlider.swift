@@ -45,6 +45,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var currentValue: Double = 0
   private var lastEmitted: Double = .nan
   private var isDragging = false
+  private var interactionId: Double = 0
   private var hasLaidOut = false
   // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
   // candidate; once the finger travels past `tapMoveThreshold` it becomes a
@@ -61,6 +62,13 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
   private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
+  // Lighter per-step tick for `hapticStep`. The bucket is the step index the
+  // value last ticked in; a mark tick in the same commit replaces the step tick.
+  private lazy var stepHaptic = UISelectionFeedbackGenerator()
+  private var lastHapticBucket = Double.nan
+  private var markTickedThisCommit = false
+  // Step ticks only follow real finger movement, never the touch-down jump.
+  private var stepTicksArmed = false
 
   // MARK: - Props (required props are non-optional in the generated spec)
   // Guards the apply-once semantics of `defaultValue`: only the first prop
@@ -82,12 +90,19 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     didSet {
       view.alpha = disabled ? 0.5 : 1
       view.isUserInteractionEnabled = !disabled
+      // UIKit may not deliver the end of a touch to a view that stopped
+      // accepting interaction, so end an active drag here.
+      if disabled { cancelInteraction() }
     }
   }
   var showBubble: Bool = true { didSet { scheduleLayout() } }
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.
   var snapTapToSegment: Bool = false
+  // Gates the per-step tick only; no visual change.
+  var hapticStep: Double = 0
+  /// Test seam (not a Nitro prop): receives "mark" or "step" for each tick.
+  var hapticTickRecorder: ((String) -> Void)?
 
   var fillColor: String = "" {
     didSet { cFill = parse(fillColor); fillLayer.backgroundColor = cFill; scheduleLayout() }
@@ -120,7 +135,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // MARK: - Callbacks
   var onChange: ((Double) -> Void)?
   var onSlideStart: (() -> Void)?
-  var onSlideComplete: (() -> Void)?
+  var onSlideComplete: ((Double, Double) -> Void)?
 
   // MARK: - Init
   override init() {
@@ -153,8 +168,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
     view.layer.addSublayer(trackLayer)
     view.layer.addSublayer(fillLayer)
-    view.layer.addSublayer(thumbLayer)
+    // Halo under the thumb: the pressed thumb stays plain (web parity) and
+    // covers the node highlight.
     view.layer.addSublayer(haloLayer)
+    view.layer.addSublayer(thumbLayer)
     view.layer.addSublayer(bubbleLayer)
 
     if let v = view as? SegmentSliderUIView {
@@ -240,12 +257,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       for _ in markLayers.count..<count {
         let l = CALayer()
         l.borderWidth = 1
-        // Marks render ABOVE the thumb + halo (web parity: mark zIndex 3 >
-        // thumb 2). So when the thumb sits on a segment node the node's dot
-        // shows through the thumb's centre — the "white ring + dark centre"
-        // bullseye look. Inserting above the halo keeps order
-        // track < fill < thumb < halo < marks < bubble.
-        view.layer.insertSublayer(l, above: haloLayer)
+        // Marks render BELOW the thumb (web parity: mark zIndex 3 < thumb 4),
+        // so the thumb covers the node it sits on. Inserting below the thumb
+        // keeps order track < fill < halo < marks < thumb < bubble.
+        view.layer.insertSublayer(l, below: thumbLayer)
         markLayers.append(l)
       }
     } else if markLayers.count > count {
@@ -356,6 +371,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       setHalo(visible: true, index: best)
       haptic.impactOccurred(intensity: 0.6)
       haptic.prepare()
+      hapticTickRecorder?("mark")
+      markTickedThisCommit = true
     }
   }
 
@@ -382,12 +399,15 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
   private func handleTouchBegan(_ x: CGFloat) {
     guard !disabled else { return }
+    interactionId += 1
     isDragging = true
     hasDragged = false
     touchStartX = x
     lastTouchX = x
     touchStartTime = CACurrentMediaTime()
     haptic.prepare()
+    stepTicksArmed = false
+    if hapticStep > 0 { stepHaptic.prepare() }
     onSlideStart?()
     animateThumbScale(activeThumbScale)
     setBubbleVisible(true)
@@ -396,6 +416,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if !snapTapsActive {
       commitDragValue(valueFromX(x))
     }
+    lastHapticBucket = hapticBucket(currentValue)
   }
 
   private func handleTouchMoved(_ x: CGFloat) {
@@ -406,7 +427,23 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     }
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
+    stepTicksArmed = true
     commitDragValue(valueFromX(x))
+  }
+
+  /// Ends an active drag without a release (e.g. the view became disabled):
+  /// no tap snap, visuals reset, ancestor gestures restored, and
+  /// `onSlideComplete` fires so the JS wrapper resumes value sync.
+  private func cancelInteraction() {
+    guard isDragging else { return }
+    isDragging = false
+    stepTicksArmed = false
+    hoverMarkIndex = -1
+    setHalo(visible: false, index: 0)
+    animateThumbScale(1.0)
+    setBubbleVisible(false)
+    (view as? SegmentSliderUIView)?.unlockAncestorGestures()
+    onSlideComplete?(interactionId, currentValue)
   }
 
   private func handleTouchEnded() {
@@ -426,7 +463,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
     setBubbleVisible(false)
-    onSlideComplete?()
+    onSlideComplete?(interactionId, currentValue)
   }
 
   /// Snaps a value to the value of the nearest segment mark. Caller guarantees
@@ -438,12 +475,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     return min + snappedFrac * (max - min)
   }
 
-  /// Hard re-sync: snap the thumb to `v`, overriding any in-flight drag. An
-  /// imperative `setValue` (or the initial `defaultValue`) wins over the current
-  /// gesture, so drop the drag (a queued touchesMoved can't then re-overwrite
-  /// the thumb) and clear the transient hover/halo before re-rendering.
+  /// Updates the idle view without emitting an interaction callback.
   private func syncToValue(_ v: Double) {
-    isDragging = false
     if hoverMarkIndex != -1 {
       hoverMarkIndex = -1
       setHalo(visible: false, index: 0)
@@ -454,14 +487,44 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
 
   private func commitDragValue(_ raw: Double) {
-    let clamped = Swift.max(min, Swift.min(max, raw))
-    let rounded = clamped.rounded()
+    let rounded = roundToRange(raw)
     currentValue = rounded
+    markTickedThisCommit = false
     applyVisual(rounded)
+    tickStepIfNeeded(rounded)
     if rounded != lastEmitted {
       lastEmitted = rounded
       onChange?(rounded)
     }
+  }
+
+  /// Rounds to an integer inside the range. With fractional bounds the
+  /// result stays within [ceil(min), floor(max)] so it never passes a bound.
+  private func roundToRange(_ raw: Double) -> Double {
+    let rounded = Swift.max(min, Swift.min(max, raw)).rounded()
+    let lo = min.rounded(.up)
+    let hi = max.rounded(.down)
+    guard lo <= hi else { return rounded }
+    return Swift.max(lo, Swift.min(hi, rounded))
+  }
+
+  /// Step index of `v` for `hapticStep`; NaN when per-step ticks are off.
+  private func hapticBucket(_ v: Double) -> Double {
+    guard hapticStep > 0 else { return .nan }
+    return ((v - min) / hapticStep).rounded(.down)
+  }
+
+  /// One light tick when a drag moves the value into a new step bucket. Skipped
+  /// when the mark tick already fired for this value (the mark tick wins).
+  private func tickStepIfNeeded(_ v: Double) {
+    guard isDragging, stepTicksArmed, hapticStep > 0 else { return }
+    let bucket = hapticBucket(v)
+    guard bucket != lastHapticBucket else { return }
+    lastHapticBucket = bucket
+    guard !markTickedThisCommit else { return }
+    stepHaptic.selectionChanged()
+    stepHaptic.prepare()
+    hapticTickRecorder?("step")
   }
 
   // MARK: - Imperative methods
@@ -469,9 +532,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   /// thread, so hop to the main thread before touching the view / layers. Does
   /// NOT fire `onChange` — `syncToValue` updates `lastEmitted` so the caller's
   /// own value never echoes back.
-  func setValue(value: Double) throws {
+  func setValue(value: Double, interactionId: Double) throws {
     DispatchQueue.main.async { [weak self] in
-      self?.syncToValue(value)
+      guard let self, !self.isDragging, self.interactionId == interactionId else { return }
+      self.syncToValue(value)
     }
   }
 

@@ -43,6 +43,10 @@ internal data class NativeListResolvedText(
   val gravity: Int,
   val offset: Float,
 ) {
+  /** Offset into [text] for a UTF-16 offset into the [source] it was resolved from. */
+  fun displayOffset(sourceOffset: Long, source: String): Int =
+    nativeListDisplayOffset(source, sourceOffset, foldsLineBreaks = lines == 1 && explicitTruncation)
+
   fun bind(view: NativeListTextView) {
     view.includeFontPadding = false
     view.fontFeatureSettings = "tnum"
@@ -119,7 +123,7 @@ internal data class NativeListResolvedText(
           else -> Gravity.TOP
         }
       return NativeListResolvedText(
-        if (maxLines == 1 && truncation) text.replace(Regex("\\r\\n|[\\r\\n]"), " ") else text,
+        if (maxLines == 1 && truncation) nativeListFoldLineBreaks(text) else text,
         fontSize,
         face,
         style

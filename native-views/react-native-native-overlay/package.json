@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-overlay",
-  "version": "6.7.0-26",
+  "version": "6.8.0-1",
   "description": "Native and Web overlay hosts with ordered levels, page scope and Fabric measurement",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -182,7 +182,8 @@
     "ios": {
       "componentProvider": {
         "RNCNativeOverlay": "RCTNativeOverlayComponentView",
-        "RNCNativeOverlayPageHost": "RCTNativeOverlayPageHostComponentView"
+        "RNCNativeOverlayPageHost": "RCTNativeOverlayPageHostComponentView",
+        "RNCNativeOverlayToaster": "RCTNativeOverlayToasterComponentView"
       }
     }
   }

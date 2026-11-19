@@ -172,6 +172,65 @@ An outer fallback count cannot bound total HTTP sends: the native library or
 ordinary domain client can itself perform internal recovery. No additional
 retry configuration is introduced by this specification.
 
+## Android failure classification and upload replay safety
+
+Status: **Implemented on Android**. This section maps the Section 9 error
+categories of [OSCS](../SPEC.md) to the codes Android rejects with; iOS keeps
+its own mapping.
+
+- `SNI_CONNECTION_REFUSED` reports a `java.net.ConnectException`, but only when
+  no attempt of the logical request ever started transmitting it. The transport
+  records request-header transmission from OkHttp's `requestHeadersStart`
+  event, which fires after connect/TLS, so the same evidence covers bodyless
+  requests such as `DELETE` that never write a request body. The pinned IP
+  refused the TCP connection before any request bytes could have been sent, so
+  this code is evidence that the request was not transmitted.
+- A connect failure is downgraded to `SNI_REQUEST_FAILED` when any attempt of
+  the same logical request already started transmitting request headers. OkHttp
+  can recover and retry inside one logical operation, so a final `ConnectException`
+  does not prove that a previous attempt was unsent, even for a bodyless
+  DELETE. `SNI_REQUEST_FAILED` also covers unclassified request-phase I/O
+  failures; timeout, TLS, certificate, and DNS failures keep their own codes.
+  Callers MUST NOT treat `SNI_REQUEST_FAILED` as pre-write authorization to
+  replay an upload or another write operation.
+- `SNI_DNS_FAILED` reports a `java.net.UnknownHostException` that is not a
+  pinned-destination escape.
+- The pinned resolver never consults system DNS, so a lookup for a host other
+  than the caller-selected hostname is a pinned-destination escape. It stays
+  `SNI_SECURITY_POLICY_FAILED` and remains fail-closed with no fallback.
+- Upload file read failures keep their existing codes: a changed file length is
+  reported as `SNI_REQUEST_FAILED` because an already transmitted prefix may
+  have been processed by the server.
+
+Only a provably pre-write `SNI_CONNECTION_REFUSED` can authorize a
+same-operation domain upload, and only Android provides that evidence from the
+native module. The App-side pre-write upload allowlist that consumes this
+distinction is a separate change: the routing defaults above are unchanged by
+this section, so a POST/PUT/PATCH/DELETE still cannot fall back on any other
+final SNI code and read methods keep their existing fallback rules.
+
+## Diagnostic log fields
+
+Status: **Implemented**. Structured native logs record `requestId`, destination
+`ip`, and unexpected DNS `requestedHost` in plaintext, preserving identifiers
+and endpoints for troubleshooting. These fields are not hashed. Log values
+still escape whitespace to keep each event on one line. Sensitive headers,
+request/response bodies, and local file paths are not added to these logs.
+Long hexadecimal runs in the displayed `requestId` are separated with `-` after
+32 hex characters when another 32 hex characters follow. This preserves the
+complete ID while avoiding the final logger's generic 64-hex private-key filter.
+For example, a 64-hex ID is displayed as two 32-hex groups. UUIDs are unchanged;
+the ID sent in headers and used for cancellation is never reformatted.
+IDs affected by whitespace cleanup are encoded from their original value before
+that cleanup. Only reformatted IDs add `requestIdFormat=uri-hex32` to the event.
+Marked IDs are UTF-8 percent-encoded, leaving only ASCII letters, digits, `_` and
+`.` unescaped, before hex grouping. This includes hex runs formed beside escape
+sequences. To restore a marked ID, remove grouping hyphens, then percent-decode
+once. This preserves original spaces, separators and percent signs. An already
+separated 32-hex/32-hex ID is unchanged and has no marker. `requestId` is
+non-sensitive diagnostic metadata and must not carry secrets; unrelated values
+retain the generic logger's sensitive-data filtering.
+
 ## Conformance and remaining evidence
 
 - JS API tests cover capability detection, missing-native Promise rejection,
@@ -180,6 +239,11 @@ retry configuration is introduced by this specification.
   become empty, and exact-limit binary contents.
 - Android tests exercise actual RequestBody writes for exact-limit data, growth
   before and during writing, and truncation, including output byte bounds.
+- Android tests classify a pre-write `ConnectException` as
+  `SNI_CONNECTION_REFUSED`, keep the pinned-destination escape fail-closed,
+  verify the request-header transmission tracking, and keep a processed
+  bodyless `DELETE` followed by a refused recovery connection ambiguous as
+  `SNI_REQUEST_FAILED`.
 - The removed recovery suites used real TLS, production transport sources,
   warmed pools, complete-body counters and native events. Their observations
   are retained in the historical matrix above; the current tree and CI no

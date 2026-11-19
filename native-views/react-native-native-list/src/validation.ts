@@ -1357,6 +1357,32 @@ function assertButtonGroup(
   });
 }
 
+// A passive label: its text and two caller colors, with no action or style slot.
+function assertWebLeadingBadge(value: unknown, path: string): void {
+  if (value === undefined) return;
+  const badge = protocolObject(value, path);
+  assertUnknownKeys(
+    badge,
+    ['text', 'textColor', 'backgroundColor'],
+    path,
+    'web leading badge key'
+  );
+  if (
+    typeof badge.text !== 'string' ||
+    !badge.text.trim() ||
+    badge.text.length > MAX_TEXT_LENGTH
+  )
+    fail(`${path}.text`, 'must be non-blank within the text limit');
+  for (const field of ['textColor', 'backgroundColor']) {
+    const color = badge[field];
+    if (
+      typeof color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)
+    )
+      fail(`${path}.${field}`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+}
+
 function assertIdentityExtras(
   row: Pick<
     IdentityRow,
@@ -1643,6 +1669,11 @@ function assertVisual(row: RowModel, path: string): void {
   });
 }
 
+/** The type half of the `descriptionActionStart` contract; the range needs the row. */
+function isDescriptionActionStart(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function assertActivity(row: Partial<ActivityRow>, path: string): void {
   if (row.hideLeading !== undefined && typeof row.hideLeading !== 'boolean')
     fail(`${path}.hideLeading`, 'must be boolean');
@@ -1655,6 +1686,11 @@ function assertActivity(row: Partial<ActivityRow>, path: string): void {
     fail(`${path}.presentation`, 'must be stacked or table');
   if (row.descriptionActionKey !== undefined)
     assertKey(row.descriptionActionKey, `${path}.descriptionActionKey`);
+  if (
+    row.descriptionActionStart !== undefined &&
+    !isDescriptionActionStart(row.descriptionActionStart)
+  )
+    fail(`${path}.descriptionActionStart`, 'must be a non-negative integer');
   if ((row.amounts?.length ?? 0) > 32)
     fail(`${path}.amounts`, 'supports at most 32 amount lines');
   const amountKeys = new Set<string>();
@@ -1921,6 +1957,13 @@ function assertRow(
       break;
     case 'activity':
       assertActivity(row, path);
+      // Checked on the complete row only: a patch may carry the offset
+      // without the description it points into.
+      if ((row.descriptionActionStart ?? 0) > (row.description?.length ?? 0))
+        fail(
+          `${path}.descriptionActionStart`,
+          'must not exceed the description length'
+        );
       break;
     case 'message':
       if (
@@ -1944,6 +1987,10 @@ function assertRow(
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
         assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${path}.columns[${columnIndex}].webLeadingBadge`
+        );
         for (const field of [
           'textSegments',
           'secondaryTextSegments',
@@ -2483,6 +2530,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'presentation',
     'fee',
     'descriptionActionKey',
+    'descriptionActionStart',
     'footerActions',
   ],
   message: [
@@ -2650,6 +2698,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'amounts',
     'fee',
     'descriptionActionKey',
+    'descriptionActionStart',
     'footerActions',
   ],
   message: [
@@ -3064,7 +3113,13 @@ function assertRowProtocol(row: RowModel, path: string): void {
     row.columns.forEach((column, index) => {
       const columnPath = `${path}.columns[${index}]`;
       protocolObject(column, columnPath);
-      if (isDevelopment()) assertIdentityExtras(column, columnPath);
+      if (isDevelopment()) {
+        assertIdentityExtras(column, columnPath);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${columnPath}.webLeadingBadge`
+        );
+      }
     });
     if (isDevelopment())
       assertTrailingAccessories(row.trailing, `${path}.trailing`);
@@ -3526,6 +3581,7 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'textSegments',
     'titleIcon',
     'secondaryTitleIcon',
+    'webLeadingBadge',
     'secondaryLeadingText',
     'secondaryText',
     'secondaryTextSegments',
@@ -3600,6 +3656,26 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
 function sanitizeDecoration(value: unknown, field: string): unknown {
   if (value === undefined || value === null) return undefined;
+  // All or nothing: a badge without valid text and both colors is dropped, and
+  // only its three declared fields are kept.
+  if (field === 'webLeadingBadge') {
+    if (
+      !isRecord(value) ||
+      typeof value.text !== 'string' ||
+      !value.text.trim() ||
+      value.text.length > MAX_TEXT_LENGTH
+    )
+      return undefined;
+    const { textColor, backgroundColor } = value;
+    if (
+      typeof textColor !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(textColor) ||
+      typeof backgroundColor !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(backgroundColor)
+    )
+      return undefined;
+    return { text: value.text, textColor, backgroundColor };
+  }
   if (
     !Array.isArray(value) &&
     [
@@ -3967,6 +4043,11 @@ function sanitizeRowForProduction(row: RowModel): RowModel {
         !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
     ) {
       delete next[field];
+      continue;
+    }
+    if (field === 'descriptionActionStart') {
+      // Renderers clamp an offset past the text; anything else has no meaning.
+      if (!isDescriptionActionStart(value)) delete next[field];
       continue;
     }
     if (field === 'parent' && isRecord(value))
@@ -4415,6 +4496,10 @@ function assertPatchChanges(patch: PatchValues, index: number): void {
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
         assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${path}.columns[${columnIndex}].webLeadingBadge`
+        );
         for (const field of [
           'textSegments',
           'secondaryTextSegments',
@@ -4900,6 +4985,16 @@ function mergeAndValidateSingleRow(
     )
       changes.subtitle = null;
   }
+  // The offset points into one specific description string, so a patch that
+  // replaces the description without restating it falls back to the default.
+  if (
+    previous.type === 'activity' &&
+    'description' in changes &&
+    changes.description !== previous.description &&
+    !('descriptionActionStart' in changes) &&
+    previous.descriptionActionStart !== undefined
+  )
+    changes.descriptionActionStart = null;
   const merged = { ...previous } as unknown as Record<string, unknown>;
   for (const [field, value] of Object.entries(changes)) {
     if (value === null) delete merged[field];

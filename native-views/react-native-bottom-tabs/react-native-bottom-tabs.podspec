@@ -19,6 +19,7 @@ Pod::Spec.new do |s|
     "ios/**/*.{swift}",
     "ios/**/*.{h,m,mm,cpp}",
   ]
+  s.exclude_files = "ios/tests/**/*"
 
   s.static_framework = true
 
@@ -33,6 +34,11 @@ Pod::Spec.new do |s|
   }
 
   s.dependency "OneKeyImage"
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+    test_spec.pod_target_xcconfig = { "PRODUCT_MODULE_NAME" => "BottomTabsModuleTests" }
+  end
 
   install_modules_dependencies(s)
 end

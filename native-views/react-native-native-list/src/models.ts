@@ -624,6 +624,14 @@ export type ActivityRow = RowBase &
       hidden?: boolean;
     }>;
     descriptionActionKey?: string;
+    /**
+     * UTF-16 offset into `description` where the text that opens
+     * `descriptionActionKey` starts; the text before it stays plain. An integer
+     * in `0...description.length`: `0`, the default, makes the whole
+     * description the action and `description.length` leaves no action text.
+     * Ignored without `descriptionActionKey`.
+     */
+    descriptionActionStart?: number;
     footerActions?: readonly FooterAction[];
     style?: ActivityRowStyle;
   }>;
@@ -650,6 +658,15 @@ export type DataColumn = Readonly<{
   textSegments?: readonly ValueTextSegment[];
   titleIcon?: IdentityRow['titleIcon'];
   secondaryTitleIcon?: IdentityRow['titleIcon'];
+  /**
+   * Web-only passive label before the primary column text. The caller supplies
+   * both colors as #RRGGBB or #RRGGBBAA; native renderers ignore the field.
+   */
+  webLeadingBadge?: Readonly<{
+    text: string;
+    textColor: string;
+    backgroundColor: string;
+  }>;
   secondaryLeadingText?: string;
   secondaryText?: string;
   secondaryTextSegments?: readonly ValueTextSegment[];
@@ -1145,6 +1162,7 @@ export type RowPatch =
         | 'presentation'
         | 'fee'
         | 'descriptionActionKey'
+        | 'descriptionActionStart'
         | 'primaryAmount'
         | 'secondaryAmount'
         | 'leading'

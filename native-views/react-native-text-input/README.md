@@ -1,6 +1,38 @@
+<div align="center">
+
 # @onekeyfe/react-native-text-input
 
-React Native TextInput with paste events for text and images on Android and iOS.
+**React Native's `TextInput` plus native paste events for text and image clipboard items.**
+
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-text-input?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-text-input)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-text-input?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Fabric](https://img.shields.io/badge/Fabric-4D6BFE)
+
+</div>
+
+Wraps React Native text inputs and emits a native `onPaste` event for clipboard
+content that React Native does not surface, including images. The platform input
+still performs the actual paste; the callback reports what the clipboard held and
+the application decides how to use it. Payloads are platform-shaped: iOS loads an
+image into a temporary file, Android reports the clipboard item's URI and MIME
+type without copying it. There is no Web implementation.
+
+## Features
+
+- **Native paste events** — an optional `onPaste` callback reports clipboard
+  items next to the ordinary `TextInput` props.
+- **Text and image coverage** — text uses `text/plain`; image clipboard items
+  arrive with a platform-specific locator instead of raw bytes.
+- **No Android copy** — for URI content the package reports the content
+  resolver's MIME type and the original URI, without creating a temporary file.
+- **iOS temporary file URL** — image data is written to a temporary file and the
+  application owns any durable copy it needs.
+- **Full `TextInput` surface** — the default export accepts React Native
+  `TextInputProps`, including controlled text and ref methods.
+- **Opt-in native listener** — with no `onPaste`, iOS has no paste subscription
+  and Android has no paste watcher.
 
 ## Installation
 
@@ -8,57 +40,85 @@ React Native TextInput with paste events for text and images on Android and iOS.
 yarn add @onekeyfe/react-native-text-input
 ```
 
-Install the application's iOS pods and rebuild the native application to register
-the paste integration. The default export accepts React Native `TextInputProps`
-and the additional `onPaste` callback.
+Install the app's iOS pods and rebuild the native application after adding the
+package so the iOS paste observer and the Android input component are
+registered; Android links through autolinking. The package declares no
+additional permissions or `Info.plist` entries.
 
 ## Usage
 
 ```tsx
-import TextInput from '@onekeyfe/react-native-text-input';
+import { useCallback, useState } from 'react';
+import TextInput, {
+  type IPasteEventParams,
+} from '@onekeyfe/react-native-text-input';
 
-<TextInput
-  onPaste={({ nativeEvent }) => {
-    console.log(nativeEvent.items);
-  }}
-/>
+function PasteAwareField() {
+  const [text, setText] = useState('');
+  const onPaste = useCallback((event: IPasteEventParams) => {
+    const item = event.nativeEvent.items?.[0];
+    if (item?.type === 'text/plain') {
+      console.log(item.data);
+    }
+  }, []);
+
+  return (
+    <TextInput
+      style={{ minHeight: 48 }}
+      value={text}
+      onChangeText={setText}
+      onPaste={onPaste}
+      placeholder="Paste text or an image"
+    />
+  );
+}
 ```
 
-## Paste events and platform differences
+Check `nativeEvent.items` before iterating and inspect each item's `type` before
+interpreting its `data`.
 
-`onPaste` receives `nativeEvent.items`, an optional array whose entries have
-`type` and `data` fields. Text items use `text/plain` and carry their text in
-`data`. The event does not supply image bytes directly.
+## API
 
-- iOS image items contain a MIME type and a temporary local file URL. Consume
-  that file while available; the application owns any durable copy it needs.
-- Android inspects the first clipboard item. For URI content it reports the
-  content resolver's MIME type and original URI, without copying an image into
-  a temporary file. Text paste still follows the underlying native input path.
-- With no `onPaste` callback, the native paste subscription/watcher is disabled.
+| Export | Type | Description | Platforms |
+| --- | --- | --- | :-: |
+| `TextInput` (default) | component | React Native `TextInput` props and ref, plus `onPaste`. | iOS, Android |
+| `ITextInputProps` | interface | Extends React Native `TextInputProps` with `onPaste`. | iOS, Android |
+| `onPaste` | `(event: IPasteEventParams) => void` | Paste event; absent items are allowed. | iOS, Android |
+| `IPasteEventParams` | type | `{ nativeEvent: { items?: IPasteEventPayload } }`. | iOS, Android |
+| `IPasteEventPayloadItem` | type | `{ type?: EPasteEventPayloadItemType; data?: string }`. | iOS, Android |
+| `EPasteEventPayloadItemType` | enum | MIME types; currently `TextPlain = 'text/plain'`. | iOS, Android |
 
-Do not assume an Android content URI is an iOS-style filesystem path. The native
-input retains its ordinary paste fallback when there is no reportable event.
-This package defines paste integration for iOS and Android, not a Web clipboard
-implementation.
+See [`src/type.ts`](src/type.ts) for the payload types and
+[`docs/SPEC.md`](docs/SPEC.md) for event ownership, temporary-file handling and
+the platform behavior.
 
-The public payload types are in [src/type.ts](src/type.ts). The
-[native behavior specification](https://github.com/OneKeyHQ/app-modules/blob/main/native-views/react-native-text-input/docs/SPEC.md)
-records event ownership, temporary-file handling and acceptance limits.
+## Platform support
 
-## Consuming paste payloads
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Emit `onPaste` | ✅ | ✅ | — |
+| Text items (`text/plain`) | ✅ | ✅ | — |
+| Image items | ✅ MIME + temporary file URL | ✅ MIME + content URI | — |
+| Plain `TextInput` behavior without `onPaste` | ✅ | ✅ | — |
 
-Check `nativeEvent.items` before iterating: the public type allows it to be
-absent. Inspect each item's MIME `type` before interpreting its string `data`.
-A text string, a temporary iOS file URL and an Android content URI need distinct
-consumer handling; the callback does not copy them into a common byte format.
+## Caveats
 
-On Android both Paste and Paste as plain text continue through the underlying
-input paste path after the optional event. On iOS the availability cache is only
-a menu hint; the actual paste action checks clipboard contents. The
-[specification](https://github.com/OneKeyHQ/app-modules/blob/main/native-views/react-native-text-input/docs/SPEC.md) separates these platform behaviors and documents
-pending device acceptance.
+> [!IMPORTANT]
+> `onPaste` never supplies image bytes. iOS gives a temporary file URL that the
+> application should consume while it is available; Android gives a content URI
+> plus MIME type and copies nothing. The application owns any durable copy.
+
+> [!NOTE]
+> Android inspects only the first clipboard item. Without an `onPaste` callback
+> the native paste subscription/watcher is disabled, and both platforms still
+> run their ordinary native paste path after an optional event.
+
+## References
+
+- [Package spec](docs/SPEC.md)
+- [Example page](../../example/react-native/pages/TextInputTestPage.tsx)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).

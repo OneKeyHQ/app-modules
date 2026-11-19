@@ -397,6 +397,7 @@ it('keeps one expanded subtree across collapse and follows accepted snapshots', 
     renderer.root.findByProps({ testID: 'native-list-footer-slot' });
   expect(mount).toHaveBeenCalledTimes(1);
   expect(footerBand().props.style.paddingHorizontal).toBe(8);
+  expect(toggle().props.style.marginHorizontal).toBe(-8);
   expect(content().props['aria-hidden']).toBe(false);
   expect(inset().props.style.height).toBe(20);
 
@@ -407,6 +408,7 @@ it('keeps one expanded subtree across collapse and follows accepted snapshots', 
   expect(content().props.pointerEvents).toBe('none');
   expect(content().props.style.display).toBe('none');
   expect(inset().props.style.height).toBe(0);
+  expect(toggle().props.style.marginHorizontal).toBe(-8);
 
   await act(async () => ref.current?.applySnapshot(expanded));
   expect(content().props['aria-hidden']).toBe(false);
@@ -420,6 +422,15 @@ it('keeps one expanded subtree across collapse and follows accepted snapshots', 
   expect(inset().props.style.height).toBe(20);
   expect(mount).toHaveBeenCalledTimes(1);
 
+  await act(async () =>
+    ref.current?.applySnapshot({
+      ...expanded,
+      layout: { ...expanded.layout, contentPaddingHorizontal: 20 },
+    })
+  );
+  expect(footerBand().props.style.paddingHorizontal).toBe(20);
+  expect(toggle().props.style.marginHorizontal).toBe(-20);
+
   await act(async () => ref.current?.applySnapshot(snapshot));
   expect(content().props.style.display).toBe('none');
   expect(content().props['aria-hidden']).toBe(true);
@@ -430,6 +441,7 @@ it('keeps one expanded subtree across collapse and follows accepted snapshots', 
   await act(async () => ref.current?.applySnapshot(expanded));
   expect(content().props['aria-hidden']).toBe(false);
   expect(toggle().props['aria-hidden']).toBe(false);
+  expect(toggle().props.style.marginHorizontal).toBe(-8);
   await act(async () => renderer.unmount());
   expect(unmount).toHaveBeenCalledTimes(1);
 });

@@ -1,21 +1,52 @@
+<div align="center">
+
 # @onekeyfe/react-native-sni-connect
 
-OneKey SNI HTTP client for React Native. Performs HTTPS requests to a caller-supplied
-IP address while preserving the original TLS SNI / `Host` of a hostname, so certificate
-chain and hostname verification are still enforced against the real hostname (not the IP).
+**HTTPS requests to a caller-supplied IP while TLS still validates the real hostname.**
 
-Backed by EMASCurl (libcurl) on iOS and OkHttp on Android.
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-sni-connect?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-sni-connect)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-sni-connect?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![TurboModule](https://img.shields.io/badge/TurboModule-4D6BFE)
+
+</div>
+
+Connects to a literal IP address you already resolved while preserving the real
+hostname's TLS SNI, `Host` header and certificate validation, so the certificate
+chain is checked against the hostname rather than the IP. Requests are text-only:
+send a UTF-8 body or stream an app-sandbox file through `uploadFile()`. The
+transport is EMASCurl (libcurl) on iOS and OkHttp on Android; there is no Web
+implementation, every request is `https` on port 443, and each connection is
+pinned to a validated public destination.
+
+## Features
+
+- **Pinned destination, real TLS identity** — SNI, `Host` and certificate
+  verification use `hostname`; `ip` only chooses the socket target.
+- **Strict request validation** — public IP literals only, relative paths only,
+  control characters and module-owned routing headers rejected before I/O.
+- **Bounded concurrency** — 64 active requests per process, 16 per
+  `(hostname, ip)` pair, a 256-request queue and `SNI_RESOURCE_LIMIT` on overflow.
+- **Request-id cancellation** — cancel one in-flight request or every request
+  owned by the current runtime.
+- **Binary uploads** — `uploadFile()` streams a local file up to 20 MiB;
+  `isUploadFileSupported()` feature-detects older native binaries.
+- **Operational hooks** — `clearDNSCache()`, per-pair `getDebugSnapshot()` and a
+  `isProxyActiveForUrl()` preflight for adapters.
 
 ## Installation
-
-This package is published as part of the OneKey `app-modules` workspace:
 
 ```sh
 yarn add @onekeyfe/react-native-sni-connect
 ```
 
-iOS: add Aliyun's spec repo and make `EMASCurl` modular in your app Podfile,
-then run `pod install`:
+Rebuild the native application after installing; the TurboModule is resolved at
+import time and throws a linking error when the pods or Android native build are
+missing. Android links through autolinking.
+
+**iOS.** The pod depends on `EMASCurl`, which lives in Aliyun's spec repo. Add that source
+and keep `EMASCurl` modular in the `Podfile`, then run `pod install`:
 
 ```ruby
 source 'https://github.com/CocoaPods/Specs.git'
@@ -28,7 +59,11 @@ target 'YourApp' do
 end
 ```
 
-Android autolinks.
+**Android.** The application must declare the normal `INTERNET` permission:
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+```
 
 ## Usage
 
@@ -36,85 +71,88 @@ Android autolinks.
 import {
   request,
   cancelRequest,
-  cancelAllRequests,
-  clearDNSCache,
-  getDebugSnapshot,
   isProxyActiveForUrl,
-  uploadFile,
-  isUploadFileSupported,
 } from '@onekeyfe/react-native-sni-connect';
 
 const proxyActive = await isProxyActiveForUrl('https://example.com/api/v1/ping');
-if (proxyActive) {
-  // Product adapters should avoid entering SNI mode when a per-URL/system proxy
-  // is active. Low-level SNI requests still bypass proxies directly.
-}
+// Adapters should avoid SNI mode while a per-URL/system proxy is active.
 
 const res = await request({
-  // requestId is optional; required only if you want to cancel the request.
-  requestId: 'health-check-1',
-  ip: '93.184.216.34', // must be a public IP literal (private/loopback/metadata are rejected)
-  hostname: 'example.com', // used for SNI, Host header and certificate validation
+  requestId: 'health-check-1', // required only if you want to cancel it
+  ip: '93.184.216.34', // public IP literal; private/loopback/metadata are rejected
+  hostname: 'example.com', // SNI, Host header and certificate validation
   method: 'GET',
-  path: '/api/v1/ping', // relative path only — absolute URLs are rejected
+  path: '/api/v1/ping', // relative path only; absolute URLs are rejected
   headers: { 'Content-Type': 'application/json' },
   timeout: 30_000,
 });
 
 console.log(res.status, res.headers, res.data);
 
-// Cancellation (requires requestId on the request)
 await cancelRequest('health-check-1');
-await cancelAllRequests();
-
-// Drop pinned-IP connections / cached clients
-await clearDNSCache();
-
-// Diagnostics for one validated hostname/IP pair
-const snapshot = await getDebugSnapshot({
-  hostname: 'example.com',
-  ip: '93.184.216.34',
-});
 ```
 
-`multiValueHeaders` preserves repeated response headers when the native transport
-exposes them as raw entries. On iOS, EMASCurl 1.5.5 currently hands this module a
-`HTTPURLResponse` dictionary view, so duplicate header names may already be
-collapsed by the transport before this adapter can observe them. Full duplicate
-header preservation on iOS requires an EMASCurl version that exposes the raw
-response header list.
+HTTP `4xx` and `5xx` resolve as normal responses; inspect `status`. The caller
+owns the target IP, the request id lifecycle and higher-level retry policy.
 
-Check `isUploadFileSupported()` before uploading when JS can run with older native
-binaries. `uploadFile()` rejects with `code: SNI_UNSUPPORTED` when unavailable.
+## API
 
-## Specification
+| Export | Signature | Platforms | Description |
+| --- | --- | :-: | --- |
+| `request` | `(config: SniConnectRequest) => Promise<SniConnectResponse>` | iOS, Android | Sends one HTTPS request over the pinned SNI transport. |
+| `uploadFile` | `(config: SniConnectUploadFileRequest) => Promise<SniConnectResponse>` | iOS, Android | Sends a local file body (`POST`/`PUT`, 1 byte–20 MiB). |
+| `isUploadFileSupported` | `() => boolean` | iOS, Android | Reports whether the loaded native module exposes `uploadFile`. |
+| `cancelRequest` | `(requestId: string) => Promise<{ success: boolean }>` | iOS, Android | Cancels the active request with that id. |
+| `cancelAllRequests` | `() => Promise<{ success: boolean }>` | iOS, Android | Cancels every request owned by the current runtime. |
+| `clearDNSCache` | `() => Promise<{ success: boolean }>` | iOS, Android | Evicts cached pinned destinations, clients and idle connections. |
+| `getDebugSnapshot` | `({ hostname, ip }) => Promise<SniConnectDebugSnapshot>` | iOS, Android | Reads active/pending counters and request ids for one pair. |
+| `isProxyActiveForUrl` | `(url: string) => Promise<boolean>` | iOS, Android | Preflight proxy probe; does not enable proxying for SNI requests. |
 
-The behavior of the SNI connect module is governed by a normative,
-platform-agnostic standard that all implementations (iOS, Android, Node/Desktop,
-shared JS adapters, and any future platform) must conform to:
+`SniConnectResponse` contains `data` (string), `status`, `statusText`, `headers`
+and an optional `multiValueHeaders`. Limits: 1 MiB body, 8 KiB path/query, 64
+headers / 32 KiB total, 10 MiB response. Exported types include
+`SniConnectRequest`, `SniConnectResponse` and `SniConnectUploadFileRequest`; see
+[`src/NativeSniConnect.ts`](src/NativeSniConnect.ts).
 
-**-> [OneKey SNI Connect Standard (OSCS)](https://github.com/OneKeyHQ/app-modules/blob/main/native-modules/react-native-sni-connect/SPEC.md)**
+## Platform support
 
-The [native upload contract](docs/SPEC.md) defines capability detection and
-consumption-time file bounds.
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Pinned-IP request with hostname TLS | ✅ | ✅ | — |
+| String request body | ✅ | ✅ | — |
+| Binary file upload (`uploadFile`) | ✅ | ✅ | — |
+| Per-request and bulk cancellation | ✅ | ✅ | — |
+| Cache clear and debug snapshot | ✅ | ✅ | — |
+| Proxy preflight | ✅ | ✅ | — |
+| Repeated response headers (`multiValueHeaders`) | ⚠️ may collapse | ✅ | — |
 
-Any change to request validation, destination pinning, TLS validation, redirect
-handling, cancellation, response shape, or cache behavior must be checked
-against OSCS.
-When an implementation and the standard disagree, the implementation is wrong.
+## Caveats
 
-### Security notes
+> [!IMPORTANT]
+> `ip` must be a public IP literal — loopback, private, link-local (including
+> cloud metadata), CGNAT, multicast and reserved ranges are rejected. `path`
+> cannot carry a scheme, host or port, and `Host` / `Content-Length` stay
+> module-owned.
 
-- The request scheme is always `https` on port `443`; `path` cannot override scheme, host or port.
-- `isProxyActiveForUrl(url)` is a preflight probe for adapters. It does not enable proxying;
-  native SNI transport still bypasses system proxy configuration.
-- `ip` must be an IPv4/IPv6 literal that routes to a public destination; loopback, private,
-  link-local (incl. cloud metadata), CGNAT, multicast and reserved ranges are rejected.
-- Header names/values containing CR/LF/control characters are rejected; the `Host` header is
-  managed by the module.
-- Native logs go through OneKey's native logger (with sensitive-data redaction); there is no
-  JS log event channel.
+> [!WARNING]
+> This is a text-response API with a 10 MiB response cap; binary response
+> transport is out of scope. Send binary request bodies with `uploadFile()` and
+> feature-detect it with `isUploadFileSupported()` before use.
+
+> [!NOTE]
+> On iOS the EMASCurl version used here exposes response headers as a dictionary
+> view, so repeated headers may already be collapsed before `multiValueHeaders`
+> is built. `isProxyActiveForUrl()` only reports proxy state; SNI transport
+> always bypasses system proxy configuration.
+
+## References
+
+- [OSCS standard](SPEC.md)
+- [Native upload contract](docs/SPEC.md)
+- [Native interface](src/NativeSniConnect.ts)
+- [npm package](https://www.npmjs.com/package/@onekeyfe/react-native-sni-connect)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

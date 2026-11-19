@@ -1,10 +1,12 @@
 # react-native-native-overlay SPEC
 
 Status: Implemented through the P5 caller migration in app-monorepo. Android
-and Web runtime checks passed there; focused iOS 26.5 simulator and Android 16
-emulator checks are recorded below. Broader iOS runtime, physical-device and
-iPad acceptance remain unverified. Packaging in app-modules is validated
-separately.
+and Web runtime checks passed there; focused iOS 26.5 and iOS 27.0 simulator
+checks and Android 16 emulator checks are recorded below. The iOS 27.0 check
+covers this window handoff with repeated More-sheet gestures, immediate and
+delayed account-selector dismissal, and an interactive cancellation. Broader
+iOS runtime, physical-device and iPad acceptance remain unverified. Packaging
+in app-modules is validated separately.
 
 The implementation is migrated from app-monorepo commit
 `376633bd9f1c410dbccb01fb6a0492be9a5c3f38`, package
@@ -68,8 +70,9 @@ password verify, DialogLoading, app lock, Spotlight, in-app notification.
 
 Non-goals:
 
-- Business UI. Titles, buttons, forms, toast cards, the hardware stage morph and
-  the lock screen UI stay React content owned by components and kit.
+- Business UI. Titles, buttons, forms, the hardware stage morph and the lock
+  screen UI stay React content owned by components and kit. Message toast
+  cards are the exception: the platform draws them from data (§5.14).
 - Navigation. Screens and navigation modals stay in react-navigation and
   react-native-screens.
 - Third-party windows such as RN `Modal`, WalletConnect, and system dialogs.
@@ -345,6 +348,50 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   first responder; passive toast/debug entries do not win solely by level.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
+- Delivered-touch retirement extension (Implemented; thirty native checks and
+  four focused local iOS 27.0 App cases passed):
+  before showing a global entry, install a passive touch observer on its real
+  app window and on the entry window. Active and retired entries of that real
+  host share a touch lifetime, including touches delivered to a lower entry or
+  the exiting window itself. Other real app windows remain independent, even
+  within the same scene. Each observer tracks delivered touch identities, never
+  retains UIEvent objects, never cancels or delays touches, and neither prevents
+  nor can be prevented by another recognizer. It stays possible until the last
+  tracked touch ends or cancels, then fails and resets without recognizing.
+  It accepts concurrent touch types with `requiresExclusiveTouchType = false`
+  and preserves UIKit's default allowed touch types.
+- Removing an entry while its real app window or any active/retired entry owned
+  by that real host has delivered active touches or
+  an interactive UIKit presentation
+  removes that entry from active ordering and restores key ownership immediately,
+  but retains its exiting window/root/scene, without hiding it, until both the
+  delivered touch set is empty and the interaction finishes or cancels. Touch
+  completion/cancellation and UIKit interaction changes schedule cleanup on the
+  next main turn. Cleanup rechecks the complete current touch set and transition
+  coordinator before releasing
+  that exact window lifetime. A newly interactive transition keeps it retired
+  until its own completion; repeated or late callbacks cannot release a new
+  entry for the same owner. A new touch beginning after a previous touch ends but
+  before queued cleanup keeps the window retired. Overlapping multi-touch can
+  extend retirement without a timeout. When neither condition exists, removal
+  still releases synchronously. Remove an entry observer only when its window
+  is released; remove a real app window's observer only when that host has no
+  active or retired entries. Touch callbacks query current host ownership across
+  scenes, rather than binding to the scene of first installation. Moving the
+  same real host to another scene keeps its remaining users protected.
+  Reassigning an observed window to a different host does not change its
+  delivered touch context: retain weak prior-host associations until a next-turn
+  check finds its complete touch set empty and those hosts' retirements released.
+  A new touch during an idle gap still protects a prior host whose context remains
+  retired. Touch completion, observer removal and host reassignment wake current
+  and prior hosts; queued cleanup does not require the source observer to survive.
+  Scene disconnect removes that scene's records and unregisters only observers with
+  no remaining users before releasing active and retired windows
+  without notifying an already removed owner again. No fixed timeout controls
+  this handoff.
+  Key restoration MUST NOT activate a host that has moved to another scene.
+  Public UIKit observation cannot account for a DOWN not yet delivered to the
+  app window; acceptance must separately exercise that delivery/teardown boundary.
 - Every presentation lifetime has a generation. Asynchronous present, dismiss,
   and animation completions must match the generation, controller/entry
   identity and applicable phase before changing state or emitting callbacks.
@@ -634,11 +681,13 @@ of these UIKit resources. Native logger persistence is owned by the logger.
 
 ## 5.8 Performance and resource budget
 
-- iOS entry windows are created lazily and released after their entry detaches.
-  Window count is O(active global entries) per scene, rather than a six-window
-  level cache. No new public limit/configuration is introduced; page entries
-  remain views. Re-ranking is O(n log n) for the affected scene and creates no
-  per-frame bridge work.
+- iOS entry windows are created lazily and released after their entry detaches,
+  or after an in-progress UIKit interaction finishes when release is deferred.
+  Window count is O(active global entries plus retired interactive windows) per
+  scene, rather than a six-window level cache. Scene disconnect drains both.
+  No new public limit/configuration is introduced; page entries remain views.
+  Re-ranking is O(n log n) for the affected scene and creates no per-frame
+  bridge work.
 - Android layers are views, not windows: no extra surfaces or WindowManager IPC.
 - Store operations are O(n) in the number of live entries. Snapshots are
   rebuilt once per mutation.
@@ -670,15 +719,82 @@ navigation remains a separate runtime acceptance item.
 
 ## 5.9 Conformance and acceptance
 
+Focused iOS 27.0 simulator runtime check (2026-11-13): three repetitions of
+the previously failing 0.25-second More-to-account-selector handoff and one
+1.25-second control dismissed to Home. A separate 0.25-second handoff with a
+slow partial selector drag canceled and returned to its original position;
+More reopened and a subsequent full drag dismissed normally. Home and Market
+remained interactive. This checks the main-UI window handoff only; physical
+devices and the broader runtime matrix remain unverified.
+
+Historical app-touch acceptance for revision `404e87c` (2026-11-13,
+local Debug build on an isolated
+iOS 27.0 simulator): all eight first-pan-only cases passed, starting from the
+Home header or list body at 250, 300, 350 and 400 ms after More close UP. The
+250/300 ms cases kept all twenty old-context events routed to the app window;
+350/400 ms started after teardown (observed 5–49 ms later) and routed all twenty
+new-context events normally. No backing-event-only dispatch occurred. Native
+pager logs recorded ended state 3 in every case. List-body accessibility samples
+continued moving after UP without another input, confirming inertia. After
+waiting for release, the first React control tap opened Home More (header) or
+AccountSelectorStack (body), without another pan or tab switch. Per-case main
+and background runtime markers remained unchanged. These measured teardown
+boundaries do not guarantee observation of a DOWN UIKit has not delivered yet.
+
+For the same historical revision, two additional selector handoffs exercised
+multiple front-card drags and a partial rebound, then front dismissal followed
+250 ms later by either a complete
+back-selector dismissal or a partial drag canceled into rebound. Both preserved
+complete old-context delivery (36 and 16 events respectively), zero backing-only
+events, stable main/background markers, and working direct React controls.
+The entry was the watch-only account-row More inside AccountSelectorStack,
+which uses the same global NativeOverlay UIWindow over a UIKit modal host.
+It is an equivalent-host regression, not a replay of the original three-account
+HD wallet-level menu. Release/TestFlight binaries, physical devices and other
+OS versions remain unverified.
+
+Review extension acceptance for `c59572b`: thirty focused native checks passed.
+A rebuilt local Debug App passed first-only header/250 ms and body/300 ms Home
+handoffs with native ended state 3, direct React control actions and stable
+main/background runtime markers. Two further cases used an independently mounted
+passive global entry over Home More. A lower-entry drag received all sixteen
+events in its own context while the upper entry closed; its next React close
+action worked. This does not establish use of the upper entry's context by the
+lower drag. In the exiting-entry case, UIKit delivered DOWN to the upper window,
+restored key ownership to the lower window on close, and delivered UP to the
+same upper window/context 657 ms after native close; the next lower React close
+action worked. Runtime markers stayed stable throughout these four post-recovery
+cases. The earlier nineteen native checks, eight Home cases and two equivalent
+selector handoffs above belong to `404e87c`, not a rerun of the review version.
+The eleven added native groups cover lower/exiting-entry and cross-window touch
+ownership, mixed delivered types, repeated host reassignment, UP/rehost/DOWN and
+coordinator-held idle gaps, projected scene ownership/disconnect, and key scope.
+Mixed-type tests directly deliver synthetic touches and assert observer flags;
+they do not prove physical Pencil input. Scene tests project one real scene into
+controlled manager identity buckets using an internal resolver; they do not prove
+system multi-scene migration. The default resolver remains `ObjectIdentifier(scene)`.
+
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its seven checks cover bounded/live
+  Animation into an isolated UIKit test app. Its original nineteen checks cover bounded/live
   ordering, key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
   higher/foreign/new-input guards), and a native sheet surviving another
-  entry's dismissal.
+  entry's dismissal. Four focused checks cover interactive retirement after
+  finish and cancellation, reopening the same owner while the old window is
+  retired, and disconnecting a scene with only a retired window. They use a
+  controlled transition coordinator to test manager lifecycle; the real
+  gesture check is the iOS 27.0 simulator run above.
+  Eight app-touch checks directly drive the production observer's
+  `touchesBegan`/`touchesEnded`/`touchesCancelled` and reset with synthetic
+  touch objects. They assert passive gesture flags, touch-only retirement,
+  multi-touch and per-real-window isolation, next-turn touch-set rechecks,
+  reset cleanup, conjunction with coordinator ownership, owner/orphan reuse,
+  and scene-disconnect callback invalidation. They prove manager lifecycle,
+  not UIKit delivery or scroll inertia; those are covered separately by the
+  local App runtime checks above, with the stated selector-entry limitation.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
@@ -834,10 +950,9 @@ P2 sheet notes:
 
 P4a toast notes:
 
-- Message toasts (`Toast.success` / `message` / `error` …) keep their
-  libraries (sonner on web, `@backpackapp-io/react-native-toast` on native)
-  and render inside one persistent, non-blocking `toast`-level fullscreen
-  entry (kit `ToastOverlayContainer`). The iOS raise tokens are gone.
+- Message toasts (`Toast.success` / `message` / `error` …) are drawn by the
+  platform from data; see §5.14. The React toast libraries and the persistent
+  `toast`-level fullscreen entry that hosted them are gone.
 - Custom toasts (`Toast.show` / `ShowCustom`) are their own `toast` entries:
   transparent blocking backdrop (tap closes when `dismissOnOverlayPress`),
   `scale 0.8 + offsetY -20 + fade` on `quick`, PanResponder swipe up to
@@ -1141,13 +1256,13 @@ Accepted limitations:
   scroll views. Page sheets should keep scrollable content short or pass
   `dismissOnPanDown={false}`.
 - Custom toasts stack by request order and overlap at the top, as before;
-  message toasts stack inside their libraries.
+  message toasts stack in the platform toaster (§5.14).
 
 Future work (better to have):
 
 - VoiceOver / TalkBack cross-window modality, verified on device.
-- Screen-reader toasts: the native toast library renders nothing under a
-  screen reader today; the toast host should announce content and extend
+- Screen-reader toasts: the native toaster announces each card's text when
+  it appears (§5.14); the lifetime is not yet extended, and the host should
   its timer instead.
 
 Known gaps:
@@ -1192,3 +1307,129 @@ staged version). Following the repository's verification guidance, the entire
 batch advances to `3.0.162-alpha.270`. Existing versions are never overwritten.
 The iOS lockfile failure was only local CocoaPods 1.17.0 versus the Gemfile's
 locked 1.16.2; the actual CI lockfile was adopted, preserving semantic checks.
+
+## 5.14 Message toasts
+
+Message toasts are plain data. `overlayToastStore.show(spec, handlers)` takes
+an `IOverlayToastSpec` (`src/toast/types.ts`) and the platform draws the card:
+DOM on Web, UIKit on iOS, Android views on Android. React draws nothing; the
+only React piece is `OverlayToastHost`, which attaches the renderer.
+
+### Contract
+
+- A spec holds resolved values only: CSS colour strings, points, font sizes,
+  icon names. The package carries no design tokens.
+- Two layouts: `message` (status icon, title, message, action row) and
+  `notification` (round badge, clamped title and message, trailing image,
+  pressable row).
+- Text is paragraphs of runs. A run may set colour, weight, size, underline
+  and `link`; a link is opaque and comes back through `onLink`.
+- Actions are small buttons described by data and report `onAction(id)`.
+  Pressing one does not dismiss the toast.
+- `show` with an id that is on screen updates that card and restarts its
+  lifetime; `update` redraws it (theme or layout change) without restarting.
+- A toast leaves the list when its renderer reports `close`, after the exit.
+  With no renderer attached a dismissal removes it at once. At most 20 toasts
+  are kept; older ones are dropped without animation.
+- Events: `dismiss(reason)` when the card starts leaving (`timeout`, `swipe`,
+  `close`, `programmatic`), `close(reason)` when it is gone, `action`,
+  `link`, `press`.
+- `configure` sets toaster-wide values: position and theme (Web), card colour
+  and content box (native), and the top obstruction the stack rests under.
+
+### Bridge
+
+iOS and Android use one zero-size Fabric component, `RNCNativeOverlayToaster`,
+with two string props (`toasts`, `config`: JSON) and one direct event
+(`onToastEvent { toastId, type, value }`). An infinite duration crosses as
+`-1`. The cards are not children of this view: iOS draws them in a `toast`
+level window from `NativeOverlayWindowManager`, Android in a layer at the
+bottom of the host's `toast` level container, so custom toast entries stay
+above them. Web has no bridge: the DOM renderer subscribes to the store.
+
+Named icons come from `@onekeyfe/react-native-image`'s native registry,
+reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
+package takes no dependency on it; without the registry an icon stays blank.
+On Android the lookup is `OneKeyNamedSVG.INSTANCE` plus its `request` (8
+arguments) and `cancel` methods; the image package's consumer R8 rules keep
+those names, since release app builds minify and would otherwise rename them.
+Web draws an SVG `<use>` of the `href` the caller supplies.
+
+### Platform behaviour
+
+Each platform keeps the look and motion of the renderer it replaced.
+
+| Behaviour | Web | iOS / Android |
+| --- | --- | --- |
+| Position | Per toast or toaster; default bottom-right | Always top-centre |
+| Stack | Newest in front, 3 visible. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Oldest at the top, newest under it, 8 pt apart, all visible |
+| Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
+| Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
+| `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
+| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed; resuming continues the remaining time |
+| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
+| Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
+| Reduced motion | Transitions off (media query) | Every animation is instant |
+
+On Web, the card captures the pointer after recognizing a swipe. Ordinary
+clicks and taps activate the pressable row, buttons, or links through their
+own handlers. Each press ends independently on release or cancellation.
+Card removal, reuse, or repositioning clears its presses, and window blur
+clears all presses and expansion. A touch drag that did not dismiss the card
+ends the press without creating hover or tap expansion.
+
+Divergences from the renderers replaced:
+
+- Web measures a card's own height. The previous renderer could record a
+  scaled height when several toasts arrived in one tick, which put about 4 px
+  less between cards of an expanded stack.
+- Web starts the enter transition synchronously, so a toast shown while the
+  page is hidden still appears.
+- Native shows toasts under a screen reader and announces their text; the
+  previous renderer drew nothing while a screen reader was on.
+
+### Verification
+
+- Web: `src/__tests__/overlayToast.web.test.ts` covers the store and the DOM
+  renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
+  dark, wide light) matched the previous renderer's card boxes, text line
+  rects, icon and button boxes and computed styles within 0.5 px.
+- Web pointer regression: `tests/browser/overlayToast.test.cjs` exercises
+  browser-generated mouse clicks, touch taps, mixed input, and swipes in
+  Chromium. Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
+  Make `esbuild` and `playwright-core` available via `NODE_PATH` or the local
+  install, and set `CHROMIUM_EXECUTABLE_PATH` if using a system Chrome.
+- iOS: built into app-monorepo and run on an iPhone 17 Pro simulator (iOS
+  26.0) beside the previous renderer. In 13 scenarios the card frames and
+  every text line box matched to the pixel; the only differing pixels were
+  corner anti-aliasing against a differently lit backdrop. Timeout, close
+  callback, action press, notification press, swipe up, press-to-pause with
+  resume, programmatic close, id de-duplication and dismiss by id were
+  exercised with injected touches. Not exercised there: the top obstruction
+  shift, the keyboard limit, dark theme, rotation, iPad and VoiceOver.
+- Android: built into app-monorepo and run on a Pixel 7 emulator (API 35,
+  420 dpi) beside the previous renderer, both with the brand typeface. In 13
+  scenarios, light and dark, every card, text, icon and button frame matched
+  to the pixel; inside the cards the remaining pixel differences were at most
+  12 of 255 (anti-aliasing), apart from the spinner's animation frame. The
+  spinner box is 2 px shorter than before (53x52 against 53x54). Timeout and
+  close callback, action press, notification press, swipe up, a short drag
+  that settles back, press-to-pause with resume, programmatic close, id
+  de-duplication, dismiss by id and stacking order were exercised with
+  injected touches. Not exercised there: the top obstruction shift, the
+  keyboard limit, rotation, tablets, foldables and TalkBack.
+
+iOS text is laid out and drawn with TextKit (no font leading, glyphs centred
+in a fixed line box) because that is what the previous text engine did. Two
+of its habits are kept on purpose: a text box is one pixel taller than its
+lines, and an explicit letter spacing, zero included, turns the font's pair
+kerning off.
+
+Android cards follow the previous layout engine's pixel rounding (Yoga): an
+offset from the parent is rounded half up, a text offset is floored, and a
+size is the difference of the rounded absolute edges, so the card keeps its
+unrounded window position. Text is drawn unhinted at subpixel positions with
+the font size and line height rounded up to whole pixels, underlines are
+stroked at baseline + thickness + 1 px, and a bordered pill's fill is inset
+by 0.8 px, all as React Native draws them. Named icons render at their
+rounded frame size.

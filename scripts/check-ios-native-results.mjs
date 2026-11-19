@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-export const requiredIosJobs = ["ios-native"];
+export const requiredIosJobs = ["ios-native", "device-utils-store"];
 const knownResults = new Set(["success", "failure", "cancelled", "skipped"]);
 
 export function checkIosNativeResults(needs) {
@@ -15,13 +15,18 @@ export function checkIosNativeResults(needs) {
     if (!knownResults.has(result)) throw new Error("invalid_ios_result");
     if (result !== "success") throw new Error(`${job}:${result}`);
   }
-  return "ios-native:success";
+  return requiredIosJobs.map((job) => `${job}:success`).join(",");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const result = process.env.IOS_NATIVE_RESULT;
-    const needs = result === undefined ? {} : { "ios-native": { result } };
+    const needs = {};
+    if (process.env.IOS_NATIVE_RESULT !== undefined) {
+      needs["ios-native"] = { result: process.env.IOS_NATIVE_RESULT };
+    }
+    if (process.env.DEVICE_UTILS_STORE_RESULT !== undefined) {
+      needs["device-utils-store"] = { result: process.env.DEVICE_UTILS_STORE_RESULT };
+    }
     console.log(checkIosNativeResults(needs));
   } catch (error) {
     console.error(error.message);

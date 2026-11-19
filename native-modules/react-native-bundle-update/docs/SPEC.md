@@ -44,6 +44,14 @@ switch, including a pre-launch pending switch, recheck every extracted file
 against signed metadata immediately before changing the active bundle. Routine
 startup retains its entry-bundle-only hot-path check. Existing cancellation,
 resume, cleanup, and fallback ownership remain with the native module.
+Extracted-file verification derives each metadata key from the directory it
+actually walks and MUST NOT depend on the string form a caller used to name that
+directory: the same tree may be reachable through a symlinked and a resolved
+path, and Android `context.filesDir` can itself be symlinked, so mixing the two
+forms produced absolute-path keys and rejected every file on affected devices.
+The walked directory MUST resolve to the managed bundle directory for the
+supplied identity, and a file that cannot be expressed relative to it MUST fail
+closed with a local diagnostic rather than be looked up by an absolute path.
 `clearDownload` and `clearBundle` first cancel each active writer, wait for its
 entire download operation (including resume-data and final ZIP writes) to stop,
 then remove managed files. A failed or timed-out wait leaves those files intact
@@ -70,6 +78,44 @@ extraction entry limit remains 4,096. iOS enumerates extracted entries after
 extraction; Android counts entries during extraction. The extracted-path
 constraints remain in force. Failure rejects the Promise; neither platform
 falls back to a caller-provided path.
+
+## OTA storage-schema guard
+
+Status: implemented on iOS and Android. The policy unit suites
+(`BundleStorageSchemaPolicyTests`, `BundleStorageSchemaPolicyTest`) run the
+shipping decision logic with an in-memory ledger reader; they do not execute a
+native runtime reload or a signed-OTA install.
+
+An OTA bundle may declare the reserved optional metadata key
+`storageSchemaVersion` in `metadata.json`. The key is reserved: it is never
+treated as a file entry. It prevents an old JavaScript bundle from returning to
+retained AsyncStorage data once the host app has started migrating AppStorage or
+Jotai to MMKV.
+
+The guard reads the host app's native migration ledger: the
+`onekey_native_storage_migration` shared preferences on Android, and the
+`UserDefaults` keys prefixed `onekey_native_storage_migration_` on iOS, for the
+`app-storage-v1` and `jotai-storage-v1` entries. The decision is:
+
+| `storageSchemaVersion` | Migration ledger | Result |
+| --- | --- | --- |
+| Missing or empty (legacy bundle) | Both entries empty | Accept |
+| Missing or empty | Any entry non-empty, including migrating or reset | Reject |
+| `mmkv-v1` | Either state | Accept |
+| Any other non-empty value | Either state | Reject |
+
+The guard runs when the current bundle is validated at startup and when an
+extracted or installed bundle is validated. Cached validated-bundle metadata is
+re-evaluated after a JS runtime reload, even when entry-bundle hashes are cached,
+because the host migration state can change while the native bundle cache
+survives. A rejected bundle is reported as an `INCOMPATIBLE` update failure on
+the step that raises the typed error; at startup the validated-bundle cache is
+invalidated so no incompatible OTA bundle path is returned.
+
+The guard only reads the host ledger. It never opens MMKV or AsyncStorage,
+deletes or migrates storage data, or emits an `update/error` event of its own. An
+old native binary that predates the guard cannot enforce it, so MMKV-migration
+OTA bundles must still target a host binary that contains this guard.
 
 ## Update failure contract
 

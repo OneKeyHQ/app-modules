@@ -112,7 +112,7 @@ final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDataDeleg
     let releasedResolver = resolverLease.release()
     SniConnectLog.info(SniConnectLog.event("sni_session_invalidated", [
       ("hostname", hostname),
-      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("ip", ip),
       ("releasedResolver", releasedResolver),
       ("success", error == nil),
     ]))
@@ -410,7 +410,7 @@ final class SniConnectClient {
     )
     SniConnectLog.info(SniConnectLog.event("sni_transport_config", [
       ("hostname", hostname),
-      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("ip", ip),
       ("ipFamily", SniConnectLog.ipFamily(ip)),
       ("proxyMode", "no_proxy"),
       ("pinnedResolver", true),
@@ -459,7 +459,7 @@ final class SniConnectClient {
       case .waitForResolverSlots(let resolverLeases):
         SniConnectLog.info(SniConnectLog.event("sni_resolver_slot_wait", [
           ("hostname", key.hostname),
-          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ip", config.ip),
           ("waitCount", resolverLeases.count),
         ]))
         for resolverLease in resolverLeases {
@@ -510,7 +510,7 @@ final class SniConnectClient {
       }
       SniConnectLog.info(SniConnectLog.event("sni_cache_evict", [
         ("hostname", evictedKey.hostname),
-        ("ipHash", SniConnectLog.shortHash(evictedKey.canonicalIP)),
+        ("ip", evictedKey.canonicalIP),
         ("cacheSize", sessionCache.count),
         ("limit", Self.maxCachedSessions),
         ("reason", forPendingInsert ? "max_cached_sessions_pending_insert" : "max_cached_sessions"),
@@ -581,14 +581,14 @@ final class SniConnectClient {
       guard let self = self, let token = self.requestTokensById.removeValue(forKey: requestId),
             let task = self.activeTasksByToken.removeValue(forKey: token) else {
         SniConnectLog.warn(SniConnectLog.event("sni_cancel", [
-          ("requestIdHash", SniConnectLog.shortHash(requestId)),
+          ("requestId", requestId),
           ("success", false),
         ]))
         return false
       }
       task.cancel()
       SniConnectLog.info(SniConnectLog.event("sni_cancel", [
-        ("requestIdHash", SniConnectLog.shortHash(requestId)),
+        ("requestId", requestId),
         ("success", true),
       ]))
       return true
@@ -638,7 +638,7 @@ final class SniConnectClient {
          let previousTask = self.activeTasksByToken.removeValue(forKey: previousToken) {
         previousTask.cancel()
         SniConnectLog.warn(SniConnectLog.event("sni_duplicate_request_id", [
-          ("requestIdHash", SniConnectLog.shortHash(requestId)),
+          ("requestId", requestId),
           ("action", "cancel_previous"),
         ]))
       }
@@ -695,9 +695,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", sniError.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", config.method.uppercased()),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -728,9 +728,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", sniError.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", method),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -793,9 +793,9 @@ final class SniConnectClient {
     let request = mutableRequest as URLRequest
 
     SniConnectLog.info(SniConnectLog.event("sni_request_start", [
-      ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+      ("requestId", config.requestId),
       ("hostname", config.hostname.lowercased()),
-      ("ipHash", SniConnectLog.shortHash(config.ip)),
+      ("ip", config.ip),
       ("ipFamily", SniConnectLog.ipFamily(config.ip)),
       ("method", method),
       ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -833,9 +833,9 @@ final class SniConnectClient {
         let resultLog = SniConnectLog.event("sni_request_result", [
           ("result", "response"),
           ("status", status),
-          ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+          ("requestId", config.requestId),
           ("hostname", config.hostname.lowercased()),
-          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ip", config.ip),
           ("ipFamily", SniConnectLog.ipFamily(config.ip)),
           ("method", method),
           ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -862,9 +862,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", error.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", method),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -878,9 +878,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", sniError.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", method),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),

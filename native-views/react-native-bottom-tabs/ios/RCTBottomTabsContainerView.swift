@@ -139,6 +139,8 @@ class RCTBottomTabsContainerView: UIView {
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: UIViewController] = [:]
+  private var pendingIconUpdates = Set<Int>()
+  private var isIconUpdateScheduled = false
   // Vertical tab bar (iPhone Duo side strip): last reported placement and the
   // round accessory button drawn above the bar.
   private var reportedTabBarPlacement: String?
@@ -684,6 +686,31 @@ class RCTBottomTabsContainerView: UIView {
     scheduleSideAccessoryLayout()
   }
 
+  private func scheduleIconUpdate(at index: Int) {
+    pendingIconUpdates.insert(index)
+    guard !isIconUpdateScheduled else { return }
+    isIconUpdateScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.isIconUpdateScheduled = false
+      let indices = self.pendingIconUpdates
+      self.pendingIconUpdates.removeAll()
+      let allItems = self.parsedItems
+      for index in indices.sorted() {
+        guard allItems.indices.contains(index),
+              let vc = self.cachedViewControllers[allItems[index].key],
+              let item = vc.tabBarItem else { continue }
+        let symbol = allItems[index].sfSymbol ?? ""
+        let fallback = symbol.isEmpty ? nil : UIImage(systemName: symbol)
+        let image = self.loadedIcons[index] ?? fallback
+        let selectedImage = self.loadedSelectedIcons[index] ?? fallback ?? image
+        // Preserve the item and controller identities while artwork arrives.
+        item.image = self.bakeTint(image, self.inactiveTintColor)
+        item.selectedImage = self.bakeTint(selectedImage, self.activeTintColor)
+      }
+    }
+  }
+
   // MARK: - Selection
 
   private func updateSelectedTab() {
@@ -1039,7 +1066,7 @@ class RCTBottomTabsContainerView: UIView {
             scaledImage = image
           }
           self.loadedIcons[index] = scaledImage
-          self.rebuildViewControllers()
+          self.scheduleIconUpdate(at: index)
         }
         continue
       }
@@ -1064,7 +1091,7 @@ class RCTBottomTabsContainerView: UIView {
           DispatchQueue.main.async {
             guard self.iconRequestTokens[index] === token else { return }
             self.loadedIcons[index] = image.resizeImageTo(size: self.iconSize)
-            self.rebuildViewControllers()
+            self.scheduleIconUpdate(at: index)
           }
         })
     }
@@ -1112,7 +1139,7 @@ class RCTBottomTabsContainerView: UIView {
             scaledImage = image
           }
           self.loadedSelectedIcons[index] = scaledImage
-          self.rebuildViewControllers()
+          self.scheduleIconUpdate(at: index)
         }
         continue
       }
@@ -1137,7 +1164,7 @@ class RCTBottomTabsContainerView: UIView {
           DispatchQueue.main.async {
             guard self.selectedIconRequestTokens[index] === token else { return }
             self.loadedSelectedIcons[index] = image.resizeImageTo(size: self.iconSize)
-            self.rebuildViewControllers()
+            self.scheduleIconUpdate(at: index)
           }
         })
     }

@@ -29,10 +29,7 @@ struct NativeListResolvedText {
     let requestedLines = style.int("lines", default: lines)
     self.lines = requestedLines == 0 ? 0 : min(3, max(1, requestedLines))
     explicitTruncation = style["lines"] != nil || style["truncate"] != nil
-    text =
-      self.lines == 1 && explicitTruncation
-      ? value.replacingOccurrences(of: "\r\n|[\r\n]", with: " ", options: .regularExpression)
-      : value
+    text = self.lines == 1 && explicitTruncation ? Self.foldingLineBreaks(value) : value
     let resolvedWeight: NativeListFontWeight
     switch style.string("fontWeight") {
     case "regular": resolvedWeight = .regular
@@ -57,6 +54,20 @@ struct NativeListResolvedText {
         ? (self.lines == 1 ? .byClipping : .byWordWrapping) : .byTruncatingTail) : breakMode
     verticalAlignment = style["verticalAlignment"] as? String
     offsetY = CGFloat(style.double("offsetY"))
+  }
+
+  private static func foldingLineBreaks(_ value: String) -> String {
+    value.replacingOccurrences(of: "\r\n|[\r\n]", with: " ", options: .regularExpression)
+  }
+
+  /// UTF-16 offset in `text` for an offset into the caller's `source`, kept
+  /// within the text. A one-line label folds each line break into one space,
+  /// which moves every offset after a CRLF.
+  func displayOffset(_ offset: Int, in source: String) -> Int {
+    let units = source as NSString
+    let clamped = min(max(offset, 0), units.length)
+    guard lines == 1, explicitTruncation else { return clamped }
+    return (Self.foldingLineBreaks(units.substring(to: clamped)) as NSString).length
   }
 
   /// Start/end follow the host view's layout direction, as legacy `marketTextAlignment` did.
