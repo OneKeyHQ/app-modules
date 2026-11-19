@@ -107,7 +107,6 @@ public abstract class JThirdPlatFormInterface {
                             fcmRegistered = true;
                         }
                         fcmPlugin.getToken(context);
-                        JLogger.i("FCM registration requested");
                     } catch (ClassNotFoundException absentPlugin) {
                         // Non-Google hosts intentionally do not include the optional plugin.
                     } catch (Exception | LinkageError unavailablePlugin) {

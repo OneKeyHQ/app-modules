@@ -68,11 +68,10 @@ public class JLogger {
 
     public static void setLoggerEnable(boolean loggerEnable) {
         isLoggerEnable = loggerEnable;
-        dispatch(Log.INFO, "setLoggerEnable=" + loggerEnable, true);
     }
 
-    private static void dispatch(int priority, String msg, boolean force) {
-        if (!force && !isLoggerEnable) {
+    private static void dispatch(int priority, String msg) {
+        if (!isLoggerEnable) {
             return;
         }
         String safeMsg = msg != null ? msg : "";
@@ -92,23 +91,23 @@ public class JLogger {
     }
 
     public static void i(String msg) {
-        dispatch(Log.INFO, msg, false);
+        dispatch(Log.INFO, msg);
     }
 
     public static void d(String msg) {
-        dispatch(Log.DEBUG, msg, false);
+        dispatch(Log.DEBUG, msg);
     }
 
     public static void v(String msg) {
-        dispatch(Log.VERBOSE, msg, false);
+        dispatch(Log.VERBOSE, msg);
     }
 
     public static void w(String msg) {
-        dispatch(Log.WARN, msg, false);
+        dispatch(Log.WARN, msg);
     }
 
     public static void e(String error) {
-        dispatch(Log.ERROR, error, false);
+        dispatch(Log.ERROR, error);
     }
 
 }

@@ -85,7 +85,6 @@ public final class FcmMessagingService extends FirebaseMessagingService {
                 JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING,
                 payload
             );
-            JLogger.i("FCM message forwarded to native dispatcher");
         } catch (Exception invalidMessage) {
             JLogger.w("FCM payload rejected");
         }

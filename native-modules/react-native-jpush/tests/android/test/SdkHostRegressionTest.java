@@ -37,6 +37,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
+import com.margelo.nitro.nativelogger.OneKeyLog;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -2600,6 +2601,35 @@ public final class SdkHostRegressionTest {
     }
 
     @org.junit.Test
+    public void testLoggerToggleIsSilentAndFirstLogReachesOneKeyLog() throws Exception {
+        boolean wasEnabled = JLogger.isLoggerEnable();
+        OneKeyLog.clearCapturedLogs();
+        try {
+            JLogger.setLoggerEnable(false);
+            JLogger.i("disabled_log");
+            JLogger.setLoggerEnable(true);
+            check(OneKeyLog.getCapturedLogs().isEmpty(), "Logger toggle and disabled logging must be silent");
+
+            java.lang.reflect.Field resolvedField = JLogger.class.getDeclaredField("sOneKeyLogResolved");
+            resolvedField.setAccessible(true);
+            resolvedField.setBoolean(null, false);
+            for (String fieldName : new String[] { "sDebugMethod", "sInfoMethod", "sWarnMethod", "sErrorMethod" }) {
+                java.lang.reflect.Field methodField = JLogger.class.getDeclaredField(fieldName);
+                methodField.setAccessible(true);
+                methodField.set(null, null);
+            }
+            JLogger.i("first_log_after_cold_start");
+            check(OneKeyLog.getCapturedLogs().equals(Collections.singletonList("[INFO] [RN-JPush] first_log_after_cold_start")),
+                "The first call after resetting the reflection cache must reach OneKeyLog");
+            check(JLogger.getRecentLogs().isEmpty() && JCoreStorage.readNewLogs(null).isEmpty(),
+                "JLogger and JCoreStorage must not retain logs in memory buffers");
+        } finally {
+            JLogger.setLoggerEnable(wasEnabled);
+            OneKeyLog.clearCapturedLogs();
+        }
+    }
+
+    @org.junit.Test
     public void testHeartbeatGeneralAckAndResumeNoOpWhenNotStopped() throws Exception {
         check(Arrays.equals(new byte[] { 0 }, JCoreWireCodec.buildPushControlPayload(true)),
             "stopPush CMD_PUSH_CTRL payload must encode action=0");
@@ -2608,23 +2638,6 @@ public final class SdkHostRegressionTest {
         check(JCoreWireCodec.parsePushControlPayload(new byte[] { 0 })
             && !JCoreWireCodec.parsePushControlPayload(new byte[] { 1 }),
             "parsePushControlPayload must treat action=0 as stopped");
-
-        // 1. Verify first-call JLogger reflection resolution does not drop the initial log entry
-        java.lang.reflect.Field resolvedField = JLogger.class.getDeclaredField("sOneKeyLogResolved");
-        resolvedField.setAccessible(true);
-        resolvedField.setBoolean(null, false);
-        for (String fieldName : new String[] { "sDebugMethod", "sInfoMethod", "sWarnMethod", "sErrorMethod" }) {
-            java.lang.reflect.Field mField = JLogger.class.getDeclaredField(fieldName);
-            mField.setAccessible(true);
-            mField.set(null, null);
-        }
-        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
-        JLogger.setLoggerEnable(true);
-        JLogger.i("first_log_after_cold_start_01");
-        check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("first_log_after_cold_start_01"),
-            "Very first JLogger call before reflection cache initialization must not be dropped");
-        check(JLogger.getRecentLogs().isEmpty() && JCoreStorage.readNewLogs(null).isEmpty(),
-            "JLogger and JCoreStorage must not retain logs in memory buffers");
 
         Context context = new Context();
         JCoreTcpEngine engine = JCoreTcpEngine.getInstance();

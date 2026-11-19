@@ -778,6 +778,7 @@ callbackSelector:(SEL)cbSelector
     [JCOREConfiguration shared].pushStopped = NO;
     [[JCORETcpSession shared] startIfNeeded];
     if (wasStopped) {
+        [JCOREConfiguration logInfo:@"Push resume requested"];
         NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
         [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
     }

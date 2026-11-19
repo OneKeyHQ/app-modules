@@ -6,7 +6,6 @@ import ReactNativeNativeLogger
 
 class ReactNativeJpush: HybridReactNativeJpushSpec {
   private static let logTag = "RN-JPush"
-  private var localLogEnabled: Bool = false
   private let listenerLock = NSLock()
   private var registeredListenerIds = Set<Int>()
 
@@ -26,11 +25,9 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     } else {
       JPUSHService.setLogOFF()
     }
-    OneKeyLog.info(Self.logTag, "setDebugMode enable=\(enable)")
   }
 
   func initPush() throws {
-    OneKeyLog.info(Self.logTag, "initPush")
     RCTJPushModule.setupOrRefreshJPushNativeState()
     let config = JCOREConfiguration.shared()
     if let appKey = config.appKey, !appKey.isEmpty {
@@ -46,9 +43,9 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
 
   func setupWithConfig(appKey: String, channel: String, production: Bool) throws {
     let resolvedChannel = channel.isEmpty ? "dev" : channel
-    OneKeyLog.info(Self.logTag, "setupWithConfig channel=\(resolvedChannel) production=\(production)")
     RCTJPushModule.setupOrRefreshJPushNativeState()
     if !appKey.isEmpty {
+      OneKeyLog.info(Self.logTag, "setupWithConfig channel=\(resolvedChannel) production=\(production)")
       JPUSHService.setup(
         withOption: nil,
         appKey: appKey,
@@ -69,7 +66,6 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   }
 
   func resumePush() throws {
-    OneKeyLog.info(Self.logTag, "resumePush")
     JPUSHService.turnOnPush()
   }
 
@@ -491,7 +487,6 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
 
   func enableSDKLocalLog(enable: Bool, uploadJgToServer: Bool) throws {
     // Deprecated: logs are forwarded directly to OneKeyLog without in-memory buffering.
-    localLogEnabled = false
     JCOREConfiguration.setLocalLogEnabled(false)
   }
 

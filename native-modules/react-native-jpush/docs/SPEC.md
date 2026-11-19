@@ -123,12 +123,12 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
   - `setAuth(auth: boolean): void`
   - `setCountryCode(code: string): void`
   - `enableAutoWakeup(enable: boolean): void`
-  - `enableSDKLocalLog(enable: boolean, uploadJgToServer: boolean): void`
-  - `readNewLogs(): string`
+  - `enableSDKLocalLog(enable: boolean, uploadJgToServer: boolean): void` is retained for compatibility. It cannot enable an SDK log buffer or upload logs to Jiguang.
+  - `readNewLogs(): string` always returns an empty string. The JS wrapper calls back with `{ logs: '' }` for the source SDK.
 
 ### JS Wrapper (`JPush` default export & `JCore` named export)
 - Preserves 100% method and callback compatibility with `jpush-react-native` and `jcore-react-native` used in `app-monorepo`:
-  - `JPush.setLoggerEnable(enable)`
+  - `JPush.setLoggerEnable(enable)` controls native SDK diagnostics through `setDebugMode` on both platforms. Changing the switch emits no diagnostic line.
   - `JPush.init({ appKey, channel, production })`
   - `JPush.getRegistrationID((res: { registerID: string }) => void)`
   - `JPush.addTags({ sequence, tags })`, `JPush.updateTags({ sequence, tags })`, `JPush.deleteTag({ sequence, tags | tag })`, `JPush.deleteTags({ sequence })`, `JPush.queryTag({ sequence, tag })`, `JPush.queryTags({ sequence })`
@@ -200,6 +200,7 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
   - Each in-flight `rid` request starts a `10s` timeout timer (resolving with `6002` timeout if unacknowledged). Android `ThirdToken (cmd=27)` retries up to 3 times before reporting failure.
 - **Native Logging & Privacy Redaction (`@onekeyfe/react-native-native-logger`)**:
   - Both iOS (`JCOREConfiguration` / `RCTJPushModule` / `JCORETcpSession` / `ReactNativeJpush`) and Android (`JLogger` / `JPushModuleReceiver` / `JPushHelper` / `JCoreTcpEngine` / `ReactNativeJpush`) emit diagnostic logs through `OneKeyLog` (`tag = "RN-JPush"`) by default.
+  - Retain transport outcomes and recovery reasons, token acknowledgement results, notification routing metadata, and actionable failures. Routine bridge initialization, Android Activity callbacks, and routine FCM forwarding produce no diagnostic lines. Resume diagnostics reflect an attempted resume command after a stopped state.
   - Logs strictly redact sensitive payloads: notification `title`, `content` / `alert`, and `extras` are never logged (only non-sensitive metadata such as `notificationEventType` and `messageID` is emitted), and user-identifying fields (`alias`, `tags`, `properties`, `mobileNumber`, `password`, device tokens) are excluded from log output. Non-sensitive identifiers (`registrationID`, `uid`, `sequence`, `code`, `cmd`, `rid`, `statusCode`) are logged for diagnostics.
 
 ---
@@ -210,7 +211,8 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
 - **Resource Bounds**:
   - Pre-login FIFO queue bounded to `128` pending frames.
   - TCP stream receive buffer bounded to `64 KiB` per frame (`frameLen <= 65535`).
-  - `fail_ips` set bounded to `32` entries; local SDK diagnostic log buffer bounded to `200` lines.
+  - `fail_ips` set bounded to `32` entries.
+  - JPush and JCore retain no local diagnostic log history. `OneKeyLog` owns log retention.
 
 ---
 
@@ -218,6 +220,7 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
 
 ### Native test sources and execution (`Implemented`)
 - Java, Objective-C and header fixtures live in native source files under `tests/android` and `tests/ios`. Python remains a build/execution and artifact-validation launcher; it must not embed native source strings. Host Android tests use real JUnit with explicitly isolated Android/RN shims; Mac Catalyst tests use the existing Objective-C runner. Both host suites run in CI alongside the existing Gradle JUnit and Simulator XCTest suites.
+- The Android host logging regression checks silent switch changes, suppression while disabled, and delivery of the first record through a cold reflection cache. Both host suites exercise direct forwarding and the absence of SDK log history.
 - External Jiguang handshake testing is opt-in with `JPUSH_LIVE_TESTS=1`. The default JUnit result is explicitly skipped. Once enabled, network, malformed-response, nonzero status and assertion failures must fail the test; no broad exception catch may convert them to a pass. Deterministic regressions verify the handshake failure contract without external access.
 - The optional `android/fcm` module has a separate Gradle JUnit/Robolectric suite linked by the example Gradle test host and required by CI report checks. It executes the production manager/service with real Firebase message/task types, mocks the external token provider, and verifies success/failure/rotation, stopped/auth guards, metadata/notification/custom conversion, bounded malformed payload handling, notification click intents and diagnostic privacy. Robolectric and mocked providers do not establish FCM cloud delivery; physical-device acceptance remains separate.
 - Android channel acceptance covers existing blocked and muted channels, first creation with legacy defaults, explicit IDs, different alert masks and priorities, custom sounds, SDK silence hours and delivery through TCP, FCM and the local API in Robolectric. On an Android 15 emulator, a native fixture created `JPush_3_7` and `JPush_4_7` through the original JPush 5.9.0 binary. After the channels were blocked and set to Silent respectively in system settings, an in-place upgrade to the source SDK fixture preserved both channels. The default notification stayed out of the active list, and the higher-priority notification arrived on the existing channel at the user-selected low importance. The fixture invokes the TCP dispatcher with local payloads. OneKey app and vendor-cloud upgrade acceptance remain pending.
