@@ -90,6 +90,11 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     didSet {
       view.alpha = disabled ? 0.5 : 1
       view.isUserInteractionEnabled = !disabled
+      if disabled {
+        view.accessibilityTraits.insert(.notEnabled)
+      } else {
+        view.accessibilityTraits.remove(.notEnabled)
+      }
       // UIKit may not deliver the end of a touch to a view that stopped
       // accepting interaction, so end an active drag here.
       if disabled { cancelInteraction() }
@@ -148,6 +153,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     super.init()
     view.backgroundColor = .clear
     view.isUserInteractionEnabled = true
+    view.isAccessibilityElement = true
+    view.accessibilityTraits = .adjustable
 
     trackLayer.cornerRadius = CGFloat(sliderHeight) / 2
     fillLayer.cornerRadius = CGFloat(sliderHeight) / 2
@@ -185,6 +192,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       v.onTouchBegan = { [weak self] x in self?.handleTouchBegan(x) }
       v.onTouchMoved = { [weak self] x in self?.handleTouchMoved(x) }
       v.onTouchEnded = { [weak self] in self?.handleTouchEnded() }
+      v.onAccessibilityStep = { [weak self] forward in self?.handleAccessibilityStep(forward: forward) }
+      v.accessibilityValueProvider = { [weak self] in self?.currentValue.formatted() }
     }
   }
 
@@ -420,7 +429,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // Tap-snap mode: defer any value change until we know this is a tap or a
     // drag, so a tap never jumps to the raw touch point first.
     if !snapTapsActive {
-      commitDragValue(valueFromX(x))
+      commitInteractionValue(valueFromX(x))
     }
     lastHapticBucket = hapticBucket(currentValue)
   }
@@ -434,7 +443,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
     stepTicksArmed = true
-    commitDragValue(valueFromX(x))
+    commitInteractionValue(valueFromX(x))
   }
 
   /// Ends an active drag without a release (e.g. the view became disabled):
@@ -462,13 +471,24 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if snapTapsActive, !hasDragged {
       let pressDuration = CACurrentMediaTime() - touchStartTime
       if pressDuration <= tapMaxDuration {
-        commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
+        commitInteractionValue(snapValueToNearestMark(valueFromX(lastTouchX)))
       }
     }
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
     setBubbleVisible(false)
+    onSlideComplete?(interactionId, currentValue)
+  }
+
+  private func handleAccessibilityStep(forward: Bool) {
+    guard !disabled, !isDragging else { return }
+    let next = forward ? currentValue.rounded(.down) + 1 : currentValue.rounded(.up) - 1
+    guard next >= min.rounded(.up), next <= max.rounded(.down), next != currentValue else { return }
+
+    interactionId += 1
+    onSlideStart?()
+    commitInteractionValue(next)
     onSlideComplete?(interactionId, currentValue)
   }
 
@@ -492,7 +512,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     applyVisual(v)
   }
 
-  private func commitDragValue(_ raw: Double) {
+  private func commitInteractionValue(_ raw: Double) {
     let rounded = roundToRange(raw)
     currentValue = rounded
     markTickedThisCommit = false

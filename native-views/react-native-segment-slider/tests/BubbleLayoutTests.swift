@@ -104,6 +104,75 @@ enum BubbleLayoutTests {
   }
 
   @MainActor
+  static func verifyAccessibilityAdjustments() async throws {
+    let slider = makeSlider(width: 320, value: 99)
+    slider.min = 1
+    slider.sliderAccessibilityLabel = "TOP"
+    let control = slider.view as! SegmentSliderUIView
+    var callbacks: [String] = []
+    var haptics: [String] = []
+    slider.onSlideStart = { callbacks.append("start") }
+    slider.onChange = { callbacks.append("change \($0)") }
+    slider.onSlideComplete = { id, value in callbacks.append("complete \(id) \(value)") }
+    slider.hapticTickRecorder = { haptics.append($0) }
+
+    check(control.isAccessibilityElement, "slider is a VoiceOver focus target")
+    check(control.accessibilityTraits.contains(.adjustable), "slider has the adjustable trait")
+    check(control.accessibilityLabel == "TOP", "slider retains its provided accessibility label")
+    check(control.accessibilityValue == 99.0.formatted(), "slider exposes its initial value")
+
+    try slider.setValue(value: 40, interactionId: 0)
+    control.accessibilityIncrement()
+    control.accessibilityIncrement()
+    await flushQueuedValueSync()
+    check(control.accessibilityValue == 100.0.formatted(), "increment reaches max and rejects stale sync")
+    control.accessibilityDecrement()
+    check(control.accessibilityValue == 99.0.formatted(), "decrement updates the accessibility value")
+    verify(slider, value: 99, label: "VoiceOver decrement")
+    check(callbacks == ["start", "change 100.0", "complete 1.0 100.0",
+                        "start", "change 99.0", "complete 2.0 99.0"],
+          "VoiceOver steps emit one ordered interaction each: \(callbacks)")
+    check(haptics.isEmpty, "VoiceOver steps do not fire drag haptics")
+
+    try slider.setValue(value: 1, interactionId: 2)
+    await flushQueuedValueSync()
+    check(control.accessibilityValue == 1.0.formatted(), "controlled update changes the accessibility value")
+    control.accessibilityDecrement()
+    slider.disabled = true
+    check(control.accessibilityTraits.contains(.notEnabled), "disabled slider has the disabled trait")
+    control.accessibilityIncrement()
+    check(control.accessibilityValue == 1.0.formatted() && callbacks.count == 6,
+          "minimum and disabled actions leave state and callbacks unchanged")
+    slider.disabled = false
+    check(!control.accessibilityTraits.contains(.notEnabled), "enabled slider clears the disabled trait")
+
+    control.onTouchBegan?(12 + 296 / 2)
+    let dragValue = control.accessibilityValue
+    let dragCallbacks = callbacks
+    control.accessibilityIncrement()
+    control.accessibilityDecrement()
+    check(control.accessibilityValue == dragValue && callbacks == dragCallbacks,
+          "VoiceOver actions leave an active drag alone")
+    check(dragValue == 51.0.formatted(), "touch changes the accessibility value")
+    control.onTouchEnded?()
+
+    let bounded = makeSlider(width: 320, value: 0.5)
+    bounded.min = 0.5
+    bounded.max = 10.5
+    var values: [Double] = []
+    bounded.onChange = { values.append($0) }
+    bounded.view.accessibilityDecrement()
+    check(bounded.view.accessibilityValue == 0.5.formatted(), "fractional minimum is retained at the bound")
+    bounded.view.accessibilityIncrement()
+    try bounded.setValue(value: 10.5, interactionId: 1)
+    await flushQueuedValueSync()
+    bounded.view.accessibilityIncrement()
+    check(bounded.view.accessibilityValue == 10.5.formatted(), "fractional maximum is retained at the bound")
+    bounded.view.accessibilityDecrement()
+    check(values == [1, 10], "VoiceOver selects the next in-range integer: \(values)")
+  }
+
+  @MainActor
   static func main() async throws {
     for width: CGFloat in [160, 320, 600] {
       for value: Double in [0, 1, 25, 50, 75, 99, 100] {
@@ -219,6 +288,7 @@ enum BubbleLayoutTests {
     check(boundChanges == [10, 1], "fractional bound values: \(boundChanges)")
 
     try await verifyDelayedValueSync()
+    try await verifyAccessibilityAdjustments()
 
     // Render with a horizontally clipping ancestor, matching the failing sheet.
     // This is a UIKit layer preview, not a React Native or iPhone screenshot.
