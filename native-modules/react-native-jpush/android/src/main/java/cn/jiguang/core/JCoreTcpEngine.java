@@ -2,6 +2,7 @@ package cn.jiguang.core;
 
 import android.content.Context;
 import android.os.Bundle;
+import cn.jiguang.core.JCoreStorage.PushResumeClaim;
 import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.api.JPushInterface;
 import cn.jpush.android.local.ActionHelper;
@@ -57,6 +58,7 @@ public final class JCoreTcpEngine {
         volatile Attempt owner;
         final long policyGeneration;
         final String configuration;
+        final PushResumeClaim resumeClaim;
         final java.util.concurrent.atomic.AtomicBoolean completed = new java.util.concurrent.atomic.AtomicBoolean();
 
         QueuedRequest(
@@ -68,7 +70,8 @@ public final class JCoreTcpEngine {
             int maxRetries,
             RequestCallback callback,
             long policyGeneration,
-            String configuration
+            String configuration,
+            PushResumeClaim resumeClaim
         ) {
             this.command = command;
             this.version = version;
@@ -79,6 +82,7 @@ public final class JCoreTcpEngine {
             this.callback = callback;
             this.policyGeneration = policyGeneration;
             this.configuration = configuration;
+            this.resumeClaim = resumeClaim;
         }
         void complete(JCoreWireCodec.DecodedFrame frame, int code) {
             if (code == 0 && (owner == null || !configuration.equals(owner.configuration) || !INSTANCE.owns(owner, null)
@@ -100,6 +104,7 @@ public final class JCoreTcpEngine {
         final AtomicBoolean heartbeatProbePending = new AtomicBoolean();
         boolean stopScheduled;
         boolean requestsReady;
+        QueuedRequest pendingResume;
         Attempt(long generation, CountDownLatch latch, String configuration) {
             this.generation = generation; this.latch = latch; this.configuration = configuration;
         }
@@ -426,6 +431,7 @@ public final class JCoreTcpEngine {
     private synchronized void closeSocket(Context context, boolean preserveUnboundRequests) {
         this.connectionGeneration++;
         drainingToken = null;
+        releasePendingPushResumeLocked(context, activeAttempt);
         activeAttempt = null;
         cancelHeartbeatTimer();
         synchronized (socketLock) {
@@ -478,6 +484,7 @@ public final class JCoreTcpEngine {
             }
             owner.stopScheduled = true;
             drainingToken = null;
+            releasePendingPushResumeLocked(context, owner);
             socket = activeSocket;
             uid = JCoreStorage.getUid(context);
             sid = sessionId;
@@ -683,6 +690,7 @@ public final class JCoreTcpEngine {
             }
             drainingToken = null;
             owner.requestsReady = false;
+            releasePendingPushResumeLocked(null, owner);
             synchronized (socketLock) {
                 if (activeSocket == owner.socket) {
                     if (activeSocket != null) try { activeSocket.close(); } catch (Exception ignored) {}
@@ -912,7 +920,7 @@ public final class JCoreTcpEngine {
                 owner.requestsReady = true;
             }
             startHeartbeatTimer(context, connectedSocket, owner);
-            ActionHelper.getInstance().sendPendingPushResume(context);
+            sendPendingPushResume(context);
             flushPreLoginQueue(context, owner);
             if (owns(owner, context)) cn.jpush.android.api.JThirdPlatFormInterface.initializeFcm(context);
             return true;
@@ -1026,7 +1034,7 @@ public final class JCoreTcpEngine {
         synchronized (this) {
             req = new QueuedRequest(command, version, rid > 0L ? rid : JCoreStorage.nextRid(), body,
                 timeoutMs > 0L ? timeoutMs : defaultRequestTimeoutMs, maxRetries, callback,
-                JCoreStorage.getContentGeneration(), configurationIdentity(context));
+                JCoreStorage.getContentGeneration(), configurationIdentity(context), null);
             queueFull = preLoginQueue.size() >= 128;
             terminal = terminalConfiguration.equals(configurationIdentity(context));
             rejected = queueFull || terminal || !JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context);
@@ -1043,6 +1051,53 @@ public final class JCoreTcpEngine {
         } else flushPreLoginQueue(context, owner);
     }
 
+    public void sendPendingPushResume(Context context) {
+        final Attempt owner;
+        synchronized (this) {
+            owner = activeAttempt;
+            synchronized (JCoreStorage.class) {
+                if (!owns(owner, context) || !owner.requestsReady) return;
+                if (owner.pendingResume != null) {
+                    if (JCoreStorage.isPushResumeClaimCurrent(context, owner.pendingResume.resumeClaim)) return;
+                    releasePendingPushResumeLocked(context, owner);
+                }
+                if (preLoginQueue.size() >= 128) return;
+                PushResumeClaim claim = JCoreStorage.claimPendingPushResume(context);
+                if (claim == null) return;
+                QueuedRequest request = new QueuedRequest(
+                    JCoreWireCodec.CMD_PUSH_CTRL, JCoreWireCodec.VER_PUSH_CTRL, JCoreStorage.nextRid(),
+                    JCoreWireCodec.buildPushControlPayload(false), defaultRequestTimeoutMs, 0,
+                    (frame, code) -> completePendingPushResume(context, owner, claim, frame, code),
+                    claim.policyGeneration, owner.configuration, claim
+                );
+                request.owner = owner;
+                owner.pendingResume = request;
+                preLoginQueue.offer(request);
+            }
+        }
+        JLogger.i("Push resume requested");
+        flushPreLoginQueue(context, owner);
+    }
+
+    private void completePendingPushResume(Context context, Attempt owner, PushResumeClaim claim,
+        JCoreWireCodec.DecodedFrame frame, int code) {
+        boolean acknowledged = frame != null && code == 0;
+        synchronized (this) {
+            if (owner.pendingResume == null || owner.pendingResume.resumeClaim != claim) return;
+            owner.pendingResume = null;
+            JCoreStorage.completePushResume(context, claim, acknowledged && owns(owner, context));
+        }
+        if (!acknowledged) JLogger.w("Push resume not acknowledged code=" + code);
+    }
+
+    private void releasePendingPushResumeLocked(Context context, Attempt owner) {
+        if (owner == null || owner.pendingResume == null) return;
+        QueuedRequest request = owner.pendingResume;
+        owner.pendingResume = null;
+        preLoginQueue.remove(request);
+        JCoreStorage.completePushResume(context, request.resumeClaim, false);
+    }
+
     private void executeQueuedRequestWithRetry(Context context, QueuedRequest req, Attempt owner) {
         final long uid = JCoreStorage.getUid(context);
         final int sid = sessionId;
@@ -1052,7 +1107,7 @@ public final class JCoreTcpEngine {
                 || !JCoreStorage.isCollectionAuth(context)) break;
             long rid = attempt == 0 ? req.rid : JCoreStorage.nextRid();
             JCoreWireCodec.DecodedFrame response = sendRequestWithRidOnSocket(owner, req.command, req.version, rid,
-                sid, uid, req.body, req.timeoutMs, req.policyGeneration);
+                sid, uid, req.body, req.timeoutMs, req.policyGeneration, req.resumeClaim);
             if (response != null && owns(owner, context) && req.configuration.equals(owner.configuration)
                 && req.policyGeneration == JCoreStorage.getContentGeneration()) {
                 int code = response.statusCode;
@@ -1188,15 +1243,15 @@ public final class JCoreTcpEngine {
 
     private JCoreWireCodec.DecodedFrame sendRequestOnSocket(Attempt owner, int command, int version, int sid, long uid, byte[] body, long timeoutMs) {
         return sendRequestWithRidOnSocket(owner, command, version, JCoreStorage.nextRid(), sid, uid, body, timeoutMs,
-            isBusinessCommand(command) ? JCoreStorage.getContentGeneration() : -1L);
+            isBusinessCommand(command) ? JCoreStorage.getContentGeneration() : -1L, null);
     }
 
     private JCoreWireCodec.DecodedFrame sendRequestWithRidOnSocket(Attempt owner, int command, int version, long rid,
-        int sid, long uid, byte[] body, long timeoutMs, long policyGeneration) {
+        int sid, long uid, byte[] body, long timeoutMs, long policyGeneration, PushResumeClaim resumeClaim) {
         if (!owns(owner, null) || owner.socket == null) return null;
         ResponseSlot slot = new ResponseSlot(owner, owner.socket, command);
         pendingRequests.put(rid, slot);
-        if (!sendFrameOwned(owner, slot.socket, command, version, rid, sid, uid, body, policyGeneration)) {
+        if (!sendFrameOwned(owner, slot.socket, command, version, rid, sid, uid, body, policyGeneration, resumeClaim)) {
             pendingRequests.remove(rid, slot);
             return null;
         }
@@ -1214,8 +1269,14 @@ public final class JCoreTcpEngine {
 
     private boolean sendFrameOwned(Attempt owner, Socket socket, int command, int version, long rid,
         int sid, long uid, byte[] body, long policyGeneration) {
+        return sendFrameOwned(owner, socket, command, version, rid, sid, uid, body, policyGeneration, null);
+    }
+
+    private boolean sendFrameOwned(Attempt owner, Socket socket, int command, int version, long rid,
+        int sid, long uid, byte[] body, long policyGeneration, PushResumeClaim resumeClaim) {
         byte[] packet = JCoreWireCodec.encodeFrame(command, version, rid, sid, uid, body);
         synchronized (owner.writerLock) {
+            if (resumeClaim != null && !JCoreStorage.isPushResumeClaimCurrent(null, resumeClaim)) return false;
             final OutputStream output;
             synchronized (socketLock) {
                 boolean stopControl = command == JCoreWireCodec.CMD_PUSH_CTRL

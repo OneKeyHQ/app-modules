@@ -156,6 +156,7 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
    - All network I/O and crypto execute on dedicated background queues/executors (`com.onekey.jcore.tcp` on iOS, daemon network workers with synchronized connection ownership on Android).
    - Business requests (`Tag cmd=28`, `Alias cmd=29`, `Properties cmd=38`, `DeviceToken cmd=13`, `MobileNumber cmd=26`, `ThirdToken cmd=27`, `VoIPToken cmd=33`, `LiveActivity cmd=39`) issued before the connection is ready are buffered in a bounded FIFO queue. Android settles the initial heartbeat before draining this queue, including any queued resume control.
    - A public resume after stop enables the local policy and persists a pending server resume for the current AppKey. A resume before configuration binds to the first resolved AppKey. Explicit resume, an authorization grant, or a successful login can retry that pending command. Concurrent calls share the in-flight request. A successful matching `PushCtrl (cmd=40)` ACK completes the resume. Stop and AppKey changes discard superseded requests. A stale connection cannot complete a newer request. An enabled cold start with no pending resume sends no control command.
+   - On Android a ready connection claims a pending resume for its AppKey and policy generation before enqueueing it. The writer rechecks that claim on the original socket. Connection teardown releases the claim and removes any queued resume for that connection before the next login can claim it. The stored pending resume survives that teardown.
 
 ---
 

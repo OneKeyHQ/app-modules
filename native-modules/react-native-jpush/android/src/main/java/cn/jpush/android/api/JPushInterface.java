@@ -105,7 +105,7 @@ public class JPushInterface {
         JCoreStorage.resumePushLocally(context);
         JCoreManager.init(context);
         JThirdPlatFormInterface.initializeFcm(context);
-        ActionHelper.getInstance().sendPendingPushResume(context);
+        JCoreTcpEngine.getInstance().sendPendingPushResume(context);
     }
 
     public static boolean isPushStopped(Context context) {

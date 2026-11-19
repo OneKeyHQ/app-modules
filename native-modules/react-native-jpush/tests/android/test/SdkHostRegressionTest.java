@@ -2833,6 +2833,198 @@ public final class SdkHostRegressionTest {
         }
     }
 
+    private static final long RESUME_FIXTURE_UID = 880001L;
+    private static volatile Runnable resumeLogBarrier;
+
+    public static void recordResumeFixtureLog(String tag, String message) {
+        Runnable barrier = resumeLogBarrier;
+        if (barrier != null && "Push resume requested".equals(message)) barrier.run();
+        OneKeyLog.info(tag, message);
+    }
+
+    private static void acknowledgeResumeFixtureLogin(Socket socket, int sid) throws Exception {
+        socket.setSoTimeout(3000);
+        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), RESUME_FIXTURE_UID);
+        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Expected resume fixture login");
+        writeLoopbackAck(socket, login, RESUME_FIXTURE_UID, sid, 0,
+            JCoreWireCodec.buildLoginResponsePayload(sid, 520, "", 1700000000));
+        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), RESUME_FIXTURE_UID);
+        check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
+        writeLoopbackAck(socket, heartbeat, RESUME_FIXTURE_UID, sid, 0, new byte[0]);
+    }
+
+    private static void prepareResumeRaceFixture(Context context, JCoreTcpEngine engine, String appKey) {
+        JCoreStorage.setPushStopped(context, false);
+        engine.stop(context);
+        engine.setAutoReconnectEnabled(false);
+        engine.setDefaultRequestTimeoutMs(1500L);
+        JCoreStorage.setAppKey(context, appKey);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.updateRegistration(context, RESUME_FIXTURE_UID, "resume-password", "resume-rid", "resume-device");
+        JCoreStorage.setServerRegistered(context, true);
+    }
+
+    @org.junit.Test
+    public void testReconnectReclaimsResumeQueuedBehindAnOldRequest() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "resume-reconnect-fixture");
+        engine.setAutoReconnectEnabled(true);
+        engine.setReconnectBaseDelayMs(100L);
+        CountDownLatch oldRequestRead = new CountDownLatch(1);
+        CountDownLatch dropOldConnection = new CountDownLatch(1);
+        CountDownLatch resumeReceived = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(4000);
+            Thread server = new Thread(() -> {
+                try {
+                    try (Socket old = listener.accept()) {
+                        acknowledgeResumeFixtureLogin(old, 8801);
+                        JCoreWireCodec.DecodedFrame request =
+                            JCoreWireCodec.readClientFrameFromStream(old.getInputStream(), RESUME_FIXTURE_UID);
+                        check(request != null && request.command == JCoreWireCodec.CMD_PROPERTY_OP,
+                            "The old connection must hold a business request awaiting ACK");
+                        oldRequestRead.countDown();
+                        check(dropOldConnection.await(3000L, TimeUnit.MILLISECONDS), "Old disconnect was not released");
+                    }
+                    try (Socket replacement = listener.accept()) {
+                        acknowledgeResumeFixtureLogin(replacement, 8802);
+                        JCoreWireCodec.DecodedFrame resume =
+                            JCoreWireCodec.readClientFrameFromStream(replacement.getInputStream(), RESUME_FIXTURE_UID);
+                        check(resume != null && resume.command == JCoreWireCodec.CMD_PUSH_CTRL
+                            && Arrays.equals(resume.body, JCoreWireCodec.buildPushControlPayload(false)),
+                            "The replacement login must immediately send a fresh resume");
+                        writeLoopbackAck(replacement, resume, RESUME_FIXTURE_UID, 8802, 0, new byte[] {0, 0});
+                        resumeReceived.countDown();
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Reconnect fixture did not finish");
+                    }
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            }, "test-resume-queued-on-old-connection");
+            server.setDaemon(true);
+            server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Old resume fixture must log in");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                    65401, JCoreWireCodec.buildPropertyOperationPayload(1, 65401,
+                        Collections.<String, Object>singletonMap("value", "waiting-for-ack")), 3000L, 0, null);
+                check(oldRequestRead.await(3000L, TimeUnit.MILLISECONDS), "Old business request did not reach the server");
+                // Seed an unacknowledged local resume while this TCP owner still drains its business queue.
+                JCoreStorage.setPushStopped(context, true);
+                JPushInterface.resumePush(context);
+                check(engine.getPreLoginQueueSize() == 1, "Resume must remain queued behind the old request");
+                dropOldConnection.countDown();
+                check(resumeReceived.await(4000L, TimeUnit.MILLISECONDS),
+                    "Replacement login did not re-claim the queued resume: " + serverError.get());
+            } finally {
+                dropOldConnection.countDown();
+                finish.countDown();
+                engine.stop(context);
+                server.join(4000L);
+                engine.setAutoReconnectEnabled(true);
+                engine.setReconnectBaseDelayMs(3000L);
+                engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Resume reconnect fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testAppKeyChangeCannotSendOldResumeOnTheReplacementSocket() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "resume-old-app-key");
+        CountDownLatch claimReached = new CountDownLatch(1);
+        CountDownLatch releaseResumeCaller = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        CountDownLatch replacementAcked = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<>();
+        AtomicReference<Throwable> callerError = new AtomicReference<>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(4000);
+            Thread server = new Thread(() -> {
+                try {
+                    try (Socket old = listener.accept()) {
+                        acknowledgeResumeFixtureLogin(old, 8811);
+                        check(old.getInputStream().read() == -1, "Old connection must close without sending resume");
+                    }
+                    try (Socket replacement = listener.accept()) {
+                        acknowledgeResumeFixtureLogin(replacement, 8812);
+                        JCoreWireCodec.DecodedFrame request =
+                            JCoreWireCodec.readClientFrameFromStream(replacement.getInputStream(), RESUME_FIXTURE_UID);
+                        check(request != null && request.command == JCoreWireCodec.CMD_PROPERTY_OP && request.requestId == 65402,
+                            "The new AppKey may send its own business request only");
+                        writeLoopbackAck(replacement, request, RESUME_FIXTURE_UID, 8812, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "AppKey fixture did not finish");
+                    }
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            }, "test-resume-app-key-server");
+            Thread resumeCaller = new Thread(() -> {
+                try { JPushInterface.resumePush(context); }
+                catch (Throwable error) { callerError.set(error); }
+            }, "test-resume-app-key-caller");
+            server.setDaemon(true);
+            resumeCaller.setDaemon(true);
+            java.lang.reflect.Field infoField = JLogger.class.getDeclaredField("sInfoMethod");
+            infoField.setAccessible(true);
+            server.start();
+            engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+            try {
+                engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Old AppKey must log in");
+                Object originalInfoMethod = infoField.get(null);
+                resumeLogBarrier = () -> {
+                    claimReached.countDown();
+                    try {
+                        if (!releaseResumeCaller.await(4000L, TimeUnit.MILLISECONDS)) {
+                            callerError.set(new AssertionError("Resume must be released after configuration change"));
+                        }
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        callerError.set(error);
+                    }
+                };
+                infoField.set(null, SdkHostRegressionTest.class.getMethod("recordResumeFixtureLog", String.class, String.class));
+                try {
+                    JCoreStorage.setPushStopped(context, true);
+                    resumeCaller.start();
+                    check(claimReached.await(3000L, TimeUnit.MILLISECONDS), "Resume claim did not reach the race boundary");
+                    JCoreStorage.setAppKey(context, "resume-new-app-key");
+                    engine.start(context);
+                    check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Replacement AppKey must log in");
+                    releaseResumeCaller.countDown();
+                    resumeCaller.join(3000L);
+                    check(!resumeCaller.isAlive() && callerError.get() == null, "Old resume caller did not complete");
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                        65402, JCoreWireCodec.buildPropertyOperationPayload(1, 65402,
+                            Collections.<String, Object>singletonMap("value", "new-app-key")), 1500L, 0,
+                        (frame, code) -> { if (frame != null && code == 0) replacementAcked.countDown(); });
+                    check(replacementAcked.await(3000L, TimeUnit.MILLISECONDS),
+                        "A stale resume reached the new configuration: " + serverError.get());
+                } finally {
+                    releaseResumeCaller.countDown();
+                    resumeCaller.join(3000L);
+                    resumeLogBarrier = null;
+                    infoField.set(null, originalInfoMethod);
+                }
+            } finally {
+                finish.countDown();
+                engine.stop(context);
+                server.join(4000L);
+                engine.setAutoReconnectEnabled(true);
+                engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Resume AppKey fixture failed: " + serverError.get());
+        }
+    }
+
     @org.junit.Test
     public void testSdkHostRegressions() throws Exception {
         testCryptoParity();

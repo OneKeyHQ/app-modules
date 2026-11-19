@@ -71,9 +71,17 @@ public final class JCoreStorage {
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
     private static volatile Context sAppContext;
     private static volatile boolean sDebugMode = false;
-    private static long resumeRequestCounter;
-    private static long inFlightResumeRequest;
-    private static long inFlightResumeGeneration;
+    private static PushResumeClaim inFlightResume;
+
+    static final class PushResumeClaim {
+        final String appKey;
+        final long policyGeneration;
+
+        PushResumeClaim(String appKey, long policyGeneration) {
+            this.appKey = appKey;
+            this.policyGeneration = policyGeneration;
+        }
+    }
 
     private JCoreStorage() {
     }
@@ -442,36 +450,38 @@ public final class JCoreStorage {
         }
     }
 
-    public static synchronized long claimPendingPushResume(Context context) {
+    static synchronized PushResumeClaim claimPendingPushResume(Context context) {
         String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
-        long generation = getContentGeneration();
-        if (pending.isEmpty() || !isCollectionAuth(context) || isPushStopped(context)
-            || (inFlightResumeRequest != 0 && inFlightResumeGeneration == generation)) {
-            return 0;
+        if (pending.isEmpty() || !isCollectionAuth(context) || isPushStopped(context) || inFlightResume != null) {
+            return null;
         }
         String appKey = getAppKey(context);
         if (appKey.isEmpty() || (!pending.equals(appKey) && !UNCONFIGURED_RESUME_APP_KEY.equals(pending))) {
-            return 0;
+            return null;
         }
         if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
             putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
         }
-        inFlightResumeGeneration = generation;
-        inFlightResumeRequest = ++resumeRequestCounter;
-        return inFlightResumeRequest;
+        inFlightResume = new PushResumeClaim(appKey, getContentGeneration());
+        return inFlightResume;
     }
 
-    public static synchronized void completePushResume(Context context, long request, boolean acknowledged) {
-        if (request != inFlightResumeRequest) return;
-        inFlightResumeRequest = 0;
-        if (acknowledged && inFlightResumeGeneration == getContentGeneration()
-            && isCollectionAuth(context) && !isPushStopped(context)) {
+    static synchronized boolean isPushResumeClaimCurrent(Context context, PushResumeClaim claim) {
+        return claim != null && claim == inFlightResume && claim.policyGeneration == getContentGeneration()
+            && claim.appKey.equals(getAppKey(context)) && isCollectionAuth(context) && !isPushStopped(context);
+    }
+
+    static synchronized void completePushResume(Context context, PushResumeClaim claim, boolean acknowledged) {
+        if (claim != inFlightResume) return;
+        if (acknowledged && isPushResumeClaimCurrent(context, claim)) {
             clearPendingPushResume(context);
+        } else {
+            inFlightResume = null;
         }
     }
 
     private static void clearPendingPushResume(Context context) {
-        inFlightResumeRequest = 0;
+        inFlightResume = null;
         if (!getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "").isEmpty()) {
             putStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
         }
