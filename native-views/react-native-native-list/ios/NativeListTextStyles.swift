@@ -57,6 +57,8 @@ enum NativeListTextStyles {
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
     if style["color"] != nil { attributes[.foregroundColor] = color }
+    // An explicit 0 still sets kern, which disables pair kerning like React Native.
+    if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
     if style["alignment"] != nil || style["lines"] != nil || style["truncate"] != nil
       || style["lineHeight"] != nil
     {
@@ -122,6 +124,7 @@ enum NativeListTextStyles {
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
     if style["color"] != nil { attributes[.foregroundColor] = color }
+    if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
     if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
       || style["truncate"] != nil
     {

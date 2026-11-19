@@ -287,10 +287,11 @@ final class NativeListIdentityCell: NativeListRendererCell {
     leadingWidth.constant = 40
     leadingHeight.constant = 40
     visual.glyphSize = 18
+    let leadingDescriptor = item.data.dictionary("leading")
     visual.bitmapBorderWidth =
-      item.data.dictionary("leading")?.string("borderColor").isEmpty == false
-      && item.data.dictionary("leading")?.string("borderStyle") != "dashed"
-      ? 1 : 0
+      leadingDescriptor?.string("borderColor").isEmpty == false
+      && leadingDescriptor?.string("borderStyle") != "dashed"
+      ? nativeListBorderWidth(leadingDescriptor?["borderWidth"]) : 0
     fallbackLabel.attributedText = nil
     fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     trailingStack.reset()
@@ -624,13 +625,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
       leadingActionButton.alpha = leadingActionButton.isEnabled ? 1 : 0.4
       leadingActionKey = leadingAction.string("actionKey")
       root.addArrangedSubview(leadingActionButton)
-      // ListItem.IconButton is a medium tertiary button: its 36-point frame
-      // carries m=-7. The collection already contributes ListItem's outer
-      // mx=8, so move the frame 7 points into that inset and reduce only the
-      // following gap by 7. This preserves the source button, avatar and text
-      // positions without shrinking the 24-point SVG glyph or its hit target.
-      leftInset = 5
-      root.setCustomSpacing(5, after: leadingActionButton)
+      // ListItem.IconButton is a medium tertiary button: p=6 plus a 1-point
+      // border makes a 38-point frame with m=-7, so its glyph sits exactly on
+      // a 24-point slot at the 12-point padding and the avatar starts at 48.
+      // This 36-point frame centers the same glyph with a 6-point inset and
+      // 6-point following gap, keeping the 24-point SVG and its hit target.
+      leftInset = 6
+      root.setCustomSpacing(6, after: leadingActionButton)
     }
     addLeading(item.data.dictionary("leading"), key: item.key)
     // OneKey patch: custom network initials match LetterAvatar size 32.
@@ -798,6 +799,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
     // Legacy kept the (possibly empty) trailing stack arranged, so the text column always
     // ends 12 points before the trailing edge inset.
     trailingStack.isHidden = false
+    // Opt-in: with no accessories, drop the column and its 12-point gap entirely.
+    if accessories.isEmpty && item.data.bool("collapseEmptyTrailing") {
+      trailingStack.isHidden = true
+    }
     if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
     if let inset = trailingStack.endInset { rightInset = -inset }
     if accessories.count == 1,

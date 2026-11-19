@@ -282,6 +282,7 @@ function assertTextStyle(
       'alignment',
       'verticalAlignment',
       'offsetY',
+      'letterSpacing',
       ...additionalKeys,
     ],
     path,
@@ -333,6 +334,12 @@ function assertTextStyle(
     fail(`${path}.verticalAlignment`, 'must be top, center, or bottom');
   }
   assertBoundedStyleNumber(style.offsetY, `${path}.offsetY`, -8, 8);
+  assertBoundedStyleNumber(
+    style.letterSpacing,
+    `${path}.letterSpacing`,
+    -4,
+    10
+  );
 }
 
 function assertBoxStyle(style: RowBoxStyle, path: string): void {
@@ -1493,6 +1500,15 @@ function assertLeadingVisual(
     )
       fail(`${path}.fallbackTextColor`, 'must be a hex color');
     if (
+      'borderWidth' in visual &&
+      visual.borderWidth !== undefined &&
+      (typeof visual.borderWidth !== 'number' ||
+        !Number.isFinite(visual.borderWidth) ||
+        visual.borderWidth <= 0 ||
+        visual.borderWidth > 4)
+    )
+      fail(`${path}.borderWidth`, 'must be within (0, 4]');
+    if (
       visual.fallbackIcon?.size !== undefined &&
       (!Number.isFinite(visual.fallbackIcon.size) ||
         visual.fallbackIcon.size <= 0 ||
@@ -2432,6 +2448,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'tertiaryTone',
     'titleLines',
     'subtitleLines',
+    'collapseEmptyTrailing',
     'badges',
     'trailing',
     'draggable',
@@ -2769,6 +2786,7 @@ const PROTOCOL_NUMBER_FIELDS = new Set([
   'opacity',
   'offsetY',
   'offsetX',
+  'letterSpacing',
   'cornerRadius',
   'borderWidth',
   'horizontalPadding',
@@ -2881,7 +2899,7 @@ function assertProtocolFields(
       PROTOCOL_NUMBER_FIELDS.has(field) &&
       typeof item === 'number' &&
       item < 0 &&
-      !['offsetX', 'offsetY'].includes(field)
+      !['offsetX', 'offsetY', 'letterSpacing'].includes(field)
     )
       fail(fieldPath, 'must be non-negative');
     if (
@@ -3236,6 +3254,7 @@ const VISUAL_FIELDS = [
   'overlays',
   'borderStyle',
   'borderColor',
+  'borderWidth',
   'cornerIcon',
 ];
 const TEXT_STYLE_FIELDS = [
@@ -3249,6 +3268,7 @@ const TEXT_STYLE_FIELDS = [
   'alignment',
   'verticalAlignment',
   'offsetY',
+  'letterSpacing',
 ];
 const ACCESSORY_FIELDS: Readonly<Record<string, readonly string[]>> = {
   value: ['kind', 'text', 'secondary', 'textSegments'],
@@ -3800,7 +3820,7 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
       typeof item !== 'object' &&
       typeof item === 'number' &&
       (!Number.isFinite(item) ||
-        (item < 0 && !['offsetX', 'offsetY'].includes(key)))
+        (item < 0 && !['offsetX', 'offsetY', 'letterSpacing'].includes(key)))
     )
       continue;
     if (

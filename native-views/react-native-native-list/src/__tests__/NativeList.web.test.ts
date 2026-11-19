@@ -7305,3 +7305,81 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 });
+
+describe('ListItem parity styles', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document } & Window;
+    };
+  };
+  const linear = (sourceRows: readonly RowModel[]) => ({
+    ...snapshot({ kind: 'linear' }, sourceRows),
+    selection: undefined,
+    capabilities: {},
+  });
+  const siteRow = (overrides: Record<string, unknown> = {}): RowModel =>
+    ({
+      type: 'identity',
+      key: 'site',
+      leading: {
+        kind: 'token',
+        borderColor: '#0000001A',
+        borderWidth: 0.5,
+        fallbackIcon: { name: 'GlobusOutline' },
+      },
+      title: 'Site',
+      subtitle: 'https://site.example',
+      collapseEmptyTrailing: true,
+      style: {
+        title: { letterSpacing: 0 },
+        subtitle: { letterSpacing: -0.5 },
+      },
+      ...overrides,
+    } as RowModel);
+
+  it('validates letterSpacing, leading borderWidth and collapseEmptyTrailing', () => {
+    expect(() => validateSnapshot(linear([siteRow()]))).not.toThrow();
+    expect(() =>
+      validateSnapshot(
+        linear([
+          siteRow({
+            leading: {
+              kind: 'token',
+              borderColor: '#0000001A',
+              borderWidth: 0,
+            },
+          }),
+        ])
+      )
+    ).toThrow(/borderWidth/);
+    expect(() =>
+      validateSnapshot(
+        linear([siteRow({ style: { title: { letterSpacing: 12 } } })])
+      )
+    ).toThrow(/letterSpacing/);
+  });
+
+  it('draws the leading border at borderWidth and applies letterSpacing on Web', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      linear([siteRow()]),
+      {},
+      false
+    );
+    try {
+      const row = host.querySelector('[data-native-list-row-key="site"]')!;
+      const bordered = Array.from(row.querySelectorAll<HTMLElement>('*')).find(
+        (element: HTMLElement) => element.style.border.includes('solid')
+      );
+      expect(bordered?.style.border).toContain('0.5px solid');
+      const slot = document.createElement('span');
+      applyTextStyleToSlot(slot, { letterSpacing: -0.5 });
+      expect(slot.style.letterSpacing).toBe('-0.5px');
+    } finally {
+      engine.destroy();
+    }
+  });
+});

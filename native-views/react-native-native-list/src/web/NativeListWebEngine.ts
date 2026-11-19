@@ -1422,7 +1422,12 @@ function createVisual(
       '2px dashed ' + (visual.borderColor ?? 'var(--nl-disabled)');
     frame.style.boxSizing = 'border-box';
   } else if ('borderColor' in visual && visual.borderColor) {
-    frame.style.border = '1px solid ' + visual.borderColor;
+    frame.style.border =
+      String(
+        'borderWidth' in visual && visual.borderWidth ? visual.borderWidth : 1
+      ) +
+      'px solid ' +
+      visual.borderColor;
     frame.style.boxSizing = 'border-box';
   }
   if ('overlays' in visual)
@@ -1840,6 +1845,16 @@ function createAccessory(
     case 'drag':
       element.textContent = '≡';
       applySelectorIcon(element, 'DragOutline');
+      // iOS and Android tint the handle iconSubdued, like ListItem.IconButton.
+      element.style.color = 'var(--nl-icon-subdued)';
+      // A 24-point centered box, so the glyph does not follow the text line box.
+      Object.assign(element.style, {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '24px',
+        height: '24px',
+      });
       setData(element, 'nativeListReorderHandle', true);
       break;
     case 'progress':

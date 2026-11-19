@@ -773,6 +773,11 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    if (style.has("letterSpacing") && view.textSize > 0f)
+      // TextView takes em; the protocol value is logical units.
+      view.letterSpacing =
+        (style.optDouble("letterSpacing") * resources.displayMetrics.density / view.textSize)
+          .toFloat()
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or

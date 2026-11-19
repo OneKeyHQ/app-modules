@@ -116,6 +116,13 @@ Status: implemented in local source for the Select Address and Swap selectors;
 native device and broader Web runtime verification remain pending. These fields travel in snapshot/patch JSON
 and do not change the Nitro ABI.
 
+An `identity` row may set `collapseEmptyTrailing: true`: when it has no trailing
+accessories, iOS drops the (empty) trailing column and its 12-point gap so the
+text column reaches the row's trailing padding, as a React Native `ListItem`
+without children does. Omission keeps the legacy iOS reservation. Android and
+Web already give an empty trailing column no width or gap, so the flag does not
+change them.
+
 An `identity` row may opt into `subtitleLines: 0`, meaning the complete subtitle
 wraps at its measured text-column width without a line cap. Existing omitted,
 one-line and two-line behavior stays unchanged. An identity row with
@@ -452,7 +459,10 @@ existing appearance.
 
 Identity leading visuals consume the existing `borderColor` as a one-point/dp
 solid bitmap border when supplied without `borderStyle: 'dashed'`; omission or
-a dashed style clears the solid border on every bind.
+a dashed style clears the solid border on every bind. An optional `borderWidth`
+(`0 < width <= 4` logical units, default 1) sets that solid border's width; a
+host hairline (`StyleSheet.hairlineWidth`) draws one physical pixel on iOS and
+Android (rounded up to at least one pixel) and a fractional CSS border on Web.
 The image is inset by that border width. An overlay may optionally set
 `fontWeight` to one of the existing text weight names
 (`regular | medium | semibold | bold`). This changes only overlay text;
@@ -623,6 +633,15 @@ and never begins a reorder. Validation rejects any other value.
   `pressDisabled`. Icons beside it keep their own actions.
 - **Web cursor:** in `handle` mode the row keeps the default cursor and the
   handle shows `grab`.
+- **Handle appearance:** every platform tints the `DragOutline` glyph
+  `iconSubdued`, matching `ListItem.IconButton`; Web centers it in a 24-point
+  box so it lines up with neighbouring icon buttons instead of the text line.
+- **Leading action geometry:** an identity `leadingAction` reproduces
+  `ListItem.IconButton` (medium tertiary: 6-point padding plus a 1-point
+  border, m=-7) on all three platforms, so its glyph sits on a 24-point slot at
+  the 12-point row padding and the leading visual starts at 48. iOS and Android
+  use a 36-point frame with a 6-point inset and 6-point following gap; Web
+  applies the tertiary icon frame.
 
 - **Enclosing pans (iOS):** once a reorder has started, the list disables the
   enabled `UIPanGestureRecognizer`s of its ancestors (for example a sheet's

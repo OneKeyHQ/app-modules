@@ -114,6 +114,10 @@ function createIdentityRow(
       row.leadingAction.tintColor
     );
     markActionAnchorSource(action, 'leadingAction');
+    // ListItem.IconButton geometry, as on iOS and Android: the medium tertiary
+    // frame overhangs its 24-point slot by 7 on each side.
+    action.classList.add('ok-native-list-tertiary-icon');
+    action.dataset.nativeListAnchorInset = '7';
     body.appendChild(action);
   }
   const visual = primitives.visual(

@@ -393,7 +393,13 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     }
     leadingFrame.bitmapBorderWidth =
       if (descriptor.optString("borderColor").isNotEmpty() &&
-        descriptor.optString("borderStyle") != "dashed") dp(1) else 0
+        descriptor.optString("borderStyle") != "dashed") {
+        // Optional borderWidth (logical units); a hairline still draws one physical pixel.
+        descriptor.optDouble("borderWidth", Double.NaN)
+          .takeIf { it.isFinite() && it > 0 && it <= 4 }
+          ?.let { (it * resources.displayMetrics.density).roundToInt().coerceAtLeast(1) }
+          ?: dp(1)
+      } else 0
     if (visual == null) leadingFrame.recycle()
     val item = currentItem!!
     val style = item.json.optJSONObject("style")?.optJSONObject("image") ?: JSONObject()
@@ -722,11 +728,11 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       leadingActionIcon.setOnClickListener {
         emitAction(item, action.optString("actionKey"), null, leadingActionIcon, "leadingAction")
       }
-      // ListItem.IconButton is 36dp with 6dp inner padding and m=-7. Keep the
-      // full button frame but absorb its leading negative margin into the row
-      // padding and its trailing margin into the following gap.
-      setPadding(dp(5), paddingTop, paddingRight, paddingBottom)
-      addView(leadingActionIcon, LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(5) })
+      // ListItem.IconButton is 38dp (6dp padding plus a 1dp border) with m=-7,
+      // so its glyph sits on a 24dp slot at the 12dp padding. This 36dp frame
+      // centers the same glyph with a 6dp inset and a 6dp following gap.
+      setPadding(dp(6), paddingTop, paddingRight, paddingBottom)
+      addView(leadingActionIcon, LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(6) })
     }
     addLeading(
       leading,
@@ -1021,6 +1027,11 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    if (style.has("letterSpacing") && view.textSize > 0f)
+      // TextView takes em; the protocol value is logical units.
+      view.letterSpacing =
+        (style.optDouble("letterSpacing") * resources.displayMetrics.density / view.textSize)
+          .toFloat()
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or

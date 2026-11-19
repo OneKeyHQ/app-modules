@@ -234,7 +234,7 @@ meaning is defined in the [catalog](ROW_TEMPLATES.md).
 
 Every text role listed below accepts the same `NativeListTextStyle`:
 `token`, `fontSize`, `fontWeight`, `color`, `lineHeight`, `lines`, `truncate`,
-`alignment`, `verticalAlignment`, `offsetY`.
+`alignment`, `verticalAlignment`, `offsetY`, `letterSpacing`.
 Weights are `regular | medium | semibold | bold`; line counts are `1 | 2 | 3`;
 `start | center | end` alignment follows layout direction on all three
 platforms (`end` is the left edge in RTL). Colors must be
@@ -359,6 +359,7 @@ style: {
 | `alignment` | Horizontal `start / center / end` inside the text region, respecting direction |
 | `verticalAlignment` | `top / center / bottom` for the complete text block inside its allocated text region; no effect without spare height |
 | `offsetY` | `-8…8` logical units of optical translation; does not change measurement, sibling spacing or hit areas |
+| `letterSpacing` | `-4…10` logical units between glyphs. iOS sets `.kern`, so an explicit `0` also turns off pair kerning, matching React Native `letterSpacing: 0`; Android converts to em of the current text size; Web sets CSS `letter-spacing`. Omission keeps each platform's existing tracking |
 
 Single-line text does not wrap; explicit CR/LF line breaks become spaces (CRLF is
 one break). Multi-line text wraps naturally, preserves explicit breaks, and
