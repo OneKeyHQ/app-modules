@@ -169,6 +169,11 @@ build below with `tests/style-gallery/StyleGallery.swift`; Android uses
 `adb shell wm density 320` for 2x output); Web uses
 `tests/style-gallery/render-web.cjs` (the built package root in headless
 Chromium with real mouse presses).
+The package's `yarn typecheck` checks `src/` (including its tests) from a
+checkout without build artifacts. Run `yarn prepare` before
+`yarn typecheck:gallery` and the Web gallery renderer. The gallery type check
+uses the generated public declarations, and the renderer resolves the
+package's `browser` export.
 Like the other harnesses, this does not exercise the React Native / Nitro
 integration.
 

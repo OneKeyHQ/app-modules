@@ -43,6 +43,7 @@
     "prepare": "bob build && rm -rf lib/nitrogen && cp -r nitrogen lib/nitrogen",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
+    "typecheck:gallery": "tsc --project tests/style-gallery/tsconfig.json",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
     "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public"
