@@ -142,15 +142,20 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
 
 - (void)testLoginV27AndPushControlCmd40WireFormatAlignment {
     NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd_unit_01" appKey:kDemoTestAppKey];
-    const uint8_t *lb = loginBody.bytes;
-    XCTAssertTrue(loginBody.length > 40);
-    XCTAssertEqual(lb[0], 0x69);
-    XCTAssertEqual(lb[1], 0x00);
-    XCTAssertEqual(lb[2], 0x00);
-    XCTAssertEqual(lb[3], 0x00);
-    NSString *ascii = [[NSString alloc] initWithData:loginBody encoding:NSISOLatin1StringEncoding];
-    XCTAssertTrue([ascii containsString:@"5.2.0|6.0.0||||||"]);
-    XCTAssertTrue([ascii containsString:kDemoTestAppKey]);
+    const uint8_t passwordPrefix[] = {0x69, 0x00, 0x00, 0x00, 0x00, 0x20};
+    // JCore 5.2.0 and JPush 6.0.0 are serialized as decimal SDK codes in this field.
+    const char sdkVersionField[] = "\x00\x13" "328192|393216||||||";
+    NSUInteger versionOffset = sizeof(passwordPrefix) + 32;
+    NSUInteger versionLength = sizeof(sdkVersionField) - 1;
+    NSData *appKeyBytes = [kDemoTestAppKey dataUsingEncoding:NSUTF8StringEncoding];
+    NSUInteger appKeyOffset = versionOffset + versionLength + 2;
+    XCTAssertGreaterThanOrEqual(loginBody.length, appKeyOffset + appKeyBytes.length);
+    if (loginBody.length < appKeyOffset + appKeyBytes.length) { return; }
+    XCTAssertEqualObjects([loginBody subdataWithRange:NSMakeRange(0, sizeof(passwordPrefix))],
+                          [NSData dataWithBytes:passwordPrefix length:sizeof(passwordPrefix)]);
+    XCTAssertEqualObjects([loginBody subdataWithRange:NSMakeRange(versionOffset, versionLength)],
+                          [NSData dataWithBytes:sdkVersionField length:versionLength]);
+    XCTAssertEqualObjects([loginBody subdataWithRange:NSMakeRange(appKeyOffset, appKeyBytes.length)], appKeyBytes);
 
     XCTAssertEqual(JCOREWireCommandPushCtrl, 40);
     NSData *stopPayload = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
