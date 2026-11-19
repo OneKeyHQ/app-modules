@@ -1,33 +1,9 @@
-import { type ComponentType, useMemo, useRef, useState } from 'react';
-import {
-  Pressable,
-  type StyleProp,
-  StyleSheet,
-  Text,
-  View,
-  type ViewStyle,
-} from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import {
-  type SegmentSliderMethods,
-  type SegmentSliderProps,
-  SegmentSliderView,
-} from '@onekeyfe/react-native-segment-slider';
-import { type HybridView, callback } from 'react-native-nitro-modules';
+import { SegmentSlider } from '@onekeyfe/react-native-segment-slider';
 
 import { TestPageBase } from './TestPageBase';
-
-type ISegmentSliderRef = HybridView<SegmentSliderProps, SegmentSliderMethods>;
-
-// The wrapper exports its props as `SegmentSliderProps & ViewProps`; `hybridRef`
-// is a host-injected Nitro prop (a `callback(...)`-wrapped `{ f }`) not declared
-// there, so cast to add it — same pattern the app uses for the perp views.
-const StyledSegmentSliderView = SegmentSliderView as ComponentType<
-  SegmentSliderProps & {
-    style?: StyleProp<ViewStyle>;
-    hybridRef?: { f: (ref: ISegmentSliderRef) => void };
-  }
->;
 
 // Real OneKey light-theme token values (resolved from the Tamagui theme). In
 // the app these come live from `useTheme()` in the composite wrapper and adapt
@@ -59,6 +35,7 @@ function Demo({
   showBubble = false,
   centerOrigin = false,
   disabled = false,
+  hapticStep = 0,
 }: {
   title: string;
   initial?: number;
@@ -68,29 +45,11 @@ function Demo({
   showBubble?: boolean;
   centerOrigin?: boolean;
   disabled?: boolean;
+  hapticStep?: number;
 }) {
-  // `value` here is display-only (header label), kept fresh by the native
-  // view's onChange. The slider is UNCONTROLLED: the initial value is seeded
-  // once via `defaultValue`, and programmatic updates go through the imperative
-  // `setValue` method on the hybrid ref (the "Set to …" buttons below) — never
-  // back through a prop. This is the perf path (no Fabric prop commit) and it
-  // sidesteps the controlled-value-vs-drag conflict.
+  // Controlled: the slider follows `value`, drags report through onChange,
+  // and the "Set to …" buttons update the same state (no onChange echo).
   const [value, setValue] = useState(initial);
-  const sliderRef = useRef<ISegmentSliderRef | null>(null);
-  const hybridRef = useMemo(
-    () =>
-      callback((node: ISegmentSliderRef) => {
-        sliderRef.current = node;
-      }),
-    [],
-  );
-
-  // Drive the native view imperatively. setValue does NOT fire onChange (the
-  // caller already knows the value), so update the header label ourselves.
-  const setTo = (v: number) => {
-    sliderRef.current?.setValue(v);
-    setValue(v);
-  };
   const mid = Math.round((min + max) / 2);
 
   return (
@@ -100,10 +59,9 @@ function Demo({
         <Text style={styles.demoValue}>{value}</Text>
       </View>
       <View style={styles.sliderBox}>
-        <StyledSegmentSliderView
-          style={styles.slider}
-          hybridRef={hybridRef}
-          defaultValue={initial}
+        <SegmentSlider
+          aria-label={title}
+          value={value}
           min={min}
           max={max}
           segments={segments}
@@ -112,18 +70,19 @@ function Demo({
           showBubble={showBubble}
           centerOrigin={centerOrigin}
           snapTapToSegment={segments > 0}
+          hapticStep={hapticStep}
           onChange={setValue}
           onSlideStart={() => console.log(`[${title}] start`)}
-          onSlideComplete={() => console.log(`[${title}] complete @`, value)}
+          onSlideComplete={() => console.log(`[${title}] complete`)}
           {...COLORS}
         />
       </View>
       <View style={styles.buttonRow}>
-        {[min, mid, max].map((v) => (
+        {[min, mid, max].map(v => (
           <Pressable
             key={v}
             style={styles.button}
-            onPress={() => setTo(v)}
+            onPress={() => setValue(v)}
             disabled={disabled}
           >
             <Text style={styles.buttonText}>{`Set to ${v}`}</Text>
@@ -139,6 +98,12 @@ export function SegmentSliderTestPage() {
     <TestPageBase title="Segment Slider Test">
       <Demo title="Continuous (no marks)" initial={30} />
       <Demo title="4 segments" segments={4} initial={50} />
+      <Demo
+        title="4 segments, haptic every 1%"
+        segments={4}
+        initial={0}
+        hapticStep={1}
+      />
       <Demo title="10 segments" segments={10} initial={70} />
       <Demo title="With bubble" segments={4} initial={25} showBubble />
       <Demo
@@ -176,10 +141,6 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   sliderBox: {
-    width: '100%',
-    height: 24,
-  },
-  slider: {
     width: '100%',
     height: 24,
   },
