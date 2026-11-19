@@ -1271,7 +1271,57 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     private var diffFallbackVersions = Set<String>()
     private var fullBundleParamsByKey: [String: (downloadUrl: String, fileSize: Double, sha256: String)] = [:]
     private var diffVerifiedMetadataSha256ByKey: [String: (fullSha256: String, metadataSha256: String)] = [:]
-    private var activeVerifications = Set<String>()
+
+    private final class VerificationContext {
+        private let lock = NSLock()
+        private var cancelledByClear = false
+        private var completed = false
+        private var waiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+
+        var wasCancelledByClear: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelledByClear
+        }
+
+        func markCancelledByClear() {
+            lock.lock()
+            cancelledByClear = true
+            lock.unlock()
+        }
+
+        func finish() {
+            lock.lock()
+            completed = true
+            let currentWaiters = Array(waiters.values)
+            waiters.removeAll()
+            lock.unlock()
+            currentWaiters.forEach { $0.resume(returning: true) }
+        }
+
+        func waitForCompletion(timeout: TimeInterval) async -> Bool {
+            await withCheckedContinuation { continuation in
+                let id = UUID()
+                lock.lock()
+                if completed {
+                    lock.unlock()
+                    continuation.resume(returning: true)
+                    return
+                }
+                waiters[id] = continuation
+                lock.unlock()
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+                    guard let self else { return }
+                    self.lock.lock()
+                    let waiter = self.waiters.removeValue(forKey: id)
+                    self.lock.unlock()
+                    waiter?.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    private var activeVerifications: [String: VerificationContext] = [:]
 
     private func isDiffFallbackMarked(_ key: String) -> Bool {
         stateQueue.sync { diffFallbackVersions.contains(key) }
@@ -1304,19 +1354,57 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         stateQueue.sync { diffVerifiedMetadataSha256ByKey[key] }
     }
 
-    private func acquireVerificationSlot(_ key: String) -> Bool {
-        stateQueue.sync {
-            if clearingDownloads || activeVerifications.contains(key) {
-                return false
+    private func acquireVerificationSlot(_ key: String) throws -> VerificationContext {
+        try stateQueue.sync {
+            if clearingDownloads {
+                throw BundleUpdateError(.cancelled, .verifyASC)
             }
-            activeVerifications.insert(key)
-            return true
+            if activeVerifications[key] != nil {
+                throw BundleUpdateError(.invalidArgument, .verifyASC)
+            }
+            let ctx = VerificationContext()
+            activeVerifications[key] = ctx
+            return ctx
         }
     }
 
-    private func releaseVerificationSlot(_ key: String) {
+    private func releaseVerificationSlot(_ key: String, context: VerificationContext) {
         stateQueue.sync {
-            _ = activeVerifications.remove(key)
+            if activeVerifications[key] === context {
+                activeVerifications.removeValue(forKey: key)
+            }
+        }
+        context.finish()
+    }
+
+    private func acquireDownloadSlotForFallback(
+        verificationContext: VerificationContext
+    ) throws -> (DownloadDelegate, URLSession) {
+        try stateQueue.sync {
+            if clearingDownloads || verificationContext.wasCancelledByClear {
+                throw BundleUpdateError(.cancelled, .verifyASC)
+            }
+            if isDownloading {
+                throw BundleUpdateError(.invalidArgument, .verifyASC)
+            }
+            guard let delegate = downloadDelegate, let session = urlSession else {
+                throw BundleUpdateError(.unknown, .verifyASC)
+            }
+            isDownloading = true
+            delegate.reset()
+            activeRunDelegate = delegate
+            return (delegate, session)
+        }
+    }
+
+    private func releaseDownloadSlot(runDelegate: DownloadDelegate) {
+        stateQueue.sync {
+            runDelegate.finishRun()
+            if activeRunDelegate === runDelegate {
+                isDownloading = false
+                activeDownloadFilePath = nil
+                activeRunDelegate = nil
+            }
         }
     }
 
@@ -1763,12 +1851,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return updatePromise(step: .download) { [weak self] in
             guard let self = self else { throw BundleUpdateError(.unknown, .download) }
 
-            let (alreadyDownloading, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, DownloadDelegate?, URLSession?) in
-                if self.isDownloading || self.clearingDownloads { return (true, nil, nil) }
+            let (isClearing, alreadyDownloading, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, Bool, DownloadDelegate?, URLSession?) in
+                if self.clearingDownloads { return (true, false, nil, nil) }
+                if self.isDownloading { return (false, true, nil, nil) }
                 self.isDownloading = true
                 self.downloadDelegate?.reset()
                 self.activeRunDelegate = self.downloadDelegate
-                return (false, self.downloadDelegate, self.urlSession)
+                return (false, false, self.downloadDelegate, self.urlSession)
+            }
+            if isClearing {
+                throw BundleUpdateError(.cancelled, .download)
             }
             guard !alreadyDownloading else {
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading")
@@ -1847,29 +1939,45 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
+            let diffDir = (downloadDir as NSString).appendingPathComponent(BundleDiffReconstruction.diffDownloadDirName)
+            let diffFileName = "\(bundleKey)\(BundleDiffReconstruction.diffZipExtension)"
+            let diffFilePath = (diffDir as NSString).appendingPathComponent(diffFileName)
+            let diffMetaPath = (diffDir as NSString).appendingPathComponent("\(bundleKey)\(BundleDiffReconstruction.diffMetaExtension)")
+            let existingDesc = BundleDiffReconstruction.readDescriptor(
+                fromPath: diffMetaPath,
+                expectedAppVersion: appVersion,
+                expectedBundleVersion: bundleVersion
+            )
+            let isFallbackMarked = self.isDiffFallbackMarked(bundleKey) ||
+                (existingDesc?.fallbackRequired == true &&
+                 BundleDiffReconstruction.constantTimeEqualHex(existingDesc?.sha256 ?? "", sha256))
+
             // Priority 1: Incremental diff download if usable diff params are provided
             let usableDiff = BundleDiffReconstruction.isUsableDiffParams(
                 diffDownloadUrl: params.diffDownloadUrl,
                 diffSha256: params.diffSha256,
                 diffSignature: params.diffSignature,
-                isFallbackMarked: self.isDiffFallbackMarked(bundleKey)
+                isFallbackMarked: isFallbackMarked
             )
             if usableDiff,
                let diffUrl = params.diffDownloadUrl,
                let diffSha256 = BundleDiffReconstruction.normalizeSha256(params.diffSha256),
                let diffSignature = params.diffSignature {
-                let diffFileName = "\(bundleKey)\(BundleDiffReconstruction.diffZipExtension)"
-                let diffFilePath = (downloadDir as NSString).appendingPathComponent(diffFileName)
-                let diffMetaPath = (downloadDir as NSString).appendingPathComponent("\(bundleKey)\(BundleDiffReconstruction.diffMetaExtension)")
+                if !FileManager.default.fileExists(atPath: diffDir) {
+                    try? FileManager.default.createDirectory(atPath: diffDir, withIntermediateDirectories: true)
+                }
                 let diffResumeDataPath = "\(diffFilePath).resume"
-                let diffDescriptor = BundleDiffReconstruction.DiffArchiveDescriptor(
-                    appVersion: appVersion,
-                    bundleVersion: bundleVersion,
-                    downloadUrl: downloadUrl,
-                    fileSize: params.fileSize,
-                    sha256: sha256,
-                    diffSha256: diffSha256,
-                    signature: nil
+                let diffDescriptor = BundleDiffReconstruction.descriptorPreservingVerifiedSignature(
+                    newDescriptor: BundleDiffReconstruction.DiffArchiveDescriptor(
+                        appVersion: appVersion,
+                        bundleVersion: bundleVersion,
+                        downloadUrl: downloadUrl,
+                        fileSize: params.fileSize,
+                        sha256: sha256,
+                        diffSha256: diffSha256,
+                        signature: nil
+                    ),
+                    existingDescriptor: existingDesc
                 )
                 let diffResult = BundleDownloadResult(
                     downloadUrl: downloadUrl,
@@ -1917,11 +2025,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     OneKeyLog.info("BundleUpdate", "downloadBundle: diff download completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
                     return diffResult
                 } catch {
-                    if runDelegate.wasCancelledByClear {
-                        throw BundleUpdateError(.cancelled, .download)
+                    let intentionallyCancelled = runDelegate.wasCancelledByClear
+                    let updateError = intentionallyCancelled
+                        ? BundleUpdateError(.cancelled, .download)
+                        : bundleUpdateError(error, step: .download)
+                    if updateError.code == .cancelled {
+                        throw updateError
                     }
-                    if let typed = error as? BundleUpdateError, typed.code == .cancelled {
-                        throw typed
+                    if BundleDiffReconstruction.isRetryableDiffDownloadError(code: updateError.code.rawValue) {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: transient diff download interruption for \(bundleKey), preserving resume progress: \(updateError)")
+                        BundleDiffReconstruction.writeDescriptor(diffDescriptor, toPath: diffMetaPath)
+                        self.sendEvent(type: "update/error", message: updateError.description)
+                        throw updateError
                     }
                     OneKeyLog.warn("BundleUpdate", "downloadBundle: diff download failed for \(bundleKey), falling back to full bundle: \(error)")
                     self.markDiffFallback(bundleKey)
@@ -2157,7 +2272,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         if let activeDir = BundleUpdateStore.currentBundleDir(),
            let activeFolder = BundleUpdateStore.currentBundleVersion(),
            activeFolder != excludingFolder,
-           !activeFolder.hasSuffix(".diff-staging"),
+           activeFolder != BundleDiffReconstruction.stagingRootDirName,
            BundleUpdateStore.bundleVersion(inFolder: activeFolder, appVersion: appVersion) != nil {
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: activeDir, isDirectory: &isDir), isDir.boolValue {
@@ -2171,7 +2286,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 if name == "asc" ||
                    name == BundleDiffReconstruction.stagingRootDirName ||
                    name == excludingFolder ||
-                   name.hasSuffix(".diff-staging") ||
                    seen.contains(name) {
                     continue
                 }
@@ -2249,12 +2363,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         signature: String,
         isInstalled: Bool,
         skipGPG: Bool,
-        runDelegate: DownloadDelegate?
+        verificationContext: VerificationContext
     ) throws {
         let fm = FileManager.default
         let folderName = "\(appVersion)-\(bundleVersion)"
 
-        if runDelegate?.wasCancelledByClear == true {
+        if verificationContext.wasCancelledByClear {
             throw BundleUpdateError(.cancelled, .verifyASC)
         }
 
@@ -2346,7 +2460,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             throw BundleDiffReconstructionError.fallbackRequired("diff zip extraction failed: \(error)")
         }
 
-        if runDelegate?.wasCancelledByClear == true {
+        if verificationContext.wasCancelledByClear {
             throw BundleUpdateError(.cancelled, .verifyASC)
         }
 
@@ -2413,7 +2527,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             targetFileEntries: targetFileEntries
         )
 
-        if runDelegate?.wasCancelledByClear == true {
+        if verificationContext.wasCancelledByClear {
             throw BundleUpdateError(.cancelled, .verifyASC)
         }
 
@@ -2429,7 +2543,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
         )
 
-        if runDelegate?.wasCancelledByClear == true {
+        if verificationContext.wasCancelledByClear {
             throw BundleUpdateError(.cancelled, .verifyASC)
         }
 
@@ -2489,12 +2603,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
 
             let folderName = "\(appVersion)-\(bundleVersion)"
-            guard self.acquireVerificationSlot(folderName) else {
-                OneKeyLog.warn("BundleUpdate", "verifyBundleASC: concurrent verification rejected for \(folderName)")
-                throw BundleUpdateError(.invalidArgument, .verifyASC)
-            }
+            let verificationContext = try self.acquireVerificationSlot(folderName)
             defer {
-                self.releaseVerificationSlot(folderName)
+                self.releaseVerificationSlot(folderName, context: verificationContext)
             }
 
             let downloadDir = BundleUpdateStore.downloadBundleDir()
@@ -2507,8 +2618,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw BundleUpdateError(.security, .verifyASC)
             }
 
-            let diffFilePath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffZipExtension)")
-            let diffMetaPath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
+            let diffDir = (downloadDir as NSString).appendingPathComponent(BundleDiffReconstruction.diffDownloadDirName)
+            let diffFilePath = (diffDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffZipExtension)")
+            let diffMetaPath = (diffDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
             let resolvedDiffPath = (diffFilePath as NSString).resolvingSymlinksInPath
             guard resolvedDiffPath.hasPrefix(baseDownloadDir + "/") else {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: diff ZIP outside download directory: \(resolvedDiffPath)")
@@ -2527,7 +2639,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw BundleUpdateError(.security, .verifyASC)
             }
             let stagingRootDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(BundleDiffReconstruction.stagingRootDirName)
-            let stagingDir = (stagingRootDir as NSString).appendingPathComponent("\(folderName)-\(UUID().uuidString)")
+            let runId = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let stagingDir = (stagingRootDir as NSString).appendingPathComponent("\(folderName)-\(runId)")
             let resolvedStagingDir = (stagingDir as NSString).resolvingSymlinksInPath
             guard resolvedStagingDir.hasPrefix(baseBundleDir + "/") else {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: staging outside bundle directory: \(resolvedStagingDir)")
@@ -2553,44 +2666,91 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     isInstalled: isInstalled,
                     skipGPG: skipGPG
                 )
+                try? fm.removeItem(atPath: diffMetaPath)
                 return
             }
 
             let normalizedDiffSha256 = BundleDiffReconstruction.normalizeSha256(params.diffSha256)
             let hasDiffSig = !(params.diffSignature ?? "").isEmpty
+            let persistedDesc = BundleDiffReconstruction.readDescriptor(
+                fromPath: diffMetaPath,
+                expectedAppVersion: appVersion,
+                expectedBundleVersion: bundleVersion
+            )
+
+            func downloadAndVerifyFullFallback(expectedDiffSha: String?) async throws {
+                if verificationContext.wasCancelledByClear {
+                    throw BundleUpdateError(.cancelled, .verifyASC)
+                }
+                self.markDiffFallback(folderName)
+                guard let fallbackParams = BundleDiffReconstruction.resolveFallbackDownloadParams(
+                    expectedFullSha256: sha256,
+                    expectedDiffSha256: expectedDiffSha,
+                    explicitDownloadUrl: params.downloadUrl,
+                    explicitFileSize: params.fileSize,
+                    inMemoryFullParams: self.recordedFullBundleParams(key: folderName),
+                    descriptor: persistedDesc
+                ) else {
+                    try? fm.removeItem(atPath: diffFilePath)
+                    try? fm.removeItem(atPath: "\(diffFilePath).resume")
+                    try? fm.removeItem(atPath: diffMetaPath)
+                    RangeDownloader.shared.discardArtifacts(filePath: diffFilePath)
+                    throw BundleUpdateError(.missing, .verifyASC)
+                }
+                let fallbackDiffSha = expectedDiffSha ?? persistedDesc?.diffSha256 ?? sha256
+                BundleDiffReconstruction.writeDescriptor(
+                    BundleDiffReconstruction.DiffArchiveDescriptor(
+                        appVersion: appVersion,
+                        bundleVersion: bundleVersion,
+                        downloadUrl: fallbackParams.downloadUrl,
+                        fileSize: fallbackParams.fileSize,
+                        sha256: sha256,
+                        diffSha256: fallbackDiffSha,
+                        signature: persistedDesc?.signature,
+                        fallbackRequired: true
+                    ),
+                    toPath: diffMetaPath
+                )
+                try? fm.removeItem(atPath: diffFilePath)
+                try? fm.removeItem(atPath: "\(diffFilePath).resume")
+                RangeDownloader.shared.discardArtifacts(filePath: diffFilePath)
+
+                let (runDelegate, runSession) = try self.acquireDownloadSlotForFallback(
+                    verificationContext: verificationContext
+                )
+                defer {
+                    self.releaseDownloadSlot(runDelegate: runDelegate)
+                }
+                if verificationContext.wasCancelledByClear || runDelegate.wasCancelledByClear {
+                    throw BundleUpdateError(.cancelled, .verifyASC)
+                }
+                runDelegate.resetForAttempt()
+                try await self.downloadVerifiedFile(
+                    downloadUrl: fallbackParams.downloadUrl,
+                    filePath: fullFilePath,
+                    sha256: sha256,
+                    rangeTaskId: folderName,
+                    runDelegate: runDelegate,
+                    runSession: runSession,
+                    step: .verifyASC,
+                    emitErrorEvents: true
+                )
+                try? fm.removeItem(atPath: diffMetaPath)
+                try self.verifyAndExtractFullZip(
+                    filePath: fullFilePath,
+                    destination: destination,
+                    appVersion: appVersion,
+                    bundleVersion: bundleVersion,
+                    sha256: sha256,
+                    signature: signature,
+                    isInstalled: isInstalled,
+                    skipGPG: skipGPG
+                )
+            }
+
             if fm.fileExists(atPath: resolvedDiffPath),
                let diffSha256 = normalizedDiffSha256,
                (skipGPG || hasDiffSig) {
-                // Register active cancellation tracking up-front across the entire
-                // diff reconstruction + potential full-bundle fallback so clearDownload
-                // waits for or cancels the run before deleting download artifacts.
-                let (busyOrClearing, runDelegate, runSession) = self.stateQueue.sync { () -> (Bool, DownloadDelegate?, URLSession?) in
-                    if self.isDownloading || self.clearingDownloads { return (true, nil, nil) }
-                    self.isDownloading = true
-                    self.downloadDelegate?.reset()
-                    self.activeRunDelegate = self.downloadDelegate
-                    return (false, self.downloadDelegate, self.urlSession)
-                }
-                guard !busyOrClearing, let runDelegate, let runSession else {
-                    throw BundleUpdateError(.cancelled, .verifyASC)
-                }
-                defer {
-                    self.stateQueue.sync {
-                        runDelegate.finishRun()
-                        if self.activeRunDelegate === runDelegate {
-                            self.isDownloading = false
-                            self.activeDownloadFilePath = nil
-                            self.activeRunDelegate = nil
-                        }
-                    }
-                }
-
-                let persistedDesc = BundleDiffReconstruction.readDescriptor(
-                    fromPath: diffMetaPath,
-                    expectedAppVersion: appVersion,
-                    expectedBundleVersion: bundleVersion
-                )
-
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: attempting incremental diff reconstruction for \(folderName)")
                 do {
                     try self.reconstructAndVerifyDiffZip(
@@ -2606,7 +2766,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                         signature: signature,
                         isInstalled: isInstalled,
                         skipGPG: skipGPG,
-                        runDelegate: runDelegate
+                        verificationContext: verificationContext
                     )
                     return
                 } catch let error as BundleUpdateError {
@@ -2620,53 +2780,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                         OneKeyLog.error("BundleUpdate", "verifyBundleASC: diff security rejected (\(reason))")
                         throw BundleUpdateError(.security, .verifyASC)
                     case .fallbackRequired(let reason):
-                        if runDelegate.wasCancelledByClear {
-                            throw BundleUpdateError(.cancelled, .verifyASC)
-                        }
                         OneKeyLog.warn("BundleUpdate", "verifyBundleASC: diff reconstruction failed (\(reason)), falling back to full bundle")
-                        self.markDiffFallback(folderName)
-                        try? fm.removeItem(atPath: diffFilePath)
-                        try? fm.removeItem(atPath: "\(diffFilePath).resume")
-                        try? fm.removeItem(atPath: diffMetaPath)
-                        RangeDownloader.shared.discardArtifacts(filePath: diffFilePath)
-
-                        if let fallbackParams = BundleDiffReconstruction.resolveFallbackDownloadParams(
-                            expectedFullSha256: sha256,
-                            expectedDiffSha256: diffSha256,
-                            explicitDownloadUrl: params.downloadUrl,
-                            explicitFileSize: params.fileSize,
-                            inMemoryFullParams: self.recordedFullBundleParams(key: folderName),
-                            descriptor: persistedDesc
-                        ) {
-                            if runDelegate.wasCancelledByClear {
-                                throw BundleUpdateError(.cancelled, .verifyASC)
-                            }
-                            runDelegate.resetForAttempt()
-                            try await self.downloadVerifiedFile(
-                                downloadUrl: fallbackParams.downloadUrl,
-                                filePath: fullFilePath,
-                                sha256: sha256,
-                                rangeTaskId: folderName,
-                                runDelegate: runDelegate,
-                                runSession: runSession,
-                                step: .verifyASC,
-                                emitErrorEvents: true
-                            )
-                            try self.verifyAndExtractFullZip(
-                                filePath: fullFilePath,
-                                destination: destination,
-                                appVersion: appVersion,
-                                bundleVersion: bundleVersion,
-                                sha256: sha256,
-                                signature: signature,
-                                isInstalled: isInstalled,
-                                skipGPG: skipGPG
-                            )
-                            return
-                        }
-                        throw BundleUpdateError(.missing, .verifyASC)
+                        try await downloadAndVerifyFullFallback(expectedDiffSha: diffSha256)
+                        return
                     }
                 }
+            }
+
+            // Resume an interrupted full-fallback download when verifyBundleASC is retried
+            if self.isDiffFallbackMarked(folderName) || persistedDesc?.fallbackRequired == true {
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: resuming interrupted full-bundle fallback for \(folderName)")
+                try await downloadAndVerifyFullFallback(expectedDiffSha: normalizedDiffSha256)
+                return
             }
 
             throw BundleUpdateError(.missing, .verifyASC)
@@ -2710,8 +2835,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 return
             }
 
-            let diffFilePath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffZipExtension)")
-            let diffMetaPath = (downloadDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
+            let diffDir = (downloadDir as NSString).appendingPathComponent(BundleDiffReconstruction.diffDownloadDirName)
+            let diffFilePath = (diffDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffZipExtension)")
+            let diffMetaPath = (diffDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
             let resolvedDiffPath = (diffFilePath as NSString).resolvingSymlinksInPath
             guard resolvedDiffPath.hasPrefix(baseDownloadDir + "/") else {
                 throw BundleUpdateError(.security, .verifyPackage)
@@ -2734,6 +2860,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             // Case 2: Reconstructed bundle directory exists on disk.
             if FileManager.default.fileExists(atPath: resolvedDiffPath),
                FileManager.default.fileExists(atPath: metadataPath) {
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: metadataPath),
+                   let metaSize = attrs[.size] as? UInt64,
+                   metaSize > BundleDiffReconstruction.maxControlJsonBytes {
+                    throw BundleUpdateError(.security, .verifyPackage)
+                }
                 if !skipGPG {
                     guard let expectedMetaSha = BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
                         suppliedFullSha256: sha256,
@@ -2934,11 +3065,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     private func clearManagedFiles(includeInstalled: Bool) async throws {
-        let (alreadyClearing, oldSession, activeDelegate, activePath) = stateQueue.sync { () -> (Bool, URLSession?, DownloadDelegate?, String?) in
-            if clearingDownloads { return (true, nil, nil, nil) }
+        let (alreadyClearing, oldSession, activeDelegate, activePath, activeVerifs) = stateQueue.sync { () -> (Bool, URLSession?, DownloadDelegate?, String?, [VerificationContext]) in
+            if clearingDownloads { return (true, nil, nil, nil, []) }
             clearingDownloads = true
             activeRunDelegate?.markCancelledByClear()
-            return (false, urlSession, activeRunDelegate, activeDownloadFilePath)
+            let verifs = Array(activeVerifications.values)
+            verifs.forEach { $0.markCancelledByClear() }
+            return (false, urlSession, activeRunDelegate, activeDownloadFilePath, verifs)
         }
         guard !alreadyClearing else { throw BundleUpdateError(.invalidArgument, .cleanup) }
         defer {
@@ -2954,6 +3087,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
         if let activeDelegate, !(await activeDelegate.waitForRunCompletion(timeout: 65)) {
             throw BundleUpdateError(.unknown, .cleanup)
+        }
+        for verif in activeVerifs {
+            if !(await verif.waitForCompletion(timeout: 65)) {
+                throw BundleUpdateError(.unknown, .cleanup)
+            }
+        }
+        stateQueue.sync {
+            diffFallbackVersions.removeAll()
+            fullBundleParamsByKey.removeAll()
+            if includeInstalled {
+                diffVerifiedMetadataSha256ByKey.removeAll()
+            }
         }
         let downloadDir = BundleUpdateStore.downloadBundleDir()
         if FileManager.default.fileExists(atPath: downloadDir) {
@@ -3051,14 +3196,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                         }
                         continue
                     }
-                    let stagingSuffix = ".diff-staging"
-                    let stem = name.hasSuffix(stagingSuffix) ? String(name.dropLast(stagingSuffix.count)) : name
-                    if shouldKeep(stem: stem) { continue }
+                    if shouldKeep(stem: name) { continue }
                     do {
                         try fm.removeItem(atPath: fullPath)
-                        if !name.hasSuffix(stagingSuffix) {
-                            deletedDirCount += 1
-                        }
+                        deletedDirCount += 1
                         OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale bundle dir \(name)")
                     } catch {
                         OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete bundle dir \(name): \(error)")
@@ -3066,23 +3207,36 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
-            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume / diff.zip / meta.json)
+            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume) and .diff/* stages
             let downloadDir = BundleUpdateStore.downloadBundleDir()
             if let contents = try? fm.contentsOfDirectory(atPath: downloadDir) {
                 for name in contents {
+                    let fullPath = (downloadDir as NSString).appendingPathComponent(name)
+                    if name == BundleDiffReconstruction.diffDownloadDirName {
+                        if let diffEntries = try? fm.contentsOfDirectory(atPath: fullPath) {
+                            for diffName in diffEntries {
+                                var diffStem = diffName
+                                for suffix in [".meta.json", ".resume", ".progress", ".partial", ".diff.zip"] {
+                                    if diffStem.hasSuffix(suffix) {
+                                        diffStem = String(diffStem.dropLast(suffix.count))
+                                    }
+                                }
+                                if shouldKeep(stem: diffStem) { continue }
+                                let diffEntryPath = (fullPath as NSString).appendingPathComponent(diffName)
+                                try? fm.removeItem(atPath: diffEntryPath)
+                            }
+                        }
+                        continue
+                    }
                     // Strip the trailing extension chain to recover the
-                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial" or "6.3.0-123.diff.zip").
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial").
                     var stem = name
-                    for suffix in [".meta.json", ".resume", ".progress", ".partial", ".diff.zip", ".zip"] {
+                    for suffix in [".resume", ".progress", ".partial", ".zip"] {
                         if stem.hasSuffix(suffix) {
                             stem = String(stem.dropLast(suffix.count))
                         }
                     }
-                    if stem.hasSuffix("-diff") {
-                        stem = String(stem.dropLast("-diff".count))
-                    }
                     if shouldKeep(stem: stem) { continue }
-                    let fullPath = (downloadDir as NSString).appendingPathComponent(name)
                     do {
                         try fm.removeItem(atPath: fullPath)
                         OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale download \(name)")
@@ -3463,7 +3617,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             var results: [LocalBundleInfo] = []
             for name in contents {
-                if name == BundleDiffReconstruction.stagingRootDirName || name.hasSuffix(".diff-staging") { continue }
+                if name == BundleDiffReconstruction.stagingRootDirName { continue }
                 let fullPath = (bundleDir as NSString).appendingPathComponent(name)
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }

@@ -35,7 +35,7 @@ Pod::Spec.new do |s|
   # delegates to react-native-bundle-crypto's BundleCryptoCore, which owns the
   # single in-tree Gopenpgp.xcframework — removing the duplicate framework that
   # previously caused a same-named pod conflict on iOS.
-  s.dependency 'ReactNativeBundleCrypto'
+  s.dependency 'ReactNativeBundleCrypto', "#{s.version}"
   # Shared concurrent + background multi-range downloader. The iOS bundle
   # download now delegates its 8-range background download to
   # react-native-range-downloader's RangeDownloader.shared (the concurrent

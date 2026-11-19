@@ -27,6 +27,7 @@ enum BundleDiffReconstruction {
     static let maxBundleUncompressedBytes: UInt64 = 512 * 1024 * 1024
     static let maxControlJsonBytes: UInt64 = 16 * 1024 * 1024
     static let stagingRootDirName = ".diff-staging"
+    static let diffDownloadDirName = ".diff"
     static let diffZipExtension = ".diff.zip"
     static let diffMetaExtension = ".diff.zip.meta.json"
 
@@ -38,6 +39,62 @@ enum BundleDiffReconstruction {
         let sha256: String
         let diffSha256: String
         let signature: String?
+        let fallbackRequired: Bool
+
+        init(
+            appVersion: String,
+            bundleVersion: String,
+            downloadUrl: String,
+            fileSize: Double,
+            sha256: String,
+            diffSha256: String,
+            signature: String?,
+            fallbackRequired: Bool = false
+        ) {
+            self.appVersion = appVersion
+            self.bundleVersion = bundleVersion
+            self.downloadUrl = downloadUrl
+            self.fileSize = fileSize
+            self.sha256 = sha256
+            self.diffSha256 = diffSha256
+            self.signature = signature
+            self.fallbackRequired = fallbackRequired
+        }
+    }
+
+    static func isRetryableDiffDownloadError(code: String) -> Bool {
+        return code == "NETWORK_ERROR" || code == "TIMEOUT"
+    }
+
+    static func descriptorPreservingVerifiedSignature(
+        newDescriptor: DiffArchiveDescriptor,
+        existingDescriptor: DiffArchiveDescriptor?
+    ) -> DiffArchiveDescriptor {
+        guard let existing = existingDescriptor,
+              existing.appVersion == newDescriptor.appVersion,
+              existing.bundleVersion == newDescriptor.bundleVersion,
+              constantTimeEqualHex(existing.sha256, newDescriptor.sha256),
+              constantTimeEqualHex(existing.diffSha256, newDescriptor.diffSha256) else {
+            return newDescriptor
+        }
+        let mergedSignature: String?
+        if let newSig = newDescriptor.signature, !newSig.isEmpty {
+            mergedSignature = newSig
+        } else if let oldSig = existing.signature, !oldSig.isEmpty {
+            mergedSignature = oldSig
+        } else {
+            mergedSignature = nil
+        }
+        return DiffArchiveDescriptor(
+            appVersion: newDescriptor.appVersion,
+            bundleVersion: newDescriptor.bundleVersion,
+            downloadUrl: newDescriptor.downloadUrl,
+            fileSize: newDescriptor.fileSize > 0 ? newDescriptor.fileSize : existing.fileSize,
+            sha256: newDescriptor.sha256,
+            diffSha256: newDescriptor.diffSha256,
+            signature: mergedSignature,
+            fallbackRequired: newDescriptor.fallbackRequired || existing.fallbackRequired
+        )
     }
 
     static func isHex64(_ value: String?) -> Bool {
@@ -63,17 +120,15 @@ enum BundleDiffReconstruction {
               version.unicodeScalars.allSatisfy({ allowedChars.contains($0) }) else {
             return false
         }
-        let lower = version.lowercased()
-        if lower.hasSuffix(".diff") ||
-           lower.hasSuffix("-diff") ||
-           lower.hasSuffix(".diff-staging") ||
-           lower.hasSuffix("-diff-staging") {
-            return false
-        }
         return true
     }
 
     static func writeDescriptor(_ descriptor: DiffArchiveDescriptor, toPath path: String) {
+        let fm = FileManager.default
+        let parentDir = (path as NSString).deletingLastPathComponent
+        if !parentDir.isEmpty && !fm.fileExists(atPath: parentDir) {
+            try? fm.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+        }
         var dict: [String: Any] = [
             "appVersion": descriptor.appVersion,
             "bundleVersion": descriptor.bundleVersion,
@@ -81,6 +136,7 @@ enum BundleDiffReconstruction {
             "fileSize": descriptor.fileSize,
             "sha256": descriptor.sha256.lowercased(),
             "diffSha256": descriptor.diffSha256.lowercased(),
+            "fallbackRequired": descriptor.fallbackRequired,
         ]
         if let sig = descriptor.signature, !sig.isEmpty {
             dict["signature"] = sig
@@ -115,6 +171,7 @@ enum BundleDiffReconstruction {
         }
         let sizeNum = (obj["fileSize"] as? NSNumber)?.doubleValue ?? 0
         let signature = obj["signature"] as? String
+        let fallbackRequired = (obj["fallbackRequired"] as? Bool) ?? false
         return DiffArchiveDescriptor(
             appVersion: appVersion,
             bundleVersion: bundleVersion,
@@ -122,7 +179,8 @@ enum BundleDiffReconstruction {
             fileSize: sizeNum,
             sha256: sha256,
             diffSha256: diffSha256,
-            signature: (signature?.isEmpty == false) ? signature : nil
+            signature: (signature?.isEmpty == false) ? signature : nil,
+            fallbackRequired: fallbackRequired
         )
     }
 
@@ -190,15 +248,21 @@ enum BundleDiffReconstruction {
 
     static func resolveFallbackDownloadParams(
         expectedFullSha256: String,
-        expectedDiffSha256: String,
+        expectedDiffSha256: String?,
         explicitDownloadUrl: String?,
         explicitFileSize: Double?,
         inMemoryFullParams: (downloadUrl: String, fileSize: Double, sha256: String)?,
         descriptor: DiffArchiveDescriptor?
     ) -> (downloadUrl: String, fileSize: Double)? {
-        guard let normFull = normalizeSha256(expectedFullSha256),
-              let normDiff = normalizeSha256(expectedDiffSha256) else {
+        guard let normFull = normalizeSha256(expectedFullSha256) else {
             return nil
+        }
+        let normDiff: String?
+        if let rawDiff = expectedDiffSha256, !rawDiff.isEmpty {
+            guard let validDiff = normalizeSha256(rawDiff) else { return nil }
+            normDiff = validDiff
+        } else {
+            normDiff = nil
         }
         if let url = explicitDownloadUrl, url.hasPrefix("https://") {
             return (downloadUrl: url, fileSize: explicitFileSize ?? 0)
@@ -211,7 +275,7 @@ enum BundleDiffReconstruction {
         if let desc = descriptor,
            desc.downloadUrl.hasPrefix("https://"),
            constantTimeEqualHex(desc.sha256, normFull),
-           constantTimeEqualHex(desc.diffSha256, normDiff) {
+           (normDiff == nil || constantTimeEqualHex(desc.diffSha256, normDiff!)) {
             return (downloadUrl: desc.downloadUrl, fileSize: desc.fileSize)
         }
         return nil
@@ -574,6 +638,10 @@ enum BundleDiffReconstruction {
                 guard let sourcePath = confinedExistingFilePath(baseDir: candidateDir, relativePath: relPath) else {
                     continue
                 }
+                guard let sourceHash = sha256OfFile(sourcePath),
+                      constantTimeEqualHex(sourceHash, expectedHash) else {
+                    continue
+                }
                 if let attrs = try? fm.attributesOfItem(atPath: sourcePath),
                    let sourceSize = attrs[.size] as? UInt64 {
                     let (projectedBytes, overflow) = cumulativeBytes.addingReportingOverflow(sourceSize)
@@ -582,10 +650,6 @@ enum BundleDiffReconstruction {
                             "reconstructed bundle size exceeds maximum allowed (\(maxTotalBytes))"
                         )
                     }
-                }
-                guard let sourceHash = sha256OfFile(sourcePath),
-                      constantTimeEqualHex(sourceHash, expectedHash) else {
-                    continue
                 }
                 do {
                     try fm.copyItem(atPath: sourcePath, toPath: destPath)

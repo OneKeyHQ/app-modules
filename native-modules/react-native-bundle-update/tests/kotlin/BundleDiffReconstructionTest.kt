@@ -254,18 +254,22 @@ fun main() {
             "Android web-embed stays at web-embed/index.html",
         )
 
-        // 6. Version sanitization rejects reserved diff/staging suffixes and leading/trailing dots
+        // 6. Version sanitization rejects leading/trailing dots (isolating .diff and .diff-staging)
+        // while preserving compatibility with legacy installed version names such as "42-diff"
         expect(BundleDiffReconstruction.isSafeVersionComponent("6.8.0"), "valid appVersion accepted")
+        expect(BundleDiffReconstruction.isSafeVersionComponent("42-diff"), "legacy 42-diff version accepted")
+        expect(BundleDiffReconstruction.isSafeVersionComponent("123.diff-staging"), "legacy 123.diff-staging accepted")
         expect(!BundleDiffReconstruction.isSafeVersionComponent(".diff-staging"), "leading dot rejected")
-        expect(!BundleDiffReconstruction.isSafeVersionComponent("123.diff-staging"), ".diff-staging suffix rejected")
-        expect(!BundleDiffReconstruction.isSafeVersionComponent("123-diff-staging"), "-diff-staging suffix rejected")
-        expect(!BundleDiffReconstruction.isSafeVersionComponent("123.diff"), ".diff suffix rejected")
-        expect(!BundleDiffReconstruction.isSafeVersionComponent("123-diff"), "-diff suffix rejected")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent(".diff"), "leading dot .diff rejected")
+        expect(!BundleDiffReconstruction.isSafeVersionComponent("123."), "trailing dot rejected")
 
-        // 7. Uppercase sha256 normalization
+        // 7. Uppercase sha256 normalization and retryable diff error classification
         val upperHex = "A1B2C3D4".repeat(8)
         expect(BundleDiffReconstruction.normalizeSha256(upperHex) == upperHex.lowercase(), "uppercase sha256 normalized to lowercase")
         expect(BundleDiffReconstruction.normalizeSha256("invalid") == null, "invalid sha256 returns null")
+        expect(BundleDiffReconstruction.isRetryableDiffDownloadError("NETWORK_ERROR"), "NETWORK_ERROR is retryable")
+        expect(BundleDiffReconstruction.isRetryableDiffDownloadError("TIMEOUT"), "TIMEOUT is retryable")
+        expect(!BundleDiffReconstruction.isRetryableDiffDownloadError("HTTP_ERROR"), "HTTP_ERROR is not retryable")
 
         // 8. Cumulative entry count and byte limits across changedFiles + reusedFiles
         val entryLimitErr = runCatching {
@@ -300,7 +304,61 @@ fun main() {
             "cumulative byte limit exceeded -> SecurityRejected",
         )
 
-        // 9. Descriptor persistence, pre-ASC verifyBundle, post-restart fail-closed verifyBundle, and fallback resolution
+        // Unmatched oversized reuse candidate in first dir does not block smaller matching candidate in second dir
+        File(activeOta, "segments/a.seg.hbc").writeBytes(ByteArray(128) { 0x41 })
+        BundleDiffReconstruction.reconstruct(
+            stagingDir = staging,
+            manifest = manifest,
+            candidateBundleDirs = listOf(activeOta, olderOta),
+            sha256OfFile = ::sha256OfFile,
+            builtinCopy = { relPath, destFile, expectedHash ->
+                val src = File(builtin, relPath)
+                if (!src.exists() || sha256OfFile(src.absolutePath) != expectedHash) {
+                    false
+                } else {
+                    src.copyTo(destFile, overwrite = true)
+                    true
+                }
+            },
+            maxEntries = 10,
+            maxTotalBytes = 50L,
+        )
+        expect(
+            sha256OfFile(File(staging, "segments/a.seg.hbc").absolutePath) == segHash,
+            "unmatched oversized reuse candidate skipped in favor of smaller matching candidate",
+        )
+
+        // Split APK resource resolution (base APK + splitSourceDirs)
+        val baseApk = File(tempRoot, "base.apk")
+        val splitXhdpiApk = File(tempRoot, "split_config.xhdpi.apk")
+        val iconBytes = "split-xhdpi-icon-bytes".toByteArray()
+        val iconHash = sha256Hex(iconBytes)
+        java.util.zip.ZipOutputStream(baseApk.outputStream()).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("AndroidManifest.xml"))
+            zos.write("manifest".toByteArray())
+            zos.closeEntry()
+        }
+        java.util.zip.ZipOutputStream(splitXhdpiApk.outputStream()).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("res/drawable-xhdpi-v4/icon.png"))
+            zos.write(iconBytes)
+            zos.closeEntry()
+        }
+        val apkPaths = BundleDiffReconstruction.collectInstalledApkPaths(
+            sourceDir = baseApk.absolutePath,
+            splitSourceDirs = arrayOf(splitXhdpiApk.absolutePath),
+        )
+        expect(apkPaths.size == 2, "collectInstalledApkPaths includes base and split APKs")
+        val copiedIconDest = File(tempRoot, "copied-icon.png")
+        val copiedFromSplit = BundleDiffReconstruction.copyMatchingZipEntryFromApks(
+            apkPaths = apkPaths,
+            candidateEntryNames = BundleDiffReconstruction.builtinCandidateApkResZipEntries("assets/drawable-xhdpi/icon.png"),
+            destinationFile = copiedIconDest,
+            expectedHash = iconHash,
+            sha256OfFile = ::sha256OfFile,
+        )
+        expect(copiedFromSplit && sha256OfFile(copiedIconDest.absolutePath) == iconHash, "copied drawable resource from split configuration APK")
+
+        // 9. Descriptor persistence, signature preservation on cache hit, pre-ASC verifyBundle, post-restart fail-closed verifyBundle, and fallback resolution
         val fullSha = "1".repeat(64)
         val diffSha = "2".repeat(64)
         val metaSha = "3".repeat(64)
@@ -317,7 +375,7 @@ fun main() {
         )
         BundleDiffReconstruction.writeDescriptor(desc, metaFile)
         val loadedDesc = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
-        expect(loadedDesc != null && loadedDesc.diffSha256 == diffSha, "descriptor persisted and normalized")
+        expect(loadedDesc != null && loadedDesc.diffSha256 == diffSha && !loadedDesc.fallbackRequired, "descriptor persisted and normalized")
 
         expect(
             BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
@@ -347,17 +405,27 @@ fun main() {
             "post-restart verifyBundle fails closed without verified signature",
         )
 
-        val signedDesc = desc.copy(signature = "VALID_PGP_SIGNATURE")
+        val signedDesc = desc.copy(signature = "VALID_PGP_SIGNATURE", fallbackRequired = true)
+        BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile)
+        val reloadedSigned = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
+        expect(reloadedSigned?.signature == "VALID_PGP_SIGNATURE" && reloadedSigned.fallbackRequired, "signed descriptor with fallbackRequired persisted")
+
+        val mergedDesc = BundleDiffReconstruction.descriptorPreservingVerifiedSignature(
+            newDescriptor = desc,
+            existingDescriptor = reloadedSigned,
+        )
+        expect(mergedDesc.signature == "VALID_PGP_SIGNATURE" && mergedDesc.fallbackRequired, "cached download preserves verified signature and fallbackRequired")
+
         expect(
             BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
                 suppliedFullSha256 = fullSha,
                 suppliedSignature = null,
                 inMemoryVerified = null,
-                descriptor = signedDesc,
+                descriptor = mergedDesc,
                 persistedAscSignature = null,
                 verifySignatureAndExtractMetadataSha256 = { sig -> if (sig == "VALID_PGP_SIGNATURE") metaSha else null },
             ) == metaSha,
-            "post-restart verifyBundle re-establishes trust from verified signature",
+            "post-restart verifyBundle re-establishes trust from preserved signature",
         )
         expect(
             BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
@@ -373,15 +441,15 @@ fun main() {
 
         val fallback = BundleDiffReconstruction.resolveFallbackDownloadParams(
             expectedFullSha256 = fullSha,
-            expectedDiffSha256 = diffSha,
+            expectedDiffSha256 = null,
             explicitDownloadUrl = null,
             explicitFileSize = null,
             inMemoryFullParams = null,
-            descriptor = loadedDesc,
+            descriptor = reloadedSigned,
         )
         expect(
             fallback == ("https://cdn.onekey.so/full.zip" to 4096.0),
-            "fallback download params recovered from persisted descriptor after restart",
+            "fallback download params recovered from persisted descriptor on verifyBundleASC retry",
         )
     } finally {
         tempRoot.deleteRecursively()

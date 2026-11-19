@@ -3368,7 +3368,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-bundle-crypto": "*"
+    "@onekeyfe/react-native-bundle-crypto": 6.8.0-1
     "@onekeyfe/react-native-native-logger": "*"
     "@onekeyfe/react-native-range-downloader": "*"
     react: "*"
