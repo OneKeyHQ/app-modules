@@ -1350,6 +1350,9 @@ above them. Web has no bridge: the DOM renderer subscribes to the store.
 Named icons come from `@onekeyfe/react-native-image`'s native registry,
 reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
 package takes no dependency on it; without the registry an icon stays blank.
+On Android the lookup is `OneKeyNamedSVG.INSTANCE` plus its `request` (8
+arguments) and `cancel` methods; the image package's consumer R8 rules keep
+those names, since release app builds minify and would otherwise rename them.
 Web draws an SVG `<use>` of the `href` the caller supplies.
 
 ### Platform behaviour

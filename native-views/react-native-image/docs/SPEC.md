@@ -760,6 +760,13 @@ Android also maintains a 64 MiB disk raster PNG cache under `cacheDir/onekey-nam
 using the same SHA-256 render-key naming and LRU pruning.
 This disk layer alone does not make a cold-process main-thread memory probe synchronous.
 
+`@onekeyfe/react-native-native-overlay` reaches the Android registry by
+reflection (`Class.forName`, then `INSTANCE`, `request` with 8 arguments and
+`cancel`) so it takes no build dependency on this package. The package's
+`consumer-rules.pro` keeps those names in minified App builds; removing or
+re-signing any of them requires updating that lookup in the same change, or
+native toast icons render blank in release builds only.
+
 On both iOS and Android, a startup prewarm closes that cold-process gap for the first screen. Named
 icon requests from both the view probe (`cachedRender`) and the callback bridge
 (`OneKeyNamedSVG.request` / `requestRender` / `OneKeyNamedSVGBridge.request`,
