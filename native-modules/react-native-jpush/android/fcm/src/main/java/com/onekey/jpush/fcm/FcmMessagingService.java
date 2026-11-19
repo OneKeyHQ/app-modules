@@ -10,6 +10,7 @@ import cn.jpush.android.local.ActionHelper;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 import java.util.Map;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class FcmMessagingService extends FirebaseMessagingService {
@@ -44,6 +45,14 @@ public final class FcmMessagingService extends FirebaseMessagingService {
             JSONObject message;
             if (raw == null || raw.isEmpty()) {
                 message = new JSONObject(data);
+                String importance = data.get("n_importance");
+                if (importance != null) {
+                    try {
+                        message.put("n_importance", new JSONObject(importance));
+                    } catch (JSONException invalidImportance) {
+                        // Ignore malformed channel metadata and deliver the rest of the message.
+                    }
+                }
             } else {
                 String decoded = JThirdPlatFormInterface.decodeMessageJson(raw);
                 if (decoded == null) {

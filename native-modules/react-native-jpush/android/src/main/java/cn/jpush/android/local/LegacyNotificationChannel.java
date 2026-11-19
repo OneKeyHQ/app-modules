@@ -6,10 +6,12 @@ import android.app.NotificationChannel;
 import android.app.NotificationChannelGroup;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
 import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.api.NotificationMessage;
 import java.util.Locale;
 import org.json.JSONObject;
@@ -17,6 +19,8 @@ import org.json.JSONObject;
 /** Resolves the JPush 5.9.0 channel identity so Android can retain user settings on upgrade. */
 public final class LegacyNotificationChannel {
     private static final String GROUP_ID = "JIGUANG_CHANNEL_GROUP";
+    private static final String SOURCE_DEFAULT_CHANNEL_ID = "jpush_default_channel";
+    private static final String SOURCE_SILENT_CHANNEL_ID = "jpush_silent_channel";
     private static final int ALERT_MASK =
         Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE | Notification.DEFAULT_LIGHTS;
 
@@ -58,7 +62,8 @@ public final class LegacyNotificationChannel {
         if (sound != null) {
             defaults &= ~Notification.DEFAULT_SOUND;
         }
-        if (TextUtils.isEmpty(channelId)) {
+        boolean derived = TextUtils.isEmpty(channelId);
+        if (derived) {
             channelId = "JPush_" + importance + "_" + defaults;
             if (sound != null) {
                 channelId += "_" + soundName;
@@ -66,17 +71,19 @@ public final class LegacyNotificationChannel {
             if (manager.getNotificationChannel(channelId) != null) {
                 return channelId;
             }
+            String sourceChannelId = silenceActive ? SOURCE_SILENT_CHANNEL_ID : SOURCE_DEFAULT_CHANNEL_ID;
+            if (manager.getNotificationChannel(sourceChannelId) != null) {
+                return sourceChannelId;
+            }
         }
 
-        String channelName = JCoreStorage.getChannel(context);
+        CharSequence channelName = derived ? derivedChannelName(context, importance) : JCoreStorage.getChannel(context);
         NotificationChannel channel = new NotificationChannel(
             channelId, TextUtils.isEmpty(channelName) ? "Notifications" : channelName, importance
         );
-        if (Build.VERSION.SDK_INT < 28 || manager.getNotificationChannelGroup(GROUP_ID) == null) {
-            CharSequence appName = context.getApplicationInfo().loadLabel(context.getPackageManager());
-            manager.createNotificationChannelGroup(new NotificationChannelGroup(GROUP_ID, appName));
+        if (ensureGroup(context, manager)) {
+            channel.setGroup(GROUP_ID);
         }
-        channel.setGroup(GROUP_ID);
         channel.enableLights((defaults & Notification.DEFAULT_LIGHTS) != 0);
         channel.enableVibration((defaults & Notification.DEFAULT_VIBRATE) != 0);
         if (sound != null || (defaults & Notification.DEFAULT_SOUND) == 0) {
@@ -84,6 +91,58 @@ public final class LegacyNotificationChannel {
         }
         manager.createNotificationChannel(channel);
         return channelId;
+    }
+
+    @TargetApi(26)
+    static boolean isBlocked(NotificationManager manager, String channelId) {
+        NotificationChannel channel = manager.getNotificationChannel(channelId);
+        if (channel == null) {
+            return false;
+        }
+        if (channel.getImportance() == NotificationManager.IMPORTANCE_NONE) {
+            return true;
+        }
+        if (Build.VERSION.SDK_INT >= 28 && !TextUtils.isEmpty(channel.getGroup())) {
+            NotificationChannelGroup group = manager.getNotificationChannelGroup(channel.getGroup());
+            return group != null && group.isBlocked();
+        }
+        return false;
+    }
+
+    @TargetApi(26)
+    private static boolean ensureGroup(Context context, NotificationManager manager) {
+        try {
+            if (Build.VERSION.SDK_INT < 28 || manager.getNotificationChannelGroup(GROUP_ID) == null) {
+                CharSequence appName = context.getApplicationInfo().loadLabel(context.getPackageManager());
+                if (TextUtils.isEmpty(appName)) {
+                    appName = context.getPackageName();
+                }
+                manager.createNotificationChannelGroup(new NotificationChannelGroup(GROUP_ID, appName));
+            }
+            return true;
+        } catch (RuntimeException unavailableGroup) {
+            JLogger.w("JPush notification channel group unavailable");
+            return false;
+        }
+    }
+
+    private static CharSequence derivedChannelName(Context context, int importance) {
+        switch (importance) {
+            case NotificationManager.IMPORTANCE_MIN:
+                return channelNameResource(context, "jg_channel_name_p_min", "MINIMUM");
+            case NotificationManager.IMPORTANCE_LOW:
+                return channelNameResource(context, "jg_channel_name_p_low", "LOW");
+            case NotificationManager.IMPORTANCE_HIGH:
+                return channelNameResource(context, "jg_channel_name_p_high", "HIGH");
+            default:
+                return channelNameResource(context, "jg_channel_name_p_default", "NORMAL");
+        }
+    }
+
+    private static CharSequence channelNameResource(Context context, String name, String fallback) {
+        Resources resources = context.getResources();
+        int resourceId = resources.getIdentifier(name, "string", context.getPackageName());
+        return resourceId != 0 ? resources.getText(resourceId) : fallback;
     }
 
     private static Uri resolveSound(Context context, String name) {

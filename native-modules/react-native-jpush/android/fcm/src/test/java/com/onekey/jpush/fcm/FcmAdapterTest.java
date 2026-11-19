@@ -8,6 +8,7 @@ import android.app.ActivityManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
+import android.app.NotificationChannelGroup;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.ContextWrapper;
@@ -587,6 +588,197 @@ public class FcmAdapterTest {
         assertEquals("JPush_3_7", posted.getValue().getChannelId());
         assertEquals(NotificationManager.IMPORTANCE_NONE, notifications.getNotificationChannel("JPush_3_7").getImportance());
         verify(manager, never()).createNotificationChannel(any(NotificationChannel.class));
+    }
+
+    @Test
+    public void blockedChannelsAndGroupsCannotEvictVisibleNotifications() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        JCoreStorage.setLatestNotificationNumber(context, 1);
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Blocked channel", NotificationManager.IMPORTANCE_NONE
+        ));
+        notifications.createNotificationChannelGroup(new NotificationChannelGroup("blocked", "Blocked group"));
+        NotificationChannel grouped = new NotificationChannel("orders", "Orders", NotificationManager.IMPORTANCE_HIGH);
+        grouped.setGroup("blocked");
+        notifications.createNotificationChannel(grouped);
+
+        NotificationManager manager = spy(notifications);
+        NotificationChannelGroup group = spy(notifications.getNotificationChannelGroup("blocked"));
+        doReturn(true).when(group).isBlocked();
+        doReturn(group).when(manager).getNotificationChannelGroup("blocked");
+        useNotificationManager(manager);
+
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7310, "{\"n_title\":\"Visible\",\"n_priority\":2}");
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7311, "{\"n_title\":\"Channel blocked\"}");
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7312, "{\"n_title\":\"Group blocked\",\"n_channel_id\":\"orders\"}");
+
+        verify(manager).notify(eq(7311), any(Notification.class));
+        verify(manager).notify(eq(7312), any(Notification.class));
+        verify(manager, never()).cancel(7310);
+        assertEquals(Collections.singletonList(7310), helper.getActiveNotificationIds());
+        assertNotNull(Shadows.shadowOf(notifications).getNotification(7310));
+    }
+
+    @Test
+    public void upgradesReuseSourceChannelsUntilTheMatchingBinaryChannelExists() {
+        notifications.createNotificationChannel(new NotificationChannel(
+            "jpush_default_channel", "Source blocked", NotificationManager.IMPORTANCE_NONE
+        ));
+        NotificationChannel sourceSilent = new NotificationChannel(
+            "jpush_silent_channel", "Source silent", NotificationManager.IMPORTANCE_LOW
+        );
+        sourceSilent.setSound(null, null);
+        notifications.createNotificationChannel(sourceSilent);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7313, "{\"n_title\":\"TCP\"}");
+        assertEquals("jpush_default_channel", Shadows.shadowOf(notifications).getNotification(7313).getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_NONE,
+            notifications.getNotificationChannel("jpush_default_channel").getImportance());
+        assertNull(notifications.getNotificationChannel("JPush_3_7"));
+
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7314, "{\"n_title\":\"TCP\",\"n_channel_id\":\"orders\"}");
+        assertEquals("orders", Shadows.shadowOf(notifications).getNotification(7314).getChannelId());
+
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Binary default", NotificationManager.IMPORTANCE_DEFAULT
+        ));
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7315, "{\"n_title\":\"TCP\"}");
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7315).getChannelId());
+
+        JCoreStorage.setSilenceTime(context, 0, 0, 23, 59);
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7316, "{\"n_title\":\"TCP\"}");
+        assertEquals("jpush_silent_channel", Shadows.shadowOf(notifications).getNotification(7316).getChannelId());
+        assertNull(notifications.getNotificationChannel("JPush_2_0"));
+    }
+
+    @Test
+    public void silenceHoursSuppressAlertsOnAnExistingAudibleChannel() {
+        NotificationChannel legacy = new NotificationChannel(
+            "JPush_2_0", "User changed alerts", NotificationManager.IMPORTANCE_HIGH
+        );
+        legacy.enableVibration(true);
+        notifications.createNotificationChannel(legacy);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7317, "{\"n_title\":\"Normal\",\"n_channel_id\":\"JPush_2_0\"}");
+        Notification normal = Shadows.shadowOf(notifications).getNotification(7317);
+        assertNull(normal.getGroup());
+        assertEquals(Notification.GROUP_ALERT_ALL, normal.getGroupAlertBehavior());
+
+        JCoreStorage.setSilenceTime(context, 0, 0, 23, 59);
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7318, "{\"n_title\":\"Silent\"}");
+
+        Notification quiet = Shadows.shadowOf(notifications).getNotification(7318);
+        assertEquals("JPush_2_0", quiet.getChannelId());
+        assertNotNull(quiet.getGroup());
+        assertFalse((quiet.flags & Notification.FLAG_GROUP_SUMMARY) != 0);
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, quiet.getGroupAlertBehavior());
+        NotificationChannel reused = notifications.getNotificationChannel("JPush_2_0");
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, reused.getImportance());
+        assertNotNull(reused.getSound());
+        assertTrue(reused.shouldVibrate());
+    }
+
+    @Test
+    public void anEmptyApplicationLabelUsesThePackageNameForTheChannelGroup() {
+        ApplicationInfo info = mock(ApplicationInfo.class);
+        doReturn("").when(info).loadLabel(any());
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public ApplicationInfo getApplicationInfo() {
+                return info;
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+
+        ActionHelper.getInstance().handleDownlinkPushMessage(wrapped, (byte) 0, 7319, "{\"n_title\":\"First push\"}");
+
+        assertEquals(context.getPackageName(), notifications.getNotificationChannelGroup("JIGUANG_CHANNEL_GROUP").getName());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7319).getChannelId());
+    }
+
+    @Test
+    public void anUnavailableGroupDoesNotPreventChannelCreationAndDelivery() {
+        NotificationManager manager = spy(notifications);
+        doThrow(new IllegalStateException()).when(manager).createNotificationChannelGroup(any());
+        useNotificationManager(manager);
+
+        ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7320, "{\"n_title\":\"First push\"}");
+
+        assertNull(notifications.getNotificationChannel("JPush_3_7").getGroup());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7320).getChannelId());
+    }
+
+    @Test
+    public void derivedChannelNamesUseDifferentHostResourcesByImportance() {
+        Resources resources = spy(context.getResources());
+        doReturn(1).when(resources).getIdentifier("jg_channel_name_p_default", "string", context.getPackageName());
+        doReturn(2).when(resources).getIdentifier("jg_channel_name_p_high", "string", context.getPackageName());
+        doReturn("Routine updates").when(resources).getText(1);
+        doReturn("Urgent updates").when(resources).getText(2);
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Resources getResources() {
+                return resources;
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7321, "{\"n_title\":\"Default\"}");
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7322, "{\"n_title\":\"High\",\"n_priority\":2}");
+
+        assertEquals("Routine updates", notifications.getNotificationChannel("JPush_3_7").getName());
+        assertEquals("Urgent updates", notifications.getNotificationChannel("JPush_4_7").getName());
+    }
+
+    @Test
+    public void framedMultilineTcpPreservesContentAndTheExplicitChannel() {
+        ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7323,
+            "package\r\nappKey\r\n{\r\n  \"m_content\": {\r\n    \"n_title\":\"Title\",\r\n"
+                + "    \"n_content\":\"Body\",\r\n    \"n_channel_id\":\"orders\"\r\n  }\r\n}\r\n");
+
+        Notification posted = Shadows.shadowOf(notifications).getNotification(7323);
+        assertEquals("orders", posted.getChannelId());
+        assertEquals("Title", posted.extras.getCharSequence(Notification.EXTRA_TITLE));
+        assertEquals("Body", posted.extras.getCharSequence(Notification.EXTRA_TEXT));
+    }
+
+    @Test
+    public void flatFcmImportanceMatchesMetadataAndMalformedImportanceKeepsTheMessage() {
+        String originalManufacturer = Build.MANUFACTURER;
+        try {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", "Google");
+            Bundle flat = new Bundle();
+            flat.putString("msg_id", "7324");
+            flat.putString("n_title", "Flat FCM");
+            flat.putString("n_priority", "2");
+            flat.putString("n_importance", "{\"fc\":1}");
+            service.onMessageReceived(new RemoteMessage(flat));
+            service.onMessageReceived(new RemoteMessage(metadata(
+                "{\"msg_id\":\"7325\",\"n_title\":\"FCM metadata\",\"n_priority\":2,\"n_importance\":{\"fc\":1}}"
+            )));
+            flat.putString("msg_id", "7326");
+            flat.putString("n_importance", "[1]");
+            service.onMessageReceived(new RemoteMessage(flat));
+        } finally {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", originalManufacturer);
+        }
+        assertEquals("JPush_1_0", Shadows.shadowOf(notifications).getNotification(
+            JThirdPlatFormInterface.getNofiticationID("7324", 0)).getChannelId());
+        assertEquals("JPush_1_0", Shadows.shadowOf(notifications).getNotification(
+            JThirdPlatFormInterface.getNofiticationID("7325", 0)).getChannelId());
+        assertEquals("JPush_4_7", Shadows.shadowOf(notifications).getNotification(
+            JThirdPlatFormInterface.getNofiticationID("7326", 0)).getChannelId());
+    }
+
+    private void useNotificationManager(NotificationManager manager) {
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
     }
 
     @Test

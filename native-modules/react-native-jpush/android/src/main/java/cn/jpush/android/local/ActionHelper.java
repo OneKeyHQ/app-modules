@@ -49,6 +49,7 @@ public class ActionHelper {
     public static final String ACTION_RECEIVER_MESSAGE = "cn.jpush.android.intent.RECEIVER_MESSAGE";
     public static final String ACTION_RECEIVE_MESSAGE = "cn.jpush.android.intent.RECEIVE_MESSAGE";
 
+    private static final String SILENT_NOTIFICATION_GROUP = "cn.jpush.android.SILENT_NOTIFICATIONS";
     private static final String KEY_CONTENT_GENERATION = "jpush_content_generation";
     private static final String KEY_EVENT_TYPE = "jpush_event_type";
     private static final String KEY_SEQUENCE = "jpush_sequence";
@@ -387,9 +388,15 @@ public class ActionHelper {
                 return;
             }
             Notification.Builder builder;
+            boolean channelBlocked = false;
             if (Build.VERSION.SDK_INT >= 26) {
                 String channelId = LegacyNotificationChannel.resolve(app, nm, message, silenceActive);
+                channelBlocked = LegacyNotificationChannel.isBlocked(nm, channelId);
                 builder = new Notification.Builder(app, channelId);
+                if (silenceActive) {
+                    // Child notifications cannot alert, even when the channel itself allows sound.
+                    builder.setGroup(SILENT_NOTIFICATION_GROUP).setGroupAlertBehavior(Notification.GROUP_ALERT_SUMMARY);
+                }
             } else {
                 builder = new Notification.Builder(app);
             }
@@ -425,7 +432,9 @@ public class ActionHelper {
                 PendingIntent pendingIntent = PendingIntent.getActivity(app, message.notificationId, clickIntent, flags);
                 if (pendingIntent != null) notification.contentIntent = pendingIntent;
                 nm.notify(notifyId, notification);
-                recordNotificationPosted(app, notifyId);
+                if (!channelBlocked) {
+                    recordNotificationPosted(app, notifyId);
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -436,13 +445,7 @@ public class ActionHelper {
         if (!isContentAllowed(context)) {
             return;
         }
-        String content = rawContent != null ? rawContent : "";
-        if (!content.trim().startsWith("{")) {
-            int lastNewline = content.lastIndexOf('\n');
-            if (lastNewline >= 0 && lastNewline + 1 < content.length()) {
-                content = content.substring(lastNewline + 1).trim();
-            }
-        }
+        String content = extractDownlinkContent(rawContent);
         String msgId = String.valueOf(messageId);
         String parsedMsgId = JCoreWireCodec.extractJsonString(content, "_j_msgid");
         if (parsedMsgId.isEmpty()) {
@@ -520,6 +523,26 @@ public class ActionHelper {
         if (contentGeneration == JCoreStorage.getContentGeneration()) {
             dispatchCustomMessageEvent(context, custom);
         }
+    }
+
+    private static String extractDownlinkContent(String rawContent) {
+        String content = rawContent != null ? rawContent : "";
+        if (content.trim().startsWith("{")) {
+            return content;
+        }
+        int packageEnd = content.indexOf('\n');
+        if (packageEnd < 0) {
+            return content;
+        }
+        int appKeyEnd = content.indexOf('\n', packageEnd + 1);
+        if (appKeyEnd >= 0) {
+            String body = content.substring(appKeyEnd + 1).trim();
+            if (body.startsWith("{")) {
+                return body;
+            }
+        }
+        int lastNewline = content.lastIndexOf('\n');
+        return lastNewline + 1 < content.length() ? content.substring(lastNewline + 1).trim() : content;
     }
 
     private static String extractJsonObjectAsString(String json, String primaryKey, String fallbackKey) {
