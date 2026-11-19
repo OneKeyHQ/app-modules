@@ -463,6 +463,9 @@ a dashed style clears the solid border on every bind. An optional `borderWidth`
 (`0 < width <= 4` logical units, default 1) sets that solid border's width; a
 host hairline (`StyleSheet.hairlineWidth`) draws one physical pixel on iOS and
 Android (rounded up to at least one pixel) and a fractional CSS border on Web.
+Web insets the main image into the bordered frame's content box, as iOS and
+Android do, and a sized `fallbackIcon` keeps its requested size there instead
+of shrinking to the content box.
 The image is inset by that border width. An overlay may optionally set
 `fontWeight` to one of the existing text weight names
 (`regular | medium | semibold | bold`). This changes only overlay text;

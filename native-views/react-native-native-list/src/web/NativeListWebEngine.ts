@@ -1404,6 +1404,8 @@ function createVisual(
           if (svg) {
             svg.style.width = `${fallbackIcon.size}px`;
             svg.style.height = `${fallbackIcon.size}px`;
+            // Keep the requested size inside a bordered frame, as Icon w/h does.
+            svg.style.flexShrink = '0';
           }
         }
       }
@@ -1429,6 +1431,14 @@ function createVisual(
       'px solid ' +
       visual.borderColor;
     frame.style.boxSizing = 'border-box';
+    // iOS and Android inset the image by the border, as React Native's Image does.
+    const main = frame.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-visual-main'
+    );
+    if (main) {
+      main.style.width = '100%';
+      main.style.height = '100%';
+    }
   }
   if ('overlays' in visual)
     visual.overlays?.forEach((overlay) => {

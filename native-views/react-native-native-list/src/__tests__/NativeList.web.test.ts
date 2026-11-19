@@ -7325,7 +7325,7 @@ describe('ListItem parity styles', () => {
         kind: 'token',
         borderColor: '#0000001A',
         borderWidth: 0.5,
-        fallbackIcon: { name: 'GlobusOutline' },
+        fallbackIcon: { name: 'GlobusOutline', size: 40 },
       },
       title: 'Site',
       subtitle: 'https://site.example',
@@ -7359,6 +7359,36 @@ describe('ListItem parity styles', () => {
     ).toThrow(/letterSpacing/);
   });
 
+  it('insets a bordered leading image by the border on Web', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      linear([
+        siteRow({
+          leading: {
+            kind: 'token',
+            borderColor: '#0000001A',
+            borderWidth: 1,
+            image: { uri: 'https://example.com/a.png', width: 40, height: 40 },
+          },
+        }),
+      ]),
+      {},
+      false
+    );
+    try {
+      const main = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="site"] .ok-native-list-visual-main'
+      );
+      expect(main?.style.width).toBe('100%');
+      expect(main?.style.height).toBe('100%');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('draws the leading border at borderWidth and applies letterSpacing on Web', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -7375,6 +7405,9 @@ describe('ListItem parity styles', () => {
         (element: HTMLElement) => element.style.border.includes('solid')
       );
       expect(bordered?.style.border).toContain('0.5px solid');
+      // The fallback glyph keeps its requested size inside the bordered frame.
+      const glyph = bordered?.querySelector<SVGElement>('svg');
+      if (glyph) expect(glyph.style.flexShrink).toBe('0');
       const slot = document.createElement('span');
       applyTextStyleToSlot(slot, { letterSpacing: -0.5 });
       expect(slot.style.letterSpacing).toBe('-0.5px');
