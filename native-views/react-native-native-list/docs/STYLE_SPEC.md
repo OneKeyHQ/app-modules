@@ -359,7 +359,7 @@ style: {
 | `alignment` | Horizontal `start / center / end` inside the text region, respecting direction |
 | `verticalAlignment` | `top / center / bottom` for the complete text block inside its allocated text region; no effect without spare height |
 | `offsetY` | `-8…8` logical units of optical translation; does not change measurement, sibling spacing or hit areas |
-| `letterSpacing` | `-4…10` logical units between glyphs. iOS sets `.kern`, so an explicit `0` also turns off pair kerning, matching React Native `letterSpacing: 0`; Android converts to em of the current text size; Web sets CSS `letter-spacing`. Omission keeps each platform's existing tracking |
+| `letterSpacing` | `-4…10` logical units between glyphs. iOS sets `.kern`, so an explicit `0` also turns off pair kerning, matching React Native `letterSpacing: 0`; Android converts to em of the current text size and adds `'kern' 0`, matching React Native text there too; Web sets CSS `letter-spacing`. Omission keeps each platform's existing tracking |
 | `tabularNumbers` | `true` draws equal-width digits, as the App's `SizableText` does by default: iOS swaps each run to the monospaced-number font feature, Android sets `tnum`, Web sets `font-variant-numeric: tabular-nums`. Omission keeps each template's current digits (iOS identity and section-header text are proportional; Android already defaults to `tnum`) |
 
 Single-line text does not wrap; explicit CR/LF line breaks become spaces (CRLF is
