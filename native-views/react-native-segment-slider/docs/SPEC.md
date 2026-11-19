@@ -63,9 +63,14 @@ haptics.
 
 `src/SegmentSlider.nitro.ts` defines the native view's required props and
 methods. The component above is the only public entry point; the Nitro view and
-its `setValue` method are internal. The package root resolves to the DOM
-implementation under the `browser` export condition and to the Nitro wrapper
-under the default condition. Both export the same public API.
+its `setValue` method are internal. The package root resolves to the Nitro
+wrapper under the `react-native` export condition and the default condition,
+and to the DOM implementation under the `browser` condition. Both export the
+same public API. React Native bundlers must reach the Nitro wrapper even with
+package exports disabled: Metro then reads the top-level fields in the order
+`react-native`, `browser`, `main`, so the top-level `react-native` field points
+at the Nitro entry and takes precedence over the Web `browser` field.
+`src/__tests__/packageEntry.test.ts` resolves both ways.
 
 - `defaultValue` seeds the value once. Later prop commits do not reset it.
 - `min` / `max` define the range (native defaults 0 / 100); callers provide a
