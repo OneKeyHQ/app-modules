@@ -68,6 +68,7 @@ beforeEach(() => {
 afterEach(() => {
   renderer.destroy();
   detach();
+  delete (document as { elementFromPoint?: unknown }).elementFromPoint;
   jest.useRealTimers();
 });
 
@@ -130,11 +131,11 @@ test('hovering the stack pauses every timer and leaving restarts them', () => {
   store.show(message('b', { duration: 1000 }));
   jest.advanceTimersByTime(900);
   const list = document.querySelector('[data-onekey-toast-toaster]');
-  list?.dispatchEvent(new MouseEvent('mouseenter'));
+  dispatchPointer(list!, 'pointerenter');
   expect(cards()[0]?.getAttribute('data-expanded')).toBe('true');
   jest.advanceTimersByTime(5000);
   expect(cards()).toHaveLength(2);
-  list?.dispatchEvent(new MouseEvent('mouseleave'));
+  dispatchPointer(list!, 'pointerleave');
   jest.advanceTimersByTime(999);
   expect(cards().every((card) => card.dataset.removed === 'false')).toBe(true);
   jest.advanceTimersByTime(1);
@@ -145,11 +146,11 @@ test('hovering a single toast pauses its timer without fanning out', () => {
   store.show(message('a', { duration: 1000 }));
   jest.advanceTimersByTime(900);
   const list = document.querySelector('[data-onekey-toast-toaster]');
-  list?.dispatchEvent(new MouseEvent('mouseenter'));
+  dispatchPointer(list!, 'pointerenter');
   expect(cards()[0]?.getAttribute('data-expanded')).toBe('false');
   jest.advanceTimersByTime(5000);
   expect(cards()[0]?.getAttribute('data-removed')).toBe('false');
-  list?.dispatchEvent(new MouseEvent('mouseleave'));
+  dispatchPointer(list!, 'pointerleave');
   jest.advanceTimersByTime(999);
   expect(cards()[0]?.getAttribute('data-removed')).toBe('false');
   jest.advanceTimersByTime(1);
@@ -159,15 +160,11 @@ test('hovering a single toast pauses its timer without fanning out', () => {
 test('pointercancel clears interaction state and resumes timers without swipe dismissal', () => {
   store.show(message('a', { duration: 1000 }));
   const card = cards()[0]!;
-  card.dispatchEvent(
-    new MouseEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 })
-  );
-  card.dispatchEvent(
-    new MouseEvent('pointermove', { bubbles: true, clientX: 0, clientY: 40 })
-  );
+  dispatchPointer(card, 'pointerdown');
+  dispatchPointer(card, 'pointermove', { clientY: 40 });
   jest.advanceTimersByTime(2000);
   expect(card.getAttribute('data-removed')).toBe('false');
-  card.dispatchEvent(new MouseEvent('pointercancel', { bubbles: true }));
+  dispatchPointer(card, 'pointercancel');
   expect(card.getAttribute('data-removed')).toBe('false');
   expect(card.getAttribute('data-swiping')).toBe('false');
   jest.advanceTimersByTime(999);
@@ -465,7 +462,7 @@ test('removing a hovered position group releases hover and resumes remaining gro
     '[data-onekey-toast-toaster][data-y-position="top"]'
   );
   expect(topList).not.toBeNull();
-  topList?.dispatchEvent(new MouseEvent('mouseenter'));
+  dispatchPointer(topList!, 'pointerenter');
   expect(
     cards().every((card) => card.getAttribute('data-expanded') === 'true')
   ).toBe(true);
@@ -553,4 +550,191 @@ test('pressable notification row is keyboard-focusable and activates on Enter an
   button?.click();
   expect(onAction).toHaveBeenCalledWith('open');
   expect(onPress).toHaveBeenCalledTimes(2);
+});
+
+function dispatchPointer(
+  target: EventTarget,
+  type: string,
+  init: Record<string, unknown> = {}
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, {
+    pointerId: 1,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: 0,
+    clientY: 0,
+    ...init,
+  });
+  target.dispatchEvent(event);
+}
+
+test('dragging out of a toast and releasing clears hover after resetting data-swiping so timers resume', () => {
+  const onClose = jest.fn();
+  store.show(message('a', { duration: 1000 }), { onClose });
+  const list = document.querySelector<HTMLElement>(
+    '[data-onekey-toast-toaster]'
+  )!;
+  const card = cards()[0]!;
+  const outside = document.createElement('div');
+  document.body.appendChild(outside);
+  // While data-swiping="true", the scaled ::before pseudo-element covers 3x
+  // the card height; once data-swiping="false" is restored on release, hit
+  // testing lands on the page behind the card.
+  document.elementFromPoint = jest.fn(() =>
+    card.getAttribute('data-swiping') === 'true' ? card : outside
+  );
+
+  dispatchPointer(list, 'pointerenter');
+  dispatchPointer(card, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(card, 'pointermove', { clientX: 200, clientY: 215 });
+  expect(card.getAttribute('data-swiping')).toBe('true');
+  jest.advanceTimersByTime(200);
+  dispatchPointer(card, 'pointerup', { clientX: 200, clientY: 215 });
+
+  expect(card.getAttribute('data-swiping')).toBe('false');
+  expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
+
+  jest.advanceTimersByTime(1000);
+  expect(card.getAttribute('data-removed')).toBe('true');
+  jest.advanceTimersByTime(200);
+  expect(onClose).toHaveBeenCalledWith('timeout');
+});
+
+test('single-direction swipe dismisses away from the anchored edge on wide and narrow positions', () => {
+  const onWideClose = jest.fn();
+  store.configure({ position: 'bottom-right' });
+  store.show(message('wide', { duration: 5000 }), { onClose: onWideClose });
+  const wideCard = cards()[0]!;
+
+  // Upward drag on bottom-right does not move or dismiss.
+  dispatchPointer(wideCard, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 200, clientY: 150 });
+  expect(wideCard.getAttribute('data-swiping')).toBe('false');
+  dispatchPointer(wideCard, 'pointerup', { clientX: 200, clientY: 150 });
+  expect(wideCard.getAttribute('data-removed')).toBe('false');
+
+  // Downward swipe after initial horizontal jitter still dismisses.
+  dispatchPointer(wideCard, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 196, clientY: 201 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  dispatchPointer(wideCard, 'pointermove', { clientX: 196, clientY: 228 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('28px');
+  dispatchPointer(wideCard, 'pointermove', { clientX: 241, clientY: 230 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('30px');
+  dispatchPointer(wideCard, 'pointerup', { clientX: 241, clientY: 230 });
+  jest.advanceTimersByTime(200);
+  expect(onWideClose).toHaveBeenCalledWith('swipe');
+
+  const onNarrowClose = jest.fn();
+  store.configure({ position: 'top-center' });
+  store.show(message('narrow-1', { duration: 1000 }));
+  store.show(message('narrow-2', { duration: 1000 }), {
+    onClose: onNarrowClose,
+  });
+  const narrowFront = cards()[0]!;
+
+  // Touch tap expands a multi-card stack on narrow screen and tapping outside collapses it.
+  dispatchPointer(narrowFront, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 40,
+  });
+  dispatchPointer(narrowFront, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 40,
+  });
+  expect(narrowFront.getAttribute('data-expanded')).toBe('true');
+  dispatchPointer(document.body, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 10,
+    clientY: 500,
+  });
+  expect(narrowFront.getAttribute('data-expanded')).toBe('false');
+
+  // Downward drag on top-center does not move or dismiss; upward swipe dismisses.
+  dispatchPointer(narrowFront, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 40,
+  });
+  dispatchPointer(narrowFront, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 90,
+  });
+  expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  dispatchPointer(narrowFront, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 90,
+  });
+  expect(narrowFront.getAttribute('data-removed')).toBe('false');
+  expect(narrowFront.getAttribute('data-expanded')).toBe('false');
+
+  dispatchPointer(narrowFront, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 60,
+  });
+  dispatchPointer(narrowFront, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 30,
+  });
+  expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('-30px');
+  dispatchPointer(narrowFront, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 30,
+  });
+  jest.advanceTimersByTime(200);
+  expect(onNarrowClose).toHaveBeenCalledWith('swipe');
+});
+
+test('only the last tracked press can resume timers', () => {
+  const onClose = jest.fn();
+  store.show(message('held', { duration: 1000 }), { onClose });
+  const card = cards()[0]!;
+  const firstTouch = { pointerId: 2, pointerType: 'touch' };
+  const secondTouch = { pointerId: 3, pointerType: 'touch' };
+  dispatchPointer(card, 'pointerdown', firstTouch);
+  dispatchPointer(card, 'pointerdown', secondTouch);
+  dispatchPointer(document.body, 'pointerup');
+  dispatchPointer(card, 'pointercancel', secondTouch);
+  jest.advanceTimersByTime(1200);
+  expect(onClose).not.toHaveBeenCalled();
+
+  dispatchPointer(card, 'pointerup', firstTouch);
+  jest.advanceTimersByTime(1200);
+  expect(onClose).toHaveBeenCalledWith('timeout');
+});
+
+test('an unfinished touch drag does not pause a single toast after release', () => {
+  const onClose = jest.fn();
+  store.show(message('held', { position: 'top-center', duration: 1000 }), {
+    onClose,
+  });
+  const card = cards()[0]!;
+  document.elementFromPoint = jest.fn(() => card);
+  const touch = { pointerId: 2, pointerType: 'touch' };
+  dispatchPointer(card, 'pointerenter', touch);
+  dispatchPointer(card, 'pointerdown', touch);
+  dispatchPointer(card, 'pointermove', { ...touch, clientY: 64 });
+  dispatchPointer(card, 'pointerup', { ...touch, clientY: 64 });
+  jest.advanceTimersByTime(1200);
+  expect(onClose).toHaveBeenCalledWith('timeout');
+});
+
+test('dragging back past the anchor cancels a recognized swipe', () => {
+  store.show(message('a', { position: 'top-center' }));
+  const card = cards()[0]!;
+  dispatchPointer(card, 'pointerdown', { clientY: 100 });
+  dispatchPointer(card, 'pointermove', { clientY: 70 });
+  expect(card.getAttribute('data-swiping')).toBe('true');
+  dispatchPointer(card, 'pointermove', { clientY: 105 });
+  expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  dispatchPointer(card, 'pointerup', { clientY: 105 });
+  expect(card.getAttribute('data-removed')).toBe('false');
 });
