@@ -74,7 +74,7 @@ run(tools / "d8", "--min-api", "26", "--lib", android, "--output", dex,
     output / "classes.jar", env=env)
 (output / "AndroidManifest.xml").write_text("""<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.onekey.sliderbubbletest">
 <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
-<application android:debuggable="true" android:label="Slider Bubble Test" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+<application android:supportsRtl="true" android:debuggable="true" android:label="Slider Bubble Test" android:theme="@android:style/Theme.Material.Light.NoActionBar">
 <activity android:name="com.margelo.nitro.segmentslider.BubbleLayoutActivity" android:exported="true"/>
 <activity android:name="com.margelo.nitro.segmentslider.StyleGalleryActivity" android:exported="true"/>
 </application></manifest>""")

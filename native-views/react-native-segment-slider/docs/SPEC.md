@@ -25,8 +25,9 @@ every pointer or keyboard interaction and paints with the latest configuration,
 including marks added during a drag. Reconciliation never emits `onChange`.
 
 An interaction is one drag or tap (one pointer and, on Web, only the primary
-button; extra pointers are ignored until it ends) or one accepted Web key
-press. Each interaction fires `onSlideStart` once and `onSlideComplete` once.
+button; extra pointers are ignored until it ends), an accepted Android or Web
+key press, or an Android accessibility action that changes the value. Each
+interaction fires `onSlideStart` once and `onSlideComplete` once.
 Setting `disabled` during a drag cancels it on every platform: the bubble and
 pressed thumb reset, ancestor gestures are restored, `onSlideComplete` fires,
 and later moves or the release change nothing.
@@ -128,9 +129,17 @@ track for a 20-point bubble and its 8-point gap.
 | Stacking (bottom to top) | Track, fill, halo, marks, thumb, bubble | Track, fill, halo, marks, thumb, bubble | Track, fill, marks, thumb, bubble; marks stay clickable under the thumb |
 | Mark tick | `UIImpactFeedbackGenerator(.light)`, intensity 0.6 | `CLOCK_TICK` | None |
 | Step tick (`hapticStep`) | `UISelectionFeedbackGenerator` | `TEXT_HANDLE_MOVE` (API 27+), else `CLOCK_TICK` | None |
-| Keyboard | None | None | Arrow keys move to the next mark value (1 unit without marks), Home / End jump to the ends |
+| Keyboard | None | Left / Right move by 1 unit following layout direction; Home / End select minimum / maximum | Arrow keys move to the next mark value (1 unit without marks), Home / End jump to the ends |
+| Adjustable accessibility range | — | SeekBar role with integer range and progress, one-unit forward/backward actions and direct progress setting | DOM slider role with range and current value |
+| RTL layout | Minimum at left | Minimum at right, with mirrored fill, marks, thumb and touch mapping | Minimum at left |
 | Pressed thumb | Scales to 18.4 points, plain thumb colors; the node halo stays under it | Scales to 18.4 dp, plain thumb colors; the node halo stays under it | Stays 16 px; plain thumb colors |
 | Mark hover | None (no pointer) | None (no pointer) | Ring while the pointer hovers a mark |
+
+Android accessibility actions and keyboard adjustments emit the same start,
+change and completion callbacks as a touch interaction, without drag haptics.
+At a bound, a step past it leaves the value unchanged. While disabled or
+mid-drag, discrete adjustments leave the active value alone. Android exposes
+the numeric accessibility range only when it contains a selectable integer.
 
 Accepted Web divergences: the endpoint inset, pressed thumb size and bubble
 clamping differ because desktop pointers do not need the enlarged touch thumb;
@@ -207,6 +216,8 @@ Injected Android pointer DOWN/MOVE/UP events also reached both endpoints;
 GPU screenshots confirmed complete circles and `0%` / `100%` text while held.
 This harness stubs the Nitro base and React context; it does not validate the
 complete OneKey Perps screen or the production Nitro/Fabric integration.
+The same harness verifies Android range metadata, accessibility actions,
+keyboard adjustments and mirrored touch and drawing on API 34.
 
 - `src/SegmentSlider.tsx`: native controlled wrapper (value sync via `setValue`).
 - `src/types.ts`: shared props and default colors.
@@ -221,7 +232,8 @@ complete OneKey Perps screen or the production Nitro/Fabric integration.
   signed ranges. Mac Catalyst execution does not
   establish React Native/Fabric or iPhone acceptance.
 - `tests/android/BubbleLayoutActivity.kt`: Android View/Canvas rendering,
-  text raster bounds and touch-event regression coverage. An RN-like wrapper
+  text raster bounds, touch events, keyboard adjustments, accessibility actions
+  and RTL regression coverage. An RN-like wrapper
   allows child overflow within a horizontally clipping sheet with headroom.
 - `tests/android/run.py`: builds a local test APK from the production Kotlin
   sources and runs it on an explicitly selected, already booted emulator.
