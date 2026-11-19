@@ -13,6 +13,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.widget.FrameLayout
@@ -77,13 +78,16 @@ class BubbleLayoutActivity : Activity() {
         runInteractionCases()
         runHapticCases()
         runAdjustableCases(root)
-        runLayoutCases {
-          verifyDelayedValueSync(root) {
-            File(filesDir, "result.json").writeText(JSONObject().apply {
-              put("checks", checks); put("failures", org.json.JSONArray(failures))
-            }.toString(2))
-            title.text = "${checks - failures.size}/$checks native Android checks passed"
-            android.util.Log.i("SliderBubbleTest", title.text.toString())
+        runFractionalEndpointCases()
+        runAccessibilityNotificationCases(root) {
+          runLayoutCases {
+            verifyDelayedValueSync(root) {
+              File(filesDir, "result.json").writeText(JSONObject().apply {
+                put("checks", checks); put("failures", org.json.JSONArray(failures))
+              }.toString(2))
+              title.text = "${checks - failures.size}/$checks native Android checks passed"
+              android.util.Log.i("SliderBubbleTest", title.text.toString())
+            }
           }
         }
       }, 250)
@@ -372,6 +376,77 @@ class BubbleLayoutActivity : Activity() {
       "disabled slider rejects accessibility and key adjustments")
     root.removeView(view)
     slider.dispose()
+  }
+
+  private fun runFractionalEndpointCases() {
+    for ((endpoint, outsideKey, outsideAction) in listOf(
+      Triple(0.5, KeyEvent.KEYCODE_DPAD_LEFT, AccessibilityAction.ACTION_SCROLL_BACKWARD),
+      Triple(10.5, KeyEvent.KEYCODE_DPAD_RIGHT, AccessibilityAction.ACTION_SCROLL_FORWARD),
+    )) {
+      val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
+        min = 0.5
+        max = 10.5
+        defaultValue = endpoint
+      }
+      val changes = mutableListOf<Double>()
+      slider.onChange = { changes.add(it) }
+      check(!slider.view.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, outsideKey)),
+        "outward key is ignored at fractional endpoint $endpoint")
+      check(!slider.view.performAccessibilityAction(outsideAction.id, null),
+        "outward accessibility step is ignored at fractional endpoint $endpoint")
+      check(field(slider, "currentValue") == endpoint && changes.isEmpty(),
+        "outward steps preserve fractional endpoint $endpoint without callbacks")
+      slider.dispose()
+    }
+  }
+
+  private fun runAccessibilityNotificationCases(root: FrameLayout, done: () -> Unit) {
+    val slider = HybridSegmentSlider(ThemedReactContext(this)).apply { defaultValue = 25.0 }
+    val view = slider.view
+    view.layout(0, 0, px(320), px(24))
+    root.addView(view, FrameLayout.LayoutParams(px(320), px(24)))
+    val snapshots = mutableListOf<Triple<Float, Float, Float>>()
+    view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+      override fun sendAccessibilityEvent(host: View, eventType: Int) {
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+          host.createAccessibilityNodeInfo().rangeInfo?.let {
+            snapshots.add(Triple(it.min, it.max, it.current))
+          }
+        }
+        super.sendAccessibilityEvent(host, eventType)
+      }
+    }
+    val inset = field(slider, "insetPx") as Float
+    fun x(value: Float) = inset + (view.width - 2 * inset) * value / 100f
+
+    touch(slider, MotionEvent.ACTION_DOWN, x(30f))
+    touch(slider, MotionEvent.ACTION_MOVE, x(60f))
+    touch(slider, MotionEvent.ACTION_MOVE, x(75f))
+    handler.postDelayed({
+      check(snapshots == listOf(Triple(0f, 100f, 75f)),
+        "drag changes coalesce into one progress event: $snapshots")
+      touch(slider, MotionEvent.ACTION_UP, x(75f))
+      slider.setValue(50.0, 1.0)
+      handler.postDelayed({
+        check(snapshots.lastOrNull() == Triple(0f, 100f, 50f) && snapshots.size == 2,
+          "controlled update sends a progress event: $snapshots")
+        slider.min = 20.0
+        slider.max = 80.0
+        handler.postDelayed({
+          check(snapshots.lastOrNull() == Triple(20f, 80f, 50f) && snapshots.size == 3,
+            "range changes coalesce into one progress event: $snapshots")
+          val notifications = snapshots.size
+          slider.setValue(50.0, 1.0)
+          handler.postDelayed({
+            check(snapshots.size == notifications,
+              "same-value update sends no progress event: $snapshots")
+            root.removeView(view)
+            slider.dispose()
+            done()
+          }, 200)
+        }, 200)
+      }, 200)
+    }, 200)
   }
 
   private fun runInteractionCases() {

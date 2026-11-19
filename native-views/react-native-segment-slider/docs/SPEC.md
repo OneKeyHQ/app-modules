@@ -137,9 +137,14 @@ track for a 20-point bubble and its 8-point gap.
 
 Android accessibility actions and keyboard adjustments emit the same start,
 change and completion callbacks as a touch interaction, without drag haptics.
-At a bound, a step past it leaves the value unchanged. While disabled or
-mid-drag, discrete adjustments leave the active value alone. Android exposes
-the numeric accessibility range only when it contains a selectable integer.
+A step selects the next integer in its direction. At a bound, a step past it
+leaves the current value unchanged, including a controlled fractional
+endpoint. While disabled or mid-drag, discrete adjustments leave the active
+value alone. Android exposes the numeric accessibility range only when it
+contains a selectable integer. When the current value or range changes, an
+attached view schedules a content-change event. Multiple updates within 100 ms
+share one event reporting the latest state. Detachment or disposal cancels
+pending notifications.
 
 Accepted Web divergences: the endpoint inset, pressed thumb size and bubble
 clamping differ because desktop pointers do not need the enlarged touch thumb;
@@ -217,7 +222,8 @@ GPU screenshots confirmed complete circles and `0%` / `100%` text while held.
 This harness stubs the Nitro base and React context; it does not validate the
 complete OneKey Perps screen or the production Nitro/Fabric integration.
 The same harness verifies Android range metadata, accessibility actions,
-keyboard adjustments and mirrored touch and drawing on API 34.
+keyboard adjustments, fractional endpoints, coalesced accessibility events,
+and mirrored touch and drawing on API 34.
 
 - `src/SegmentSlider.tsx`: native controlled wrapper (value sync via `setValue`).
 - `src/types.ts`: shared props and default colors.

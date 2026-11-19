@@ -93,6 +93,14 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // A tap only snaps when it's quick. Holding longer (without dragging) is a
   // long-press and does nothing — matching the competitor's tap window.
   private val tapMaxDurationMs = 300L
+  private var accessibilityUpdatePending = false
+  private val dispatchAccessibilityUpdate = Runnable {
+    accessibilityUpdatePending = false
+    if (!isDisposed && view.isAttachedToWindow) {
+      view.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+    }
+  }
+
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -123,8 +131,8 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
     override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
       val value = when (action) {
-        AccessibilityAction.ACTION_SCROLL_FORWARD.id -> currentValue + 1
-        AccessibilityAction.ACTION_SCROLL_BACKWARD.id -> currentValue - 1
+        AccessibilityAction.ACTION_SCROLL_FORWARD.id -> return stepValue(forward = true)
+        AccessibilityAction.ACTION_SCROLL_BACKWARD.id -> return stepValue(forward = false)
         AccessibilityAction.ACTION_SET_PROGRESS.id ->
           arguments?.getFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, Float.NaN)
             ?.toDouble() ?: return false
@@ -135,14 +143,14 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
       if (event.hasNoModifiers()) {
-        val value = when (keyCode) {
-          KeyEvent.KEYCODE_DPAD_LEFT -> currentValue + if (isRtl) 1 else -1
-          KeyEvent.KEYCODE_DPAD_RIGHT -> currentValue + if (isRtl) -1 else 1
-          KeyEvent.KEYCODE_MOVE_HOME -> min
-          KeyEvent.KEYCODE_MOVE_END -> max
-          else -> return super.onKeyDown(keyCode, event)
+        val adjusted = when (keyCode) {
+          KeyEvent.KEYCODE_DPAD_LEFT -> stepValue(forward = isRtl)
+          KeyEvent.KEYCODE_DPAD_RIGHT -> stepValue(forward = !isRtl)
+          KeyEvent.KEYCODE_MOVE_HOME -> adjustValue(min)
+          KeyEvent.KEYCODE_MOVE_END -> adjustValue(max)
+          else -> false
         }
-        if (adjustValue(value)) return true
+        if (adjusted) return true
       }
       return super.onKeyDown(keyCode, event)
     }
@@ -150,6 +158,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     override fun onRtlPropertiesChanged(layoutDirection: Int) {
       super.onRtlPropertiesChanged(layoutDirection)
       invalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+      cancelAccessibilityUpdate()
+      super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -235,11 +248,21 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   override var min: Double = 0.0
     get() = field
-    set(v) { field = v; invalidateIfAlive() }
+    set(v) {
+      if (field == v) return
+      field = v
+      invalidateIfAlive()
+      scheduleAccessibilityUpdate()
+    }
 
   override var max: Double = 100.0
     get() = field
-    set(v) { field = v; invalidateIfAlive() }
+    set(v) {
+      if (field == v) return
+      field = v
+      invalidateIfAlive()
+      scheduleAccessibilityUpdate()
+    }
 
   override var segments: Double = 0.0
     get() = field
@@ -376,13 +399,31 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     return min + snappedFrac * (max - min)
   }
 
+  private fun scheduleAccessibilityUpdate() {
+    if (isDisposed || !view.isAttachedToWindow || accessibilityUpdatePending) return
+    accessibilityUpdatePending = view.postDelayed(dispatchAccessibilityUpdate, 100L)
+  }
+
+  private fun cancelAccessibilityUpdate() {
+    view.removeCallbacks(dispatchAccessibilityUpdate)
+    accessibilityUpdatePending = false
+  }
+
   /** Updates the idle view without emitting an interaction callback. */
   private fun syncToValue(v: Double) {
     if (isDisposed) return
     hoverMarkIndex = -1
+    val changed = currentValue != v
     currentValue = v
     lastEmitted = v
     view.invalidate()
+    if (changed) scheduleAccessibilityUpdate()
+  }
+
+  private fun stepValue(forward: Boolean): Boolean {
+    val next = if (forward) Math.floor(currentValue) + 1 else Math.ceil(currentValue) - 1
+    if (next < Math.ceil(min) || next > Math.floor(max)) return false
+    return adjustValue(next)
   }
 
   private fun adjustValue(raw: Double): Boolean {
@@ -396,13 +437,14 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     onSlideStart?.invoke()
     commitDragValue(value)
     onSlideComplete?.invoke(interactionId, currentValue)
-    view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
     return true
   }
 
   private fun commitDragValue(raw: Double) {
     val rounded = roundToRange(raw)
+    val changed = currentValue != rounded
     currentValue = rounded
+    if (changed) scheduleAccessibilityUpdate()
     markTickedThisCommit = false
     updateHover()
     tickStepIfNeeded(rounded)
@@ -578,6 +620,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   override fun dispose() {
     isDisposed = true
+    cancelAccessibilityUpdate()
     thumbScaleAnimator?.cancel()
     thumbScaleAnimator = null
   }
