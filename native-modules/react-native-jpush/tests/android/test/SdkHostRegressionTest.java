@@ -2,6 +2,7 @@ package test;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -44,6 +45,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -2834,6 +2837,7 @@ public final class SdkHostRegressionTest {
     }
 
     private static final long RESUME_FIXTURE_UID = 880001L;
+    private static final String PENDING_RESUME_APP_KEY = "pending_push_resume_app_key";
     private static volatile Runnable resumeLogBarrier;
 
     public static void recordResumeFixtureLog(String tag, String message) {
@@ -2865,10 +2869,146 @@ public final class SdkHostRegressionTest {
     }
 
     @org.junit.Test
+    @SuppressWarnings("unchecked")
+    public void testColdAppKeyReadCannotOverwriteAnExplicitKey() throws Exception {
+        String appKeyPref = "app_key";
+        String explicitKey = "new-explicit-key";
+        AtomicReference<String> persistedKey = new AtomicReference<>("old-persisted-key");
+        CountDownLatch oldRead = new CountDownLatch(1);
+        CountDownLatch releaseOldRead = new CountDownLatch(1);
+        ClassLoader loader = getClass().getClassLoader();
+        SharedPreferences.Editor editor = (SharedPreferences.Editor) Proxy.newProxyInstance(loader,
+            new Class<?>[] {SharedPreferences.Editor.class}, (self, method, args) -> {
+                if ("putString".equals(method.getName())) {
+                    if (appKeyPref.equals(args[0])) persistedKey.set((String) args[1]);
+                    return self;
+                }
+                return null;
+            });
+        SharedPreferences preferences = (SharedPreferences) Proxy.newProxyInstance(loader,
+            new Class<?>[] {SharedPreferences.class}, (self, method, args) -> {
+                if ("edit".equals(method.getName())) return editor;
+                if (!"getString".equals(method.getName()) || !appKeyPref.equals(args[0])) return null;
+                String capturedKey = persistedKey.get();
+                oldRead.countDown();
+                check(releaseOldRead.await(5000L, TimeUnit.MILLISECONDS), "Cold preference read was not released");
+                return capturedKey;
+            });
+        Context context = new Context() {
+            @Override public SharedPreferences getSharedPreferences(String name, int mode) { return preferences; }
+        };
+        Field appContextField = JCoreStorage.class.getDeclaredField("sAppContext");
+        appContextField.setAccessible(true);
+        Field cacheField = JCoreStorage.class.getDeclaredField("MEMORY_FALLBACK");
+        cacheField.setAccessible(true);
+        Map<String, Object> cache = (Map<String, Object>) cacheField.get(null);
+        Object originalContext = appContextField.get(null);
+        Object originalAppKey = cache.remove(appKeyPref);
+        Object originalPendingKey = cache.remove(PENDING_RESUME_APP_KEY);
+        appContextField.set(null, context);
+        Thread getter = new Thread(() -> JCoreStorage.getAppKey(context), "test-cold-app-key-reader");
+        Thread setter = new Thread(() -> JCoreStorage.setAppKey(context, explicitKey), "test-explicit-app-key-writer");
+        getter.setDaemon(true);
+        setter.setDaemon(true);
+        try {
+            getter.start();
+            check(oldRead.await(3000L, TimeUnit.MILLISECONDS), "Cold read did not capture the old AppKey");
+            setter.start();
+            awaitCondition(() -> !setter.isAlive() || setter.getState() == Thread.State.BLOCKED,
+                "Explicit AppKey setter did not reach storage");
+            releaseOldRead.countDown();
+            getter.join(3000L);
+            setter.join(3000L);
+            check(!getter.isAlive() && !setter.isAlive(), "Concurrent AppKey operations must finish");
+            check(explicitKey.equals(persistedKey.get()), "Explicit AppKey must be persisted");
+            check(explicitKey.equals(JCoreStorage.getAppKey(context)), "An old cold read must not replace the explicit AppKey in memory");
+        } finally {
+            releaseOldRead.countDown();
+            getter.join(3000L);
+            setter.join(3000L);
+            appContextField.set(null, originalContext);
+            if (originalAppKey == null) cache.remove(appKeyPref); else cache.put(appKeyPref, originalAppKey);
+            if (originalPendingKey == null) cache.remove(PENDING_RESUME_APP_KEY); else cache.put(PENDING_RESUME_APP_KEY, originalPendingKey);
+        }
+    }
+
+    @org.junit.Test
+    public void testResumeAfterObservableStopKeepsItsConnection() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "stop-resume-order");
+        CountDownLatch resumed = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<>();
+        AtomicReference<Throwable> stopError = new AtomicReference<>();
+        Thread stopper = new Thread(() -> {
+            try { JPushInterface.stopPush(context); }
+            catch (Throwable error) { stopError.set(error); }
+        }, "test-overlapping-stop");
+        stopper.setDaemon(true);
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(4000);
+            Thread server = new Thread(() -> {
+                try {
+                    try (Socket old = listener.accept()) {
+                        acknowledgeResumeFixtureLogin(old, 8872);
+                        while (JCoreWireCodec.readClientFrameFromStream(old.getInputStream(), RESUME_FIXTURE_UID) != null) {
+                            // Wait for the old owner to close.
+                        }
+                    }
+                    try (Socket replacement = listener.accept()) {
+                        acknowledgeResumeFixtureLogin(replacement, 8873);
+                        JCoreWireCodec.DecodedFrame resume =
+                            JCoreWireCodec.readClientFrameFromStream(replacement.getInputStream(), RESUME_FIXTURE_UID);
+                        check(resume != null && resume.command == JCoreWireCodec.CMD_PUSH_CTRL
+                            && Arrays.equals(resume.body, JCoreWireCodec.buildPushControlPayload(false)),
+                            "A resume after the observed stop must reach the replacement owner");
+                        writeLoopbackAck(replacement, resume, RESUME_FIXTURE_UID, 8873, 0, new byte[] {0, 0});
+                        resumed.countDown();
+                        check(finish.await(4000L, TimeUnit.MILLISECONDS), "Stop and resume fixture did not finish");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-overlapping-stop-server");
+            server.setDaemon(true);
+            server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Old owner must log in");
+                synchronized (engine) {
+                    stopper.start();
+                    awaitCondition(() -> stopper.getState() == Thread.State.BLOCKED
+                        && Arrays.stream(stopper.getStackTrace()).anyMatch(
+                            frame -> JCoreTcpEngine.class.getName().equals(frame.getClassName())),
+                        "Public stop did not reach the engine monitor");
+                    // Resume as soon as the public stopped state becomes visible.
+                    if (JPushInterface.isPushStopped(context)) JPushInterface.resumePush(context);
+                }
+                stopper.join(3000L);
+                check(!stopper.isAlive() && stopError.get() == null, "Public stop did not finish");
+                if (JPushInterface.isPushStopped(context)) JPushInterface.resumePush(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(),
+                    "An older stop must not close the connection after a later resume");
+                check(resumed.await(4000L, TimeUnit.MILLISECONDS), "Resume did not reach the replacement: " + serverError.get());
+            } finally {
+                finish.countDown();
+                stopper.join(3000L);
+                JCoreStorage.setPushStopped(context, false);
+                engine.stop(context);
+                server.join(5000L);
+                engine.setAutoReconnectEnabled(true);
+                engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Stop and resume fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
     public void testResumeAfterLoginWithFullBusinessQueue() throws Exception {
         Context context = new Context();
         JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
-        prepareResumeRaceFixture(context, engine, "resume-full-queue-fixture");
+        String appKey = "resume-full-queue-fixture";
+        prepareResumeRaceFixture(context, engine, appKey);
         JPushInterface.stopPush(context);
         final int queueCapacity = 128;
         final long firstRid = 65000L;
@@ -2918,6 +3058,8 @@ public final class SdkHostRegressionTest {
             try {
                 engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
                 JPushInterface.resumePush(context);
+                check(appKey.equals(JCoreStorage.getSpValue(context, PENDING_RESUME_APP_KEY, "")),
+                    "Resume must persist the pending AppKey before login");
                 JCoreTcpEngine.RequestCallback acknowledged = (frame, code) -> {
                     if (frame != null && code == 0) businessAcked.countDown();
                 };
@@ -2935,7 +3077,9 @@ public final class SdkHostRegressionTest {
                 check(overflowCode.get() == 6002, "The reserved slot must not admit a 129th ordinary queued request");
                 releaseFirstBusinessAck.countDown();
                 check(businessAcked.await(5000L, TimeUnit.MILLISECONDS),
-                    "All accepted business requests and the interleaved resume must be acknowledged: " + serverError.get());
+                    "All accepted business requests must be acknowledged: " + serverError.get());
+                check(JCoreStorage.getSpValue(context, PENDING_RESUME_APP_KEY, "").isEmpty(),
+                    "The resume ACK must clear the pending AppKey before later business requests complete");
             } finally {
                 releaseLogin.countDown();
                 releaseFirstBusinessAck.countDown();
@@ -2951,9 +3095,19 @@ public final class SdkHostRegressionTest {
 
     @org.junit.Test
     public void testReconnectReclaimsResumeQueuedBehindAnOldRequest() throws Exception {
+        runReconnectResumeFixture(true);
+    }
+
+    @org.junit.Test
+    public void testReconnectReclaimsResumeSentWithoutAck() throws Exception {
+        runReconnectResumeFixture(false);
+    }
+
+    private static void runReconnectResumeFixture(boolean queueBehindBusinessRequest) throws Exception {
         Context context = new Context();
         JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
-        prepareResumeRaceFixture(context, engine, "resume-reconnect-fixture");
+        String appKey = queueBehindBusinessRequest ? "resume-queued-reconnect" : "resume-sent-reconnect";
+        prepareResumeRaceFixture(context, engine, appKey);
         engine.setAutoReconnectEnabled(true);
         engine.setReconnectBaseDelayMs(100L);
         CountDownLatch oldRequestRead = new CountDownLatch(1);
@@ -2965,12 +3119,20 @@ public final class SdkHostRegressionTest {
             listener.setSoTimeout(4000);
             Thread server = new Thread(() -> {
                 try {
+                    long previousRid;
                     try (Socket old = listener.accept()) {
                         acknowledgeResumeFixtureLogin(old, 8801);
                         JCoreWireCodec.DecodedFrame request =
                             JCoreWireCodec.readClientFrameFromStream(old.getInputStream(), RESUME_FIXTURE_UID);
-                        check(request != null && request.command == JCoreWireCodec.CMD_PROPERTY_OP,
-                            "The old connection must hold a business request awaiting ACK");
+                        check(request != null, "The old connection must hold a request awaiting ACK");
+                        if (queueBehindBusinessRequest) {
+                            check(request.command == JCoreWireCodec.CMD_PROPERTY_OP, "Expected a business request on the old owner");
+                        } else {
+                            check(request.command == JCoreWireCodec.CMD_PUSH_CTRL
+                                && Arrays.equals(request.body, JCoreWireCodec.buildPushControlPayload(false)),
+                                "Expected an in-flight resume on the old owner");
+                        }
+                        previousRid = request.requestId;
                         oldRequestRead.countDown();
                         check(dropOldConnection.await(3000L, TimeUnit.MILLISECONDS), "Old disconnect was not released");
                     }
@@ -2979,6 +3141,7 @@ public final class SdkHostRegressionTest {
                         JCoreWireCodec.DecodedFrame resume =
                             JCoreWireCodec.readClientFrameFromStream(replacement.getInputStream(), RESUME_FIXTURE_UID);
                         check(resume != null && resume.command == JCoreWireCodec.CMD_PUSH_CTRL
+                            && resume.requestId != previousRid
                             && Arrays.equals(resume.body, JCoreWireCodec.buildPushControlPayload(false)),
                             "The replacement login must immediately send a fresh resume");
                         writeLoopbackAck(replacement, resume, RESUME_FIXTURE_UID, 8802, 0, new byte[] {0, 0});
@@ -2988,24 +3151,34 @@ public final class SdkHostRegressionTest {
                 } catch (Throwable error) {
                     serverError.set(error);
                 }
-            }, "test-resume-queued-on-old-connection");
+            }, "test-resume-reconnect");
             server.setDaemon(true);
             server.start();
             try {
                 engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
                 engine.start(context);
                 check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Old resume fixture must log in");
-                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
-                    65401, JCoreWireCodec.buildPropertyOperationPayload(1, 65401,
-                        Collections.<String, Object>singletonMap("value", "waiting-for-ack")), 3000L, 0, null);
-                check(oldRequestRead.await(3000L, TimeUnit.MILLISECONDS), "Old business request did not reach the server");
-                // Seed an unacknowledged local resume while this TCP owner still drains its business queue.
+                if (queueBehindBusinessRequest) {
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                        65401, JCoreWireCodec.buildPropertyOperationPayload(1, 65401,
+                            Collections.<String, Object>singletonMap("value", "waiting-for-ack")), 3000L, 0, null);
+                    check(oldRequestRead.await(3000L, TimeUnit.MILLISECONDS), "Old business request did not reach the server");
+                }
+                // Seed a local resume without closing the old socket.
                 JCoreStorage.setPushStopped(context, true);
                 JPushInterface.resumePush(context);
-                check(engine.getPreLoginQueueSize() == 1, "Resume must remain queued behind the old request");
+                if (queueBehindBusinessRequest) {
+                    check(engine.getPreLoginQueueSize() == 1, "Resume must remain queued behind the old request");
+                } else {
+                    check(oldRequestRead.await(3000L, TimeUnit.MILLISECONDS), "Resume did not reach the old server");
+                }
+                check(appKey.equals(JCoreStorage.getSpValue(context, PENDING_RESUME_APP_KEY, "")),
+                    "Pending resume must survive until a matching ACK arrives");
                 dropOldConnection.countDown();
                 check(resumeReceived.await(4000L, TimeUnit.MILLISECONDS),
-                    "Replacement login did not re-claim the queued resume: " + serverError.get());
+                    "Replacement login did not re-claim the pending resume: " + serverError.get());
+                awaitCondition(() -> JCoreStorage.getSpValue(context, PENDING_RESUME_APP_KEY, "").isEmpty(),
+                    "Only the replacement owner's ACK may clear the pending resume");
             } finally {
                 dropOldConnection.countDown();
                 finish.countDown();

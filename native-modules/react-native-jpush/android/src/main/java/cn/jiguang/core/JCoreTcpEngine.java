@@ -470,12 +470,21 @@ public final class JCoreTcpEngine {
     }
 
     public void stop(Context context) {
+        stop(context, false);
+    }
+
+    public void stopPush(Context context) {
+        stop(context, true);
+    }
+
+    private void stop(Context context, boolean disablePush) {
         final Attempt owner;
         final Socket socket;
         final long uid;
         final int sid;
         List<QueuedRequest> canceled;
         synchronized (this) {
+            if (disablePush) JCoreStorage.setPushStopped(context, true);
             owner = activeAttempt;
             if (owner != null && owner.stopScheduled && JCoreStorage.isPushStopped(context)) return;
             if (owner == null || !loggedIn || activeSocket == null || !JCoreStorage.isPushStopped(context)) {

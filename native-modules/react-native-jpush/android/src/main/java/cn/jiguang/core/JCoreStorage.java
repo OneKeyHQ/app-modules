@@ -259,6 +259,12 @@ public final class JCoreStorage {
     }
 
     public static String getAppKey(Context context) {
+        Object cached = MEMORY_FALLBACK.get(KEY_APP_KEY);
+        if (cached instanceof String && !isEmpty((String) cached)) return (String) cached;
+        return loadAppKey(context);
+    }
+
+    private static synchronized String loadAppKey(Context context) {
         String cached = getStringPref(context, KEY_APP_KEY, "");
         if (!isEmpty(cached)) {
             return cached;
