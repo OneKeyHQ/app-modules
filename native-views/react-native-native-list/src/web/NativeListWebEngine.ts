@@ -310,6 +310,17 @@ type PointerReorderState = {
   active: boolean;
 };
 
+type ReorderClickPointer = Readonly<{
+  suppress: boolean;
+  release?: Readonly<{
+    target: Element | undefined;
+    clientX: number;
+    clientY: number;
+    pointerType: string;
+    timer: number;
+  }>;
+}>;
+
 type KeyboardReorderState = {
   sourceKey: string;
   originalRows: readonly RowModel[];
@@ -2024,8 +2035,10 @@ export class NativeListWebEngine {
   private reorderSettlingKey: string | undefined;
   private reorderCompactKey: string | undefined;
   private reorderExpandingKey: string | undefined;
-  private readonly reorderClickPointers = new Map<number, number | undefined>();
-  private lastReleasedPrimaryPointerId: number | undefined;
+  private readonly reorderClickPointers = new Map<
+    number,
+    ReorderClickPointer
+  >();
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
@@ -2269,7 +2282,7 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.addEventListener('click', this.handleClick);
-    this.root.addEventListener('pointerdown', this.trackReorderPress, true);
+    this.document.addEventListener('pointerdown', this.trackReorderPress, true);
     this.document.addEventListener('pointerup', this.trackReorderRelease, true);
     this.document.addEventListener(
       'pointercancel',
@@ -3184,7 +3197,11 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.removeEventListener('click', this.handleClick);
-    this.root.removeEventListener('pointerdown', this.trackReorderPress, true);
+    this.document.removeEventListener(
+      'pointerdown',
+      this.trackReorderPress,
+      true
+    );
     this.document.removeEventListener(
       'pointerup',
       this.trackReorderRelease,
@@ -4840,49 +4857,100 @@ export class NativeListWebEngine {
       this.invalidateActionAnchor('pointerLeave');
   };
 
-  private clearReorderClick(pointerId: number): boolean {
-    const timer = this.reorderClickPointers.get(pointerId);
-    if (timer !== undefined) this.document.defaultView?.clearTimeout(timer);
-    return this.reorderClickPointers.delete(pointerId);
+  private clearReorderClick(
+    pointerId: number
+  ): ReorderClickPointer | undefined {
+    const pointer = this.reorderClickPointers.get(pointerId);
+    if (pointer?.release)
+      this.document.defaultView?.clearTimeout(pointer.release.timer);
+    this.reorderClickPointers.delete(pointerId);
+    return pointer;
+  }
+
+  private reorderClickTarget(target: EventTarget | null): Element | undefined {
+    if (!(target instanceof Element) || !this.root.contains(target))
+      return undefined;
+    return (
+      target.closest(
+        '[data-native-list-action],[data-native-list-group-member-key],[data-native-list-row-key]'
+      ) ?? target
+    );
   }
 
   private trackReorderPress = (event: PointerEvent) => {
     this.clearReorderClick(event.pointerId);
   };
 
-  private trackReorderRelease = ({
-    type,
-    isPrimary,
-    button,
-    pointerId,
-  }: PointerEvent) => {
-    const released = type === 'pointerup';
-    if (released && isPrimary !== false && button === 0)
-      this.lastReleasedPrimaryPointerId = pointerId;
-    if (!this.clearReorderClick(pointerId) || !released) return;
+  private trackReorderRelease = (event: PointerEvent) => {
+    if (this.reorderClickPointers.size === 0) return;
+    const {
+      type,
+      pointerId,
+      clientX,
+      clientY,
+      pointerType,
+      isPrimary,
+      button,
+    } = event;
+    const pending = this.clearReorderClick(pointerId);
+    if (type !== 'pointerup' || isPrimary === false || button !== 0) return;
+    const releaseTarget =
+      event.target === this.viewport &&
+      this.viewport.hasPointerCapture?.(pointerId)
+        ? this.document.elementFromPoint?.(clientX, clientY) ?? event.target
+        : event.target;
+    const target = this.reorderClickTarget(releaseTarget);
+    const suppress = pending?.suppress ?? false;
+    // Short taps in the list can be newer matches for the same target. Outside
+    // releases without a reorder have no click to correlate here.
+    if (!suppress && !target) return;
 
-    // A browser can queue the compatibility click after pointerup. Start
-    // expiry at release, so cancelling a drag while held cannot unblock it.
+    // Start expiry at release so a cancelled reorder stays suppressed while held.
     const view = this.document.defaultView;
-    if (view) {
-      const timer = view.setTimeout(
-        () => this.reorderClickPointers.delete(pointerId),
-        REORDER_CLICK_GRACE_MS
-      );
-      this.reorderClickPointers.set(pointerId, timer);
-    }
+    if (!view) return;
+    const timer = view.setTimeout(
+      () => this.reorderClickPointers.delete(pointerId),
+      REORDER_CLICK_GRACE_MS
+    );
+    this.reorderClickPointers.set(pointerId, {
+      suppress,
+      release: { target, clientX, clientY, pointerType, timer },
+    });
   };
 
-  private handleClick = (event: Event) => {
-    // Older browsers dispatch MouseEvent for clicks. Non-pointer activations
-    // have detail 0, or pointerId -1 on browsers that dispatch PointerEvent.
+  private legacyClickPointerId(event: MouseEvent): number | undefined {
+    // Keyboard and programmatic activations have detail 0.
+    if (!(event.detail > 0)) return undefined;
+    const target = this.reorderClickTarget(event.target);
+    if (!target) return undefined;
+    const fromTouch = (
+      event as MouseEvent & {
+        sourceCapabilities?: { firesTouchEvents: boolean } | null;
+      }
+    ).sourceCapabilities?.firesTouchEvents;
+    let match: number | undefined;
+    // A release inserts at the end of the map. Keep the latest matching release.
+    for (const [pointerId, { release }] of this.reorderClickPointers) {
+      if (
+        release?.target === target &&
+        (fromTouch === undefined ||
+          fromTouch === (release.pointerType === 'touch')) &&
+        Math.abs(release.clientX - event.clientX) <= 1 &&
+        Math.abs(release.clientY - event.clientY) <= 1
+      )
+        match = pointerId;
+    }
+    return match;
+  }
+
+  private handleClick = (event: MouseEvent) => {
     const pointerId =
       (event as PointerEvent).pointerId ??
-      ((event as MouseEvent).detail > 0
-        ? this.lastReleasedPrimaryPointerId
+      (this.reorderClickPointers.size > 0
+        ? this.legacyClickPointerId(event)
         : undefined);
     const clickFromReorder =
-      pointerId !== undefined && this.clearReorderClick(pointerId);
+      pointerId !== undefined && this.clearReorderClick(pointerId)?.suppress;
     if (this.marketLongPressFired || clickFromReorder) {
       this.marketLongPressFired = false;
       event.preventDefault();
@@ -5377,7 +5445,7 @@ export class NativeListWebEngine {
     state.originalRows = this.snapshot.rows;
     state.workingRows = [...this.snapshot.rows];
     state.active = true;
-    this.reorderClickPointers.set(state.pointerId, undefined);
+    this.reorderClickPointers.set(state.pointerId, { suppress: true });
     this.cancelMarketPointer();
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();

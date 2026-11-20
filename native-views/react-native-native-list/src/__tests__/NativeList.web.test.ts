@@ -7650,6 +7650,8 @@ describe('NativeList web handle reorder and host icons', () => {
               bubbles: true,
               cancelable: true,
               detail: 1,
+              clientX: 10,
+              clientY: 20,
             });
             if (pointerClick) Object.assign(event, { pointerId: 1 });
             handle.dispatchEvent(event);
@@ -7731,6 +7733,8 @@ describe('NativeList web handle reorder and host icons', () => {
               bubbles: true,
               cancelable: true,
               detail: 1,
+              clientX: 10,
+              clientY: 20,
             });
             if (pointerClick) Object.assign(event, { pointerId });
             handle.dispatchEvent(event);
@@ -7770,6 +7774,91 @@ describe('NativeList web handle reorder and host icons', () => {
       }
     }
   );
+
+  it('matches a delayed legacy click to its drag release across unrelated releases', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, dragging } = mount(
+      'handle',
+      handleRows.slice(0, 2).map((row) => ({
+        ...(row as IdentityRow),
+        trailing: [{ kind: 'drag', actionKey: row.key }],
+      }))
+    );
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      withElement(document, () => {
+        const [handle, unrelated] = host.querySelectorAll<HTMLButtonElement>(
+          'button[data-native-list-reorder-handle]'
+        );
+        const pointer = (
+          type: string,
+          target: Element,
+          pointerId: number,
+          pointerType: 'touch' | 'mouse',
+          clientX = 10,
+          clientY = 20
+        ) =>
+          target.dispatchEvent(
+            Object.assign(
+              new document.defaultView!.Event(type, {
+                bubbles: true,
+                cancelable: true,
+              }),
+              {
+                pointerId,
+                pointerType,
+                isPrimary: true,
+                button: 0,
+                clientX,
+                clientY,
+              }
+            )
+          );
+        const click = (target: Element, clientX = 10, clientY = 20) =>
+          target.dispatchEvent(
+            new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+              clientX,
+              clientY,
+            })
+          );
+
+        pointer('pointerdown', handle!, 7, 'touch');
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+        engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+        expect(dragging()).toBe(false);
+        pointer('pointerup', handle!, 7, 'touch', 10.5, 20.5);
+
+        // At the same location, the newer short tap on this button still fires.
+        pointer('pointerdown', handle!, 1, 'mouse');
+        pointer('pointerup', handle!, 1, 'mouse');
+        click(handle!);
+        expect(onRowAction).toHaveBeenCalledTimes(1);
+
+        // A different target at the same coordinates is a separate activation.
+        click(unrelated!);
+        expect(onRowAction).toHaveBeenCalledTimes(2);
+        // The same target at a different position is also a separate activation.
+        click(handle!, 19, 24);
+        expect(onRowAction).toHaveBeenCalledTimes(3);
+
+        pointer('pointerdown', outside, 1, 'mouse');
+        pointer('pointerup', outside, 1, 'mouse');
+        jest.advanceTimersByTime(250);
+        click(handle!);
+        expect(onRowAction).toHaveBeenCalledTimes(3);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
 
   it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
     const { document, host, engine, dragging } = mount('row', [
