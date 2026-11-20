@@ -131,42 +131,140 @@ class BubbleLayoutActivity : Activity() {
   }
 
   // A tap keeps the bubble up for 800 ms (showing the landed value); a snap-mode
-  // tap candidate shows no bubble; a drag hides it on release.
+  // tap candidate shows no bubble; a drag or a system cancel hides it on
+  // release; unrelated value updates end a tap's bubble. Checks the drawn
+  // bubble, so a replacement implementation without the same private fields
+  // still reports each case.
   private fun runTapLingerCases(root: FrameLayout, done: () -> Unit) {
     val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
       segments = 4.0; defaultValue = 0.0; showBubble = true; snapTapToSegment = true
+      bubbleColor = "#000000"; bubbleTextColor = "#ffffff"
     }
+    val changes = mutableListOf<Double>()
+    var completions = 0
+    var lastId = 0.0
+    slider.onChange = { changes.add(it) }
+    slider.onSlideComplete = { id, _ -> completions++; lastId = id }
     root.addView(slider.view, FrameLayout.LayoutParams(px(320), px(24)))
     slider.view.layout(0, 0, px(320), px(24))
-    val inset = field(slider, "insetPx") as Float
+    val inset = 12f * density
     fun x(fraction: Float) = inset + fraction * (slider.view.width - 2 * inset)
-    fun shown() = field(slider, "bubbleAlphaTarget") == 1f
-
-    touch(slider, MotionEvent.ACTION_DOWN, x(0.3f))
-    check(!shown(), "snap tap candidate shows the old value")
-    touch(slider, MotionEvent.ACTION_UP, x(0.3f))
-    check(field(slider, "currentValue") == 25.0, "tap no longer snaps to segment")
-    check(shown(), "bubble hidden right after a tap")
-    handler.postDelayed({
-      check(shown(), "bubble hidden before the tap linger ends")
-      handler.postDelayed({
-        check(!shown(), "bubble still visible after the tap linger")
-        touch(slider, MotionEvent.ACTION_DOWN, x(0.3f))
-        touch(slider, MotionEvent.ACTION_UP, x(0.3f))
-        touch(slider, MotionEvent.ACTION_DOWN, x(0.3f))
-        touch(slider, MotionEvent.ACTION_MOVE, x(0.6f))
-        check(shown(), "bubble hidden during drag")
-        touch(slider, MotionEvent.ACTION_UP, x(0.6f))
-        check(!shown(), "bubble lingers after a drag")
+    fun press(action: Int, fraction: Float) = touch(slider, action, x(fraction))
+    var completionsBeforeCancel = 0
+    runSteps(listOf(
+      0L to {
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+      },
+      200L to {
+        check(!bubbleDrawn(slider), "snap tap candidate shows the old value")
+        press(MotionEvent.ACTION_UP, 0.3f)
+        check(changes.lastOrNull() == 25.0, "tap no longer snaps to segment")
+      },
+      300L to { check(bubbleDrawn(slider), "bubble hidden right after a tap") },
+      300L to { check(bubbleDrawn(slider), "bubble hidden before the tap linger ends") },
+      600L to { check(!bubbleDrawn(slider), "bubble still visible after the tap linger") },
+      // A new snap press hides the previous tap's bubble until it lands.
+      0L to {
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_UP, 0.3f)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "bubble hidden right after a second tap")
+        press(MotionEvent.ACTION_DOWN, 0.8f)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "pending snap press kept the previous tap bubble")
+        press(MotionEvent.ACTION_UP, 0.8f)
+      },
+      300L to { check(bubbleDrawn(slider), "bubble hidden after the follow-up tap landed") },
+      // A drag that follows a tap hides on release.
+      0L to {
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_MOVE, 0.6f)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "bubble hidden during drag")
+        press(MotionEvent.ACTION_UP, 0.6f)
+      },
+      300L to { check(!bubbleDrawn(slider), "bubble lingers after a drag") },
+      // A system cancel is not a tap: no linger, one completion.
+      0L to {
+        completionsBeforeCancel = completions
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_CANCEL, 0.3f)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "cancelled press lingered the bubble")
+        check(completions == completionsBeforeCancel + 1, "cancelled press completions changed")
+        slider.snapTapToSegment = false
+        press(MotionEvent.ACTION_DOWN, 0.5f)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "plain press hid the bubble")
+        press(MotionEvent.ACTION_CANCEL, 0.5f)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "cancelled plain press lingered the bubble")
+        slider.snapTapToSegment = true
+        // The lingering bubble belongs to its tap.
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_UP, 0.3f)
+        slider.setValue(25.0, lastId)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "accepting the tap value ended its linger")
+        slider.setValue(60.0, lastId)
+      },
+      100L to {
+        check(!bubbleDrawn(slider), "controlled update kept the tap bubble")
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_UP, 0.3f)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "bubble hidden after a tap")
+        slider.view.performAccessibilityAction(AccessibilityAction.ACTION_SCROLL_FORWARD.id, null)
+        check(!bubbleDrawn(slider), "accessibility step kept the tap bubble")
         slider.showBubble = false
         slider.showBubble = true
-        check(field(slider, "bubbleAlpha") == 0f && !shown(),
-          "re-enabling showBubble resurrected the bubble")
+        check(!bubbleDrawn(slider), "re-enabling showBubble resurrected the bubble")
+        // Turning showBubble on during a drag shows the drag's bubble.
+        slider.showBubble = false
+        slider.snapTapToSegment = false
+        press(MotionEvent.ACTION_DOWN, 0.2f)
+        press(MotionEvent.ACTION_MOVE, 0.5f)
+        slider.showBubble = true
+      },
+      300L to {
+        check(bubbleDrawn(slider), "showBubble enabled mid-drag stayed hidden")
+        press(MotionEvent.ACTION_UP, 0.5f)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "drag bubble lingered after enabling showBubble")
         root.removeView(slider.view)
         slider.dispose()
-        done()
-      }, 600)
-    }, 400)
+      }
+    ), done)
+  }
+
+  /** Runs each step after its delay, in order, then [done]. */
+  private fun runSteps(steps: List<Pair<Long, () -> Unit>>, done: () -> Unit) {
+    if (steps.isEmpty()) { done(); return }
+    val (delay, step) = steps.first()
+    handler.postDelayed({ step(); runSteps(steps.drop(1), done) }, delay)
+  }
+
+  /** True when the bubble paints anything in the headroom above the view. */
+  private fun bubbleDrawn(slider: HybridSegmentSlider): Boolean {
+    val headroom = px(60)
+    val bitmap = Bitmap.createBitmap(slider.view.width, headroom + slider.view.height,
+      Bitmap.Config.ARGB_8888)
+    slider.view.draw(Canvas(bitmap).apply { translate(0f, headroom.toFloat()) })
+    var drawn = false
+    loop@ for (y in 0 until headroom) for (x in 0 until bitmap.width) {
+      if (Color.alpha(bitmap.getPixel(x, y)) > 0) { drawn = true; break@loop }
+    }
+    bitmap.recycle()
+    return drawn
   }
 
   private fun verifyDelayedValueSync(root: FrameLayout, done: () -> Unit) {

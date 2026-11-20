@@ -87,12 +87,16 @@ at the Nitro entry and takes precedence over the Web `browser` field.
   The bubble fades in and out over 150 ms. A drag hides it on release. A tap
   (a release without a drag) keeps it visible for 800 ms after release, showing
   the value the tap landed on, then fades it; a new press cancels that pending
-  fade. In `snapTapToSegment` mode the bubble stays hidden while a press is
-  still a tap candidate (it would show the old value) and appears once the
-  press becomes a drag or the tap lands; a long press that changes nothing
-  shows no bubble. A drag ended by `disabled` hides it at once, and keyboard
-  or accessibility changes do not show it. Turning `showBubble` off hides a
-  lingering bubble.
+  fade. A press the system cancels is not a tap and hides the bubble like the
+  end of a drag. In `snapTapToSegment` mode the bubble stays hidden while a
+  press is still a tap candidate (it would show the old value), including a
+  previous tap's lingering bubble, and appears once the press becomes a drag or
+  the tap lands; a long press that changes nothing shows no bubble. A drag
+  ended by `disabled` hides it at once, and keyboard or accessibility changes
+  do not show it. The lingering bubble belongs to its tap: a keyboard or
+  accessibility change, or a controlled value other than the tap's, removes it
+  at once before the new value is drawn. Turning `showBubble` off hides a
+  lingering bubble; turning it on during a drag shows the drag's bubble.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
   (default false). It has no effect without marks. On Web a press on a mark

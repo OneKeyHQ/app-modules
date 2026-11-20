@@ -102,6 +102,8 @@ final class SegmentSliderUIView: UIControl {
   var onTouchMoved: ((CGFloat) -> Void)?
   /// Touch ended or was cancelled.
   var onTouchEnded: (() -> Void)?
+  /// A touch the system cancelled; it never counts as a tap.
+  var onTouchCancelled: (() -> Void)?
   var onAccessibilityStep: ((Bool) -> Void)?
   var accessibilityValueProvider: (() -> String?)?
 
@@ -180,7 +182,7 @@ final class SegmentSliderUIView: UIControl {
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
     super.touchesCancelled(touches, with: event)
     unlockAncestorGestures()
-    onTouchEnded?()
+    onTouchCancelled?()
   }
 
   // If the view is detached mid-drag (e.g. JS unmounts it during a gesture),

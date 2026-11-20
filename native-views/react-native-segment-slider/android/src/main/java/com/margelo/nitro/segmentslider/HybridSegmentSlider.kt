@@ -197,9 +197,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
           animateThumbScale(activeThumbScale)
           // Tap-snap mode: defer the value commit until we know this is a tap or
           // a drag, so a tap never jumps to the raw touch point first. The
-          // bubble waits too; showing it now would display the old value.
+          // bubble waits too, and a previous tap's bubble is hidden: either
+          // would show the old value.
           if (snapTapsActive) {
-            cancelBubbleHide()
+            setBubbleVisible(false)
           } else {
             setBubbleVisible(true)
             commitDragValue(valueFromX(event.x))
@@ -229,19 +230,20 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
             // A quick tap (no drag) lands directly on the nearest segment node
             // in a single move — no detour through the raw touch point. A long
             // press (held past tapMaxDurationMs without dragging) does nothing.
-            // A drag keeps its free value.
-            var isTap = !hasDragged
-            if (snapTapsActive && isTap) {
+            // A drag keeps its free value. Only a real release lingers the
+            // bubble; a system cancel hides it like the end of a drag.
+            var lingers = !hasDragged && event.actionMasked == MotionEvent.ACTION_UP
+            if (snapTapsActive && !hasDragged) {
               if ((event.eventTime - event.downTime) <= tapMaxDurationMs) {
                 commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
               } else {
                 // Long press in snap mode changes nothing, so there is no value to show.
-                isTap = false
+                lingers = false
               }
             }
             hoverMarkIndex = -1
             animateThumbScale(1f)
-            if (isTap) lingerThenHideBubble() else setBubbleVisible(false)
+            if (lingers) lingerThenHideBubble() else setBubbleVisible(false)
             view.invalidate()
             onSlideComplete?.invoke(interactionId, currentValue)
           }
@@ -323,10 +325,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       field = v
       if (!v) {
         // Drop a visible or lingering bubble so re-enabling never resurrects it.
-        cancelBubbleHide()
-        bubbleAlphaAnimator?.cancel()
-        bubbleAlpha = 0f
-        bubbleAlphaTarget = 0f
+        hideBubbleNow()
+      } else if (isDragging && !(snapTapsActive && !hasDragged)) {
+        // A drag already under way shows its bubble again; a snap-mode tap
+        // candidate stays hidden until it becomes a drag or lands.
+        setBubbleVisible(true)
       }
       invalidateIfAlive()
     }
@@ -457,6 +460,8 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     if (isDisposed) return
     hoverMarkIndex = -1
     val changed = currentValue != v
+    // A tap's lingering bubble shows that tap's value; an unrelated update ends it.
+    if (changed) dropIdleBubble()
     currentValue = v
     lastEmitted = v
     view.invalidate()
@@ -476,6 +481,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
     val value = roundToRange(raw)
     if (value == currentValue) return false
+    dropIdleBubble()
     interactionId += 1
     onSlideStart?.invoke()
     commitDragValue(value)
@@ -587,6 +593,21 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   private fun cancelBubbleHide() {
     view.removeCallbacks(hideBubbleRunnable)
+  }
+
+  /// Removes the bubble at once, without a fade.
+  private fun hideBubbleNow() {
+    cancelBubbleHide()
+    bubbleAlphaAnimator?.cancel()
+    bubbleAlpha = 0f
+    bubbleAlphaTarget = 0f
+    invalidateIfAlive()
+  }
+
+  /// An idle bubble belongs to the tap that showed it (lingering or fading).
+  /// Remove it before another value is drawn so it never shows that value.
+  private fun dropIdleBubble() {
+    if (!isDragging) hideBubbleNow()
   }
 
   /// Shows the bubble (with the value the tap landed on) and fades it out
