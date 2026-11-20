@@ -2,6 +2,35 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { readCleartextMessage, readKey } from 'openpgp';
 
+export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024;
+
+export class ArchiveSizeError extends Error {}
+
+export async function hashArchive(
+  filePath: string,
+  algorithm: 'sha256' | 'sha512',
+  signal?: AbortSignal
+): Promise<{ digest: string; size: number }> {
+  signal?.throwIfAborted();
+  const stat = await fs.promises.stat(filePath);
+  signal?.throwIfAborted();
+  if (stat.size > MAX_ARCHIVE_BYTES) throw new ArchiveSizeError();
+  const hash = crypto.createHash(algorithm);
+  const stream = fs.createReadStream(filePath, {
+    highWaterMark: 64 * 1024,
+    signal,
+  });
+  let size = 0;
+  for await (const chunk of stream) {
+    signal?.throwIfAborted();
+    size += chunk.length;
+    if (size > MAX_ARCHIVE_BYTES) throw new ArchiveSizeError();
+    hash.update(chunk);
+  }
+  signal?.throwIfAborted();
+  return { digest: hash.digest('hex'), size };
+}
+
 export class SignedMetadataError extends Error {}
 
 export interface ISignedMetadataIdentity {
@@ -95,6 +124,22 @@ const classifySHA256Error = (error: unknown): string => {
   return ctor ? `IO_${ctor}` : 'IO_UNKNOWN';
 };
 
+function hashFile(filePath: string, algorithm: 'sha256' | 'sha512'): string {
+  const hash = crypto.createHash(algorithm);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+    while (bytesRead > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+      bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+    }
+    return hash.digest('hex');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 export const calculateSHA256 = (filePath: string) => {
   stampSHA256Failure(undefined);
   if (!filePath) {
@@ -111,10 +156,7 @@ export const calculateSHA256 = (filePath: string) => {
       stampSHA256Failure('FILE_EMPTY');
       return '';
     }
-    const hashSum = crypto.createHash('sha256');
-    const fileBuffer = fs.readFileSync(filePath);
-    hashSum.update(fileBuffer);
-    return hashSum.digest('hex');
+    return hashFile(filePath, 'sha256');
   } catch (error) {
     stampSHA256Failure(classifySHA256Error(error));
     throw error;
@@ -167,9 +209,7 @@ export const checkFileSha512 = (filePath: string, sha512: string) => {
     if (!normalizedExpected) {
       return false;
     }
-    const file = fs.readFileSync(filePath);
-    const hash = crypto.createHash('sha512').update(file).digest('hex');
-    const actualBuf = Buffer.from(hash, 'utf8');
+    const actualBuf = Buffer.from(hashFile(filePath, 'sha512'), 'utf8');
     const expectedBuf = Buffer.from(normalizedExpected, 'utf8');
     return (
       actualBuf.length === expectedBuf.length &&

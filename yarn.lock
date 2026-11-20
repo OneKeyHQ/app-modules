@@ -3376,7 +3376,7 @@ __metadata:
   peerDependencies:
     "@onekeyfe/react-native-bundle-crypto": 6.8.0-1
     "@onekeyfe/react-native-native-logger": "*"
-    "@onekeyfe/react-native-range-downloader": "*"
+    "@onekeyfe/react-native-range-downloader": 6.8.0-1
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0

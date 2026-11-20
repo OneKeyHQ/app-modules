@@ -26,6 +26,39 @@ import Foundation
 // ───────────────────────────────────────────────────────────────────────────
 final class RangeDownloadLogicTests: XCTestCase {
 
+  func testArchiveByteLimitIncludesPreviouslyWrittenBytes() throws {
+    let limit: Int64 = 512 * 1024 * 1024
+    XCTAssertNoThrow(try RangeDownloadLogic.validateSize(incoming: limit, maximum: limit))
+    XCTAssertNoThrow(try RangeDownloadLogic.validateSize(written: limit - 1, incoming: 1, maximum: limit))
+    XCTAssertThrowsError(try RangeDownloadLogic.validateSize(incoming: limit + 1, maximum: limit)) {
+      XCTAssertTrue($0 is RangeDownloadSizeLimitError)
+    }
+    XCTAssertThrowsError(try RangeDownloadLogic.validateSize(written: limit, incoming: 1, maximum: limit))
+    XCTAssertThrowsError(try RangeDownloadLogic.validateSize(written: Int64.max, incoming: 1, maximum: Int64.max))
+  }
+
+  func testRangeBodyCannotExceedItsSliceEvenWithoutResponseHeaders() {
+    XCTAssertTrue(RangeDownloadLogic.isWithinSegmentBounds(received: 64, expected: -1, segmentBytes: 64))
+    XCTAssertFalse(RangeDownloadLogic.isWithinSegmentBounds(received: 65, expected: -1, segmentBytes: 64))
+    XCTAssertFalse(RangeDownloadLogic.isWithinSegmentBounds(received: 1, expected: 65, segmentBytes: 64))
+    XCTAssertFalse(RangeDownloadLogic.isWithinSegmentBounds(received: -1, expected: 64, segmentBytes: 64))
+  }
+
+  func testLocallyDiscardedHTTPBodyPreservesResponseForRetry() {
+    XCTAssertTrue(RangeDownloadLogic.canUseRecordedHTTPResponse(
+      completionError: URLError(.cancelled), locallyCancelledBody: true
+    ))
+    XCTAssertFalse(RangeDownloadLogic.canUseRecordedHTTPResponse(
+      completionError: URLError(.cancelled), locallyCancelledBody: false
+    ))
+    XCTAssertFalse(RangeDownloadLogic.canUseRecordedHTTPResponse(
+      completionError: URLError(.timedOut), locallyCancelledBody: true
+    ))
+    XCTAssertTrue(RangeDownloadLogic.canUseRecordedHTTPResponse(
+      completionError: nil, locallyCancelledBody: false
+    ))
+  }
+
   func testFirmwareArtifactDownloadKeyIsolatesTransactions() {
     let first = firmwareArtifactDownloadKey(
       transactionId: "fwtx:first",

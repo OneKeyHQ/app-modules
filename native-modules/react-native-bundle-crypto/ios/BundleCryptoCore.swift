@@ -476,18 +476,6 @@ public enum BundleCryptoCore {
     return result == 0
   }
 
-  /// Strip only the leading base directory from an absolute path, returning the
-  /// relative path with any leading "/" trimmed. Unlike replacingOccurrences,
-  /// this removes only the leading prefix so a base dir name that recurs deeper
-  /// in the tree cannot corrupt the relative path / metadata key.
-  private static func stripLeadingDir(_ fullPath: String, prefix: String) -> String {
-    if fullPath.hasPrefix(prefix) {
-      return String(fullPath.dropFirst(prefix.count))
-    }
-    // Fall back to trimming a leading separator so keys stay consistent.
-    return fullPath.hasPrefix("/") ? String(fullPath.dropFirst()) : fullPath
-  }
-
   /// Synchronous sha256 used internally by dir hashing — returns nil on any
   /// failure (used where only the hex/nil distinction matters).
   private static func calculateSHA256Sync(_ filePath: String) -> String? {
@@ -529,8 +517,6 @@ public enum BundleCryptoCore {
       OneKeyLog.error("BundleCrypto", "[bundle-verify] dir not found: \(dirPath)")
       return false
     }
-    // Normalize the directory prefix so relative paths match.
-    let normalizedDir = (dirPath as NSString).hasSuffix("/") ? dirPath : dirPath + "/"
     let resolvedDir = (dirPath as NSString).resolvingSymlinksInPath
     let resolvedPrefix = resolvedDir == "/" ? "/" : resolvedDir + "/"
 
@@ -538,26 +524,23 @@ public enum BundleCryptoCore {
     for entry in entries {
       guard !entry.relativePath.isEmpty,
             !(entry.relativePath as NSString).isAbsolutePath else { return false }
-      let resolvedFile = ((normalizedDir + entry.relativePath) as NSString).resolvingSymlinksInPath
-      guard resolvedFile.hasPrefix(resolvedPrefix) else { return false }
+      let resolvedFile = ((resolvedPrefix + entry.relativePath) as NSString).resolvingSymlinksInPath
+      guard resolvedFile.hasPrefix(resolvedPrefix), expected[entry.relativePath] == nil else { return false }
       expected[entry.relativePath] = entry.sha256
     }
 
-    guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
-    while let file = enumerator.nextObject() as? String {
-      // Skip only by EXACT basename (defense-in-depth: `file` is the relative
-      // path, so a substring match was even looser and could let an unverified
-      // file like "evil-metadata.json" or "sub/metadata.json.bak" bypass).
-      let basename = (file as NSString).lastPathComponent
-      if basename == "metadata.json" || basename == ".DS_Store" { continue }
-      let fullPath = (dirPath as NSString).appendingPathComponent(file)
-      var entryIsDir: ObjCBool = false
-      if fm.fileExists(atPath: fullPath, isDirectory: &entryIsDir), entryIsDir.boolValue { continue }
-
-      // Strip only the leading base dir; a global replace would corrupt paths
-      // where the base dir name recurs deeper in the tree.
-      let relativePath = Self.stripLeadingDir(fullPath, prefix: normalizedDir)
-      guard let expectedSHA256 = expected[relativePath] else {
+    guard let enumerator = fm.enumerator(atPath: resolvedDir) else { return false }
+    while let relativePath = enumerator.nextObject() as? String {
+      let fullPath = (resolvedDir as NSString).appendingPathComponent(relativePath)
+      let type = enumerator.fileAttributes?[.type] as? FileAttributeType
+      if type == .typeDirectory { continue }
+      guard type == .typeRegular else {
+        OneKeyLog.error("BundleCrypto", "[bundle-verify] Expected a regular file: \(relativePath)")
+        return false
+      }
+      let expectedSHA256 = expected[relativePath]
+      if expectedSHA256 == nil && isUnlistedControlFile(relativePath) { continue }
+      guard let expectedSHA256 else {
         OneKeyLog.error("BundleCrypto", "[bundle-verify] File on disk not found in metadata: \(relativePath)")
         return false
       }
@@ -565,45 +548,41 @@ public enum BundleCryptoCore {
         OneKeyLog.error("BundleCrypto", "[bundle-verify] Failed to calculate SHA256 for file: \(relativePath)")
         return false
       }
-      if !Self.secureCompare(expectedSHA256, actualSHA256) {
+      guard Self.secureCompare(expectedSHA256, actualSHA256) else {
         OneKeyLog.error("BundleCrypto", "[bundle-verify] SHA256 mismatch for \(relativePath)")
         return false
       }
+      expected.removeValue(forKey: relativePath)
     }
 
-    // Verify completeness: every expected entry must exist on disk.
-    for (relativePath, _) in expected {
-      let expectedFilePath = normalizedDir + relativePath
-      if !fm.fileExists(atPath: expectedFilePath) {
-        OneKeyLog.error("BundleCrypto", "[bundle-verify] File listed in metadata but missing on disk: \(relativePath)")
-        return false
-      }
+    if let missing = expected.keys.first {
+      OneKeyLog.error("BundleCrypto", "[bundle-verify] File listed in metadata but not verified: \(missing)")
+      return false
     }
     return true
   }
 
-  // MARK: - Hash a whole dir into relativePath -> sha256 entries (new helper,
-  // same enumeration/skip rules as verifyDirAgainstHashes). Throws HASH_FAILED
-  // if any file cannot be hashed.
+  private static func isUnlistedControlFile(_ relativePath: String) -> Bool {
+    relativePath == "metadata.json" || (relativePath as NSString).lastPathComponent == ".DS_Store"
+  }
 
   public static func hashDir(_ dirPath: String) throws -> [DirHash] {
-    let fm = FileManager.default
-    let normalizedDir = (dirPath as NSString).hasSuffix("/") ? dirPath : dirPath + "/"
+    let resolvedDir = (dirPath as NSString).resolvingSymlinksInPath
     var results: [DirHash] = []
-    guard let enumerator = fm.enumerator(atPath: dirPath) else { return [] }
-    while let file = enumerator.nextObject() as? String {
-      // Skip only by EXACT basename (mirror verifyDirAgainstHashes / sibling check).
-      let basename = (file as NSString).lastPathComponent
-      if basename == "metadata.json" || basename == ".DS_Store" { continue }
-      let fullPath = (dirPath as NSString).appendingPathComponent(file)
-      var entryIsDir: ObjCBool = false
-      if fm.fileExists(atPath: fullPath, isDirectory: &entryIsDir), entryIsDir.boolValue { continue }
-      guard let sha256 = Self.calculateSHA256Sync(fullPath) else {
-        OneKeyLog.error("BundleCrypto", "hashDir: failed to hash \(file)")
+    guard let enumerator = FileManager.default.enumerator(atPath: resolvedDir) else { return [] }
+    while let relativePath = enumerator.nextObject() as? String {
+      let type = enumerator.fileAttributes?[.type] as? FileAttributeType
+      if type == .typeDirectory { continue }
+      let fullPath = (resolvedDir as NSString).appendingPathComponent(relativePath)
+      guard type == .typeRegular else {
+        OneKeyLog.error("BundleCrypto", "hashDir: expected a regular file at \(relativePath)")
         throw NSError(domain: "BundleCrypto", code: -1, userInfo: [NSLocalizedDescriptionKey: "HASH_FAILED"])
       }
-      // Strip only the leading base dir (see verifyDirAgainstHashes).
-      let relativePath = Self.stripLeadingDir(fullPath, prefix: normalizedDir)
+      if isUnlistedControlFile(relativePath) { continue }
+      guard let sha256 = Self.calculateSHA256Sync(fullPath) else {
+        OneKeyLog.error("BundleCrypto", "hashDir: failed to hash \(relativePath)")
+        throw NSError(domain: "BundleCrypto", code: -1, userInfo: [NSLocalizedDescriptionKey: "HASH_FAILED"])
+      }
       results.append(DirHash(relativePath: relativePath, sha256: sha256))
     }
     return results

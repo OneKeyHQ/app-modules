@@ -24,6 +24,39 @@ final class BundleDiffReconstructionTests: XCTestCase {
         try body(dir)
     }
 
+    func testPackageVerificationDistinguishesAbsentAndIncompleteTargets() throws {
+        try withTempDir { root in
+            let fm = FileManager.default
+            let target = root.appendingPathComponent("target")
+            let metadata = target.appendingPathComponent("metadata.json")
+            XCTAssertNil(try BundleDiffReconstruction.targetMetadataSizeIfPresent(target.path))
+
+            try Data().write(to: target)
+            XCTAssertThrowsError(try BundleDiffReconstruction.targetMetadataSizeIfPresent(target.path))
+            try fm.removeItem(at: target)
+
+            try fm.createDirectory(at: target, withIntermediateDirectories: false)
+            XCTAssertThrowsError(try BundleDiffReconstruction.targetMetadataSizeIfPresent(target.path))
+            try Data("{}".utf8).write(to: metadata)
+            XCTAssertEqual(try BundleDiffReconstruction.targetMetadataSizeIfPresent(target.path), 2)
+
+            let alias = root.appendingPathComponent("alias")
+            try fm.createSymbolicLink(at: alias, withDestinationURL: target)
+            XCTAssertThrowsError(try BundleDiffReconstruction.targetMetadataSizeIfPresent(alias.path))
+            let metadataSource = root.appendingPathComponent("metadata.json")
+            try fm.moveItem(at: metadata, to: metadataSource)
+            try fm.createSymbolicLink(at: metadata, withDestinationURL: metadataSource)
+            XCTAssertThrowsError(try BundleDiffReconstruction.targetMetadataSizeIfPresent(target.path))
+        }
+    }
+
+    func testVerifiedReleaseIdentityUsesBothVersionFields() {
+        let first = BundleDiffReconstruction.ReleaseIdentity(appVersion: "6.8-beta", bundleVersion: "123")
+        let second = BundleDiffReconstruction.ReleaseIdentity(appVersion: "6.8", bundleVersion: "beta-123")
+        let records = [first: "verified"]
+        XCTAssertNil(records[second])
+    }
+
     func testStagingSweepRemovesAbandonedEntriesAndPreservesLiveRuns() throws {
         try withTempDir { root in
             let fm = FileManager.default
@@ -499,7 +532,7 @@ final class BundleDiffReconstructionTests: XCTestCase {
             XCTAssertEqual(loadedDesc?.diffSha256, diffSha)
             XCTAssertEqual(loadedDesc?.fallbackRequired, false)
 
-            // Pre-ASC verifyBundle resolves diffSha256 from persisted descriptor or explicit param
+            // Pre-ASC verifyBundle requires the persisted descriptor even with an explicit diff digest
             XCTAssertEqual(
                 BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
                     suppliedFullSha256: fullSha.uppercased(),
@@ -515,6 +548,29 @@ final class BundleDiffReconstructionTests: XCTestCase {
                     descriptor: loadedDesc
                 )
             )
+
+            XCTAssertNil(BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                suppliedFullSha256: fullSha, suppliedDiffSha256: diffSha, descriptor: nil
+            ))
+            XCTAssertNil(BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                suppliedFullSha256: fullSha, suppliedDiffSha256: wrongSha, descriptor: loadedDesc
+            ))
+            XCTAssertNil(BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                suppliedFullSha256: fullSha,
+                suppliedSignature: "VALID_PGP_SIGNATURE",
+                inMemoryVerified: nil,
+                descriptor: nil,
+                persistedAscSignature: nil,
+                verifySignatureAndExtractMetadataSha256: { _ in metaSha }
+            ))
+            XCTAssertEqual(BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                suppliedFullSha256: fullSha,
+                suppliedSignature: nil,
+                inMemoryVerified: .init(fullSha256: fullSha, diffSha256: diffSha, metadataSha256: metaSha),
+                descriptor: nil,
+                persistedAscSignature: nil,
+                verifySignatureAndExtractMetadataSha256: { _ in nil }
+            ), metaSha)
 
             // Post-restart verifyBundle fails closed when neither in-memory digest nor verified signature exists
             XCTAssertNil(
@@ -536,8 +592,7 @@ final class BundleDiffReconstructionTests: XCTestCase {
                 fileSize: 4096,
                 sha256: fullSha,
                 diffSha256: diffSha,
-                signature: "VALID_PGP_SIGNATURE",
-                fallbackRequired: true
+                signature: "VALID_PGP_SIGNATURE"
             )
             BundleDiffReconstruction.writeDescriptor(signedDesc, toPath: metaPath)
             let reloadedSigned = BundleDiffReconstruction.readDescriptor(
@@ -546,7 +601,7 @@ final class BundleDiffReconstructionTests: XCTestCase {
                 expectedBundleVersion: "20260103"
             )
             XCTAssertEqual(reloadedSigned?.signature, "VALID_PGP_SIGNATURE")
-            XCTAssertEqual(reloadedSigned?.fallbackRequired, true)
+            XCTAssertEqual(reloadedSigned?.fallbackRequired, false)
 
             // Reusing cached diff archive in downloadBundle preserves existing verified signature
             let mergedDesc = BundleDiffReconstruction.descriptorPreservingVerifiedSignature(
@@ -554,7 +609,7 @@ final class BundleDiffReconstructionTests: XCTestCase {
                 existingDescriptor: reloadedSigned
             )
             XCTAssertEqual(mergedDesc.signature, "VALID_PGP_SIGNATURE")
-            XCTAssertEqual(mergedDesc.fallbackRequired, true)
+            XCTAssertEqual(mergedDesc.fallbackRequired, false)
 
             XCTAssertEqual(
                 BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
@@ -572,7 +627,7 @@ final class BundleDiffReconstructionTests: XCTestCase {
                 BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
                     suppliedFullSha256: wrongSha,
                     suppliedSignature: nil,
-                    inMemoryVerified: (fullSha256: fullSha, metadataSha256: metaSha),
+                    inMemoryVerified: .init(fullSha256: fullSha, diffSha256: diffSha, metadataSha256: metaSha),
                     descriptor: signedDesc,
                     persistedAscSignature: nil,
                     verifySignatureAndExtractMetadataSha256: { _ in metaSha }

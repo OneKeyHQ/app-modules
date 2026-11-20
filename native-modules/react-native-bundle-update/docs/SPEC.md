@@ -19,8 +19,10 @@ Desktop main process. The Node updater and its callers share a single JS
 runtime. Electron supplies the directory, native app version and build number,
 trusted PGP public key, active/fallback bundle state, restart, and optional
 download, progress and logger hooks. The package defaults to Node HTTPS for
-downloads. Electron supplies its proxy-aware transport to the packaged downloader. The React Native package
-root continues to expose the Nitro module.
+downloads. Electron supplies its proxy-aware transport to the packaged
+downloader. An invalid redirect is rejected through the update error contract.
+The React Native package root continues to expose the Nitro module. The Node
+ESM and CommonJS entry points include compatible TypeScript declarations.
 
 The Node updater owns the managed `onekey-bundle-download` and `onekey-bundle`
 directories, including partial download state and diff descriptors. Its
@@ -42,12 +44,31 @@ fallback. Signature failures and archive security violations are terminal.
 Only the trusted Desktop host can enable its existing development-only
 verification setting.
 
-Same-destination downloads join for the same checksum. Archive and verification
-operations track cancellation until settled so cleanup waits before removing
-their files. Persisted descriptors allow full fallback to resume across Node
+Same-destination downloads join for the same checksum, including full
+downloads initiated by verification fallback. If a managed full ZIP already
+exists, the downloader verifies it and reuses or replaces it before returning
+a full download result. Archive and verification operations
+track cancellation until settled so cleanup waits before removing their files.
+Full and diff ASC runs verify uninstalled bundles in per-run staging directories
+and check cancellation before publishing the verified bundle.
+The package verification ordering and release-record requirements below also
+apply to Desktop. Persisted descriptors allow full fallback to resume across Node
 instances. The Node package tests exercise the shipped entry points, signed
 full and diff archives, local reuse, persisted fallback and cleanup. Electron
 launch and installation runs are separate acceptance checks.
+
+The Node downloader applies a 15-minute wall-clock deadline across probes,
+redirects, retries, transfers, and the final hash. Expiry is `TIMEOUT` and a
+caller abort is `CANCELLED`. Probe, single-stream, and segmented retries honor
+valid `Retry-After` values up to 60 seconds. A successful HTTP 200 response to
+an `If-Range` request restarts from byte zero with the new response headers;
+the release checksum and expected length still apply. Desktop archive
+verification hashes in asynchronous chunks, observes the verification run's
+cancellation signal, and rejects archives over its 2 GiB limit. After store
+state for installation is committed, deletion of an evicted fallback
+directory is best effort. An explicit cache clear rejects with
+`STORAGE_ERROR` if an extracted directory cannot be deleted, before clearing
+the active bundle record.
 
 ## Public API and identity
 
@@ -108,14 +129,24 @@ lifecycle acceptance remain pending.
      binding the target versions, full `downloadUrl`, `fileSize`, normalized
      `sha256`, and normalized `diffSha256` (preserving any previously verified
      `signature` already recorded in `.diff.zip.meta.json` for the same hashes).
+     A record write failure returns `STORAGE_ERROR` and retains the verified
+     diff ZIP for a retry.
+   - Native Range probes, resumed runs, and single-stream downloads enforce the
+     same 512 MiB archive limit before accepting or promoting an artifact. A
+     stopped segment pool does not cancel the enclosing Android update or its
+     next transfer.
+     Android single-stream `206` responses must begin at the requested offset.
+     The downloader appends only to a partial file of exactly that positive
+     length. An offset of zero starts a new stream and truncates any old partial.
    - Full fallback parameters are recorded only after single-flight download
      registration succeeds so a rejected duplicate call cannot overwrite an
      in-flight download's fallback parameters.
    - If the diff download encounters a retryable transport interruption
      (`NETWORK_ERROR` or `TIMEOUT`, including iOS background pause resume-data
-     snapshots), the module preserves partial/resume artifacts and diff
-     eligibility and rejects with that retryable error so the caller can resume.
-   - If the diff download fails with a non-retryable, non-cancellation error
+     snapshots, and retryable HTTP responses on Desktop), the module preserves
+     partial/resume artifacts and diff eligibility and rejects with that
+     retryable error so the caller can resume.
+   - If the diff download fails with a non-retryable archive or HTTP error
      (such as HTTP 404 or SHA-256 mismatch), the module marks the target
      identity for session fallback, deletes partial diff artifacts, and
      immediately downloads the full `<latestVersion>-<bundleVersion>.zip`.
@@ -123,11 +154,20 @@ lifecycle acceptance remain pending.
    - `verifyBundleASC` coordinates per-target single-flight execution and
      registers per-target cancellation tracking before starting diff
      verification so `clearDownload` / `clearBundle` cancels and waits for both
-     reconstruction and any fallback download before removing files. On iOS,
+     reconstruction and any fallback download before removing files. The
+     native admission and cleanup barrier covers both Nitro instances sharing
+     the app process and storage. A cancelled verification cannot publish a
+     successful result. On iOS,
      local diff verification uses its per-target verification slot without
      acquiring the global transfer slot, so local verification of version B can
      complete while version A is downloading; the global transfer slot is
      requested only if version B enters full-bundle network fallback.
+   - A diff can be reconstructed only for the existing download record with
+     matching target versions and both archive digests. If a valid record
+     cannot be established, the updater must obtain and verify the full ZIP
+     before reporting success or reject verification. An explicit signature
+     authenticates metadata for a version and does not establish a missing
+     full ZIP digest.
    - When verifying a diff archive, `verifyBundleASC` first verifies two PGP
      cleartext signatures against the embedded OneKey public key:
      `diffSignature` bound to `fileName == "diff-manifest.json"` and `signature`
@@ -163,9 +203,9 @@ lifecycle acceptance remain pending.
      `web-embed/**`).
    - After deleting `diff-manifest.json` from staging, the module validates path
      safety, every file's SHA-256 against `metadata.json`, and bundle-pair /
-     storage-schema compatibility before promoting the staging directory to
-     `onekey-bundle/<latestVersion>-<bundleVersion>` and recording the verified
-     `signature` in `.diff.zip.meta.json`.
+     storage-schema compatibility. It records the verified `signature` in
+     `.diff.zip.meta.json` before promoting the verified staging directory to
+     `onekey-bundle/<latestVersion>-<bundleVersion>`.
    - If diff extraction (including an empty or corrupt archive, whereas zip-bomb
      size/entry violations and symlink/traversal escapes remain hard
      `SECURITY_REJECTED` failures) or local file reuse fails with
@@ -175,28 +215,36 @@ lifecycle acceptance remain pending.
      parameters, or the persisted `.diff.zip.meta.json` descriptor (surviving
      process restarts and resuming the full download if a retryable network
      interruption occurs before the final `.zip` is promoted).
+     A failed fallback descriptor write returns `STORAGE_ERROR` before
+     marking session fallback or removing the existing diff artifacts.
 3. **Package verification (`verifyBundle`) ordering and trust anchor**:
    - If the full `.zip` exists on disk, `verifyBundle` checks its streaming
      SHA-256 against `params.sha256`.
-   - If the reconstructed directory `onekey-bundle/<latestVersion>-<bundleVersion>`
-     exists on disk alongside `.diff.zip`, `verifyBundle` requires an
-     authenticated `metadata.json` digest bound to `params.sha256` — either from
-     the current module instance's verified-ASC cache or by re-verifying the
-     version-bound PGP `signature` (from `params.signature`, `.diff.zip.meta.json`,
-     or `asc/`). If no authenticated digest can be established or `params.sha256`
-     does not match, `verifyBundle` fails closed with `INTEGRITY_FAILED`.
-   - If `verifyBundle` is called after `downloadBundle` before `verifyBundleASC`
-     has reconstructed the target directory, it verifies the downloaded
-     `.diff.zip` streaming SHA-256 against `params.diffSha256` or the
-     `.diff.zip.meta.json` descriptor bound to `params.sha256`.
+   - Without a full ZIP, `verifyBundle` requires the managed diff ZIP. If a
+     target directory exists, the complete tree and its real `metadata.json`
+     must verify. The metadata digest must be authenticated and associated
+     with `params.sha256` by either
+     a live verified-ASC record or a matching persisted download descriptor
+     and a re-verified version-bound PGP `signature` (from `params.signature`,
+     `.diff.zip.meta.json`, or `asc/`). If no authenticated digest can be
+     established or `params.sha256` does not match, `verifyBundle` fails closed
+     with `INTEGRITY_FAILED`.
+   - If the target directory is absent after `downloadBundle`, `verifyBundle`
+     verifies the downloaded
+     `.diff.zip` streaming SHA-256 against the descriptor bound to
+     `params.sha256`. An explicit `params.diffSha256` must also match that
+     descriptor.
 
 ## Lifecycle and data
 
 Download writes and verifies a partial ZIP before promoting it to the managed
 ZIP name. A matching existing ZIP may be reused only after SHA-256 verification.
 ASC verification checks signed metadata and ZIP hash before extraction, then
-checks extracted files and bundle compatibility. Installation and every bundle
-switch, including a pre-launch pending switch, recheck every extracted file
+checks extracted files and bundle compatibility. Whole-directory verification
+exempts the root `metadata.json` control file. A nested file with that name must
+appear in the manifest and pass its hash check. Every manifest path must
+correspond to a regular file whose hash was verified. Installation and every
+bundle switch, including a pre-launch pending switch, recheck every extracted file
 against signed metadata immediately before changing the active bundle. Routine
 startup retains its entry-bundle-only hot-path check. Existing cancellation,
 resume, cleanup, and fallback ownership remain with the native module.
@@ -230,7 +278,9 @@ own managed download root. iOS uses Foundation and Gopenpgp; Android uses Java
 files and BouncyCastle. Both reject paths resolving outside the managed root,
 including symlink redirects, and retain signature binding to app and bundle
 versions. ZIP download and uncompressed payload limits remain 512 MiB, and the
-extraction entry limit remains 4,096. iOS enumerates extracted entries after
+extraction entry limit remains 4,096. The updater and its Range Downloader
+peer are released together so the native byte-limit contract is present.
+iOS enumerates extracted entries after
 extraction; Android counts entries during extraction. The extracted-path
 constraints remain in force. Failure rejects the Promise; neither platform
 falls back to a caller-provided path.

@@ -1,6 +1,7 @@
 package com.margelo.nitro.reactnativebundleupdate
 
 import java.io.File
+import java.nio.file.Files
 
 /**
  * Path helpers shared by the extracted-file verifiers.
@@ -42,4 +43,54 @@ internal fun bundleRelativePath(rootDir: File, file: File): String? {
         return null
     }
     return filePath.substring(rootPrefix.length)
+}
+
+/** Match every expected path to a regular file that passed its hash check. */
+internal fun verifyBundleFiles(
+    root: File,
+    subtree: File,
+    metadata: Map<String, String>,
+    verifyHash: (File, String) -> Boolean,
+    logError: (String) -> Unit,
+): Boolean {
+    val remaining = metadata.toMutableMap()
+
+    fun walk(directory: File): Boolean {
+        val files = directory.listFiles() ?: run {
+            logError("Failed to list directory: ${directory.absolutePath}")
+            return false
+        }
+        for (file in files) {
+            val relativePath = bundleRelativePath(root, file)
+            if (relativePath == null || Files.isSymbolicLink(file.toPath())) {
+                logError("Unsafe bundle path: ${file.absolutePath}")
+                return false
+            }
+            if (file.isDirectory) {
+                if (!walk(file)) return false
+                continue
+            }
+            if (!file.isFile) {
+                logError("Bundle path is not a regular file: $relativePath")
+                return false
+            }
+            val expected = remaining[relativePath]
+            if (expected == null && (relativePath == "metadata.json" || file.name == ".DS_Store")) {
+                continue
+            }
+            if (expected == null || !verifyHash(file, expected)) {
+                logError("Missing hash or SHA256 mismatch for $relativePath")
+                return false
+            }
+            remaining.remove(relativePath)
+        }
+        return true
+    }
+
+    if (Files.isSymbolicLink(subtree.toPath()) || !walk(subtree)) return false
+    if (remaining.isNotEmpty()) {
+        logError("No verified file for metadata entry: ${remaining.keys.first()}")
+        return false
+    }
+    return true
 }

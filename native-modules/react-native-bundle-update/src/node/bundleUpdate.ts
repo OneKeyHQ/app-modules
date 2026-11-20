@@ -4,19 +4,25 @@ import path from 'node:path';
 import AdmZip from 'adm-zip';
 import semver from 'semver';
 
-import { downloadNodeFile, stripSensitiveHeaders } from './download';
-import { EUpdateErrorCode, createUpdateError, getUpdateError } from './errors';
-import { assertSafeBundleVersion, resolveBundlePath } from './paths';
+import { downloadNodeFile, stripSensitiveHeaders } from './download.js';
+import {
+  EUpdateErrorCode,
+  createUpdateError,
+  getUpdateError,
+  isRetryableUpdateError,
+} from './errors.js';
+import { assertSafeBundleVersion, resolveBundlePath } from './paths.js';
 import {
   calculateSHA256,
   checkFileSha512,
-  lastSHA256FailureReason,
+  ArchiveSizeError,
+  hashArchive,
   readSignedMetadataSha256,
   SignedMetadataError,
   verifySha256,
-} from './verification';
-import type { TUpdateErrorStep } from './errors';
-import type { ISignedMetadataIdentity } from './verification';
+} from './verification.js';
+import type { TUpdateErrorStep } from './errors.js';
+import type { ISignedMetadataIdentity } from './verification.js';
 import type {
   IBundleUpdateIdentity,
   IBundleUpdateNodeOptions,
@@ -24,7 +30,7 @@ import type {
   IInstalledBundle,
   IUpdateDownloadedEvent,
   IUpdateOperationParams,
-} from './types';
+} from './types.js';
 
 export const MAX_BUNDLE_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
 export const MAX_BUNDLE_ENTRY_COUNT = 4096;
@@ -35,6 +41,15 @@ export const DIFF_STAGING_DIR_NAME = '.diff-staging';
 // Keep the download boundary limited to the shared updater payload.
 function wrapDownloadError(error: unknown) {
   return createUpdateError(getUpdateError(error, 'download'));
+}
+
+function throwIfCancelled(
+  signal: AbortSignal | undefined,
+  step: TUpdateErrorStep
+) {
+  if (signal?.aborted) {
+    throw createUpdateError({ code: EUpdateErrorCode.cancelled, step });
+  }
 }
 
 function assertUpdateBundleVersion(
@@ -199,36 +214,42 @@ interface IDiffArchiveDescriptor {
   fallbackRequired?: boolean;
 }
 
+interface IDownloadRun {
+  releaseKey: string;
+  controller: AbortController;
+  fullWriter: boolean;
+  run: Promise<IUpdateDownloadedEvent>;
+}
+
 const diffGpgErrors = new WeakSet<object>();
 
 export class BundleUpdateNode {
   private diffFallbackTargets = new Set<string>();
 
-  private activeVerifications = new Set<{
-    cancel: () => void;
-    promise: Promise<void>;
-  }>();
-
-  get isDownloading(): boolean {
-    return this.cancelByDest.size > 0;
-  }
-
-  // OCDS §5.8 per-destination single-flight. A second request with the same
-  // content hash joins the writer; a different hash cannot write that ZIP.
-  // The entry is always deleted on settle (finally)
-  // so a crashed/rejected run never permanently wedges a destination — the
-  // in-memory map is the reclaimable lock (the process restarting clears it
-  // entirely, which is the desktop equivalent of stale-lock recovery).
-  private inflightDownloads = new Map<
+  private activeVerifications = new Map<
     string,
-    { sha256: string; run: Promise<IUpdateDownloadedEvent> }
+    {
+      releaseKey: string;
+      verificationKey: string;
+      controller: AbortController;
+      run: Promise<void>;
+    }
   >();
 
-  // OCDS §5.8: cancellation wired per-destination so cancelling one dest does
-  // not tear down an unrelated concurrent run.
-  private cancelByDest = new Map<string, () => void>();
+  private inflightDownloads = new Map<string, IDownloadRun>();
+
+  private activePackageVerifications = new Set<{
+    controller: AbortController;
+    run: Promise<void>;
+  }>();
+
+  private activeArchiveDownloads = 0;
 
   private cacheClearPromise: Promise<void> | undefined;
+
+  get isDownloading(): boolean {
+    return this.activeArchiveDownloads > 0;
+  }
 
   constructor(private readonly options: IBundleUpdateNodeOptions) {}
 
@@ -266,24 +287,18 @@ export class BundleUpdateNode {
   }
 
   private async verifySignedMetadata(
-    params: IInstalledBundle & {
-      expectedAppVersion?: string;
-      metadataFilePath?: string;
-    },
+    { appVersion, bundleVersion, signature }: IInstalledBundle,
     step: TUpdateErrorStep
   ) {
     try {
-      const metadataFilePath =
-        params.metadataFilePath ?? this.getMetadataFilePath(params);
-      if (!fs.existsSync(metadataFilePath)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.packageMissing,
-          step,
-        });
-      }
-      const hash = await this.readMetadataFileSha256(params.signature, {
-        appVersion: params.expectedAppVersion ?? params.appVersion,
-        bundleVersion: params.bundleVersion,
+      const metadataFilePath = this.getMetadataFilePath({
+        appVersion,
+        bundleVersion,
+      });
+      this.assertExtractedMetadataPath(metadataFilePath, step);
+      const hash = await this.readMetadataFileSha256(signature, {
+        appVersion,
+        bundleVersion,
       });
       if (!verifySha256(metadataFilePath, hash, this.options.logger)) {
         throw new SignedMetadataError('Invalid metadata hash');
@@ -305,15 +320,20 @@ export class BundleUpdateNode {
     return tempDir;
   }
 
-  private getBundleTargetKey(appVersion: string, bundleVersion: string) {
-    return `${appVersion}-${bundleVersion}`;
+  private getReleaseKey(
+    appVersion: string,
+    bundleVersion: string,
+    sha256: string
+  ): string {
+    return JSON.stringify([appVersion, bundleVersion, sha256]);
   }
 
   // The destination zip path for a (appVersion, bundleVersion) pair.
-  private getDestZipPath(
-    params?: Pick<IDownloadPackageParams, 'latestVersion' | 'bundleVersion'>
-  ): string | null {
-    const { latestVersion: appVersion, bundleVersion } = params || {};
+  private getDestZipPath(params: {
+    latestVersion: string;
+    bundleVersion: string;
+  }): string {
+    const { latestVersion: appVersion, bundleVersion } = params;
     assertSafeBundleVersion(appVersion);
     assertSafeBundleVersion(bundleVersion);
     return resolveBundlePath(
@@ -330,10 +350,11 @@ export class BundleUpdateNode {
     return diffDir;
   }
 
-  private getDestDiffZipPath(
-    params?: Pick<IDownloadPackageParams, 'latestVersion' | 'bundleVersion'>
-  ): string | null {
-    const { latestVersion: appVersion, bundleVersion } = params || {};
+  private getDestDiffZipPath(params: {
+    latestVersion: string;
+    bundleVersion: string;
+  }): string {
+    const { latestVersion: appVersion, bundleVersion } = params;
     assertSafeBundleVersion(appVersion);
     assertSafeBundleVersion(bundleVersion);
     return resolveBundlePath(
@@ -347,23 +368,12 @@ export class BundleUpdateNode {
   }
 
   private readDiffDescriptor(
-    diffZipPath: string | null
+    diffZipPath: string
   ): IDiffArchiveDescriptor | null {
-    if (!diffZipPath) {
-      return null;
-    }
     const metaPath = this.getDestDiffDescriptorPath(diffZipPath);
-    if (!fs.existsSync(metaPath)) {
-      return null;
-    }
     try {
       const stat = fs.lstatSync(metaPath, { throwIfNoEntry: false });
-      if (
-        !stat ||
-        stat.isSymbolicLink() ||
-        stat.size <= 0 ||
-        stat.size > 65_536
-      ) {
+      if (!stat || !stat.isFile() || stat.size <= 0 || stat.size > 65_536) {
         return null;
       }
       const raw = JSON.parse(
@@ -401,13 +411,50 @@ export class BundleUpdateNode {
     }
   }
 
-  private writeDiffDescriptor(
-    diffZipPath: string | null,
-    descriptor: IDiffArchiveDescriptor
-  ) {
-    if (!diffZipPath) {
-      return;
+  private readMatchingDiffDescriptor(
+    diffZipPath: string,
+    appVersion: string,
+    bundleVersion: string,
+    sha256: string
+  ): IDiffArchiveDescriptor | undefined {
+    const descriptor = this.readDiffDescriptor(diffZipPath);
+    if (
+      descriptor?.appVersion === appVersion &&
+      descriptor.bundleVersion === bundleVersion &&
+      descriptor.sha256 === sha256
+    ) {
+      return descriptor;
     }
+    return undefined;
+  }
+
+  private matchesDiffDigest(
+    descriptor: IDiffArchiveDescriptor,
+    suppliedDigest: string | undefined
+  ) {
+    return (
+      suppliedDigest === undefined ||
+      normalizeSha256Hex(suppliedDigest) === descriptor.diffSha256
+    );
+  }
+
+  private assertManagedArchive(filePath: string, step: TUpdateErrorStep) {
+    if (
+      hasSymlinkOnPathWithinRoot(this.getDownloadDir(), filePath) ||
+      !fs.lstatSync(filePath).isFile()
+    ) {
+      throw createUpdateError({
+        code: EUpdateErrorCode.securityRejected,
+        step,
+      });
+    }
+  }
+
+  private writeDiffDescriptor(
+    diffZipPath: string,
+    descriptor: IDiffArchiveDescriptor,
+    step: 'download' | 'verifyASC'
+  ) {
     try {
       const existing = this.readDiffDescriptor(diffZipPath);
       const preservedSignature =
@@ -415,7 +462,8 @@ export class BundleUpdateNode {
         (existing &&
         existing.appVersion === descriptor.appVersion &&
         existing.bundleVersion === descriptor.bundleVersion &&
-        existing.sha256 === descriptor.sha256
+        existing.sha256 === descriptor.sha256 &&
+        existing.diffSha256 === descriptor.diffSha256
           ? existing.signature
           : undefined);
       const payload: IDiffArchiveDescriptor = {
@@ -428,7 +476,7 @@ export class BundleUpdateNode {
       fs.writeFileSync(tmpPath, JSON.stringify(payload), 'utf8');
       fs.renameSync(tmpPath, metaPath);
     } catch {
-      // ignore descriptor write failure
+      throw createUpdateError({ code: EUpdateErrorCode.storageError, step });
     }
   }
 
@@ -460,92 +508,124 @@ export class BundleUpdateNode {
     );
   }
 
-  private cleanupDiffArtifacts(
-    diffZipPath: string | null,
-    stagingDir?: string,
-    options?: { keepDescriptor?: boolean }
-  ) {
-    if (diffZipPath) {
-      const targets = [
-        diffZipPath,
-        `${diffZipPath}.partial`,
-        `${diffZipPath}.partial.progress.json`,
-      ];
-      if (!options?.keepDescriptor) {
-        targets.push(
-          this.getDestDiffDescriptorPath(diffZipPath),
-          `${this.getDestDiffDescriptorPath(diffZipPath)}.tmp`
-        );
-      }
-      for (const target of targets) {
-        try {
-          fs.rmSync(target, { force: true });
-        } catch {
-          // ignore cleanup failure
-        }
-      }
+  private cleanupDiffArtifacts(diffZipPath: string, keepDescriptor = false) {
+    const targets = [
+      diffZipPath,
+      `${diffZipPath}.partial`,
+      `${diffZipPath}.partial.progress.json`,
+    ];
+    if (!keepDescriptor) {
+      targets.push(
+        this.getDestDiffDescriptorPath(diffZipPath),
+        `${this.getDestDiffDescriptorPath(diffZipPath)}.tmp`
+      );
     }
-    if (stagingDir) {
+    for (const target of targets) {
       try {
-        fs.rmSync(stagingDir, { recursive: true, force: true });
+        fs.rmSync(target, { force: true });
       } catch {
-        // ignore cleanup failure
+        // Ignore cleanup failure.
       }
     }
   }
 
-  // Public entry point. OCDS §5.8 per-destination single-flight: a second
-  // download() for the same destination JOINS the in-flight run instead of
-  // co-writing the same artifacts; a different destination proceeds
-  // independently. The map entry is removed on settle so a crashed/rejected run
-  // never wedges the destination (in-memory map = reclaimable lock).
   async downloadBundle(
     params: IDownloadPackageParams
   ): Promise<IUpdateDownloadedEvent> {
     try {
-      return await this.downloadBundleInternal(params);
+      while (this.cacheClearPromise) await this.cacheClearPromise;
+      return await this.coordinateDownload(params);
     } catch (error) {
       throw wrapBundleError(error, 'download');
     }
   }
 
-  private async downloadBundleInternal(
-    params: IDownloadPackageParams
+  private coordinateDownload(
+    params: IDownloadPackageParams,
+    fallback?: { signal: AbortSignal; prepare: () => void }
   ): Promise<IUpdateDownloadedEvent> {
-    while (this.cacheClearPromise) await this.cacheClearPromise;
-    const safeParams = params || ({} as IDownloadPackageParams);
-    assertUpdateBundleVersion(safeParams.latestVersion, 'download');
-    assertUpdateBundleVersion(safeParams.bundleVersion, 'download');
-    const destKey = this.getDestZipPath(safeParams);
-    const validSha256 =
-      typeof safeParams.sha256 === 'string' &&
-      /^[a-fA-F0-9]{64}$/.test(safeParams.sha256)
-        ? safeParams.sha256.toLowerCase()
-        : null;
-    // No usable key (missing version/sha256 params): skip single-flight bookkeeping
-    // and let the downstream validation produce the canonical error.
-    if (!destKey || !validSha256) {
-      return this.runDownloadBundle(safeParams);
+    const { latestVersion, bundleVersion, downloadUrl } = params ?? {};
+    assertUpdateBundleVersion(latestVersion, 'download');
+    assertUpdateBundleVersion(bundleVersion, 'download');
+    const sha256 = normalizeSha256Hex(params?.sha256);
+    if (!sha256 || !isValidHttpsUrl(downloadUrl)) {
+      throw createUpdateError({
+        code: EUpdateErrorCode.invalidArgument,
+        step: 'download',
+      });
     }
-    const existing = this.inflightDownloads.get(destKey);
+    const destination = this.getDestZipPath({ latestVersion, bundleVersion });
+    const releaseKey = this.getReleaseKey(latestVersion, bundleVersion, sha256);
+    const existing = this.inflightDownloads.get(destination);
+    const verification = this.activeVerifications.get(destination);
+    if (
+      (verification && verification.releaseKey !== releaseKey) ||
+      (existing && existing.releaseKey !== releaseKey)
+    ) {
+      throw createUpdateError({
+        code: EUpdateErrorCode.incompatible,
+        step: 'download',
+      });
+    }
+    throwIfCancelled(fallback?.signal, 'download');
     if (existing) {
-      if (existing.sha256 !== validSha256) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.incompatible,
-          step: 'download',
-        });
+      if (!fallback) return existing.run;
+      // A full writer never touches the diff archive or descriptor again.
+      if (existing.fullWriter) {
+        fallback.prepare();
+        return existing.run;
       }
-      this.options.logger?.info(
-        'bundle-download',
-        'Joining in-flight download for same destination'
+      return existing.run.then(
+        (result) =>
+          result?.diffSha256
+            ? this.coordinateDownload(params, fallback)
+            : result,
+        (error: unknown) => {
+          if (
+            !fallback.signal.aborted &&
+            !this.inflightDownloads.has(destination)
+          ) {
+            fallback.prepare();
+          }
+          throw error;
+        }
       );
-      return existing.run;
     }
-    const run = this.runDownloadBundle(safeParams).finally(() => {
-      this.inflightDownloads.delete(destKey);
-      this.cancelByDest.delete(destKey);
+
+    const controller = new AbortController();
+    let resolveRun!: (value: Promise<IUpdateDownloadedEvent>) => void;
+    let rejectRun!: (reason: unknown) => void;
+    const run = new Promise<IUpdateDownloadedEvent>((resolve, reject) => {
+      resolveRun = resolve;
+      rejectRun = reject;
+    }).finally(() => {
+      this.inflightDownloads.delete(destination);
     });
-    this.inflightDownloads.set(destKey, { sha256: validSha256, run });
+    const operation: IDownloadRun = {
+      releaseKey,
+      controller,
+      fullWriter: false,
+      run,
+    };
+    this.inflightDownloads.set(destination, operation);
+
+    try {
+      throwIfCancelled(fallback?.signal, 'download');
+      fallback?.prepare();
+      resolveRun(
+        this.runDownloadBundle(
+          { ...params, latestVersion, bundleVersion, downloadUrl, sha256 },
+          destination,
+          controller.signal,
+          Boolean(fallback),
+          () => {
+            operation.fullWriter = true;
+          }
+        )
+      );
+    } catch (error) {
+      rejectRun(error);
+    }
     return run;
   }
 
@@ -558,7 +638,7 @@ export class BundleUpdateNode {
     expectedSha256,
     latestVersion,
     bundleVersion,
-    controller,
+    signal,
   }: {
     url: string;
     targetPath: string;
@@ -568,12 +648,12 @@ export class BundleUpdateNode {
     expectedSha256: string;
     latestVersion: string;
     bundleVersion: string;
-    controller: AbortController;
+    signal: AbortSignal;
   }) {
-    const cancel = () => controller.abort();
-    this.cancelByDest.set(targetPath, cancel);
+    throwIfCancelled(signal, 'download');
+    this.activeArchiveDownloads += 1;
     try {
-      if (this.cancelByDest.size === 1) {
+      if (this.activeArchiveDownloads === 1) {
         this.options.onDownloadStateChange?.(true);
       }
       const download = this.options.download ?? downloadNodeFile;
@@ -584,7 +664,7 @@ export class BundleUpdateNode {
         headers: stripSensitiveHeaders(headers ?? {}),
         expectedBytes: normalizePositiveInt(expectedBytes),
         expectedSha256,
-        signal: controller.signal,
+        signal,
         onProgress: (progress) => {
           this.options.onProgress?.({
             ...progress,
@@ -593,8 +673,9 @@ export class BundleUpdateNode {
           });
         },
       });
+      throwIfCancelled(signal, 'download');
     } finally {
-      this.cancelByDest.delete(targetPath);
+      this.activeArchiveDownloads -= 1;
       if (!this.isDownloading) {
         this.options.onDownloadStateChange?.(false);
       }
@@ -603,13 +684,22 @@ export class BundleUpdateNode {
 
   // The shared downloader owns range selection, resume, and integrity checks.
   private async runDownloadBundle(
-    params: IDownloadPackageParams
+    params: IDownloadPackageParams & {
+      latestVersion: string;
+      bundleVersion: string;
+      downloadUrl: string;
+      sha256: string;
+    },
+    filePath: string,
+    signal: AbortSignal,
+    forceFull: boolean,
+    markFullWriter: () => void
   ): Promise<IUpdateDownloadedEvent> {
     const {
       latestVersion,
       bundleVersion,
       downloadUrl,
-      sha256,
+      sha256: normalizedSha256,
       signature,
       fileSize,
       diffDownloadUrl,
@@ -617,44 +707,36 @@ export class BundleUpdateNode {
       diffSha256,
       diffSignature,
       headers,
-    } = params || {};
-    const normalizedSha256 = normalizeSha256Hex(sha256);
-    if (!latestVersion || !bundleVersion || !downloadUrl || !normalizedSha256) {
-      throw createUpdateError({
-        code: EUpdateErrorCode.invalidArgument,
-        step: 'download',
-      });
-    }
-    const filePath = this.getDestZipPath(params);
-    if (!filePath) {
-      throw createUpdateError({
-        code: EUpdateErrorCode.invalidArgument,
-        step: 'download',
-      });
-    }
+    } = params;
+    const hasFullArchive = fs.lstatSync(filePath, { throwIfNoEntry: false });
+    if (hasFullArchive) this.assertManagedArchive(filePath, 'download');
     const allowSkipGPG = this.isSkipGPGAllowed();
-    const targetKey = this.getBundleTargetKey(latestVersion, bundleVersion);
+    const releaseKey = this.getReleaseKey(
+      latestVersion,
+      bundleVersion,
+      normalizedSha256
+    );
     const normalizedDiffSha256 = normalizeSha256Hex(diffSha256);
     const hasValidDiffSignature =
       (typeof diffSignature === 'string' && diffSignature.trim().length > 0) ||
       allowSkipGPG;
     const diffZipPath = this.getDestDiffZipPath(params);
-    const existingDescriptor = this.readDiffDescriptor(diffZipPath);
-    const isFallbackRequiredForCurrentRelease = Boolean(
-      existingDescriptor?.fallbackRequired &&
-        existingDescriptor.appVersion === latestVersion &&
-        existingDescriptor.bundleVersion === bundleVersion &&
-        existingDescriptor.sha256 === normalizedSha256
+    const existingDescriptor = this.readMatchingDiffDescriptor(
+      diffZipPath,
+      latestVersion,
+      bundleVersion,
+      normalizedSha256
     );
     const isDiffEligible =
+      !forceFull &&
+      !hasFullArchive &&
       isValidHttpsUrl(diffDownloadUrl) &&
       Boolean(normalizedDiffSha256) &&
       hasValidDiffSignature &&
-      !this.diffFallbackTargets.has(targetKey) &&
-      !isFallbackRequiredForCurrentRelease;
+      !this.diffFallbackTargets.has(releaseKey) &&
+      !existingDescriptor?.fallbackRequired;
 
-    if (isDiffEligible && diffZipPath) {
-      const diffController = new AbortController();
+    if (isDiffEligible) {
       try {
         await this.downloadArchiveFile({
           url: diffDownloadUrl,
@@ -665,21 +747,22 @@ export class BundleUpdateNode {
           expectedSha256: normalizedDiffSha256,
           latestVersion,
           bundleVersion,
-          controller: diffController,
+          signal,
         });
-        this.writeDiffDescriptor(diffZipPath, {
-          appVersion: latestVersion,
-          bundleVersion,
-          downloadUrl,
-          fileSize: normalizePositiveInt(fileSize),
-          sha256: normalizedSha256,
-          diffSha256: normalizedDiffSha256,
-          signature:
-            typeof signature === 'string' && signature.trim().length > 0
-              ? signature
-              : undefined,
-          fallbackRequired: false,
-        });
+        throwIfCancelled(signal, 'download');
+        this.writeDiffDescriptor(
+          diffZipPath,
+          {
+            appVersion: latestVersion,
+            bundleVersion,
+            downloadUrl,
+            fileSize: normalizePositiveInt(fileSize),
+            sha256: normalizedSha256,
+            diffSha256: normalizedDiffSha256,
+            fallbackRequired: false,
+          },
+          'download'
+        );
         return {
           downloadUrl,
           latestVersion,
@@ -693,12 +776,12 @@ export class BundleUpdateNode {
         };
       } catch (diffError) {
         const wrappedDiffError = wrapDownloadError(diffError);
-        const errorCode = getUpdateError(wrappedDiffError, 'download').code;
+        const updateError = getUpdateError(wrappedDiffError, 'download');
         if (
-          diffController.signal.aborted ||
-          errorCode === EUpdateErrorCode.cancelled ||
-          errorCode === EUpdateErrorCode.networkError ||
-          errorCode === EUpdateErrorCode.timeout
+          signal.aborted ||
+          updateError.code === EUpdateErrorCode.cancelled ||
+          updateError.code === EUpdateErrorCode.storageError ||
+          isRetryableUpdateError(updateError)
         ) {
           throw wrappedDiffError;
         }
@@ -714,13 +797,13 @@ export class BundleUpdateNode {
                 : String(diffError),
           }
         );
-        this.diffFallbackTargets.add(targetKey);
+        this.diffFallbackTargets.add(releaseKey);
         this.cleanupDiffArtifacts(diffZipPath);
       }
     }
 
-    const controller = new AbortController();
     try {
+      markFullWriter();
       await this.downloadArchiveFile({
         url: downloadUrl,
         targetPath: filePath,
@@ -730,8 +813,9 @@ export class BundleUpdateNode {
         expectedSha256: normalizedSha256,
         latestVersion,
         bundleVersion,
-        controller,
+        signal,
       });
+      throwIfCancelled(signal, 'download');
       return {
         downloadUrl,
         latestVersion,
@@ -772,33 +856,67 @@ export class BundleUpdateNode {
 
   async verifyBundle(params: IUpdateOperationParams) {
     try {
-      await this.verifyBundleInternal(params);
+      while (this.cacheClearPromise) await this.cacheClearPromise;
+      const controller = new AbortController();
+      const verification = {
+        controller,
+        run: this.verifyBundleInternal(params, controller.signal),
+      };
+      this.activePackageVerifications.add(verification);
+      try {
+        await verification.run;
+      } finally {
+        this.activePackageVerifications.delete(verification);
+      }
     } catch (error) {
       throw wrapBundleError(error, 'verifyPackage');
     }
   }
 
+  private async verifyArchiveSha256(
+    filePath: string,
+    expected: string,
+    step: 'verifyPackage' | 'verifyASC',
+    signal: AbortSignal | undefined
+  ): Promise<void> {
+    const verifyFullASC =
+      step === 'verifyASC' && path.dirname(filePath) === this.getDownloadDir();
+    let actual: Awaited<ReturnType<typeof hashArchive>>;
+    try {
+      actual = await hashArchive(filePath, 'sha256', signal);
+    } catch (error) {
+      throwIfCancelled(signal, step);
+      const errno = (error as NodeJS.ErrnoException | undefined)?.code;
+      const code =
+        error instanceof ArchiveSizeError
+          ? EUpdateErrorCode.securityRejected
+          : verifyFullASC
+            ? errno === 'ENOENT'
+              ? EUpdateErrorCode.packageMissing
+              : EUpdateErrorCode.storageError
+            : EUpdateErrorCode.integrityFailed;
+      throw createUpdateError({ code, step });
+    }
+    throwIfCancelled(signal, step);
+    this.options.logger?.info(
+      'bundle-download-verifySha256',
+      expected,
+      actual.digest
+    );
+    if (!actual.size || actual.digest !== expected) {
+      throw createUpdateError({ code: EUpdateErrorCode.integrityFailed, step });
+    }
+  }
+
   private resolvePersistedTrustAnchorSignature(
-    appVersion: string,
-    bundleVersion: string,
-    normalizedSha256: string,
+    descriptor: IDiffArchiveDescriptor,
     explicitSignature?: string
   ): string | undefined {
+    const { appVersion, bundleVersion } = descriptor;
     if (typeof explicitSignature === 'string' && explicitSignature.trim()) {
       return explicitSignature;
     }
-    const diffZipPath = this.getDestDiffZipPath({
-      latestVersion: appVersion,
-      bundleVersion,
-    });
-    const descriptor = this.readDiffDescriptor(diffZipPath);
-    if (
-      descriptor &&
-      descriptor.appVersion === appVersion &&
-      descriptor.bundleVersion === bundleVersion &&
-      descriptor.sha256 === normalizedSha256 &&
-      descriptor.signature
-    ) {
+    if (descriptor.signature) {
       return descriptor.signature;
     }
     const activeBundle = this.options.store.getUpdateBundleData();
@@ -827,160 +945,92 @@ export class BundleUpdateNode {
     return undefined;
   }
 
-  private async verifyBundleInternal(params: IUpdateOperationParams) {
+  private async verifyBundleInternal(
+    params: IUpdateOperationParams,
+    signal: AbortSignal
+  ) {
+    const step = 'verifyPackage';
     const {
       sha256,
       latestVersion: appVersion,
       bundleVersion,
       signature,
       diffSha256,
-    } = params || {};
-    assertUpdateBundleVersion(appVersion, 'verifyPackage');
-    assertUpdateBundleVersion(bundleVersion, 'verifyPackage');
-    const allowSkipGPG = this.isSkipGPGAllowed();
+    } = params ?? {};
+    assertUpdateBundleVersion(appVersion, step);
+    assertUpdateBundleVersion(bundleVersion, step);
     const normalizedSha256 = normalizeSha256Hex(sha256);
-    if (!normalizedSha256 || !appVersion || !bundleVersion) {
-      throw createUpdateError({
-        code: EUpdateErrorCode.invalidArgument,
-        step: 'verifyPackage',
-      });
+    if (!normalizedSha256) {
+      throw createUpdateError({ code: EUpdateErrorCode.invalidArgument, step });
     }
 
+    const identity = { latestVersion: appVersion, bundleVersion };
+    const downloadedFile = this.getDestZipPath(identity);
+    if (fs.lstatSync(downloadedFile, { throwIfNoEntry: false })) {
+      this.assertManagedArchive(downloadedFile, step);
+      await this.verifyArchiveSha256(
+        downloadedFile,
+        normalizedSha256,
+        step,
+        signal
+      );
+      return;
+    }
+
+    const diffZipPath = this.getDestDiffZipPath(identity);
+    this.assertManagedArchive(diffZipPath, step);
+    const descriptor = this.readMatchingDiffDescriptor(
+      diffZipPath,
+      appVersion,
+      bundleVersion,
+      normalizedSha256
+    );
+    if (!descriptor || !this.matchesDiffDigest(descriptor, diffSha256)) {
+      throw createUpdateError({ code: EUpdateErrorCode.integrityFailed, step });
+    }
     const extractDir = this.getBundleExtractDir({ appVersion, bundleVersion });
-    const metadataFilePath = path.join(extractDir, 'metadata.json');
-    if (fs.existsSync(extractDir) && fs.existsSync(metadataFilePath)) {
-      if (
-        fs.lstatSync(extractDir, { throwIfNoEntry: false })?.isSymbolicLink() ||
-        fs
-          .lstatSync(metadataFilePath, { throwIfNoEntry: false })
-          ?.isSymbolicLink()
-      ) {
+    const target = fs.lstatSync(extractDir, { throwIfNoEntry: false });
+    if (target) {
+      if (!target.isDirectory()) {
         throw createUpdateError({
           code: EUpdateErrorCode.securityRejected,
-          step: 'verifyPackage',
+          step,
         });
       }
-      const metadataStat = fs.statSync(metadataFilePath);
-      if (
-        metadataStat.size <= 0 ||
-        metadataStat.size > MAX_CONTROL_JSON_BYTES
-      ) {
-        throw createUpdateError({
-          code:
-            metadataStat.size > MAX_CONTROL_JSON_BYTES
-              ? EUpdateErrorCode.securityRejected
-              : EUpdateErrorCode.integrityFailed,
-          step: 'verifyPackage',
-        });
-      }
-      const effectiveSignature = this.resolvePersistedTrustAnchorSignature(
-        appVersion,
-        bundleVersion,
-        normalizedSha256,
-        signature
+      this.assertExtractedMetadataPath(
+        path.join(extractDir, 'metadata.json'),
+        step
       );
-      if (!allowSkipGPG) {
+      if (!this.isSkipGPGAllowed()) {
+        const effectiveSignature = this.resolvePersistedTrustAnchorSignature(
+          descriptor,
+          signature
+        );
         if (!effectiveSignature) {
           throw createUpdateError({
-            code: EUpdateErrorCode.invalidArgument,
-            step: 'verifyPackage',
+            code: EUpdateErrorCode.integrityFailed,
+            step,
           });
         }
         await this.verifySignedMetadata(
-          {
-            appVersion,
-            expectedAppVersion: appVersion,
-            bundleVersion,
-            signature: effectiveSignature,
-          },
-          'verifyPackage'
+          { appVersion, bundleVersion, signature: effectiveSignature },
+          step
         );
       }
-      const metadata = JSON.parse(
-        fs.readFileSync(metadataFilePath, 'utf8')
-      ) as Record<string, string>;
-      if (
-        !metadata ||
-        typeof metadata !== 'object' ||
-        Array.isArray(metadata)
-      ) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.integrityFailed,
-          step: 'verifyPackage',
-        });
-      }
-      this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
+      throwIfCancelled(signal, step);
+      this.verifyExtractedFiles(extractDir, step);
       return;
     }
 
-    const downloadedFile = this.getDestZipPath({
-      latestVersion: appVersion,
-      bundleVersion,
-    });
-    if (downloadedFile && fs.existsSync(downloadedFile)) {
-      const resolvedRoot = fs.realpathSync(this.getDownloadDir());
-      const resolvedFile = fs.realpathSync(downloadedFile);
-      if (!resolvedFile.startsWith(`${resolvedRoot}${path.sep}`)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.securityRejected,
-          step: 'verifyPackage',
-        });
-      }
-      if (
-        !verifySha256(downloadedFile, normalizedSha256, this.options.logger)
-      ) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.integrityFailed,
-          step: 'verifyPackage',
-        });
-      }
-      return;
+    if (descriptor.fallbackRequired) {
+      throw createUpdateError({ code: EUpdateErrorCode.integrityFailed, step });
     }
-
-    const diffZipPath = this.getDestDiffZipPath({
-      latestVersion: appVersion,
-      bundleVersion,
-    });
-    if (diffZipPath && fs.existsSync(diffZipPath)) {
-      const resolvedRoot = fs.realpathSync(this.getDownloadDir());
-      const resolvedDiffFile = fs.realpathSync(diffZipPath);
-      if (!resolvedDiffFile.startsWith(`${resolvedRoot}${path.sep}`)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.securityRejected,
-          step: 'verifyPackage',
-        });
-      }
-      const descriptor = this.readDiffDescriptor(diffZipPath);
-      const expectedDiffSha256 =
-        normalizeSha256Hex(diffSha256) ||
-        (descriptor &&
-        descriptor.appVersion === appVersion &&
-        descriptor.bundleVersion === bundleVersion &&
-        descriptor.sha256 === normalizedSha256
-          ? descriptor.diffSha256
-          : '');
-      if (
-        !expectedDiffSha256 ||
-        !verifySha256(diffZipPath, expectedDiffSha256)
-      ) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.integrityFailed,
-          step: 'verifyPackage',
-        });
-      }
-      return;
-    }
-
-    if (!signature && !allowSkipGPG) {
-      throw createUpdateError({
-        code: EUpdateErrorCode.invalidArgument,
-        step: 'verifyPackage',
-      });
-    }
-    throw createUpdateError({
-      code: EUpdateErrorCode.packageMissing,
-      step: 'verifyPackage',
-    });
+    await this.verifyArchiveSha256(
+      diffZipPath,
+      descriptor.diffSha256,
+      step,
+      signal
+    );
   }
 
   /**
@@ -1208,22 +1258,15 @@ export class BundleUpdateNode {
       if (hasSymlinkOnPathWithinRoot(resolvedRoot, candidatePath)) {
         return null;
       }
-      if (!fs.existsSync(candidatePath)) {
-        return null;
-      }
+      const stat = fs.statSync(candidatePath, { throwIfNoEntry: false });
+      if (!stat?.isFile()) return null;
       // Verify SHA-512 match BEFORE enforcing the remaining byte budget so
       // an oversized unmatched candidate in an earlier directory is skipped
       // instead of blocking a smaller matching file in a later candidate.
       if (!checkFileSha512(candidatePath, expectedSha512)) {
         return null;
       }
-      const stat = fs.statSync(candidatePath);
-      if (
-        !stat.isFile() ||
-        !Number.isFinite(stat.size) ||
-        stat.size < 0 ||
-        stat.size > remainingBytes
-      ) {
+      if (stat.size > remainingBytes) {
         throw createUpdateError({
           code: EUpdateErrorCode.securityRejected,
           step: 'verifyASC',
@@ -1284,18 +1327,6 @@ export class BundleUpdateNode {
       }
     };
     throwIfAborted();
-    const normalizedDiffSha256 = normalizeSha256Hex(diffSha256);
-    if (!allowSkipGPG || normalizedDiffSha256) {
-      if (
-        !normalizedDiffSha256 ||
-        !verifySha256(diffZipPath, normalizedDiffSha256)
-      ) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.integrityFailed,
-          step: 'verifyASC',
-        });
-      }
-    }
     let signedDiffManifestSha256 = '';
     let signedMetadataSha256 = '';
     if (!allowSkipGPG) {
@@ -1339,34 +1370,18 @@ export class BundleUpdateNode {
     }
     throwIfAborted();
 
-    if (isInstalled && fs.existsSync(extractDir)) {
-      const metadataFilePath = this.getMetadataFilePath({
-        appVersion,
-        bundleVersion,
+    if (!diffSha256) {
+      throw createUpdateError({
+        code: EUpdateErrorCode.integrityFailed,
+        step: 'verifyASC',
       });
-      if (!fs.existsSync(metadataFilePath)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.packageMissing,
-          step: 'verifyASC',
-        });
-      }
-      if (!allowSkipGPG) {
-        await this.verifySignedMetadata(
-          {
-            appVersion,
-            expectedAppVersion: appVersion,
-            bundleVersion,
-            signature: signature!,
-          },
-          'verifyASC'
-        );
-      }
-      const metadata = JSON.parse(
-        fs.readFileSync(metadataFilePath, 'utf8')
-      ) as Record<string, string>;
-      this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
-      return;
     }
+    await this.verifyArchiveSha256(
+      diffZipPath,
+      diffSha256,
+      'verifyASC',
+      signal
+    );
 
     const zip = new AdmZip(diffZipPath);
     const entries = this.validateAndGetZipEntries(zip, stagingDir, 'verifyASC');
@@ -1437,10 +1452,12 @@ export class BundleUpdateNode {
         !verifySha256(diffManifestPath, signedDiffManifestSha256) ||
         !verifySha256(metadataPath, signedMetadataSha256)
       ) {
-        throw createUpdateError({
+        const error = createUpdateError({
           code: EUpdateErrorCode.integrityFailed,
           step: 'verifyASC',
         });
+        diffGpgErrors.add(error);
+        throw error;
       }
     }
 
@@ -1484,6 +1501,23 @@ export class BundleUpdateNode {
         code: EUpdateErrorCode.integrityFailed,
         step: 'verifyASC',
       });
+    }
+
+    if (isInstalled && fs.existsSync(extractDir)) {
+      if (!allowSkipGPG) {
+        const metadataFilePath = path.join(extractDir, 'metadata.json');
+        this.assertExtractedMetadataPath(metadataFilePath, 'verifyASC');
+        if (!verifySha256(metadataFilePath, signedMetadataSha256)) {
+          const error = createUpdateError({
+            code: EUpdateErrorCode.integrityFailed,
+            step: 'verifyASC',
+          });
+          diffGpgErrors.add(error);
+          throw error;
+        }
+      }
+      this.verifyExtractedFiles(extractDir, 'verifyASC');
+      return false;
     }
 
     const changedEntries = Object.entries(diffManifest.changedFiles);
@@ -1651,92 +1685,106 @@ export class BundleUpdateNode {
           step: 'verifyASC',
         });
       }
-      fs.writeFileSync(destFilePath, fs.readFileSync(matched.sourcePath));
+      fs.copyFileSync(matched.sourcePath, destFilePath);
     }
 
     fs.rmSync(diffManifestPath, { force: true });
-    this.verifyAllExtractedFiles(stagingDir, targetMetadata, stagingDir);
+    this.verifyAllExtractedFiles(stagingDir, targetMetadata, 'verifyASC');
     throwIfAborted();
-
-    fs.rmSync(extractDir, { recursive: true, force: true });
-    fs.renameSync(stagingDir, extractDir);
+    return true;
   }
 
   private async verifyBundleASCInternal(params: IUpdateOperationParams) {
+    const step = 'verifyASC';
     while (this.cacheClearPromise) await this.cacheClearPromise;
-    const verifyController = new AbortController();
-    let resolveVerifyDone!: () => void;
-    const verifyPromise = new Promise<void>((resolve) => {
-      resolveVerifyDone = resolve;
-    });
-    const verificationHandle = {
-      cancel: () => verifyController.abort(),
-      promise: verifyPromise,
-    };
-    this.activeVerifications.add(verificationHandle);
-    try {
-      await this.runVerifyBundleASC(params, verifyController);
-    } finally {
-      this.activeVerifications.delete(verificationHandle);
-      resolveVerifyDone();
-    }
-  }
-
-  private async runVerifyBundleASC(
-    params: IUpdateOperationParams,
-    verifyController: AbortController
-  ) {
-    const throwIfAborted = () => {
-      if (verifyController.signal.aborted) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.cancelled,
-          step: 'verifyASC',
-        });
-      }
-    };
     const {
-      sha256,
       latestVersion: appVersion,
       bundleVersion,
       signature,
-      diffSha256,
       diffSignature,
-    } = params || {};
-    assertUpdateBundleVersion(appVersion, 'verifyASC');
-    assertUpdateBundleVersion(bundleVersion, 'verifyASC');
-    const downloadedFile = this.getDestZipPath({
-      latestVersion: appVersion,
-      bundleVersion,
-    });
-    const diffZipPath = this.getDestDiffZipPath({
-      latestVersion: appVersion,
-      bundleVersion,
-    });
+    } = params ?? {};
+    assertUpdateBundleVersion(appVersion, step);
+    assertUpdateBundleVersion(bundleVersion, step);
+    const sha256 = normalizeSha256Hex(params?.sha256);
     const allowSkipGPG = this.isSkipGPGAllowed();
-    const normalizedSha256 = normalizeSha256Hex(sha256);
+    const diffSha256 = params?.diffSha256;
     if (
-      !downloadedFile ||
-      !normalizedSha256 ||
-      !appVersion ||
-      !bundleVersion ||
-      (!signature && !allowSkipGPG)
+      !sha256 ||
+      (!signature && !allowSkipGPG) ||
+      (diffSha256 !== undefined && !normalizeSha256Hex(diffSha256))
     ) {
-      this.options.logger?.error('bundle-verifyASC', 'Invalid parameters', {
-        downloadedFile,
-        sha256,
-        appVersion,
-        bundleVersion,
-        hasSignature: !!signature,
-        allowSkipGPG,
-      });
-      throw createUpdateError({
-        code: EUpdateErrorCode.invalidArgument,
-        step: 'verifyASC',
-      });
+      throw createUpdateError({ code: EUpdateErrorCode.invalidArgument, step });
     }
-    if (this.activeVerifications.size === 1) this.cleanupDiffStagingDirs();
-    const targetKey = this.getBundleTargetKey(appVersion, bundleVersion);
-    const persistedDescriptor = this.readDiffDescriptor(diffZipPath);
+    const identity = { latestVersion: appVersion, bundleVersion };
+    const downloadedFile = this.getDestZipPath(identity);
+    const releaseKey = this.getReleaseKey(appVersion, bundleVersion, sha256);
+    const verificationKey = JSON.stringify([
+      releaseKey,
+      normalizeSha256Hex(diffSha256),
+      signature,
+      diffSignature,
+      params?.downloadUrl,
+      params?.fileSize,
+      allowSkipGPG,
+    ]);
+    const existingDownload = this.inflightDownloads.get(downloadedFile);
+    const existingVerification = this.activeVerifications.get(downloadedFile);
+    if (
+      (existingDownload && existingDownload.releaseKey !== releaseKey) ||
+      (existingVerification &&
+        existingVerification.verificationKey !== verificationKey)
+    ) {
+      throw createUpdateError({ code: EUpdateErrorCode.incompatible, step });
+    }
+    if (existingVerification) return existingVerification.run;
+
+    if (this.activeVerifications.size === 0) this.cleanupDiffStagingDirs();
+    const controller = new AbortController();
+    const run = Promise.resolve()
+      .then(() =>
+        this.runVerifyBundleASC({
+          appVersion,
+          bundleVersion,
+          sha256,
+          downloadedFile,
+          params,
+          releaseKey,
+          allowSkipGPG,
+          signal: controller.signal,
+        })
+      )
+      .finally(() => this.activeVerifications.delete(downloadedFile));
+    this.activeVerifications.set(downloadedFile, {
+      releaseKey,
+      verificationKey,
+      controller,
+      run,
+    });
+    return run;
+  }
+
+  private async runVerifyBundleASC({
+    appVersion,
+    bundleVersion,
+    sha256,
+    downloadedFile,
+    params,
+    releaseKey,
+    allowSkipGPG,
+    signal,
+  }: IBundleUpdateIdentity & {
+    sha256: string;
+    downloadedFile: string;
+    params: IUpdateOperationParams;
+    releaseKey: string;
+    allowSkipGPG: boolean;
+    signal: AbortSignal;
+  }) {
+    const step = 'verifyASC';
+    throwIfCancelled(signal, step);
+    const identity = { latestVersion: appVersion, bundleVersion };
+    const { signature, diffSignature, diffSha256 } = params ?? {};
+    const diffZipPath = this.getDestDiffZipPath(identity);
     const activeBundle = this.options.store.getUpdateBundleData();
     const fallbackBundles = this.options.store.getFallbackUpdateBundleData();
     const isInstalled =
@@ -1748,431 +1796,343 @@ export class BundleUpdateNode {
             entry?.appVersion === appVersion &&
             entry.bundleVersion === bundleVersion
         ));
-
-    const resolveFullFallbackDownloadParams = ():
-      | (IDownloadPackageParams & { downloadUrl: string })
-      | null => {
-      let fallbackUrl = '';
-      if (isValidHttpsUrl(params?.downloadUrl)) {
-        fallbackUrl = params.downloadUrl;
-      } else if (
-        persistedDescriptor &&
-        persistedDescriptor.appVersion === appVersion &&
-        persistedDescriptor.bundleVersion === bundleVersion &&
-        persistedDescriptor.sha256 === normalizedSha256 &&
-        isValidHttpsUrl(persistedDescriptor.downloadUrl)
+    const resolveExtractionDirectory = () => {
+      const directory = this.getBundleExtractDir({ appVersion, bundleVersion });
+      if (
+        fs.lstatSync(directory, { throwIfNoEntry: false })?.isSymbolicLink()
       ) {
-        fallbackUrl = persistedDescriptor.downloadUrl;
+        throw createUpdateError({
+          code: EUpdateErrorCode.securityRejected,
+          step,
+        });
       }
-      if (!fallbackUrl) {
-        return null;
-      }
-      const fallbackFileSize =
-        normalizePositiveInt(params?.fileSize) ?? persistedDescriptor?.fileSize;
-      return {
-        ...params,
-        latestVersion: appVersion,
-        bundleVersion,
-        downloadUrl: fallbackUrl,
-        fileSize: fallbackFileSize,
-        sha256: normalizedSha256,
-        diffDownloadUrl: undefined,
-        diffFileSize: undefined,
-        diffSha256: undefined,
-        diffSignature: undefined,
-      };
+      return directory;
     };
 
-    const isFallbackRequiredForRelease = Boolean(
-      persistedDescriptor?.fallbackRequired &&
-        persistedDescriptor.appVersion === appVersion &&
-        persistedDescriptor.bundleVersion === bundleVersion &&
-        persistedDescriptor.sha256 === normalizedSha256
-    );
-
-    if (
-      !fs.existsSync(downloadedFile) &&
-      diffZipPath &&
-      fs.existsSync(diffZipPath) &&
-      !this.diffFallbackTargets.has(targetKey) &&
-      !isFallbackRequiredForRelease
-    ) {
-      const resolvedRoot = fs.realpathSync(this.getDownloadDir());
-      const resolvedDiffFile = fs.realpathSync(diffZipPath);
-      if (!resolvedDiffFile.startsWith(`${resolvedRoot}${path.sep}`)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.securityRejected,
-          step: 'verifyASC',
-        });
-      }
-      const extractDir = this.getBundleExtractDir({
+    if (!fs.lstatSync(downloadedFile, { throwIfNoEntry: false })) {
+      const descriptor = this.readMatchingDiffDescriptor(
+        diffZipPath,
         appVersion,
         bundleVersion,
-      });
+        sha256
+      );
+      const hasDiffZip = fs.lstatSync(diffZipPath, { throwIfNoEntry: false });
+      if (hasDiffZip) this.assertManagedArchive(diffZipPath, step);
       if (
-        fs.lstatSync(extractDir, { throwIfNoEntry: false })?.isSymbolicLink()
+        (hasDiffZip && !descriptor) ||
+        (descriptor && !this.matchesDiffDigest(descriptor, diffSha256))
       ) {
         throw createUpdateError({
-          code: EUpdateErrorCode.securityRejected,
-          step: 'verifyASC',
+          code: EUpdateErrorCode.integrityFailed,
+          step,
         });
       }
-      const stagingDir = this.createDiffStagingDir(appVersion, bundleVersion);
-      const effectiveDiffSha256 =
-        normalizeSha256Hex(diffSha256) ||
-        (persistedDescriptor &&
-        persistedDescriptor.appVersion === appVersion &&
-        persistedDescriptor.bundleVersion === bundleVersion &&
-        persistedDescriptor.sha256 === normalizedSha256
-          ? persistedDescriptor.diffSha256
-          : '');
-      try {
-        await this.reconstructDiffBundle({
-          appVersion,
-          bundleVersion,
-          diffZipPath,
-          stagingDir,
-          extractDir,
-          allowSkipGPG,
-          signature,
-          diffSha256: effectiveDiffSha256,
-          diffSignature,
-          isInstalled,
-          signal: verifyController.signal,
-        });
-        fs.rmSync(stagingDir, { recursive: true, force: true });
-        if (diffZipPath) {
-          this.writeDiffDescriptor(diffZipPath, {
-            appVersion,
-            bundleVersion,
-            downloadUrl:
-              (isValidHttpsUrl(params?.downloadUrl)
-                ? params.downloadUrl
-                : persistedDescriptor?.downloadUrl) || 'https://onekey.so',
-            fileSize:
-              normalizePositiveInt(params?.fileSize) ??
-              persistedDescriptor?.fileSize,
-            sha256: normalizedSha256,
-            diffSha256: effectiveDiffSha256 || normalizedSha256,
-            signature:
-              typeof signature === 'string' && signature.trim().length > 0
-                ? signature
-                : persistedDescriptor?.signature,
-            fallbackRequired: false,
-          });
-        }
-        return;
-      } catch (error) {
-        fs.rmSync(stagingDir, { recursive: true, force: true });
-        const errCode = getUpdateError(error, 'verifyASC').code;
-        if (
-          verifyController.signal.aborted ||
-          errCode === EUpdateErrorCode.cancelled
-        ) {
+
+      const fallbackRequired =
+        descriptor?.fallbackRequired ||
+        this.diffFallbackTargets.has(releaseKey);
+      if (hasDiffZip && descriptor && !fallbackRequired) {
+        if (!allowSkipGPG && !diffSignature) {
           throw createUpdateError({
-            code: EUpdateErrorCode.cancelled,
-            step: 'verifyASC',
+            code: EUpdateErrorCode.invalidArgument,
+            step,
           });
         }
-        if (
-          (error && typeof error === 'object' && diffGpgErrors.has(error)) ||
-          errCode === EUpdateErrorCode.securityRejected
-        ) {
-          this.cleanupDiffArtifacts(diffZipPath, stagingDir);
-          this.diffFallbackTargets.add(targetKey);
-          throw error;
-        }
-        this.options.logger?.warn(
-          'bundle-verifyASC',
-          'Diff bundle reconstruction failed, falling back to full bundle',
-          {
+        const extractDir = resolveExtractionDirectory();
+        const stagingDir = this.createDiffStagingDir(appVersion, bundleVersion);
+        try {
+          const shouldPromote = await this.reconstructDiffBundle({
             appVersion,
             bundleVersion,
-            error: error instanceof Error ? error.message : String(error),
+            diffZipPath,
+            stagingDir,
+            extractDir,
+            allowSkipGPG,
+            signature,
+            diffSha256: descriptor.diffSha256,
+            diffSignature,
+            isInstalled,
+            signal,
+          });
+          throwIfCancelled(signal, step);
+          if (!allowSkipGPG) {
+            // A normal download may have refreshed the descriptor during GPG IO.
+            const current = this.readMatchingDiffDescriptor(
+              diffZipPath,
+              appVersion,
+              bundleVersion,
+              sha256
+            );
+            if (
+              current?.diffSha256 !== descriptor.diffSha256 ||
+              current.fallbackRequired
+            ) {
+              throw createUpdateError({
+                code: EUpdateErrorCode.incompatible,
+                step,
+              });
+            }
+            this.writeDiffDescriptor(
+              diffZipPath,
+              { ...current, signature },
+              step
+            );
+          }
+          if (shouldPromote) this.promoteBundle(stagingDir, extractDir);
+          return;
+        } catch (error) {
+          throwIfCancelled(signal, step);
+          const code = getUpdateError(error, step).code;
+          if (
+            code === EUpdateErrorCode.storageError ||
+            code === EUpdateErrorCode.incompatible
+          ) {
+            throw error;
+          }
+          if (
+            (error && typeof error === 'object' && diffGpgErrors.has(error)) ||
+            code === EUpdateErrorCode.securityRejected ||
+            code === EUpdateErrorCode.cancelled
+          ) {
+            const writer = this.inflightDownloads.get(downloadedFile);
+            if (
+              code !== EUpdateErrorCode.cancelled &&
+              (!writer || writer.fullWriter)
+            ) {
+              this.cleanupDiffArtifacts(diffZipPath);
+            }
+            throw error;
+          }
+          this.options.logger?.warn(
+            'bundle-verifyASC',
+            'Diff bundle reconstruction failed, falling back to full bundle',
+            { appVersion, bundleVersion }
+          );
+        } finally {
+          fs.rmSync(stagingDir, { recursive: true, force: true });
+        }
+      }
+
+      const downloadUrl = isValidHttpsUrl(params?.downloadUrl)
+        ? params.downloadUrl
+        : descriptor?.downloadUrl;
+      if ((fallbackRequired || (hasDiffZip && descriptor)) && downloadUrl) {
+        const fileSize =
+          normalizePositiveInt(params?.fileSize) ?? descriptor?.fileSize;
+        await this.coordinateDownload(
+          { ...identity, downloadUrl, fileSize, sha256, signature },
+          {
+            signal,
+            prepare: () => {
+              if (descriptor) {
+                this.writeDiffDescriptor(
+                  diffZipPath,
+                  {
+                    ...descriptor,
+                    downloadUrl,
+                    fileSize,
+                    fallbackRequired: true,
+                  },
+                  step
+                );
+                this.cleanupDiffArtifacts(diffZipPath, true);
+              }
+              this.diffFallbackTargets.add(releaseKey);
+            },
           }
         );
-        this.diffFallbackTargets.add(targetKey);
-        const fallbackParams = resolveFullFallbackDownloadParams();
-        if (diffZipPath && fallbackParams) {
-          this.writeDiffDescriptor(diffZipPath, {
-            appVersion,
-            bundleVersion,
-            downloadUrl: fallbackParams.downloadUrl,
-            fileSize: fallbackParams.fileSize,
-            sha256: normalizedSha256,
-            diffSha256: effectiveDiffSha256 || normalizedSha256,
-            signature:
-              typeof signature === 'string' && signature.trim().length > 0
-                ? signature
-                : persistedDescriptor?.signature,
-            fallbackRequired: true,
-          });
-        }
-        this.cleanupDiffArtifacts(diffZipPath, stagingDir, {
-          keepDescriptor: Boolean(fallbackParams),
-        });
-        if (!fallbackParams) {
-          throw createUpdateError({
-            code: EUpdateErrorCode.packageMissing,
-            step: 'verifyASC',
-          });
-        }
-        throwIfAborted();
-        await this.runDownloadBundle(fallbackParams);
-        throwIfAborted();
-      }
-    } else if (
-      !fs.existsSync(downloadedFile) &&
-      (isFallbackRequiredForRelease || this.diffFallbackTargets.has(targetKey))
-    ) {
-      const fallbackParams = resolveFullFallbackDownloadParams();
-      if (fallbackParams) {
-        this.cleanupDiffArtifacts(diffZipPath, undefined, {
-          keepDescriptor: true,
-        });
-        throwIfAborted();
-        await this.runDownloadBundle(fallbackParams);
-        throwIfAborted();
       }
     }
-    throwIfAborted();
-    if (fs.existsSync(downloadedFile)) {
-      const resolvedRoot = fs.realpathSync(this.getDownloadDir());
-      const resolvedFile = fs.realpathSync(downloadedFile);
-      if (!resolvedFile.startsWith(`${resolvedRoot}${path.sep}`)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.securityRejected,
-          step: 'verifyASC',
-        });
-      }
-    }
-    if (!fs.existsSync(downloadedFile)) {
-      throw createUpdateError({
-        code: EUpdateErrorCode.packageMissing,
-        step: 'verifyASC',
-      });
-    }
+
+    throwIfCancelled(signal, step);
+    this.assertManagedArchive(downloadedFile, step);
+    await this.verifyArchiveSha256(downloadedFile, sha256, step, signal);
+    let signedMetadataSha256: string | undefined;
     if (!allowSkipGPG) {
-      const isBundleVerified = verifySha256(
-        downloadedFile,
-        normalizedSha256,
-        this.options.logger
-      );
-      if (!isBundleVerified) {
-        // Keep detailed SHA failures local; the bridge reports one fixed code.
-        const reason = lastSHA256FailureReason() ?? 'MISMATCH';
-        this.options.logger?.error(
-          'bundle-verifyASC',
-          `SHA256 verification failed (reason=${reason})`
-        );
-        let code = EUpdateErrorCode.storageError;
-        if (reason === 'FILE_NOT_FOUND') {
-          code = EUpdateErrorCode.packageMissing;
-        } else if (reason === 'MISMATCH' || reason === 'FILE_EMPTY') {
-          code = EUpdateErrorCode.integrityFailed;
-        }
-        throw createUpdateError({
-          code,
-          step: 'verifyASC',
-        });
-      }
       try {
-        await this.readMetadataFileSha256(signature!, {
+        signedMetadataSha256 = await this.readMetadataFileSha256(signature!, {
           appVersion,
           bundleVersion,
         });
       } catch (error) {
-        throw wrapSignedMetadataError(error, 'verifyASC');
+        throw wrapSignedMetadataError(error, step);
       }
     }
-    throwIfAborted();
-    const extractDir = this.getBundleExtractDir({
-      appVersion,
-      bundleVersion,
-    });
-    if (fs.lstatSync(extractDir, { throwIfNoEntry: false })?.isSymbolicLink()) {
-      throw createUpdateError({
-        code: EUpdateErrorCode.securityRejected,
-        step: 'verifyASC',
-      });
-    }
+    throwIfCancelled(signal, step);
+
+    const extractDir = resolveExtractionDirectory();
+    const verifyMetadata = (directory: string) => {
+      if (signedMetadataSha256) {
+        const metadataFilePath = path.join(directory, 'metadata.json');
+        this.assertExtractedMetadataPath(metadataFilePath, step);
+        if (!verifySha256(metadataFilePath, signedMetadataSha256)) {
+          throw createUpdateError({
+            code: EUpdateErrorCode.integrityFailed,
+            step,
+          });
+        }
+      }
+    };
     if (isInstalled) {
-      const metadataFilePath = this.getMetadataFilePath({
-        appVersion,
-        bundleVersion,
-      });
-      if (!allowSkipGPG) {
-        await this.verifySignedMetadata(
-          {
-            appVersion,
-            expectedAppVersion: appVersion,
-            bundleVersion,
-            signature: signature!,
-          },
-          'verifyASC'
-        );
-      }
-      const metadata = JSON.parse(
-        fs.readFileSync(metadataFilePath, 'utf8')
-      ) as Record<string, string>;
-      this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
-      if (diffZipPath) {
-        this.writeDiffDescriptor(diffZipPath, {
-          appVersion,
-          bundleVersion,
-          downloadUrl:
-            (isValidHttpsUrl(params?.downloadUrl)
-              ? params.downloadUrl
-              : persistedDescriptor?.downloadUrl) || 'https://onekey.so',
-          fileSize:
-            normalizePositiveInt(params?.fileSize) ??
-            persistedDescriptor?.fileSize,
-          sha256: normalizedSha256,
-          diffSha256:
-            normalizeSha256Hex(diffSha256) ||
-            persistedDescriptor?.diffSha256 ||
-            normalizedSha256,
-          signature:
-            typeof signature === 'string' && signature.trim().length > 0
-              ? signature
-              : persistedDescriptor?.signature,
-          fallbackRequired: false,
-        });
-      }
+      verifyMetadata(extractDir);
+      this.verifyExtractedFiles(extractDir, step);
       return;
     }
 
+    const stagingDir = this.createDiffStagingDir(appVersion, bundleVersion);
     try {
       const zip = new AdmZip(downloadedFile);
-      const entries = this.validateAndGetZipEntries(
-        zip,
-        extractDir,
-        'verifyASC'
-      );
+      const entries = this.validateAndGetZipEntries(zip, stagingDir, step);
       const metadataEntry = entries.find(
-        (e) =>
-          !e.isDirectory &&
-          e.entryName.replace(/\\/g, '/').replace(/^\.\//, '') ===
+        (entry) =>
+          !entry.isDirectory &&
+          entry.entryName.replace(/\\/g, '/').replace(/^\.\//, '') ===
             'metadata.json'
       );
-      if (!metadataEntry || !(metadataEntry.header.size > 0)) {
+      if (!metadataEntry || metadataEntry.header.size <= 0) {
         throw createUpdateError({
           code: EUpdateErrorCode.packageMissing,
-          step: 'verifyASC',
+          step,
         });
       }
       if (metadataEntry.header.size > MAX_CONTROL_JSON_BYTES) {
         throw createUpdateError({
           code: EUpdateErrorCode.securityRejected,
-          step: 'verifyASC',
+          step,
         });
       }
-      fs.rmSync(extractDir, { recursive: true, force: true });
       if (!allowSkipGPG) {
-        if (typeof zip.extractEntryTo === 'function') {
-          zip.extractEntryTo(metadataEntry, extractDir, false, true);
-        } else if (typeof metadataEntry.getData === 'function') {
-          fs.mkdirSync(extractDir, { recursive: true });
-          fs.writeFileSync(
-            this.getMetadataFilePath({ appVersion, bundleVersion }),
-            metadataEntry.getData()
-          );
-        }
-        await this.verifySignedMetadata(
-          {
-            appVersion,
-            expectedAppVersion: appVersion,
-            bundleVersion,
-            signature: signature!,
-          },
-          'verifyASC'
-        );
+        zip.extractEntryTo(metadataEntry, stagingDir, false, true);
+        verifyMetadata(stagingDir);
       }
-      zip.extractAllTo(extractDir, true);
+      zip.extractAllTo(stagingDir, true);
+      verifyMetadata(stagingDir);
+      this.verifyExtractedFiles(stagingDir, step);
+      throwIfCancelled(signal, step);
+      this.promoteBundle(stagingDir, extractDir);
     } catch (error) {
-      this.options.logger?.error('Failed to extract bundle zip file:', error);
-      // Cleanup partially extracted directory
-      if (fs.existsSync(extractDir)) {
-        fs.rmSync(extractDir, { recursive: true, force: true });
-      }
+      this.options.logger?.error('Failed to verify extracted bundle:', error);
       throw error;
-    }
-
-    try {
-      const metadataFilePath = this.getMetadataFilePath({
-        appVersion,
-        bundleVersion,
-      });
-      this.options.logger?.info(
-        'bundle-verifyBundleASC',
-        metadataFilePath,
-        allowSkipGPG
-      );
-      if (!allowSkipGPG) {
-        await this.verifySignedMetadata(
-          {
-            appVersion,
-            expectedAppVersion: appVersion,
-            bundleVersion,
-            signature: signature!,
-          },
-          'verifyASC'
-        );
-      }
-
-      // Verify all extracted files against metadata SHA-512 hashes
-      if (!fs.existsSync(metadataFilePath)) {
-        throw createUpdateError({
-          code: EUpdateErrorCode.packageMissing,
-          step: 'verifyASC',
-        });
-      }
-      const metadataContent = fs.readFileSync(metadataFilePath, 'utf8');
-      const metadata = JSON.parse(metadataContent) as Record<string, string>;
-      this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
-      if (diffZipPath) {
-        this.writeDiffDescriptor(diffZipPath, {
-          appVersion,
-          bundleVersion,
-          downloadUrl:
-            (isValidHttpsUrl(params?.downloadUrl)
-              ? params.downloadUrl
-              : persistedDescriptor?.downloadUrl) || 'https://onekey.so',
-          fileSize:
-            normalizePositiveInt(params?.fileSize) ??
-            persistedDescriptor?.fileSize,
-          sha256: normalizedSha256,
-          diffSha256:
-            normalizeSha256Hex(diffSha256) ||
-            persistedDescriptor?.diffSha256 ||
-            normalizedSha256,
-          signature:
-            typeof signature === 'string' && signature.trim().length > 0
-              ? signature
-              : persistedDescriptor?.signature,
-          fallbackRequired: false,
-        });
-      }
-    } catch (error) {
-      // Cleanup extracted directory on verification failure
-      if (fs.existsSync(extractDir)) {
-        fs.rmSync(extractDir, { recursive: true, force: true });
-      }
-      throw error;
+    } finally {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
     }
   }
 
-  private verifyAllExtractedFiles(
-    dirPath: string,
-    metadata: Record<string, string>,
-    baseDir: string
-  ) {
-    const verifiedFiles = new Set<string>();
-    this.walkAndVerifyFiles(dirPath, metadata, baseDir, verifiedFiles);
+  private promoteBundle(stagingDir: string, extractDir: string) {
+    const backup = fs.existsSync(extractDir)
+      ? `${stagingDir}.backup`
+      : undefined;
+    if (backup) fs.renameSync(extractDir, backup);
+    try {
+      fs.renameSync(stagingDir, extractDir);
+    } catch (error) {
+      if (backup) fs.renameSync(backup, extractDir);
+      throw error;
+    }
+    if (backup) {
+      try {
+        fs.rmSync(backup, { recursive: true, force: true });
+      } catch (error) {
+        this.options.logger?.warn('Failed to remove previous bundle:', error);
+      }
+    }
+  }
 
-    // Security: Verify completeness — every file in metadata must exist on disk
-    const metadataKeys = Object.keys(metadata);
-    for (const key of metadataKeys) {
+  private assertExtractedMetadataPath(
+    metadataPath: string,
+    step: TUpdateErrorStep
+  ) {
+    const extractDir = path.dirname(metadataPath);
+    const stat = fs.lstatSync(metadataPath, { throwIfNoEntry: false });
+    if (!stat) {
+      throw createUpdateError({ code: EUpdateErrorCode.packageMissing, step });
+    }
+    if (
+      fs.lstatSync(extractDir).isSymbolicLink() ||
+      !stat.isFile() ||
+      stat.size > MAX_CONTROL_JSON_BYTES
+    ) {
+      throw createUpdateError({
+        code: EUpdateErrorCode.securityRejected,
+        step,
+      });
+    }
+    if (stat.size <= 0) {
+      throw createUpdateError({ code: EUpdateErrorCode.integrityFailed, step });
+    }
+  }
+
+  private verifyExtractedFiles(extractDir: string, step: TUpdateErrorStep) {
+    const metadataPath = path.join(extractDir, 'metadata.json');
+    this.assertExtractedMetadataPath(metadataPath, step);
+    const metadata: unknown = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    this.verifyAllExtractedFiles(extractDir, metadata, step);
+  }
+
+  private verifyAllExtractedFiles(
+    extractDir: string,
+    metadata: unknown,
+    step: TUpdateErrorStep
+  ) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw createUpdateError({ code: EUpdateErrorCode.integrityFailed, step });
+    }
+    const verifiedFiles = new Set<string>();
+    const buildDir = path.join(extractDir, 'build');
+    const metadataRecord = metadata as Record<string, unknown>;
+    const walk = (dirPath: string) => {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isSymbolicLink()) {
+          throw createUpdateError({
+            code: EUpdateErrorCode.securityRejected,
+            step,
+          });
+        }
+        if (entry.isDirectory()) {
+          walk(fullPath);
+          continue;
+        }
+        if (!entry.isFile()) {
+          throw createUpdateError({
+            code: EUpdateErrorCode.securityRejected,
+            step,
+          });
+        }
+        if (dirPath === extractDir && entry.name === 'metadata.json') continue;
+
+        const relativePath = path
+          .relative(buildDir, fullPath)
+          .split(path.sep)
+          .join('/');
+        const isListed = Object.prototype.hasOwnProperty.call(
+          metadataRecord,
+          relativePath
+        );
+        if (entry.name === '.DS_Store' && !isListed) continue;
+        const expectedSha512 = metadataRecord[relativePath];
+        if (
+          !isSafeRelativeManifestPath(relativePath) ||
+          !isListed ||
+          !isValidSha512Hex(expectedSha512) ||
+          !checkFileSha512(fullPath, expectedSha512)
+        ) {
+          this.options.logger?.error(
+            'bundle-verify',
+            `File verification failed: ${relativePath}`
+          );
+          throw createUpdateError({
+            code: EUpdateErrorCode.integrityFailed,
+            step,
+          });
+        }
+        verifiedFiles.add(relativePath);
+      }
+    };
+    walk(extractDir);
+
+    for (const key of Object.keys(metadataRecord)) {
       if (!verifiedFiles.has(key)) {
         this.options.logger?.error(
           'bundle-verify',
@@ -2180,64 +2140,8 @@ export class BundleUpdateNode {
         );
         throw createUpdateError({
           code: EUpdateErrorCode.integrityFailed,
-          step: 'verifyPackage',
+          step,
         });
-      }
-    }
-  }
-
-  private walkAndVerifyFiles(
-    dirPath: string,
-    metadata: Record<string, string>,
-    baseDir: string,
-    verifiedFiles: Set<string>
-  ) {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      // Security: Reject symbolic links to prevent symlink attacks
-      if (entry.isSymbolicLink()) {
-        this.options.logger?.error(
-          'bundle-verify',
-          `Symbolic link detected: ${entry.name}`
-        );
-        throw createUpdateError({
-          code: EUpdateErrorCode.securityRejected,
-          step: 'verifyPackage',
-        });
-      }
-      if (entry.isDirectory()) {
-        this.walkAndVerifyFiles(fullPath, metadata, baseDir, verifiedFiles);
-      } else if (entry.name !== 'metadata.json' && entry.name !== '.DS_Store') {
-        // Strict contract: only files under "build/" are allowed to be hashed
-        // by metadata. Any extra root-level file is treated as verification failure.
-        const relativePath = path
-          .relative(path.join(baseDir, 'build'), fullPath)
-          .split(path.sep)
-          .join('/');
-        const expectedSha512 = metadata[relativePath];
-        if (!expectedSha512) {
-          this.options.logger?.error(
-            'bundle-verify',
-            `File on disk not found in metadata: ${relativePath}`
-          );
-          throw createUpdateError({
-            code: EUpdateErrorCode.integrityFailed,
-            step: 'verifyPackage',
-          });
-        }
-        const isSha512Matched = checkFileSha512(fullPath, expectedSha512);
-        if (!isSha512Matched) {
-          this.options.logger?.error(
-            'bundle-verify',
-            `SHA512 mismatch for ${relativePath}`
-          );
-          throw createUpdateError({
-            code: EUpdateErrorCode.integrityFailed,
-            step: 'verifyPackage',
-          });
-        }
-        verifiedFiles.add(relativePath);
       }
     }
   }
@@ -2257,48 +2161,36 @@ export class BundleUpdateNode {
     if (!fs.existsSync(bundleDir)) {
       return [];
     }
+    const appVersion = this.options.appVersion();
     const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
     const results: { appVersion: string; bundleVersion: string }[] = [];
     for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith('.')) {
-        const lastDash = entry.name.lastIndexOf('-');
-        if (lastDash > 0) {
-          const appVersion = entry.name.substring(0, lastDash);
-          const bundleVersion = entry.name.substring(lastDash + 1);
-          if (appVersion && bundleVersion) {
-            results.push({ appVersion, bundleVersion });
-          }
-        }
+      if (entry.isDirectory()) {
+        const bundleVersion = this.getLocalBundleVersion(
+          entry.name,
+          appVersion
+        );
+        if (bundleVersion) results.push({ appVersion, bundleVersion });
       }
     }
     return results;
   }
 
-  // Parse "{appVersion}-{bundleVersion}" for installed extract directories in
-  // onekey-bundle/ without stripping ".diff" or ".diff-staging" so bundleVersion
-  // values like "42.diff" or "42.diff-staging" remain intact.
-  private parseAppVersionFromExtractDirName(name: string): string | null {
-    if (!name || name.startsWith('.')) {
-      return null;
-    }
-    const lastDash = name.lastIndexOf('-');
-    if (lastDash <= 0) {
-      return null;
-    }
-    const appVersion = name.substring(0, lastDash);
-    const bundleVersion = name.substring(lastDash + 1);
-    if (!appVersion || !bundleVersion) {
-      return null;
-    }
-    return appVersion;
+  private getLocalBundleVersion(name: string, appVersion: string): string {
+    const prefix = `${appVersion}-`;
+    return !name.startsWith('.') && name.startsWith(prefix)
+      ? name.slice(prefix.length)
+      : '';
   }
 
-  // Parse "{appVersion}-{bundleVersion}" for download artifacts in
-  // onekey-bundle-download/ and onekey-bundle-download/.diff/.
-  private parseAppVersionFromName(name: string): string | null {
-    if (!name || name.startsWith('.')) {
-      return null;
-    }
+  private isVersionedBundleName(name: string): boolean {
+    const separator = name.lastIndexOf('-');
+    return (
+      !name.startsWith('.') && separator > 0 && separator < name.length - 1
+    );
+  }
+
+  private getBundleNameFromDownloadArtifact(name: string): string {
     let base = name;
     for (const suffix of [
       '.meta.json.tmp',
@@ -2312,16 +2204,7 @@ export class BundleUpdateNode {
         base = base.slice(0, -suffix.length);
       }
     }
-    const lastDash = base.lastIndexOf('-');
-    if (lastDash <= 0) {
-      return null;
-    }
-    const appVersion = base.substring(0, lastDash);
-    const bundleVersion = base.substring(lastDash + 1);
-    if (!appVersion || !bundleVersion) {
-      return null;
-    }
-    return appVersion;
+    return base;
   }
 
   /**
@@ -2368,16 +2251,18 @@ export class BundleUpdateNode {
             }
           }
         } else {
-          const appV = entry.isDirectory()
-            ? this.parseAppVersionFromExtractDirName(entry.name)
-            : null;
           // Safety net: keep current appVersion AND the active install dir.
           const isActiveInstall = Boolean(
             activeAppV &&
-              activeBundleV &&
-              entry.name === `${activeAppV}-${activeBundleV}`
+            activeBundleV &&
+            entry.name === `${activeAppV}-${activeBundleV}`
           );
-          if (appV && appV !== currentAppV && !isActiveInstall) {
+          if (
+            entry.isDirectory() &&
+            this.isVersionedBundleName(entry.name) &&
+            !this.getLocalBundleVersion(entry.name, currentAppV) &&
+            !isActiveInstall
+          ) {
             const dirPath = path.join(bundleDir, entry.name);
             try {
               fs.rmSync(dirPath, { recursive: true, force: true });
@@ -2407,11 +2292,13 @@ export class BundleUpdateNode {
         withFileTypes: true,
       });
       for (const entry of downloadEntries) {
-        const appV = entry.isFile()
-          ? this.parseAppVersionFromName(entry.name)
-          : null;
+        const name = this.getBundleNameFromDownloadArtifact(entry.name);
         // Safety net: never delete current appVersion's download artifacts.
-        if (appV && appV !== currentAppV) {
+        if (
+          entry.isFile() &&
+          this.isVersionedBundleName(name) &&
+          !this.getLocalBundleVersion(name, currentAppV)
+        ) {
           const filePath = path.join(dir, entry.name);
           try {
             fs.rmSync(filePath, { force: true });
@@ -2492,20 +2379,7 @@ export class BundleUpdateNode {
         step: 'verifyPackage',
       });
     }
-    const metadataFilePath = path.join(extractDir, 'metadata.json');
-    if (!fs.existsSync(metadataFilePath)) {
-      this.options.logger?.error(
-        'bundle-verify',
-        `verifyExtractedBundle: metadata.json not found in ${extractDir}`
-      );
-      throw createUpdateError({
-        code: EUpdateErrorCode.packageMissing,
-        step: 'verifyPackage',
-      });
-    }
-    const metadataContent = fs.readFileSync(metadataFilePath, 'utf8');
-    const metadata = JSON.parse(metadataContent) as Record<string, string>;
-    this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
+    this.verifyExtractedFiles(extractDir, 'verifyPackage');
   }
 
   async installBundle(params: IUpdateOperationParams) {
@@ -2627,33 +2501,14 @@ export class BundleUpdateNode {
       await this.verifySignedMetadata(
         {
           appVersion,
-          expectedAppVersion: appVersion,
           bundleVersion,
           signature: signature!,
         },
         'install'
       );
     }
-    const metadataContent = fs.readFileSync(metadataFilePath, 'utf8');
-    const metadata = JSON.parse(metadataContent) as Record<string, string>;
-    this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
+    this.verifyExtractedFiles(extractDir, 'install');
 
-    this.options.store.setUpdateBundleData({
-      appVersion,
-      bundleVersion,
-      signature: signature ?? '',
-    });
-    this.options.logger?.info('installBundle', {
-      appVersion,
-      bundleVersion,
-    });
-    this.options.store.setNativeVersion(this.options.appVersion());
-    const buildNumber = this.options.buildNumber();
-    this.options.store.setNativeBuildNumber(buildNumber);
-    this.options.logger?.info('installBundle setNativeVersion', {
-      nativeVersion: this.options.appVersion(),
-      buildNumber,
-    });
     if (
       currentUpdateBundleData &&
       currentUpdateBundleData.appVersion &&
@@ -2665,22 +2520,31 @@ export class BundleUpdateNode {
       fallbackUpdateBundleData.push(currentUpdateBundleData);
     }
 
-    if (fallbackUpdateBundleData.length > 3) {
-      const shiftUpdateBundleData = fallbackUpdateBundleData.shift();
-      if (
-        shiftUpdateBundleData &&
-        !(
-          shiftUpdateBundleData.appVersion === appVersion &&
-          shiftUpdateBundleData.bundleVersion === bundleVersion
-        )
-      ) {
-        const bundleDirPath = this.getBundleExtractDir(shiftUpdateBundleData);
-        if (fs.existsSync(bundleDirPath)) {
-          fs.rmSync(bundleDirPath, { recursive: true, force: true });
-        }
+    const evictedBundle =
+      fallbackUpdateBundleData.length > 3
+        ? fallbackUpdateBundleData.shift()
+        : undefined;
+
+    this.options.store.setUpdateBundleData({
+      appVersion,
+      bundleVersion,
+      signature: signature ?? '',
+    });
+    this.options.store.setNativeVersion(this.options.appVersion());
+    this.options.store.setNativeBuildNumber(this.options.buildNumber());
+    this.options.store.setFallbackUpdateBundleData(fallbackUpdateBundleData);
+    this.options.logger?.info('installBundle', { appVersion, bundleVersion });
+
+    if (evictedBundle) {
+      try {
+        fs.rmSync(this.getBundleExtractDir(evictedBundle), {
+          recursive: true,
+          force: true,
+        });
+      } catch (error) {
+        this.options.logger?.warn('Failed to remove evicted bundle:', error);
       }
     }
-    this.options.store.setFallbackUpdateBundleData(fallbackUpdateBundleData);
     await this.options.restart();
   }
 
@@ -2713,19 +2577,31 @@ export class BundleUpdateNode {
     }
   }
 
-  private async clearDownloadInternal() {
-    if (this.cacheClearPromise) return this.cacheClearPromise;
+  private async clearDownloadInternal(clearExtract = false) {
+    const pending = this.cacheClearPromise;
+    if (pending && !clearExtract) return pending;
     // Publish the barrier before cancellation callbacks can start another run.
-    const clear = Promise.resolve()
-      .then(async () => {
-        for (const cancel of this.cancelByDest.values()) cancel();
-        for (const active of this.activeVerifications) active.cancel();
+    const clear = (
+      pending ??
+      Promise.resolve().then(async () => {
+        const downloads = [...this.inflightDownloads.values()];
+        const verifications = [
+          ...this.activeVerifications.values(),
+          ...this.activePackageVerifications,
+        ];
+        for (const operation of [...downloads, ...verifications]) {
+          operation.controller.abort();
+        }
         await Promise.allSettled([
-          ...[...this.inflightDownloads.values()].map(({ run }) => run),
-          ...[...this.activeVerifications].map(({ promise }) => promise),
+          ...downloads.map(({ run }) => run),
+          ...verifications.map(({ run }) => run),
         ]);
         fs.rmSync(this.getDownloadDir(), { recursive: true, force: true });
         this.cleanupDiffStagingDirs();
+      })
+    )
+      .then(() => {
+        if (clearExtract) this.removeBundleExtract();
       })
       .finally(() => {
         if (this.cacheClearPromise === clear)
@@ -2797,16 +2673,13 @@ export class BundleUpdateNode {
       await this.verifySignedMetadata(
         {
           appVersion,
-          expectedAppVersion: appVersion,
           bundleVersion,
           signature: signature!,
         },
         'install'
       );
     }
-    const metadataContent = fs.readFileSync(metadataFilePath, 'utf8');
-    const metadata = JSON.parse(metadataContent) as Record<string, string>;
-    this.verifyAllExtractedFiles(extractDir, metadata, extractDir);
+    this.verifyExtractedFiles(extractDir, 'install');
 
     this.options.store.setUpdateBundleData(updateBundleData);
     this.options.store.setNativeVersion(this.options.appVersion());
@@ -2817,17 +2690,30 @@ export class BundleUpdateNode {
   }
 
   async clearBundleExtract() {
-    const bundleDir = this.getBundleDirName();
+    this.removeBundleExtract();
+  }
+
+  private removeBundleExtract() {
     try {
-      fs.rmSync(bundleDir, { recursive: true, force: true });
+      fs.rmSync(path.join(this.options.userDataDir(), 'onekey-bundle'), {
+        recursive: true,
+        force: true,
+      });
     } catch (error) {
       this.options.logger?.error('Failed to clear bundle extract:', error);
+      throw createUpdateError({
+        code: EUpdateErrorCode.storageError,
+        step: 'cleanup',
+      });
     }
   }
 
   async clearBundle() {
-    await this.clearDownload();
-    await this.clearBundleExtract();
+    try {
+      await this.clearDownloadInternal(true);
+    } catch (error) {
+      throw wrapBundleError(error, 'cleanup');
+    }
     return new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
@@ -2848,9 +2734,8 @@ export class BundleUpdateNode {
 
   async clearAllJSBundleData() {
     try {
+      await this.clearDownloadInternal(true);
       this.diffFallbackTargets.clear();
-      await this.clearDownload();
-      await this.clearBundleExtract();
       this.options.store.clearUpdateBundleData();
       return await new Promise<{ success: boolean; message: string }>(
         (resolve) => {

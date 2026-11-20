@@ -195,6 +195,34 @@ XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
   }
 
   @Test
+  fun directoryHashesOnlyExemptUnlistedRootMetadataAndFinderFiles() {
+    val bundle = temporaryFolder.newFolder("metadata")
+    val nested = File(bundle, "assets").apply { mkdirs() }
+    val nestedMetadata = File(nested, "metadata.json").apply { writeText("asset manifest") }
+    File(bundle, "metadata.json").writeText("bundle manifest")
+    val finderFile = File(nested, ".DS_Store").apply { writeText("finder metadata") }
+
+    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath)
+    assertEquals("assets/metadata.json", hashes.single().relativePath)
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, emptyList()))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+      bundle.absolutePath,
+      hashes + BundleCryptoCore.DirHash("assets", "0".repeat(64)),
+    ))
+    val finderHash = requireNotNull(BundleCryptoCore.sha256OfFile(finderFile.absolutePath).sha256)
+    val manifest = hashes + BundleCryptoCore.DirHash("assets/.DS_Store", finderHash)
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest))
+    finderFile.writeText("tampered")
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest))
+    nestedMetadata.writeText("tampered")
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    nestedMetadata.delete()
+    nestedMetadata.mkdir()
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+  }
+
+  @Test
   fun directoryHashesRejectExpectedPathsOutsideBundle() {
     val root = temporaryFolder.newFolder("root")
     val bundle = File(root, "bundle").apply { mkdirs() }

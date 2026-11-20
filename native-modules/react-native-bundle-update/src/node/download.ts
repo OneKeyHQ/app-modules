@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
@@ -8,7 +7,13 @@ import {
   createUpdateError,
   getUpdateError,
   isRetryableUpdateError,
-} from './errors';
+  BundleUpdateNodeError,
+} from './errors.js';
+import {
+  ArchiveSizeError,
+  hashArchive,
+  MAX_ARCHIVE_BYTES,
+} from './verification.js';
 
 import type { IncomingHttpHeaders } from 'node:http';
 
@@ -29,7 +34,7 @@ const FLUSH_BYTES = 4 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const MAX_RETRIES = 3;
 const STALL_MS = 60_000;
-const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+const DOWNLOAD_DEADLINE_MS = 15 * 60_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 
 export interface INodeDownloadProgress {
@@ -76,8 +81,25 @@ interface IManifest {
 type IResponse = IUpdateResponse;
 
 class RangeFallback extends Error {
-  constructor(message: string, readonly refreshMetadata = false) {
+  constructor(
+    message: string,
+    readonly refreshMetadata = false,
+    readonly retryAfter: number | null = null
+  ) {
     super(message);
+  }
+}
+
+class DownloadHttpError extends BundleUpdateNodeError {
+  constructor(
+    status: number,
+    readonly retryAfter: number | null
+  ) {
+    super({
+      code: EUpdateErrorCode.httpError,
+      step: 'download',
+      httpStatus: status,
+    });
   }
 }
 
@@ -87,6 +109,8 @@ function failure(code: EUpdateErrorCode, httpStatus?: number) {
 
 export function classifyNodeError(error: unknown) {
   try {
+    if (error instanceof ArchiveSizeError)
+      return failure(EUpdateErrorCode.integrityFailed);
     if (error instanceof RangeFallback) {
       return error.refreshMetadata
         ? failure(EUpdateErrorCode.httpError, 416)
@@ -147,12 +171,83 @@ function waitForRetry(delay: number, signal?: AbortSignal): Promise<void> {
       signal?.removeEventListener('abort', onAbort);
       reject(failure(EUpdateErrorCode.cancelled));
     };
-    timer.id = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, Math.min(Math.max(delay, 0), MAX_RETRY_DELAY_MS));
+    timer.id = setTimeout(
+      () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      },
+      Math.min(Math.max(delay, 0), MAX_RETRY_DELAY_MS)
+    );
     signal?.addEventListener('abort', onAbort, { once: true });
   });
+}
+
+function retryDelay(error: unknown, retry: number): number {
+  return (
+    (error instanceof DownloadHttpError || error instanceof RangeFallback
+      ? error.retryAfter
+      : null) ?? Math.min(500 * 2 ** retry, 10_000)
+  );
+}
+
+function rejectedResponse(response: IResponse['response']): DownloadHttpError {
+  const error = new DownloadHttpError(
+    response.statusCode ?? 0,
+    retryAfterMs(response.headers['retry-after'])
+  );
+  response.destroy();
+  return error;
+}
+
+function waitForAbortable<T>(
+  pending: Promise<T>,
+  signal?: AbortSignal,
+  release?: (result: T) => void
+): Promise<T> {
+  if (!signal) return pending;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(failure(EUpdateErrorCode.cancelled));
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    void pending.then(
+      (result) => {
+        signal.removeEventListener('abort', onAbort);
+        if (signal.aborted) {
+          release?.(result);
+        } else {
+          resolve(result);
+        }
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+async function* readResponse(
+  response: IResponse['response'],
+  signal?: AbortSignal
+): AsyncGenerator<Buffer> {
+  const iterator = response[Symbol.asyncIterator]();
+  let complete = false;
+  try {
+    while (true) {
+      cancelled(signal);
+      const next = await waitForAbortable(iterator.next(), signal);
+      if (next.done) {
+        complete = true;
+        return;
+      }
+      yield next.value;
+    }
+  } finally {
+    if (!complete) {
+      response.destroy();
+      void iterator.return?.().catch(() => {});
+    }
+  }
 }
 
 function isHttps(url: string): boolean {
@@ -196,7 +291,13 @@ async function get(
 ): Promise<IResponse> {
   cancelled(signal);
   if (!isHttps(url)) throw failure(EUpdateErrorCode.invalidArgument);
-  if (transport) return transport(url, headers, signal);
+  if (transport) {
+    return waitForAbortable(
+      transport(url, headers, signal),
+      signal,
+      ({ response }) => response.destroy()
+    );
+  }
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers, signal }, (response) => {
       const status = response.statusCode ?? 0;
@@ -206,19 +307,26 @@ async function get(
           reject(failure(EUpdateErrorCode.securityRejected));
           return;
         }
-        const next = new URL(response.headers.location, url).toString();
-        if (!isHttps(next)) {
+        try {
+          const next = new URL(response.headers.location, url);
+          if (next.protocol !== 'https:') {
+            reject(failure(EUpdateErrorCode.securityRejected));
+            return;
+          }
+          const nextHeaders =
+            next.origin === new URL(url).origin
+              ? headers
+              : stripSensitiveHeaders(headers);
+          void get(
+            next.href,
+            nextHeaders,
+            signal,
+            redirects + 1,
+            transport
+          ).then(resolve, reject);
+        } catch {
           reject(failure(EUpdateErrorCode.securityRejected));
-          return;
         }
-        const nextHeaders =
-          new URL(next).origin === new URL(url).origin
-            ? headers
-            : stripSensitiveHeaders(headers);
-        void get(next, nextHeaders, signal, redirects + 1, transport).then(
-          resolve,
-          reject
-        );
         return;
       }
       resolve({ response, url });
@@ -244,13 +352,12 @@ async function probe(opts: INodeDownloadOptions) {
   if (status === 206) {
     size = range?.start === 0 && range.end === 0 ? range.total : 0;
   }
+  if (status !== 200 && status !== 206) throw rejectedResponse(response);
   response.destroy();
-  if (status !== 200 && status !== 206)
-    throw failure(EUpdateErrorCode.httpError, status);
   if (!Number.isSafeInteger(size) || size < 0)
     throw failure(EUpdateErrorCode.integrityFailed);
   if (
-    size > MAX_DOWNLOAD_BYTES ||
+    size > MAX_ARCHIVE_BYTES ||
     (opts.expectedBytes && size && size !== opts.expectedBytes)
   )
     throw failure(EUpdateErrorCode.integrityFailed);
@@ -279,8 +386,7 @@ async function probeWithRetry(opts: INodeDownloadOptions) {
         retry === MAX_RETRIES
       )
         throw error;
-      const delay = Math.min(500 * 2 ** retry, 10_000);
-      await waitForRetry(delay, opts.signal);
+      await waitForRetry(retryDelay(error, retry), opts.signal);
     }
   }
   throw failure(EUpdateErrorCode.unknown);
@@ -324,28 +430,16 @@ async function verify(
   ] as const;
   for (const [algorithm, expected] of algorithms) {
     if (expected) {
-      cancelled(opts.signal);
-      const hash = createHash(algorithm);
-      const stream = fs.createReadStream(filePath);
-      const onAbort = () => stream.destroy(failure(EUpdateErrorCode.cancelled));
-      opts.signal?.addEventListener('abort', onAbort, { once: true });
+      let actual: string;
       try {
-        for await (const chunk of stream) {
-          cancelled(opts.signal);
-          hash.update(chunk);
-        }
+        actual = (await hashArchive(filePath, algorithm, opts.signal)).digest;
       } catch (error) {
         cancelled(opts.signal);
         if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
           return false;
         }
         throw error;
-      } finally {
-        opts.signal?.removeEventListener('abort', onAbort);
-        stream.destroy();
       }
-      cancelled(opts.signal);
-      const actual = hash.digest('hex');
       const normalized = expected.trim().toLowerCase();
       const expectedHex = /^[0-9a-f]+$/.test(normalized)
         ? normalized
@@ -400,7 +494,7 @@ function readManifest(
           size === 0 &&
           Number.isSafeInteger(manifest.size) &&
           manifest.size >= 0 &&
-          manifest.size <= MAX_DOWNLOAD_BYTES)) &&
+          manifest.size <= MAX_ARCHIVE_BYTES)) &&
       manifest.etag === (etag ?? manifest.etag) &&
       manifest.checksum === checksumKey(opts) &&
       manifest.mode === mode &&
@@ -475,19 +569,11 @@ function emit(
   });
 }
 
-function retryableStatus(status: number): boolean {
-  return (
-    status === 408 ||
-    status === 429 ||
-    (status >= 500 && status <= 599 && status !== 501 && status !== 505)
-  );
-}
-
 function retryAfterMs(value: string | string[] | undefined): number | null {
-  const raw = Array.isArray(value) ? value[0] : value;
+  const raw = (Array.isArray(value) ? value[0] : value)?.trim();
   if (!raw) return null;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+  if (!/^[A-Za-z]{3,9},? /.test(raw)) return null;
   const date = Date.parse(raw);
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
@@ -500,7 +586,6 @@ async function downloadPart(
   finalUrl: string,
   flush: () => void
 ): Promise<void> {
-  let serverDelay: number | null = null;
   for (let retry = 0; retry <= MAX_RETRIES; retry += 1) {
     cancelled(opts.signal);
     const start = part.start + part.done;
@@ -524,6 +609,11 @@ async function downloadPart(
         opts.transport
       );
       const status = response.statusCode ?? 0;
+      if (status === 416) {
+        const error = rejectedResponse(response);
+        throw new RangeFallback('HTTP 416', true, error.retryAfter);
+      }
+      if (status !== 200 && status !== 206) throw rejectedResponse(response);
       const range = contentRange(response.headers['content-range']);
       if (
         status !== 206 ||
@@ -539,16 +629,10 @@ async function downloadPart(
         )
       ) {
         response.destroy();
-        if (status === 416) throw new RangeFallback('HTTP 416', true);
-        if (status === 200 || status === 206)
-          throw new RangeFallback('Range response changed');
-        if (!retryableStatus(status))
-          throw failure(EUpdateErrorCode.httpError, status);
-        serverDelay = retryAfterMs(response.headers['retry-after']);
-        throw failure(EUpdateErrorCode.httpError, status);
+        throw new RangeFallback('Range response changed');
       }
       let sinceFlush = 0;
-      for await (const chunk of response) {
+      for await (const chunk of readResponse(response, opts.signal)) {
         cancelled(opts.signal);
         const bytes = chunk as Buffer;
         if (bytes.length > part.end - part.start + 1 - part.done)
@@ -580,9 +664,7 @@ async function downloadPart(
         )
       )
         throw classifyNodeError(error);
-      const delay = serverDelay ?? Math.min(500 * 2 ** retry, 10_000);
-      await waitForRetry(delay, opts.signal);
-      serverDelay = null;
+      await waitForRetry(retryDelay(error, retry), opts.signal);
     }
   }
 }
@@ -691,11 +773,11 @@ async function parallel(
 
 async function single(
   opts: INodeDownloadOptions,
-  size: number,
-  etag: string | null,
+  info: { size: number; etag: string | null },
   partial: string,
   manifestPath: string
 ): Promise<number> {
+  const { size, etag } = info;
   let manifest = readManifest(
     opts,
     partial,
@@ -720,7 +802,7 @@ async function single(
   }
   const part = manifest.parts[0];
   if (!part) throw failure(EUpdateErrorCode.integrityFailed);
-  let offset = part.done;
+  const offset = part.done;
   const knownSize = manifest.size || size;
   const knownEtag = manifest.etag ?? etag;
   if (knownSize && offset === knownSize) return knownSize;
@@ -737,46 +819,38 @@ async function single(
     opts.transport
   );
   const status = response.statusCode ?? 0;
-  if (status !== 200 && status !== 206) {
-    response.destroy();
-    throw failure(EUpdateErrorCode.httpError, status);
-  }
-  if (
-    knownEtag &&
-    response.headers.etag &&
-    response.headers.etag !== knownEtag
-  ) {
-    response.destroy();
-    discard(partial, manifestPath);
-    throw failure(EUpdateErrorCode.integrityFailed);
-  }
+  if (status !== 200 && status !== 206) throw rejectedResponse(response);
+  const responseEtag = response.headers.etag;
+  const contentLength = Number(response.headers['content-length'] ?? 0);
   if (status === 206) {
     const range = contentRange(response.headers['content-range']);
     if (
       !range ||
       range.start !== offset ||
-      (knownSize && range.total !== knownSize)
+      range.end !== range.total - 1 ||
+      range.end < range.start ||
+      (knownSize && range.total !== knownSize) ||
+      (knownEtag && responseEtag && responseEtag !== knownEtag) ||
+      (contentLength && contentLength !== range.end - range.start + 1) ||
+      String(response.headers['content-type'] ?? '').includes(
+        'multipart/byteranges'
+      )
     ) {
       response.destroy();
       discard(partial, manifestPath);
       throw failure(EUpdateErrorCode.integrityFailed);
     }
     manifest.size = range.total;
-    part.end = range.total - 1;
-  } else if (offset) {
-    offset = 0;
-    part.done = 0;
-    fs.truncateSync(partial, 0);
+    manifest.etag = responseEtag ?? knownEtag;
+  } else {
+    manifest.size = contentLength;
+    manifest.etag = responseEtag ?? null;
   }
-  if (!manifest.size) {
-    manifest.size = Number(response.headers['content-length']) || 0;
-    part.end = Math.max(0, manifest.size - 1);
-  }
-  if (!manifest.etag && response.headers.etag) {
-    manifest.etag = response.headers.etag;
-  }
+  part.end = Math.max(0, manifest.size - 1);
   if (
-    manifest.size > MAX_DOWNLOAD_BYTES ||
+    !Number.isSafeInteger(contentLength) ||
+    contentLength < 0 ||
+    manifest.size > MAX_ARCHIVE_BYTES ||
     (opts.expectedBytes &&
       manifest.size &&
       manifest.size !== opts.expectedBytes)
@@ -788,13 +862,19 @@ async function single(
   const flush = () => saveManifest(manifestPath, manifest, fd);
   let sinceFlush = 0;
   try {
+    if (status === 200 && offset) {
+      fs.ftruncateSync(fd, 0);
+      part.done = 0;
+    }
+    info.size = manifest.size;
+    info.etag = manifest.etag;
     emit(opts, manifest, 0);
-    for await (const chunk of response) {
+    for await (const chunk of readResponse(response, opts.signal)) {
       cancelled(opts.signal);
       const bytes = chunk as Buffer;
       if (
         (manifest.size && part.done + bytes.length > manifest.size) ||
-        part.done + bytes.length > MAX_DOWNLOAD_BYTES ||
+        part.done + bytes.length > MAX_ARCHIVE_BYTES ||
         (opts.expectedBytes && part.done + bytes.length > opts.expectedBytes)
       )
         throw failure(EUpdateErrorCode.integrityFailed);
@@ -830,17 +910,10 @@ async function singleWithRetry(
   partial: string,
   manifestPath: string
 ): Promise<number> {
-  let currentSize = size;
-  let currentEtag = etag;
+  let info = { size, etag };
   for (let retry = 0; retry <= MAX_RETRIES; retry += 1) {
     try {
-      return await single(
-        opts,
-        currentSize,
-        currentEtag,
-        partial,
-        manifestPath
-      );
+      return await single(opts, info, partial, manifestPath);
     } catch (error) {
       const updateError = getUpdateError(classifyNodeError(error), 'download');
       if (
@@ -849,13 +922,11 @@ async function singleWithRetry(
         !isRetryableUpdateError(updateError)
       )
         throw classifyNodeError(error);
+      await waitForRetry(retryDelay(error, retry), opts.signal);
       if (updateError.httpStatus === 416) {
         // Revalidate the object before readManifest decides to keep/reset bytes.
-        const refreshed = await probeWithRetry(opts);
-        currentSize = refreshed.size;
-        currentEtag = refreshed.etag;
+        info = await probeWithRetry(opts);
       }
-      await waitForRetry(Math.min(500 * 2 ** retry, 10_000), opts.signal);
     }
   }
   throw failure(EUpdateErrorCode.unknown);
@@ -884,7 +955,7 @@ async function parallelWithRecovery(
       if (error.refreshMetadata) {
         cancelled(opts.signal);
         if (retry === MAX_RETRIES) throw error;
-        await waitForRetry(Math.min(500 * 2 ** retry, 10_000), opts.signal);
+        await waitForRetry(retryDelay(error, retry), opts.signal);
         info = await probeWithRetry(opts);
         // Matching metadata preserves all completed segments on the next run.
       } else {
@@ -924,7 +995,7 @@ async function downloadNodeFileInternal(
     opts.expectedBytes !== undefined &&
     (!Number.isSafeInteger(opts.expectedBytes) ||
       opts.expectedBytes <= 0 ||
-      opts.expectedBytes > MAX_DOWNLOAD_BYTES)
+      opts.expectedBytes > MAX_ARCHIVE_BYTES)
   )
     throw failure(EUpdateErrorCode.invalidArgument);
   fs.mkdirSync(path.dirname(opts.targetPath), { recursive: true });
@@ -932,7 +1003,7 @@ async function downloadNodeFileInternal(
   const manifestPath = `${partial}.progress.json`;
   if (fs.existsSync(opts.targetPath)) {
     if (
-      fs.statSync(opts.targetPath).size <= MAX_DOWNLOAD_BYTES &&
+      fs.statSync(opts.targetPath).size <= MAX_ARCHIVE_BYTES &&
       (!opts.expectedBytes ||
         fs.statSync(opts.targetPath).size === opts.expectedBytes) &&
       (await verify(opts.targetPath, opts))
@@ -956,6 +1027,9 @@ async function downloadNodeFileInternal(
       fs.existsSync(partial)
     )
       throw error;
+    if (error instanceof DownloadHttpError && error.retryAfter !== null) {
+      await waitForRetry(error.retryAfter, opts.signal);
+    }
     info = { url: opts.url, size: 0, etag: null, parallel: false };
   }
   let size: number;
@@ -975,7 +1049,7 @@ async function downloadNodeFileInternal(
   }
   cancelled(opts.signal);
   if (
-    size > MAX_DOWNLOAD_BYTES ||
+    size > MAX_ARCHIVE_BYTES ||
     (opts.expectedBytes && size !== opts.expectedBytes)
   ) {
     throw failure(EUpdateErrorCode.integrityFailed);
@@ -993,9 +1067,25 @@ async function downloadNodeFileInternal(
 export async function downloadNodeFile(
   input: INodeDownloadOptions
 ): Promise<{ filePath: string; totalBytes: number }> {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(failure(EUpdateErrorCode.cancelled));
+  const timer = setTimeout(
+    () => controller.abort(failure(EUpdateErrorCode.timeout)),
+    DOWNLOAD_DEADLINE_MS
+  );
+  input.signal?.addEventListener('abort', onAbort, { once: true });
+  if (input.signal?.aborted) onAbort();
   try {
-    return await downloadNodeFileInternal(input);
+    return await downloadNodeFileInternal({
+      ...input,
+      signal: controller.signal,
+    });
   } catch (error) {
-    throw classifyNodeError(error);
+    throw classifyNodeError(
+      controller.signal.aborted ? controller.signal.reason : error
+    );
+  } finally {
+    clearTimeout(timer);
+    input.signal?.removeEventListener('abort', onAbort);
   }
 }

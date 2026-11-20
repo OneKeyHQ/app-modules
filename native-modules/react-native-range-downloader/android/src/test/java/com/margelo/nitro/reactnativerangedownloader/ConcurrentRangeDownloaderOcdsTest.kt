@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -107,10 +108,26 @@ class ConcurrentRangeDownloaderOcdsTest {
       )
     }.exceptionOrNull()
 
-    assertTrue("oversized total must reject", failure is SecurityException)
+    assertTrue("oversized total must reject", failure is ConcurrentRangeDownloader.SizeLimitExceededException)
     assertEquals("only the probe may reach the server", 1, server.requestCount)
     assertEquals("bytes=0-0", server.takeRequest().getHeader("Range"))
     assertNoArtifactsLeft(partial)
+  }
+
+  @Test
+  fun oversizedRestoredPartialRejectsBeforeProbe() {
+    startServer(RangeFaultServer(content))
+    val partial = partialPath()
+    val cap = content.size.toLong()
+    RandomAccessFile(partial, "rw").use { it.setLength(cap + 1) }
+
+    val failure = runCatching {
+      newDownloader().download(url(), partial, maxTotalBytes = cap) { _, _ -> }
+    }.exceptionOrNull()
+
+    assertTrue(failure is ConcurrentRangeDownloader.SizeLimitExceededException)
+    assertEquals(0, server.requestCount)
+    assertEquals(cap + 1, File(partial).length())
   }
 
   @Test
@@ -294,10 +311,10 @@ class ConcurrentRangeDownloaderOcdsTest {
   }
 
   @Test
-  fun internalFallbackDoesNotMarkCallerCancelled() {
+  fun internalFallbackDoesNotStopTheNextTransferOnTheSameHandle() {
     val target = parts[2]
     startServer(RangeFaultServer(content).arm(
-      RangeFaultServer.FaultMode.STATUS_200, target.start, target.end, times = Int.MAX_VALUE,
+      RangeFaultServer.FaultMode.STATUS_200, target.start, target.end, times = 1,
     ))
     val handle = ConcurrentRangeDownloader.CancelHandle()
 
@@ -306,6 +323,11 @@ class ConcurrentRangeDownloaderOcdsTest {
     assertEquals(ConcurrentRangeDownloader.Outcome.FALLBACK, outcome)
     assertFalse(handle.aborted.get())
     assertNoArtifactsLeft(partialPath())
+
+    val nextPath = File(tmpDir, "full.zip.partial").absolutePath
+    val nextOutcome = newDownloader().download(url(), nextPath, handle) { _, _ -> }
+    assertEquals(ConcurrentRangeDownloader.Outcome.COMPLETED, nextOutcome)
+    assertEquals(sha256(content), sha256(File(nextPath)))
   }
 
   @Test

@@ -174,7 +174,8 @@ enum BundleDiffReconstruction {
         return true
     }
 
-    static func writeDescriptor(_ descriptor: DiffArchiveDescriptor, toPath path: String) {
+    @discardableResult
+    static func writeDescriptor(_ descriptor: DiffArchiveDescriptor, toPath path: String) -> Bool {
         let fm = FileManager.default
         let parentDir = (path as NSString).deletingLastPathComponent
         if !parentDir.isEmpty && !fm.fileExists(atPath: parentDir) {
@@ -192,8 +193,13 @@ enum BundleDiffReconstruction {
         if let sig = descriptor.signature, !sig.isEmpty {
             dict["signature"] = sig
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return }
-        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        do {
+            let data = try JSONSerialization.data(withJSONObject: dict)
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 
     static func readDescriptor(
@@ -204,6 +210,7 @@ enum BundleDiffReconstruction {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path),
               let attrs = try? fm.attributesOfItem(atPath: path),
+              attrs[.type] as? FileAttributeType == .typeRegular,
               let fileSize = attrs[.size] as? UInt64,
               fileSize <= 256 * 1024,
               let data = fm.contents(atPath: path),
@@ -235,62 +242,91 @@ enum BundleDiffReconstruction {
         )
     }
 
+    struct ReleaseIdentity: Hashable {
+        let appVersion: String
+        let bundleVersion: String
+    }
+
+    static func targetMetadataSizeIfPresent(_ targetPath: String) throws -> UInt64? {
+        let fm = FileManager.default
+        let targetAttributes: [FileAttributeKey: Any]
+        do {
+            targetAttributes = try fm.attributesOfItem(atPath: targetPath)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return nil
+        }
+        guard targetAttributes[.type] as? FileAttributeType == .typeDirectory else {
+            throw BundleDiffReconstructionError.integrityFailed("bundle target is not a directory")
+        }
+        let metadataPath = (targetPath as NSString).appendingPathComponent("metadata.json")
+        guard let attributes = try? fm.attributesOfItem(atPath: metadataPath),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? UInt64 else {
+            throw BundleDiffReconstructionError.integrityFailed("bundle target has no regular metadata control file")
+        }
+        return size
+    }
+
+    struct VerifiedDiffRecord {
+        let fullSha256: String
+        let diffSha256: String
+        let metadataSha256: String
+    }
+
+    static func matchesDownloadRecord(
+        suppliedFullSha256: String,
+        suppliedDiffSha256: String?,
+        descriptor: DiffArchiveDescriptor
+    ) -> Bool {
+        guard !descriptor.fallbackRequired,
+              let normalizedFull = normalizeSha256(suppliedFullSha256),
+              constantTimeEqualHex(descriptor.sha256, normalizedFull) else { return false }
+        guard let suppliedDiffSha256 else { return true }
+        guard let normalizedDiff = normalizeSha256(suppliedDiffSha256) else { return false }
+        return constantTimeEqualHex(descriptor.diffSha256, normalizedDiff)
+    }
+
     static func resolveExpectedDiffSha256ForPackageVerify(
         suppliedFullSha256: String,
         suppliedDiffSha256: String?,
         descriptor: DiffArchiveDescriptor?
     ) -> String? {
-        guard let normalizedFull = normalizeSha256(suppliedFullSha256) else { return nil }
-        if let descriptor {
-            guard constantTimeEqualHex(descriptor.sha256, normalizedFull) else {
-                return nil
-            }
-        }
-        if let rawDiff = suppliedDiffSha256, !rawDiff.isEmpty {
-            guard let normalizedDiff = normalizeSha256(rawDiff) else { return nil }
-            if let descriptor, !constantTimeEqualHex(descriptor.diffSha256, normalizedDiff) {
-                return nil
-            }
-            return normalizedDiff
-        }
-        return descriptor?.diffSha256
+        guard let descriptor, matchesDownloadRecord(
+            suppliedFullSha256: suppliedFullSha256,
+            suppliedDiffSha256: suppliedDiffSha256,
+            descriptor: descriptor
+        ) else { return nil }
+        return descriptor.diffSha256
     }
 
     static func resolveTrustedMetadataSha256ForPackageVerify(
         suppliedFullSha256: String,
+        suppliedDiffSha256: String? = nil,
         suppliedSignature: String?,
-        inMemoryVerified: (fullSha256: String, metadataSha256: String)?,
+        inMemoryVerified: VerifiedDiffRecord?,
         descriptor: DiffArchiveDescriptor?,
         persistedAscSignature: String?,
         verifySignatureAndExtractMetadataSha256: (String) -> String?
     ) -> String? {
         guard let normalizedFull = normalizeSha256(suppliedFullSha256) else { return nil }
-        if let inMemoryVerified {
-            guard constantTimeEqualHex(inMemoryVerified.fullSha256, normalizedFull),
-                  let metaSha = normalizeSha256(inMemoryVerified.metadataSha256) else {
-                return nil
+        if let descriptor, !matchesDownloadRecord(
+            suppliedFullSha256: normalizedFull,
+            suppliedDiffSha256: suppliedDiffSha256,
+            descriptor: descriptor
+        ) { return nil }
+
+        if let inMemoryVerified,
+           constantTimeEqualHex(inMemoryVerified.fullSha256, normalizedFull) {
+            let expectedDiff = suppliedDiffSha256 ?? descriptor?.diffSha256
+            if expectedDiff == nil || normalizeSha256(expectedDiff) == inMemoryVerified.diffSha256 {
+                return normalizeSha256(inMemoryVerified.metadataSha256)
             }
-            return metaSha
         }
-        if let descriptor, !constantTimeEqualHex(descriptor.sha256, normalizedFull) {
-            return nil
-        }
-        let candidateSignatures: [String] = [
-            suppliedSignature,
-            descriptor?.signature,
-            persistedAscSignature,
-        ].compactMap { sig in
-            guard let sig, !sig.isEmpty else { return nil }
-            return sig
-        }
-        // If no in-memory verified record and no explicit signature was passed,
-        // require the descriptor bound to `normalizedFull` to be present so an
-        // unverified fullSha256 parameter cannot be ignored.
-        if (suppliedSignature == nil || suppliedSignature?.isEmpty == true) && descriptor == nil {
-            return nil
-        }
-        for sig in candidateSignatures {
-            if let extracted = normalizeSha256(verifySignatureAndExtractMetadataSha256(sig)) {
+
+        guard let descriptor else { return nil }
+        for signature in [suppliedSignature, descriptor.signature, persistedAscSignature] {
+            guard let signature, !signature.isEmpty else { continue }
+            if let extracted = normalizeSha256(verifySignatureAndExtractMetadataSha256(signature)) {
                 return extracted
             }
         }

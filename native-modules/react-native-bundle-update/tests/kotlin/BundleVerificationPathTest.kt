@@ -63,6 +63,31 @@ fun main() {
         expect(isSameDirectory(bundleDir, siblingDir) == false, true, "different dirs are not the same")
         expect(isSameDirectory(bundleDir, File(tempRoot, "missing")) == false, true, "missing dir is not the same")
 
+        val nestedMetadata = File(segmentDir, "metadata.json").apply { writeText("payload metadata") }
+        File(bundleDir, "metadata.json").writeText("root control metadata")
+        val finderFile = File(segmentDir, ".DS_Store").apply { writeText("finder") }
+        val baseEntries = mapOf(
+            "main.jsbundle.hbc" to "main",
+            "segments-background/core.chains.all.CoreChainImported.seg.hbc" to "segment",
+        )
+        val nestedKey = "segments-background/metadata.json"
+        val finderKey = "segments-background/.DS_Store"
+        fun verify(metadata: Map<String, String>, subtree: File = bundleDir): Boolean =
+            verifyBundleFiles(bundleDir, subtree, metadata, { file, expected -> file.readText() == expected }, {})
+        expect(verify(baseEntries), false, "nested metadata cannot be omitted from the manifest")
+        val allEntries = baseEntries + (nestedKey to "payload metadata")
+        expect(verify(allEntries), true, "root metadata and unlisted Finder files may be skipped")
+        expect(verify(allEntries + (finderKey to "finder")), true, "listed Finder file is hashed")
+        expect(verify(allEntries + (finderKey to "wrong")), false, "listed Finder file cannot bypass verification")
+        expect(verify(allEntries + ("segments-background" to "wrong")), false, "a directory does not satisfy a manifest entry")
+        expect(verify(allEntries + ("/${finderFile.absolutePath}" to "finder")), false, "non-relative manifest entry remains unconsumed")
+        expect(verify(allEntries - "main.jsbundle.hbc", segmentDir), true, "subtree verifies bundle-relative manifest entries")
+        nestedMetadata.writeText("changed")
+        expect(verify(allEntries), false, "nested metadata content must match its hash")
+        nestedMetadata.delete()
+        nestedMetadata.mkdir()
+        expect(verify(allEntries), false, "manifest-listed metadata must be a regular file")
+
         val link = File(tempRoot, "bundle-link")
         val linked = runCatching { Files.createSymbolicLink(link.toPath(), bundleDir.toPath()) }.isSuccess
         if (linked) {

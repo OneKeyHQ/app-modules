@@ -40,7 +40,7 @@ Pod::Spec.new do |s|
   # download now delegates its 8-range background download to
   # react-native-range-downloader's RangeDownloader.shared (the concurrent
   # downloader that originated here), removing the in-tree duplicate.
-  s.dependency 'ReactNativeRangeDownloader'
+  s.dependency 'ReactNativeRangeDownloader', "#{s.version}"
   # >= 2.5.4 pulls the fix for the zip-slip / symlink path-traversal CVEs
   # (CVE-2023-39139 etc.) — important since OTA unzips downloaded archives.
   s.dependency 'SSZipArchive', '>= 2.5.4'

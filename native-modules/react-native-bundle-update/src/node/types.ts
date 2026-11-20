@@ -1,4 +1,4 @@
-import type { downloadNodeFile, INodeDownloadProgress } from './download';
+import type { downloadNodeFile, INodeDownloadProgress } from './download.js';
 
 export interface IDownloadPackageParams {
   downloadUrl?: string;

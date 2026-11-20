@@ -7,14 +7,14 @@ let package = Package(
         .target(
             name: "BundleStorageSchemaPolicy",
             path: "ios",
-            exclude: ["ReactNativeBundleUpdate.swift", "BundleDiffReconstruction.swift"],
+            exclude: ["ReactNativeBundleUpdate.swift", "BundleDiffReconstruction.swift", "BundleVerificationRun.swift"],
             sources: ["BundleStorageSchemaPolicy.swift"]
         ),
         .target(
             name: "BundleDiffReconstruction",
             path: "ios",
             exclude: ["ReactNativeBundleUpdate.swift", "BundleStorageSchemaPolicy.swift"],
-            sources: ["BundleDiffReconstruction.swift"]
+            sources: ["BundleDiffReconstruction.swift", "BundleVerificationRun.swift"]
         ),
         .testTarget(
             name: "BundleStorageSchemaPolicyTests",

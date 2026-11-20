@@ -5,8 +5,11 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -35,12 +38,50 @@ internal object BundleDiffReconstruction {
     const val EXPECTED_SCHEMA_VERSION = 1
     const val EXPECTED_HASH_ALGORITHM = "sha256"
     const val MAX_BUNDLE_ENTRIES = 4096
+    const val MAX_BUNDLE_ARCHIVE_BYTES = 512L * 1024 * 1024
     const val MAX_BUNDLE_UNCOMPRESSED_BYTES = 512L * 1024 * 1024
     const val MAX_CONTROL_JSON_BYTES = 16L * 1024 * 1024
     const val STAGING_ROOT_DIR_NAME = ".diff-staging"
     const val DIFF_DOWNLOAD_DIR_NAME = ".diff"
     const val DIFF_ZIP_EXTENSION = ".diff.zip"
     const val DIFF_META_EXTENSION = ".diff.zip.meta.json"
+
+    class ArchiveSizeLimitExceeded : SecurityException("Bundle archive exceeds size limit")
+
+    fun requireArchiveBytes(existingBytes: Long, incomingBytes: Long = 0L): Long {
+        if (existingBytes > MAX_BUNDLE_ARCHIVE_BYTES - incomingBytes) throw ArchiveSizeLimitExceeded()
+        return existingBytes + incomingBytes
+    }
+
+    private val singleStreamContentRange = Regex("""bytes\s+(\d+)-(\d+)/(\d+)""", RegexOption.IGNORE_CASE)
+
+    fun singleStreamRangeTotal(header: String?, offset: Long): Long? {
+        val bounds = header?.let(singleStreamContentRange::matchEntire) ?: return null
+        val start = bounds.groupValues[1].toLongOrNull() ?: return null
+        val end = bounds.groupValues[2].toLongOrNull() ?: return null
+        val total = bounds.groupValues[3].toLongOrNull() ?: return null
+        return total.takeIf { start == offset && end >= start && end < total }
+    }
+
+    fun targetMetadataSizeIfPresent(targetDir: File, metadataFile: File): Long? {
+        val target = try {
+            Files.readAttributes(targetDir.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        } catch (_: NoSuchFileException) {
+            return null
+        }
+        if (!target.isDirectory) {
+            throw BundleDiffReconstructionException.IntegrityFailed("Bundle target is not a directory")
+        }
+        val metadata = try {
+            Files.readAttributes(metadataFile.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        } catch (_: NoSuchFileException) {
+            throw BundleDiffReconstructionException.IntegrityFailed("Bundle target has no metadata control file")
+        }
+        if (!metadata.isRegularFile) {
+            throw BundleDiffReconstructionException.IntegrityFailed("Bundle target has no regular metadata control file")
+        }
+        return metadata.size()
+    }
 
     // Shared by all native module instances in this process.
     private val liveStagingDirectories = mutableSetOf<File>()
@@ -98,7 +139,16 @@ internal object BundleDiffReconstruction {
         val destDirPath = destDir.canonicalFile.toPath()
         var totalBytesWritten = 0L
         var entryCount = 0
-        ZipInputStream(FileInputStream(zipFilePath)).use { zipIn ->
+        val zipStream = object : ZipInputStream(FileInputStream(zipFilePath)) {
+            override fun createZipEntry(name: String): ZipEntry {
+                // Android 14 checks these paths after creating the entry and reports a generic ZipException.
+                if (name.startsWith('/') || name.split('/').any { it == ".." }) {
+                    throw SecurityException("Unsafe zip entry path")
+                }
+                return super.createZipEntry(name)
+            }
+        }
+        zipStream.use { zipIn ->
             var entry: ZipEntry? = zipIn.nextEntry
             while (entry != null) {
                 entryCount++
@@ -243,11 +293,11 @@ internal object BundleDiffReconstruction {
         return sb.toString()
     }
 
-    fun writeDescriptor(descriptor: DiffArchiveDescriptor, file: File) {
-        try {
+    fun writeDescriptor(descriptor: DiffArchiveDescriptor, file: File): Boolean {
+        val tmpFile = File(file.parentFile, "${file.name}.tmp")
+        return try {
             val parent = file.parentFile
             if (parent != null && !parent.exists()) parent.mkdirs()
-            val tmpFile = File(file.parentFile, "${file.name}.tmp")
             val json = buildString {
                 append('{')
                 append("\"appVersion\":").append(jsonEscape(descriptor.appVersion)).append(',')
@@ -266,12 +316,12 @@ internal object BundleDiffReconstruction {
                 fos.write(json.toByteArray(Charsets.UTF_8))
                 fos.fd.sync()
             }
-            if (file.exists()) file.delete()
-            if (!tmpFile.renameTo(file)) {
-                tmpFile.delete()
-            }
+            // Replace the sidecar atomically so a failed move leaves the previous record intact.
+            Files.move(tmpFile.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            true
         } catch (_: Exception) {
-            // Best-effort sidecar persistence
+            tmpFile.delete()
+            false
         }
     }
 
@@ -314,38 +364,36 @@ internal object BundleDiffReconstruction {
         descriptor: DiffArchiveDescriptor?,
     ): String? {
         val normalizedFull = normalizeSha256(suppliedFullSha256) ?: return null
-        if (descriptor != null && !constantTimeEqualHex(descriptor.sha256, normalizedFull)) {
-            return null
-        }
-        if (!suppliedDiffSha256.isNullOrEmpty()) {
+        if (descriptor == null || descriptor.fallbackRequired ||
+            !constantTimeEqualHex(descriptor.sha256, normalizedFull)
+        ) return null
+        if (suppliedDiffSha256 != null) {
             val normalizedDiff = normalizeSha256(suppliedDiffSha256) ?: return null
-            if (descriptor != null && !constantTimeEqualHex(descriptor.diffSha256, normalizedDiff)) {
-                return null
-            }
-            return normalizedDiff
+            if (!constantTimeEqualHex(descriptor.diffSha256, normalizedDiff)) return null
         }
-        return descriptor?.diffSha256
+        return descriptor.diffSha256
+    }
+
+    data class VerifiedDiffMetadata(val fullSha256: String, val diffSha256: String, val metadataSha256: String) {
+        fun matches(fullSha256: String, diffSha256: String?): Boolean =
+            constantTimeEqualHex(this.fullSha256, fullSha256) &&
+                (diffSha256 == null || normalizeSha256(diffSha256) == this.diffSha256)
     }
 
     fun resolveTrustedMetadataSha256ForPackageVerify(
         suppliedFullSha256: String,
         suppliedSignature: String?,
-        inMemoryVerified: Pair<String, String>?,
+        inMemoryVerified: VerifiedDiffMetadata?,
         descriptor: DiffArchiveDescriptor?,
         persistedAscSignature: String?,
+        suppliedDiffSha256: String? = null,
         verifySignatureAndExtractMetadataSha256: (String) -> String?,
     ): String? {
         val normalizedFull = normalizeSha256(suppliedFullSha256) ?: return null
-        if (inMemoryVerified != null) {
-            if (!constantTimeEqualHex(inMemoryVerified.first, normalizedFull)) return null
-            return normalizeSha256(inMemoryVerified.second)
+        if (inMemoryVerified?.matches(normalizedFull, suppliedDiffSha256) == true) {
+            normalizeSha256(inMemoryVerified.metadataSha256)?.let { return it }
         }
-        if (descriptor != null && !constantTimeEqualHex(descriptor.sha256, normalizedFull)) {
-            return null
-        }
-        if (suppliedSignature.isNullOrEmpty() && descriptor == null) {
-            return null
-        }
+        if (resolveExpectedDiffSha256ForPackageVerify(normalizedFull, suppliedDiffSha256, descriptor) == null) return null
         val candidateSignatures = listOfNotNull(
             suppliedSignature?.takeIf { it.isNotEmpty() },
             descriptor?.signature?.takeIf { it.isNotEmpty() },
@@ -411,7 +459,7 @@ internal object BundleDiffReconstruction {
         if (relPath.isEmpty() || relPath.startsWith("/") || relPath.contains('\\') || relPath.contains('\u0000')) {
             return false
         }
-        if (relPath == "metadata.json" || relPath == "diff-manifest.json" || relPath == ".DS_Store") {
+        if (relPath == "metadata.json" || relPath == "diff-manifest.json") {
             return false
         }
         val components = relPath.split('/')

@@ -197,6 +197,31 @@ final class BundleCryptoCoreTests: XCTestCase {
     }
   }
 
+  func testRelativeMetadataAndListedLegacyFilesAreHashed() throws {
+    try withTemporaryDirectory { root in
+      let nested = root.appendingPathComponent("assets", isDirectory: true)
+      try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+      try Data("control".utf8).write(to: root.appendingPathComponent("metadata.json"))
+      try Data("abc".utf8).write(to: nested.appendingPathComponent("metadata.json"))
+      try Data("abc".utf8).write(to: root.appendingPathComponent(".DS_Store"))
+
+      let hashes = try BundleCryptoCore.hashDir(root.path)
+      XCTAssertEqual(hashes.map(\.relativePath), ["assets/metadata.json"])
+      let sha = try XCTUnwrap(hashes.first?.sha256)
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(dirPath: root.path, entries: []))
+      XCTAssertTrue(BundleCryptoCore.verifyDirAgainstHashes(dirPath: root.path, entries: hashes))
+      XCTAssertTrue(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: root.path, entries: hashes + [.init(relativePath: ".DS_Store", sha256: sha)]
+      ))
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: root.path, entries: hashes + [.init(relativePath: ".DS_Store", sha256: expectedSignedHash)]
+      ))
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: root.path, entries: hashes + [.init(relativePath: "assets", sha256: sha)]
+      ))
+    }
+  }
+
   func testExtractedPathSafetyRejectsSymlinks() throws {
     try withTemporaryDirectory { root in
       let destination = root.appendingPathComponent("bundle", isDirectory: true)

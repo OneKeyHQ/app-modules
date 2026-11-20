@@ -524,90 +524,70 @@ object BundleCryptoCore {
       OneKeyLog.error("BundleCrypto", "[bundle-verify] dir not found: $dirPath")
       return false
     }
-    val jsBundleDir = dir.absolutePath + "/"
     val resolvedDir = try { dir.canonicalFile.toPath() } catch (e: Exception) { return false }
-    val expected = HashMap<String, String>()
+    val remaining = HashMap<String, String>()
     for (entry in entries) {
       if (entry.relativePath.isEmpty() || File(entry.relativePath).isAbsolute) return false
       val resolvedFile = try { File(dir, entry.relativePath).canonicalFile.toPath() } catch (e: Exception) { return false }
       if (resolvedFile == resolvedDir || !resolvedFile.startsWith(resolvedDir)) return false
-      expected[entry.relativePath] = entry.sha256
+      if (remaining.put(entry.relativePath, entry.sha256) != null) return false
     }
 
-    if (!validateFilesRecursive(dir, expected, jsBundleDir)) return false
+    val verified = walkRegularFiles(dir, dir) { file, relativePath ->
+      val expected = remaining[relativePath]
+      if (expected == null && isUnlistedExemptFile(file, relativePath)) {
+        return@walkRegularFiles true
+      }
+      val actual = if (expected == null) null else calculateSHA256(file.absolutePath).sha256
+      if (expected == null || actual == null || !secureCompare(expected, actual)) {
+        OneKeyLog.error("BundleCrypto", "[bundle-verify] missing hash or SHA256 mismatch for $relativePath")
+        return@walkRegularFiles false
+      }
+      remaining.remove(relativePath)
+      true
+    }
+    if (verified && remaining.isNotEmpty()) {
+      OneKeyLog.error("BundleCrypto", "[bundle-verify] no verified file for metadata entry: ${remaining.keys.first()}")
+    }
+    return verified && remaining.isEmpty()
+  }
 
-    // Verify completeness.
-    for ((relativePath, _) in expected) {
-      val expectedFile = File(jsBundleDir + relativePath)
-      if (!expectedFile.exists()) {
-        OneKeyLog.error("BundleCrypto", "[bundle-verify] File listed in metadata but missing on disk: $relativePath")
+  private fun isUnlistedExemptFile(file: File, relativePath: String): Boolean =
+    relativePath == "metadata.json" || file.name == ".DS_Store"
+
+  private fun walkRegularFiles(
+    root: File,
+    directory: File,
+    visit: (File, String) -> Boolean,
+  ): Boolean {
+    val files = directory.listFiles() ?: return false
+    for (file in files) {
+      if (Files.isSymbolicLink(file.toPath())) return false
+      if (file.isDirectory) {
+        if (!walkRegularFiles(root, file, visit)) return false
+      } else if (!file.isFile || !visit(file, file.relativeTo(root).invariantSeparatorsPath)) {
         return false
       }
     }
     return true
   }
 
-  private fun validateFilesRecursive(dir: File, expected: Map<String, String>, jsBundleDir: String): Boolean {
-    val files = dir.listFiles() ?: return true
-    for (file in files) {
-      if (file.isDirectory) {
-        if (!validateFilesRecursive(file, expected, jsBundleDir)) return false
-      } else {
-        // Skip only by EXACT basename (defense-in-depth: substring match could
-        // let an unverified file like "evil-metadata.json" bypass hashing).
-        if (file.name == "metadata.json" || file.name == ".DS_Store") continue
-        // Strip only the leading base dir; a global replace would corrupt paths
-        // where the base dir name recurs deeper in the tree.
-        val relativePath = file.absolutePath.removePrefix(jsBundleDir)
-        val expectedSHA256 = expected[relativePath]
-        if (expectedSHA256 == null) {
-          OneKeyLog.error("BundleCrypto", "[bundle-verify] File on disk not found in metadata: $relativePath")
-          return false
-        }
-        val actualSHA256 = calculateSHA256(file.absolutePath).sha256
-        if (actualSHA256 == null) {
-          OneKeyLog.error("BundleCrypto", "[bundle-verify] Failed to calculate SHA256 for file: $relativePath")
-          return false
-        }
-        if (!secureCompare(expectedSHA256, actualSHA256)) {
-          OneKeyLog.error("BundleCrypto", "[bundle-verify] SHA256 mismatch for $relativePath")
-          return false
-        }
-      }
-    }
-    return true
-  }
-
-  // MARK: - Hash a whole dir into relativePath -> sha256 entries (new helper,
-  // same recursion/skip rules as verifyDirAgainstHashes). Throws if any file
-  // cannot be hashed.
+  // MARK: - Hash every regular payload file. Throws if the walk or a hash fails.
 
   fun hashDir(dirPath: String): List<DirHash> {
     val dir = File(dirPath)
-    if (!dir.exists() || !dir.isDirectory) {
-      return emptyList()
-    }
-    val jsBundleDir = dir.absolutePath + "/"
+    if (!dir.exists() || !dir.isDirectory) return emptyList()
     val results = ArrayList<DirHash>()
-    hashFilesRecursive(dir, jsBundleDir, results)
-    return results
-  }
-
-  private fun hashFilesRecursive(dir: File, jsBundleDir: String, out: ArrayList<DirHash>) {
-    val files = dir.listFiles() ?: return
-    for (file in files) {
-      if (file.isDirectory) {
-        hashFilesRecursive(file, jsBundleDir, out)
-      } else {
-        // Skip only by EXACT basename (mirror verify loop / sibling check).
-        if (file.name == "metadata.json" || file.name == ".DS_Store") continue
-        // Strip only the leading base dir (see validateFilesRecursive).
-        val relativePath = file.absolutePath.removePrefix(jsBundleDir)
+    val hashed = walkRegularFiles(dir, dir) { file, relativePath ->
+      if (!isUnlistedExemptFile(file, relativePath)) {
         val sha256 = calculateSHA256(file.absolutePath).sha256
           ?: throw Exception("HASH_FAILED:$relativePath")
-        out.add(DirHash(relativePath, sha256))
+        results.add(DirHash(relativePath, sha256))
       }
+      true
     }
+    if (!hashed) throw Exception("HASH_DIRECTORY_WALK_FAILED")
+    return results
   }
 
   // MARK: - Symlink / path-traversal guard — ported from the unzip-time guard

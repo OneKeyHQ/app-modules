@@ -358,6 +358,50 @@ fun main() {
         )
         expect(copiedFromSplit && sha256OfFile(copiedIconDest.absolutePath) == iconHash, "copied drawable resource from split configuration APK")
 
+        val archiveLimit = BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES
+        expect(archiveLimit == 512L * 1024 * 1024, "OTA archive cap is 512 MiB")
+        expect(BundleDiffReconstruction.requireArchiveBytes(archiveLimit - 1, 1) == archiveLimit, "single-stream accepts the exact archive limit")
+        expect(
+            runCatching { BundleDiffReconstruction.requireArchiveBytes(archiveLimit, 1) }.exceptionOrNull() is
+                BundleDiffReconstruction.ArchiveSizeLimitExceeded,
+            "single-stream rejects a chunk crossing the archive limit",
+        )
+        expect(
+            runCatching { BundleDiffReconstruction.requireArchiveBytes(archiveLimit, Long.MAX_VALUE) }.exceptionOrNull() is
+                BundleDiffReconstruction.ArchiveSizeLimitExceeded,
+            "size validation cannot wrap a declared resume length",
+        )
+        expect(BundleDiffReconstruction.singleStreamRangeTotal("bytes 0-63/64", 0) == 64L, "fresh 206 begins at zero")
+        expect(BundleDiffReconstruction.singleStreamRangeTotal("bytes 16-63/64", 16) == 64L, "resumed 206 begins at the requested offset")
+        expect(BundleDiffReconstruction.singleStreamRangeTotal("bytes 16-63/64", 0) == null, "fresh 206 rejects a nonzero offset")
+        expect(BundleDiffReconstruction.singleStreamRangeTotal("bytes 0-63/64", 16) == null, "resumed 206 rejects a zero offset")
+        expect(BundleDiffReconstruction.singleStreamRangeTotal(null, 0) == null, "206 must provide a Content-Range")
+        expect(BundleDiffReconstruction.singleStreamRangeTotal("bytes 0-63/64 junk", 0) == null, "206 rejects an invalid Content-Range suffix")
+        expect(BundleDiffReconstruction.singleStreamRangeTotal("bytes 0-64/64", 0) == null, "206 rejects an end outside the advertised archive")
+
+        val target = File(tempRoot, "diff-verification-target")
+        val targetMetadata = File(target, "metadata.json")
+        fun metadataSize() = BundleDiffReconstruction.targetMetadataSizeIfPresent(target, targetMetadata)
+        expect(metadataSize() == null, "absent target uses archive verification")
+        target.writeText("not a directory")
+        expect(
+            runCatching { metadataSize() }.exceptionOrNull() is BundleDiffReconstructionException.IntegrityFailed,
+            "target occupied by a file fails integrity verification",
+        )
+        check(target.delete() && target.mkdir())
+        expect(
+            runCatching { metadataSize() }.exceptionOrNull() is BundleDiffReconstructionException.IntegrityFailed,
+            "existing target without metadata fails integrity verification",
+        )
+        check(targetMetadata.mkdir())
+        expect(
+            runCatching { metadataSize() }.exceptionOrNull() is BundleDiffReconstructionException.IntegrityFailed,
+            "metadata directory fails integrity verification",
+        )
+        check(targetMetadata.delete())
+        targetMetadata.writeText("{}")
+        expect(metadataSize() == 2L, "existing target with regular metadata uses tree verification")
+
         // 9. Descriptor persistence, signature preservation on cache hit, pre-ASC verifyBundle, post-restart fail-closed verifyBundle, and fallback resolution
         val fullSha = "1".repeat(64)
         val diffSha = "2".repeat(64)
@@ -405,8 +449,41 @@ fun main() {
             "post-restart verifyBundle fails closed without verified signature",
         )
 
+        expect(
+            BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(fullSha, diffSha, null) == null,
+            "an explicit diff digest cannot replace the download record",
+        )
+        expect(
+            BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(fullSha, wrongSha, loadedDesc) == null,
+            "an explicit diff digest must match the download record",
+        )
+        expect(
+            BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                suppliedFullSha256 = wrongSha,
+                suppliedSignature = "VALID_PGP_SIGNATURE",
+                inMemoryVerified = null,
+                descriptor = null,
+                persistedAscSignature = null,
+                verifySignatureAndExtractMetadataSha256 = { metaSha },
+            ) == null,
+            "a valid version-bound signature cannot establish the full archive digest",
+        )
+        val liveRecord = BundleDiffReconstruction.VerifiedDiffMetadata(fullSha, diffSha, metaSha)
+        expect(liveRecord.matches(fullSha, diffSha), "verified record matches both digests")
+        expect(!liveRecord.matches(fullSha, wrongSha), "verified record rejects a different diff digest")
+
         val signedDesc = desc.copy(signature = "VALID_PGP_SIGNATURE", fallbackRequired = true)
-        BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile)
+        val descriptorTemp = File(metaFile.parentFile, "${metaFile.name}.tmp")
+        check(descriptorTemp.mkdir())
+        expect(
+            !BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile),
+            "blocked temporary write reports failure",
+        )
+        expect(
+            BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103") == loadedDesc,
+            "failed fallback descriptor write preserves the previous download record",
+        )
+        expect(BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile), "atomically replace an existing descriptor")
         val reloadedSigned = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
         expect(reloadedSigned?.signature == "VALID_PGP_SIGNATURE" && reloadedSigned.fallbackRequired, "signed descriptor with fallbackRequired persisted")
 
@@ -421,17 +498,21 @@ fun main() {
                 suppliedFullSha256 = fullSha,
                 suppliedSignature = null,
                 inMemoryVerified = null,
-                descriptor = mergedDesc,
+                descriptor = mergedDesc.copy(fallbackRequired = false),
                 persistedAscSignature = null,
                 verifySignatureAndExtractMetadataSha256 = { sig -> if (sig == "VALID_PGP_SIGNATURE") metaSha else null },
             ) == metaSha,
             "post-restart verifyBundle re-establishes trust from preserved signature",
         )
         expect(
+            BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(fullSha, diffSha, reloadedSigned) == null,
+            "a full-fallback record cannot authorize a diff reconstruction",
+        )
+        expect(
             BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
                 suppliedFullSha256 = wrongSha,
                 suppliedSignature = null,
-                inMemoryVerified = fullSha to metaSha,
+                inMemoryVerified = liveRecord,
                 descriptor = signedDesc,
                 persistedAscSignature = null,
                 verifySignatureAndExtractMetadataSha256 = { metaSha },
