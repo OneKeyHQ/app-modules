@@ -7860,6 +7860,76 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 
+  it('suppresses a legacy row click after releasing a cancelled drag over an adjacent action', () => {
+    const { document, host, engine, dragging } = mount('handle', [
+      {
+        ...(handleRows[0] as IdentityRow),
+        trailing: [
+          { kind: 'icon', name: 'PencilOutline', actionKey: 'edit' },
+          { kind: 'drag', actionKey: 'handle.info' },
+        ],
+      },
+    ]);
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const handle = host.querySelector(
+          '[data-native-list-action="handle.info"]'
+        )!;
+        const edit = host.querySelector('[data-native-list-action="edit"]')!;
+        const common = handle.parentElement!;
+        expect(edit.parentElement).toBe(common);
+        const pointer = (type: string, target: Element, clientX: number) =>
+          target.dispatchEvent(
+            Object.assign(
+              new document.defaultView!.Event(type, {
+                bubbles: true,
+                cancelable: true,
+              }),
+              {
+                pointerId: 1,
+                pointerType: 'mouse',
+                isPrimary: true,
+                button: 0,
+                clientX,
+                clientY: 20,
+              }
+            )
+          );
+        const click = (target: Element) =>
+          target.dispatchEvent(
+            new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+              clientX: 60,
+              clientY: 20,
+            })
+          );
+
+        pointer('pointerdown', handle, 10);
+        pointer('pointermove', handle, 60);
+        expect(dragging()).toBe(true);
+        engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+        expect(dragging()).toBe(false);
+        pointer('pointerup', edit, 60);
+        click(common);
+        expect(onRowAction).not.toHaveBeenCalled();
+
+        pointer('pointerdown', edit, 60);
+        pointer('pointerup', edit, 60);
+        click(edit);
+        expect(onRowAction).toHaveBeenCalledTimes(1);
+        expect(onRowAction).toHaveBeenCalledWith(
+          expect.objectContaining({ actionKey: 'edit' })
+        );
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
     const { document, host, engine, dragging } = mount('row', [
       { ...(handleRows[0] as IdentityRow), draggable: true, trailing: [] },

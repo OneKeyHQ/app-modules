@@ -685,7 +685,9 @@ and retain the currently accepted snapshot.
   ID, native cancellation, or 500 ms after release. A click without a pointer ID
   matches the most recent release at the same action or row and client position
   (within one CSS pixel), using the input type when the browser supplies it.
-  Releases outside the list cannot replace that match. A new short tap or
+  For a press and release on different elements, the match uses their nearest
+  shared ancestor as the click target. Releases outside the list cannot replace
+  that match. A new short tap or
   keyboard activation can still emit the action. Icons beside the handle keep
   their own actions.
   Callers can use `pressDisabled` to disable row opening.
