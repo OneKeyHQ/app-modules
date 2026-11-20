@@ -66,6 +66,8 @@ export class OverlayStore {
 
   private focusedPageHost: string | null | undefined;
 
+  private isPageHostAvailable?: (hostKey: string | undefined) => boolean;
+
   private readonly listeners = new Set<() => void>();
 
   private snapshot: IOverlaySnapshot = {
@@ -212,6 +214,13 @@ export class OverlayStore {
     );
   }
 
+  /** @internal Web supplies its DOM host check for blocking and Escape. */
+  setPageHostAvailabilityCheck(
+    isAvailable: (hostKey: string | undefined) => boolean
+  ): void {
+    this.isPageHostAvailable = isAvailable;
+  }
+
   /** Native / navigation signal: the owning page was covered, detached or restored. */
   setPageVisible(ownerKey: string, visible: boolean): void {
     if ((this.pageVisibility.get(ownerKey) ?? true) === visible) {
@@ -262,7 +271,7 @@ export class OverlayStore {
         !e.suspended &&
         (e.blocking || e.dismissible) &&
         (e.scope === 'global' ||
-          (this.isPageHostFocused(e.hostKey) &&
+          (this.isPageHostInteractive(e.hostKey) &&
             (focusedHostKey === undefined || e.hostKey === focusedHostKey)))
     );
     const top = candidates[candidates.length - 1];
@@ -274,12 +283,12 @@ export class OverlayStore {
       : { kind: 'block' };
   }
 
-  /** Topmost visible blocking entry; everything rendered below it is inert. */
   /** The entry whose `statusBarStyle` applies (see `findStatusBarOwner`). */
   getStatusBarOwner(): IOverlayEntry | undefined {
     return findStatusBarOwner(this.snapshot);
   }
 
+  /** Topmost visible blocking entry; everything rendered below it is inert. */
   getBlockingTop(): IOverlayEntry | undefined {
     const { entries } = this.snapshot;
     for (let i = entries.length - 1; i >= 0; i -= 1) {
@@ -289,12 +298,19 @@ export class OverlayStore {
         entry.phase !== 'closing' &&
         !entry.suspended &&
         entry.blocking &&
-        (entry.scope === 'global' || this.isPageHostFocused(entry.hostKey))
+        (entry.scope === 'global' || this.isPageHostInteractive(entry.hostKey))
       ) {
         return entry;
       }
     }
     return undefined;
+  }
+
+  private isPageHostInteractive(hostKey: string | undefined): boolean {
+    return (
+      this.isPageHostFocused(hostKey) &&
+      (this.isPageHostAvailable?.(hostKey) ?? true)
+    );
   }
 
   private dismissWithoutEmit(

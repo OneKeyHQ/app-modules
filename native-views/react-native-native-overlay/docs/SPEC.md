@@ -614,7 +614,8 @@ the first/last child respectively. With no tabbable children, focus stays on
 the entry root. Disabled, negative-tabindex, hidden and inert subtrees are
 excluded. Positive tabindex values precede ordinary DOM-order tab stops.
 Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
-focus loop. Existing focus entry/restore and Escape policies are unchanged.
+focus loop. When a page dialog becomes the top blocker again, it takes focus
+on its entry root if focus is currently outside the dialog.
 
 A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
 when its entry is non-blocking. This permits a transparent outside-click
@@ -713,9 +714,12 @@ order within that level; dismissal restores entries no longer below a blocker.
 On Web, a covered root route can keep its page overlays visible. Its overlay
 host is inert, and its entries cannot block the foreground route or consume
 Escape. Switching focus restores eligibility without dismissing or remounting
-entries. Host registration and unregistration recalculate DOM isolation. Global
-overlays remain eligible regardless of the focused page host. iOS and Android
-retain their existing page visibility and back handling.
+entries. Host registration and unregistration recalculate DOM isolation. A
+page entry requires a connected, registered host to block the DOM or consume
+Escape. If its host detaches, the next eligible overlay takes precedence, or
+the page becomes interactive if none remains. Global overlays remain eligible
+regardless of the focused page host. iOS and Android use their native host
+lifecycle for page visibility and back handling.
 
 On Android, a blocking page entry MUST hide underlying page/navigation siblings
 from accessibility while preserving the page host and the blocking entry. Entries
@@ -841,7 +845,12 @@ Automated (P0):
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed. It also verifies host isolation and Escape
-  handling when root-route focus changes.
+  handling when root-route focus changes or the top page host detaches.
+- `tests/browser/pageIsolation.test.cjs` verifies in Chromium that removing a
+  host while its dialog stays visible restores page clicks and focus, and that
+  a dialog opened on a covered route regains focus and contains Tab when its
+  route returns. It uses the same browser dependencies as the toast tests
+  (§5.14).
 - `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
   Android views: page/navigation siblings, entries above the blocker, original
   flags, global/page transitions, detached hosts and changing blockers. These

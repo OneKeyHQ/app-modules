@@ -48,6 +48,7 @@ function setInert(element: HTMLElement | null | undefined, inert: boolean) {
 
 // Elements outside a page host made inert for a blocking page overlay.
 let pageInertElements = new Set<HTMLElement>();
+let topPageBlocker: HTMLElement | undefined;
 
 /**
  * A page host lives inside the app root, so a blocking page overlay cannot
@@ -137,6 +138,26 @@ export function syncOverlayInert() {
       top?.scope === 'global' && level === top.level ? top : undefined
     );
   }
+
+  const pageEntry =
+    top &&
+    pageHost?.querySelector<HTMLElement>(
+      `[${ENTRY_ATTRIBUTE}][data-stack-order="${top.seq}"]`
+    );
+  const blocker = pageEntry && !pageEntry.inert ? pageEntry : undefined;
+  if (blocker === topPageBlocker) return;
+  topPageBlocker = blocker;
+  if (!blocker) return;
+  // Wait for the route commit before focusing a newly interactive dialog.
+  requestAnimationFrame(() => {
+    if (
+      topPageBlocker === blocker &&
+      blocker.isConnected &&
+      !blocker.contains(document.activeElement)
+    ) {
+      blocker.focus({ preventScroll: true });
+    }
+  });
 }
 
 function onKeyDown(event: KeyboardEvent) {
@@ -160,6 +181,9 @@ function installOverlayWebManager() {
     return;
   }
   installed = true;
+  overlayStore.setPageHostAvailabilityCheck(
+    (hostKey) => getOverlayPageHost(hostKey)?.isConnected === true
+  );
   overlayStore.subscribe(syncOverlayInert);
   document.addEventListener('keydown', onKeyDown, true);
 }

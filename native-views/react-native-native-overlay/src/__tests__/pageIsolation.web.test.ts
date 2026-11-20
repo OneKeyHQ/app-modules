@@ -12,6 +12,7 @@ import {
   registerOverlayDismissRequester,
   registerOverlayPageHost,
   scheduleOverlayInertSync,
+  syncOverlayInert,
 } from '../web/overlayLayers';
 
 function entry(level: number, seq: number) {
@@ -150,6 +151,46 @@ it('restores a non-blocking page entry when the blocker is removed', () => {
   expect(passiveElement.inert).toBe(false);
   expect(content.inert).toBe(false);
   unregister();
+});
+
+it('skips a disconnected top host in favor of the next connected blocker', () => {
+  const app = document.getElementById('root')!;
+  const content = document.createElement('button');
+  const lowerHost = document.createElement('div');
+  const upperHost = document.createElement('div');
+  app.append(content, lowerHost, upperHost);
+  const unregisterLower = registerOverlayPageHost('lower', lowerHost);
+  const unregisterUpper = registerOverlayPageHost('upper', upperHost);
+  const lower = overlayStore.request({
+    id: 'lower-dialog',
+    scope: 'page',
+    hostKey: 'lower',
+    ownerKey: 'lower-page',
+  });
+  const upper = overlayStore.request({
+    id: 'upper-dialog',
+    scope: 'page',
+    hostKey: 'upper',
+    ownerKey: 'upper-page',
+    level: 'secure',
+  });
+  lowerHost.append(entry(100, lower.seq));
+  upperHost.append(entry(300, upper.seq));
+  expect(lowerHost.inert).toBe(true);
+  expect(overlayStore.getBlockingTop()?.id).toBe(upper.id);
+
+  upperHost.remove();
+  syncOverlayInert();
+  expect(overlayStore.getBlockingTop()?.id).toBe(lower.id);
+  expect(overlayStore.resolveBack()).toEqual({ kind: 'dismiss', id: lower.id });
+  expect(app.inert).toBe(false);
+  expect(content.inert).toBe(true);
+  expect(lowerHost.inert).toBe(false);
+
+  unregisterUpper();
+  unregisterLower();
+  expect(overlayStore.resolveBack()).toEqual({ kind: 'pass' });
+  expect(content.inert).toBe(false);
 });
 
 it('keeps a covered root overlay visible and restores isolation and Escape when its route regains focus', () => {
