@@ -77,8 +77,20 @@ Status: **Implemented in source**; native device/network acceptance remains open
   Any validation work that cannot be interrupted may finish in the background.
   Its late result cannot start transport or update progress.
 - Node clients in the Electron main process share the baseline admission
-  counters across the CommonJS and ESM entry points. Cancellation and upload
-  progress belong to the client instance.
+  counters and the `SniRequestError` constructor across the CommonJS and ESM
+  entry points. An admission rejection is an instance of the error exported by
+  either entry. Cancellation and upload progress belong to the client instance.
+- Node uploads require `getAllowedUploadRoots` to return at least one usable
+  app-owned directory. The defaults allow direct-child `.zip` files and
+  `POST` or `PUT` to `/wallet/v1/client/log` on
+  `https://wallet.onekeycn.com` or `https://wallet.onekeytest.com`.
+- After checking the canonical path against the allowed roots, the client
+  opens a read-only handle and checks its identity against the canonical path.
+  The regular-file and size checks use that handle. Optional verification
+  receives the canonical path and size from that check. The same handle is
+  retained through admission and used to stream the body. It is closed on
+  validation failure, timeout, cancellation, transport failure, or success.
+  The caller remains responsible for keeping file contents unchanged.
 - Electron consumers supply their session's `resolveProxy(url)` to the
   client. The proxy preflight rejects with `SNI_UNSUPPORTED` when no resolver
   is available or the resolver returns an empty route. Direct SNI transport
@@ -88,8 +100,11 @@ Status: **Implemented in source**; native device/network acceptance remains open
   reject with `SNI_SECURITY_POLICY_FAILED`. Premature request closure settles
   the operation and releases admission. Header dictionaries preserve valid
   names and repeated values regardless of object prototype properties.
-- File stream errors reject with `SNI_FILE_READ_FAILED` and a fixed public
-  message. Local paths are excluded from that error and its diagnostic log.
+- Node streams at most the file length declared in `Content-Length`.
+  A short read rejects immediately with `SNI_FILE_READ_FAILED` and aborts the
+  request. A full read ends the request after the final write callback.
+  File stream errors and their diagnostic logs use a fixed message that
+  excludes local paths.
 - Clearing the DNS cache rotates the client's agent, immediately destroys
   idle sockets on the previous agent and closes its active sockets when
   they finish.
@@ -308,8 +323,11 @@ retain the generic logger's sensitive-data filtering.
   supported forwarding, and synchronous native errors becoming rejections.
 - Node tests cover method and response handling, shared admission, upload
   deadlines and cancellation, file-error logging, proxy preflight and agent
-  cleanup. A packed-package smoke test checks both NodeNext declarations and
-  shared admission for CommonJS and ESM consumers.
+  cleanup. Upload tests check that the client retains the opened file across
+  admission, closes it on cancellation, and aborts a short body.
+- After building the package, `node --test tests/node-entrypoints.test.mjs`
+  verifies that the later-loaded Node entry sees a shared queue overflow as a
+  `SniRequestError`. A packed-package smoke test checks NodeNext declarations.
 - Swift validation tests exercise bounded reads after validated files grow or
   become empty, and exact-limit binary contents.
 - Android tests exercise actual RequestBody writes for exact-limit data, growth

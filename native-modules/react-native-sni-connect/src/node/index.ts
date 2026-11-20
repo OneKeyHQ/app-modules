@@ -198,7 +198,7 @@ type SniRequestState = {
   cancel: (error: SniRequestError) => void;
 };
 
-export class SniRequestError extends Error {
+const SniRequestErrorClass = class SniRequestError extends Error {
   code: string;
   failClosed: boolean;
 
@@ -208,7 +208,19 @@ export class SniRequestError extends Error {
     this.code = code;
     this.failClosed = failClosed;
   }
-}
+};
+
+const requestErrorKey = Symbol.for(
+  '@onekeyfe/react-native-sni-connect.requestError'
+);
+const processWithSniError = process as typeof process & {
+  [requestErrorKey]?: typeof SniRequestErrorClass;
+};
+
+// Admission is process-shared, and either Node entry can consume its errors.
+export const SniRequestError = (processWithSniError[requestErrorKey] ??=
+  SniRequestErrorClass);
+export type SniRequestError = InstanceType<typeof SniRequestErrorClass>;
 
 export function isSniFailClosedError(error: unknown): boolean {
   const code =
@@ -650,11 +662,39 @@ async function resolveAllowedUploadRoots(
   return roots.filter((root): root is string => !!root);
 }
 
+type OpenedUploadFile = {
+  filePath: string;
+  sizeBytes: number;
+  handle: fsPromises.FileHandle;
+  close: () => Promise<void>;
+};
+
+async function statCanonicalUploadPath(
+  realPath: string
+): Promise<fs.BigIntStats> {
+  try {
+    const stat = await fsPromises.lstat(realPath, { bigint: true });
+    if ((await fsPromises.realpath(realPath)) === realPath) return stat;
+  } catch {
+    invalidConfig('Upload file is not readable');
+  }
+  invalidConfig('Upload file path changed during validation');
+}
+
+function isSameFile(left: fs.BigIntStats, right: fs.BigIntStats): boolean {
+  return (
+    left.isFile() &&
+    right.isFile() &&
+    left.dev === right.dev &&
+    left.ino === right.ino
+  );
+}
+
 async function resolveUploadFile(
   filePath: unknown,
   options?: SniNodeUploadValidationOptions,
   signal?: AbortSignal
-): Promise<{ filePath: string; sizeBytes: number }> {
+): Promise<OpenedUploadFile> {
   if (typeof filePath !== 'string' || !filePath || hasControlChar(filePath)) {
     invalidConfig('Invalid filePath');
   }
@@ -701,40 +741,78 @@ async function resolveUploadFile(
     invalidConfig('Upload file is outside app storage');
   }
 
-  let stat: fs.Stats;
+  const pathStat = await statCanonicalUploadPath(realPath);
+  if (!pathStat.isFile()) {
+    invalidConfig('Upload file is not a regular file');
+  }
+  signal?.throwIfAborted();
+
+  let handle: fsPromises.FileHandle;
   try {
-    stat = await fsPromises.stat(realPath);
-    await fsPromises.access(realPath, fs.constants.R_OK);
+    // Windows does not expose the optional Unix open flags. Identity is
+    // checked on every platform before accepting the file.
+    const flags =
+      fs.constants.O_RDONLY |
+      (fs.constants.O_NOFOLLOW ?? 0) |
+      (fs.constants.O_NONBLOCK ?? 0);
+    handle = await fsPromises.open(realPath, flags);
   } catch {
     invalidConfig('Upload file is not readable');
   }
-  if (!stat.isFile()) {
-    invalidConfig('Upload file is not a regular file');
-  }
-  if (stat.size < 1 || stat.size > MAX_UPLOAD_FILE_BYTES) {
-    invalidConfig(`Invalid upload file size: ${stat.size}`);
-  }
-  signal?.throwIfAborted();
-  if (options?.verifyUploadFile) {
-    let verified: boolean;
-    try {
-      verified = await options.verifyUploadFile(realPath, stat.size);
-    } catch {
-      invalidConfig('Upload file verification failed');
+
+  let closing: Promise<void> | undefined;
+  const close = () => {
+    signal?.removeEventListener('abort', close);
+    return (closing ??= handle.close().catch(() => undefined));
+  };
+  signal?.addEventListener('abort', close, { once: true });
+
+  try {
+    signal?.throwIfAborted();
+    const stat = await handle
+      .stat({ bigint: true })
+      .catch(() => invalidConfig('Upload file is not readable'));
+    if (!isSameFile(stat, pathStat)) {
+      invalidConfig('Upload file path changed during validation');
+    }
+    if (stat.size < 1n || stat.size > BigInt(MAX_UPLOAD_FILE_BYTES)) {
+      invalidConfig(`Invalid upload file size: ${stat.size}`);
+    }
+    const sizeBytes = Number(stat.size);
+    signal?.throwIfAborted();
+
+    if (options?.verifyUploadFile) {
+      let verified: boolean;
+      try {
+        verified = await options.verifyUploadFile(realPath, sizeBytes);
+      } catch {
+        invalidConfig('Upload file verification failed');
+      }
+      signal?.throwIfAborted();
+      if (!verified) {
+        invalidConfig('Upload file was not collected by the main process');
+      }
+    }
+
+    const verifiedPathStat = await statCanonicalUploadPath(realPath);
+    if (
+      !isSameFile(stat, verifiedPathStat) ||
+      stat.size !== verifiedPathStat.size
+    ) {
+      invalidConfig('Upload file changed during validation');
     }
     signal?.throwIfAborted();
-    if (!verified) {
-      invalidConfig('Upload file was not collected by the main process');
-    }
+    return { filePath: realPath, sizeBytes, handle, close };
+  } catch (error) {
+    await close();
+    throw error;
   }
-  return { filePath: realPath, sizeBytes: stat.size };
 }
 
-export async function validateSniUploadFileConfig(
+function normalizeSniUploadFileConfig(
   config: SniNodeUploadFileConfig,
-  options?: SniNodeUploadValidationOptions,
-  signal?: AbortSignal
-): Promise<NormalizedSniRequestConfig> {
+  options?: SniNodeUploadValidationOptions
+): NormalizedSniRequestConfig {
   if ((config as { body?: unknown }).body !== undefined) {
     invalidConfig('uploadFile does not accept a body');
   }
@@ -773,9 +851,21 @@ export async function validateSniUploadFileConfig(
   ) {
     invalidConfig('Upload destination is not allowed');
   }
+  return normalized;
+}
+
+export async function validateSniUploadFileConfig(
+  config: SniNodeUploadFileConfig,
+  options?: SniNodeUploadValidationOptions,
+  signal?: AbortSignal
+): Promise<NormalizedSniRequestConfig> {
+  const normalized = normalizeSniUploadFileConfig(config, options);
+  const file = await resolveUploadFile(config.filePath, options, signal);
+  await file.close();
+  signal?.throwIfAborted();
   return {
     ...normalized,
-    bodyFile: await resolveUploadFile(config.filePath, options, signal),
+    bodyFile: { filePath: file.filePath, sizeBytes: file.sizeBytes },
   };
 }
 
@@ -1476,32 +1566,41 @@ export class SniNodeClient {
     const { signal } = requestState;
     let rejectOnAbort: (() => void) | undefined;
     let normalizedConfig: NormalizedSniRequestConfig;
+    let file: OpenedUploadFile | undefined;
     try {
       requestState.checkDeadline();
-      normalizedConfig = await new Promise<NormalizedSniRequestConfig>(
-        (resolve, reject) => {
-          rejectOnAbort = () => reject(signal.reason);
-          signal.addEventListener('abort', rejectOnAbort, { once: true });
-          validateSniUploadFileConfig(config, this.options, signal).then(
-            resolve,
-            reject
-          );
-        }
-      );
+      normalizedConfig = normalizeSniUploadFileConfig(config, this.options);
+      file = await new Promise<OpenedUploadFile>((resolve, reject) => {
+        rejectOnAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', rejectOnAbort, { once: true });
+        resolveUploadFile(config.filePath, this.options, signal).then(
+          resolve,
+          reject
+        );
+      });
       requestState.checkDeadline();
     } catch (error) {
       this.removeRequestState(requestState, undefined, undefined);
+      await file?.close();
       this.logInvalidConfig(config, 0, error, startedAt);
       throw error;
     } finally {
       if (rejectOnAbort) signal.removeEventListener('abort', rejectOnAbort);
     }
 
-    if (requestState.uploadProgress && normalizedConfig.bodyFile) {
-      requestState.uploadProgress.totalBytes =
-        normalizedConfig.bodyFile.sizeBytes;
+    if (requestState.uploadProgress) {
+      requestState.uploadProgress.totalBytes = file.sizeBytes;
     }
-    return this.execute(normalizedConfig, startedAt, requestState);
+    try {
+      return await this.execute(
+        normalizedConfig,
+        startedAt,
+        requestState,
+        file
+      );
+    } finally {
+      await file.close();
+    }
   }
 
   async getUploadProgress(
@@ -1521,10 +1620,12 @@ export class SniNodeClient {
   }
 
   private async execute(
-    normalizedConfig: NormalizedSniRequestConfig,
+    config: Omit<NormalizedSniRequestConfig, 'bodyFile'>,
     startedAt: number,
-    requestState: SniRequestState
+    requestState: SniRequestState,
+    bodyFile?: OpenedUploadFile
   ): Promise<SniNodeResponse> {
+    const normalizedConfig = bodyFile ? { ...config, bodyFile } : config;
     let releaseRequestSlot: (() => void) | undefined;
     let activeRequest: ClientRequest | undefined;
     let activeAgentState: SniAgentState | undefined;
@@ -1616,11 +1717,7 @@ export class SniNodeClient {
       const settleResolve = (response: SniNodeResponse) => {
         if (settled) return;
         settled = true;
-        if (
-          normalizedConfig.bodyFile &&
-          activeRequest &&
-          !activeRequest.writableEnded
-        ) {
+        if (bodyFile && activeRequest && !activeRequest.writableEnded) {
           activeRequest.destroy();
         }
         cleanup();
@@ -1720,9 +1817,7 @@ export class SniNodeClient {
         activeAgentState.activeRequests.add(request);
         this.requestAgentStates.set(request, activeAgentState);
         request.on('error', (error: Error) => {
-          settleReject(
-            classifyTransportError(error, Boolean(normalizedConfig.bodyFile))
-          );
+          settleReject(classifyTransportError(error, Boolean(bodyFile)));
         });
 
         request.once('upgrade', (_response, socket) => {
@@ -1767,15 +1862,15 @@ export class SniNodeClient {
         });
 
         if (settled) return;
-        const { bodyFile } = normalizedConfig;
         if (bodyFile) {
-          // Bounded to the validated size so a growing file cannot exceed
-          // the Content-Length that was already sent.
-          activeFileStream = fs.createReadStream(bodyFile.filePath, {
+          // Stream the validated object and cap reads at the declared length.
+          const fileStream = bodyFile.handle.createReadStream({
             start: 0,
             end: bodyFile.sizeBytes - 1,
+            autoClose: false,
           });
-          activeFileStream.on('error', () => {
+          activeFileStream = fileStream;
+          const rejectFileRead = () =>
             settleReject(
               new SniRequestError(
                 'SNI_FILE_READ_FAILED',
@@ -1783,7 +1878,9 @@ export class SniNodeClient {
                 true
               )
             );
-          });
+          fileStream.on('error', rejectFileRead);
+          let bytesRead = 0;
+          let fileEnded = false;
           let bytesSent = 0;
           let lastProgressAt = 0;
           const sendProgress = () => {
@@ -1809,19 +1906,18 @@ export class SniNodeClient {
               ),
             });
           };
-          activeFileStream.on('data', (chunk: Buffer | string) => {
+          fileStream.on('data', (chunk: Buffer | string) => {
+            if (settled) return;
             const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-            activeFileStream?.pause();
+            bytesRead += bytes.length;
+            fileStream.pause();
             request.write(bytes, (error?: Error | null) => {
               if (settled || requestState.settled) return;
               if (error) {
                 settleReject(classifyTransportError(error, true));
                 return;
               }
-              bytesSent = Math.min(
-                bodyFile.sizeBytes,
-                bytesSent + bytes.length
-              );
+              bytesSent += bytes.length;
               if (requestState.uploadProgress) {
                 requestState.uploadProgress = {
                   bytesSent,
@@ -1833,10 +1929,22 @@ export class SniNodeClient {
               } catch {
                 /* Progress must not fail upload. */
               }
-              activeFileStream?.resume();
+              if (fileEnded) {
+                request.end();
+              } else {
+                fileStream.resume();
+              }
             });
           });
-          activeFileStream.on('end', () => request.end());
+          fileStream.on('end', () => {
+            if (settled) return;
+            if (bytesRead !== bodyFile.sizeBytes) {
+              rejectFileRead();
+              return;
+            }
+            fileEnded = true;
+            if (bytesSent === bytesRead) request.end();
+          });
           return;
         }
 

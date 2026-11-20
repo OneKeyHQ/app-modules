@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import type { IncomingMessage } from 'http';
 import https, { type RequestOptions } from 'https';
 import { Socket } from 'net';
@@ -20,7 +21,13 @@ import SniNodeClient, {
   type SniNodeRequestConfig,
   type SniNodeUploadFileConfig,
   validateSniRequestConfig,
+  validateSniUploadFileConfig,
 } from '../node';
+
+jest.mock('fs/promises', () => {
+  const actual = jest.requireActual<typeof fsPromises>('fs/promises');
+  return { ...actual, open: jest.fn(actual.open) };
+});
 
 const baseConfig = (): SniNodeRequestConfig => ({
   ip: '93.184.216.34',
@@ -787,6 +794,17 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
     });
   }
 
+  function onNextAdmission(limiter: SniRequestLimiter): Promise<void> {
+    const acquire = limiter.acquire.bind(limiter);
+    return new Promise((resolve) => {
+      jest.spyOn(limiter, 'acquire').mockImplementationOnce((...args) => {
+        const result = acquire(...args);
+        resolve();
+        return result;
+      });
+    });
+  }
+
   beforeAll(() => {
     for (const dir of [
       USER_DATA_DIR,
@@ -805,6 +823,7 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
   });
 
   beforeEach(() => {
+    jest.mocked(fsPromises.open).mockClear();
     requests = [];
     streamSpy = jest.spyOn(fs.ReadStream.prototype, 'destroy');
     requestSpy = jest.spyOn(https, 'request').mockImplementation(((
@@ -1093,6 +1112,7 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
       'wallet.onekeycn.com',
       '93.184.216.34'
     );
+    const admissionRequested = onNextAdmission(limiter);
     const result = observeRejection(
       client.uploadFile(baseUploadConfig({ timeout: 100 }))
     );
@@ -1101,7 +1121,7 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
       await verificationStarted;
       jest.advanceTimersByTime(75);
       finishVerification(true);
-      await jest.advanceTimersByTimeAsync(0);
+      await admissionRequested;
       expect(limiter.snapshot().pendingRequests).toBe(1);
       jest.advanceTimersByTime(25);
       await expect(result).rejects.toMatchObject({ code: 'SNI_TIMEOUT' });
@@ -1115,24 +1135,111 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
     }
   });
 
-  test('keeps the archive path out of file stream errors and logs', async () => {
-    const logger = createMockLogger();
-    const filePath = path.join(ARCHIVE_DIR, 'removed-before-read.zip');
-    fs.writeFileSync(filePath, 'archive');
+  test('validates upload metadata without retaining the open file', async () => {
+    const config = await validateSniUploadFileConfig(baseUploadConfig(), {
+      getAllowedUploadRoots: () => [ARCHIVE_DIR],
+    });
+    expect(config.bodyFile).toEqual({
+      filePath: ARCHIVE_FILE,
+      sizeBytes: ARCHIVE_BYTES.length,
+    });
+    const opened = await jest.mocked(fsPromises.open).mock.results[0]?.value;
+    expect(opened?.fd).toBe(-1);
+  });
+
+  test('retains the validated file across admission and closes it after upload', async () => {
+    const filePath = path.join(ARCHIVE_DIR, 'queued.zip');
+    const movedPath = path.join(ARCHIVE_DIR, 'queued-renamed.zip');
+    fs.writeFileSync(filePath, ARCHIVE_BYTES);
+    const client = makeClient();
+    const limiter = new SniRequestLimiter(1, 1);
+    client.setRequestLimiter(limiter);
+    const release = await limiter.acquire(
+      'wallet.onekeycn.com',
+      '93.184.216.34'
+    );
+    const admissionRequested = onNextAdmission(limiter);
+    const result = observeRejection(
+      client.uploadFile(baseUploadConfig({ filePath }))
+    );
+
+    try {
+      await admissionRequested;
+      const opened = await jest.mocked(fsPromises.open).mock.results[0]?.value;
+      expect(opened?.fd).toBeGreaterThanOrEqual(0);
+
+      // Archive rotation can rename the file while this upload is queued.
+      fs.renameSync(filePath, movedPath);
+      release();
+      await expect(result).resolves.toMatchObject({ statusCode: 200 });
+      expect(requests[0]?.body).toEqual(ARCHIVE_BYTES);
+      expect(jest.mocked(fsPromises.open)).toHaveBeenCalledTimes(1);
+      expect(opened?.fd).toBe(-1);
+    } finally {
+      await client.cancelAllRequests();
+      release();
+      await result.catch(() => undefined);
+    }
+  });
+
+  test('closes the handle when cancelled during archive verification', async () => {
+    let onVerificationStarted!: () => void;
+    let finishVerification!: (verified: boolean) => void;
+    const verificationStarted = new Promise<void>((resolve) => {
+      onVerificationStarted = resolve;
+    });
+    const verification = new Promise<boolean>((resolve) => {
+      finishVerification = resolve;
+    });
     const client = makeClient({
-      logger,
       verifyUploadFile: () => {
-        fs.unlinkSync(filePath);
-        return true;
+        onVerificationStarted();
+        return verification;
       },
     });
+    const result = observeRejection(
+      client.uploadFile(baseUploadConfig({ requestId: 'cancel-verified-file' }))
+    );
+
+    try {
+      await verificationStarted;
+      const opened = await jest.mocked(fsPromises.open).mock.results[0]!.value;
+      const close = jest.spyOn(opened, 'close');
+      await client.cancelRequest('cancel-verified-file');
+      await expect(result).rejects.toMatchObject({ code: 'SNI_CANCELLED' });
+      expect(close).toHaveBeenCalled();
+      await close.mock.results[0]?.value;
+      expect(opened.fd).toBe(-1);
+      expect(requestSpy).not.toHaveBeenCalled();
+    } finally {
+      finishVerification(true);
+      await client.cancelAllRequests();
+      await result.catch(() => undefined);
+    }
+  });
+
+  test('aborts a short upload before request.end and omits the archive path from errors and logs', async () => {
+    const logger = createMockLogger();
+    const filePath = path.join(ARCHIVE_DIR, 'short-read.zip');
+    fs.writeFileSync(filePath, ARCHIVE_BYTES);
+    requestSpy.mockImplementationOnce(((options: RequestOptions) => {
+      const request = new FakeUploadRequest(options);
+      requests.push(request);
+      fs.truncateSync(filePath, 1);
+      return request;
+    }) as unknown as typeof https.request);
 
     await expect(
-      client.uploadFile(baseUploadConfig({ filePath }))
+      makeClient({ logger }).uploadFile(baseUploadConfig({ filePath }))
     ).rejects.toMatchObject({
       code: 'SNI_FILE_READ_FAILED',
       message: 'SNI_FILE_READ_FAILED: Upload file read failed',
+      failClosed: true,
     });
+    expect(requests[0]?.end).not.toHaveBeenCalled();
+    expect(requests[0]?.destroy).toHaveBeenCalledTimes(1);
+    const opened = await jest.mocked(fsPromises.open).mock.results[0]?.value;
+    expect(opened?.fd).toBe(-1);
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(logger.error.mock.calls[0]?.[0]).not.toContain(filePath);
   });
