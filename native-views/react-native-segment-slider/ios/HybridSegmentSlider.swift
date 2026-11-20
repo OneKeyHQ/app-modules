@@ -16,7 +16,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var inset: CGFloat { ceil(thumbSize * activeThumbScale / 2) + 2 }
 
   // MARK: - HybridView
-  var view: UIView = SegmentSliderUIView()
+  let view = UIView()
+  private let control = SegmentSliderUIView()
 
   // MARK: - Layers
   private let trackLayer = CALayer()
@@ -91,9 +92,9 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       view.alpha = disabled ? 0.5 : 1
       view.isUserInteractionEnabled = !disabled
       if disabled {
-        view.accessibilityTraits.insert(.notEnabled)
+        control.accessibilityTraits.insert(.notEnabled)
       } else {
-        view.accessibilityTraits.remove(.notEnabled)
+        control.accessibilityTraits.remove(.notEnabled)
       }
       // UIKit may not deliver the end of a touch to a view that stopped
       // accepting interaction, so end an active drag here.
@@ -102,7 +103,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
   var sliderAccessibilityLabel: String = "" {
     didSet {
-      view.accessibilityLabel = sliderAccessibilityLabel.isEmpty ? nil : sliderAccessibilityLabel
+      control.accessibilityLabel = sliderAccessibilityLabel.isEmpty ? nil : sliderAccessibilityLabel
     }
   }
 
@@ -151,10 +152,15 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // MARK: - Init
   override init() {
     super.init()
-    view.backgroundColor = .clear
-    view.isUserInteractionEnabled = true
-    view.isAccessibilityElement = true
-    view.accessibilityTraits = .adjustable
+    // Fabric mirrors its content view's accessibility flag. Keep it off so
+    // UIKit sends VoiceOver adjustment actions to the control inside it.
+    view.isAccessibilityElement = false
+    control.isAccessibilityElement = true
+    control.accessibilityTraits = .adjustable
+    control.frame = view.bounds
+    control.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.addSubview(control)
+    view.accessibilityElements = [control]
 
     trackLayer.cornerRadius = CGFloat(sliderHeight) / 2
     fillLayer.cornerRadius = CGFloat(sliderHeight) / 2
@@ -179,22 +185,20 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     haloLayer.cornerRadius = haloSize / 2
     haloLayer.opacity = 0
 
-    view.layer.addSublayer(trackLayer)
-    view.layer.addSublayer(fillLayer)
+    control.layer.addSublayer(trackLayer)
+    control.layer.addSublayer(fillLayer)
     // Halo under the thumb: the pressed thumb stays plain (web parity) and
     // covers the node highlight.
-    view.layer.addSublayer(haloLayer)
-    view.layer.addSublayer(thumbLayer)
-    view.layer.addSublayer(bubbleLayer)
+    control.layer.addSublayer(haloLayer)
+    control.layer.addSublayer(thumbLayer)
+    control.layer.addSublayer(bubbleLayer)
 
-    if let v = view as? SegmentSliderUIView {
-      v.onLayout = { [weak self] in self?.performLayout() }
-      v.onTouchBegan = { [weak self] x in self?.handleTouchBegan(x) }
-      v.onTouchMoved = { [weak self] x in self?.handleTouchMoved(x) }
-      v.onTouchEnded = { [weak self] in self?.handleTouchEnded() }
-      v.onAccessibilityStep = { [weak self] forward in self?.handleAccessibilityStep(forward: forward) }
-      v.accessibilityValueProvider = { [weak self] in self?.currentValue.formatted() }
-    }
+    control.onLayout = { [weak self] in self?.performLayout() }
+    control.onTouchBegan = { [weak self] x in self?.handleTouchBegan(x) }
+    control.onTouchMoved = { [weak self] x in self?.handleTouchMoved(x) }
+    control.onTouchEnded = { [weak self] in self?.handleTouchEnded() }
+    control.onAccessibilityStep = { [weak self] forward in self?.handleAccessibilityStep(forward: forward) }
+    control.accessibilityValueProvider = { [weak self] in self?.currentValue.formatted() }
   }
 
   // MARK: - Color helper
@@ -203,11 +207,11 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
 
   private func scheduleLayout() {
-    view.setNeedsLayout()
+    control.setNeedsLayout()
   }
 
   // MARK: - Geometry helpers
-  private var trackWidth: CGFloat { Swift.max(view.bounds.width - inset * 2, 0) }
+  private var trackWidth: CGFloat { Swift.max(control.bounds.width - inset * 2, 0) }
   private var trackLeft: CGFloat { inset }
   private var range: Double { let r = max - min; return r == 0 ? 1 : r }
   private var markCount: Int { segments >= 1 ? Int(segments) + 1 : 0 }
@@ -228,7 +232,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
   // MARK: - Layout
   private func performLayout() {
-    let bounds = view.bounds
+    let bounds = control.bounds
     guard bounds.width > 0 else { return }
 
     syncMarkLayers(markCount)
@@ -275,7 +279,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
         // Marks render BELOW the thumb (web parity: mark zIndex 3 < thumb 4),
         // so the thumb covers the node it sits on. Inserting below the thumb
         // keeps order track < fill < halo < marks < thumb < bubble.
-        view.layer.insertSublayer(l, below: thumbLayer)
+        control.layer.insertSublayer(l, below: thumbLayer)
         markLayers.append(l)
       }
     } else if markLayers.count > count {
@@ -286,8 +290,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
   // MARK: - Visual application (no implicit animations)
   private func applyVisual(_ v: Double) {
-    guard hasLaidOut, view.bounds.width > 0 else { return }
-    let bounds = view.bounds
+    guard hasLaidOut, control.bounds.width > 0 else { return }
+    let bounds = control.bounds
     let h = CGFloat(sliderHeight)
     let trackTop = bounds.midY - h / 2
     let frac = valueToFrac(v)
@@ -397,7 +401,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if visible {
       let frac = markCount > 1 ? CGFloat(index) / CGFloat(markCount - 1) : 0
       let mx = trackLeft + frac * trackWidth
-      haloLayer.position = CGPoint(x: mx, y: view.bounds.midY)
+      haloLayer.position = CGPoint(x: mx, y: control.bounds.midY)
       haloLayer.backgroundColor = UIColor(cgColor: cMarkActive)
         .withAlphaComponent(0.25).cgColor
       haloLayer.opacity = 1
@@ -457,7 +461,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
     setBubbleVisible(false)
-    (view as? SegmentSliderUIView)?.unlockAncestorGestures()
+    control.unlockAncestorGestures()
     onSlideComplete?(interactionId, currentValue)
   }
 

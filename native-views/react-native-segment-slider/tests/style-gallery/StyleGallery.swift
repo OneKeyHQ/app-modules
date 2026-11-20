@@ -55,7 +55,7 @@ enum StyleGallery {
       if row["pressed"] as? Bool == true {
         // Same 12-pt endpoint inset the production view maps touches with.
         let x = 12 + CGFloat(value / 100) * (sliderWidth - 24)
-        (slider.view as! SegmentSliderUIView).onTouchBegan?(x)
+        (slider.view.subviews.first as! SegmentSliderUIView).onTouchBegan?(x)
       }
       retained.append(slider)
     }

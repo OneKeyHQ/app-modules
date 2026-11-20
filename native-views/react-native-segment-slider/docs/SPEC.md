@@ -143,8 +143,11 @@ leaves the current value unchanged, including a controlled fractional
 endpoint. While disabled or mid-drag, discrete adjustments leave the active
 value alone. The iOS element exposes the latest value after both native
 interactions and controlled updates, and exposes the disabled trait while
-disabled. Android exposes the numeric accessibility range only when it
-contains a selectable integer. When the current value or range changes, an
+disabled. The Nitro content view is a non-accessible container so the Fabric
+host leaves accessibility focus and actions on the UIKit slider control.
+
+Android exposes the numeric accessibility range only when it contains a
+selectable integer. When the current value or range changes, an
 attached view schedules an accessibility progress event. Multiple updates
 within 100 ms share one event reporting the latest state. Android 11 and later
 send `TYPE_WINDOW_CONTENT_CHANGED` with
@@ -245,8 +248,10 @@ adjustment actions, dragging, controlled value updates, and range updates.
   and callback values at endpoints, intermediate values, resized widths and
   signed ranges. It also invokes the UIKit accessibility actions and checks
   the element's label, value, traits, callback order, endpoint behavior and
-  controlled updates. Mac Catalyst execution does not
-  establish React Native/Fabric or iPhone acceptance.
+  controlled updates. The harness checks that the Nitro content view exposes
+  the slider control as its sole accessibility element and lays it out to fill
+  the content bounds. Mac Catalyst execution does not establish React
+  Native/Fabric or iPhone acceptance.
 - `tests/android/BubbleLayoutActivity.kt`: Android View/Canvas rendering,
   text raster bounds, touch events, keyboard adjustments, accessibility actions
   and RTL regression coverage. An RN-like wrapper
