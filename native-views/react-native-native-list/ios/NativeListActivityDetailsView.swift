@@ -9,6 +9,9 @@ final class NativeListActivityDetailsView: UIStackView {
   private let identity = UIStackView()
   private let titleLine = UIStackView()
   private let title = NativeListTextLabel()
+  // Absorbs the title line's slack so the title keeps its intrinsic width and the
+  // badges follow the text (OK-67497), matching the identity title row (OK-66041).
+  private let titleLineFiller = NativeListTitleLineFiller()
   private let descriptionLabel = NativeListTextLabel()
   private let status = NativeListTextLabel()
   private let amounts = UIStackView()
@@ -32,6 +35,9 @@ final class NativeListActivityDetailsView: UIStackView {
     identity.axis = .vertical; identity.alignment = .fill
     titleLine.axis = .horizontal; titleLine.alignment = .center; titleLine.spacing = 4
     titleLine.addArrangedSubview(title)
+    titleLine.addArrangedSubview(titleLineFiller)
+    titleLineFiller.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    titleLineFiller.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
     [titleLine, descriptionLabel, status].forEach(identity.addArrangedSubview)
     amounts.axis = .vertical; amounts.alignment = .fill; amounts.spacing = 2
     fee.axis = .vertical; fee.alignment = .trailing
@@ -47,6 +53,11 @@ final class NativeListActivityDetailsView: UIStackView {
     title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     identity.setContentHuggingPriority(.defaultLow, for: .horizontal)
     amounts.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    // Stacked fee text hugs, or the fee column takes the row's slack the same
+    // way an unpinned amount column does. Required table widths still win.
+    [feeLabel, feePrimary, feeSecondary].forEach {
+      $0.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    }
   }
   required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -215,10 +226,12 @@ final class NativeListActivityDetailsView: UIStackView {
       ).bind(label)
       label.backgroundColor = tint.withAlphaComponent(0.1)
       label.layer.cornerRadius = 4; label.clipsToBounds = true
+      label.setContentHuggingPriority(.required, for: .horizontal)
       label.setContentCompressionResistancePriority(.required, for: .horizontal)
-      titleLine.addArrangedSubview(label)
+      titleLine.insertArrangedSubview(label, at: titleLine.arrangedSubviews.count - 1)
       return label
     }
+    settleTitleLineFillerSpacing()
     let descriptors = data.dictionaries("amounts")
     while amountViews.count > descriptors.count {
       let view = amountViews.removeLast(); view.recycle(); amounts.removeArrangedSubview(view); view.removeFromSuperview()
@@ -269,6 +282,19 @@ final class NativeListActivityDetailsView: UIStackView {
     actions.arrangedSubviews.filter { !($0 is UIButton) }.forEach { actions.removeArrangedSubview($0); $0.removeFromSuperview() }
     actions.addArrangedSubview(spacer)
   }
+  /// The filler only packs the title while badges follow it. Without badges it is
+  /// hidden so the title keeps the whole line and its `alignment` (center/end) still
+  /// applies, exactly as before badges existed. With badges, the stack's spacing
+  /// before the filler would shave `titleBadgeGap` off the title, so that gap is zero.
+  private func settleTitleLineFillerSpacing() {
+    titleLineFiller.isHidden = badgeViews.isEmpty
+    // With badges the filler, not the title, takes the column's leftover width.
+    // Without badges the title has to be free to span the line so center/end
+    // alignment still applies.
+    title.setContentHuggingPriority(badgeViews.isEmpty ? .defaultLow : .defaultHigh, for: .horizontal)
+    if let last = badgeViews.last { titleLine.setCustomSpacing(0, after: last) }
+  }
+
   @objc private func descriptionPressed() { onAction?(descriptionKey, descriptionLabel, "description", 0) }
   @objc private func actionPressed(_ button: UIButton) {
     guard button.tag < actionKeys.count else { return }
@@ -277,6 +303,15 @@ final class NativeListActivityDetailsView: UIStackView {
   func recycle() {
     visual.recycle(); visual.isHidden = false; amountViews.forEach { $0.recycle() }; actionKeys = []; descriptionKey = ""
     descriptionLabel.touchableTextStart = nil
+  }
+}
+
+/// Horizontal spacer with intrinsic width 0. Hugging and compression are 1, so
+/// once the title line is as wide as the identity column the leftover width
+/// lands here, after the badge (OK-67497).
+private final class NativeListTitleLineFiller: UIView {
+  override var intrinsicContentSize: CGSize {
+    CGSize(width: 0, height: UIView.noIntrinsicMetric)
   }
 }
 
@@ -301,6 +336,13 @@ private final class NativeListActivityAmountView: UIStackView {
     super.init(frame: frame)
     axis = .horizontal; alignment = .center; spacing = 6
     labels.axis = .vertical; labels.alignment = .fill
+    // Stacked amounts stay at their text width (Android WRAP_CONTENT). The
+    // identity column then receives the leftover row width, which is what
+    // measure() already assumes. Table columns ignore this: their required
+    // widths win (OK-67497).
+    [primary, secondary].forEach {
+      $0.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    }
     [primary, secondary].forEach(labels.addArrangedSubview)
     [visual, labels].forEach(addArrangedSubview)
     NSLayoutConstraint.activate([visual.widthAnchor.constraint(equalToConstant: 20), visual.heightAnchor.constraint(equalToConstant: 20)])

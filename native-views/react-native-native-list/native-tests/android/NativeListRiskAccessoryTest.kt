@@ -439,6 +439,54 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     }
   }
 
+  // OK-67497: an activity title badge ("High risk") follows the title text instead of the
+  // amount column, and a recycled row without badges does not keep the title's width cap.
+  fun testActivityTitleBadgesFollowTheTitleText() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "ActivityBadgeTest", 1)
+      val details = NativeListActivityDetailsView(context, NativeListFonts())
+      activity.setContentView(details)
+      val width = NativeListScale.dp(activity.resources, 390)
+      fun bind(title: String, badges: Boolean, alignment: String? = null) {
+        val data = JSONObject().put("type", "activity").put("key", "receive").put("title", title)
+          .put("description", "0xc168f7...62f46d")
+          .put("leading", JSONObject().put("kind", "icon").put("name", "ArrowBottomOutline"))
+          .put("amounts", JSONArray().put(JSONObject().put("key", "usdt").put("text", "+1,250 USDT").put("secondaryText", "$1,250.13")))
+        if (alignment != null) data.put("style", JSONObject().put("title", JSONObject().put("alignment", alignment)))
+        if (badges) data.put("badges", JSONArray().put(JSONObject().put("key", "risk").put("text", "High risk").put("tone", "warning")))
+        details.bind(NativeListItem("receive", "activity", null, 0, data), null, false)
+        details.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        details.layout(0, 0, width, details.measuredHeight)
+      }
+      val titleLine = field<PackedTitleLineLayout>(details, "titleLine")
+      val title = field<TextView>(details, "title")
+      val badges = field<MutableList<View>>(details, "badges")
+      val gap = NativeListScale.dp(activity.resources, 4)
+
+      bind("Receive", true)
+      assertEquals("badge follows the title with titleBadgeGap", title.right + gap, badges.first().left)
+      // Before the fix the title took the line's slack and the badge ended flush with it.
+      assertTrue("the line's slack stays after the badge",
+        titleLine.width - badges.first().right > NativeListScale.dp(activity.resources, 20))
+
+      val longTitle = "Contract interaction ".repeat(6)
+      bind(longTitle, true)
+      assertTrue("long title truncates in front of the badge", badges.first().right <= titleLine.width)
+      assertEquals(title.right + gap, badges.first().left)
+
+      bind(longTitle, false)
+      assertEquals("no stale cap after badges are removed", Int.MAX_VALUE, title.maxWidth)
+
+      // A recycled row without badges matches a fresh one, so a centered title keeps the line.
+      bind("Receive", false, "center")
+      val params = title.layoutParams as LinearLayout.LayoutParams
+      assertEquals(0, params.width)
+      assertEquals(1f, params.weight)
+      assertEquals("centered title spans the line", titleLine.width, title.width)
+    }
+  }
+
   fun testActivityTableColumnsStayStableAcrossFeeLeadingAndAmountReuse() {
     onMain {
       val context = ThemedReactContext(BridgeReactContext(activity), activity, "ActivityColumnsTest", 1)
