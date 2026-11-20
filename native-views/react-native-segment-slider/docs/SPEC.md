@@ -43,7 +43,7 @@ description or UIKit's accessibility label. An absent or empty label clears it.
 
 Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
 `sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
-(false), `snapTapToSegment` (true), `hapticStep` (0), the nine color props
+(false), `snapTapToSegment` (false), `hapticStep` (0), the nine color props
 below, `onSlideStart` and `onSlideComplete`. `alignSegmentMarksToIntegerValues`
 (false) is accepted everywhere and only changes mark placement on Web.
 
@@ -95,9 +95,7 @@ at the Nitro entry and takes precedence over the Web `browser` field.
   lingering bubble.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
-  (default true; when false a tap lands on the pressed position). The native
-  view's own field defaults to false, but the public component always passes
-  the prop. It has no effect without marks. On Web a press on a mark
+  (default false). It has no effect without marks. On Web a press on a mark
   always lands exactly on that mark.
 - `hapticStep` adds the per-step tick described above (native default 0).
 - Color props supply resolved theme colors. Invalid colors fall back according

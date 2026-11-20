@@ -60,7 +60,7 @@ function SegmentSliderComponent({
   disabled = false,
   showBubble = true,
   centerOrigin = false,
-  snapTapToSegment = true,
+  snapTapToSegment = false,
   hapticStep = 0,
   onSlideStart,
   onSlideComplete,
