@@ -101,10 +101,10 @@ Signed metadata binds the supplied app and bundle versions as separate fields;
 verification never recovers them by splitting the combined directory name.
 Startup derives the bundle version only by removing the exact running native
 app-version prefix and separator from the stored directory name. An absent or
-empty suffix fails closed. Local bundle listing and stale-version pruning must
-not mistake a hyphen in the current app or bundle version for that separator.
-Listing returns only bundles for the running native app version; older-version
-artifacts remain subject to the existing best-effort prune rules.
+empty suffix fails closed. Local bundle listing and stale-version pruning use
+the complete running app-version prefix to preserve bundle versions containing
+hyphens. Native listing returns bundles for the running app version. Desktop
+also lists older cached versions until they are removed by best-effort pruning.
 `downloadBundleASC` validates the signature and its managed destination; the
 installed signature sidecar (`asc/<latestVersion>-<bundleVersion>-signature.asc`)
 is committed only when installation succeeds.

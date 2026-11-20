@@ -697,7 +697,7 @@ test('lists and prunes using the exact native version prefix', async (t) => {
   const f = await fixture(t, { nativeVersion });
   const client = f.makeClient();
   const current = `${nativeVersion}-41-diff`;
-  const stale = '6.7.0-beta.2-41-diff';
+  const stale = '6.7.0-beta.2-40';
   const extractRoot = dirname(f.bundleDir);
   const downloadRoot = client.getDownloadDir();
   for (const name of [current, stale]) {
@@ -713,10 +713,17 @@ test('lists and prunes using the exact native version prefix', async (t) => {
   for (const artifact of [...artifacts(current), ...artifacts(stale)]) {
     writeFileSync(artifact, '');
   }
+  assert.deepEqual(
+    new Set(await client.listLocalBundles()),
+    new Set([
+      { appVersion: '6.7.0-beta.2', bundleVersion: '40' },
+      { appVersion: nativeVersion, bundleVersion: '41-diff' },
+    ])
+  );
+  assert.equal(await client.pruneStaleAppVersionBundles(), 1);
   assert.deepEqual(await client.listLocalBundles(), [
     { appVersion: nativeVersion, bundleVersion: '41-diff' },
   ]);
-  assert.equal(await client.pruneStaleAppVersionBundles(), 1);
   assert.equal(existsSync(join(extractRoot, current)), true);
   for (const artifact of artifacts(current))
     assert.equal(existsSync(artifact), true);

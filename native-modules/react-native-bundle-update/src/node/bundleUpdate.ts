@@ -2165,12 +2165,16 @@ export class BundleUpdateNode {
     const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
     const results: { appVersion: string; bundleVersion: string }[] = [];
     for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const bundleVersion = this.getLocalBundleVersion(
-          entry.name,
-          appVersion
-        );
-        if (bundleVersion) results.push({ appVersion, bundleVersion });
+      if (!entry.isDirectory()) continue;
+      const bundleVersion = this.getLocalBundleVersion(entry.name, appVersion);
+      if (bundleVersion) {
+        results.push({ appVersion, bundleVersion });
+      } else if (this.isVersionedBundleName(entry.name)) {
+        const separator = entry.name.lastIndexOf('-');
+        results.push({
+          appVersion: entry.name.slice(0, separator),
+          bundleVersion: entry.name.slice(separator + 1),
+        });
       }
     }
     return results;
