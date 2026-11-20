@@ -24,6 +24,25 @@ final class BundleDiffReconstructionTests: XCTestCase {
         try body(dir)
     }
 
+    func testStagingSweepRemovesAbandonedEntriesAndPreservesLiveRuns() throws {
+        try withTempDir { root in
+            let fm = FileManager.default
+            let abandoned = root.appendingPathComponent("6.8.0-42-abandoned")
+            let live = root.appendingPathComponent("6.8.0-43-live")
+            try fm.createDirectory(at: abandoned, withIntermediateDirectories: false)
+            try fm.createDirectory(at: live, withIntermediateDirectories: false)
+            let liveFile = live.appendingPathComponent("partial")
+            try Data("data".utf8).write(to: liveFile)
+
+            BundleDiffReconstruction.retainStagingDirectory(live.path)
+            BundleDiffReconstruction.sweepStagingDirectory(root.path)
+            XCTAssertFalse(fm.fileExists(atPath: abandoned.path))
+            XCTAssertTrue(fm.fileExists(atPath: liveFile.path))
+            BundleDiffReconstruction.releaseStagingDirectory(live.path)
+            XCTAssertFalse(fm.fileExists(atPath: live.path))
+        }
+    }
+
     func testIsUsableDiffParamsValidation() {
         let validHash = String(repeating: "a", count: 64)
         XCTAssertTrue(BundleDiffReconstruction.isUsableDiffParams(

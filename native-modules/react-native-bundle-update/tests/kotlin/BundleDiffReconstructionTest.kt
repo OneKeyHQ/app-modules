@@ -466,11 +466,6 @@ fun main() {
             "rangeTaskIdForFilePath resolves full task id",
         )
 
-        class StreamResetException(message: String) : java.io.IOException(message)
-        expect(
-            BundleDiffReconstruction.isRetryableNetworkIOException(StreamResetException("stream was reset: CANCEL")),
-            "HTTP/2 StreamResetException classified as retryable network error",
-        )
         expect(
             BundleDiffReconstruction.isRetryableNetworkIOException(java.io.EOFException("unexpected end of stream")),
             "EOFException classified as retryable network error",
@@ -479,6 +474,45 @@ fun main() {
             !BundleDiffReconstruction.isRetryableNetworkIOException(java.io.FileNotFoundException("missing")),
             "FileNotFoundException is not classified as network error",
         )
+
+        expect(
+            !BundleDiffReconstruction.isRetryableNetworkIOException(java.io.IOException("stream was reset: CANCEL")),
+            "generic IOException remains unclassified even when its prose resembles a stream reset",
+        )
+
+        val stagingRoot = File(tempRoot, BundleDiffReconstruction.STAGING_ROOT_DIR_NAME).apply { mkdir() }
+        val abandoned = File(stagingRoot, "6.8.0-42-abandoned").apply { mkdir() }
+        File(abandoned, "partial").writeText("data")
+        val live = File(stagingRoot, "6.8.0-43-live").apply { mkdir() }
+        val liveFile = File(live, "partial").apply { writeText("data") }
+        BundleDiffReconstruction.retainStagingDirectory(live)
+        try {
+            BundleDiffReconstruction.sweepStagingDirectory(stagingRoot)
+            expect(!abandoned.exists(), "sweep reclaims abandoned current-version staging")
+            expect(liveFile.exists(), "sweep preserves a registered live staging tree")
+        } finally {
+            BundleDiffReconstruction.releaseStagingDirectory(live)
+        }
+        expect(!live.exists(), "settled staging is removed")
+
+        val zip = File(tempRoot, "extraction-budget.zip")
+        java.util.zip.ZipOutputStream(zip.outputStream()).use { output ->
+            for (name in listOf("a", "b")) {
+                output.putNextEntry(java.util.zip.ZipEntry(name))
+                output.write(ByteArray(8))
+                output.closeEntry()
+            }
+        }
+        BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "at-budget").path, maxUncompressedBytes = 16)
+        expect(File(tempRoot, "at-budget/b").length() == 8L, "extraction accepts the exact cumulative byte limit")
+        val overBudget = runCatching {
+            BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "over-budget").path, maxUncompressedBytes = 15)
+        }
+        expect(overBudget.exceptionOrNull() is SecurityException, "extraction byte limit raises a terminal security error")
+        val overEntryLimit = runCatching {
+            BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "over-entries").path, maxEntries = 1)
+        }
+        expect(overEntryLimit.exceptionOrNull() is SecurityException, "extraction entry limit raises a terminal security error")
     } finally {
         tempRoot.deleteRecursively()
     }

@@ -100,6 +100,10 @@ lifecycle acceptance remain pending.
      never passes ASC verification).
    - It extracts `.diff.zip` into a unique per-run directory
      `onekey-bundle/.diff-staging/<latestVersion>-<bundleVersion>-<runId>`.
+     Before verification and during stale-version pruning, the module makes a
+     best-effort sweep of abandoned staging entries, including those for the
+     running app version. It preserves staging directories owned by live runs
+     across native module instances in the app process.
    - Both `diff-manifest.json` and staged `metadata.json` are capped at 16 MiB
      and their streaming SHA-256 hashes are verified against the GPG-signed
      digests (and `manifest.targetMetadataSha256`) before reading their bytes

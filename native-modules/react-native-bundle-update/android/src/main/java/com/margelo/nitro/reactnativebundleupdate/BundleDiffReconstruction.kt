@@ -3,7 +3,13 @@ package com.margelo.nitro.reactnativebundleupdate
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 
 internal sealed class BundleDiffReconstructionException(message: String) : Exception(message) {
     class SecurityRejected(message: String) : BundleDiffReconstructionException(message)
@@ -36,6 +42,99 @@ internal object BundleDiffReconstruction {
     const val DIFF_ZIP_EXTENSION = ".diff.zip"
     const val DIFF_META_EXTENSION = ".diff.zip.meta.json"
 
+    // Shared by all native module instances in this process.
+    private val liveStagingDirectories = mutableSetOf<File>()
+
+    fun retainStagingDirectory(directory: File) {
+        synchronized(liveStagingDirectories) {
+            liveStagingDirectories.add(directory.absoluteFile)
+        }
+    }
+
+    fun releaseStagingDirectory(directory: File) {
+        synchronized(liveStagingDirectories) {
+            deleteStagingEntry(directory)
+            liveStagingDirectories.remove(directory.absoluteFile)
+        }
+    }
+
+    fun sweepStagingDirectory(root: File) {
+        synchronized(liveStagingDirectories) {
+            if (Files.isSymbolicLink(root.toPath())) return
+            root.listFiles()?.filterNot { it.absoluteFile in liveStagingDirectories }
+                ?.forEach(::deleteStagingEntry)
+        }
+    }
+
+    private fun deleteStagingEntry(entry: File) {
+        try {
+            // Walk without following links, including an abandoned symlink entry.
+            Files.walkFileTree(entry.toPath(), object : SimpleFileVisitor<Path>() {
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    Files.deleteIfExists(file)
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun postVisitDirectory(dir: Path, error: java.io.IOException?): FileVisitResult {
+                    if (error != null) throw error
+                    Files.deleteIfExists(dir)
+                    return FileVisitResult.CONTINUE
+                }
+            })
+        } catch (_: java.io.IOException) {
+            // Missing entries and cleanup failures are safe to retry at the next sweep.
+        }
+    }
+
+    fun unzipFile(
+        zipFilePath: String,
+        destDirectory: String,
+        maxUncompressedBytes: Long = MAX_BUNDLE_UNCOMPRESSED_BYTES,
+        maxEntries: Int = MAX_BUNDLE_ENTRIES,
+    ) {
+        val destDir = File(destDirectory)
+        if (!destDir.exists()) destDir.mkdirs()
+
+        val destDirPath = destDir.canonicalFile.toPath()
+        var totalBytesWritten = 0L
+        var entryCount = 0
+        ZipInputStream(FileInputStream(zipFilePath)).use { zipIn ->
+            var entry: ZipEntry? = zipIn.nextEntry
+            while (entry != null) {
+                entryCount++
+                if (entryCount > maxEntries) {
+                    throw SecurityException("Zip entry count exceeds maximum allowed ($maxEntries)")
+                }
+                val outFile = File(destDir, entry.name)
+                if (Files.isSymbolicLink(outFile.toPath())) {
+                    throw SecurityException("Symlink detected at zip entry destination: ${entry.name}")
+                }
+                val outPath = outFile.canonicalFile.toPath()
+                if (!outPath.startsWith(destDirPath)) {
+                    throw SecurityException("Entry is outside of the target dir: ${entry.name}")
+                }
+                if (!entry.isDirectory) {
+                    outFile.parentFile?.mkdirs()
+                    FileOutputStream(outFile).use { fos ->
+                        val buffer = ByteArray(8192)
+                        var length: Int
+                        while (zipIn.read(buffer).also { length = it } > 0) {
+                            totalBytesWritten += length
+                            if (totalBytesWritten > maxUncompressedBytes) {
+                                throw SecurityException("Zip extracted size exceeds maximum allowed ($maxUncompressedBytes bytes)")
+                            }
+                            fos.write(buffer, 0, length)
+                        }
+                    }
+                } else {
+                    outFile.mkdirs()
+                }
+                zipIn.closeEntry()
+                entry = zipIn.nextEntry
+            }
+        }
+    }
+
     internal data class DiffArchiveDescriptor(
         val appVersion: String,
         val bundleVersion: String,
@@ -52,22 +151,13 @@ internal object BundleDiffReconstruction {
     }
 
     fun isRetryableNetworkIOException(error: Throwable): Boolean {
-        if (error is java.net.SocketTimeoutException ||
+        return error is java.net.SocketTimeoutException ||
             error is java.net.UnknownHostException ||
             error is java.net.ConnectException ||
             error is java.net.ProtocolException ||
             error is java.net.SocketException ||
             error is java.io.EOFException ||
             error is java.io.InterruptedIOException
-        ) {
-            return true
-        }
-        val className = error.javaClass.name
-        if (className.endsWith(".StreamResetException") || className == "StreamResetException") {
-            return true
-        }
-        val msg = error.message.orEmpty()
-        return error is java.io.IOException && msg.startsWith("stream was reset:", ignoreCase = true)
     }
 
     fun rangeTaskId(bundleKey: String, isDiff: Boolean): String {

@@ -31,6 +31,38 @@ enum BundleDiffReconstruction {
     static let diffZipExtension = ".diff.zip"
     static let diffMetaExtension = ".diff.zip.meta.json"
 
+    // Shared by all native module instances in this process.
+    private static let stagingLock = NSLock()
+    private static var liveStagingDirectories = Set<String>()
+
+    static func retainStagingDirectory(_ path: String) {
+        stagingLock.lock()
+        defer { stagingLock.unlock() }
+        liveStagingDirectories.insert(path)
+    }
+
+    static func releaseStagingDirectory(_ path: String) {
+        stagingLock.lock()
+        defer { stagingLock.unlock() }
+        try? FileManager.default.removeItem(atPath: path)
+        liveStagingDirectories.remove(path)
+    }
+
+    static func sweepStagingDirectory(_ root: String) {
+        stagingLock.lock()
+        defer { stagingLock.unlock() }
+        let fm = FileManager.default
+        guard let attributes = try? fm.attributesOfItem(atPath: root),
+              attributes[.type] as? FileAttributeType == .typeDirectory,
+              let entries = try? fm.contentsOfDirectory(atPath: root) else { return }
+        for entry in entries {
+            let path = (root as NSString).appendingPathComponent(entry)
+            if !liveStagingDirectories.contains(path) {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+    }
+
     struct DiffArchiveDescriptor: Equatable {
         let appVersion: String
         let bundleVersion: String

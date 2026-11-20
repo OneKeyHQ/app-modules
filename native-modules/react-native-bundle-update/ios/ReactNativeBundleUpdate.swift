@@ -2457,11 +2457,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             return
         }
 
-        defer {
-            if fm.fileExists(atPath: stagingDir) {
-                try? fm.removeItem(atPath: stagingDir)
-            }
-        }
+        BundleDiffReconstruction.retainStagingDirectory(stagingDir)
+        defer { BundleDiffReconstruction.releaseStagingDirectory(stagingDir) }
 
         // b. Extract .diff.zip into isolated staging directory with full zip safety checks
         do {
@@ -2655,6 +2652,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw BundleUpdateError(.security, .verifyASC)
             }
             let stagingRootDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(BundleDiffReconstruction.stagingRootDirName)
+            BundleDiffReconstruction.sweepStagingDirectory(stagingRootDir)
             let runId = UUID().uuidString.replacingOccurrences(of: "-", with: "")
             let stagingDir = (stagingRootDir as NSString).appendingPathComponent("\(folderName)-\(runId)")
             let resolvedStagingDir = (stagingDir as NSString).resolvingSymlinksInPath
@@ -3201,16 +3199,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     var isDir: ObjCBool = false
                     guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
                     if name == BundleDiffReconstruction.stagingRootDirName {
-                        if let stageEntries = try? fm.contentsOfDirectory(atPath: fullPath) {
-                            for stageEntry in stageEntries {
-                                let stagePath = (fullPath as NSString).appendingPathComponent(stageEntry)
-                                if let dashRange = stageEntry.range(of: "-", options: .backwards) {
-                                    let stem = String(stageEntry[stageEntry.startIndex..<dashRange.lowerBound])
-                                    if shouldKeep(stem: stem) { continue }
-                                }
-                                try? fm.removeItem(atPath: stagePath)
-                            }
-                        }
+                        BundleDiffReconstruction.sweepStagingDirectory(fullPath)
                         continue
                     }
                     if shouldKeep(stem: name) { continue }

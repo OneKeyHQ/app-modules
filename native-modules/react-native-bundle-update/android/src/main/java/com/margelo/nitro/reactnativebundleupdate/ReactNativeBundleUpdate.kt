@@ -12,21 +12,18 @@ import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.internal.http2.StreamResetException
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -63,7 +60,7 @@ private fun bundleUpdateError(error: Exception, step: String): BundleUpdateError
         error is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
         error is java.io.FileNotFoundException ||
             error is java.nio.file.AccessDeniedException -> "STORAGE_ERROR"
-        BundleDiffReconstruction.isRetryableNetworkIOException(error) -> "NETWORK_ERROR"
+        error is StreamResetException || BundleDiffReconstruction.isRetryableNetworkIOException(error) -> "NETWORK_ERROR"
         error is IllegalArgumentException -> "INVALID_ARGUMENT"
         error is SecurityException -> "SECURITY_REJECTED"
         else -> "UNKNOWN"
@@ -1242,53 +1239,8 @@ object BundleUpdateStoreAndroid {
 
     fun deleteDir(dir: File): Boolean = deleteDirectory(dir)
 
-    private const val MAX_UNZIPPED_SIZE = 512L * 1024 * 1024  // 512 MB limit
-    private const val MAX_ZIP_ENTRIES = 4096
-
     fun unzipFile(zipFilePath: String, destDirectory: String) {
-        val destDir = File(destDirectory)
-        if (!destDir.exists()) destDir.mkdirs()
-
-        val destDirPath: Path = Paths.get(destDir.canonicalPath)
-        var totalBytesWritten = 0L
-        var entryCount = 0
-        ZipInputStream(FileInputStream(zipFilePath)).use { zipIn ->
-            var entry: ZipEntry? = zipIn.nextEntry
-            while (entry != null) {
-                entryCount++
-                if (entryCount > MAX_ZIP_ENTRIES) {
-                    throw SecurityException("Zip entry count exceeds maximum allowed ($MAX_ZIP_ENTRIES)")
-                }
-                val outFile = File(destDir, entry.name)
-                val outPath: Path = Paths.get(outFile.canonicalPath)
-                if (!outPath.startsWith(destDirPath)) {
-                    throw java.io.IOException("Entry is outside of the target dir: ${entry.name}")
-                }
-                if (!entry.isDirectory) {
-                    outFile.parentFile?.mkdirs()
-                    FileOutputStream(outFile).use { fos ->
-                        val buffer = ByteArray(8192)
-                        var length: Int
-                        while (zipIn.read(buffer).also { length = it } > 0) {
-                            totalBytesWritten += length
-                            if (totalBytesWritten > MAX_UNZIPPED_SIZE) {
-                                throw java.io.IOException("Decompression bomb detected: extracted size exceeds ${MAX_UNZIPPED_SIZE / 1024 / 1024} MB")
-                            }
-                            fos.write(buffer, 0, length)
-                        }
-                    }
-                    // Validate no symlink was created (zip slip via symlink attack)
-                    if (Files.isSymbolicLink(outFile.toPath())) {
-                        outFile.delete()
-                        throw java.io.IOException("Symlink detected in zip entry: ${entry.name}")
-                    }
-                } else {
-                    outFile.mkdirs()
-                }
-                zipIn.closeEntry()
-                entry = zipIn.nextEntry
-            }
-        }
+        BundleDiffReconstruction.unzipFile(zipFilePath, destDirectory)
     }
 }
 
@@ -2228,20 +2180,15 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             return
         }
 
+        BundleDiffReconstruction.retainStagingDirectory(stagingDir)
         try {
             // b. Extract .diff.zip into isolated staging directory (enforces entry count, size, symlink, traversal checks)
-            if (stagingDir.exists()) {
-                BundleUpdateStoreAndroid.deleteDir(stagingDir)
-            }
             stagingDir.parentFile?.mkdirs()
             try {
                 BundleUpdateStoreAndroid.unzipFile(resolvedDiffZipPath, stagingPath)
             } catch (e: SecurityException) {
                 throw BundleDiffReconstructionException.SecurityRejected(e.message ?: "diff zip security violation")
             } catch (e: Exception) {
-                if (e.message?.contains("Symlink") == true || e.message?.contains("outside of the target dir") == true) {
-                    throw BundleDiffReconstructionException.SecurityRejected(e.message ?: "diff zip path violation")
-                }
                 throw BundleDiffReconstructionException.FallbackRequired("diff zip extraction failed: ${e.message}")
             }
 
@@ -2356,9 +2303,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             )
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: diff reconstruction succeeded for $folderName")
         } finally {
-            if (stagingDir.exists()) {
-                BundleUpdateStoreAndroid.deleteDir(stagingDir)
-            }
+            BundleDiffReconstruction.releaseStagingDirectory(stagingDir)
         }
     }
 
@@ -2437,6 +2382,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw BundleUpdateError("INVALID_ARGUMENT", "verifyASC")
             }
             try {
+                BundleDiffReconstruction.sweepStagingDirectory(stagingRootDir)
                 if (File(resolvedFullPath).isFile) {
                     OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$fullFilePath, signatureLength=${signature.length}")
                     verifyAndExtractFullZip(
@@ -2954,19 +2900,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     // Skip non-version entries (asc dir, fallback json, etc.)
                     if (name == "asc" || name == "fallbackUpdateBundleData.json") return@forEach
                     if (name == BundleDiffReconstruction.STAGING_ROOT_DIR_NAME) {
-                        child.listFiles()?.forEach { stageChild ->
-                            val stageName = stageChild.name
-                            val lastDash = stageName.lastIndexOf('-')
-                            if (lastDash > 0) {
-                                val stem = stageName.substring(0, lastDash)
-                                if (shouldKeep(stem)) return@forEach
-                            }
-                            if (stageChild.isDirectory) {
-                                BundleUpdateStoreAndroid.deleteDir(stageChild)
-                            } else {
-                                stageChild.delete()
-                            }
-                        }
+                        BundleDiffReconstruction.sweepStagingDirectory(child)
                         return@forEach
                     }
                     if (shouldKeep(name)) return@forEach
