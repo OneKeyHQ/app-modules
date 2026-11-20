@@ -82,7 +82,7 @@ props you leave out use a neutral light palette (`DEFAULT_SEGMENT_SLIDER_COLORS`
 | `disabled` | `boolean` | Dims the slider, blocks interaction and cancels an active drag. | All |
 | `showBubble` | `boolean` | Shows the rounded value with `%` above the thumb during interaction (default true). | All |
 | `centerOrigin` | `boolean` | Fills from the zero origin instead of the left edge. | All |
-| `snapTapToSegment` | `boolean` | Snaps a quick tap to the nearest mark; drags stay continuous. | All |
+| `snapTapToSegment` | `boolean` | Snaps a quick tap to the nearest mark; drags stay continuous (default true). Pass `false` to land a tap on the pressed position. | All |
 | `hapticStep` | `number` | Light tick each time a drag enters a new step bucket; 0 keeps mark-only ticks. | iOS, Android |
 | `alignSegmentMarksToIntegerValues` | `boolean` | Places marks on the integer values the slider emits. | Web |
 | `aria-label`, `aria-labelledby` | `string` | Accessible name for the slider. | All |

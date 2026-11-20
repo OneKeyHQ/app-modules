@@ -90,6 +90,13 @@ it('retries a rejected value sync using the newer interaction and its final valu
   expect(onSlideComplete.mock.calls).toEqual([[], []]);
 });
 
+it('enables tap snapping by default and lets callers turn it off', () => {
+  setup();
+  expect(viewProps.snapTapToSegment).toBe(true);
+  setup({ snapTapToSegment: false });
+  expect(viewProps.snapTapToSegment).toBe(false);
+});
+
 it('passes hapticStep and colors through to the native view', () => {
   setup({ hapticStep: 1, fillColor: '#00ff00' });
   expect(viewProps.hapticStep).toBe(1);

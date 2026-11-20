@@ -147,7 +147,7 @@ function SegmentSliderComponent({
   disabled = false,
   showBubble = true,
   centerOrigin = false,
-  snapTapToSegment = false,
+  snapTapToSegment = true,
   alignSegmentMarksToIntegerValues = false,
   onSlideStart,
   onSlideComplete,

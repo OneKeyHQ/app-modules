@@ -170,6 +170,19 @@ it('snaps a quick tap to the nearest mark with snapTapToSegment', () => {
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([25]);
 });
 
+it('snaps a tap by default and lands on the pressed position when off', () => {
+  const snapped = render({ value: 0 });
+  pointer(snapped.slider, 'pointerdown', TRACK_LEFT + 60);
+  pointer(snapped.slider, 'pointerup', TRACK_LEFT + 60);
+  expect(snapped.onChange.mock.calls.map(([v]) => v)).toEqual([25]);
+  act(() => root.unmount());
+  root = createRoot(container);
+  const plain = render({ value: 0, snapTapToSegment: false });
+  pointer(plain.slider, 'pointerdown', TRACK_LEFT + 60);
+  pointer(plain.slider, 'pointerup', TRACK_LEFT + 60);
+  expect(plain.onChange.mock.calls.map(([v]) => v)).toEqual([30]);
+});
+
 it('lets a drag stay free with snapTapToSegment', () => {
   const { slider, onChange } = render({ value: 0, snapTapToSegment: true });
   pointer(slider, 'pointerdown', TRACK_LEFT + 20);
@@ -201,7 +214,7 @@ describe('bubble after a tap', () => {
   });
 
   it('lingers after a plain tap without snapping', () => {
-    const { slider } = render({ value: 0 });
+    const { slider } = render({ value: 0, snapTapToSegment: false });
     pointer(slider, 'pointerdown', TRACK_LEFT + 60);
     expect(bubbleOpacity()).toBe('1');
     pointer(slider, 'pointerup', TRACK_LEFT + 60);
@@ -366,7 +379,7 @@ it('keeps a drag bound to the pointer that started it', () => {
 });
 
 it('ignores a second pointer on a mark without affecting the next press', () => {
-  const { slider, onChange } = render({ value: 0 });
+  const { slider, onChange } = render({ value: 0, snapTapToSegment: false });
   pointer(slider, 'pointerdown', TRACK_LEFT + 20, 1);
   pointer(markDot(3), 'pointerdown', TRACK_LEFT + 150, 2);
   pointer(markDot(3), 'pointerup', TRACK_LEFT + 150, 2);

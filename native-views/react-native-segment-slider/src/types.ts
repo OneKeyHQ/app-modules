@@ -61,8 +61,9 @@ export interface ISegmentSliderProps extends Partial<ISegmentSliderColors> {
   /** Fills from the value-0 origin instead of the left edge. Default false. */
   'centerOrigin'?: boolean;
   /**
-   * A quick tap snaps to the nearest mark while a drag stays free. No effect
-   * without marks. Default false.
+   * A quick tap snaps to the nearest mark while a drag stays free; when false
+   * a tap lands on the pressed position. No effect without marks. Default
+   * true.
    */
   'snapTapToSegment'?: boolean;
   /**
