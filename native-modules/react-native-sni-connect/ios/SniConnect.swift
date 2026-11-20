@@ -67,7 +67,11 @@ final class SniConnectImpl: NSObject {
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
-    resolve(client.getUploadProgress(requestId: requestId))
+    if let progress = client.getUploadProgress(requestId: requestId) {
+      resolve(progress)
+    } else {
+      resolve(NSNull())
+    }
   }
 
   private func handleRequest(

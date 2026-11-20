@@ -5,8 +5,6 @@ import https, { type RequestOptions } from 'https';
 import * as nodePath from 'path';
 import { fileURLToPath } from 'url';
 
-import type { SniConnectUploadProgress } from '../NativeSniConnect';
-
 const MAX_REQUEST_ID_BYTES = 128;
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_PATH_BYTES = 8 * 1024;
@@ -70,10 +68,12 @@ const IPV4_LOG_RE =
   /(^|[^\d.])((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3})(?=$|[^\d.])/g;
 const IPV4_LITERAL_LOG_RE =
   /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+// An IPv6 literal with an embedded IPv4 address is at most 45 characters.
+// Bound both scans before validating candidate addresses for log redaction.
 const BRACKETED_IPV6_LOG_RE =
-  /\[([0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*)\](?=$|:\d{1,5}\b|[^0-9A-Fa-f:.\]])/g;
+  /\[([0-9A-Fa-f:.]{1,45})\](?=$|:\d{1,5}\b|[^0-9A-Fa-f:.\]])/g;
 const IPV6_CANDIDATE_LOG_RE =
-  /(^|[^0-9A-Fa-f:.[])(\[?[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]?)(?=$|[^0-9A-Fa-f:.\]])/g;
+  /(^|[^0-9A-Fa-f:.[])(\[?[0-9A-Fa-f:.]{1,45}\]?)(?=$|[^0-9A-Fa-f:.\]])/g;
 
 const SNI_FAIL_CLOSED_ERROR_CODES = new Set([
   'SNI_INVALID_CONFIG',
@@ -134,10 +134,13 @@ export interface SniNodeLogSink {
   error?: (message: string) => void;
 }
 
-export interface SniNodeUploadProgressEvent {
-  requestId: string;
+export interface SniNodeUploadProgress {
   bytesSent: number;
   totalBytes: number;
+}
+
+export interface SniNodeUploadProgressEvent extends SniNodeUploadProgress {
+  requestId: string;
   progressPercent: number;
 }
 
@@ -188,7 +191,10 @@ type SniRequestLimiterWaiter = {
 type SniRequestState = {
   requestId: string | undefined;
   settled: boolean;
-  uploadProgress: SniConnectUploadProgress | undefined;
+  uploadProgress: SniNodeUploadProgress | undefined;
+  signal: AbortSignal;
+  checkDeadline: () => void;
+  clearDeadline: () => void;
   cancel: (error: SniRequestError) => void;
 };
 
@@ -222,6 +228,7 @@ function isLikelyIpv6Literal(candidate: string): boolean {
     candidate.startsWith('[') && candidate.endsWith(']')
       ? candidate.slice(1, -1)
       : candidate;
+  if (!value.includes(':')) return false;
   const parts = value.split(':');
   const doubleColonCount = value.split('::').length - 1;
 
@@ -597,8 +604,11 @@ function validateTimeout(timeout: number): void {
 }
 
 function validateBody(body: string | null): void {
-  if (body !== null && byteSize(body) > MAX_REQUEST_BODY_BYTES) {
-    invalidConfig('Request body too large');
+  if (body !== null) {
+    if (typeof body !== 'string') invalidConfig('Invalid request body');
+    if (byteSize(body) > MAX_REQUEST_BODY_BYTES) {
+      invalidConfig('Request body too large');
+    }
   }
 }
 
@@ -615,7 +625,8 @@ function isPathInside(root: string, target: string): boolean {
 }
 
 async function resolveAllowedUploadRoots(
-  getAllowedUploadRoots?: () => Promise<readonly string[]> | readonly string[]
+  getAllowedUploadRoots?: () => Promise<readonly string[]> | readonly string[],
+  signal?: AbortSignal
 ): Promise<string[]> {
   if (!getAllowedUploadRoots) {
     return [];
@@ -626,6 +637,7 @@ async function resolveAllowedUploadRoots(
   } catch {
     return [];
   }
+  signal?.throwIfAborted();
   const roots = await Promise.all(
     candidates.map(async (candidate) => {
       try {
@@ -640,7 +652,8 @@ async function resolveAllowedUploadRoots(
 
 async function resolveUploadFile(
   filePath: unknown,
-  options?: SniNodeUploadValidationOptions
+  options?: SniNodeUploadValidationOptions,
+  signal?: AbortSignal
 ): Promise<{ filePath: string; sizeBytes: number }> {
   if (typeof filePath !== 'string' || !filePath || hasControlChar(filePath)) {
     invalidConfig('Invalid filePath');
@@ -664,12 +677,17 @@ async function resolveUploadFile(
     invalidConfig('Upload file is not readable');
   }
 
+  signal?.throwIfAborted();
   const requiredExtension =
     options?.requiredFileExtension === undefined
       ? '.zip'
       : options.requiredFileExtension;
   const requireDirectChild = options?.requireDirectChildOfRoot ?? true;
-  const roots = await resolveAllowedUploadRoots(options?.getAllowedUploadRoots);
+  const roots = await resolveAllowedUploadRoots(
+    options?.getAllowedUploadRoots,
+    signal
+  );
+  signal?.throwIfAborted();
 
   const hasValidExtension =
     !requiredExtension || realPath.endsWith(requiredExtension);
@@ -696,8 +714,15 @@ async function resolveUploadFile(
   if (stat.size < 1 || stat.size > MAX_UPLOAD_FILE_BYTES) {
     invalidConfig(`Invalid upload file size: ${stat.size}`);
   }
+  signal?.throwIfAborted();
   if (options?.verifyUploadFile) {
-    const verified = await options.verifyUploadFile(realPath, stat.size);
+    let verified: boolean;
+    try {
+      verified = await options.verifyUploadFile(realPath, stat.size);
+    } catch {
+      invalidConfig('Upload file verification failed');
+    }
+    signal?.throwIfAborted();
     if (!verified) {
       invalidConfig('Upload file was not collected by the main process');
     }
@@ -707,7 +732,8 @@ async function resolveUploadFile(
 
 export async function validateSniUploadFileConfig(
   config: SniNodeUploadFileConfig,
-  options?: SniNodeUploadValidationOptions
+  options?: SniNodeUploadValidationOptions,
+  signal?: AbortSignal
 ): Promise<NormalizedSniRequestConfig> {
   if ((config as { body?: unknown }).body !== undefined) {
     invalidConfig('uploadFile does not accept a body');
@@ -717,7 +743,7 @@ export async function validateSniUploadFileConfig(
   if (!UPLOAD_FILE_METHODS.has(method)) {
     invalidConfig(`Invalid upload method: ${String(config.method)}`);
   }
-  const normalized = validateSniRequestConfig({
+  const normalized = normalizeSniRequestConfig({
     requestId: config.requestId,
     ip: config.ip,
     hostname: config.hostname,
@@ -749,7 +775,7 @@ export async function validateSniUploadFileConfig(
   }
   return {
     ...normalized,
-    bodyFile: await resolveUploadFile(config.filePath, options),
+    bodyFile: await resolveUploadFile(config.filePath, options, signal),
   };
 }
 
@@ -866,7 +892,7 @@ function normalizeHeaders(
   }
 
   let totalBytes = 0;
-  const normalizedHeaders: Record<string, string> = {};
+  const normalizedHeaders = new Map<string, string>();
   for (const [name, rawValue] of entries) {
     const value = String(rawValue ?? '');
     const nameBytes = byteSize(name);
@@ -893,14 +919,14 @@ function normalizeHeaders(
       invalidConfig(`Unsafe header: ${name}`);
     }
     if (!MODULE_OWNED_HEADERS.has(lowerName)) {
-      normalizedHeaders[name] = value;
+      normalizedHeaders.set(name, value);
     }
   }
 
   if (totalBytes > MAX_TOTAL_HEADER_BYTES) {
     invalidConfig('Headers too large');
   }
-  return normalizedHeaders;
+  return Object.fromEntries(normalizedHeaders);
 }
 
 export function validateSniRequestConfig(
@@ -909,6 +935,23 @@ export function validateSniRequestConfig(
   if ((config as { bodyFile?: unknown }).bodyFile !== undefined) {
     invalidConfig('request does not accept bodyFile');
   }
+  const normalized = normalizeSniRequestConfig(config);
+  const { method, body } = normalized;
+  if ((method === 'GET' || method === 'HEAD') && body !== null) {
+    invalidConfig(`${method} requests must not have a body`);
+  }
+  if (
+    (method === 'POST' || method === 'PUT' || method === 'PATCH') &&
+    body === null
+  ) {
+    invalidConfig(`${method} requests require an explicit body`);
+  }
+  return normalized;
+}
+
+function normalizeSniRequestConfig(
+  config: SniNodeRequestConfig
+): NormalizedSniRequestConfig {
   validateRequestId(config.requestId);
   validatePublicIp(config.ip);
   validateHostname(config.hostname);
@@ -1003,40 +1046,44 @@ export function headersToMaps(rawHeaders: string[]): {
   headers: Record<string, string>;
   multiValueHeaders: Record<string, string[]>;
 } {
-  const headers: Record<string, string> = {};
-  const multiValueHeaders: Record<string, string[]> = {};
+  const headers = new Map<string, string>();
+  const multiValueHeaders = new Map<string, string[]>();
   for (let index = 0; index < rawHeaders.length; index += 2) {
     const name = String(rawHeaders[index] ?? '').toLowerCase();
     const value = String(rawHeaders[index + 1] ?? '');
     if (name) {
-      headers[name] = value;
-      multiValueHeaders[name] = [...(multiValueHeaders[name] ?? []), value];
+      headers.set(name, value);
+      const values = multiValueHeaders.get(name);
+      if (values) {
+        values.push(value);
+      } else {
+        multiValueHeaders.set(name, [value]);
+      }
     }
   }
-  return { headers, multiValueHeaders };
+  return {
+    headers: Object.fromEntries(headers),
+    multiValueHeaders: Object.fromEntries(multiValueHeaders),
+  };
 }
+
+type SniLimiterLog = (
+  level: 'info' | 'warn' | 'error',
+  event: string,
+  fields: Record<string, unknown>
+) => void;
 
 export class SniRequestLimiter {
   private maxActiveRequests: number;
   private maxActiveRequestsPerPair: number;
   private maxPendingRequests: number;
-  private onLog:
-    | ((
-        level: 'info' | 'warn' | 'error',
-        event: string,
-        fields: Record<string, unknown>
-      ) => void)
-    | undefined;
+  private onLog: SniLimiterLog | undefined;
 
   constructor(
     maxActiveRequests = MAX_ACTIVE_REQUESTS,
     maxActiveRequestsPerPair = MAX_ACTIVE_REQUESTS_PER_PAIR,
     maxPendingRequests = MAX_PENDING_REQUESTS,
-    onLog?: (
-      level: 'info' | 'warn' | 'error',
-      event: string,
-      fields: Record<string, unknown>
-    ) => void
+    onLog?: SniLimiterLog
   ) {
     this.maxActiveRequests = maxActiveRequests;
     this.maxActiveRequestsPerPair = maxActiveRequestsPerPair;
@@ -1120,7 +1167,7 @@ export class SniRequestLimiter {
   acquire(
     hostname: string,
     ip: string,
-    options: { signal?: AbortSignal } = {}
+    options: { signal?: AbortSignal; onLog?: SniLimiterLog } = {}
   ): Promise<() => void> {
     const key = this.getKey(hostname, ip);
     if (options.signal?.aborted) {
@@ -1131,7 +1178,8 @@ export class SniRequestLimiter {
     }
     if (this.pendingRequests.length >= this.maxPendingRequests) {
       const stats = this.snapshot(hostname, ip);
-      this.onLog?.('warn', 'desktop_sni_resource_limit', {
+      const onLog = options.onLog ?? this.onLog;
+      onLog?.('warn', 'desktop_sni_resource_limit', {
         hostname: hostname.toLowerCase(),
         ip,
         ipFamily: getIpFamily(ip),
@@ -1174,6 +1222,16 @@ export class SniRequestLimiter {
   }
 }
 
+// Both package entry points must use the same limiter in the main process.
+const limiterKey = Symbol.for(
+  '@onekeyfe/react-native-sni-connect.requestLimiter'
+);
+const sniProcess = process as typeof process & {
+  [limiterKey]?: SniRequestLimiter;
+};
+const sharedRequestLimiter = (sniProcess[limiterKey] ??=
+  new SniRequestLimiter());
+
 export class SniNodeClient {
   private options: SniNodeClientOptions;
 
@@ -1189,18 +1247,12 @@ export class SniNodeClient {
 
   private requestAgentStates = new Map<ClientRequest, SniAgentState>();
 
-  private requestLimiter: SniRequestLimiter;
+  private requestLimiter = sharedRequestLimiter;
 
   constructor(options: SniNodeClientOptions = {}) {
     this.options = options;
     this.logPrefix = options.logPrefix ?? '[DesktopApiSniRequest]';
     this.agentState = createAgentState();
-    this.requestLimiter = new SniRequestLimiter(
-      MAX_ACTIVE_REQUESTS,
-      MAX_ACTIVE_REQUESTS_PER_PAIR,
-      MAX_PENDING_REQUESTS,
-      (level, event, fields) => this.writeNativeLog(level, event, fields)
-    );
   }
 
   getRequestLimiter(): SniRequestLimiter {
@@ -1239,6 +1291,7 @@ export class SniNodeClient {
     request: ClientRequest | undefined,
     agentState: SniAgentState | undefined
   ): void {
+    requestState.clearDeadline();
     requestState.settled = true;
     requestState.uploadProgress = undefined;
     let cleanupAgentState = agentState;
@@ -1265,14 +1318,19 @@ export class SniNodeClient {
     const startedAt = Date.now();
     const hostname = getHostnameForLog(url);
     try {
-      const proxyRules = this.options.resolveProxy
-        ? await this.options.resolveProxy(url)
-        : 'DIRECT';
-      const proxyActive = isProxyRouteActive(proxyRules);
+      const proxyRules = await this.options.resolveProxy?.(url);
+      const proxyRuleType = getProxyRuleType(proxyRules ?? '');
+      if (proxyRuleType === 'unknown') {
+        throw new SniRequestError(
+          'SNI_UNSUPPORTED',
+          'Proxy preflight is unavailable'
+        );
+      }
+      const proxyActive = proxyRuleType !== 'direct';
       this.writeNativeLog('info', 'desktop_sni_proxy_preflight', {
         hostname,
         proxyActive,
-        proxyRuleType: getProxyRuleType(proxyRules),
+        proxyRuleType,
         durationMs: Date.now() - startedAt,
       });
       return proxyActive;
@@ -1321,31 +1379,37 @@ export class SniNodeClient {
   private createRequestState(
     requestId: string | undefined,
     isUpload: boolean,
-    initialTotalBytes = 0
-  ): {
-    abortController: AbortController;
-    requestState: SniRequestState;
-    setActiveRequest: (request: ClientRequest | undefined) => void;
-  } {
+    timeout: number,
+    startedAt: number
+  ): SniRequestState {
     const abortController = new AbortController();
-    let currentActiveRequest: ClientRequest | undefined;
+    const deadline = startedAt + timeout;
+    const cancelForTimeout = () =>
+      requestState.cancel(
+        new SniRequestError(
+          'SNI_TIMEOUT',
+          `SNI request timeout after ${timeout}ms`
+        )
+      );
+    const timer = setTimeout(
+      cancelForTimeout,
+      Math.max(0, deadline - Date.now())
+    );
     const requestState: SniRequestState = {
       requestId,
       settled: false,
       uploadProgress:
-        requestId && isUpload
-          ? {
-              bytesSent: 0,
-              totalBytes: initialTotalBytes,
-            }
-          : undefined,
+        requestId && isUpload ? { bytesSent: 0, totalBytes: 0 } : undefined,
+      signal: abortController.signal,
+      checkDeadline: () => {
+        if (Date.now() >= deadline) cancelForTimeout();
+        abortController.signal.throwIfAborted();
+      },
+      clearDeadline: () => clearTimeout(timer),
       cancel: (error) => {
         requestState.settled = true;
         requestState.uploadProgress = undefined;
-        if (!abortController.signal.aborted) {
-          abortController.abort(error);
-        }
-        currentActiveRequest?.destroy(error);
+        abortController.abort(error);
       },
     };
 
@@ -1367,13 +1431,7 @@ export class SniNodeClient {
     }
     this.allRequests.add(requestState);
 
-    return {
-      abortController,
-      requestState,
-      setActiveRequest: (request) => {
-        currentActiveRequest = request;
-      },
-    };
+    return requestState;
   }
 
   async request(config: SniNodeRequestConfig): Promise<SniNodeResponse> {
@@ -1390,75 +1448,65 @@ export class SniNodeClient {
       );
       return Promise.reject(error);
     }
-    return this.execute(normalizedConfig, startedAt);
+    const requestState = this.createRequestState(
+      normalizedConfig.requestId,
+      false,
+      normalizedConfig.timeout,
+      startedAt
+    );
+    return this.execute(normalizedConfig, startedAt, requestState);
   }
 
   async uploadFile(config: SniNodeUploadFileConfig): Promise<SniNodeResponse> {
     const startedAt = Date.now();
-    let preRegistered:
-      | ReturnType<SniNodeClient['createRequestState']>
-      | undefined;
     try {
       validateRequestId(config.requestId);
-      if (config.requestId) {
-        preRegistered = this.createRequestState(config.requestId, true, 0);
-      }
+      validateTimeout(config.timeout);
     } catch (error) {
       this.logInvalidConfig(config, 0, error, startedAt);
-      return Promise.reject(error);
+      throw error;
     }
 
+    const requestState = this.createRequestState(
+      config.requestId,
+      true,
+      Math.trunc(config.timeout),
+      startedAt
+    );
+    const { signal } = requestState;
+    let rejectOnAbort: (() => void) | undefined;
     let normalizedConfig: NormalizedSniRequestConfig;
     try {
-      normalizedConfig = await validateSniUploadFileConfig(
-        config,
-        this.options
+      requestState.checkDeadline();
+      normalizedConfig = await new Promise<NormalizedSniRequestConfig>(
+        (resolve, reject) => {
+          rejectOnAbort = () => reject(signal.reason);
+          signal.addEventListener('abort', rejectOnAbort, { once: true });
+          validateSniUploadFileConfig(config, this.options, signal).then(
+            resolve,
+            reject
+          );
+        }
       );
+      requestState.checkDeadline();
     } catch (error) {
-      if (preRegistered) {
-        this.removeRequestState(
-          preRegistered.requestState,
-          undefined,
-          undefined
-        );
-      }
+      this.removeRequestState(requestState, undefined, undefined);
       this.logInvalidConfig(config, 0, error, startedAt);
-      return Promise.reject(error);
+      throw error;
+    } finally {
+      if (rejectOnAbort) signal.removeEventListener('abort', rejectOnAbort);
     }
 
-    if (preRegistered && normalizedConfig.bodyFile) {
-      if (
-        preRegistered.requestState.settled ||
-        preRegistered.abortController.signal.aborted
-      ) {
-        const error =
-          preRegistered.abortController.signal.reason instanceof Error
-            ? preRegistered.abortController.signal.reason
-            : new SniRequestError('SNI_CANCELLED', 'Request cancelled', true);
-        this.removeRequestState(
-          preRegistered.requestState,
-          undefined,
-          undefined
-        );
-        this.logInvalidConfig(
-          config,
-          normalizedConfig.bodyFile.sizeBytes,
-          error,
-          startedAt
-        );
-        return Promise.reject(error);
-      }
-      preRegistered.requestState.uploadProgress = {
-        bytesSent: 0,
-        totalBytes: normalizedConfig.bodyFile.sizeBytes,
-      };
+    if (requestState.uploadProgress && normalizedConfig.bodyFile) {
+      requestState.uploadProgress.totalBytes =
+        normalizedConfig.bodyFile.sizeBytes;
     }
-    return this.execute(normalizedConfig, startedAt, preRegistered);
+    return this.execute(normalizedConfig, startedAt, requestState);
   }
 
   async getUploadProgress(
     requestId: string
-  ): Promise<SniConnectUploadProgress | null> {
+  ): Promise<SniNodeUploadProgress | null> {
     if (!requestId) {
       return null;
     }
@@ -1475,45 +1523,28 @@ export class SniNodeClient {
   private async execute(
     normalizedConfig: NormalizedSniRequestConfig,
     startedAt: number,
-    preRegistered?: ReturnType<SniNodeClient['createRequestState']>
+    requestState: SniRequestState
   ): Promise<SniNodeResponse> {
     let releaseRequestSlot: (() => void) | undefined;
-    let queueTimeoutId: ReturnType<typeof setTimeout> | undefined;
     let activeRequest: ClientRequest | undefined;
     let activeAgentState: SniAgentState | undefined;
     let activeFileStream: fs.ReadStream | undefined;
-    const timeoutError = () =>
-      new SniRequestError(
-        'SNI_TIMEOUT',
-        `SNI request timeout after ${normalizedConfig.timeout}ms`
-      );
-    const { abortController, requestState, setActiveRequest } =
-      preRegistered ??
-      this.createRequestState(
-        normalizedConfig.requestId,
-        Boolean(normalizedConfig.bodyFile),
-        normalizedConfig.bodyFile?.sizeBytes ?? 0
-      );
-
-    queueTimeoutId = setTimeout(() => {
-      requestState.cancel(timeoutError());
-    }, normalizedConfig.timeout);
+    const { signal } = requestState;
+    const limiter = this.requestLimiter;
 
     try {
-      releaseRequestSlot = await this.requestLimiter.acquire(
+      requestState.checkDeadline();
+      releaseRequestSlot = await limiter.acquire(
         normalizedConfig.hostname,
         normalizedConfig.ip,
-        { signal: abortController.signal }
+        {
+          signal,
+          onLog: (level, event, fields) =>
+            this.writeNativeLog(level, event, fields),
+        }
       );
-      if (queueTimeoutId) clearTimeout(queueTimeoutId);
-      queueTimeoutId = undefined;
-      if (abortController.signal.aborted) {
-        throw abortController.signal.reason instanceof Error
-          ? abortController.signal.reason
-          : new SniRequestError('SNI_CANCELLED', 'Request cancelled', true);
-      }
+      requestState.checkDeadline();
     } catch (error) {
-      if (queueTimeoutId) clearTimeout(queueTimeoutId);
       releaseRequestSlot?.();
       releaseRequestSlot = undefined;
       this.removeRequestState(requestState, undefined, undefined);
@@ -1542,39 +1573,22 @@ export class SniNodeClient {
       return Promise.reject(error);
     }
 
-    const remainingTimeout =
-      normalizedConfig.timeout - (Date.now() - startedAt);
-    if (remainingTimeout <= 0) {
-      releaseRequestSlot();
-      releaseRequestSlot = undefined;
-      this.removeRequestState(requestState, undefined, undefined);
-      return Promise.reject(timeoutError());
-    }
-
     return new Promise((resolve, reject) => {
       let settled = false;
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      const releaseSlot = () => {
-        releaseRequestSlot?.();
-        releaseRequestSlot = undefined;
+      let responseStarted = false;
+      const cleanup = () => {
+        signal.removeEventListener('abort', onAbort);
         activeFileStream?.destroy();
-        if (
-          normalizedConfig.bodyFile &&
-          activeRequest &&
-          !activeRequest.writableEnded &&
-          !(activeRequest as { ended?: boolean }).ended
-        ) {
-          activeRequest.destroy();
-        }
+        this.removeRequestState(requestState, activeRequest, activeAgentState);
+        releaseRequestSlot?.();
       };
 
       const settleReject = (error: Error) => {
         if (settled) return;
         settled = true;
-        releaseSlot();
-        if (timeoutId) clearTimeout(timeoutId);
-        this.removeRequestState(requestState, activeRequest, activeAgentState);
-        const stats = this.requestLimiter.snapshot(
+        activeRequest?.destroy();
+        cleanup();
+        const stats = limiter.snapshot(
           normalizedConfig.hostname,
           normalizedConfig.ip
         );
@@ -1602,9 +1616,14 @@ export class SniNodeClient {
       const settleResolve = (response: SniNodeResponse) => {
         if (settled) return;
         settled = true;
-        releaseSlot();
-        if (timeoutId) clearTimeout(timeoutId);
-        this.removeRequestState(requestState, activeRequest, activeAgentState);
+        if (
+          normalizedConfig.bodyFile &&
+          activeRequest &&
+          !activeRequest.writableEnded
+        ) {
+          activeRequest.destroy();
+        }
+        cleanup();
         this.writeNativeLog('info', 'desktop_sni_request_result', {
           result: 'response',
           status: response.statusCode,
@@ -1619,6 +1638,9 @@ export class SniNodeClient {
         resolve(response);
       };
 
+      const onAbort = () => settleReject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+
       try {
         activeAgentState = this.agentState;
         const requestOptions = buildSniRequestOptions(
@@ -1627,9 +1649,25 @@ export class SniNodeClient {
         );
 
         const request = https.request(requestOptions, (response) => {
+          responseStarted = true;
+          response.on('error', (error: Error) => {
+            settleReject(
+              error instanceof SniRequestError
+                ? error
+                : new SniRequestError(
+                    'SNI_RESPONSE_FAILED',
+                    `Response stream error: ${error.message}`,
+                    true
+                  )
+            );
+          });
+
+          if (settled) {
+            response.destroy();
+            return;
+          }
           const encoding = response.headers['content-encoding'];
           if (encoding && encoding !== 'identity') {
-            response.resume();
             settleReject(
               new SniRequestError(
                 'SNI_RESPONSE_FAILED',
@@ -1643,12 +1681,13 @@ export class SniNodeClient {
           const chunks: Buffer[] = [];
           let totalBytes = 0;
           response.on('data', (chunk: Buffer | string) => {
+            if (settled) return;
             const buffer = Buffer.isBuffer(chunk)
               ? chunk
               : Buffer.from(chunk, 'utf8');
             totalBytes += buffer.length;
             if (totalBytes > MAX_RESPONSE_BODY_BYTES) {
-              request.destroy(
+              settleReject(
                 new SniRequestError(
                   'SNI_RESPONSE_FAILED',
                   'Response body too large',
@@ -1661,6 +1700,7 @@ export class SniNodeClient {
           });
 
           response.on('end', () => {
+            if (settled) return;
             const headerMaps = headersToMaps(response.rawHeaders ?? []);
             const body = Buffer.concat(chunks).toString('utf8');
             const statusCode = response.statusCode || 0;
@@ -1674,25 +1714,39 @@ export class SniNodeClient {
               data: body,
             });
           });
-
-          response.on('error', (error: Error) => {
-            settleReject(
-              error instanceof SniRequestError
-                ? error
-                : new SniRequestError(
-                    'SNI_RESPONSE_FAILED',
-                    `Response stream error: ${error.message}`,
-                    true
-                  )
-            );
-          });
         });
         activeRequest = request;
-        setActiveRequest(request);
         this.allActiveRequests.add(request);
         activeAgentState.activeRequests.add(request);
         this.requestAgentStates.set(request, activeAgentState);
-        const stats = this.requestLimiter.snapshot(
+        request.on('error', (error: Error) => {
+          settleReject(
+            classifyTransportError(error, Boolean(normalizedConfig.bodyFile))
+          );
+        });
+
+        request.once('upgrade', (_response, socket) => {
+          socket.destroy();
+          settleReject(
+            new SniRequestError(
+              'SNI_SECURITY_POLICY_FAILED',
+              'Protocol upgrades are not supported',
+              true
+            )
+          );
+        });
+        request.once('close', () => {
+          if (settled) return;
+          settleReject(
+            new SniRequestError(
+              responseStarted ? 'SNI_RESPONSE_FAILED' : 'SNI_REQUEST_FAILED',
+              'Request closed before completion',
+              responseStarted
+            )
+          );
+        });
+
+        const stats = limiter.snapshot(
           normalizedConfig.hostname,
           normalizedConfig.ip
         );
@@ -1712,16 +1766,7 @@ export class SniNodeClient {
           pendingRequestsForPair: stats.pendingRequestsForPair,
         });
 
-        request.on('error', (error: Error) => {
-          settleReject(
-            classifyTransportError(error, Boolean(normalizedConfig.bodyFile))
-          );
-        });
-
-        timeoutId = setTimeout(() => {
-          request.destroy(timeoutError());
-        }, remainingTimeout);
-
+        if (settled) return;
         const { bodyFile } = normalizedConfig;
         if (bodyFile) {
           // Bounded to the validated size so a growing file cannot exceed
@@ -1730,11 +1775,11 @@ export class SniNodeClient {
             start: 0,
             end: bodyFile.sizeBytes - 1,
           });
-          activeFileStream.on('error', (error: Error) => {
-            request.destroy(
+          activeFileStream.on('error', () => {
+            settleReject(
               new SniRequestError(
                 'SNI_FILE_READ_FAILED',
-                `Upload file read failed: ${error.message}`,
+                'Upload file read failed',
                 true
               )
             );
@@ -1770,7 +1815,7 @@ export class SniNodeClient {
             request.write(bytes, (error?: Error | null) => {
               if (settled || requestState.settled) return;
               if (error) {
-                request.destroy(error);
+                settleReject(classifyTransportError(error, true));
                 return;
               }
               bytesSent = Math.min(
@@ -1866,13 +1911,12 @@ export class SniNodeClient {
   async clearDNSCache(): Promise<{ success: boolean }> {
     const previousAgentState = this.agentState;
     this.agentState = createAgentState();
-    if (
-      previousAgentState.activeRequests.size === 0 &&
-      !previousAgentState.destroyed
-    ) {
-      previousAgentState.destroyed = true;
-      previousAgentState.agent.destroy();
+    const previousAgent = previousAgentState.agent;
+    previousAgent.keepSocketAlive = () => false;
+    for (const sockets of Object.values(previousAgent.freeSockets)) {
+      sockets?.forEach((socket) => socket.destroy());
     }
+    this.maybeDestroyIdleAgentState(previousAgentState);
     this.writeNativeLog('info', 'desktop_sni_lifecycle', {
       action: 'clear_dns_cache',
       success: true,

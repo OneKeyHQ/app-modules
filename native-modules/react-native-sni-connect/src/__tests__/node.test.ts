@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import type { IncomingMessage } from 'http';
 import https, { type RequestOptions } from 'https';
+import { Socket } from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
@@ -12,6 +13,7 @@ import SniNodeClient, {
   headersToMaps,
   isProxyRouteActive,
   isSniFailClosedError,
+  redactIpLiterals,
   SniRequestError,
   SniRequestLimiter,
   type SniNodeLogSink,
@@ -60,7 +62,7 @@ class FakeUploadRequest extends EventEmitter {
 
   chunks: Buffer[] = [];
 
-  ended = false;
+  writableEnded = false;
 
   destroyedWith: Error | undefined;
 
@@ -84,7 +86,7 @@ class FakeUploadRequest extends EventEmitter {
 
   end = jest.fn((chunk?: Buffer | string) => {
     if (chunk) this.write(chunk);
-    this.ended = true;
+    this.writableEnded = true;
     this.emit('finish');
     return this as never;
   });
@@ -142,15 +144,36 @@ describe('SniNodeClient OSCS validation and request lifecycle', () => {
     const normalized = validateSniRequestConfig({
       ...baseConfig(),
       requestId: 'req-1',
-      method: ' get ',
+      method: ' post ',
       path: 'v1?q=1',
       body: 'a'.repeat(1024 * 1024),
       timeout: 120_000,
     });
 
-    expect(normalized.method).toBe('GET');
+    expect(normalized.method).toBe('POST');
     expect(normalized.path).toBe('/v1?q=1');
     expect(normalized.body).toHaveLength(1024 * 1024);
+  });
+
+  test('requires explicit bodies for write methods and rejects bodies for GET and HEAD', () => {
+    for (const method of ['GET', 'HEAD']) {
+      expectInvalid({ method, body: '' });
+    }
+    for (const method of ['POST', 'PUT', 'PATCH']) {
+      expectInvalid({ method });
+      expect(
+        validateSniRequestConfig({ ...baseConfig(), method, body: '' }).body
+      ).toBe('');
+    }
+  });
+
+  test('redacts bracketed and unbracketed IPv6 including an IPv4 tail', () => {
+    expect(redactIpLiterals('dial [2001:db8::1]:443 or 2001:db8::2')).toBe(
+      'dial <ip6>:443 or <ip6>'
+    );
+    expect(
+      redactIpLiterals('[abcd:abcd:abcd:abcd:abcd:abcd:192.168.128.100]')
+    ).toBe('<ip6>');
   });
 
   test('rejects unsafe IP destinations and hostnames that are IP literals', () => {
@@ -250,7 +273,7 @@ describe('SniNodeClient OSCS validation and request lifecycle', () => {
   test('filters module-owned headers and rejects unsafe headers', () => {
     const normalized = validateSniRequestConfig({
       ...baseConfig(),
-      method: 'get',
+      method: 'post',
       headers: {
         'Host': 'evil.example',
         'Content-Length': '9999',
@@ -264,7 +287,7 @@ describe('SniNodeClient OSCS validation and request lifecycle', () => {
     expect(options.port).toBe(443);
     expect(options.host).toBe('93.184.216.34');
     expect(options.servername).toBe('example.com');
-    expect(options.method).toBe('GET');
+    expect(options.method).toBe('POST');
     expect(options.headers).toMatchObject({
       'Host': 'example.com',
       'Accept-Encoding': 'identity',
@@ -301,15 +324,25 @@ describe('SniNodeClient OSCS validation and request lifecycle', () => {
       'b=2',
       'X-Test',
       'one',
+      'Constructor',
+      'two',
+      '__proto__',
+      'three',
+      '__proto__',
+      'four',
     ]);
 
     expect(maps.headers).toEqual({
       'set-cookie': 'b=2',
       'x-test': 'one',
+      'constructor': 'two',
+      ['__proto__']: 'four',
     });
     expect(maps.multiValueHeaders).toEqual({
       'set-cookie': ['a=1', 'b=2'],
       'x-test': ['one'],
+      'constructor': ['two'],
+      ['__proto__']: ['three', 'four'],
     });
   });
 
@@ -407,6 +440,113 @@ describe('SniNodeClient OSCS validation and request lifecycle', () => {
     await expect(
       client.isProxyActiveForUrl('https://example.com/')
     ).resolves.toBe(true);
+  });
+
+  test('reports unavailable proxy preflight when there is no route to inspect', async () => {
+    for (const client of [
+      new SniNodeClient(),
+      new SniNodeClient({ resolveProxy: async () => ' ; ' }),
+    ]) {
+      await expect(
+        client.isProxyActiveForUrl('https://example.com/')
+      ).rejects.toMatchObject({
+        code: 'SNI_UNSUPPORTED',
+      });
+    }
+  });
+
+  test('shares per-destination admission across clients', async () => {
+    const firstClient = new SniNodeClient();
+    const secondClient = new SniNodeClient();
+    const requestSpy = jest
+      .spyOn(https, 'request')
+      .mockImplementation(
+        ((options: RequestOptions) => new FakeClientRequest(options)) as never
+      );
+    const active = Array.from({ length: 16 }, () =>
+      observeRejection(firstClient.request(baseConfig()))
+    );
+    const queued = observeRejection(secondClient.request(baseConfig()));
+
+    try {
+      await flushMicrotasks();
+      expect(requestSpy).toHaveBeenCalledTimes(16);
+      await expect(
+        secondClient.getDebugSnapshot(baseConfig())
+      ).resolves.toMatchObject({
+        activeRequests: 16,
+        activeRequestsForPair: 16,
+        pendingRequests: 1,
+        pendingRequestsForPair: 1,
+      });
+      await firstClient.cancelAllRequests();
+      await flushMicrotasks();
+      expect(requestSpy).toHaveBeenCalledTimes(17);
+      await expect(
+        secondClient.getDebugSnapshot(baseConfig())
+      ).resolves.toMatchObject({
+        activeRequests: 1,
+        pendingRequests: 0,
+      });
+    } finally {
+      await firstClient.cancelAllRequests();
+      await secondClient.cancelAllRequests();
+      await Promise.allSettled([...active, queued]);
+      requestSpy.mockRestore();
+    }
+  });
+
+  test.each([
+    ['unsupported encoding', 'SNI_RESPONSE_FAILED'],
+    ['upgrade', 'SNI_SECURITY_POLICY_FAILED'],
+    ['close', 'SNI_REQUEST_FAILED'],
+  ])('cleans up the transport and admission after %s', async (event, code) => {
+    const client = new SniNodeClient();
+    const socket = new Socket();
+    const destroySocket = jest.spyOn(socket, 'destroy');
+    const request = new FakeClientRequest({});
+    const response = Object.assign(new EventEmitter(), {
+      headers: { 'content-encoding': 'gzip' },
+      resume: jest.fn(),
+    }) as unknown as IncomingMessage;
+    const requestSpy = jest.spyOn(https, 'request').mockImplementation(((
+      _options: RequestOptions,
+      callback: (message: IncomingMessage) => void
+    ) => {
+      request.once('response', callback);
+      return request;
+    }) as never);
+
+    const pending = observeRejection(
+      client.request({ ...baseConfig(), requestId: 'request' })
+    );
+    try {
+      await flushMicrotasks();
+      if (event === 'unsupported encoding') {
+        request.emit('response', response);
+        expect(response.resume).not.toHaveBeenCalled();
+      } else if (event === 'upgrade') {
+        request.emit('upgrade', response, socket);
+        expect(destroySocket).toHaveBeenCalled();
+      } else {
+        request.emit('close');
+      }
+      await expect(pending).rejects.toMatchObject({ code });
+      expect(request.destroy).toHaveBeenCalledTimes(1);
+      await expect(client.cancelRequest('request')).resolves.toEqual({
+        success: false,
+      });
+      await expect(
+        client.getDebugSnapshot(baseConfig())
+      ).resolves.toMatchObject({
+        activeRequests: 0,
+        pendingRequests: 0,
+      });
+    } finally {
+      await client.cancelAllRequests();
+      socket.destroy();
+      requestSpy.mockRestore();
+    }
   });
 
   test('queues the 17th per-pair and 65th global request, enforces 256 pending limit, and preserves FIFO', async () => {
@@ -561,8 +701,16 @@ describe('SniNodeClient OSCS validation and request lifecycle', () => {
 
       const firstAgent = requests[0]?.options.agent as https.Agent;
       const firstAgentDestroySpy = jest.spyOn(firstAgent, 'destroy');
+      const idleSocket = new Socket();
+      const destroyIdleSocket = jest.spyOn(idleSocket, 'destroy');
+      Object.assign(firstAgent.freeSockets, {
+        'idle.example.com:8.8.8.8:443': [idleSocket],
+      });
       await client.clearDNSCache();
+      expect(destroyIdleSocket).toHaveBeenCalledTimes(1);
+      expect(firstAgent.keepSocketAlive(idleSocket)).toBe(false);
       expect(firstAgentDestroySpy).not.toHaveBeenCalled();
+      expect(requests[0]?.destroy).not.toHaveBeenCalled();
 
       await client.cancelAllRequests();
       await expect(activePromise).rejects.toMatchObject({
@@ -863,6 +1011,130 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
       code: 'SNI_INVALID_CONFIG',
       failClosed: true,
     });
+  });
+
+  test.each(['cancel by ID', 'cancel without ID', 'timeout'])(
+    'settles an upload blocked in validation on %s',
+    async (action) => {
+      jest.useFakeTimers();
+      let onValidationStarted!: () => void;
+      let finishValidation!: (roots: string[]) => void;
+      const validationStarted = new Promise<void>((resolve) => {
+        onValidationStarted = resolve;
+      });
+      const validation = new Promise<string[]>((resolve) => {
+        finishValidation = resolve;
+      });
+      const verifyUploadFile = jest.fn(() => true);
+      const client = makeClient({
+        getAllowedUploadRoots: () => {
+          onValidationStarted();
+          return validation;
+        },
+        verifyUploadFile,
+      });
+      const requestId =
+        action === 'cancel without ID' ? undefined : 'validating';
+      const result = observeRejection(
+        client.uploadFile(baseUploadConfig({ requestId, timeout: 100 }))
+      );
+      try {
+        await validationStarted;
+        if (action === 'timeout') {
+          jest.advanceTimersByTime(100);
+        } else if (requestId) {
+          await expect(client.cancelRequest(requestId)).resolves.toEqual({
+            success: true,
+          });
+        } else {
+          await client.cancelAllRequests();
+        }
+
+        await expect(result).rejects.toMatchObject({
+          code: action === 'timeout' ? 'SNI_TIMEOUT' : 'SNI_CANCELLED',
+        });
+        await expect(
+          client.getUploadProgress('validating')
+        ).resolves.toBeNull();
+        await expect(client.cancelRequest('validating')).resolves.toEqual({
+          success: false,
+        });
+        finishValidation([ARCHIVE_DIR]);
+        await flushMicrotasks();
+        expect(verifyUploadFile).not.toHaveBeenCalled();
+        expect(requestSpy).not.toHaveBeenCalled();
+      } finally {
+        finishValidation([ARCHIVE_DIR]);
+        await client.cancelAllRequests();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  test('uses the original upload deadline while waiting for admission', async () => {
+    jest.useFakeTimers();
+    let onVerificationStarted!: () => void;
+    let finishVerification!: (verified: boolean) => void;
+    const verificationStarted = new Promise<void>((resolve) => {
+      onVerificationStarted = resolve;
+    });
+    const verification = new Promise<boolean>((resolve) => {
+      finishVerification = resolve;
+    });
+    const client = makeClient({
+      verifyUploadFile: () => {
+        onVerificationStarted();
+        return verification;
+      },
+    });
+    const limiter = new SniRequestLimiter(1, 1);
+    client.setRequestLimiter(limiter);
+    const release = await limiter.acquire(
+      'wallet.onekeycn.com',
+      '93.184.216.34'
+    );
+    const result = observeRejection(
+      client.uploadFile(baseUploadConfig({ timeout: 100 }))
+    );
+
+    try {
+      await verificationStarted;
+      jest.advanceTimersByTime(75);
+      finishVerification(true);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(limiter.snapshot().pendingRequests).toBe(1);
+      jest.advanceTimersByTime(25);
+      await expect(result).rejects.toMatchObject({ code: 'SNI_TIMEOUT' });
+      expect(limiter.snapshot().pendingRequests).toBe(0);
+      expect(requestSpy).not.toHaveBeenCalled();
+    } finally {
+      finishVerification(true);
+      await client.cancelAllRequests();
+      release();
+      jest.useRealTimers();
+    }
+  });
+
+  test('keeps the archive path out of file stream errors and logs', async () => {
+    const logger = createMockLogger();
+    const filePath = path.join(ARCHIVE_DIR, 'removed-before-read.zip');
+    fs.writeFileSync(filePath, 'archive');
+    const client = makeClient({
+      logger,
+      verifyUploadFile: () => {
+        fs.unlinkSync(filePath);
+        return true;
+      },
+    });
+
+    await expect(
+      client.uploadFile(baseUploadConfig({ filePath }))
+    ).rejects.toMatchObject({
+      code: 'SNI_FILE_READ_FAILED',
+      message: 'SNI_FILE_READ_FAILED: Upload file read failed',
+    });
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error.mock.calls[0]?.[0]).not.toContain(filePath);
   });
 
   test('times out stalled uploads, classifies pre-write ECONNREFUSED, and destroys incomplete requests on early reply', async () => {

@@ -13,8 +13,8 @@ upload boundary and its focused review corrections.
 - Supported native methods receive the caller's config unchanged.
 - `getUploadProgress(requestId)` returns the latest active upload snapshot or
   `null` for an unknown, inactive, or non-upload request ID. JS calls the native
-  method directly; the JS and native changes must ship together. This does not
-  change `uploadFile(config)` or its response/error behavior.
+  method directly, and iOS resolves an explicit JavaScript `null` through the
+  bridge. The JS and native changes must ship together.
 
 ## Upload progress
 
@@ -63,7 +63,36 @@ Status: **Implemented in source**; native device/network acceptance remains open
   with an I/O error (`SNI_REQUEST_FAILED`); an already transmitted prefix can
   remain at the server. Disk input and socket output remain streaming.
 - Admission, cancellation, total deadlines, response handling, and destination
-  pinning continue to follow OSCS without changes.
+  pinning follow OSCS.
+
+## Node/Desktop conformance
+
+- `request()` rejects GET and HEAD with a body and POST, PUT and PATCH
+  without a body. The empty string is an explicit body. File uploads supply
+  their body through the validated file.
+- The upload deadline starts at invocation and covers asynchronous file and
+  caller-provided validation, admission, and transport. Validating uploads are
+  included in `cancelAllRequests()` even without a request ID. Timeout,
+  individual cancellation and replacement of an active ID settle promptly.
+  Any validation work that cannot be interrupted may finish in the background.
+  Its late result cannot start transport or update progress.
+- Node clients in the Electron main process share the baseline admission
+  counters across the CommonJS and ESM entry points. Cancellation and upload
+  progress belong to the client instance.
+- Electron consumers supply their session's `resolveProxy(url)` to the
+  client. The proxy preflight rejects with `SNI_UNSUPPORTED` when no resolver
+  is available or the resolver returns an empty route. Direct SNI transport
+  follows its existing pinning and bypass contract.
+- Unsupported response encodings abort the transport with
+  `SNI_RESPONSE_FAILED`. Unsolicited protocol upgrades close the socket and
+  reject with `SNI_SECURITY_POLICY_FAILED`. Premature request closure settles
+  the operation and releases admission. Header dictionaries preserve valid
+  names and repeated values regardless of object prototype properties.
+- File stream errors reject with `SNI_FILE_READ_FAILED` and a fixed public
+  message. Local paths are excluded from that error and its diagnostic log.
+- Clearing the DNS cache rotates the client's agent, immediately destroys
+  idle sockets on the previous agent and closes its active sockets when
+  they finish.
 
 ## Transport recovery boundary
 
@@ -83,9 +112,9 @@ resource and deadline constraints remain unchanged.
 - Internal behavior differs by library, request body and connection history.
   Fixture-specific counts below characterize locked versions; they are not
   cross-platform public guarantees or a requirement to retry every request.
-- The historical Node fixture loaded the actual external consumer source;
-  this package has no Node transport implementation. That HTTPS backend does
-  not add a recovery loop in the characterized cases.
+- The historical Node fixture loaded the external consumer source that
+  preceded this package's Node transport. That backend adds no recovery loop
+  in the characterized cases.
 - Historical iOS package acceptance compiled the unpacked npm artifact's five
   original Swift sources against pristine EMASCurl 1.5.5. No dependency patch,
   consumer patch hook or replay-verification build phase is required.
@@ -277,6 +306,10 @@ retain the generic logger's sensitive-data filtering.
   libcurl. Native build and device/network behavior remain unverified here.
 - JS API tests cover capability detection, missing-native Promise rejection,
   supported forwarding, and synchronous native errors becoming rejections.
+- Node tests cover method and response handling, shared admission, upload
+  deadlines and cancellation, file-error logging, proxy preflight and agent
+  cleanup. A packed-package smoke test checks both NodeNext declarations and
+  shared admission for CommonJS and ESM consumers.
 - Swift validation tests exercise bounded reads after validated files grow or
   become empty, and exact-limit binary contents.
 - Android tests exercise actual RequestBody writes for exact-limit data, growth
