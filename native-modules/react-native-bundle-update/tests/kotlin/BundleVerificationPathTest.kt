@@ -1,5 +1,6 @@
 package com.margelo.nitro.reactnativebundleupdate
 
+import com.margelo.nitro.reactnativebundlecrypto.JvmBundleFileSystem
 import java.io.File
 import java.nio.file.Files
 
@@ -73,7 +74,7 @@ fun main() {
         val nestedKey = "segments-background/metadata.json"
         val finderKey = "segments-background/.DS_Store"
         fun verify(metadata: Map<String, String>, subtree: File = bundleDir): Boolean =
-            verifyBundleFiles(bundleDir, subtree, metadata, { file, expected -> file.readText() == expected }, {})
+            verifyBundleFiles(bundleDir, subtree, metadata, JvmBundleFileSystem, { file, expected -> file.readText() == expected }, {})
         expect(verify(baseEntries), false, "nested metadata cannot be omitted from the manifest")
         val allEntries = baseEntries + (nestedKey to "payload metadata")
         expect(verify(allEntries), true, "root metadata and unlisted Finder files may be skipped")
@@ -88,10 +89,48 @@ fun main() {
         nestedMetadata.mkdir()
         expect(verify(allEntries), false, "manifest-listed metadata must be a regular file")
 
+        fun managed(root: File, file: File) = resolveManagedBundlePath(root, file, JvmBundleFileSystem)
+        val absentDiff = File(bundleDir, "diff/next.diff.zip")
+        expect(managed(bundleDir, absentDiff) == absentDiff.canonicalPath, true, "admit download before the diff directory exists")
+        expect(managed(bundleDir, segment) == segment.canonicalPath, true, "admit an existing managed entry")
+        val metadataBelowRegularFile = File(entryBundle, "metadata.json")
+        expect(
+            managed(bundleDir, metadataBelowRegularFile) == metadataBelowRegularFile.canonicalPath,
+            true,
+            "admission leaves target type validation to the package verifier",
+        )
+        expect(managed(bundleDir, bundleDir) == null, true, "managed output must be below its root")
+        expect(managed(bundleDir, siblingFile) == null, true, "reject prefix-sharing sibling at admission")
+        expect(managed(bundleDir, File(bundleDir, "../outside.hbc")) == null, true, "reject path traversal at admission")
+
         val link = File(tempRoot, "bundle-link")
         val linked = runCatching { Files.createSymbolicLink(link.toPath(), bundleDir.toPath()) }.isSuccess
         if (linked) {
             expect(isSameDirectory(link, bundleDir), true, "symlinked root resolves to the same dir")
+            expect(managed(link, File(link, "next.zip")) == null, true, "reject symlink at managed root")
+            val filesDir = File(tempRoot, "filesDir").apply { mkdir() }
+            val filesDirLink = File(tempRoot, "filesDir-link")
+            Files.createSymbolicLink(filesDirLink.toPath(), filesDir.toPath())
+            val managedAlias = File(filesDirLink, folderName)
+            expect(
+                managed(managedAlias, File(managedAlias, "next.zip")) == File(filesDir, "$folderName/next.zip").canonicalPath,
+                true,
+                "allow symlink above the managed root",
+            )
+            val fileLink = File(bundleDir, "next.zip")
+            Files.createSymbolicLink(fileLink.toPath(), File(bundleDir, "missing-target.zip").toPath())
+            expect(managed(bundleDir, fileLink) == null, true, "reject a dangling output symlink")
+            expect(verify(allEntries - nestedKey), false, "extracted-file verifier rejects dangling symlinks")
+            Files.delete(fileLink.toPath())
+            Files.createSymbolicLink(fileLink.toPath(), entryBundle.toPath())
+            expect(managed(bundleDir, fileLink) == null, true, "reject a symlink pointing inside the managed root")
+            val diffLink = File(bundleDir, "diff")
+            Files.createSymbolicLink(diffLink.toPath(), File(bundleDir, "missing-diff-directory").toPath())
+            expect(managed(bundleDir, absentDiff) == null, true, "reject a dangling intermediate symlink")
+            Files.delete(diffLink.toPath())
+            Files.createSymbolicLink(diffLink.toPath(), segmentDir.toPath())
+            expect(managed(bundleDir, absentDiff) == null, true, "reject an intermediate symlink pointing inside the root")
+            Files.delete(filesDirLink.toPath())
             expect(
                 bundleRelativePath(
                     link,

@@ -59,7 +59,7 @@ function zip(files) {
   return archive.toBuffer();
 }
 
-async function signDigest(fileName, data) {
+async function signDigest(fileName, data, targetBundleVersion = bundleVersion) {
   const { privateKey } = await keys;
   return sign({
     message: await createCleartextMessage({
@@ -67,7 +67,7 @@ async function signDigest(fileName, data) {
         fileName,
         appType: 'electron',
         appVersion,
-        bundleVersion,
+        bundleVersion: targetBundleVersion,
         sha256: hash('sha256', data),
       }),
     }),
@@ -647,6 +647,131 @@ test(
   }
 );
 
+test('stale ASC fallback preserves a newer diff for the same full release', async (t) => {
+  const replacementUrl = 'https://fixtures.invalid/replacement-diff.zip';
+  let client;
+  let replacementArchive;
+  let replacementDownload;
+  const f = await fixture(t, {
+    base: false,
+    logger: {
+      info: () => {},
+      error: () => {},
+      warn: (source) => {
+        if (source === 'bundle-verifyASC' && !replacementDownload) {
+          replacementDownload = client.downloadBundle({
+            ...f.params,
+            diffDownloadUrl: replacementUrl,
+            diffSha256: hash('sha256', replacementArchive),
+            diffFileSize: replacementArchive.length,
+          });
+        }
+      },
+    },
+    transport: async (url, _headers, _signal, data) => {
+      if (!replacementArchive) {
+        const archive = new AdmZip(data);
+        archive.addZipComment('Replacement copy of the signed diff');
+        replacementArchive = archive.toBuffer();
+      }
+      return fixtureResponse(
+        url,
+        200,
+        url === replacementUrl ? replacementArchive : data
+      );
+    },
+  });
+  client = f.makeClient();
+  const original = await client.downloadBundle(f.params);
+  await assert.rejects(
+    client.verifyBundleASC(original),
+    hasCode('INCOMPATIBLE', 'verifyASC')
+  );
+  const replacement = await replacementDownload;
+  assert.notEqual(replacement.diffSha256, original.diffSha256);
+  const archive = join(f.diffDir, `${outputName}.diff.zip`);
+  assert.deepEqual(readFileSync(archive), replacementArchive);
+  const descriptor = JSON.parse(readFileSync(`${archive}.meta.json`, 'utf8'));
+  assert.equal(descriptor.sha256, original.sha256);
+  assert.equal(descriptor.diffSha256, replacement.diffSha256);
+  assert.equal(descriptor.fallbackRequired, false);
+
+  const source = join(f.root, 'built-in/build/assets/reused.txt');
+  mkdirSync(dirname(source), { recursive: true });
+  writeFileSync(source, f.asset);
+  await client.verifyBundleASC(replacement);
+  assert.equal(readFileSync(f.metadataPath, 'utf8'), f.metadata);
+  assert.equal(f.calls.includes(downloadUrl), false);
+});
+
+test(
+  'a terminal ASC failure preserves a completed newer diff',
+  { timeout: 5000 },
+  async (t) => {
+    const replacementUrl = 'https://fixtures.invalid/replacement-diff.zip';
+    let replacementArchive;
+    const f = await fixture(t, {
+      transport: async (url, _headers, _signal, data) => {
+        if (url === diffDownloadUrl && !replacementArchive) {
+          const archive = new AdmZip(data);
+          archive.addZipComment('Replacement copy of the signed diff');
+          replacementArchive = archive.toBuffer();
+        }
+        return fixtureResponse(
+          url,
+          200,
+          url === replacementUrl ? replacementArchive : data
+        );
+      },
+    });
+    const client = f.makeClient();
+    const original = await client.downloadBundle(f.params);
+    let notifyVerificationStarted;
+    let allowVerificationToFail;
+    const verificationStarted = new Promise((resolve) => {
+      notifyVerificationStarted = resolve;
+    });
+    const verificationCanFail = new Promise((resolve) => {
+      allowVerificationToFail = resolve;
+    });
+    const readSignature = client.readMetadataFileSha256.bind(client);
+    const signatureReader = t.mock.method(
+      client,
+      'readMetadataFileSha256',
+      async (signature, expected) => {
+        await readSignature(signature, expected);
+        notifyVerificationStarted();
+        await verificationCanFail;
+        return '';
+      }
+    );
+    const rejected = assert.rejects(
+      client.verifyBundleASC(original),
+      hasCode('INTEGRITY_FAILED', 'verifyASC')
+    );
+    await verificationStarted;
+    const replacement = await client.downloadBundle({
+      ...f.params,
+      diffDownloadUrl: replacementUrl,
+      diffSha256: hash('sha256', replacementArchive),
+      diffFileSize: replacementArchive.length,
+    });
+    assert.notEqual(replacement.diffSha256, original.diffSha256);
+    allowVerificationToFail();
+    await rejected;
+    signatureReader.mock.restore();
+
+    const archive = join(f.diffDir, `${outputName}.diff.zip`);
+    assert.deepEqual(readFileSync(archive), replacementArchive);
+    const descriptor = JSON.parse(readFileSync(`${archive}.meta.json`, 'utf8'));
+    assert.equal(descriptor.diffSha256, replacement.diffSha256);
+    assert.equal(descriptor.fallbackRequired, false);
+    await client.verifyBundleASC(replacement);
+    assert.equal(readFileSync(f.metadataPath, 'utf8'), f.metadata);
+    assert.equal(f.calls.includes(downloadUrl), false);
+  }
+);
+
 test('an existing stale full ZIP is replaced before download reports success', async (t) => {
   const f = await fixture(t);
   const client = f.makeClient();
@@ -984,6 +1109,71 @@ test('installs and commits the fallback list when evicted-directory cleanup fail
   assert.equal(f.getRestarts(), 1);
   assert.equal(existsSync(evicted), true);
 });
+
+test(
+  'concurrent installs record the active bundle in verification completion order',
+  { timeout: 5000 },
+  async (t) => {
+    const f = await fixture(t);
+    const client = f.makeClient();
+    const bundles = await Promise.all(
+      ['40', '41', '42'].map(async (version) => {
+        const directory = join(
+          dirname(f.bundleDir),
+          `${appVersion}-${version}`
+        );
+        const html = `<html>version ${version}</html>`;
+        const metadata = JSON.stringify({ 'index.html': hash('sha512', html) });
+        mkdirSync(join(directory, 'build'), { recursive: true });
+        writeFileSync(join(directory, 'build/index.html'), html);
+        writeFileSync(join(directory, 'metadata.json'), metadata);
+        return {
+          latestVersion: appVersion,
+          bundleVersion: version,
+          signature: await signDigest('metadata.json', metadata, version),
+        };
+      })
+    );
+    const [first, second, last] = bundles;
+    await client.installBundle(first);
+
+    let announceVerified;
+    let allowCommit;
+    const lastVerified = new Promise((resolve) => {
+      announceVerified = resolve;
+    });
+    const lastCanCommit = new Promise((resolve) => {
+      allowCommit = resolve;
+    });
+    const readSignature = client.readMetadataFileSha256.bind(client);
+    t.mock.method(
+      client,
+      'readMetadataFileSha256',
+      async (signature, expected) => {
+        const digest = await readSignature(signature, expected);
+        if (expected.bundleVersion === last.bundleVersion) {
+          announceVerified();
+          await lastCanCommit;
+        }
+        return digest;
+      }
+    );
+
+    const installLast = client.installBundle(last);
+    await lastVerified;
+    assert.equal(f.getInstalled()?.bundleVersion, first.bundleVersion);
+    await client.installBundle(second);
+    assert.equal(f.getInstalled()?.bundleVersion, second.bundleVersion);
+    allowCommit();
+    await installLast;
+    assert.equal(f.getInstalled()?.bundleVersion, last.bundleVersion);
+    assert.deepEqual(
+      f.store.getFallbackUpdateBundleData().map((entry) => entry.bundleVersion),
+      [first.bundleVersion, second.bundleVersion]
+    );
+    assert.equal(f.getRestarts(), 3);
+  }
+);
 
 test('failed full ASC verification preserves the prior cached bundle', async (t) => {
   const f = await fixture(t);

@@ -1,6 +1,9 @@
 package com.margelo.nitro.reactnativebundleupdate
 
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystem
+import com.margelo.nitro.reactnativebundlecrypto.JvmBundleFileSystem
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.security.MessageDigest
 
@@ -166,11 +169,14 @@ fun main() {
             deletedFiles = emptyList(),
         )
 
+        val oldOta = File(tempRoot, "oldOta").apply { mkdir() }
+        File(oldOta, "segments").writeText("old release used a file where the target uses a directory")
         BundleDiffReconstruction.reconstruct(
             stagingDir = staging,
             manifest = manifest,
-            candidateBundleDirs = listOf(activeOta, olderOta),
+            candidateBundleDirs = listOf(oldOta, activeOta, olderOta),
             sha256OfFile = ::sha256OfFile,
+            fileSystem = JvmBundleFileSystem,
             builtinCopy = { relPath, destFile, expectedHash ->
                 val src = File(builtin, relPath)
                 if (!src.exists() || sha256OfFile(src.absolutePath) != expectedHash) {
@@ -197,6 +203,7 @@ fun main() {
                 manifest = manifest.copy(reusedFiles = mapOf("missing.bundle" to "f".repeat(64))),
                 candidateBundleDirs = listOf(activeOta, olderOta),
                 sha256OfFile = ::sha256OfFile,
+                fileSystem = JvmBundleFileSystem,
                 builtinCopy = { _, _, _ -> false },
             )
         }.exceptionOrNull()
@@ -278,6 +285,7 @@ fun main() {
                 manifest = manifest,
                 candidateBundleDirs = listOf(activeOta, olderOta),
                 sha256OfFile = ::sha256OfFile,
+                fileSystem = JvmBundleFileSystem,
                 builtinCopy = { _, _, _ -> false },
                 maxEntries = 2,
                 maxTotalBytes = 1024L * 1024L,
@@ -294,6 +302,7 @@ fun main() {
                 manifest = manifest,
                 candidateBundleDirs = listOf(activeOta, olderOta),
                 sha256OfFile = ::sha256OfFile,
+                fileSystem = JvmBundleFileSystem,
                 builtinCopy = { _, _, _ -> false },
                 maxEntries = 10,
                 maxTotalBytes = 15L,
@@ -311,6 +320,7 @@ fun main() {
             manifest = manifest,
             candidateBundleDirs = listOf(activeOta, olderOta),
             sha256OfFile = ::sha256OfFile,
+            fileSystem = JvmBundleFileSystem,
             builtinCopy = { relPath, destFile, expectedHash ->
                 val src = File(builtin, relPath)
                 if (!src.exists() || sha256OfFile(src.absolutePath) != expectedHash) {
@@ -381,7 +391,7 @@ fun main() {
 
         val target = File(tempRoot, "diff-verification-target")
         val targetMetadata = File(target, "metadata.json")
-        fun metadataSize() = BundleDiffReconstruction.targetMetadataSizeIfPresent(target, targetMetadata)
+        fun metadataSize() = BundleDiffReconstruction.targetMetadataSizeIfPresent(target, targetMetadata, JvmBundleFileSystem)
         expect(metadataSize() == null, "absent target uses archive verification")
         target.writeText("not a directory")
         expect(
@@ -417,7 +427,7 @@ fun main() {
             diffSha256 = diffSha.uppercase(),
             signature = null,
         )
-        BundleDiffReconstruction.writeDescriptor(desc, metaFile)
+        BundleDiffReconstruction.writeDescriptor(desc, metaFile, JvmBundleFileSystem)
         val loadedDesc = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
         expect(loadedDesc != null && loadedDesc.diffSha256 == diffSha && !loadedDesc.fallbackRequired, "descriptor persisted and normalized")
 
@@ -473,17 +483,26 @@ fun main() {
         expect(!liveRecord.matches(fullSha, wrongSha), "verified record rejects a different diff digest")
 
         val signedDesc = desc.copy(signature = "VALID_PGP_SIGNATURE", fallbackRequired = true)
-        val descriptorTemp = File(metaFile.parentFile, "${metaFile.name}.tmp")
-        check(descriptorTemp.mkdir())
+        val failedRename = object : BundleFileSystem by JvmBundleFileSystem {
+            override fun rename(source: File, destination: File) {
+                expect(source.parentFile == destination.parentFile, "descriptor temp is on the destination filesystem")
+                expect(source.readText().contains("\"fallbackRequired\":true"), "renamed file contains the complete fallback descriptor")
+                throw IOException("simulated rename failure")
+            }
+        }
         expect(
-            !BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile),
-            "blocked temporary write reports failure",
+            !BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile, failedRename),
+            "descriptor rename failure is reported",
+        )
+        expect(
+            metaFile.parentFile.listFiles().orEmpty().none { it.name.startsWith("diff-descriptor-") },
+            "descriptor rename failure removes its temporary file",
         )
         expect(
             BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103") == loadedDesc,
             "failed fallback descriptor write preserves the previous download record",
         )
-        expect(BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile), "atomically replace an existing descriptor")
+        expect(BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile, JvmBundleFileSystem), "atomically replace an existing descriptor")
         val reloadedSigned = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
         expect(reloadedSigned?.signature == "VALID_PGP_SIGNATURE" && reloadedSigned.fallbackRequired, "signed descriptor with fallbackRequired persisted")
 
@@ -564,17 +583,42 @@ fun main() {
         val stagingRoot = File(tempRoot, BundleDiffReconstruction.STAGING_ROOT_DIR_NAME).apply { mkdir() }
         val abandoned = File(stagingRoot, "6.8.0-42-abandoned").apply { mkdir() }
         File(abandoned, "partial").writeText("data")
+        val outsideStaging = File(tempRoot, "outside-staging").apply { mkdir() }
+        val outsideFile = File(outsideStaging, "keep").apply { writeText("kept") }
+        val abandonedLink = File(abandoned, "external")
+        Files.createSymbolicLink(abandonedLink.toPath(), outsideStaging.toPath())
         val live = File(stagingRoot, "6.8.0-43-live").apply { mkdir() }
         val liveFile = File(live, "partial").apply { writeText("data") }
         BundleDiffReconstruction.retainStagingDirectory(live)
         try {
-            BundleDiffReconstruction.sweepStagingDirectory(stagingRoot)
+            BundleDiffReconstruction.sweepStagingDirectory(stagingRoot, JvmBundleFileSystem)
             expect(!abandoned.exists(), "sweep reclaims abandoned current-version staging")
+            expect(outsideFile.readText() == "kept", "sweep removes an abandoned symlink without following it")
             expect(liveFile.exists(), "sweep preserves a registered live staging tree")
         } finally {
-            BundleDiffReconstruction.releaseStagingDirectory(live)
+            BundleDiffReconstruction.releaseStagingDirectory(live, JvmBundleFileSystem)
         }
         expect(!live.exists(), "settled staging is removed")
+
+        val zipWithRootEntry = File(tempRoot, "with-root-entry.zip")
+        java.util.zip.ZipOutputStream(zipWithRootEntry.outputStream()).use { output ->
+            output.putNextEntry(java.util.zip.ZipEntry("./"))
+            output.closeEntry()
+            output.putNextEntry(java.util.zip.ZipEntry("payload"))
+            output.write("content".toByteArray())
+            output.closeEntry()
+        }
+        val rootEntryOutput = File(tempRoot, "with-root-entry")
+        BundleDiffReconstruction.unzipFile(zipWithRootEntry.path, rootEntryOutput.path, JvmBundleFileSystem)
+        expect(File(rootEntryOutput, "payload").readText() == "content", "extraction accepts a ZIP root directory entry")
+
+        val symlinkOutput = File(tempRoot, "with-symlink").apply { mkdir() }
+        val missingTarget = File(symlinkOutput, "missing")
+        Files.createSymbolicLink(File(symlinkOutput, "payload").toPath(), missingTarget.toPath())
+        val symlinkError = runCatching {
+            BundleDiffReconstruction.unzipFile(zipWithRootEntry.path, symlinkOutput.path, JvmBundleFileSystem)
+        }.exceptionOrNull()
+        expect(symlinkError is SecurityException && !missingTarget.exists(), "extraction rejects dangling symlink entries")
 
         val zip = File(tempRoot, "extraction-budget.zip")
         java.util.zip.ZipOutputStream(zip.outputStream()).use { output ->
@@ -584,14 +628,14 @@ fun main() {
                 output.closeEntry()
             }
         }
-        BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "at-budget").path, maxUncompressedBytes = 16)
+        BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "at-budget").path, JvmBundleFileSystem, maxUncompressedBytes = 16)
         expect(File(tempRoot, "at-budget/b").length() == 8L, "extraction accepts the exact cumulative byte limit")
         val overBudget = runCatching {
-            BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "over-budget").path, maxUncompressedBytes = 15)
+            BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "over-budget").path, JvmBundleFileSystem, maxUncompressedBytes = 15)
         }
         expect(overBudget.exceptionOrNull() is SecurityException, "extraction byte limit raises a terminal security error")
         val overEntryLimit = runCatching {
-            BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "over-entries").path, maxEntries = 1)
+            BundleDiffReconstruction.unzipFile(zip.path, File(tempRoot, "over-entries").path, JvmBundleFileSystem, maxEntries = 1)
         }
         expect(overEntryLimit.exceptionOrNull() is SecurityException, "extraction entry limit raises a terminal security error")
     } finally {

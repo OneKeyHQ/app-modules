@@ -1616,7 +1616,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             if let rangeError {
                 let updateError = bundleUpdateError(rangeError, step: step)
-                if updateError.code != .network && updateError.code != .timeout {
+                if !BundleDiffReconstruction.shouldContinueAfterRangeError(
+                    code: updateError.code.rawValue,
+                    httpStatus: updateError.httpStatus,
+                    rangeIsTransient: rangeClass == .fallbackTransient,
+                    hasRetryBudget: concurrentAttempt < maxConcurrentAttempts
+                ) {
                     if emitErrorEvents {
                         self.sendEvent(type: "update/error", message: updateError.description)
                     }
@@ -1759,18 +1764,20 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             defer { try? FileManager.default.removeItem(at: tempURL) }
             guard !runDelegate.wasCancelledByClear else { throw BundleUpdateError(.cancelled, step) }
             try self.validateManagedArchive(tempURL.path, step: step)
-            try? FileManager.default.removeItem(atPath: resumeDataPath)
+            let httpResponse = response as? HTTPURLResponse
+            if !BundleDiffReconstruction.isRetryableHTTPStatus(httpResponse?.statusCode) {
+                try? FileManager.default.removeItem(atPath: resumeDataPath)
+            }
 
-            if let httpResponse = response as? HTTPURLResponse,
-               let responseUrl = httpResponse.url,
+            if let responseUrl = httpResponse?.url,
                responseUrl.scheme?.lowercased() != "https" {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: redirected to non-HTTPS URL: \(responseUrl)")
                 throw BundleUpdateError(.security, step)
             }
 
-            guard let httpResponse = response as? HTTPURLResponse,
+            guard let httpResponse,
                   httpResponse.statusCode == 200 || httpResponse.statusCode == 206 else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let statusCode = httpResponse?.statusCode ?? -1
                 OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=\(statusCode)")
                 let updateError = BundleUpdateError(.http, step, httpStatus: statusCode)
                 if emitErrorEvents {
@@ -1972,7 +1979,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     if updateError.code == .cancelled || updateError.code == .storage {
                         throw updateError
                     }
-                    if BundleDiffReconstruction.isRetryableDiffDownloadError(code: updateError.code.rawValue) {
+                    if BundleDiffReconstruction.isRetryableDiffDownloadError(
+                        code: updateError.code.rawValue, httpStatus: updateError.httpStatus
+                    ) {
                         OneKeyLog.warn("BundleUpdate", "downloadBundle: transient diff download interruption for \(bundleKey), preserving resume progress: \(updateError)")
                         BundleDiffReconstruction.writeDescriptor(diffDescriptor, toPath: diffMetaPath)
                         self.sendEvent(type: "update/error", message: updateError.description)

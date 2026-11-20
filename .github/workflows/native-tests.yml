@@ -431,6 +431,8 @@ jobs:
         run: |
           "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
             android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleVerificationPath.kt \
+            ../react-native-bundle-crypto/android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleFileSystem.kt \
+            ../react-native-bundle-crypto/android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/JvmBundleFileSystem.kt \
             tests/kotlin/BundleVerificationPathTest.kt \
             -include-runtime -d "$RUNNER_TEMP/bundle-verification-path-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-verification-path-tests.jar" | tee "$RUNNER_TEMP/bundle-verification-path-tests.log"
@@ -440,6 +442,8 @@ jobs:
         run: |
           "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
             android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleDiffReconstruction.kt \
+            ../react-native-bundle-crypto/android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleFileSystem.kt \
+            ../react-native-bundle-crypto/android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/JvmBundleFileSystem.kt \
             tests/kotlin/BundleDiffReconstructionTest.kt \
             -include-runtime -d "$RUNNER_TEMP/bundle-diff-reconstruction-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-diff-reconstruction-tests.jar" | tee "$RUNNER_TEMP/bundle-diff-reconstruction-tests.log"

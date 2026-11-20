@@ -70,6 +70,15 @@ directory is best effort. An explicit cache clear rejects with
 `STORAGE_ERROR` if an extracted directory cannot be deleted, before clearing
 the active bundle record.
 
+Desktop installation reads the active bundle and fallback list after
+verification, then commits them synchronously. Rollback history follows the
+order in which verified installs commit. Before recording full fallback or
+deleting the diff archive for full fallback, Desktop ASC re-reads the managed
+descriptor in the coordinated download step. A changed release identity,
+archive digest, or fallback flag rejects the stale ASC run with `INCOMPATIBLE`.
+A terminal ASC failure retains its original error and cleans up the diff only
+if the descriptor still matches those fields and no diff download is active.
+
 ## Public API and identity
 
 `downloadBundle` takes an HTTPS `downloadUrl`, `latestVersion`, `bundleVersion`,
@@ -155,9 +164,12 @@ lifecycle acceptance remain pending.
      in-flight download's fallback parameters.
    - If the diff download encounters a retryable transport interruption
      (`NETWORK_ERROR` or `TIMEOUT`, including iOS background pause resume-data
-     snapshots, and retryable HTTP responses on Desktop), the module preserves
-     partial/resume artifacts and diff eligibility and rejects with that
-     retryable error so the caller can resume.
+     snapshots, and retryable HTTP responses on iOS and Desktop), the module
+     preserves partial/resume artifacts and diff eligibility and rejects with
+     that retryable error so the caller can resume. On iOS, a transient Range
+     HTTP result keeps using the bounded segmented retry budget. After that
+     budget is exhausted, the updater returns `HTTP_ERROR` with the original
+     retryable status (408, 416, 429, or 5xx except 501 and 505).
    - If the diff download fails with a non-retryable archive or HTTP error
      (such as HTTP 404 or SHA-256 mismatch), the module marks the target
      identity for session fallback, deletes partial diff artifacts, and
@@ -289,7 +301,13 @@ Both platforms derive the same ZIP name from validated versions inside their
 own managed download root. iOS uses Foundation and Gopenpgp; Android uses Java
 files and BouncyCastle. Both reject paths resolving outside the managed root,
 including symlink redirects, and retain signature binding to app and bundle
-versions. ZIP download and uncompressed payload limits remain 512 MiB, and the
+versions. Android supports API 24 and later from full and diff download
+admission through extraction, verification, and bundle promotion. Managed-path
+checks reject symbolic links in and below the managed root, including dangling
+links. Android syncs each new diff descriptor before atomically renaming it
+from a temporary file in the same directory. A failed rename leaves the prior
+record in place.
+ZIP download and uncompressed payload limits remain 512 MiB, and the
 extraction entry limit remains 4,096. The updater and its Range Downloader
 peer are released together so the native byte-limit contract is present.
 iOS enumerates extracted entries after

@@ -406,6 +406,38 @@ final class BundleDiffReconstructionTests: XCTestCase {
         }
     }
 
+    func testRetryableHTTPDiffFailuresPreserveDiffAfterRangeBudgetExhaustion() {
+        for status in [408, 416, 429, 500, 503, 599] {
+            XCTAssertTrue(BundleDiffReconstruction.shouldContinueAfterRangeError(
+                code: "HTTP_ERROR", httpStatus: status, rangeIsTransient: true, hasRetryBudget: true
+            ), "HTTP \(status) should retry the segmented transfer")
+            XCTAssertFalse(BundleDiffReconstruction.shouldContinueAfterRangeError(
+                code: "HTTP_ERROR", httpStatus: status, rangeIsTransient: true, hasRetryBudget: false
+            ), "HTTP \(status) should be returned to the caller after the Range budget is exhausted")
+            XCTAssertFalse(BundleDiffReconstruction.shouldContinueAfterRangeError(
+                code: "HTTP_ERROR", httpStatus: status, rangeIsTransient: false, hasRetryBudget: true
+            ), "A permanent Range outcome should be returned without a segmented retry")
+            XCTAssertTrue(BundleDiffReconstruction.isRetryableDiffDownloadError(
+                code: "HTTP_ERROR", httpStatus: status
+            ), "HTTP \(status) should preserve the diff for the next caller retry")
+        }
+    }
+
+    func testPermanentHTTPAndStorageErrorsDoNotEnterSegmentedRetry() {
+        for status: Int? in [nil, 401, 403, 404, 410, 501, 505, 600] {
+            XCTAssertFalse(BundleDiffReconstruction.shouldContinueAfterRangeError(
+                code: "HTTP_ERROR", httpStatus: status, rangeIsTransient: true, hasRetryBudget: true
+            ))
+            XCTAssertFalse(BundleDiffReconstruction.isRetryableDiffDownloadError(code: "HTTP_ERROR", httpStatus: status))
+        }
+        XCTAssertFalse(BundleDiffReconstruction.shouldContinueAfterRangeError(
+            code: "STORAGE_ERROR", httpStatus: nil, rangeIsTransient: true, hasRetryBudget: true
+        ))
+        XCTAssertTrue(BundleDiffReconstruction.shouldContinueAfterRangeError(
+            code: "NETWORK_ERROR", httpStatus: nil, rangeIsTransient: true, hasRetryBudget: false
+        ), "Network exhaustion should retain the existing single-stream fallback")
+    }
+
     func testVersionIsolationPayloadLimitsAndLifecycleTrustResolvers() throws {
         // 1. Version sanitization rejects leading/trailing dots (isolating .diff and .diff-staging)
         // while preserving compatibility with legacy installed version names such as "42-diff"

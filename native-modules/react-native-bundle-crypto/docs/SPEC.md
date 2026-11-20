@@ -22,6 +22,11 @@ Each `DirHashEntry.relativePath` passed to `verifyDirAgainstHashes` must name a 
 
 The verification and file operations are synchronous inside each native core; the Nitro wrappers return promises for the asynchronous API methods. No long-lived request state is retained by the core. File hashing streams input rather than loading entire files into memory. Android uses BouncyCastle for PGP verification and Java `MessageDigest`; iOS uses Gopenpgp and CommonCrypto. Both platforms use the same embedded public key and directory-path boundary. The caller must separately limit downloaded data and decide how to handle failed verification.
 
+Android path checks and filesystem moves support API 24 and later.
+`atomicWriteFile` syncs the temporary file before replacing the target by
+same-directory rename. `safeRename` promotes a file or directory on the same
+filesystem and removes an existing destination before promotion.
+
 ## Mac Catalyst framework packaging
 
 Implemented; extracted npm-package Catalyst Swift import verified. Full consumer

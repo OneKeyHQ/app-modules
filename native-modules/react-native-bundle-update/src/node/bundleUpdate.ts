@@ -234,6 +234,19 @@ interface IDiffArchiveDescriptor {
   fallbackRequired?: boolean;
 }
 
+function sameDiffDescriptorOwner(
+  current: IDiffArchiveDescriptor | null,
+  expected: IDiffArchiveDescriptor | undefined
+): boolean {
+  if (!current || !expected) return !current && !expected;
+  return (
+    sameBundleIdentity(current, expected) &&
+    current.sha256 === expected.sha256 &&
+    current.diffSha256 === expected.diffSha256 &&
+    current.fallbackRequired === expected.fallbackRequired
+  );
+}
+
 interface IDownloadRun {
   releaseKey: string;
   controller: AbortController;
@@ -573,7 +586,10 @@ export class BundleUpdateNode {
 
   private coordinateDownload(
     params: IDownloadPackageParams,
-    fallback?: { signal: AbortSignal; prepare: () => void }
+    fallback?: {
+      signal: AbortSignal;
+      prepare: () => Pick<IDownloadPackageParams, 'downloadUrl' | 'fileSize'>;
+    }
   ): Promise<IUpdateDownloadedEvent> {
     const { latestVersion, bundleVersion, downloadUrl } = params ?? {};
     assertUpdateBundleVersion(latestVersion, 'download');
@@ -642,10 +658,17 @@ export class BundleUpdateNode {
 
     try {
       throwIfCancelled(fallback?.signal, 'download');
-      fallback?.prepare();
+      const prepared = fallback?.prepare();
       resolveRun(
         this.runDownloadBundle(
-          { ...params, latestVersion, bundleVersion, downloadUrl, sha256 },
+          {
+            ...params,
+            latestVersion,
+            bundleVersion,
+            downloadUrl,
+            sha256,
+            ...prepared,
+          },
           destination,
           controller.signal,
           Boolean(fallback),
@@ -1907,7 +1930,11 @@ export class BundleUpdateNode {
             const writer = this.inflightDownloads.get(downloadedFile);
             if (
               code !== EUpdateErrorCode.cancelled &&
-              (!writer || writer.fullWriter)
+              (!writer || writer.fullWriter) &&
+              sameDiffDescriptorOwner(
+                this.readDiffDescriptor(diffZipPath),
+                descriptor
+              )
             ) {
               this.cleanupDiffArtifacts(diffZipPath);
             }
@@ -1923,24 +1950,35 @@ export class BundleUpdateNode {
         }
       }
 
-      const downloadUrl = isValidHttpsUrl(params?.downloadUrl)
+      const explicitUrl = isValidHttpsUrl(params?.downloadUrl)
         ? params.downloadUrl
-        : descriptor?.downloadUrl;
+        : undefined;
+      const downloadUrl = explicitUrl ?? descriptor?.downloadUrl;
       if ((fallbackRequired || (hasDiffZip && descriptor)) && downloadUrl) {
-        const fileSize =
-          normalizePositiveInt(params?.fileSize) ?? descriptor?.fileSize;
+        const explicitFileSize = normalizePositiveInt(params?.fileSize);
         await this.coordinateDownload(
-          { ...identity, downloadUrl, fileSize, sha256, signature },
+          { ...identity, downloadUrl, sha256, signature },
           {
             signal,
             prepare: () => {
-              if (descriptor) {
+              const current = this.readDiffDescriptor(diffZipPath);
+              if (!sameDiffDescriptorOwner(current, descriptor)) {
+                throw createUpdateError({
+                  code: EUpdateErrorCode.incompatible,
+                  step,
+                });
+              }
+
+              const download = {
+                downloadUrl: explicitUrl ?? current?.downloadUrl ?? downloadUrl,
+                fileSize: explicitFileSize ?? current?.fileSize,
+              };
+              if (current) {
                 this.writeDiffDescriptor(
                   diffZipPath,
                   {
-                    ...descriptor,
-                    downloadUrl,
-                    fileSize,
+                    ...current,
+                    ...download,
                     fallbackRequired: true,
                   },
                   step
@@ -1948,6 +1986,7 @@ export class BundleUpdateNode {
                 this.cleanupDiffArtifacts(diffZipPath, true);
               }
               this.diffFallbackTargets.add(releaseKey);
+              return download;
             },
           }
         );
@@ -2516,41 +2555,6 @@ export class BundleUpdateNode {
         step: 'install',
       });
     }
-    const isValidStoredBundle = (entry: IInstalledBundle | undefined) => {
-      try {
-        assertSafeBundleVersion(entry?.appVersion);
-        assertSafeBundleVersion(entry?.bundleVersion);
-        return true;
-      } catch {
-        this.options.logger?.warn(
-          'bundle-install',
-          'Discarding invalid stored bundle'
-        );
-        return false;
-      }
-    };
-    const storedCurrentBundle = this.options.store.getUpdateBundleData();
-    const currentUpdateBundleData =
-      storedCurrentBundle && isValidStoredBundle(storedCurrentBundle)
-        ? storedCurrentBundle
-        : undefined;
-    const storedFallbacks = this.options.store.getFallbackUpdateBundleData();
-    const fallbackUpdateBundleData = Array.isArray(storedFallbacks)
-      ? storedFallbacks.filter(
-          (entry) =>
-            isValidStoredBundle(entry) &&
-            !(
-              entry.appVersion === appVersion &&
-              entry.bundleVersion === bundleVersion
-            ) &&
-            !(
-              currentUpdateBundleData &&
-              entry.appVersion === currentUpdateBundleData.appVersion &&
-              entry.bundleVersion === currentUpdateBundleData.bundleVersion
-            )
-        )
-      : [];
-
     // Security: Verify bundle directory and integrity before updating store
     const extractDir = this.getBundleExtractDir({ appVersion, bundleVersion });
     if (!fs.existsSync(extractDir)) {
@@ -2600,6 +2604,35 @@ export class BundleUpdateNode {
     }
     this.verifyExtractedFiles(extractDir, 'install');
 
+    const isValidStoredBundle = (entry: IInstalledBundle | undefined) => {
+      if (readBundleIdentity(entry?.appVersion, entry?.bundleVersion))
+        return true;
+      this.options.logger?.warn(
+        'bundle-install',
+        'Discarding invalid stored bundle'
+      );
+      return false;
+    };
+    const storedCurrentBundle = this.options.store.getUpdateBundleData();
+    const currentUpdateBundleData =
+      storedCurrentBundle && isValidStoredBundle(storedCurrentBundle)
+        ? storedCurrentBundle
+        : undefined;
+    const storedFallbacks = this.options.store.getFallbackUpdateBundleData();
+    const fallbackUpdateBundleData = Array.isArray(storedFallbacks)
+      ? storedFallbacks.filter(
+          (entry) =>
+            isValidStoredBundle(entry) &&
+            !(
+              entry.appVersion === appVersion &&
+              entry.bundleVersion === bundleVersion
+            ) &&
+            !(
+              currentUpdateBundleData &&
+              sameBundleIdentity(entry, currentUpdateBundleData)
+            )
+        )
+      : [];
     if (
       currentUpdateBundleData &&
       currentUpdateBundleData.appVersion &&

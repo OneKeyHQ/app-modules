@@ -1,7 +1,8 @@
 package com.margelo.nitro.reactnativebundleupdate
 
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystem
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileType
 import java.io.File
-import java.nio.file.Files
 
 /**
  * Path helpers shared by the extracted-file verifiers.
@@ -45,11 +46,32 @@ internal fun bundleRelativePath(rootDir: File, file: File): String? {
     return filePath.substring(rootPrefix.length)
 }
 
+internal fun resolveManagedBundlePath(root: File, file: File, fileSystem: BundleFileSystem): String? {
+    val managedRoot = root.absoluteFile
+    val entries = generateSequence(file.absoluteFile) { it.parentFile }
+        .takeWhile { it != managedRoot }
+        .toList()
+    if (entries.lastOrNull()?.parentFile != managedRoot) return null
+
+    // A missing entry or a non-directory cannot contain a deeper symlink.
+    for (entry in listOf(managedRoot) + entries.asReversed()) {
+        when (fileSystem.lstat(entry)?.type) {
+            BundleFileType.SYMLINK -> return null
+            BundleFileType.DIRECTORY -> continue
+            else -> break
+        }
+    }
+
+    val rootPrefix = root.canonicalPath.trimEnd(File.separatorChar) + File.separator
+    return file.canonicalPath.takeIf { it.startsWith(rootPrefix) && it != rootPrefix }
+}
+
 /** Match every expected path to a regular file that passed its hash check. */
 internal fun verifyBundleFiles(
     root: File,
     subtree: File,
     metadata: Map<String, String>,
+    fileSystem: BundleFileSystem,
     verifyHash: (File, String) -> Boolean,
     logError: (String) -> Unit,
 ): Boolean {
@@ -62,15 +84,16 @@ internal fun verifyBundleFiles(
         }
         for (file in files) {
             val relativePath = bundleRelativePath(root, file)
-            if (relativePath == null || Files.isSymbolicLink(file.toPath())) {
+            val type = fileSystem.lstat(file)?.type
+            if (relativePath == null || type == BundleFileType.SYMLINK) {
                 logError("Unsafe bundle path: ${file.absolutePath}")
                 return false
             }
-            if (file.isDirectory) {
+            if (type == BundleFileType.DIRECTORY) {
                 if (!walk(file)) return false
                 continue
             }
-            if (!file.isFile) {
+            if (type != BundleFileType.REGULAR) {
                 logError("Bundle path is not a regular file: $relativePath")
                 return false
             }
@@ -87,7 +110,7 @@ internal fun verifyBundleFiles(
         return true
     }
 
-    if (Files.isSymbolicLink(subtree.toPath()) || !walk(subtree)) return false
+    if (fileSystem.lstat(subtree)?.type != BundleFileType.DIRECTORY || !walk(subtree)) return false
     if (remaining.isNotEmpty()) {
         logError("No verified file for metadata entry: ${remaining.keys.first()}")
         return false

@@ -7,7 +7,9 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.margelo.nitro.reactnativebundlecrypto.AndroidBundleFileSystem
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystemException
 import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
@@ -17,7 +19,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
@@ -60,7 +61,7 @@ private fun bundleUpdateError(error: Exception, step: String): BundleUpdateError
             error is java.io.InterruptedIOException -> "TIMEOUT"
         error is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
         error is java.io.FileNotFoundException ||
-            error is java.nio.file.AccessDeniedException -> "STORAGE_ERROR"
+            error is BundleFileSystemException -> "STORAGE_ERROR"
         error is StreamResetException || BundleDiffReconstruction.isRetryableNetworkIOException(error) -> "NETWORK_ERROR"
         error is IllegalArgumentException -> "INVALID_ARGUMENT"
         error is SecurityException -> "SECURITY_REJECTED"
@@ -358,7 +359,7 @@ object BundleUpdateStoreAndroid {
             val folderName = "$appVersion-$bundleVersion"
             val baseBundleDir = File(getBundleDir(context)).canonicalPath
             val bundleDirPath = File(getBundleDir(context), folderName)
-            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(bundleDirPath) ||
                 !bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
@@ -367,7 +368,7 @@ object BundleUpdateStoreAndroid {
             }
             val sigFile = File(getSignatureFilePath(context, folderName))
             val baseAscDir = File(getAscDir(context)).canonicalPath
-            if (Files.isSymbolicLink(sigFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(sigFile) ||
                 !sigFile.canonicalPath.startsWith(baseAscDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: signature path outside asc directory: ${sigFile.canonicalPath}")
@@ -699,6 +700,7 @@ object BundleUpdateStoreAndroid {
         root = root,
         subtree = subtree,
         metadata = metadata,
+        fileSystem = AndroidBundleFileSystem,
         verifyHash = { file, expected ->
             val actual = calculateSHA256(file.absolutePath)
             actual != null && secureCompare(expected, actual)
@@ -1130,7 +1132,7 @@ object BundleUpdateStoreAndroid {
     fun deleteDir(dir: File): Boolean = deleteDirectory(dir)
 
     fun unzipFile(zipFilePath: String, destDirectory: String) {
-        BundleDiffReconstruction.unzipFile(zipFilePath, destDirectory)
+        BundleDiffReconstruction.unzipFile(zipFilePath, destDirectory, AndroidBundleFileSystem)
     }
 }
 
@@ -1604,7 +1606,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                             for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$diffPartial.seg$i").delete()
                             Thread.sleep(1000)
                             return@updatePromise complete(diffResult) {
-                                if (!BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile)) {
+                                if (!BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile, AndroidBundleFileSystem)) {
                                     throw BundleUpdateError("STORAGE_ERROR", "download")
                                 }
                             }
@@ -1625,7 +1627,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         )
                         OneKeyLog.info("BundleUpdate", "downloadBundle: diff download completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
                         return@updatePromise complete(diffResult) {
-                            if (!BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile)) {
+                            if (!BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile, AndroidBundleFileSystem)) {
                                 throw BundleUpdateError("STORAGE_ERROR", "download")
                             }
                         }
@@ -1635,7 +1637,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         if (updateError.code == "CANCELLED" || updateError.code == "STORAGE_ERROR") throw updateError
                         if (BundleDiffReconstruction.isRetryableDiffDownloadError(updateError.code)) {
                             OneKeyLog.warn("BundleUpdate", "downloadBundle: transient diff download interruption for $bundleKey, preserving resume progress: ${updateError.code}")
-                            BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile)
+                            BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile, AndroidBundleFileSystem)
                             throw updateError
                         }
                         OneKeyLog.warn("BundleUpdate", "downloadBundle: diff download failed for $bundleKey, falling back to full bundle: ${e.message}")
@@ -1717,7 +1719,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val storageKey = "$appVersion-$bundleVersion"
             val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
             val signatureFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, storageKey))
-            if (Files.isSymbolicLink(signatureFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(signatureFile) ||
                 !signatureFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)
             ) {
                 throw BundleUpdateError("SECURITY_REJECTED", "downloadASC")
@@ -2034,6 +2036,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             manifest = manifest,
             candidateBundleDirs = candidateDirs,
             sha256OfFile = { BundleUpdateStoreAndroid.calculateSHA256(it) },
+            fileSystem = AndroidBundleFileSystem,
             builtinCopy = { relPath, destFile, expectedHash ->
                 copyBuiltinAssetFile(context, relPath, destFile, expectedHash)
             },
@@ -2096,7 +2099,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val stagingPath = resolveManagedFile(bundleDir, stagingDir, "verifyASC")
                 val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
 
-                BundleDiffReconstruction.sweepStagingDirectory(stagingRootDir)
+                BundleDiffReconstruction.sweepStagingDirectory(stagingRootDir, AndroidBundleFileSystem)
                 BundleDiffReconstruction.retainStagingDirectory(stagingDir)
                 retainedStaging = stagingDir
 
@@ -2157,7 +2160,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         signature = matchingDescriptor?.signature,
                         fallbackRequired = true,
                     )
-                    if (!BundleDiffReconstruction.writeDescriptor(fallbackDescriptor, diffMetaFile)) {
+                    if (!BundleDiffReconstruction.writeDescriptor(fallbackDescriptor, diffMetaFile, AndroidBundleFileSystem)) {
                         throw BundleUpdateError("STORAGE_ERROR", "verifyASC")
                     }
                     operation.ensureActive()
@@ -2168,7 +2171,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     File("$diffPartial.progress").delete()
                     for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$diffPartial.seg$i").delete()
 
-                    BundleDiffReconstruction.releaseStagingDirectory(stagingDir)
+                    BundleDiffReconstruction.releaseStagingDirectory(stagingDir, AndroidBundleFileSystem)
                     BundleDiffReconstruction.retainStagingDirectory(stagingDir)
                     operation.ensureActive()
                     downloadFileWithResumeAndVerify(
@@ -2208,7 +2211,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         )
                         operations.publish(operation) {
                             if (!skipGPG && !BundleDiffReconstruction.writeDescriptor(
-                                    matchingDescriptor.copy(signature = signature), diffMetaFile,
+                                    matchingDescriptor.copy(signature = signature), diffMetaFile, AndroidBundleFileSystem,
                                 )
                             ) {
                                 throw BundleUpdateError("STORAGE_ERROR", "verifyASC")
@@ -2256,7 +2259,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw e
             } finally {
                 try {
-                    retainedStaging?.let(BundleDiffReconstruction::releaseStagingDirectory)
+                    retainedStaging?.let { BundleDiffReconstruction.releaseStagingDirectory(it, AndroidBundleFileSystem) }
                 } finally {
                     operations.finish(operation)
                 }
@@ -2264,20 +2267,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    private fun resolveManagedFile(root: File, file: File, step: String): String {
-        val path = file.canonicalPath
-        if (!path.startsWith(root.canonicalPath + File.separator)) {
-            throw BundleUpdateError("SECURITY_REJECTED", step)
-        }
-        var entry: File? = file.absoluteFile
-        val managedRoot = root.absoluteFile
-        while (entry != null) {
-            if (Files.isSymbolicLink(entry.toPath())) throw BundleUpdateError("SECURITY_REJECTED", step)
-            if (entry == managedRoot) return path
-            entry = entry.parentFile
-        }
-        throw BundleUpdateError("SECURITY_REJECTED", step)
-    }
+    private fun resolveManagedFile(root: File, file: File, step: String): String =
+        resolveManagedBundlePath(root, file, AndroidBundleFileSystem)
+            ?: throw BundleUpdateError("SECURITY_REJECTED", step)
 
     override fun verifyBundle(params: BundleVerifyParams): Promise<Unit> {
         return updatePromise("verifyPackage") {
@@ -2338,7 +2330,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val metadataFile = File(bundleDirPath, "metadata.json")
                 resolveManagedFile(bundleDir, metadataFile, "verifyPackage")
                 val metadataSize = try {
-                    BundleDiffReconstruction.targetMetadataSizeIfPresent(bundleDirPath, metadataFile)
+                    BundleDiffReconstruction.targetMetadataSizeIfPresent(bundleDirPath, metadataFile, AndroidBundleFileSystem)
                 } catch (_: BundleDiffReconstructionException.IntegrityFailed) {
                     throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
                 } catch (_: IOException) {
@@ -2456,14 +2448,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // Verify bundle directory exists and is canonically confined inside getBundleDir(context)
             val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
-            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(bundleDirPath) ||
                 !bundleDirPath.canonicalPath.startsWith(bundleBaseCanonical + File.separator)
             ) {
                 throw BundleUpdateError("SECURITY_REJECTED", "install")
             }
             val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
             val sigFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, folderName))
-            if (Files.isSymbolicLink(sigFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(sigFile) ||
                 !sigFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)
             ) {
                 throw BundleUpdateError("SECURITY_REJECTED", "install")
@@ -2654,7 +2646,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     // Skip non-version entries (asc dir, fallback json, etc.)
                     if (name == "asc" || name == "fallbackUpdateBundleData.json") return@forEach
                     if (name == BundleDiffReconstruction.STAGING_ROOT_DIR_NAME) {
-                        BundleDiffReconstruction.sweepStagingDirectory(child)
+                        BundleDiffReconstruction.sweepStagingDirectory(child, AndroidBundleFileSystem)
                         return@forEach
                     }
                     if (shouldKeep(name)) return@forEach
@@ -2827,7 +2819,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), bundleVersion)
-            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(bundleDirPath) ||
                 !bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
@@ -2835,7 +2827,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
             val sigFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, bundleVersion))
             val baseAscDir = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
-            if (Files.isSymbolicLink(sigFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(sigFile) ||
                 !sigFile.canonicalPath.startsWith(baseAscDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: signature path outside asc directory: ${sigFile.canonicalPath}")

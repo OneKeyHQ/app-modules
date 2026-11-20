@@ -94,8 +94,35 @@ enum BundleDiffReconstruction {
         }
     }
 
-    static func isRetryableDiffDownloadError(code: String) -> Bool {
-        return code == "NETWORK_ERROR" || code == "TIMEOUT"
+    static func isRetryableDiffDownloadError(code: String, httpStatus: Int? = nil) -> Bool {
+        switch code {
+        case "NETWORK_ERROR", "TIMEOUT":
+            return true
+        case "HTTP_ERROR":
+            return isRetryableHTTPStatus(httpStatus)
+        default:
+            return false
+        }
+    }
+
+    static func isRetryableHTTPStatus(_ status: Int?) -> Bool {
+        switch status {
+        case 408, 416, 429:
+            return true
+        case 501, 505:
+            return false
+        case let status?:
+            return (500...599).contains(status)
+        case nil:
+            return false
+        }
+    }
+
+    static func shouldContinueAfterRangeError(
+        code: String, httpStatus: Int?, rangeIsTransient: Bool, hasRetryBudget: Bool
+    ) -> Bool {
+        guard isRetryableDiffDownloadError(code: code, httpStatus: httpStatus) else { return false }
+        return code != "HTTP_ERROR" || (rangeIsTransient && hasRetryBudget)
     }
 
     static func rangeTaskId(bundleKey: String, isDiff: Bool) -> String {

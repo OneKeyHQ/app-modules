@@ -4,7 +4,8 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.nio.file.Files
+import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
 import org.bouncycastle.bcpg.HashAlgorithmTags
 import org.bouncycastle.jce.provider.BouncyCastleProvider
@@ -518,22 +519,27 @@ object BundleCryptoCore {
   // relativePath -> sha256 entries (JS derives these from verified metadata).
   // Verifies every on-disk file matches AND every expected entry exists.
 
-  fun verifyDirAgainstHashes(dirPath: String, entries: List<DirHash>): Boolean {
+  @JvmOverloads
+  fun verifyDirAgainstHashes(
+    dirPath: String,
+    entries: List<DirHash>,
+    fileSystem: BundleFileSystem = AndroidBundleFileSystem,
+  ): Boolean {
     val dir = File(dirPath)
     if (!dir.exists() || !dir.isDirectory) {
       OneKeyLog.error("BundleCrypto", "[bundle-verify] dir not found: $dirPath")
       return false
     }
-    val resolvedDir = try { dir.canonicalFile.toPath() } catch (e: Exception) { return false }
+    val rootPrefix = try { dir.canonicalPath.trimEnd(File.separatorChar) + File.separator } catch (_: IOException) { return false }
     val remaining = HashMap<String, String>()
     for (entry in entries) {
       if (entry.relativePath.isEmpty() || File(entry.relativePath).isAbsolute) return false
-      val resolvedFile = try { File(dir, entry.relativePath).canonicalFile.toPath() } catch (e: Exception) { return false }
-      if (resolvedFile == resolvedDir || !resolvedFile.startsWith(resolvedDir)) return false
+      val resolvedFile = try { File(dir, entry.relativePath).canonicalPath } catch (_: IOException) { return false }
+      if (resolvedFile == rootPrefix || !resolvedFile.startsWith(rootPrefix)) return false
       if (remaining.put(entry.relativePath, entry.sha256) != null) return false
     }
 
-    val verified = walkRegularFiles(dir, dir) { file, relativePath ->
+    val verified = walkRegularFiles(dir, dir, fileSystem) { file, relativePath ->
       val expected = remaining[relativePath]
       if (expected == null && isUnlistedExemptFile(file, relativePath)) {
         return@walkRegularFiles true
@@ -558,15 +564,16 @@ object BundleCryptoCore {
   private fun walkRegularFiles(
     root: File,
     directory: File,
+    fileSystem: BundleFileSystem,
     visit: (File, String) -> Boolean,
   ): Boolean {
     val files = directory.listFiles() ?: return false
     for (file in files) {
-      if (Files.isSymbolicLink(file.toPath())) return false
-      if (file.isDirectory) {
-        if (!walkRegularFiles(root, file, visit)) return false
-      } else if (!file.isFile || !visit(file, file.relativeTo(root).invariantSeparatorsPath)) {
-        return false
+      val type = try { fileSystem.lstat(file)?.type } catch (_: IOException) { return false }
+      when (type) {
+        BundleFileType.DIRECTORY -> if (!walkRegularFiles(root, file, fileSystem, visit)) return false
+        BundleFileType.REGULAR -> if (!visit(file, file.relativeTo(root).invariantSeparatorsPath)) return false
+        else -> return false
       }
     }
     return true
@@ -574,11 +581,12 @@ object BundleCryptoCore {
 
   // MARK: - Hash every regular payload file. Throws if the walk or a hash fails.
 
-  fun hashDir(dirPath: String): List<DirHash> {
+  @JvmOverloads
+  fun hashDir(dirPath: String, fileSystem: BundleFileSystem = AndroidBundleFileSystem): List<DirHash> {
     val dir = File(dirPath)
     if (!dir.exists() || !dir.isDirectory) return emptyList()
     val results = ArrayList<DirHash>()
-    val hashed = walkRegularFiles(dir, dir) { file, relativePath ->
+    val hashed = walkRegularFiles(dir, dir, fileSystem) { file, relativePath ->
       if (!isUnlistedExemptFile(file, relativePath)) {
         val sha256 = calculateSHA256(file.absolutePath).sha256
           ?: throw Exception("HASH_FAILED:$relativePath")
@@ -590,87 +598,79 @@ object BundleCryptoCore {
     return results
   }
 
-  // MARK: - Symlink / path-traversal guard — ported from the unzip-time guard
-  // in ReactNativeBundleUpdate.unzipFile (canonicalPath prefix check + symlink
-  // detection via Files.isSymbolicLink), consolidated into a standalone verb.
+  // MARK: - Extracted directory and path safety
 
-  fun validateExtractedPathSafety(destination: String): Boolean {
+  @JvmOverloads
+  fun validateExtractedPathSafety(
+    destination: String,
+    fileSystem: BundleFileSystem = AndroidBundleFileSystem,
+  ): Boolean {
     val destDir = File(destination)
-    if (!destDir.exists()) {
-      // Nothing extracted yet — nothing unsafe to find. Mirrors iOS (empty
-      // enumerator => true).
-      return true
+    return try {
+      if (fileSystem.isSymbolicLink(destDir)) return false
+      if (!destDir.exists()) return true
+      val rootPrefix = destDir.canonicalPath.trimEnd(File.separatorChar) + File.separator
+      validatePathSafetyRecursive(destDir, rootPrefix, fileSystem)
+    } catch (_: IOException) {
+      false
     }
-    val resolvedDestination = destDir.canonicalPath
-    return validatePathSafetyRecursive(destDir, resolvedDestination)
   }
 
-  private fun validatePathSafetyRecursive(dir: File, resolvedDestination: String): Boolean {
+  private fun validatePathSafetyRecursive(dir: File, rootPrefix: String, fileSystem: BundleFileSystem): Boolean {
     val files = dir.listFiles() ?: return true
     for (file in files) {
-      if (Files.isSymbolicLink(file.toPath())) {
+      val type = fileSystem.lstat(file)?.type ?: return false
+      if (type == BundleFileType.SYMLINK) {
         OneKeyLog.error("BundleCrypto", "Symlink detected in extracted bundle: ${file.name}")
         return false
       }
-      val resolvedPath = file.canonicalPath
-      if (resolvedPath != resolvedDestination && !resolvedPath.startsWith("$resolvedDestination/")) {
+      if (!file.canonicalPath.startsWith(rootPrefix)) {
         OneKeyLog.error("BundleCrypto", "Path traversal detected in extracted bundle: ${file.name}")
         return false
       }
-      if (file.isDirectory) {
-        if (!validatePathSafetyRecursive(file, resolvedDestination)) return false
-      }
+      if (type == BundleFileType.DIRECTORY && !validatePathSafetyRecursive(file, rootPrefix, fileSystem)) return false
     }
     return true
   }
 
   // MARK: - Safe file verbs — atomic write / safe rename / version-dir listing.
-  // Consolidates the write/move/enumerate patterns from ReactNativeBundleUpdate
-  // (atomic temp-file write, remove-then-move, directory enumeration) into
-  // explicit APIs.
 
-  fun atomicWriteFile(filePath: String, contentUtf8: String) {
-    val target = File(filePath)
-    target.parentFile?.mkdirs()
+  @JvmOverloads
+  fun atomicWriteFile(
+    filePath: String,
+    contentUtf8: String,
+    fileSystem: BundleFileSystem = AndroidBundleFileSystem,
+  ) {
+    val target = File(filePath).absoluteFile
+    val parent = target.parentFile ?: throw IOException("atomicWriteFile: target has no parent")
+    parent.mkdirs()
     // Write to a temp file in the same directory, then atomically rename.
-    val tmp = File.createTempFile("bundle-crypto-", ".tmp", target.parentFile)
+    val tmp = File.createTempFile("bundle-crypto-", ".tmp", parent)
     try {
-      tmp.writeText(contentUtf8, Charsets.UTF_8)
-      // Files.move with ATOMIC_MOVE / REPLACE_EXISTING gives the same-volume
-      // atomic replace semantics as the source's atomic write.
-      Files.move(
-        tmp.toPath(),
-        target.toPath(),
-        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-        java.nio.file.StandardCopyOption.ATOMIC_MOVE
-      )
-    } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-      // Fallback for filesystems without atomic move support.
-      Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+      FileOutputStream(tmp).use { stream ->
+        stream.write(contentUtf8.toByteArray(Charsets.UTF_8))
+        stream.fd.sync()
+      }
+      fileSystem.rename(tmp, target)
     } finally {
-      if (tmp.exists()) tmp.delete()
+      tmp.delete()
     }
   }
 
-  fun safeRename(fromPath: String, toPath: String) {
+  @JvmOverloads
+  fun safeRename(
+    fromPath: String,
+    toPath: String,
+    fileSystem: BundleFileSystem = AndroidBundleFileSystem,
+  ) {
     val from = File(fromPath)
     val to = File(toPath)
     to.parentFile?.mkdirs()
-    // Same pattern as downloadBundle: remove existing target, then move.
-    if (to.exists()) {
-      if (!to.deleteRecursively()) {
-        throw Exception("safeRename: failed to remove existing target: $toPath")
-      }
+    // A replacement directory may already contain an uninstalled bundle.
+    if (to.exists() && !to.deleteRecursively()) {
+      throw IOException("safeRename: failed to remove existing target: $toPath")
     }
-    try {
-      Files.move(
-        from.toPath(),
-        to.toPath(),
-        java.nio.file.StandardCopyOption.ATOMIC_MOVE
-      )
-    } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-      Files.move(from.toPath(), to.toPath())
-    }
+    fileSystem.rename(from, to)
   }
 
   fun listVersionDirs(parentDir: String): List<String> {

@@ -43,9 +43,18 @@ java -jar /tmp/bundle-storage-schema-tests.jar
 
 # Same CLI requirements; exercises the extracted-file verifier path helpers.
 kotlinc android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleVerificationPath.kt \
+  ../react-native-bundle-crypto/android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleFileSystem.kt \
+  ../react-native-bundle-crypto/android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/JvmBundleFileSystem.kt \
   tests/kotlin/BundleVerificationPathTest.kt \
   -include-runtime -d /tmp/bundle-verification-path-tests.jar
 java -jar /tmp/bundle-verification-path-tests.jar
+
+kotlinc android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleDiffReconstruction.kt \
+  ../react-native-bundle-crypto/android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleFileSystem.kt \
+  ../react-native-bundle-crypto/android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/JvmBundleFileSystem.kt \
+  tests/kotlin/BundleDiffReconstructionTest.kt \
+  -include-runtime -d /tmp/bundle-diff-reconstruction-tests.jar
+java -jar /tmp/bundle-diff-reconstruction-tests.jar
 ```
 
 Swift and Kotlin tests compile and execute the shipping policy sources. They

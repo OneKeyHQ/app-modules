@@ -1,16 +1,11 @@
 package com.margelo.nitro.reactnativebundleupdate
 
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystem
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileType
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.nio.file.FileVisitResult
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.NoSuchFileException
-import java.nio.file.Path
-import java.nio.file.SimpleFileVisitor
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.BasicFileAttributes
+import java.io.IOException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -63,24 +58,16 @@ internal object BundleDiffReconstruction {
         return total.takeIf { start == offset && end >= start && end < total }
     }
 
-    fun targetMetadataSizeIfPresent(targetDir: File, metadataFile: File): Long? {
-        val target = try {
-            Files.readAttributes(targetDir.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        } catch (_: NoSuchFileException) {
-            return null
-        }
-        if (!target.isDirectory) {
+    fun targetMetadataSizeIfPresent(targetDir: File, metadataFile: File, fileSystem: BundleFileSystem): Long? {
+        val target = fileSystem.lstat(targetDir) ?: return null
+        if (target.type != BundleFileType.DIRECTORY) {
             throw BundleDiffReconstructionException.IntegrityFailed("Bundle target is not a directory")
         }
-        val metadata = try {
-            Files.readAttributes(metadataFile.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        } catch (_: NoSuchFileException) {
-            throw BundleDiffReconstructionException.IntegrityFailed("Bundle target has no metadata control file")
-        }
-        if (!metadata.isRegularFile) {
+        val metadata = fileSystem.lstat(metadataFile)
+        if (metadata?.type != BundleFileType.REGULAR) {
             throw BundleDiffReconstructionException.IntegrityFailed("Bundle target has no regular metadata control file")
         }
-        return metadata.size()
+        return metadata.size
     }
 
     // Shared by all native module instances in this process.
@@ -92,37 +79,39 @@ internal object BundleDiffReconstruction {
         }
     }
 
-    fun releaseStagingDirectory(directory: File) {
+    fun releaseStagingDirectory(directory: File, fileSystem: BundleFileSystem) {
         synchronized(liveStagingDirectories) {
-            deleteStagingEntry(directory)
+            deleteStagingEntry(directory, fileSystem)
             liveStagingDirectories.remove(directory.absoluteFile)
         }
     }
 
-    fun sweepStagingDirectory(root: File) {
+    fun sweepStagingDirectory(root: File, fileSystem: BundleFileSystem) {
         synchronized(liveStagingDirectories) {
-            if (Files.isSymbolicLink(root.toPath())) return
-            root.listFiles()?.filterNot { it.absoluteFile in liveStagingDirectories }
-                ?.forEach(::deleteStagingEntry)
+            val rootType = try { fileSystem.lstat(root)?.type } catch (_: IOException) { return }
+            if (rootType != BundleFileType.DIRECTORY) return
+            root.listFiles()?.forEach { entry ->
+                if (entry.absoluteFile !in liveStagingDirectories) deleteStagingEntry(entry, fileSystem)
+            }
         }
     }
 
-    private fun deleteStagingEntry(entry: File) {
+    private fun deleteStagingEntry(entry: File, fileSystem: BundleFileSystem) {
         try {
             // Walk without following links, including an abandoned symlink entry.
-            Files.walkFileTree(entry.toPath(), object : SimpleFileVisitor<Path>() {
-                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    Files.deleteIfExists(file)
-                    return FileVisitResult.CONTINUE
+            val pending = ArrayDeque<Pair<File, Boolean>>()
+            pending.addLast(entry to false)
+            while (pending.isNotEmpty()) {
+                val (file, visited) = pending.removeLast()
+                if (!visited && fileSystem.lstat(file)?.type == BundleFileType.DIRECTORY) {
+                    val children = file.listFiles() ?: continue
+                    pending.addLast(file to true)
+                    for (child in children) pending.addLast(child to false)
+                } else {
+                    file.delete()
                 }
-
-                override fun postVisitDirectory(dir: Path, error: java.io.IOException?): FileVisitResult {
-                    if (error != null) throw error
-                    Files.deleteIfExists(dir)
-                    return FileVisitResult.CONTINUE
-                }
-            })
-        } catch (_: java.io.IOException) {
+            }
+        } catch (_: IOException) {
             // Missing entries and cleanup failures are safe to retry at the next sweep.
         }
     }
@@ -130,13 +119,15 @@ internal object BundleDiffReconstruction {
     fun unzipFile(
         zipFilePath: String,
         destDirectory: String,
+        fileSystem: BundleFileSystem,
         maxUncompressedBytes: Long = MAX_BUNDLE_UNCOMPRESSED_BYTES,
         maxEntries: Int = MAX_BUNDLE_ENTRIES,
     ) {
         val destDir = File(destDirectory)
         if (!destDir.exists()) destDir.mkdirs()
 
-        val destDirPath = destDir.canonicalFile.toPath()
+        val canonicalDestDir = destDir.canonicalPath
+        val destDirPrefix = canonicalDestDir.trimEnd(File.separatorChar) + File.separator
         var totalBytesWritten = 0L
         var entryCount = 0
         val zipStream = object : ZipInputStream(FileInputStream(zipFilePath)) {
@@ -156,11 +147,12 @@ internal object BundleDiffReconstruction {
                     throw SecurityException("Zip entry count exceeds maximum allowed ($maxEntries)")
                 }
                 val outFile = File(destDir, entry.name)
-                if (Files.isSymbolicLink(outFile.toPath())) {
+                if (fileSystem.isSymbolicLink(outFile)) {
                     throw SecurityException("Symlink detected at zip entry destination: ${entry.name}")
                 }
-                val outPath = outFile.canonicalFile.toPath()
-                if (!outPath.startsWith(destDirPath)) {
+                val outPath = outFile.canonicalPath
+                val isConfined = if (outPath == canonicalDestDir) entry.isDirectory else outPath.startsWith(destDirPrefix)
+                if (!isConfined) {
                     throw SecurityException("Entry is outside of the target dir: ${entry.name}")
                 }
                 if (!entry.isDirectory) {
@@ -293,11 +285,11 @@ internal object BundleDiffReconstruction {
         return sb.toString()
     }
 
-    fun writeDescriptor(descriptor: DiffArchiveDescriptor, file: File): Boolean {
-        val tmpFile = File(file.parentFile, "${file.name}.tmp")
+    fun writeDescriptor(descriptor: DiffArchiveDescriptor, file: File, fileSystem: BundleFileSystem): Boolean {
+        val target = file.absoluteFile
+        val parent = target.parentFile ?: return false
         return try {
-            val parent = file.parentFile
-            if (parent != null && !parent.exists()) parent.mkdirs()
+            parent.mkdirs()
             val json = buildString {
                 append('{')
                 append("\"appVersion\":").append(jsonEscape(descriptor.appVersion)).append(',')
@@ -312,15 +304,19 @@ internal object BundleDiffReconstruction {
                 }
                 append('}')
             }
-            FileOutputStream(tmpFile).use { fos ->
-                fos.write(json.toByteArray(Charsets.UTF_8))
-                fos.fd.sync()
+            val tmpFile = File.createTempFile("diff-descriptor-", ".tmp", parent)
+            try {
+                FileOutputStream(tmpFile).use { fos ->
+                    fos.write(json.toByteArray(Charsets.UTF_8))
+                    fos.fd.sync()
+                }
+                // A failed rename leaves the prior sidecar intact.
+                fileSystem.rename(tmpFile, target)
+                true
+            } finally {
+                tmpFile.delete()
             }
-            // Replace the sidecar atomically so a failed move leaves the previous record intact.
-            Files.move(tmpFile.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
-            true
         } catch (_: Exception) {
-            tmpFile.delete()
             false
         }
     }
@@ -701,29 +697,31 @@ internal object BundleDiffReconstruction {
         return result
     }
 
-    fun confinedExistingFile(baseDir: File, relativePath: String): File? {
+    private fun confinedExistingFile(baseDir: File, relativePath: String, fileSystem: BundleFileSystem): File? {
         if (!isSafeRelativeBundlePath(relativePath)) return null
         val resolvedBase = try { baseDir.canonicalPath } catch (_: Exception) { return null }
         var current = baseDir
-        for (component in relativePath.split('/')) {
-            current = File(current, component)
-            if (Files.isSymbolicLink(current.toPath())) return null
+        val components = relativePath.split('/')
+        for (index in components.indices) {
+            current = File(current, components[index])
+            val expectedType = if (index == components.lastIndex) BundleFileType.REGULAR else BundleFileType.DIRECTORY
+            if (fileSystem.lstat(current)?.type != expectedType) return null
         }
-        if (!current.exists() || !current.isFile) return null
         val resolvedFile = try { current.canonicalPath } catch (_: Exception) { return null }
         if (!resolvedFile.startsWith(resolvedBase + File.separator)) return null
         return current
     }
 
-    fun confinedDestinationFile(baseDir: File, relativePath: String): File? {
+    private fun confinedDestinationFile(baseDir: File, relativePath: String, fileSystem: BundleFileSystem): File? {
         if (!isSafeRelativeBundlePath(relativePath)) return null
         val resolvedBase = try { baseDir.canonicalPath } catch (_: Exception) { return null }
         val components = relativePath.split('/')
         var current = baseDir
         for (idx in components.indices) {
             current = File(current, components[idx])
-            if (current.exists() && Files.isSymbolicLink(current.toPath())) return null
-            if (idx < components.lastIndex && current.exists() && !current.isDirectory) return null
+            val type = fileSystem.lstat(current)?.type
+            if (type == BundleFileType.SYMLINK) return null
+            if (idx < components.lastIndex && type != null && type != BundleFileType.DIRECTORY) return null
         }
         val resolvedFile = try { current.canonicalPath } catch (_: Exception) { return null }
         if (!resolvedFile.startsWith(resolvedBase + File.separator)) return null
@@ -774,6 +772,7 @@ internal object BundleDiffReconstruction {
         candidateBundleDirs: List<File>,
         sha256OfFile: (String) -> String?,
         builtinCopy: (relativePath: String, destinationFile: File, expectedHash: String) -> Boolean,
+        fileSystem: BundleFileSystem,
         maxEntries: Int = MAX_BUNDLE_ENTRIES,
         maxTotalBytes: Long = MAX_BUNDLE_UNCOMPRESSED_BYTES,
     ) {
@@ -812,7 +811,7 @@ internal object BundleDiffReconstruction {
                     "reconstructed entry count exceeds maximum allowed ($maxEntries)",
                 )
             }
-            val stagedFile = confinedExistingFile(stagingDir, relPath)
+            val stagedFile = confinedExistingFile(stagingDir, relPath, fileSystem)
                 ?: throw BundleDiffReconstructionException.FallbackRequired("changed file missing or unsafe: $relPath")
             val fileSize = stagedFile.length().coerceAtLeast(0L)
             if (fileSize > maxTotalBytes - cumulativeBytes) {
@@ -835,7 +834,7 @@ internal object BundleDiffReconstruction {
                     "reconstructed entry count exceeds maximum allowed ($maxEntries)",
                 )
             }
-            val destFile = confinedDestinationFile(stagingDir, relPath)
+            val destFile = confinedDestinationFile(stagingDir, relPath, fileSystem)
                 ?: throw BundleDiffReconstructionException.SecurityRejected(
                     "unsafe destination path for reused file: $relPath",
                 )
@@ -849,7 +848,7 @@ internal object BundleDiffReconstruction {
 
             var copied = false
             for (candidateDir in candidateBundleDirs) {
-                val sourceFile = confinedExistingFile(candidateDir, relPath) ?: continue
+                val sourceFile = confinedExistingFile(candidateDir, relPath, fileSystem) ?: continue
                 val sourceHash = sha256OfFile(sourceFile.absolutePath) ?: continue
                 if (!constantTimeEqualHex(sourceHash, expectedHash)) continue
                 val sourceSize = sourceFile.length().coerceAtLeast(0L)

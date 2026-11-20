@@ -178,20 +178,20 @@ XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
     val file = File(nested, "index.js").apply { writeText("abc") }
     File(bundle, "metadata.json").writeText("ignored")
 
-    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath)
+    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath, JvmBundleFileSystem)
     assertEquals(1, hashes.size)
     assertEquals("nested/bundle/index.js", hashes.single().relativePath)
     assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", hashes.single().sha256)
-    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
 
     file.writeText("changed")
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
     file.delete()
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
 
     file.writeText("abc")
     File(bundle, "evil-metadata.json").writeText("unlisted")
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
   }
 
   @Test
@@ -202,24 +202,25 @@ XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
     File(bundle, "metadata.json").writeText("bundle manifest")
     val finderFile = File(nested, ".DS_Store").apply { writeText("finder metadata") }
 
-    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath)
+    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath, JvmBundleFileSystem)
     assertEquals("assets/metadata.json", hashes.single().relativePath)
-    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, emptyList()))
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, emptyList(), JvmBundleFileSystem))
     assertFalse(BundleCryptoCore.verifyDirAgainstHashes(
       bundle.absolutePath,
       hashes + BundleCryptoCore.DirHash("assets", "0".repeat(64)),
+      JvmBundleFileSystem,
     ))
     val finderHash = requireNotNull(BundleCryptoCore.sha256OfFile(finderFile.absolutePath).sha256)
     val manifest = hashes + BundleCryptoCore.DirHash("assets/.DS_Store", finderHash)
-    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest))
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest, JvmBundleFileSystem))
     finderFile.writeText("tampered")
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest, JvmBundleFileSystem))
     nestedMetadata.writeText("tampered")
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
     nestedMetadata.delete()
     nestedMetadata.mkdir()
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
   }
 
   @Test
@@ -232,28 +233,49 @@ XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash("../outside.txt", wrongHash))
+        listOf(BundleCryptoCore.DirHash("../outside.txt", wrongHash)),
+        JvmBundleFileSystem,
       )
     )
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash(outside.absolutePath, wrongHash))
+        listOf(BundleCryptoCore.DirHash(outside.absolutePath, wrongHash)),
+        JvmBundleFileSystem,
       )
     )
     Files.createSymbolicLink(File(bundle, "link.txt").toPath(), outside.toPath())
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash("link.txt", wrongHash))
+        listOf(BundleCryptoCore.DirHash("link.txt", wrongHash)),
+        JvmBundleFileSystem,
       )
     )
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash("", wrongHash))
+        listOf(BundleCryptoCore.DirHash("", wrongHash)),
+        JvmBundleFileSystem,
       )
     )
+  }
+
+  @Test
+  fun atomicWriteReplacesTargetAndSafeRenamePromotesDirectory() {
+    val root = temporaryFolder.newFolder("file-operations")
+    val staging = File(root, "staging").apply { mkdir() }
+    val metadata = File(staging, "metadata.json").apply { writeText("original") }
+    BundleCryptoCore.atomicWriteFile(metadata.absolutePath, "replacement", JvmBundleFileSystem)
+    assertEquals("replacement", metadata.readText())
+    assertEquals(listOf("metadata.json"), staging.listFiles().orEmpty().map { it.name })
+
+    val destination = File(root, "destination").apply { mkdir() }
+    File(destination, "old").writeText("old content")
+    BundleCryptoCore.safeRename(staging.absolutePath, destination.absolutePath, JvmBundleFileSystem)
+    assertFalse(staging.exists())
+    assertFalse(File(destination, "old").exists())
+    assertEquals("replacement", File(destination, "metadata.json").readText())
   }
 
   @Test
@@ -261,9 +283,9 @@ XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
     val bundle = temporaryFolder.newFolder("extracted")
     val outside = temporaryFolder.newFile("outside.txt").apply { writeText("outside") }
     File(bundle, "index.js").writeText("inside")
-    assertTrue(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath))
+    assertTrue(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath, JvmBundleFileSystem))
 
     Files.createSymbolicLink(File(bundle, "escape").toPath(), outside.toPath())
-    assertFalse(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath))
+    assertFalse(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath, JvmBundleFileSystem))
   }
 }
