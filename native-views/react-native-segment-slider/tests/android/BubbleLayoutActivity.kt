@@ -253,9 +253,10 @@ class BubbleLayoutActivity : Activity() {
   // Per-step haptics: one tick per value bucket during a drag; entering a mark
   // fires the mark tick instead of the step tick; 0 keeps mark-only ticks.
   private fun runHapticCases() {
-    fun ticks(step: Double): List<String> {
+    fun ticks(step: Double, enabled: Boolean = true): List<String> {
       val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
         segments = 4.0; defaultValue = 0.0; hapticStep = step
+        hapticFeedbackEnabled = enabled
         view.layout(0, 0, px(320), px(24))
       }
       val ticks = mutableListOf<String>()
@@ -272,6 +273,8 @@ class BubbleLayoutActivity : Activity() {
     check(stepTicks == listOf("mark", "step", "step", "mark", "step"), "hapticStep 1 ticks: $stepTicks")
     val markTicks = ticks(0.0)
     check(markTicks == listOf("mark", "mark"), "hapticStep 0 ticks: $markTicks")
+    val silentTicks = ticks(1.0, enabled = false)
+    check(silentTicks.isEmpty(), "hapticFeedbackEnabled false ticked: $silentTicks")
 
     fun make(configure: HybridSegmentSlider.() -> Unit) =
       HybridSegmentSlider(ThemedReactContext(this)).apply {

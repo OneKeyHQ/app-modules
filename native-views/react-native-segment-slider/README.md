@@ -29,6 +29,7 @@ and owns the value's meaning.
   quick tap to the nearest mark while drags stay free.
 - **Per-step haptics** — `hapticStep` ticks on every step of a drag on iOS and
   Android, with a stronger tick on each mark.
+  `hapticFeedbackEnabled={false}` silences every tick.
 - **Theme-agnostic colors** — nine color props take resolved color strings.
 - **Optional value bubble** and **signed ranges** with `centerOrigin`.
 

@@ -43,7 +43,8 @@ description or UIKit's accessibility label. An absent or empty label clears it.
 
 Shared props (defaults in parentheses): `min` (0), `max` (100), `segments`,
 `sliderHeight` (4), `disabled` (false), `showBubble` (true), `centerOrigin`
-(false), `snapTapToSegment` (false), `hapticStep` (0), the nine color props
+(false), `snapTapToSegment` (false), `hapticStep` (0), `hapticFeedbackEnabled`
+(true), the nine color props
 below, `onSlideStart` and `onSlideComplete`. `alignSegmentMarksToIntegerValues`
 (false) is accepted everywhere and only changes mark placement on Web.
 
@@ -89,6 +90,9 @@ at the Nitro entry and takes precedence over the Web `browser` field.
   (default false). It has no effect without marks. On Web a press on a mark
   always lands exactly on that mark.
 - `hapticStep` adds the per-step tick described above (native default 0).
+- `hapticFeedbackEnabled` is the master haptic switch (default true). False
+  silences both the mark tick and the step tick on iOS and Android, so a host
+  can honor an app-level "haptic feedback" setting. Web has no haptics.
 - Color props supply resolved theme colors. Invalid colors fall back according
   to the platform color parser; the view does not resolve application themes.
 - `onChange` reports changed, integer-rounded interaction values.
@@ -208,7 +212,8 @@ integration.
 Haptics (`hapticStep`): `hapticTickRecorder` (a test seam on both native
 classes, not a Nitro prop) records each tick. The iOS and Android harnesses
 drag across 0, 1, 2, 25 and 26 and assert `mark, step, step, mark, step` with
-`hapticStep = 1` and `mark, mark` with `0`, and assert that a tap without
+`hapticStep = 1`, `mark, mark` with `0` and no ticks with
+`hapticFeedbackEnabled = false`, and assert that a tap without
 movement fires no step tick. The same harnesses cover disabling mid-drag (one
 completion, no later values) and fractional bounds (0.5..10.5 emits 10 and 1). Feel and strength still need
 acceptance on a physical iPhone and Android phone
