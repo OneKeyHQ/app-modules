@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "BundleStorageSchemaPolicy",
+    platforms: [.macOS(.v12)],
     targets: [
         .target(
             name: "BundleStorageSchemaPolicy",
