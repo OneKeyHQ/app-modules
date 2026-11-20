@@ -148,6 +148,7 @@ internal fun applyNativeListTextSpacing(
   view: TextView,
   style: JSONObject?,
   defaultFeatures: String? = "tnum",
+  defaultLetterSpacing: Float = 0f,
 ) {
   val tracking = style?.optDouble("letterSpacing")?.takeIf { it.isFinite() }
   val digitFeatures = when {
@@ -159,7 +160,7 @@ internal fun applyNativeListTextSpacing(
     listOfNotNull(digitFeatures, "'kern' 0").joinToString(", ")
   view.letterSpacing = if (tracking != null && view.textSize > 0f)
     (tracking * view.resources.displayMetrics.density / view.textSize).toFloat()
-  else 0f
+  else defaultLetterSpacing
 }
 
 /**

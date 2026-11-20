@@ -572,6 +572,10 @@ model fields, whatever the renderer's internal view names are.
 | table layout | `$bodyXs` | 11 regular / 14 | sp(11) regular / dp(14) | — |
 | `value` | `$bodyLg` | 16 / 24 | sp(16) medium / dp(24) | 14px / 20px / 500 **≠** |
 
+Android history titles keep their default tracking when `style.title` omits
+`letterSpacing`. Web network selector success badges inherit tabular numerals
+from the section, independently of explicit digit styles on the title or value.
+
 ### action
 
 | Key | Default | iOS | Android | Web |

@@ -97,6 +97,7 @@ export const WEB_REORDER_ANIMATION = {
 } as const;
 
 const REORDER_TOUCH_LONG_PRESS_MS = 120;
+const REORDER_CLICK_GRACE_MS = 500;
 const MARKET_LONG_PRESS_MS = 800;
 const MARKET_MOVE_CANCEL_PX = 10;
 const REORDER_MOUSE_MOVE_THRESHOLD_PX = 5;
@@ -875,7 +876,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-image-skeleton{position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:ok-native-list-skeleton-light 1.5s linear infinite alternate}.ok-native-list-image-skeleton[data-dark="true"]{animation-name:ok-native-list-skeleton-dark}@keyframes ok-native-list-skeleton-light{0%{background-color:#fafafa}100%{background-color:#cdcdcd}}@keyframes ok-native-list-skeleton-dark{0%{background-color:#111111}100%{background-color:#333333}}@media(prefers-reduced-motion:reduce){.ok-native-list-image-skeleton{animation:none;background-color:var(--nl-strong)}}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
 .ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;cursor:pointer;font-family:var(--nl-font-medium)}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
 .ok-native-list-icon-button.ok-native-list-decorative-refresh{min-width:16px;width:16px;height:16px}
-.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium);font-variant-numeric:inherit}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
 .ok-native-list-identity-row .ok-native-list-badge[data-tone="neutral"]{height:20px;box-sizing:border-box;padding:2px 8px;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:500;font-family:var(--nl-font-medium)}
 .ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-bold)}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px;letter-spacing:0.8px}.ok-native-list-section-value{margin-left:auto}
 .ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent);font-family:var(--nl-font-semibold)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
@@ -2023,8 +2024,8 @@ export class NativeListWebEngine {
   private reorderSettlingKey: string | undefined;
   private reorderCompactKey: string | undefined;
   private reorderExpandingKey: string | undefined;
-  private reorderClickPointerId: number | undefined;
-  private lastPrimaryPointerId: number | undefined;
+  private readonly reorderClickPointers = new Map<number, number | undefined>();
+  private lastReleasedPrimaryPointerId: number | undefined;
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
@@ -2268,7 +2269,13 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.addEventListener('click', this.handleClick);
-    this.root.addEventListener('pointerdown', this.trackPrimaryPress, true);
+    this.root.addEventListener('pointerdown', this.trackReorderPress, true);
+    this.document.addEventListener('pointerup', this.trackReorderRelease, true);
+    this.document.addEventListener(
+      'pointercancel',
+      this.trackReorderRelease,
+      true
+    );
     this.root.addEventListener('contextmenu', this.handleMarketContextMenu);
     this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
     this.root.addEventListener('pointermove', this.handleMarketPointerMove);
@@ -3177,7 +3184,19 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.removeEventListener('click', this.handleClick);
-    this.root.removeEventListener('pointerdown', this.trackPrimaryPress, true);
+    this.root.removeEventListener('pointerdown', this.trackReorderPress, true);
+    this.document.removeEventListener(
+      'pointerup',
+      this.trackReorderRelease,
+      true
+    );
+    this.document.removeEventListener(
+      'pointercancel',
+      this.trackReorderRelease,
+      true
+    );
+    for (const id of this.reorderClickPointers.keys())
+      this.clearReorderClick(id);
     this.root.removeEventListener('contextmenu', this.handleMarketContextMenu);
     this.cancelMarketPointer();
     this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
@@ -4821,11 +4840,37 @@ export class NativeListWebEngine {
       this.invalidateActionAnchor('pointerLeave');
   };
 
-  private trackPrimaryPress = (event: PointerEvent) => {
-    if (event.isPrimary === false || event.button !== 0) return;
-    this.lastPrimaryPointerId = event.pointerId;
-    if (this.reorderClickPointerId === event.pointerId)
-      this.reorderClickPointerId = undefined;
+  private clearReorderClick(pointerId: number): boolean {
+    const timer = this.reorderClickPointers.get(pointerId);
+    if (timer !== undefined) this.document.defaultView?.clearTimeout(timer);
+    return this.reorderClickPointers.delete(pointerId);
+  }
+
+  private trackReorderPress = (event: PointerEvent) => {
+    this.clearReorderClick(event.pointerId);
+  };
+
+  private trackReorderRelease = ({
+    type,
+    isPrimary,
+    button,
+    pointerId,
+  }: PointerEvent) => {
+    const released = type === 'pointerup';
+    if (released && isPrimary !== false && button === 0)
+      this.lastReleasedPrimaryPointerId = pointerId;
+    if (!this.clearReorderClick(pointerId) || !released) return;
+
+    // A browser can queue the compatibility click after pointerup. Start
+    // expiry at release, so cancelling a drag while held cannot unblock it.
+    const view = this.document.defaultView;
+    if (view) {
+      const timer = view.setTimeout(
+        () => this.reorderClickPointers.delete(pointerId),
+        REORDER_CLICK_GRACE_MS
+      );
+      this.reorderClickPointers.set(pointerId, timer);
+    }
   };
 
   private handleClick = (event: Event) => {
@@ -4834,12 +4879,10 @@ export class NativeListWebEngine {
     const pointerId =
       (event as PointerEvent).pointerId ??
       ((event as MouseEvent).detail > 0
-        ? this.lastPrimaryPointerId
+        ? this.lastReleasedPrimaryPointerId
         : undefined);
     const clickFromReorder =
-      this.reorderClickPointerId !== undefined &&
-      pointerId === this.reorderClickPointerId;
-    if (clickFromReorder) this.reorderClickPointerId = undefined;
+      pointerId !== undefined && this.clearReorderClick(pointerId);
     if (this.marketLongPressFired || clickFromReorder) {
       this.marketLongPressFired = false;
       event.preventDefault();
@@ -5334,7 +5377,7 @@ export class NativeListWebEngine {
     state.originalRows = this.snapshot.rows;
     state.workingRows = [...this.snapshot.rows];
     state.active = true;
-    this.reorderClickPointerId = state.pointerId;
+    this.reorderClickPointers.set(state.pointerId, undefined);
     this.cancelMarketPointer();
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();

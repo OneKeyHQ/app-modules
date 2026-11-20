@@ -7,6 +7,7 @@ import android.animation.AnimatorListenerAdapter
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -4638,12 +4639,7 @@ class NativeListView(
   private fun findReorderHandle(root: View, rawX: Float, rawY: Float): View? {
     if (root.visibility != View.VISIBLE) return null
     if (root.getTag(R.id.onekey_native_list_reorder_handle) == true) {
-      val location = IntArray(2)
-      root.getLocationOnScreen(location)
-      return root.takeIf {
-        rawX >= location[0] && rawX < location[0] + root.width &&
-          rawY >= location[1] && rawY < location[1] + root.height
-      }
+      return root.takeIf { reorderHandleContainsScreenPoint(it, rawX, rawY) }
     }
     if (root is ViewGroup) {
       for (index in 0 until root.childCount) {
@@ -4651,6 +4647,39 @@ class NativeListView(
       }
     }
     return null
+  }
+
+  private fun reorderHandleContainsScreenPoint(handle: View, rawX: Float, rawY: Float): Boolean {
+    val localToScreen = Matrix()
+    var view = handle
+    while (true) {
+      val parent = view.parent as? View ?: break
+      localToScreen.postConcat(view.matrix)
+      localToScreen.postTranslate(
+        (view.left - parent.scrollX).toFloat(),
+        (view.top - parent.scrollY).toFloat(),
+      )
+      view = parent
+    }
+
+    // The top-level View's screen origin already includes its transform and
+    // the window offset. Subtract its mapped origin to apply the matrix once.
+    val screenOrigin = IntArray(2)
+    view.getLocationOnScreen(screenOrigin)
+    val mappedOrigin = floatArrayOf(0f, 0f)
+    view.matrix.mapPoints(mappedOrigin)
+    localToScreen.postConcat(view.matrix)
+    localToScreen.postTranslate(
+      screenOrigin[0] - mappedOrigin[0],
+      screenOrigin[1] - mappedOrigin[1],
+    )
+
+    val screenToLocal = Matrix()
+    if (!localToScreen.invert(screenToLocal)) return false
+    val point = floatArrayOf(rawX, rawY)
+    screenToLocal.mapPoints(point)
+    return point[0] >= 0f && point[0] < handle.width &&
+      point[1] >= 0f && point[1] < handle.height
   }
 
   private fun prepareDisplacedReorderAnimation(view: View, helper: ItemTouchHelper) {

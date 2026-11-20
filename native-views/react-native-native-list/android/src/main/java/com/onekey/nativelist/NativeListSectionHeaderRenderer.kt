@@ -773,7 +773,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
-    applyNativeListTextSpacing(view, style)
+    applyNativeListTextSpacing(view, style, defaultLetterSpacing = view.letterSpacing)
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or
@@ -830,7 +830,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
             view.text = text
           }
         }
-        applyNativeListTextSpacing(view, explicit)
+        applyNativeListTextSpacing(view, explicit, defaultLetterSpacing = view.letterSpacing)
       }
       if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
     }

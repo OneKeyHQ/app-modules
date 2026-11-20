@@ -7064,6 +7064,48 @@ describe('DeFi position Web controls', () => {
     }
   });
 
+  it('keeps tabular digits on a network selector success badge beside proportional text', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const engine = new NativeListWebEngine(
+      host,
+      snap({
+        type: 'sectionHeader',
+        key: 'networks',
+        sectionKey: 'networks',
+        presentation: 'networkSelector',
+        title: '11111111',
+        leadingBadge: { key: 'enabled', text: '88888888', tone: 'success' },
+        value: '22222222',
+        style: {
+          title: { tabularNumbers: false },
+          value: { tabularNumbers: false },
+        },
+      }),
+      {},
+      false
+    );
+    try {
+      const badge = host.querySelector<HTMLElement>(
+        '.ok-native-list-section > [data-tone="success"]'
+      )!;
+      const style = document.defaultView!.getComputedStyle(badge);
+      expect(style.fontVariantNumeric).toBe('inherit');
+      expect(badge.parentElement?.style.fontVariantNumeric).toBe(
+        'tabular-nums'
+      );
+      for (const slot of ['title', 'value']) {
+        const text = host.querySelector<HTMLElement>(
+          `[data-nl-slot="${slot}"]`
+        )!;
+        expect(text.style.fontVariantNumeric).toBe('proportional-nums');
+      }
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('uses hover only for tooltip help and click only for popover help', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -7635,6 +7677,91 @@ describe('NativeList web handle reorder and host icons', () => {
           expect(onRowAction).toHaveBeenCalledTimes(1);
           expect(onRowAction).toHaveBeenCalledWith(
             expect.objectContaining({ actionKey: 'handle.info' })
+          );
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it.each([true, false])(
+    'suppresses overlapping touch and mouse reorder clicks independently (pointer click: %s)',
+    (pointerClick) => {
+      jest.useFakeTimers();
+      const sources = handleRows.slice(0, 2).map((row) => ({
+        ...(row as IdentityRow),
+        trailing: [{ kind: 'drag' as const, actionKey: row.key }],
+      }));
+      const { document, host, engine, dragging } = mount('handle', sources);
+      const onRowAction = jest.fn();
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onRowAction, onReorder });
+      try {
+        withElement(document, () => {
+          const handles = host.querySelectorAll<HTMLButtonElement>(
+            'button[data-native-list-reorder-handle]'
+          );
+          const sendPointer = (
+            type: string,
+            handle: HTMLButtonElement,
+            pointerId: number,
+            pointerType: 'touch' | 'mouse',
+            clientX = 10
+          ) =>
+            handle.dispatchEvent(
+              Object.assign(
+                new document.defaultView!.Event(type, {
+                  bubbles: true,
+                  cancelable: true,
+                }),
+                {
+                  pointerId,
+                  pointerType,
+                  isPrimary: true,
+                  button: 0,
+                  clientX,
+                  clientY: 20,
+                }
+              )
+            );
+          const click = (handle: HTMLButtonElement, pointerId: number) => {
+            const event = new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+            });
+            if (pointerClick) Object.assign(event, { pointerId });
+            handle.dispatchEvent(event);
+          };
+
+          sendPointer('pointerdown', handles[0]!, 7, 'touch');
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(true);
+          engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+          expect(dragging()).toBe(false);
+
+          sendPointer('pointerdown', handles[1]!, 1, 'mouse');
+          sendPointer('pointermove', handles[1]!, 1, 'mouse', 60);
+          expect(dragging()).toBe(true);
+          engine.applySnapshot({ ...engine.currentSnapshot(), generation: 3 });
+          expect(dragging()).toBe(false);
+          jest.advanceTimersByTime(600);
+
+          sendPointer('pointerup', handles[0]!, 7, 'touch');
+          click(handles[0]!, 7);
+          sendPointer('pointerup', handles[1]!, 1, 'mouse');
+          click(handles[1]!, 1);
+          expect(onRowAction).not.toHaveBeenCalled();
+          expect(onReorder).not.toHaveBeenCalled();
+
+          sendPointer('pointerdown', handles[1]!, 1, 'mouse');
+          sendPointer('pointerup', handles[1]!, 1, 'mouse');
+          click(handles[1]!, 1);
+          expect(onRowAction).toHaveBeenCalledTimes(1);
+          expect(onRowAction).toHaveBeenCalledWith(
+            expect.objectContaining({ actionKey: 'b' })
           );
         });
       } finally {
