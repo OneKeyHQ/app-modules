@@ -817,6 +817,78 @@ and top refresh.
 Spot's scroll-then-refresh release-reversal sequence still jumps in both the
 baseline and corrected builds; that existing NativeScroller case remains open.
 
+## Android platform ScrollView release fling
+
+Status: implemented. Runtime verified on 2026-11-20 in the OneKey app on an
+Android 16 emulator (API 36): the cases listed at the end of this section,
+except a touch during the motion, which has source coverage only.
+
+In smooth-header mode the shared header moves only through nested scrolling.
+RecyclerView and the owned NativeScroller keep dispatching nested scrolls while
+they fling, so a release that leaves the header between its ends continues on
+the header before the content moves. A platform `android.widget.ScrollView`
+owner, which is what React Native's vertical ScrollView is, reports its release
+velocity once through nested pre-fling and then flings its content without
+nested callbacks. Left alone, the content scrolls under a partly collapsed
+header (C < D with a moving body), which the smooth contract above excludes, and
+the page stays short by the part of the header that did not collapse.
+
+When the current page's observed owner is a platform ScrollView and the release
+comes from that owner, or from the SwipeRefreshLayout wrapping it, the
+coordinator MUST consume the nested pre-fling and carry the release on the shared
+header in these two cases:
+
+- Upward velocity while C < D: the header collapses with the release velocity.
+  On reaching D the velocity that is left is handed to the owner's own `fling`
+  when it is at least the platform minimum fling velocity and the content can
+  scroll further; the content then continues as an ordinary fling.
+- Downward velocity while C > 0 and the content is at its top: the header
+  expands with the release velocity and stops at 0. What is left is dropped.
+
+A release too weak to reach either end leaves the header where the motion
+stops, as a nested fling does. Every other release is left to the owner
+unchanged: a fully collapsed header with upward velocity, downward velocity
+while the content is away from its top, RecyclerView and NativeScroller owners,
+non-smooth mode, inactive pages, a nested child inside the owner, and a pending
+refresh pull, which the refresh release settlement above consumes first.
+
+The coordinator owns the motion on the UI thread, one frame callback at a time,
+with no JavaScript callbacks. The fling is unbounded; the header range is applied
+per frame, so a header measured again mid-flight clamps to the latest D. A new
+touch on the pager, an accepted page-top or partial header command, a
+horizontal transition, a different observed owner, page key or attachment, and
+detach cancel it, and a cancelled motion never hands velocity over. While it
+runs the header is not reported as settled at the top. Its end, other than by
+detach, publishes the header offset the way the end of a nested scroll does.
+The motion itself does not write body memory B.
+
+The caller's side is unchanged: a platform ScrollView joins nested scrolling only
+when asked to (React Native: `nestedScrollEnabled`). Without it no nested
+callback reaches the coordinator and the header does not move at all. Accepted
+divergence from RecyclerView: a content fling that reaches the top with the
+header collapsed leaves the header collapsed until the next drag. iOS and Web
+derive the header from the content offset and are unchanged.
+
+The focused JVM regression `CollapsiblePagerHeaderFlingTest.kt` covers which
+releases are carried, hand-over at full collapse, a weak release, expansion to
+the top, a header range that shrinks mid-flight and extreme travel. Runtime
+acceptance requires, on a React Native ScrollView page with nested scrolling
+enabled: a short upward flick that ends with the header partly collapsed
+(collapses fully, content keeps its momentum), a downward release with the
+content at its top and the header partly revealed (expands fully), a slow
+release (stays where it stops), a touch during the motion (stops it), and an
+unchanged RecyclerView page in the same pager. Source and JVM checks are not
+runtime acceptance.
+
+The 2026-11-20 run used the Receive selector's network list (FlashList, a React
+Native ScrollView) beside its token list (NativeList) with a 116 px header. A
+100 px flick released at C = 28 px and 3935 px/s collapsed the header and
+handed 3834 px/s to the content, which kept scrolling; before the change the
+same flick left the header half collapsed. A downward flick released at
+C = 13 px and -1696 px/s expanded it to 0. Slow releases stayed at 48 px. The
+token list and the Home pager (RecyclerView owners) collapsed through their own
+fling as before, six of six flicks on Home with the header going 0 to 767 px.
+
 ## Superseded Android indicator placement
 
 The alpha.257 approach translated the RN indicator below the shared tabs.
