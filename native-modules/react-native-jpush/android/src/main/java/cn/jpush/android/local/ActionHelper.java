@@ -444,9 +444,15 @@ public class ActionHelper {
         }
     }
 
+    private static boolean isSupportedDownlinkMessageType(byte messageType) {
+        int type = messageType & 0xFF;
+        return type == 0 || type == 1 || type == 2 || type == 20
+            || type == 100 || type == 101 || type == 103 || type == 104 || type == 115;
+    }
+
     public void handleDownlinkPushMessage(Context context, byte messageType, long messageId, String rawContent) {
         long contentGeneration = JCoreStorage.getContentGeneration();
-        if (!isContentAllowed(context)) {
+        if (!isContentAllowed(context) || !isSupportedDownlinkMessageType(messageType)) {
             return;
         }
         String content = extractDownlinkContent(rawContent);
@@ -497,6 +503,9 @@ public class ActionHelper {
         custom.contentType = downlinkString(envelope, body, content, "content_type");
         custom.extra = extractDownlinkExtras(envelope, body, content, "extras", "n_extras");
         custom.platform = (byte) downlinkInt(envelope, body, content, "platform", 0);
+        if (custom.title.isEmpty() && custom.message.isEmpty() && custom.extra.isEmpty()) {
+            return;
+        }
         if (contentGeneration == JCoreStorage.getContentGeneration()) {
             dispatchCustomMessageEvent(context, custom);
         }
@@ -517,9 +526,10 @@ public class ActionHelper {
             if (body.startsWith("{")) {
                 return body;
             }
+            return body;
         }
-        int lastNewline = content.lastIndexOf('\n');
-        return lastNewline + 1 < content.length() ? content.substring(lastNewline + 1).trim() : content;
+        String secondLine = content.substring(packageEnd + 1).trim();
+        return secondLine.startsWith("{") ? secondLine : "";
     }
 
     private static JSONObject parseDownlinkObject(String content) {

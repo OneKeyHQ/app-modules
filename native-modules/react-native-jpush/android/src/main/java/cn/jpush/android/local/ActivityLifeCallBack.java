@@ -3,6 +3,7 @@ package cn.jpush.android.local;
 import android.app.Activity;
 import android.app.Application;
 import android.os.Bundle;
+import cn.jiguang.core.JCoreTcpEngine;
 
 public class ActivityLifeCallBack implements Application.ActivityLifecycleCallbacks {
     private static int activityTaskCount = 0;
@@ -15,6 +16,9 @@ public class ActivityLifeCallBack implements Application.ActivityLifecycleCallba
     public void onActivityStarted(Activity activity) {
         if (activityTaskCount == 0) {
             JPushConstants.isForeGround = true;
+            JCoreTcpEngine.getInstance().onAppForeground(
+                activity != null ? activity.getApplicationContext() : null
+            );
         }
         activityTaskCount++;
     }

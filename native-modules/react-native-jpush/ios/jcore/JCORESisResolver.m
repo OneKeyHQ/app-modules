@@ -274,6 +274,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     for (NSString *addr in config.ips) {
         JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil) {
+            ep.useSSL = (ep.port == 443);
             if ([failedSet containsObject:ep.addressString]) {
                 [deprioritizedFailed addObject:ep];
             } else {
@@ -282,8 +283,9 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         }
     }
     for (NSString *addr in config.sslIps) {
-        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil) {
+            ep.useSSL = (ep.port == 443);
             if ([failedSet containsObject:ep.addressString]) {
                 [deprioritizedFailed addObject:ep];
             } else {
@@ -314,6 +316,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         if ([addr isKindOfClass:[NSString class]]) {
             JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
             if (ep != nil) {
+                ep.useSSL = (ep.port == 443);
                 [results addObject:ep];
             }
         }
@@ -321,8 +324,9 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     NSArray<NSString *> *sslIps = [dict[@"ssl_ips"] isKindOfClass:[NSArray class]] ? dict[@"ssl_ips"] : @[];
     for (NSString *addr in sslIps) {
         if ([addr isKindOfClass:[NSString class]]) {
-            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
             if (ep != nil) {
+                ep.useSSL = (ep.port == 443);
                 [results addObject:ep];
             }
         }
@@ -417,7 +421,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         }
     }
     for (NSString *addr in config.sslIps) {
-        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil && ![failedSet containsObject:ep.addressString]) {
             return YES;
         }
@@ -513,6 +517,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
             NSDictionary *json = [JCORESisResolver decryptHttpSisResponse:data aesKey:aesKey];
             NSArray<JCORESisEndpoint *> *parsed = [self parseSisResponseDictionary:json];
             if (parsed.count > 0) {
+                [[JCOREConfiguration shared] clearFailedIps];
                 completion(parsed);
                 return;
             }

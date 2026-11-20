@@ -265,12 +265,13 @@ public final class SdkHostRegressionTest {
             check(
                 parsedLoginReq != null
                     && parsedLoginReq.passwordMd5.equals(JCoreCrypto.md5Hex("pw_secret"))
-                    && "5.1.1|5.9.0".equals(parsedLoginReq.sdkVerInfo)
+                    && "328192|387328".equals(parsedLoginReq.sdkVerInfo)
                     && "appkey_123".equals(parsedLoginReq.appKey)
                     && "srv_dev_001".equals(parsedLoginReq.deviceId)
                     && "US".equals(parsedLoginReq.countryCode)
                     && parsedLoginReq.loginFlag == 1
-                    && "1".equals(parsedLoginReq.gSdkTypeInfo),
+                    && parsedLoginReq.romPlatformMask == 8
+                    && "4|64".equals(parsedLoginReq.gSdkTypeInfo),
                 "Login v27 payload fields must match production spec"
             );
 
@@ -2670,7 +2671,8 @@ public final class SdkHostRegressionTest {
                     try (Socket socket1 = listener.accept()) {
                         socket1.setSoTimeout(3000);
                         JCoreWireCodec.DecodedFrame login1 = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
-                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #1");
+                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN && login1.sessionId == 0,
+                            "Expected fast login with sessionId=0 on connection #1");
                         writeLoopbackAck(socket1, login1, 870001L, 8701, 0, JCoreWireCodec.buildLoginResponsePayload(8701, 520, "", 1700000000));
 
                         JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
@@ -2724,7 +2726,8 @@ public final class SdkHostRegressionTest {
                     try (Socket socket2 = listener.accept()) {
                         socket2.setSoTimeout(3000);
                         JCoreWireCodec.DecodedFrame login2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
-                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #2");
+                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN && login2.sessionId == 0,
+                            "Expected fast login with sessionId=0 on connection #2");
                         writeLoopbackAck(socket2, login2, 870001L, 8702, 0, JCoreWireCodec.buildLoginResponsePayload(8702, 520, "", 1700000001));
 
                         JCoreWireCodec.DecodedFrame hb2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
@@ -2761,8 +2764,8 @@ public final class SdkHostRegressionTest {
                         try (Socket socket3 = listener.accept()) {
                             socket3.setSoTimeout(3000);
                             JCoreWireCodec.DecodedFrame login3 = JCoreWireCodec.readClientFrameFromStream(socket3.getInputStream(), 870001L);
-                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN,
-                                "Expected fast login on connection #3 after heartbeat timeout");
+                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN && login3.sessionId == 0,
+                                "Expected fast login with sessionId=0 on connection #3 after heartbeat timeout");
                             writeLoopbackAck(socket3, login3, 870001L, 8703, 0, JCoreWireCodec.buildLoginResponsePayload(8703, 520, "", 1700000002));
                             reconnectedAfterHbTimeout.countDown();
                         }
@@ -2824,6 +2827,13 @@ public final class SdkHostRegressionTest {
                     "Engine must auto-reconnect when periodic heartbeat ACK times out");
                 check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("TCP heartbeat timed out, scheduling reconnect"),
                     "OneKeyLog must record WARN when periodic heartbeat ACK times out");
+                byte[] encodedLoginWithStaleSid = JCoreWireCodec.encodeClientFrame(
+                    JCoreWireCodec.CMD_LOGIN, JCoreWireCodec.VER_LOGIN, JCoreWireCodec.ALG_AES_CBC, 0,
+                    99L, 46453, 870001L, JCoreWireCodec.buildLoginPayload("hb-password", "hb-ack-and-resume-noop", "hb-device", "US")
+                );
+                JCoreWireCodec.DecodedFrame decodedLoginWithStaleSid = JCoreWireCodec.decodeClientFrame(encodedLoginWithStaleSid, 870001L);
+                check(decodedLoginWithStaleSid != null && decodedLoginWithStaleSid.sessionId == 0,
+                    "encodeClientFrame must force sessionId=0 on CMD_LOGIN frames");
             } finally {
                 engine.stop(context);
                 server.join(3000L);
@@ -3284,6 +3294,161 @@ public final class SdkHostRegressionTest {
     }
 
     @org.junit.Test
+    public void testLoginSdkVerParityAndDownlinkMsgType4Filtering() throws Exception {
+        final Context context = new Context();
+        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "login-parity-app-key");
+        JCoreStorage.updateRegistration(context, 88971093104L, "parity_pw", "100d8559081eb0a0367", "parity_dev");
+        JCoreStorage.setServerRegistered(context, true);
+
+        final AtomicInteger customMessageCount = new AtomicInteger();
+        final AtomicReference<String> lastCustomMessageId = new AtomicReference<String>("");
+        final CountDownLatch validCustomReceived = new CountDownLatch(1);
+        final CountDownLatch thirdTokenAcked = new CountDownLatch(1);
+        final AtomicInteger thirdTokenCode = new AtomicInteger(-1);
+        final CountDownLatch msgType4AckSeen = new CountDownLatch(1);
+        final AtomicReference<JCoreWireCodec.MessageAck> msgType2AckRef =
+            new AtomicReference<JCoreWireCodec.MessageAck>();
+        final CountDownLatch msgType2AckSeen = new CountDownLatch(1);
+        final AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        final CountDownLatch finish = new CountDownLatch(1);
+
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override
+            public void onMessage(Context ctx, CustomMessage customMessage) {
+                customMessageCount.incrementAndGet();
+                if (customMessage != null) {
+                    lastCustomMessageId.set(customMessage.messageId);
+                    if ("777002".equals(customMessage.messageId)) {
+                        validCustomReceived.countDown();
+                    }
+                }
+            }
+
+            @Override
+            public void onCommandResult(Context ctx, CmdMessage cmdMessage) {
+                if (cmdMessage != null && cmdMessage.cmd == 10000) {
+                    thirdTokenCode.set(cmdMessage.errorCode);
+                    thirdTokenAcked.countDown();
+                }
+            }
+        };
+        ActionHelper.getInstance().registerReceiver(receiver);
+
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            Thread server = new Thread(() -> {
+                try (Socket socket = listener.accept()) {
+                    socket.setSoTimeout(3000);
+                    InputStream in = socket.getInputStream();
+                    OutputStream out = socket.getOutputStream();
+
+                    JCoreWireCodec.DecodedFrame loginFrame = JCoreWireCodec.readClientFrameFromStream(in, 88971093104L);
+                    check(loginFrame != null && loginFrame.command == JCoreWireCodec.CMD_LOGIN, "Expected Login frame");
+                    check(loginFrame.sessionId == 0, "Login frame header sessionId must be 0");
+                    JCoreWireCodec.LoginRequest loginReq = JCoreWireCodec.parseLoginRequest(loginFrame.body);
+                    check(loginReq != null, "Login payload must parse");
+                    // Strict server check: reject dot-formatted sdkVerInfo ("5.1.1|5.9.0") that caused
+                    // JPush server to push msgType=4 msgId=999999 and close TCP on CMD_THIRD_TOKEN.
+                    check("328192|387328".equals(loginReq.sdkVerInfo),
+                        "Login sdkVerInfo must use integer encoding 328192|387328, got: " + loginReq.sdkVerInfo);
+                    check("4|64".equals(loginReq.gSdkTypeInfo),
+                        "Login gSdkTypeInfo must be 4|64, got: " + loginReq.gSdkTypeInfo);
+                    check((loginReq.romPlatformMask & 8) != 0,
+                        "Login romPlatformMask must advertise FCM bit 0x08, got: " + loginReq.romPlatformMask);
+
+                    writeLoopbackAck(socket, loginFrame, 88971093104L, 55215, 0,
+                        JCoreWireCodec.buildLoginResponsePayload(55215, 1, "", 1700000000));
+
+                    JCoreWireCodec.DecodedFrame hbFrame = JCoreWireCodec.readClientFrameFromStream(in, 88971093104L);
+                    check(hbFrame != null && hbFrame.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial Heartbeat");
+                    writeLoopbackAck(socket, hbFrame, 88971093104L, 55215, 0, new byte[0]);
+
+                    // Push internal msgType=4 msgId=999999 with 2-line packageName + appKey header and no JSON body
+                    byte[] msgType4Body = JCoreWireCodec.buildPushMessagePayload(
+                        (byte) 4,
+                        999999L,
+                        "com.example.jpushdemo\n3af172b794896c3e1de43fe7"
+                    );
+                    out.write(JCoreWireCodec.encodeServerFrame(
+                        JCoreWireCodec.CMD_PUSH_MESSAGE,
+                        1,
+                        JCoreWireCodec.ALG_AES_CBC,
+                        0,
+                        10000L,
+                        88971093104L,
+                        0L,
+                        msgType4Body
+                    ));
+                    out.flush();
+
+                    // Push valid msgType=2 custom message with _j_data_
+                    byte[] msgType2Body = JCoreWireCodec.buildPushMessagePayload(
+                        (byte) 2,
+                        777002L,
+                        "so.onekey.app.wallet\nlogin-parity-app-key\n{\"_j_msgid\":\"777002\",\"_j_data_\":\"jdata_ext_01\",\"message\":\"real_payload\"}"
+                    );
+                    out.write(JCoreWireCodec.encodeServerFrame(
+                        JCoreWireCodec.CMD_PUSH_MESSAGE,
+                        1,
+                        JCoreWireCodec.ALG_AES_CBC,
+                        0,
+                        10001L,
+                        88971093104L,
+                        0L,
+                        msgType2Body
+                    ));
+                    out.flush();
+
+                    while (msgType4AckSeen.getCount() > 0 || msgType2AckSeen.getCount() > 0 || thirdTokenAcked.getCount() > 0) {
+                        JCoreWireCodec.DecodedFrame clientFrame = JCoreWireCodec.readClientFrameFromStream(in, 88971093104L);
+                        if (clientFrame == null) break;
+                        if (clientFrame.command == JCoreWireCodec.CMD_MESSAGE_ACK) {
+                            JCoreWireCodec.MessageAck ack = JCoreWireCodec.parseMessageAck(clientFrame);
+                            if (ack != null && ack.messageType == (byte) 4 && ack.messageId == 999999L) {
+                                msgType4AckSeen.countDown();
+                            } else if (ack != null && ack.messageType == (byte) 2 && ack.messageId == 777002L) {
+                                msgType2AckRef.set(ack);
+                                msgType2AckSeen.countDown();
+                            }
+                        } else if (clientFrame.command == JCoreWireCodec.CMD_THIRD_TOKEN) {
+                            writeLoopbackAck(socket, clientFrame, 88971093104L, 55215, 0, new byte[0]);
+                        }
+                    }
+                    finish.await(3000L, TimeUnit.MILLISECONDS);
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            }, "test-login-parity-and-msgtype4");
+            server.setDaemon(true);
+            server.start();
+
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Login parity handshake must succeed");
+                ActionHelper.getInstance().setThirdTokenWithCallBack(context, "fcm_token_parity_01", (byte) 8, false);
+                check(msgType4AckSeen.await(3000L, TimeUnit.MILLISECONDS), "Internal msgType=4 must still be ACKed on wire");
+                check(msgType2AckSeen.await(3000L, TimeUnit.MILLISECONDS), "Valid msgType=2 must be ACKed on wire");
+                check(msgType2AckRef.get() != null && "jdata_ext_01".equals(msgType2AckRef.get().extData),
+                    "CMD_MESSAGE_ACK must echo _j_data_ in extData");
+                check(validCustomReceived.await(3000L, TimeUnit.MILLISECONDS), "Valid msgType=2 custom message must be delivered");
+                check(customMessageCount.get() == 1 && "777002".equals(lastCustomMessageId.get()),
+                    "Internal msgType=4 msgId=999999 must NOT emit a spurious onMessage callback; count=" + customMessageCount.get());
+                check(thirdTokenAcked.await(3000L, TimeUnit.MILLISECONDS) && thirdTokenCode.get() == 0,
+                    "CMD_THIRD_TOKEN must succeed with code=0 and keep TCP connection open");
+                check(engine.isLoggedIn(), "Connection must remain logged in after CMD_THIRD_TOKEN");
+            } finally {
+                finish.countDown();
+                JCoreStorage.saveThirdToken(context, (byte) 8, "");
+                ActionHelper.getInstance().unregisterReceiver(receiver);
+                engine.stop(context);
+                server.join(3000L);
+            }
+            check(serverError.get() == null, "Login parity server error: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
     public void testSdkHostRegressions() throws Exception {
         testCryptoParity();
         testUdpSis10ByteAndAsymmetricTcpWireCodec();
@@ -3294,6 +3459,7 @@ public final class SdkHostRegressionTest {
         testAutoReconnectScheduleAndBinderSecurity();
         testStoppedInitAndRealLoginFcmRebind();
         testContentQueueInvalidation();
+        testLoginSdkVerParityAndDownlinkMsgType4Filtering();
 
     }
 }

@@ -266,8 +266,8 @@ static void testSisWireFormatAndUdpLoopback(void) {
     }];
     ASSERT_TRUE(dispatch_semaphore_wait(udpSem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC))) == 0,
                 "UDP SIS loopback timed out");
-    ASSERT_TRUE(resolvedUdp.count == 1 && [resolvedUdp[0].host isEqualToString:@"127.0.0.1"] && resolvedUdp[0].port == 28888,
-                "UDP SIS loopback resolved unexpected endpoint");
+    ASSERT_TRUE(resolvedUdp.count == 1 && [resolvedUdp[0].host isEqualToString:@"127.0.0.1"] && resolvedUdp[0].port == 28888 && resolvedUdp[0].useSSL == NO,
+                "UDP SIS loopback resolved unexpected endpoint or wrongly enabled standard TLS on non-443 ssl_ips port");
 
     // Verify stale SIS cache fallback in resolveEndpointsWithCompletion: when all cached ips/ssl_ips are in failedIps
     int staleUdpFd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -627,9 +627,8 @@ static void testEndToEndMockServerHandshake(void) {
                 ASSERT_TRUE(writeExactBytes(clientFd, ack.bytes, ack.length), "Failed writing LiveActivity ack");
             } else if (req.command == JCOREWireCommandPushCtrl) {
                 ASSERT_TRUE(req.version == 1, "PushCtrl version must be 1");
-                NSDictionary *pushCtrlJson = [JCOREWireProtocol parseJsonBodyFromFrame:req];
-                ASSERT_TRUE([pushCtrlJson[@"type"] isEqualToString:@"notif_state"] && [pushCtrlJson[@"enabled"] boolValue] == YES,
-                            "PushCtrl turnONPush body must have type=notif_state and enabled=YES, got %@", pushCtrlJson);
+                ASSERT_TRUE(req.bodyData.length == 1 && ((const uint8_t *)req.bodyData.bytes)[0] == 1,
+                            "PushCtrl turnONPush body must be 1-byte 0x01, got %@", req.bodyData);
                 serverSawPushCtrlResume = YES;
             } else {
                 ASSERT_TRUE(NO, "Unexpected command from client: %u", req.command);
@@ -684,6 +683,8 @@ static void testEndToEndMockServerHandshake(void) {
     });
 
     // Reset client state & point SIS override to our loopback mock server
+    [JCOREConfiguration shared].pushStopped = NO;
+    [JCOREConfiguration shared].collectionAuthorized = YES;
     [[JCOREConfiguration shared] resetRegistration];
     ASSERT_TRUE([[JPUSHService registrationID] isEqualToString:@""],
                 "Expected empty registrationID before TCP Register (cmd=0), got %@", [JPUSHService registrationID]);
@@ -1699,7 +1700,8 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
                                 ((const uint8_t *)request.bodyData.bytes)[0] == 0,
                                 "Stop control must send cmd=40, ver=1 with 1-byte action=0 (stopPush)");
                     uint8_t byte = 0;
-                    ASSERT_TRUE(recv(fd, &byte, 1, 0) == 0, "Stop control must be followed by connection close");
+                    ssize_t closeRc = recv(fd, &byte, 1, 0);
+                    ASSERT_TRUE(closeRc == 0 || (closeRc < 0 && errno == ECONNRESET), "Stop control must be followed by connection close");
                     break;
                 } else {
                     ASSERT_TRUE(NO, "Unexpected token fixture command %u", request.command);
@@ -1825,8 +1827,8 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
         setsockopt(fd1, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         JCOREWireFrame *login1 = readSingleClientFrameOnServer(fd1);
-        ASSERT_TRUE(login1 != nil && login1.command == JCOREWireCommandLogin && login1.version == 27,
-                    "Suite 9 expected Fast-Login on connection #1");
+        ASSERT_TRUE(login1 != nil && login1.command == JCOREWireCommandLogin && login1.version == 27 && login1.sessionId == 0,
+                    "Suite 9 expected Fast-Login with sessionId=0 on connection #1");
         NSData *loginAck1 = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
                                                                     version:27
                                                                   requestId:login1.requestId
@@ -1885,8 +1887,8 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
         ASSERT_TRUE(fd2 >= 0, "Suite 9 accept #2 (reconnect after heartbeat timeout) failed");
         setsockopt(fd2, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         JCOREWireFrame *login2 = readSingleClientFrameOnServer(fd2);
-        ASSERT_TRUE(login2 != nil && login2.command == JCOREWireCommandLogin && login2.uid == config.uid,
-                    "Expected Fast-Login on connection #2 after heartbeat timeout");
+        ASSERT_TRUE(login2 != nil && login2.command == JCOREWireCommandLogin && login2.uid == config.uid && login2.sessionId == 0,
+                    "Expected Fast-Login with sessionId=0 (never stale sid=301) on connection #2 after heartbeat timeout");
         NSData *loginAck2 = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
                                                                     version:27
                                                                   requestId:login2.requestId

@@ -199,7 +199,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                     !strongSelf->_connected &&
                     !strongSelf->_connecting &&
                     [JCOREConfiguration shared].appKey.length > 0 &&
-                    ![JCOREConfiguration shared].pushStopped) {
+                    [JCOREConfiguration shared].policyAllowsPush) {
                     strongSelf->_reconnectAttempt = 0;
                     [strongSelf startLockedForceReconnect:NO];
                 }
@@ -219,7 +219,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 - (void)handleAppWillEnterForeground:(NSNotification *)note {
     (void)note;
     dispatch_async(_sessionQueue, ^{
-        if (self->_userDisconnected || [JCOREConfiguration shared].pushStopped) {
+        if (self->_userDisconnected || ![JCOREConfiguration shared].policyAllowsPush) {
             return;
         }
         if (!self->_connected && !self->_connecting) {
@@ -417,6 +417,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             BOOL wasConnected = strongSelf->_connected;
             strongSelf->_connected = NO;
             strongSelf->_loggedIn = NO;
+            strongSelf->_sessionId = 0;
             [strongSelf stopHeartbeatLocked];
             if (strongSelf->_inFlightRequests.count > 0) {
                 NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
@@ -728,6 +729,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             strongSelf->_connecting = NO;
             strongSelf->_connected = NO;
             strongSelf->_loggedIn = NO;
+            strongSelf->_sessionId = 0;
             [strongSelf stopHeartbeatLocked];
             if (strongSelf->_inFlightRequests.count > 0) {
                 NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
@@ -735,10 +737,13 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                                                     userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
                 [strongSelf failAllInFlightRequestsLockedWithError:closeErr];
             }
-            if (wasConnected && strongSelf->_connection == connection) {
-                [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
-                if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped && !strongSelf->_connecting) {
-                    [strongSelf scheduleReconnectLocked];
+            if (strongSelf->_connection == connection) {
+                [strongSelf tearDownConnectionLocked];
+                if (wasConnected) {
+                    [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
+                    if (!strongSelf->_userDisconnected && [JCOREConfiguration shared].policyAllowsPush && !strongSelf->_connecting) {
+                        [strongSelf scheduleReconnectLocked];
+                    }
                 }
             }
         }
@@ -755,6 +760,9 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             [self sendReceiptLockedForMessageType:envelope.messageType
                                         messageId:envelope.messageId
                                         requestId:frame.requestId];
+            if (envelope.messageType == 4 && ![envelope.jsonPayload isKindOfClass:[NSDictionary class]]) {
+                return;
+            }
             NSMutableDictionary *payload = [NSMutableDictionary dictionary];
             if ([envelope.jsonPayload isKindOfClass:[NSDictionary class]]) {
                 [payload addEntriesFromDictionary:envelope.jsonPayload];
@@ -1045,10 +1053,13 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 
     uint16_t rid = [config nextRequestId];
     uint64_t packetUid = (command == JCOREWireCommandRegister) ? 0ULL : config.uid;
+    uint32_t packetSessionId = (command == JCOREWireCommandRegister || command == JCOREWireCommandLogin)
+        ? 0U
+        : _sessionId;
     NSData *packet = [JCOREWireProtocol encodeFrameWithCommand:command
                                                        version:version
                                                      requestId:rid
-                                                     sessionId:_sessionId
+                                                     sessionId:packetSessionId
                                                            uid:packetUid
                                                       bodyData:bodyData];
     if (packet.length == 0) {
@@ -1167,6 +1178,9 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     [_receiveBuffer setLength:0];
     _connected = NO;
     _loggedIn = NO;
+    _sessionId = 0;
+    _serverVersion = 0;
+    _serverTimestamp = 0;
     _pushResumeInFlight = NO;
     _loggedInAppKey = nil;
     if (_inFlightRequests.count > 0) {

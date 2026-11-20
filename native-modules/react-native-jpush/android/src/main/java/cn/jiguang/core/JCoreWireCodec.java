@@ -195,6 +195,7 @@ public final class JCoreWireCodec {
         public final String appKey;
         public final int platform;
         public final int loginFlag;
+        public final int romPlatformMask;
         public final int netType;
         public final String deviceId;
         public final String countryCode;
@@ -213,11 +214,40 @@ public final class JCoreWireCodec {
             int initPushSdk,
             String gSdkTypeInfo
         ) {
+            this(
+                passwordMd5,
+                sdkVerInfo,
+                appKey,
+                platform,
+                loginFlag,
+                0,
+                netType,
+                deviceId,
+                countryCode,
+                initPushSdk,
+                gSdkTypeInfo
+            );
+        }
+
+        public LoginRequest(
+            String passwordMd5,
+            String sdkVerInfo,
+            String appKey,
+            int platform,
+            int loginFlag,
+            int romPlatformMask,
+            int netType,
+            String deviceId,
+            String countryCode,
+            int initPushSdk,
+            String gSdkTypeInfo
+        ) {
             this.passwordMd5 = passwordMd5 != null ? passwordMd5 : "";
             this.sdkVerInfo = sdkVerInfo != null ? sdkVerInfo : "";
             this.appKey = appKey != null ? appKey : "";
             this.platform = platform;
             this.loginFlag = loginFlag;
+            this.romPlatformMask = romPlatformMask & 0xFF;
             this.netType = netType;
             this.deviceId = deviceId != null ? deviceId : "";
             this.countryCode = countryCode != null ? countryCode : "";
@@ -446,6 +476,9 @@ public final class JCoreWireCodec {
             effectiveUid = 0L;
             cryptoSeed = lastRegisterSeed;
         } else {
+            if (command == CMD_LOGIN) {
+                headerSeedOrSid = 0;
+            }
             cryptoSeed = (uid > 0L) ? uid : lastRegisterSeed;
         }
 
@@ -1006,11 +1039,11 @@ public final class JCoreWireCodec {
      * 2. uint8(0)
      * 3. uint16(0)
      * 4. string(md5Hex(password))
-     * 5. string("5.1.1|5.9.0") (sdkVerInfo)
+     * 5. string("328192|387328") (sdkVerInfo: JCore 5.2.0 = (5<<16)|(2<<8) = 328192, JPush 5.9.0 = (5<<16)|(9<<8) = 387328)
      * 6. string(appKey)
      * 7. uint8(0) (Android platform = 0)
      * 8. uint32(1) (loginFlag = 1 for JPush)
-     * 9. uint8(0) (romPlatformMask)
+     * 9. uint8(romPlatformMask) (e.g. 0x08 for FCM, 0x28 when FCM token is uploaded)
      * 10. uint8(1) (netType)
      * 11. string(deviceId)
      * 12. string("") (locInfo empty)
@@ -1018,7 +1051,7 @@ public final class JCoreWireCodec {
      * 14. string("") (accountId)
      * 15. uint8(0) (userType)
      * 16. uint8(1) (initPushSdk = 1)
-     * 17. string("1") (gSdkTypeInfo)
+     * 17. string("4|64") (gSdkTypeInfo: JCore=4, JPush=64)
      */
     public static byte[] buildLoginPayload(String password, String appKey) {
         return buildLoginPayload(password, appKey, "", "");
@@ -1030,17 +1063,27 @@ public final class JCoreWireCodec {
         String deviceId,
         String countryCode
     ) {
+        return buildLoginPayload(password, appKey, deviceId, countryCode, (byte) 8);
+    }
+
+    public static byte[] buildLoginPayload(
+        String password,
+        String appKey,
+        String deviceId,
+        String countryCode,
+        byte romPlatformMask
+    ) {
         String pwdMd5 = JCoreCrypto.md5Hex(password != null ? password : "");
         ByteBuffer buf = ByteBuffer.allocate(512);
         buf.put((byte) 97);
         buf.put((byte) 0);
         buf.putShort((short) 0);
         writeString(buf, pwdMd5);
-        writeString(buf, "5.1.1|5.9.0");
+        writeString(buf, "328192|387328");
         writeString(buf, appKey != null ? appKey : "");
         buf.put((byte) 0); // Android platform = 0
         buf.putInt(1); // loginFlag = 1
-        buf.put((byte) 0); // romPlatformMask
+        buf.put(romPlatformMask); // romPlatformMask (pluginPlatformType)
         buf.put((byte) 1); // netType
         writeString(buf, deviceId != null ? deviceId : "");
         writeString(buf, ""); // locInfo
@@ -1048,7 +1091,7 @@ public final class JCoreWireCodec {
         writeString(buf, ""); // accountId
         buf.put((byte) 0); // userType
         buf.put((byte) 1); // initPushSdk = 1
-        writeString(buf, "1"); // gSdkTypeInfo
+        writeString(buf, "4|64"); // gSdkTypeInfo
         return sliceUsed(buf);
     }
 
@@ -1084,9 +1127,7 @@ public final class JCoreWireCodec {
         String appKey = readString(buf);
         int platform = buf.remaining() >= 1 ? (buf.get() & 0xFF) : 0;
         int loginFlag = buf.remaining() >= 4 ? buf.getInt() : 1;
-        if (buf.remaining() >= 1) {
-            buf.get(); // romPlatformMask
-        }
+        int romPlatformMask = buf.remaining() >= 1 ? (buf.get() & 0xFF) : 0;
         int netType = buf.remaining() >= 1 ? (buf.get() & 0xFF) : 1;
         String deviceId = readString(buf);
         readString(buf); // locInfo
@@ -1103,6 +1144,7 @@ public final class JCoreWireCodec {
             appKey,
             platform,
             loginFlag,
+            romPlatformMask,
             netType,
             deviceId,
             countryCode,
