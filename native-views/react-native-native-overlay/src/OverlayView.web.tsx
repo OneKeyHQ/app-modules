@@ -19,9 +19,11 @@ import { useOverlayController } from './useOverlayController';
 import { animateBackdrop, animateTransition } from './web/animateTransition';
 import {
   ENTRY_ATTRIBUTE,
+  focusOverlayEntry,
   getOverlayLayerRoot,
   getOverlayPageHost,
   registerOverlayDismissRequester,
+  restoreOverlayEntryFocus,
   scheduleOverlayInertSync,
   subscribeOverlayPageHost,
 } from './web/overlayLayers';
@@ -104,7 +106,6 @@ function WebOverlayEntry({
   const backdropRef = useRef<HTMLDivElement>(null);
   const directionRef = useRef<'in' | 'out' | undefined>(undefined);
   const runningAnimationsRef = useRef<Animation[]>([]);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const callbacksRef = useRef({ onPresented, onDismissed });
   callbacksRef.current = { onPresented, onDismissed };
 
@@ -121,7 +122,8 @@ function WebOverlayEntry({
 
   useLayoutEffect(() => {
     const content = contentRef.current;
-    if (!content) {
+    const entryElement = entryRef.current;
+    if (!content || !entryElement) {
       return;
     }
     const direction = presented ? 'in' : 'out';
@@ -145,8 +147,7 @@ function WebOverlayEntry({
     }
     runningAnimationsRef.current = [];
     if (direction === 'out' && (neverEntered || pannedAwayRef.current)) {
-      restoreFocusRef.current?.focus?.({ preventScroll: true });
-      restoreFocusRef.current = null;
+      restoreOverlayEntryFocus(entryElement);
       callbacksRef.current.onDismissed();
       return;
     }
@@ -157,9 +158,8 @@ function WebOverlayEntry({
       if (backdropRef.current) {
         backdropRef.current.style.opacity = '1';
       }
-      if (blocking) {
-        restoreFocusRef.current = document.activeElement as HTMLElement | null;
-        entryRef.current?.focus({ preventScroll: true });
+      if (blocking && overlayStore.getBlockingTop()?.id === entryId) {
+        focusOverlayEntry(entryElement);
       }
     }
     // A sheet is measured as a whole; other presentations by the children
@@ -194,15 +194,14 @@ function WebOverlayEntry({
         if (direction === 'in') {
           callbacksRef.current.onPresented();
         } else {
-          restoreFocusRef.current?.focus?.({ preventScroll: true });
-          restoreFocusRef.current = null;
+          restoreOverlayEntryFocus(entryElement);
           callbacksRef.current.onDismissed();
         }
       })
       .catch(() => {
         // Cancelled by a newer transition; that run reports instead.
       });
-  }, [presented, animation, blocking, isSheet]);
+  }, [presented, animation, blocking, isSheet, entryId]);
 
   useEffect(
     () => registerOverlayDismissRequester(entryId, onRequestDismiss),

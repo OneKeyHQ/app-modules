@@ -37,7 +37,9 @@ before(async () => {
                 key: 'overlay', visible, scope: 'page', hostKey: 'main',
                 ownerKey: 'screen',
               }, 'Loading'),
-              createElement('button', { key: 'foreground' }, 'Foreground')
+              createElement('button', { key: 'foreground' }, 'Foreground'),
+              createElement('input', { key: 'first', 'aria-label': 'First input' }),
+              createElement('input', { key: 'second', 'aria-label': 'Second input' })
             )
           ));
         window.getEntryCount = () => overlayStore.getSnapshot().entries.length;
@@ -102,4 +104,62 @@ test('a dialog opened on a covered route takes focus and traps Tab when its rout
     await page.keyboard.press(key);
     assert.equal(await hasFocus(), true);
   }
+});
+
+test('closing a covered dialog leaves keyboard input in the current foreground field', async (t) => {
+  const page = await createPage(t);
+  await page.evaluate(() => {
+    window.focusHost('modal');
+    window.renderPage({ visible: false });
+  });
+  const first = page.getByRole('textbox', { name: 'First input' });
+  const second = page.getByRole('textbox', { name: 'Second input' });
+  await first.focus();
+  await page.evaluate(() => window.renderPage());
+  const dialog = page.locator('[role="dialog"]');
+  await dialog.waitFor({ timeout: 2000 });
+  assert.equal(
+    await first.evaluate((node) => node === document.activeElement),
+    true
+  );
+
+  await second.focus();
+  await page.evaluate(() => window.renderPage({ visible: false }));
+  await dialog.waitFor({ state: 'detached', timeout: 2000 });
+  await page.keyboard.type('foreground edit');
+  assert.equal(await second.inputValue(), 'foreground edit');
+  assert.equal(await first.inputValue(), '');
+});
+
+test('closing a resumed dialog restores the focus displaced on route return', async (t) => {
+  const page = await createPage(t);
+  await page.evaluate(() => {
+    // Keep this control outside the app root so it is eligible for focus
+    // while the page host becomes interactive.
+    const control = document.createElement('button');
+    control.textContent = 'Outside control';
+    document.body.append(control);
+    window.focusHost('modal');
+    window.renderPage({ visible: false });
+  });
+  await page.getByRole('textbox', { name: 'First input' }).focus();
+  await page.evaluate(() => window.renderPage());
+  const dialog = page.locator('[role="dialog"]');
+  await dialog.waitFor({ timeout: 2000 });
+
+  const outside = page.getByRole('button', { name: 'Outside control' });
+  await outside.focus();
+  await page.evaluate(() => window.focusHost('main'));
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  assert.equal(
+    await dialog.evaluate((node) => node === document.activeElement),
+    true
+  );
+
+  await page.evaluate(() => window.renderPage({ visible: false }));
+  await dialog.waitFor({ state: 'detached', timeout: 2000 });
+  assert.equal(
+    await outside.evaluate((node) => node === document.activeElement),
+    true
+  );
 });

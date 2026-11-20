@@ -616,6 +616,10 @@ excluded. Positive tabindex values precede ordinary DOM-order tab stops.
 Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
 focus loop. When a page dialog becomes the top blocker again, it takes focus
 on its entry root if focus is currently outside the dialog.
+The dialog records a focus restoration target only when it actually moves
+focus inside. On exit, it restores that target when focus is still inside
+the dialog or has fallen back to the document body. An active control
+outside the dialog keeps focus.
 
 A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
 when its entry is non-blocking. This permits a transparent outside-click
@@ -849,7 +853,9 @@ Automated (P0):
 - `tests/browser/pageIsolation.test.cjs` verifies in Chromium that removing a
   host while its dialog stays visible restores page clicks and focus, and that
   a dialog opened on a covered route regains focus and contains Tab when its
-  route returns. It uses the same browser dependencies as the toast tests
+  route returns. It also checks that closing a covered dialog preserves
+  foreground typing and that focus acquired after a route returns can be
+  restored on close. It uses the same browser dependencies as the toast tests
   (§5.14).
 - `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
   Android views: page/navigation siblings, entries above the blocker, original

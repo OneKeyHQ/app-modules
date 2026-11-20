@@ -49,6 +49,40 @@ function setInert(element: HTMLElement | null | undefined, inert: boolean) {
 // Elements outside a page host made inert for a blocking page overlay.
 let pageInertElements = new Set<HTMLElement>();
 let topPageBlocker: HTMLElement | undefined;
+const previousFocusByEntry = new WeakMap<
+  HTMLElement,
+  HTMLElement | SVGElement
+>();
+
+export function focusOverlayEntry(entry: HTMLElement) {
+  const { activeElement, body } = entry.ownerDocument;
+  if (!entry.isConnected || entry.contains(activeElement)) return;
+
+  entry.focus({ preventScroll: true });
+  if (
+    entry.contains(entry.ownerDocument.activeElement) &&
+    activeElement !== body &&
+    (activeElement instanceof HTMLElement ||
+      activeElement instanceof SVGElement)
+  ) {
+    previousFocusByEntry.set(entry, activeElement);
+  }
+}
+
+export function restoreOverlayEntryFocus(entry: HTMLElement) {
+  const previousFocus = previousFocusByEntry.get(entry);
+  previousFocusByEntry.delete(entry);
+  if (!entry.isConnected || !previousFocus?.isConnected) return;
+
+  const { activeElement, body } = entry.ownerDocument;
+  if (
+    !activeElement ||
+    activeElement === body ||
+    entry.contains(activeElement)
+  ) {
+    previousFocus.focus({ preventScroll: true });
+  }
+}
 
 /**
  * A page host lives inside the app root, so a blocking page overlay cannot
@@ -150,13 +184,7 @@ export function syncOverlayInert() {
   if (!blocker) return;
   // Wait for the route commit before focusing a newly interactive dialog.
   requestAnimationFrame(() => {
-    if (
-      topPageBlocker === blocker &&
-      blocker.isConnected &&
-      !blocker.contains(document.activeElement)
-    ) {
-      blocker.focus({ preventScroll: true });
-    }
+    if (topPageBlocker === blocker) focusOverlayEntry(blocker);
   });
 }
 
