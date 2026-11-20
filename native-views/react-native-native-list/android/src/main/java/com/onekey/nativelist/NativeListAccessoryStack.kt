@@ -255,6 +255,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       v.ellipsize = null
       v.setLineSpacing(0f, 1f)
       v.letterSpacing = 0f
+      v.fontFeatureSettings = null
     }
     trailingIcons.forEach {
       it.visibility = GONE
@@ -907,6 +908,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    applyNativeListTextSpacing(view, style, view.fontFeatureSettings)
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or

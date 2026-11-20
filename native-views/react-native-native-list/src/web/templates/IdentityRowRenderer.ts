@@ -121,13 +121,21 @@ function createIdentityRow(
       row.leadingAction.name,
       row.leadingAction.actionKey,
       row.leadingAction.disabled,
-      row.leadingAction.tintColor
+      row.leadingAction.tintColor,
+      row.leadingAction.accessibilityLabel
     );
     markActionAnchorSource(action, 'leadingAction');
     // ListItem.IconButton geometry, as on iOS and Android: the medium tertiary
     // frame overhangs its 24-point slot by 7 on each side.
     action.classList.add('ok-native-list-tertiary-icon');
-    action.dataset.nativeListAnchorInset = '7';
+    const glyph = createElement(
+      document,
+      'span',
+      'ok-native-list-action-glyph'
+    );
+    glyph.dataset.nativeListAnchorGlyph = '';
+    glyph.append(...action.childNodes);
+    action.append(glyph);
     body.appendChild(action);
   }
   const visual = primitives.visual(

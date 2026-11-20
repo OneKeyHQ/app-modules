@@ -50,6 +50,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
       stack.spacing = 10
     }
   }
+  private static func collapsesTrailing(_ item: NativeListItem, descriptors: [[String: Any]]) -> Bool {
+    descriptors.isEmpty && item.data.bool("collapseEmptyTrailing")
+  }
+
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
     fonts: NativeListFontFamilies
@@ -71,11 +75,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
       trailing.bind(
         item, descriptors: accessories, theme: theme, style: style,
         defaultSpacing: trailing.spacing, checkboxState: { _, _, fallback in fallback }, fonts: fonts)
-      trailing.isHidden = false
-      let trailingSize = trailing.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+      let collapsed = collapsesTrailing(item, descriptors: accessories)
+      let trailingSize = collapsed ? .zero
+        : trailing.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
       let rightInset = style["horizontalPadding"] != nil
         ? horizontalPadding : trailing.endInset ?? horizontalPadding
-      let contentGap = trailing.contentGap ?? 12
+      let contentGap = collapsed ? 0 : trailing.contentGap ?? 12
       let textWidth = max(1,
         width - horizontalPadding - rightInset - imageWidth - leadingGap
           - trailingSize.width - contentGap)
@@ -798,11 +803,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       defaultSpacing: trailingStack.spacing, checkboxState: checkboxState, fonts: fonts)
     // Legacy kept the (possibly empty) trailing stack arranged, so the text column always
     // ends 12 points before the trailing edge inset.
-    trailingStack.isHidden = false
-    // Opt-in: with no accessories, drop the column and its 12-point gap entirely.
-    if accessories.isEmpty && item.data.bool("collapseEmptyTrailing") {
-      trailingStack.isHidden = true
-    }
+    trailingStack.isHidden = Self.collapsesTrailing(item, descriptors: accessories)
     if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
     if let inset = trailingStack.endInset { rightInset = -inset }
     if accessories.count == 1,
@@ -835,51 +836,22 @@ final class NativeListIdentityCell: NativeListRendererCell {
     default: return nativeListColor(theme, "primaryText", "#202020")
     }
   }
-  private func selectorTabularFont(_ font: UIFont) -> UIFont {
-    var settings =
-      font.fontDescriptor.fontAttributes[.featureSettings] as? [[UIFontDescriptor.FeatureKey: Int]]
-      ?? []
-    settings.removeAll { $0[.type] == kNumberSpacingType }
-    settings.append([.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector])
-    return UIFont(
-      descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]),
-      size: font.pointSize)
-  }
-  private func selectorTabularText(_ original: NSAttributedString) -> NSAttributedString {
-    let result = NSMutableAttributedString(attributedString: original)
-    // OneKey patch: body typography explicitly supplies letterSpacing=0 in Tamagui.
-    result.addAttribute(.kern, value: 0, range: NSRange(location: 0, length: result.length))
-    original.enumerateAttribute(.font, in: NSRange(location: 0, length: original.length)) {
-      value, range, _ in
-      if let font = value as? UIFont {
-        result.addAttribute(.font, value: self.selectorTabularFont(font), range: range)
-      }
-    }
-    return result
-  }
   private func applySelectorTypography(_ item: NativeListItem) {
-    guard
-      ["accountSelector", "networkSelector", "walletSidebar"].contains(
-        item.data.string("presentation"))
-    else { return }
-    func visit(_ view: UIView) {
-      if let button = view as? UIButton {
-        if let original = button.attributedTitle(for: .normal) {
-          selectorTypographyRestorers.append { button.setAttributedTitle(original, for: .normal) }
-          button.setAttributedTitle(selectorTabularText(original), for: .normal)
-        }
-      } else if let label = view as? UILabel, let font = label.font {
-        let original = label.attributedText
-        selectorTypographyRestorers.append {
-          label.font = font
-          label.attributedText = original
-        }
-        label.font = selectorTabularFont(font)
-        if let original { label.attributedText = selectorTabularText(original) }
+    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(
+      item.data.string("presentation")
+    ) else { return }
+    let style = item.data.dictionary("style") ?? [:]
+    selectorTypographyRestorers = NativeListTextStyles.applySelectorDefaults(in: contentView) { view in
+      if view === titleLabel { return style.dictionary("title") }
+      if view === subtitleLabel || semanticSubtitleLabels.contains(where: { $0 === view }) {
+        return style.dictionary("subtitle")
       }
-      for child in view.subviews { visit(child) }
+      if view === tertiaryLabel { return style.dictionary("tertiary") }
+      if view === badgeLabel || semanticBadgeLabels.contains(where: { $0 === view }) {
+        return style.dictionary("badge")
+      }
+      return trailingStack.explicitTextStyle(for: view, style: style)
     }
-    visit(contentView)
   }
   private func setLineHeight(
     _ label: UILabel,

@@ -947,6 +947,10 @@ P2 sheet notes:
 - `keepContentMounted` renders content while closed so callers can measure it
   before opening (Popover waits for header / scroll measurements).
 - `pan` dismissals cannot be vetoed; `onRequestDismiss('pan')` is informative.
+- An active iOS NativeList reorder temporarily suppresses the enclosing page
+  sheet's dismiss pan. The sheet owns the latest `dismissOnPanDown` setting
+  throughout the suppression. Releasing the reorder restores eligibility
+  only when the current setting allows it.
 
 P4a toast notes:
 

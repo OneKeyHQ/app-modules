@@ -56,7 +56,9 @@ enum NativeListTextStyles {
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
-    if style.bool("tabularNumbers") { applyTabularNumbers(attributed, fallback: baseFont) }
+    if let tabular = style["tabularNumbers"] as? Bool {
+      applyDigitSpacing(attributed, tabular: tabular, fallback: font)
+    }
     if style["color"] != nil { attributes[.foregroundColor] = color }
     // An explicit 0 still sets kern, which disables pair kerning like React Native.
     if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
@@ -124,7 +126,9 @@ enum NativeListTextStyles {
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
-    if style.bool("tabularNumbers") { applyTabularNumbers(attributed, fallback: baseFont) }
+    if let tabular = style["tabularNumbers"] as? Bool {
+      applyDigitSpacing(attributed, tabular: tabular, fallback: font)
+    }
     if style["color"] != nil { attributes[.foregroundColor] = color }
     if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
     if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
@@ -207,41 +211,82 @@ enum NativeListTextStyles {
     }
   }
 
-  /// Legacy selector/warning typography: monospaced digits and zero kerning on the label.
+  /// Legacy selector/warning defaults: monospaced digits and zero tracking.
   static func applyTabularDigits(_ label: UILabel) {
     guard let font = label.font else { return }
-    label.font = tabularDigitsFont(font)
-    guard let original = label.attributedText else { return }
-    let result = NSMutableAttributedString(attributedString: original)
-    let range = NSRange(location: 0, length: result.length)
-    result.addAttribute(.kern, value: 0, range: range)
-    original.enumerateAttribute(.font, in: range) { value, range, _ in
-      if let font = value as? UIFont {
-        result.addAttribute(.font, value: tabularDigitsFont(font), range: range)
-      }
+    label.font = digitSpacingFont(font, tabular: true)
+    if let original = label.attributedText {
+      label.attributedText = selectorText(original, explicit: nil, fallback: font)
     }
-    label.attributedText = result
   }
 
-  /// Swaps every run's font for its tabular-digit variant (`tabularNumbers`).
-  static func applyTabularNumbers(_ text: NSMutableAttributedString, fallback: UIFont) {
+  static func selectorText(
+    _ original: NSAttributedString, explicit: [String: Any]?, fallback: UIFont
+  ) -> NSAttributedString {
+    let result = NSMutableAttributedString(attributedString: original)
+    if explicit?["letterSpacing"] == nil {
+      result.addAttribute(.kern, value: 0, range: NSRange(location: 0, length: result.length))
+    }
+    if explicit?["tabularNumbers"] == nil {
+      applyDigitSpacing(result, tabular: true, fallback: fallback)
+    }
+    return result
+  }
+
+  /// Apply the feature to each run without changing its weight or size.
+  static func applyDigitSpacing(
+    _ text: NSMutableAttributedString, tabular: Bool, fallback: UIFont
+  ) {
     let range = NSRange(location: 0, length: text.length)
     var runs: [(NSRange, UIFont)] = []
     text.enumerateAttribute(.font, in: range) { value, run, _ in
       runs.append((run, (value as? UIFont) ?? fallback))
     }
-    for (run, font) in runs { text.addAttribute(.font, value: tabularDigitsFont(font), range: run) }
+    for (run, font) in runs {
+      text.addAttribute(.font, value: digitSpacingFont(font, tabular: tabular), range: run)
+    }
   }
 
-  static func tabularDigitsFont(_ font: UIFont) -> UIFont {
+  static func digitSpacingFont(_ font: UIFont, tabular: Bool) -> UIFont {
     var settings =
       font.fontDescriptor.fontAttributes[.featureSettings] as? [[UIFontDescriptor.FeatureKey: Int]]
       ?? []
     settings.removeAll { $0[.type] == kNumberSpacingType }
-    settings.append([.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector])
+    settings.append([
+      .type: kNumberSpacingType,
+      .selector: tabular ? kMonospacedNumbersSelector : kProportionalNumbersSelector,
+    ])
     return UIFont(
       descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]),
       size: font.pointSize)
+  }
+
+  static func applySelectorDefaults(
+    in root: UIView, explicitStyle: (UIView) -> [String: Any]?
+  ) -> [() -> Void] {
+    var restorers: [() -> Void] = []
+    func visit(_ view: UIView, inherited: [String: Any]? = nil) {
+      let style = explicitStyle(view) ?? inherited
+      if let button = view as? UIButton,
+         let original = button.attributedTitle(for: .normal),
+         let font = button.titleLabel?.font {
+        restorers.append { button.setAttributedTitle(original, for: .normal) }
+        button.setAttributedTitle(selectorText(original, explicit: style, fallback: font), for: .normal)
+      } else if let label = view as? UILabel, let font = label.font {
+        let original = label.attributedText
+        restorers.append {
+          label.font = font
+          label.attributedText = original
+        }
+        if style?["tabularNumbers"] == nil { label.font = digitSpacingFont(font, tabular: true) }
+        if let original {
+          label.attributedText = selectorText(original, explicit: style, fallback: font)
+        }
+      }
+      for child in view.subviews { visit(child, inherited: style) }
+    }
+    visit(root)
+    return restorers
   }
 
   static func marketTextAlignment(_ value: String, direction: UIUserInterfaceLayoutDirection)

@@ -1126,6 +1126,7 @@ export type RowPatch =
         | 'titleImage'
         | 'subtitle'
         | 'subtitleLines'
+        | 'collapseEmptyTrailing'
         | 'contentHeight'
         | 'longPressActionKey'
         | 'tertiary'

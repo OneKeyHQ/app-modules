@@ -2353,17 +2353,6 @@ function assertSnapshotContract(
   ) {
     fail('snapshot.capabilities.endReachedThreshold', 'must be within 0...1');
   }
-  const reorderActivation = snapshot.capabilities?.reorderActivation;
-  if (
-    reorderActivation !== undefined &&
-    reorderActivation !== 'row' &&
-    reorderActivation !== 'handle'
-  ) {
-    fail(
-      'snapshot.capabilities.reorderActivation',
-      "must be 'row' or 'handle'"
-    );
-  }
   const sectionIndex = snapshot.capabilities?.sectionIndex;
   if (sectionIndex !== undefined) {
     if (typeof sectionIndex.enabled !== 'boolean') {
@@ -2679,6 +2668,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'tertiary',
     'tertiaryTone',
     'subtitleLines',
+    'collapseEmptyTrailing',
     'badges',
     'trailing',
   ],
@@ -2965,7 +2955,10 @@ function assertProtocolFields(
       fail(fieldPath, 'must be regular, medium, semibold, or bold');
     if (field === 'buttonStyle' && item !== 'tertiary')
       fail(fieldPath, 'must be tertiary');
-    if (field === 'hideLeading' && typeof item !== 'boolean')
+    if (
+      (field === 'hideLeading' || field === 'collapseEmptyTrailing') &&
+      typeof item !== 'boolean'
+    )
       fail(fieldPath, 'must be boolean');
     if (
       field === 'key' ||
@@ -3173,6 +3166,17 @@ function assertRowProtocol(row: RowModel, path: string): void {
 
 function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
   protocolObject(snapshot, 'snapshot');
+  const reorderActivation = snapshot.capabilities?.reorderActivation;
+  if (
+    reorderActivation !== undefined &&
+    reorderActivation !== 'row' &&
+    reorderActivation !== 'handle'
+  ) {
+    fail(
+      'snapshot.capabilities.reorderActivation',
+      "must be 'row' or 'handle'"
+    );
+  }
   if (snapshot.disclosure !== undefined) {
     protocolObject(snapshot.disclosure, 'snapshot.disclosure');
     if (typeof snapshot.disclosure.expanded !== 'boolean')
@@ -3717,6 +3721,9 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
       : items.filter((item) => item !== undefined);
   }
   if (!isRecord(value)) return value;
+  const isLeadingVisual = ['leading', 'visual', 'secondaryLeading'].includes(
+    field
+  );
   let object = value;
   if (field === 'titleImage') {
     const image = sanitizeImage(value.image);
@@ -3740,7 +3747,7 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   ) {
     if (typeof value.name !== 'string' || !value.name.trim()) return undefined;
     object = pickFields(value, ICON_FIELDS);
-  } else if (['leading', 'visual', 'secondaryLeading'].includes(field)) {
+  } else if (isLeadingVisual) {
     object = pickFields(value, VISUAL_FIELDS);
   } else if (field === 'media') {
     object = pickFields(value, ['source', 'probeOrder']);
@@ -3839,6 +3846,24 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   const next: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(object)) {
     if (item === undefined || item === null) continue;
+    if (
+      isLeadingVisual &&
+      key === 'borderWidth' &&
+      (typeof item !== 'number' ||
+        !Number.isFinite(item) ||
+        item <= 0 ||
+        item > 4)
+    )
+      continue;
+    if (
+      key === 'letterSpacing' &&
+      (typeof item !== 'number' ||
+        !Number.isFinite(item) ||
+        item < -4 ||
+        item > 10)
+    )
+      continue;
+    if (key === 'tabularNumbers' && typeof item !== 'boolean') continue;
     if (
       (/color$/i.test(key) || /background$/i.test(key)) &&
       (typeof item !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(item))

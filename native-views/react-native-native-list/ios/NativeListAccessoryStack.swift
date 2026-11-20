@@ -280,6 +280,14 @@ final class NativeListAccessoryStack: UIStackView {
     }
     isHidden = arrangedSubviews.allSatisfy { $0.isHidden }
   }
+  func explicitTextStyle(for view: UIView, style: [String: Any]) -> [String: Any]? {
+    switch semanticValueButtons.firstIndex(where: { $0 === view }) {
+    case 0: return style.dictionary("value")
+    case 1: return style.dictionary("valueSecondary")
+    default: return nil
+    }
+  }
+
   func updateSelection(
     _ item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
@@ -799,6 +807,7 @@ final class NativeListAccessoryStack: UIStackView {
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont)
     if style["color"] != nil { attributes[.foregroundColor] = color }
+    if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
     if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
       || style["truncate"] != nil
     {
@@ -842,6 +851,9 @@ final class NativeListAccessoryStack: UIStackView {
           value: nativeListFont(ofSize: ceil(size * 0.6), weight: weight, fonts: fonts),
           range: range)
       }
+    }
+    if let tabular = style["tabularNumbers"] as? Bool {
+      NativeListTextStyles.applyDigitSpacing(attributed, tabular: tabular, fallback: font)
     }
     button.setAttributedTitle(attributed, for: .normal)
   }

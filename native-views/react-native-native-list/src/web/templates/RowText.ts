@@ -150,7 +150,10 @@ export function applyTextStyleToSlot(
   if (style.fontWeight !== undefined)
     applyTextWeight(element, String(fontWeight(style.fontWeight, 400)));
   if (style.color !== undefined) element.style.color = style.color;
-  if (style.tabularNumbers) element.style.fontVariantNumeric = 'tabular-nums';
+  if (style.tabularNumbers !== undefined)
+    element.style.fontVariantNumeric = style.tabularNumbers
+      ? 'tabular-nums'
+      : 'proportional-nums';
   if (style.letterSpacing !== undefined)
     element.style.letterSpacing = String(style.letterSpacing) + 'px';
   // Explicit overrides also apply to rich text runs, but never to sibling badges.

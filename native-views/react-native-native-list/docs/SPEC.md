@@ -116,6 +116,10 @@ Status: implemented in local source for the Select Address and Swap selectors;
 native device and broader Web runtime verification remain pending. These fields travel in snapshot/patch JSON
 and do not change the Nitro ABI.
 
+Snapshot and patch validation requires a boolean for `collapseEmptyTrailing`;
+a patch with `null` restores the default. Automatic height uses the same
+trailing geometry, font features and tracking as the rendered text.
+
 An `identity` row may set `collapseEmptyTrailing: true`: when it has no trailing
 accessories, iOS drops the (empty) trailing column and its 12-point gap so the
 text column reaches the row's trailing padding, as a React Native `ListItem`
@@ -654,20 +658,26 @@ execution of a JavaScript press handler or physical-device gesture feel.
 (default, also when omitted) keeps the existing behavior: a long press anywhere
 on a reorderable row. `handle` restricts the start to the row's trailing `drag`
 accessory; a long press elsewhere on the row is an ordinary press or long press
-and never begins a reorder. Validation rejects any other value.
+and never begins a reorder. Development and production reject any other value
+and retain the currently accepted snapshot.
 
 - **Gesture:** iOS and Android keep their reorder long-press duration (200 ms)
   and movement tolerance. Web keeps its touch long press and mouse drag
   threshold; only the pointer-down target is narrowed.
 - **Hit area:** the visible `drag` accessory. Android accepts its 24dp glyph
-  slot plus 7dp on each side; iOS uses the accessory button's frame.
+  slot plus 7dp on each side (its actual 38dp button frame). iOS also uses
+  the button frame. Recognition remains tied to the row and handle that
+  received the initial touch, even if the finger moves across a row boundary.
+  A removed handle or a recycled binding cancels a pending start and keeps
+  accepted data updates.
 - **Eligibility:** row reorder eligibility (`draggable`, a `drag` accessory,
   `disabled`) is unchanged. A row without a `drag` accessory cannot start a
   reorder in `handle` mode.
-- **Accessory:** the `drag` accessory has no action of its own (legacy). A
-  short tap on it is swallowed by its button on iOS and reaches the row on
-  Android and Web; callers that must not open the row in edit mode set
-  `pressDisabled`. Icons beside it keep their own actions.
+- **Accessory:** a `drag` without an action swallows a short tap on iOS and
+  passes it to the row on Android and Web. In Web handle mode a `drag` with
+  an `actionKey` can start a reorder and still emits its action on a short
+  tap. A recognized reorder suppresses the click. Icons beside it keep their
+  own actions. Callers can use `pressDisabled` to disable row opening.
 - **Web cursor:** in `handle` mode the row keeps the default cursor and the
   handle shows `grab`.
 - **Handle appearance:** every platform tints the `DragOutline` glyph
@@ -687,18 +697,31 @@ and never begins a reorder. Validation rejects any other value.
   border, m=-7) on all three platforms, so its glyph sits on a 24-point slot at
   the 12-point row padding and the leading visual starts at 48. iOS and Android
   use a 36-point frame with a 6-point inset and 6-point following gap; Web
-  applies the tertiary icon frame.
+  applies the tertiary icon frame and reports the inner glyph slot's window
+  rect, including any ancestor transform. Web icon buttons use an explicit
+  accessibility label where supplied and otherwise retain their fallback
+  glyph as a name even when host SVG artwork is present.
 
 - **Enclosing pans (iOS):** once a reorder has started, the list disables the
   enabled `UIPanGestureRecognizer`s of its ancestors (for example a sheet's
   dismiss pan or a pager) and restores them when the reorder finishes, is
   cancelled by a structural update, or the list is torn down. Before the long
   press is recognized those pans behave as before, so a quick pull still drags
-  the sheet. This applies to both activation modes.
+  the sheet. This applies to both activation modes. The NativeOverlay page
+  sheet combines temporary suppression with the current `dismissOnPanDown`
+  setting, including prop changes during the drag.
 
-Toggling `reorderActivation` replaces the reorder recognizer state like a
-`reorderable` change. Snapshot and patch payloads carry it as plain JSON; the
-Nitro ABI is unchanged.
+Toggling `reorderActivation` or `reorderable` cancels pending and active
+pointer reorder without emitting a reorder event. An accepted full Web
+snapshot supersedes a provisional reorder; accepted row patches retain their
+content even if a gesture is cancelled. Web keyboard sorting remains available
+from the focused row if it has a rendered handle in `handle` mode. The
+capability travels in snapshot JSON; the Nitro ABI is unchanged.
+
+Leading visual `borderWidth` supports values in (0, 4]. Development rejects
+out-of-range widths; production discards the invalid width in full snapshots
+and patches so the border uses its existing default of 1. Production also
+discards invalid tracking and digit-spacing overrides so template defaults apply.
 
 ### Android reorder cancellation
 

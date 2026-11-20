@@ -1203,6 +1203,50 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(actions, ["continue", "footer-accessory"])
   }
 
+  func testResolvedTrackingAffectsWidthAndIsClearedOnRebind() {
+    let fonts = NativeListFontFamilies()
+    func text(_ style: [String: Any]?) -> NativeListResolvedText {
+      NativeListResolvedText("Wallet 123456", style: style, size: 16, color: .label,
+        lineHeight: 24, lines: 1, tabular: true, fonts: fonts)
+    }
+    let label = NativeListTextLabel()
+    let tracked = text(["letterSpacing": 4, "tabularNumbers": false])
+    let standard = text(nil)
+    tracked.bind(label)
+    XCTAssertEqual(label.attributedText?.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat, 4)
+    XCTAssertEqual(tracked.digitSpacing, false)
+    XCTAssertGreaterThan(tracked.measureWidth(), standard.measureWidth())
+    standard.bind(label)
+    XCTAssertNil(label.attributedText?.attribute(.kern, at: 0, effectiveRange: nil))
+    XCTAssertEqual(standard.digitSpacing, true)
+  }
+
+  func testAutoHeightIdentityAccountsForCollapsedTrailingAndTracking() throws {
+    func item(collapse: Bool, tracking: Double) throws -> NativeListItem {
+      try NativeListItem(data: [
+        "key": "recipient", "type": "identity", "title": "Recipient",
+        "subtitle": String(repeating: "Wallet 1234567890 ", count: 8),
+        "subtitleLines": 0, "contentHeight": "auto",
+        "collapseEmptyTrailing": collapse,
+        "style": ["subtitle": ["letterSpacing": tracking]],
+      ])
+    }
+    func height(_ item: NativeListItem, width: CGFloat) throws -> CGFloat {
+      try XCTUnwrap(NativeListIdentityCell.measure(
+        item, width: width, theme: nil, layout: "linear", fonts: NativeListFontFamilies()))
+    }
+    let collapsed = try item(collapse: true, tracking: 0)
+    let reserved = try item(collapse: false, tracking: 0)
+    let tracked = try item(collapse: true, tracking: 4)
+    let widths = stride(from: CGFloat(180), through: 260, by: 4)
+    let differences = try widths.map { width in
+      (try height(collapsed, width: width), try height(reserved, width: width),
+       try height(tracked, width: width))
+    }
+    XCTAssertTrue(differences.contains { collapsed, reserved, _ in collapsed < reserved })
+    XCTAssertTrue(differences.contains { collapsed, _, tracked in collapsed < tracked })
+  }
+
   func testFontResolversMeasureBindResetAndKeepIndependentInstances() throws {
     let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
     let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])

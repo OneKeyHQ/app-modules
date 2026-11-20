@@ -380,6 +380,9 @@ internal data class NativeListConfig(
       val layout = root.getJSONObject("layout")
       val selection = root.optJSONObject("selection")
       val capabilities = root.optJSONObject("capabilities")
+      val reorderActivation = capabilities?.opt("reorderActivation")
+      require(reorderActivation == null || reorderActivation == "row" ||
+        reorderActivation == "handle") { "Invalid reorderActivation" }
       val sectionIndex = capabilities?.optJSONObject("sectionIndex")
       val rowArray = root.getJSONArray("rows")
       val items = ArrayList<NativeListItem>(rowArray.length())
@@ -413,7 +416,7 @@ internal data class NativeListConfig(
         rowPressToggles = selection?.optBoolean("rowPressToggles", false) ?: false,
         selectedKeys = selectedKeys,
         reorderable = capabilities?.optBoolean("reorderable", false) ?: false,
-        reorderFromHandleOnly = capabilities?.optString("reorderActivation") == "handle",
+        reorderFromHandleOnly = reorderActivation == "handle",
         pullToRefresh = capabilities?.optBoolean("pullToRefresh", false) ?: false,
         refreshTriggerDistance = capabilities?.optDouble("refreshTriggerDistance")?.takeIf { it.isFinite() && it > 0 },
         refreshing = capabilities?.optBoolean("refreshing", false) ?: false,

@@ -33,7 +33,7 @@ import {
   webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
 import { applyTextStyleToSlot } from '../web/templates/RowText';
-import { validateSnapshot } from '../validation';
+import { applyRowPatches, validateSnapshot } from '../validation';
 
 jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
   jest.requireActual('../../../react-native-image/src/icon/dom')
@@ -1854,8 +1854,21 @@ describe('web row style', () => {
       expect(action()?.dataset.nativeListAction).toBe('address-info');
       expect(action()?.textContent).toBe('Router • V2');
       expect(description().textContent).toBe('Router • V2');
+      const style = {
+        description: { letterSpacing: 4, tabularNumbers: false },
+      };
+      bind({ style });
+      expect(description().style.letterSpacing).toBe('4px');
+      expect(description().style.fontVariantNumeric).toBe('proportional-nums');
+      expect(action()?.style.letterSpacing).toBe('inherit');
+      expect(action()?.style.fontVariantNumeric).toBe('inherit');
 
-      bind({ description: '08:48 • Router • V2', descriptionActionStart: 8 });
+      bind({
+        description: '08:48 • Router • V2',
+        descriptionActionStart: 8,
+        style,
+      });
+      expect(action()?.style.letterSpacing).toBe('inherit');
       expect(action()?.textContent).toBe('Router • V2');
       expect(description().textContent).toBe('08:48 • Router • V2');
 
@@ -7424,6 +7437,263 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 
+  it.each([false, true])(
+    'clears a row gesture on a mode change (active: %s)',
+    (active) => {
+      jest.useFakeTimers();
+      const { document, host, engine, pointerDown, dragging } = mount('row');
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onReorder });
+      try {
+        withElement(document, () => {
+          const title = host.querySelector(
+            '[data-native-list-row-key="a"] .ok-native-list-title'
+          )!;
+          pointerDown(title);
+          if (active) jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(active);
+          engine.applySnapshot({
+            ...engine.currentSnapshot(),
+            capabilities: { reorderable: true, reorderActivation: 'handle' },
+          });
+          expect(
+            host
+              .querySelector('.ok-native-list-root')
+              ?.getAttribute('data-native-list-reorder-activation')
+          ).toBe('handle');
+          expect(host.contains(title)).toBe(true);
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(false);
+          expect(onReorder).not.toHaveBeenCalled();
+          pointerDown(title);
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(false);
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it.each([false, true])(
+    'retains a patch that removes a pressed handle (active: %s)',
+    (active) => {
+      jest.useFakeTimers();
+      const { document, host, engine, pointerDown, dragging } = mount(
+        'handle',
+        [
+          { ...(handleRows[0] as IdentityRow), draggable: true },
+          ...handleRows.slice(1),
+        ]
+      );
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onReorder });
+      try {
+        withElement(document, () => {
+          pointerDown(
+            host.querySelector(
+              '[data-native-list-row-key="a"] [data-native-list-reorder-handle]'
+            )!
+          );
+          if (active) jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(active);
+          engine.applyPatches([
+            {
+              type: 'identity',
+              key: 'a',
+              changes: { trailing: [], title: 'Updated' },
+            },
+          ]);
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(false);
+          expect(onReorder).not.toHaveBeenCalled();
+          expect(engine.currentSnapshot().rows[0]).toMatchObject({
+            key: 'a',
+            title: 'Updated',
+            trailing: [],
+          });
+          expect(
+            host.querySelector(
+              '[data-native-list-row-key="a"] [data-native-list-reorder-handle]'
+            )
+          ).toBeNull();
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it('lets an actionable handle start a reorder and retain its short-tap action', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, pointerDown, dragging } = mount('handle', [
+      {
+        ...(handleRows[0] as IdentityRow),
+        trailing: [{ kind: 'drag', actionKey: 'handle.info' }],
+      },
+      ...handleRows.slice(1),
+    ]);
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const handle = host.querySelector<HTMLButtonElement>(
+          'button[data-native-list-reorder-handle]'
+        )!;
+        pointerDown(handle);
+        handle.dispatchEvent(
+          Object.assign(
+            new document.defaultView!.Event('pointerup', { bubbles: true }),
+            { pointerId: 1 }
+          )
+        );
+        handle.click();
+        expect(onRowAction).toHaveBeenCalledWith(
+          expect.objectContaining({ actionKey: 'handle.info' })
+        );
+        pointerDown(handle);
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
+    const { document, host, engine, dragging } = mount('row', [
+      { ...(handleRows[0] as IdentityRow), draggable: true, trailing: [] },
+      ...handleRows.slice(1),
+    ]);
+    const onReorder = jest.fn();
+    engine.updateCallbacks({ onReorder });
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement');
+    Object.defineProperty(globalThis, 'HTMLElement', {
+      configurable: true,
+      value: document.defaultView!.HTMLElement,
+    });
+    try {
+      const row = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="a"]'
+      )!;
+      row.focus();
+      const keyDown = (key: string) =>
+        document.activeElement!.dispatchEvent(
+          Object.assign(
+            new document.defaultView!.Event('keydown', {
+              bubbles: true,
+              cancelable: true,
+            }),
+            { key }
+          )
+        );
+      keyDown(' ');
+      expect(dragging()).toBe(true);
+
+      keyDown('ArrowDown');
+      expect(engine.currentSnapshot().rows.map(({ key }) => key)).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+      engine.applySnapshot({
+        ...engine.currentSnapshot(),
+        capabilities: { reorderable: true, reorderActivation: 'handle' },
+      });
+      expect(dragging()).toBe(false);
+      expect(
+        document.activeElement?.getAttribute('data-native-list-row-key')
+      ).toBe('a');
+      keyDown('ArrowDown');
+      keyDown(' ');
+      expect(dragging()).toBe(false);
+      expect(onReorder).not.toHaveBeenCalled();
+      expect(engine.currentSnapshot().rows.map(({ key }) => key)).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'HTMLElement', original);
+      else Reflect.deleteProperty(globalThis, 'HTMLElement');
+      engine.destroy();
+    }
+  });
+
+  it('preserves the accepted handle mode when production rejects an invalid update', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    const { engine } = mount('handle');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      environment.__DEV__ = false;
+      const accepted = engine.currentSnapshot();
+      engine.applySnapshot({
+        ...accepted,
+        capabilities: {
+          reorderable: true,
+          reorderActivation: 'invalid' as 'handle',
+        },
+      });
+      expect(engine.currentSnapshot()).toBe(accepted);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('reorderActivation')
+      );
+    } finally {
+      environment.__DEV__ = previous;
+      warn.mockRestore();
+      engine.destroy();
+    }
+  });
+
+  it('reports the scaled glyph rect for a leading action, with artwork or text', () => {
+    const iconRows = ['MinusCircleSolid', 'NoMatchingIcon'].map(
+      (name, index) => ({
+        ...(handleRows[index] as IdentityRow),
+        leadingAction: {
+          kind: 'icon' as const,
+          name,
+          actionKey: 'remove',
+          accessibilityLabel: 'Remove item',
+        },
+      })
+    );
+    const { document, host, engine } = mount(undefined, iconRows);
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const buttons = host.querySelectorAll<HTMLButtonElement>(
+          '[data-native-list-action="remove"]'
+        );
+        expect(buttons).toHaveLength(2);
+        buttons.forEach((button) => {
+          expect(button.getAttribute('aria-label')).toBe('Remove item');
+          const slot = button.querySelector<HTMLElement>(
+            '[data-native-list-anchor-glyph]'
+          )!;
+          button.getBoundingClientRect = () =>
+            ({ left: 2.5, top: 1.5, width: 19, height: 19 } as DOMRect);
+          slot.getBoundingClientRect = () =>
+            ({ left: 6, top: 5, width: 12, height: 12 } as DOMRect);
+          button.click();
+          expect(onRowAction).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              anchor: expect.objectContaining({
+                windowRect: { x: 6, y: 5, width: 12, height: 12 },
+              }),
+            })
+          );
+        });
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('resolves unregistered icon names through the host catalog', () => {
     const { host, engine } = mount(undefined, [
       {
@@ -7446,6 +7716,9 @@ describe('NativeList web handle reorder and host icons', () => {
         '[data-native-list-action="remove"] use'
       );
       expect(removeIcon?.getAttribute('href')).toContain('MinusCircleSolid');
+      expect(removeIcon?.closest('button')?.getAttribute('aria-label')).toBe(
+        '−'
+      );
       const missing = host.querySelector<HTMLElement>(
         '[data-native-list-action="x"]'
       )!;
@@ -7468,7 +7741,7 @@ describe('ListItem parity styles', () => {
     selection: undefined,
     capabilities: {},
   });
-  const siteRow = (overrides: Record<string, unknown> = {}): RowModel =>
+  const siteRow = (overrides: Record<string, unknown> = {}): IdentityRow =>
     ({
       type: 'identity',
       key: 'site',
@@ -7486,7 +7759,7 @@ describe('ListItem parity styles', () => {
         subtitle: { letterSpacing: -0.5 },
       },
       ...overrides,
-    } as RowModel);
+    } as IdentityRow);
 
   it('validates letterSpacing, leading borderWidth and collapseEmptyTrailing', () => {
     expect(() => validateSnapshot(linear([siteRow()]))).not.toThrow();
@@ -7578,6 +7851,104 @@ describe('ListItem parity styles', () => {
       );
       expect(main?.style.width).toBe('100%');
       expect(main?.style.height).toBe('100%');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('sets and clears collapseEmptyTrailing with row patches', () => {
+    const base = linear([siteRow()]);
+    const set = applyRowPatches(base, [
+      {
+        type: 'identity',
+        key: 'site',
+        changes: { collapseEmptyTrailing: false },
+      },
+    ]);
+    expect(set.rows[0]).toMatchObject({ collapseEmptyTrailing: false });
+    const cleared = applyRowPatches(set, [
+      {
+        type: 'identity',
+        key: 'site',
+        changes: { collapseEmptyTrailing: null },
+      },
+    ]);
+    expect(cleared.rows[0]).not.toHaveProperty('collapseEmptyTrailing');
+    expect(() =>
+      applyRowPatches(base, [
+        {
+          type: 'identity',
+          key: 'site',
+          changes: { collapseEmptyTrailing: 'false' as unknown as boolean },
+        },
+      ])
+    ).toThrow(/collapseEmptyTrailing/);
+  });
+
+  it('drops invalid visual border widths and text spacing in production snapshots and patches', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    try {
+      environment.__DEV__ = false;
+      const valid = siteRow();
+      const invalid = siteRow({
+        leading: {
+          ...valid.leading,
+          borderWidth: 100,
+        } as IdentityRow['leading'],
+        style: {
+          title: {
+            letterSpacing: 1000,
+            tabularNumbers: 'false' as unknown as boolean,
+          },
+        },
+      });
+      const accepted = [
+        validateSnapshot(linear([invalid])),
+        applyRowPatches(linear([valid]), [
+          {
+            type: 'identity',
+            key: 'site',
+            changes: { leading: invalid.leading, style: invalid.style },
+          },
+        ]),
+      ];
+      for (const result of accepted) {
+        expect(result.rows[0]).not.toHaveProperty('leading.borderWidth');
+        expect(result.rows[0]).not.toHaveProperty('style.title.letterSpacing');
+        expect(result.rows[0]).not.toHaveProperty('style.title.tabularNumbers');
+      }
+    } finally {
+      environment.__DEV__ = previous;
+    }
+  });
+
+  it('restores default gallery badge typography on the retained element', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const row: RowModel = {
+      type: 'mediaTile',
+      key: 'gallery-badge',
+      variant: 'gallery',
+      title: 'NFT',
+      image,
+      badge: { key: 'count', text: '123' },
+      style: { badge: { letterSpacing: 3, tabularNumbers: true } },
+    };
+    const engine = new NativeListWebEngine(host, linear([row]), {}, false);
+    try {
+      const findBadge = () =>
+        host.querySelector<HTMLElement>('[data-nl-slot="badge"]');
+      const styled = findBadge();
+      expect(styled?.style.letterSpacing).toBe('3px');
+      expect(styled?.style.fontVariantNumeric).toBe('tabular-nums');
+      engine.applyPatches([
+        { type: 'mediaTile', key: row.key, changes: { style: null } },
+      ]);
+      expect(findBadge()).toBe(styled);
+      expect(styled?.style.letterSpacing).toBe('');
+      expect(styled?.style.fontVariantNumeric).toBe('');
     } finally {
       engine.destroy();
     }

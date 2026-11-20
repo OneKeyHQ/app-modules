@@ -285,6 +285,8 @@ type PointerReorderState = {
   pointerId: number;
   pointerType: string;
   sourceKey: string;
+  memberKey?: string;
+  handle?: HTMLElement;
   currentIndex: number;
   startX: number;
   startY: number;
@@ -324,6 +326,15 @@ export function isWebRowReorderable(
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
+  );
+}
+
+function hasWebReorderHandle(row: RowModel): boolean {
+  if (row.type === 'walletGroup')
+    return [row.parent, ...row.children].some(hasWebReorderHandle);
+  return (
+    'trailing' in row &&
+    row.trailing?.some((accessory) => accessory.kind === 'drag') === true
   );
 }
 
@@ -831,7 +842,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
-.ok-native-list-item[data-native-list-reorder-activation="handle"]>.ok-native-list-row{cursor:default}
+:where(.ok-native-list-root[data-native-list-reorder-activation="handle"]) .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:default}
 .ok-native-list-item[data-native-list-reorderable="true"] [data-native-list-reorder-handle]{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
 .ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
@@ -853,6 +864,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
 .ok-native-list-trailing-button{appearance:none;box-sizing:border-box;flex:0 0 auto;padding:4px 10px;border:1px solid transparent;border-radius:9999px;background:var(--nl-button-bg,var(--nl-strong));color:var(--nl-button-text,var(--nl-primary));font:500 14px/20px var(--nl-font-medium);white-space:nowrap;cursor:default}.ok-native-list-trailing-button:hover:not(:disabled){background:var(--nl-button-hover,var(--nl-strong))}.ok-native-list-trailing-button:active:not(:disabled){background:var(--nl-button-pressed,var(--nl-pressed))}.ok-native-list-trailing-button:focus-visible{outline:2px solid var(--nl-button-focus,var(--nl-accent))}.ok-native-list-trailing-button:disabled{opacity:.4;cursor:default}
 .ok-native-list-icon-button.ok-native-list-tertiary-icon{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:6px;border:1px solid transparent;border-radius:9999px;color:var(--nl-icon-subdued);background:transparent}.ok-native-list-icon-button.ok-native-list-tertiary-icon:hover:not(:disabled){background:var(--nl-hover)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:active:not(:disabled){background:var(--nl-pressed)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:disabled{opacity:.4;cursor:default}
+.ok-native-list-action-glyph{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center}
 .ok-native-list-icon-button.ok-native-list-tertiary-icon:focus-visible:not(:disabled){outline:2px solid var(--nl-accent)}
 .ok-native-list-identity-title-icon{flex:0 0 20px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;color:var(--nl-icon);font-size:20px}.ok-native-list-identity-title-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}
@@ -1654,7 +1666,8 @@ function createIconAction(
   name: string,
   actionKey: string | undefined,
   disabled?: boolean,
-  tintColor?: string
+  tintColor?: string,
+  accessibilityLabel?: string
 ): HTMLElement {
   const element = createElement(
     context.document,
@@ -1665,7 +1678,13 @@ function createIconAction(
   if (element.tagName === 'BUTTON') {
     element.setAttribute('type', 'button');
     element.toggleAttribute('disabled', Boolean(disabled));
-    if (name === 'DotVerSolid') element.setAttribute('aria-label', '⋮');
+    element.setAttribute(
+      'aria-label',
+      accessibilityLabel || (name === 'DotVerSolid' ? '⋮' : iconGlyph(name))
+    );
+  } else if (accessibilityLabel) {
+    element.setAttribute('aria-label', accessibilityLabel);
+    element.setAttribute('role', 'img');
   }
   applySelectorIcon(element, name);
   if (actionKey) setData(element, 'nativeListAction', actionKey);
@@ -1736,8 +1755,9 @@ function createAccessory(
       context,
       accessory.name,
       accessory.actionKey,
-      accessory.disabled,
-      accessory.tintColor
+      rowDisabled || accessory.disabled,
+      accessory.tintColor,
+      accessory.accessibilityLabel
     );
     markActionAnchorSource(element, 'trailingAccessory', slot);
     if (accessory.name === 'RefreshCcwOutline' && !accessory.actionKey) {
@@ -1755,8 +1775,6 @@ function createAccessory(
       setData(element, 'nativeListHoverAction', accessory.hoverActionKey);
     if (accessory.hoverActionKey && accessory.buttonStyle === 'tertiary')
       setData(element, 'nativeListIconHelp', true);
-    if (accessory.accessibilityLabel)
-      element.setAttribute('aria-label', accessory.accessibilityLabel);
     const row = context.snapshot.rows[context.itemIndex];
     if (
       row &&
@@ -1865,7 +1883,12 @@ function createAccessory(
         width: '24px',
         height: '24px',
       });
+      if (actionKey) {
+        element.toggleAttribute('disabled', rowDisabled);
+        element.setAttribute('aria-label', '≡');
+      }
       setData(element, 'nativeListReorderHandle', true);
+      setData(element, 'nativeListAnchorSlot', slot);
       break;
     case 'progress':
       element.textContent = String(Math.round(accessory.value * 100)) + '%';
@@ -1890,8 +1913,17 @@ function rendererPrimitives(context: RenderContext, rowDisabled: boolean) {
       name: string,
       actionKey: string | undefined,
       disabled?: boolean,
-      tintColor?: string
-    ) => createIconAction(context, name, actionKey, disabled, tintColor),
+      tintColor?: string,
+      accessibilityLabel?: string
+    ) =>
+      createIconAction(
+        context,
+        name,
+        actionKey,
+        rowDisabled || disabled,
+        tintColor,
+        accessibilityLabel
+      ),
     dispose: disposeWebImageRetries,
   };
 }
@@ -2420,6 +2452,25 @@ export class NativeListWebEngine {
   private applyValidatedSnapshot(validated: NativeListSnapshot) {
     this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('snapshot');
+    const capabilities = this.snapshot.capabilities;
+    const nextCapabilities = validated.capabilities;
+    if (
+      this.pointerReorder?.active ||
+      capabilities?.reorderable !== nextCapabilities?.reorderable ||
+      (capabilities?.reorderActivation ?? 'row') !==
+        (nextCapabilities?.reorderActivation ?? 'row')
+    ) {
+      this.cancelPointerReorder(false);
+    }
+    const keyboardSource = this.keyboardReorder?.sourceKey;
+    const preserveKeyboardFocus =
+      keyboardSource &&
+      this.document.activeElement?.getAttribute('data-native-list-row-key') ===
+        keyboardSource;
+    if (this.keyboardReorder) {
+      this.keyboardReorder = undefined;
+      this.updateReorderVisualState();
+    }
     const transition = validated.structuralTransition;
     const isNewTransition =
       transition !== undefined &&
@@ -2460,6 +2511,7 @@ export class NativeListWebEngine {
         this.cancelStructuralAnimation();
       this.setSnapshot(validated);
     }
+    if (preserveKeyboardFocus) this.focusMountedRow(keyboardSource);
     this.hasAppliedSnapshot = true;
   }
 
@@ -2850,7 +2902,12 @@ export class NativeListWebEngine {
   }
 
   currentSnapshot(): NativeListSnapshot {
-    return this.snapshot;
+    const originalRows = this.pointerReorder?.active
+      ? this.pointerReorder.originalRows
+      : this.keyboardReorder?.originalRows;
+    return originalRows
+      ? { ...this.snapshot, rows: originalRows }
+      : this.snapshot;
   }
 
   applyPatches(patches: readonly RowPatch[]) {
@@ -2859,7 +2916,38 @@ export class NativeListWebEngine {
     );
     if (!accepted || accepted.patches.length === 0) return;
     patches = accepted.patches;
-    const next = accepted.snapshot;
+    let next = accepted.snapshot;
+    let restoredReorder = false;
+    const pointer = this.pointerReorder?.active
+      ? this.pointerReorder
+      : undefined;
+    const keyboard = this.keyboardReorder;
+    const reorder = pointer ?? keyboard;
+    if (reorder) {
+      const byKey = new Map(next.rows.map((row) => [row.key, row]));
+      reorder.originalRows = reorder.originalRows.map(
+        (row) => byKey.get(row.key) ?? row
+      );
+      const source = byKey.get(reorder.sourceKey);
+      const canContinue = pointer
+        ? this.canStartPointerReorder(pointer, next)
+        : source &&
+          isWebRowReorderable(next, source) &&
+          (next.capabilities?.reorderActivation !== 'handle' ||
+            hasWebReorderHandle(source));
+      if (!canContinue) {
+        if (pointer) this.cancelPointerReorder(false);
+        if (keyboard) {
+          this.keyboardReorder = undefined;
+          this.updateReorderVisualState();
+        }
+        this.remapMountedRows(reorder.originalRows);
+        next = { ...next, rows: reorder.originalRows };
+        restoredReorder = true;
+      } else if (pointer) {
+        pointer.workingRows = [...next.rows];
+      }
+    }
     const selection = new Set(this.selectedKeys);
     patches.forEach((patch) => {
       const selected =
@@ -2882,7 +2970,10 @@ export class NativeListWebEngine {
         canPatchMarketTableValues(before, after)
       );
     });
-    if (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly) {
+    if (
+      !restoredReorder &&
+      (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly)
+    ) {
       this.snapshot = next;
       this.rows = effectiveRows(next);
       this.selectedKeys = selection;
@@ -3161,6 +3252,11 @@ export class NativeListWebEngine {
     this.pressedHelpElement = undefined;
     this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
+    setData(
+      this.root,
+      'nativeListReorderActivation',
+      snapshot.capabilities?.reorderActivation
+    );
     this.rows = effectiveRows(snapshot);
     this.selectedKeys =
       selectedKeys ?? selectionStateFromSnapshot(snapshot).selectedKeys;
@@ -3502,6 +3598,7 @@ export class NativeListWebEngine {
         this.content.appendChild(element);
       }
       this.positionElement(element, layoutItem);
+      setData(element, 'nativeListReorderable', this.isReorderable(row));
       const signature = webRowRenderSignature(row);
       if (
         element.dataset.nativeListRowKey !== row.key ||
@@ -3585,11 +3682,6 @@ export class NativeListWebEngine {
         (row.disabled ? 0.5 : 1)
     );
     setData(element, 'nativeListReorderable', this.isReorderable(row));
-    setData(
-      element,
-      'nativeListReorderActivation',
-      this.snapshot.capabilities?.reorderActivation
-    );
     setData(
       element,
       'nativeListDragging',
@@ -4369,7 +4461,10 @@ export class NativeListWebEngine {
     if (!source || !bindingEpoch || !rowElement.contains(actionElement))
       return undefined;
     this.invalidateActionAnchor('rebind');
-    const actualRect = actionElement.getBoundingClientRect();
+    const glyph = actionElement.querySelector(
+      ':scope > [data-native-list-anchor-glyph]'
+    );
+    const actualRect = (glyph ?? actionElement).getBoundingClientRect();
     const inset = Number(actionElement.dataset.nativeListAnchorInset ?? 0);
     const rect = {
       left: actualRect.left + inset,
@@ -4844,7 +4939,16 @@ export class NativeListWebEngine {
     const row = this.rowAtElement(target.closest('[data-native-list-row-key]'));
     if (!row) return;
     event.preventDefault();
-    if (event.key === ' ' && this.isReorderable(row)) {
+    const hasHandle = target
+      .closest('[data-native-list-row-key]')
+      ?.querySelector('[data-native-list-reorder-handle]');
+    if (
+      event.key === ' ' &&
+      this.isReorderable(row) &&
+      (this.keyboardReorder ||
+        this.snapshot.capabilities?.reorderActivation !== 'handle' ||
+        hasHandle)
+    ) {
       if (this.keyboardReorder) this.finishKeyboardReorder();
       else this.startKeyboardReorder(row);
       return;
@@ -4889,9 +4993,7 @@ export class NativeListWebEngine {
       viewPosition: 0,
       viewOffset: 0,
     });
-    [...this.mounted.values()]
-      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
-      ?.focus({ preventScroll: true });
+    this.focusMountedRow(state.sourceKey);
   }
 
   private finishKeyboardReorder() {
@@ -4917,8 +5019,12 @@ export class NativeListWebEngine {
       this.selectedKeys
     );
     this.updateReorderVisualState();
+    this.focusMountedRow(state.sourceKey);
+  }
+
+  private focusMountedRow(key: string) {
     [...this.mounted.values()]
-      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
+      .find((element) => element.dataset.nativeListRowKey === key)
       ?.focus({ preventScroll: true });
   }
 
@@ -5108,12 +5214,14 @@ export class NativeListWebEngine {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (target.closest('button,input,textarea,select,a')) return;
-    if (
-      this.snapshot.capabilities?.reorderActivation === 'handle' &&
-      !target.closest('[data-native-list-reorder-handle]')
-    )
-      return;
+    const handleMode =
+      this.snapshot.capabilities?.reorderActivation === 'handle';
+    const handle = handleMode
+      ? target.closest<HTMLElement>('[data-native-list-reorder-handle]')
+      : undefined;
+    const control = target.closest('button,input,textarea,select,a');
+    if (handleMode && !handle) return;
+    if (control && (control !== handle || control.matches(':disabled'))) return;
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-index]'
     );
@@ -5137,6 +5245,8 @@ export class NativeListWebEngine {
       pointerId: event.pointerId,
       pointerType: event.pointerType || 'mouse',
       sourceKey: row.key,
+      memberKey,
+      handle: handle ?? undefined,
       currentIndex: index,
       startX: event.clientX,
       startY: event.clientY,
@@ -5156,9 +5266,52 @@ export class NativeListWebEngine {
     }
   };
 
+  private canStartPointerReorder(
+    state: PointerReorderState,
+    snapshot: NativeListSnapshot
+  ): boolean {
+    const row = snapshot.rows.find(
+      (candidate) => candidate.key === state.sourceKey
+    );
+    if (
+      !row ||
+      !isWebRowReorderable(snapshot, row) ||
+      !canStartWebWalletGroupReorder(row, state.memberKey)
+    )
+      return false;
+    if (!state.handle) return true;
+    const handleRow =
+      row.type === 'walletGroup'
+        ? [row.parent, ...row.children].find(
+            (member) => member.key === state.memberKey
+          )
+        : row;
+    const slot = Number(state.handle.dataset.nativeListAnchorSlot);
+    return Boolean(
+      handleRow &&
+        'trailing' in handleRow &&
+        handleRow.trailing?.[slot]?.kind === 'drag'
+    );
+  }
+
   private activatePointerReorder(state: PointerReorderState) {
     if (this.pointerReorder !== state) return;
+    const rowIndex = this.snapshot.rows.findIndex(
+      (row) => row.key === state.sourceKey
+    );
+    const source = this.mounted.get(rowIndex);
+    if (
+      !source ||
+      !this.canStartPointerReorder(state, this.snapshot) ||
+      (state.handle && !source.contains(state.handle))
+    ) {
+      this.cancelPointerReorder(false);
+      return;
+    }
     this.clearReorderLongPress(state);
+    state.currentIndex = rowIndex;
+    state.originalRows = this.snapshot.rows;
+    state.workingRows = [...this.snapshot.rows];
     state.active = true;
     this.cancelMarketPointer();
     state.activatedAt = Date.now();
@@ -5675,8 +5828,8 @@ export class NativeListWebEngine {
         { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
         this.selectedKeys
       );
-      this.suppressClickUntil = Date.now() + 300;
     }
+    if (state.active) this.suppressClickUntil = Date.now() + 300;
     if (state.active && restore) this.animateReorderPreviewToCurrent(state);
     else this.hideReorderPreview();
     this.updateReorderVisualState();

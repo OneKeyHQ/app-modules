@@ -366,11 +366,12 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       return
     fun visit(view: View) {
       if (view is TextView) {
-        view.fontFeatureSettings = "tnum"
         if (sourceScale) {
           paintDefaults.putIfAbsent(view, view.paintFlags)
           // Explicit style fontSize/lineHeight are kept as the caller set them.
           applyNativeListSourceTypography(view, explicitStyle(view))
+        } else {
+          applyNativeListTextSpacing(view, explicitStyle(view))
         }
       }
       if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
@@ -929,7 +930,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     trailingColumn.endInset?.let { setPadding(paddingLeft, paddingTop, it, paddingBottom) }
     // ListItem keeps 12dp between the text and a tertiary button's 24dp slot; the
     // button's m=-7 would otherwise pull its slot over the text column.
-    if (accessories.optJSONObject(0)?.optString("buttonStyle") == "tertiary") {
+    val first = accessories.optJSONObject(0)
+    if (first?.optString("kind") == "drag" || first?.optString("buttonStyle") == "tertiary") {
       (mainColumn.layoutParams as LayoutParams).marginEnd = dp(12)
     }
   }
@@ -1032,17 +1034,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
-    if (style.optBoolean("tabularNumbers")) view.fontFeatureSettings = "tnum"
-    // React Native text has no pair kerning when letterSpacing is given, as on iOS.
-    if (style.has("letterSpacing"))
-      view.fontFeatureSettings =
-        listOfNotNull(view.fontFeatureSettings?.takeIf { it.isNotEmpty() }, "'kern' 0")
-          .joinToString(", ")
-    if (style.has("letterSpacing") && view.textSize > 0f)
-      // TextView takes em; the protocol value is logical units.
-      view.letterSpacing =
-        (style.optDouble("letterSpacing") * resources.displayMetrics.density / view.textSize)
-          .toFloat()
+    applyNativeListTextSpacing(view, style)
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or

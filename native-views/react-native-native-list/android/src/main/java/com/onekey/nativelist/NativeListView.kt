@@ -4539,17 +4539,29 @@ class NativeListView(
     val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
     reorderTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
       private var candidate: RecyclerView.ViewHolder? = null
+      private var candidateItem: NativeListItem? = null
+      private var candidateHandle: View? = null
+      private var rawDownX = 0f
+      private var rawDownY = 0f
       private var downX = 0f
       private var downY = 0f
       private var dragStarted = false
       private val startDrag = Runnable {
         val holder = candidate ?: return@Runnable
-        val position = holder.bindingAdapterPosition
-        val item = adapter.itemAt(position) ?: return@Runnable
-        if (!item.isReorderable) return@Runnable
-        if (item.type != "walletGroup" && recyclerView.isLayoutRequested) {
+        val original = candidateItem ?: return@Runnable
+        if (original.type != "walletGroup" && recyclerView.isLayoutRequested) {
           relayoutRecyclerViewImmediately()
         }
+        val item = adapter.itemAt(holder.bindingAdapterPosition) ?: return@Runnable
+        val acceptedIndex = acceptedKeyIndex?.get(original.key) ?: return@Runnable
+        val accepted = config?.items?.getOrNull(acceptedIndex) ?: return@Runnable
+        if (item.key != original.key || accepted.key != original.key || !accepted.isReorderable)
+          return@Runnable
+        val handle = candidateHandle
+        if (handle != null &&
+          (accepted.content != original.content ||
+            findReorderHandle(holder.itemView, rawDownX, rawDownY) !== handle)
+        ) return@Runnable
         dragStarted = true
         beginDrag(holder)
       }
@@ -4563,6 +4575,8 @@ class NativeListView(
       private fun cancelPending() {
         handler.removeCallbacks(startDrag)
         candidate = null
+        candidateItem = null
+        candidateHandle = null
       }
 
       override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
@@ -4573,6 +4587,8 @@ class NativeListView(
             dragStarted = false
             downX = event.x
             downY = event.y
+            rawDownX = event.rawX
+            rawDownY = event.rawY
             val child = recyclerView.findChildViewUnder(event.x, event.y)
             candidate = child
               ?.let(recyclerView::getChildViewHolder)
@@ -4587,12 +4603,15 @@ class NativeListView(
                   // item.type != "walletGroup" ||
                   // event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
                   // )
+                  candidateItem = item
+                  if (config?.reorderFromHandleOnly == true) {
+                    candidateHandle = findReorderHandle(holder.itemView, rawDownX, rawDownY)
+                    if (candidateHandle == null) return@let false
+                  }
                   item.isReorderable &&
                     (holder as? NativeListViewHolder)?.rowView?.canStartWalletGroupReorder(
                       event.y - holder.itemView.top,
-                    ) != false &&
-                    (config?.reorderFromHandleOnly != true ||
-                      isOnReorderHandle(holder.itemView, event.rawX, event.rawY))
+                    ) != false
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
@@ -4610,22 +4629,23 @@ class NativeListView(
     }.also(recyclerView::addOnItemTouchListener)
   }
 
-  /** Whether a screen point falls on a visible trailing `drag` handle inside [root]. */
-  private fun isOnReorderHandle(root: View, rawX: Float, rawY: Float): Boolean {
-    if (root.visibility != View.VISIBLE) return false
+  /** Find the visible trailing handle whose button frame contains the initial press. */
+  private fun findReorderHandle(root: View, rawX: Float, rawY: Float): View? {
+    if (root.visibility != View.VISIBLE) return null
     if (root.getTag(R.id.onekey_native_list_reorder_handle) == true) {
       val location = IntArray(2)
       root.getLocationOnScreen(location)
-      // The glyph slot is 24dp; accept the surrounding press target as well.
-      val slop = dp(REORDER_HANDLE_SLOP_DP)
-      return rawX >= location[0] - slop && rawX <= location[0] + root.width + slop &&
-        rawY >= location[1] - slop && rawY <= location[1] + root.height + slop
+      return root.takeIf {
+        rawX >= location[0] && rawX < location[0] + root.width &&
+          rawY >= location[1] && rawY < location[1] + root.height
+      }
     }
-    if (root !is ViewGroup) return false
-    for (index in 0 until root.childCount) {
-      if (isOnReorderHandle(root.getChildAt(index), rawX, rawY)) return true
+    if (root is ViewGroup) {
+      for (index in 0 until root.childCount) {
+        findReorderHandle(root.getChildAt(index), rawX, rawY)?.let { return it }
+      }
     }
-    return false
+    return null
   }
 
   private fun prepareDisplacedReorderAnimation(view: View, helper: ItemTouchHelper) {
@@ -4874,7 +4894,6 @@ class NativeListView(
     private const val SECTION_INDEX_PREVIEW_HEIGHT_DP = 50
     private const val SECTION_INDEX_PREVIEW_END_MARGIN_DP = 40
     private const val REORDER_LONG_PRESS_MS = 200L
-    private const val REORDER_HANDLE_SLOP_DP = 7
     private const val REORDER_ALLOWABLE_MOVEMENT_DP = 10
     private const val REORDER_PLACEHOLDER_INSET_DP = 8
     private const val REORDER_PLACEHOLDER_RADIUS_DP = 12
