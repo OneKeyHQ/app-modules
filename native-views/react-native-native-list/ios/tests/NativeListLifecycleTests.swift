@@ -1203,6 +1203,111 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(actions, ["continue", "footer-accessory"])
   }
 
+  func testPendingHandleReorderSurvivesSelectionEchoButRejectsHandleRemoval() throws {
+    final class HandleTouch: UITouch {
+      let handle: UIView
+      init(handle: UIView) {
+        self.handle = handle
+        super.init()
+      }
+      override var view: UIView? { handle }
+      override func location(in view: UIView?) -> CGPoint {
+        handle.convert(CGPoint(x: handle.bounds.midX, y: handle.bounds.midY), to: view)
+      }
+    }
+    func findHandle(in view: UIView) -> NativeListAccessoryButton? {
+      if let button = view as? NativeListAccessoryButton, button.isReorderHandle { return button }
+      return view.subviews.lazy.compactMap { findHandle(in: $0) }.first
+    }
+    func snapshot(selected: Bool) throws -> String {
+      let row: [String: Any] = [
+        "type": "identity", "key": "source", "title": "Source", "height": 60,
+        "selected": selected, "draggable": true, "trailing": [["kind": "drag"]],
+      ]
+      let body: [String: Any] = [
+        "schemaVersion": 1, "generation": 1, "layout": ["kind": "linear"],
+        "capabilities": ["reorderable": true, "reorderActivation": "handle"],
+        "selection": ["mode": "multiple", "selectedKeys": selected ? ["source"] : []],
+        "rows": [row],
+      ]
+      return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+    }
+
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 697))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    let list = NativeListView(frame: window.bounds)
+    controller.view.addSubview(list)
+    defer {
+      list.dispose()
+      window.isHidden = true
+    }
+    list.applySnapshotJson(try snapshot(selected: false))
+    window.layoutIfNeeded()
+    list.layoutIfNeeded()
+    let collection = try XCTUnwrap(list.subviews.compactMap { $0 as? UICollectionView }.first)
+    collection.layoutIfNeeded()
+    let recognizer = try XCTUnwrap(collection.gestureRecognizers?.compactMap {
+      $0 as? UILongPressGestureRecognizer
+    }.first { String(describing: type(of: $0)) == "NativeListReorderLongPress" })
+    let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)) as? NativeListRowHost)
+    let handle = try XCTUnwrap(findHandle(in: cell))
+    let epoch = cell.bindingEpoch
+    XCTAssertTrue(list.gestureRecognizer(recognizer, shouldReceive: HandleTouch(handle: handle)))
+
+    list.applySnapshotJson(try snapshot(selected: true))
+    XCTAssertEqual(cell.bindingEpoch, epoch)
+    XCTAssertTrue(list.gestureRecognizerShouldBegin(recognizer))
+
+    list.applyPatchesJson(#"[{"type":"identity","key":"source","changes":{"trailing":[]}}]"#)
+    XCTAssertFalse(list.gestureRecognizerShouldBegin(recognizer))
+  }
+
+  func testResolvedTrackingAffectsWidthAndIsClearedOnRebind() {
+    let fonts = NativeListFontFamilies()
+    func text(_ style: [String: Any]?) -> NativeListResolvedText {
+      NativeListResolvedText("Wallet 123456", style: style, size: 16, color: .label,
+        lineHeight: 24, lines: 1, tabular: true, fonts: fonts)
+    }
+    let label = NativeListTextLabel()
+    let tracked = text(["letterSpacing": 4, "tabularNumbers": false])
+    let standard = text(nil)
+    tracked.bind(label)
+    XCTAssertEqual(label.attributedText?.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat, 4)
+    XCTAssertEqual(tracked.digitSpacing, false)
+    XCTAssertGreaterThan(tracked.measureWidth(), standard.measureWidth())
+    standard.bind(label)
+    XCTAssertNil(label.attributedText?.attribute(.kern, at: 0, effectiveRange: nil))
+    XCTAssertEqual(standard.digitSpacing, true)
+  }
+
+  func testAutoHeightIdentityAccountsForCollapsedTrailingAndTracking() throws {
+    func item(collapse: Bool, tracking: Double) throws -> NativeListItem {
+      try NativeListItem(data: [
+        "key": "recipient", "type": "identity", "title": "Recipient",
+        "subtitle": String(repeating: "Wallet 1234567890 ", count: 8),
+        "subtitleLines": 0, "contentHeight": "auto",
+        "collapseEmptyTrailing": collapse,
+        "style": ["subtitle": ["letterSpacing": tracking]],
+      ])
+    }
+    func height(_ item: NativeListItem, width: CGFloat) throws -> CGFloat {
+      try XCTUnwrap(NativeListIdentityCell.measure(
+        item, width: width, theme: nil, layout: "linear", fonts: NativeListFontFamilies()))
+    }
+    let collapsed = try item(collapse: true, tracking: 0)
+    let reserved = try item(collapse: false, tracking: 0)
+    let tracked = try item(collapse: true, tracking: 4)
+    let widths = stride(from: CGFloat(180), through: 260, by: 4)
+    let differences = try widths.map { width in
+      (try height(collapsed, width: width), try height(reserved, width: width),
+       try height(tracked, width: width))
+    }
+    XCTAssertTrue(differences.contains { collapsed, reserved, _ in collapsed < reserved })
+    XCTAssertTrue(differences.contains { collapsed, _, tracked in collapsed < tracked })
+  }
+
   func testFontResolversMeasureBindResetAndKeepIndependentInstances() throws {
     let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
     let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])

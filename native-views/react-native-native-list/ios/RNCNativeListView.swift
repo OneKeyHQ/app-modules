@@ -7,6 +7,19 @@ enum NativeListTopScrollEdgeEffect {
   case none, hard, soft
 }
 
+private final class NativeListReorderLongPress: UILongPressGestureRecognizer {
+  var sourceItem: NativeListItem?
+  var bindingEpoch: Int?
+  weak var handle: NativeListAccessoryButton?
+
+  override func reset() {
+    super.reset()
+    sourceItem = nil
+    bindingEpoch = nil
+    handle = nil
+  }
+}
+
 final class NativeListView: UIView {
   private var fonts = NativeListFontFamilies()
 
@@ -722,7 +735,7 @@ final class NativeListView: UIView {
   private var pagerCommandCancelObserver: NSObjectProtocol?
   private var pendingScrollRequest: ScrollRequest?
   private let sectionIndexFeedback = UISelectionFeedbackGenerator()
-  private lazy var reorderLongPress = UILongPressGestureRecognizer(
+  private lazy var reorderLongPress = NativeListReorderLongPress(
     target: self,
     action: #selector(reorderLongPressChanged(_:))
   )
@@ -756,6 +769,8 @@ final class NativeListView: UIView {
   private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
   private let reorderMoveFeedback = UISelectionFeedbackGenerator()
   private var interactiveReorderFeedbackIndex: Int?
+  /// Ancestor pans (for example a sheet's dismiss pan) paused while a reorder is active.
+  private var reorderSuspendedAncestorPans: [UIGestureRecognizer] = []
   private var interactiveMovementKeys: [String]?
   private var actionAnchor: ActionAnchorRecord?
   private let actionAnchorInstanceID = UUID().uuidString
@@ -1102,6 +1117,13 @@ final class NativeListView: UIView {
 
   func applySnapshotJson(_ json: String) {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
+    if let current = config,
+       current.reorderable != next.reorderable ||
+        current.reorderFromHandleOnly != next.reorderFromHandleOnly {
+      cancelInteractiveReorderForStructuralUpdate()
+      reorderLongPress.isEnabled = false
+      reorderLongPress.isEnabled = true
+    }
     let transition = next.structuralTransition
     let isNewTransition = transition != nil && transition?.id != consumedStructuralTransitionID
     let disclosureGeometryInvalid = deferredDisclosureGeometryInvalid
@@ -2022,11 +2044,12 @@ final class NativeListView: UIView {
       let point = gesture.location(in: collectionView)
       guard let current = config,
             current.reorderable,
-            let indexPath = collectionView.indexPathForItem(at: point),
+            let indexPath = reorderSourceIndexPath(at: point),
             let item = item(at: indexPath),
             item.isReorderable,
             let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost,
-            cell.canStartWalletGroupReorder(at: gesture.location(in: cell)) else {
+            (current.reorderFromHandleOnly ||
+             cell.canStartWalletGroupReorder(at: gesture.location(in: cell))) else {
         interactiveReorderSource = nil
         interactiveReorderCell = nil
         interactiveReorderTargetIndex = nil
@@ -2077,6 +2100,7 @@ final class NativeListView: UIView {
         interactiveMovementKeys = dataSource.snapshot().itemIdentifiers
       }
       interactiveReorderFeedbackIndex = indexPath.item
+      suspendAncestorPansForReorder()
       reorderStartFeedback.impactOccurred(intensity: 0.7)
       reorderStartFeedback.prepare()
       reorderMoveFeedback.prepare()
@@ -2116,6 +2140,42 @@ final class NativeListView: UIView {
     default:
       break
     }
+  }
+
+  // NativeOverlay implements this optional UIKit coordination hook to retain
+  // ownership of its current dismiss policy. The packages can load independently.
+  private static let setPanReorderSuppressed =
+    NSSelectorFromString("setOneKeyNativeListReorderSuppressed:")
+
+  /// A reorder that has started owns the drag: an enclosing sheet or pager must
+  /// not also pan (and dismiss or page) with the same finger.
+  private func suspendAncestorPansForReorder() {
+    resumeAncestorPansAfterReorder()
+    var view = collectionView.superview
+    while let current = view {
+      for recognizer in current.gestureRecognizers ?? []
+      where recognizer is UIPanGestureRecognizer && recognizer.delegate !== self {
+        if recognizer.responds(to: Self.setPanReorderSuppressed) {
+          _ = recognizer.perform(Self.setPanReorderSuppressed, with: NSNumber(value: true))
+        } else {
+          guard recognizer.isEnabled else { continue }
+          recognizer.isEnabled = false
+        }
+        reorderSuspendedAncestorPans.append(recognizer)
+      }
+      view = current.superview
+    }
+  }
+
+  private func resumeAncestorPansAfterReorder() {
+    for recognizer in reorderSuspendedAncestorPans {
+      if recognizer.responds(to: Self.setPanReorderSuppressed) {
+        _ = recognizer.perform(Self.setPanReorderSuppressed, with: NSNumber(value: false))
+      } else {
+        recognizer.isEnabled = true
+      }
+    }
+    reorderSuspendedAncestorPans.removeAll()
   }
 
   private func nearestReorderIndexPath(to point: CGPoint) -> IndexPath? {
@@ -2175,6 +2235,7 @@ final class NativeListView: UIView {
   }
 
   private func finishInteractiveReorder(cancelled: Bool) {
+    resumeAncestorPansAfterReorder()
     interactiveReorderLockedCrossAxisPosition = nil
     if interactiveReorderUsesAtomicTargeting {
       finishAtomicInteractiveReorder(cancelled: cancelled)
@@ -2219,6 +2280,7 @@ final class NativeListView: UIView {
 
   private func cancelInteractiveReorderForStructuralUpdate() {
     guard interactiveReorderSource != nil else { return }
+    resumeAncestorPansAfterReorder()
     interactiveReorderAnimator?.stopAnimation(true)
     interactiveReorderAnimator = nil
     interactiveMovementKeys = nil
@@ -2862,6 +2924,7 @@ final class NativeListView: UIView {
           current.selectionMode == next.selectionMode,
           current.rowPressToggles == next.rowPressToggles,
           current.reorderable == next.reorderable,
+          current.reorderFromHandleOnly == next.reorderFromHandleOnly,
           current.pullToRefresh == next.pullToRefresh,
           current.refreshTriggerDistance == next.refreshTriggerDistance,
           current.refreshing == next.refreshing,
@@ -2874,24 +2937,21 @@ final class NativeListView: UIView {
           current.fixedFooter?.content == next.fixedFooter?.content,
           current.items.count == next.items.count else { return false }
 
+    let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
     return zip(current.items, next.items).allSatisfy { old, new in
-      guard old.key == new.key, old.type == new.type else { return false }
-      if old.content == new.content { return true }
-      // OneKey patch: controlled echoes can also update row and checkbox selection fields.
-      // guard old.type == "sectionHeader",
-      //       old.data.string("variant") == "summary",
-      //       new.data.string("variant") == "summary" else { return false }
-      // var oldData = old.data
-      // var newData = new.data
-      // oldData.removeValue(forKey: "title")
-      // oldData.removeValue(forKey: "value")
-      // newData.removeValue(forKey: "title")
-      // newData.removeValue(forKey: "value")
-      let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
-      guard let oldData = selectionComparisonData(old.data, controlled: controlled),
-            let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
-      return jsonData(oldData) == jsonData(newData)
+      isStableSelectionUpdate(from: old, to: new, controlled: controlled)
     }
+  }
+
+  // The lightweight selection rebind leaves the original row and controls mounted.
+  private func isStableSelectionUpdate(
+    from old: NativeListItem, to new: NativeListItem, controlled: Bool
+  ) -> Bool {
+    guard old.key == new.key, old.type == new.type else { return false }
+    if old.content == new.content { return true }
+    guard let oldData = selectionComparisonData(old.data, controlled: controlled),
+          let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
+    return jsonData(oldData) == jsonData(newData)
   }
 
   private func canDeferSnapshotDuringInteractiveReorder(
@@ -2909,6 +2969,7 @@ final class NativeListView: UIView {
           current.contentPaddingBottom == next.contentPaddingBottom,
           current.itemSpacing == next.itemSpacing,
           current.reorderable == next.reorderable,
+          current.reorderFromHandleOnly == next.reorderFromHandleOnly,
           current.sectionIndexEnabled == next.sectionIndexEnabled,
           current.items.count == next.items.count,
           hasSameFooterGeometry(current.fixedFooter, next.fixedFooter) else { return false }
@@ -3161,6 +3222,7 @@ final class NativeListView: UIView {
     keyboardDragRecognizer.delegate = nil
     listBodyGestureGuard.delegate = nil
     reorderLongPress.delegate = nil
+    resumeAncestorPansAfterReorder()
     marketLongPress.delegate = nil
 
     for case let cell as NativeListRowHost in collectionView.visibleCells {
@@ -3348,13 +3410,33 @@ final class NativeListView: UIView {
     }.sorted()
   }
 
+  private func reorderSourceIndexPath(at point: CGPoint) -> IndexPath? {
+    guard config?.reorderFromHandleOnly == true else {
+      return collectionView.indexPathForItem(at: point)
+    }
+    let controlled = config?.selectionMode == "single" || config?.selectionMode == "multiple"
+    guard let original = reorderLongPress.sourceItem,
+          let handle = reorderLongPress.handle, handle.isReorderHandle,
+          let indexPath = dataSource.indexPath(for: original.key),
+          let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost,
+          cell.bindingEpoch == reorderLongPress.bindingEpoch,
+          handle.isDescendant(of: cell),
+          let current = item(at: indexPath),
+          isStableSelectionUpdate(from: original, to: current, controlled: controlled)
+    else { return nil }
+    return indexPath
+  }
+
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer === keyboardDragRecognizer {
       return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
     }
     if gestureRecognizer === reorderLongPress || gestureRecognizer === marketLongPress {
       let point = gestureRecognizer.location(in: collectionView)
-      guard let indexPath = collectionView.indexPathForItem(at: point),
+      let sourceIndexPath = gestureRecognizer === reorderLongPress
+        ? reorderSourceIndexPath(at: point)
+        : collectionView.indexPathForItem(at: point)
+      guard let indexPath = sourceIndexPath,
             let item = item(at: indexPath), !isInertPresentationKey(item.key),
             !item.data.bool("disabled") else { return false }
       if gestureRecognizer === reorderLongPress {
@@ -3387,6 +3469,28 @@ extension NativeListView: UIGestureRecognizerDelegate {
       }
     }
     if gestureRecognizer === listBodyGestureGuard { return true }
+    if gestureRecognizer === reorderLongPress, config?.reorderFromHandleOnly == true {
+      guard reorderLongPress.sourceItem == nil else { return false }
+      var view = touch.view
+      var handle: NativeListAccessoryButton?
+      while let current = view, current !== footerCell, current !== collectionView {
+        if let button = current as? NativeListAccessoryButton, button.isReorderHandle {
+          handle = button
+        }
+        if let cell = current as? NativeListRowHost, let handle,
+           let indexPath = collectionView.indexPath(for: cell),
+           let item = item(at: indexPath), item.isReorderable,
+           !isInertPresentationKey(item.key),
+           cell.canStartWalletGroupReorder(at: touch.location(in: cell)) {
+          reorderLongPress.sourceItem = item
+          reorderLongPress.bindingEpoch = cell.bindingEpoch
+          reorderLongPress.handle = handle
+          return true
+        }
+        view = current.superview
+      }
+      return false
+    }
     var view = touch.view
     while let current = view, current !== footerCell {
       if current is UIControl { return false }

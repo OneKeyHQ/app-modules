@@ -13,7 +13,8 @@ struct NativeListResolvedText {
   let offsetY: CGFloat
   let explicitLineHeight: Bool
   let explicitTruncation: Bool
-  let tabular: Bool
+  let digitSpacing: Bool?
+  let letterSpacing: CGFloat?
   /// Keep the label's break mode in the attributed paragraph (legacy plain-text labels kept
   /// their tail ellipsis; attributed paragraphs otherwise default to word wrapping).
   let preservesBreakMode: Bool
@@ -24,7 +25,8 @@ struct NativeListResolvedText {
     tabular: Bool = false, preservesBreakMode: Bool = false, fonts: NativeListFontFamilies
   ) {
     let style = style ?? [:]
-    self.tabular = tabular
+    digitSpacing = (style["tabularNumbers"] as? Bool) ?? (tabular ? true : nil)
+    letterSpacing = style["letterSpacing"].map { _ in CGFloat(style.double("letterSpacing")) }
     self.preservesBreakMode = preservesBreakMode
     let requestedLines = style.int("lines", default: lines)
     self.lines = requestedLines == 0 ? 0 : min(3, max(1, requestedLines))
@@ -39,10 +41,9 @@ struct NativeListResolvedText {
     default: resolvedWeight = weight
     }
     let resolvedSize = CGFloat(style.double("fontSize", default: Double(size)))
-    font =
-      tabular
-      ? nativeListTabularFont(ofSize: resolvedSize, weight: resolvedWeight, fonts: fonts)
-      : nativeListFont(ofSize: resolvedSize, weight: resolvedWeight, fonts: fonts)
+    let baseFont = nativeListFont(ofSize: resolvedSize, weight: resolvedWeight, fonts: fonts)
+    font = digitSpacing.map { NativeListTextStyles.digitSpacingFont(baseFont, tabular: $0) }
+      ?? baseFont
     self.color =
       (style["color"] as? String).map { UIColor(nativeListHex: $0, fallback: color) } ?? color
     self.lineHeight = CGFloat(style.double("lineHeight", default: Double(lineHeight)))
@@ -85,6 +86,7 @@ struct NativeListResolvedText {
     var attributes: [NSAttributedString.Key: Any] = [
       .font: font, .foregroundColor: color, .paragraphStyle: paragraph,
     ]
+    if let letterSpacing { attributes[.kern] = letterSpacing }
     if explicitLineHeight {
       attributes[.baselineOffset] = max(0, (lineHeight - font.lineHeight) / 2)
     }
@@ -128,7 +130,7 @@ struct NativeListResolvedText {
     guard !text.isEmpty else { return 0 }
     let width = max(1, width)
     let key =
-      "\(width)|\(lines)|\(lineHeight)|\(explicitLineHeight)|\(explicitTruncation)|\(breakMode.rawValue)|\(preservesBreakMode)|\(font.fontName)|\(font.pointSize)|\(tabular)|\(text)"
+      "\(width)|\(lines)|\(lineHeight)|\(explicitLineHeight)|\(explicitTruncation)|\(breakMode.rawValue)|\(preservesBreakMode)|\(font.fontName)|\(font.pointSize)|\(String(describing: digitSpacing))|\(String(describing: letterSpacing))|\(text)"
       as NSString
     if let cached = Self.heightCache.object(forKey: key) { return CGFloat(cached.doubleValue) }
     let label = Thread.isMainThread ? Self.sizingLabel : NativeListTextLabel()

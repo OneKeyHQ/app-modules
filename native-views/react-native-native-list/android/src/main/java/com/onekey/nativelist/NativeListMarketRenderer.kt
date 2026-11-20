@@ -401,10 +401,10 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     defaultAlignment: String,
   ) {
     view.includeFontPadding = false
-    view.fontFeatureSettings = "tnum"
     view.textSize =
       sp(style?.optDouble("fontSize", defaultSize.toDouble())?.toFloat() ?: defaultSize)
     view.typeface = marketTypeface(style?.optString("fontWeight").orEmpty(), defaultWeight)
+    applyNativeListTextSpacing(view, style)
     view.setTextColor(safeColor(style?.optString("color"), defaultColor))
     val alignment = style?.optString("alignment", defaultAlignment) ?: defaultAlignment
     view.gravity =
@@ -437,6 +437,7 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
         kotlin.math.ceil(sourceSize.toDouble()).toFloat(),
       )
     }
+    applyNativeListTextSpacing(view, style)
     // Legacy parity: keep marketText's subscript AbsoluteSizeSpan (ceil(0.6 x fontSize)).
     val text = SpannableStringBuilder(view.text)
     text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)
@@ -703,8 +704,8 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
             }
         badgeLabel.text = text
         // OneKey patch: match SizableText's tabular numerals only for explicit Market metrics.
-        badgeLabel.fontFeatureSettings = if (badgeStyle != null) "tnum" else null
         badgeLabel.textSize = sp(badgeStyle?.optDouble("fontSize", 11.0)?.toFloat() ?: 11f)
+        applyNativeListTextSpacing(badgeLabel, badgeStyle, if (badgeStyle != null) "tnum" else null)
         badgeLabel.typeface =
           marketTypeface(badgeStyle?.optString("fontWeight").orEmpty(), "medium")
         if (badgeStyle?.has("lineHeight") == true) {

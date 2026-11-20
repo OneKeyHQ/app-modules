@@ -42,6 +42,7 @@ internal data class NativeListResolvedText(
   val clip: Boolean,
   val gravity: Int,
   val offset: Float,
+  private val style: JSONObject?,
 ) {
   /** Offset into [text] for a UTF-16 offset into the [source] it was resolved from. */
   fun displayOffset(sourceOffset: Long, source: String): Int =
@@ -49,11 +50,10 @@ internal data class NativeListResolvedText(
 
   fun bind(view: NativeListTextView) {
     view.includeFontPadding = false
-    view.fontFeatureSettings = "tnum"
     view.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
     view.typeface = typeface
     view.setTextColor(color)
-    view.letterSpacing = 0f
+    applyNativeListTextSpacing(view, style)
     view.gravity = gravity
     view.opticalOffsetY = offset
     view.maxLines = if (lines == 0) Int.MAX_VALUE else lines
@@ -137,9 +137,30 @@ internal data class NativeListResolvedText(
         style?.optString("truncate") == "clip",
         horizontal or vertical,
         ((style?.optDouble("offsetY", 0.0) ?: 0.0) * density).toFloat(),
+        style,
       )
     }
   }
+}
+
+/** Apply tracking after the final font size, then rebuild font features for this binding. */
+internal fun applyNativeListTextSpacing(
+  view: TextView,
+  style: JSONObject?,
+  defaultFeatures: String? = "tnum",
+  defaultLetterSpacing: Float = 0f,
+) {
+  val tracking = style?.optDouble("letterSpacing")?.takeIf { it.isFinite() }
+  val digitFeatures = when {
+    style?.has("tabularNumbers") != true -> defaultFeatures
+    style.optBoolean("tabularNumbers") -> "tnum"
+    else -> "'tnum' 0, 'pnum' 1"
+  }
+  view.fontFeatureSettings = if (tracking == null) digitFeatures else
+    listOfNotNull(digitFeatures, "'kern' 0").joinToString(", ")
+  view.letterSpacing = if (tracking != null && view.textSize > 0f)
+    (tracking * view.resources.displayMetrics.density / view.textSize).toFloat()
+  else defaultLetterSpacing
 }
 
 /**
@@ -158,7 +179,7 @@ internal fun applyNativeListSourceTypography(view: TextView, style: JSONObject?)
       TypedValue.COMPLEX_UNIT_PX,
       kotlin.math.ceil((view.textSize * metrics.density / metrics.scaledDensity).toDouble()).toFloat(),
     )
-  view.letterSpacing = 0f
+  applyNativeListTextSpacing(view, style)
   if (style?.has("lineHeight") != true && view.text.isNotEmpty()) {
     val text = SpannableStringBuilder(view.text)
     text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)

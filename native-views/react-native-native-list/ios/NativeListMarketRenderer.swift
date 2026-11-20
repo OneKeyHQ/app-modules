@@ -188,7 +188,7 @@ final class NativeListMarketCell: NativeListRendererCell {
     button.titleEdgeInsets = .zero
   }
   private func textLayoutStyle(_ style: [String: Any]) -> [String: Any] {
-    style.filter { ["lines", "truncate", "verticalAlignment", "offsetY"].contains($0.key) }
+    style.filter { ["lines", "truncate", "verticalAlignment", "offsetY", "letterSpacing", "tabularNumbers"].contains($0.key) }
   }
   override func accessibilityText(_ item: NativeListItem) -> String {
     if let label = item.data["accessibilityLabel"] as? String { return label }
@@ -603,6 +603,9 @@ final class NativeListMarketCell: NativeListRendererCell {
         // The explicit text-only line box must not cover an adjacent icon.
         if hasIcon { button.marketLineHeight = nil }
       }
+      if let badgeStyle {
+        NativeListTextStyles.applyStyledButton(button, textLayoutStyle(badgeStyle), fonts: fonts)
+      }
       button.tintColor = foreground
       button.backgroundColor = UIColor(
         nativeListHex: badge.string("backgroundColor", default: ""),
@@ -631,7 +634,8 @@ final class NativeListMarketCell: NativeListRendererCell {
       // let height = button.heightAnchor.constraint(equalToConstant: 18)
       let height = button.heightAnchor.constraint(
         equalToConstant: CGFloat(badgeStyle?.double("height", default: 18) ?? 18))
-      let textWidth = (text as NSString).size(withAttributes: [.font: badgeFont]).width
+      let textWidth = button.attributedTitle(for: .normal)?.size().width
+        ?? (text as NSString).size(withAttributes: [.font: badgeFont]).width
       let scale = max(1, traitCollection.displayScale)
       let roundedTextWidth = badgeStyle == nil ? ceil(textWidth) : ceil(textWidth * scale) / scale
       let extraWidth =

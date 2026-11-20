@@ -66,6 +66,8 @@ function applyMarketTextStyle(
     String(fontWeight(style?.fontWeight, defaults.weight))
   );
   element.style.color = style?.color ?? '';
+  element.style.letterSpacing = '';
+  element.style.fontVariantNumeric = '';
   element.style.textAlign = style?.alignment ?? defaults.alignment;
   element.style.whiteSpace = (style?.lines ?? 1) > 1 ? 'normal' : 'nowrap';
   element.style.display = '';

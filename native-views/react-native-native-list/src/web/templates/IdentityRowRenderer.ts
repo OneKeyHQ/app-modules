@@ -44,6 +44,16 @@ function appendAccessories(
     'ok-native-list-accessories'
   );
 
+  // ListItem's rename + drag pair sits in <XStack gap="$6">; iOS and Android
+  // lay the same pair out natively.
+  if (
+    accessories.length === 2 &&
+    accessories[0].kind === 'icon' &&
+    accessories[0].name === 'PencilOutline' &&
+    accessories[1].kind === 'drag'
+  )
+    container.style.gap = '24px';
+
   if (
     row &&
     hasExplicitRowHeight(row) &&
@@ -111,9 +121,21 @@ function createIdentityRow(
       row.leadingAction.name,
       row.leadingAction.actionKey,
       row.leadingAction.disabled,
-      row.leadingAction.tintColor
+      row.leadingAction.tintColor,
+      row.leadingAction.accessibilityLabel
     );
     markActionAnchorSource(action, 'leadingAction');
+    // ListItem.IconButton geometry, as on iOS and Android: the medium tertiary
+    // frame overhangs its 24-point slot by 7 on each side.
+    action.classList.add('ok-native-list-tertiary-icon');
+    const glyph = createElement(
+      document,
+      'span',
+      'ok-native-list-action-glyph'
+    );
+    glyph.dataset.nativeListAnchorGlyph = '';
+    glyph.append(...action.childNodes);
+    action.append(glyph);
     body.appendChild(action);
   }
   const visual = primitives.visual(

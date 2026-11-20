@@ -13,7 +13,8 @@ export type RowPrimitives = Readonly<{
     name: string,
     actionKey: string | undefined,
     disabled?: boolean,
-    tintColor?: string
+    tintColor?: string,
+    accessibilityLabel?: string
   ) => HTMLElement;
   accessory: (
     rowKey: string,
