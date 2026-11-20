@@ -7563,6 +7563,87 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 
+  it.each([
+    ['mouse', true],
+    ['touch', true],
+    ['touch', false],
+  ])(
+    'suppresses a cancelled %s drag click after a long hold (pointer click: %s)',
+    (pointerType, pointerClick) => {
+      jest.useFakeTimers();
+      const { document, host, engine, dragging } = mount('handle', [
+        {
+          ...(handleRows[0] as IdentityRow),
+          trailing: [{ kind: 'drag', actionKey: 'handle.info' }],
+        },
+        ...handleRows.slice(1),
+      ]);
+      const onRowAction = jest.fn();
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onRowAction, onReorder });
+      try {
+        withElement(document, () => {
+          const handle = host.querySelector<HTMLButtonElement>(
+            'button[data-native-list-reorder-handle]'
+          )!;
+          const pointer = (type: string, clientX = 10) =>
+            handle.dispatchEvent(
+              Object.assign(
+                new document.defaultView!.Event(type, {
+                  bubbles: true,
+                  cancelable: true,
+                }),
+                {
+                  pointerId: 1,
+                  pointerType,
+                  isPrimary: true,
+                  button: 0,
+                  clientX,
+                  clientY: 20,
+                }
+              )
+            );
+          const click = () => {
+            const event = new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+            });
+            if (pointerClick) Object.assign(event, { pointerId: 1 });
+            handle.dispatchEvent(event);
+          };
+          pointer('pointerdown');
+          if (pointerType === 'mouse') pointer('pointermove', 60);
+          else jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(true);
+
+          engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+          expect(dragging()).toBe(false);
+          expect(handle.isConnected).toBe(true);
+          handle.click();
+          expect(onRowAction).toHaveBeenCalledTimes(1);
+          onRowAction.mockClear();
+          jest.advanceTimersByTime(450);
+          pointer('pointerup');
+          click();
+          expect(onReorder).not.toHaveBeenCalled();
+          expect(onRowAction).not.toHaveBeenCalled();
+
+          pointer('pointerdown');
+          pointer('pointerup');
+          click();
+          expect(onRowAction).toHaveBeenCalledTimes(1);
+          expect(onRowAction).toHaveBeenCalledWith(
+            expect.objectContaining({ actionKey: 'handle.info' })
+          );
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
   it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
     const { document, host, engine, dragging } = mount('row', [
       { ...(handleRows[0] as IdentityRow), draggable: true, trailing: [] },

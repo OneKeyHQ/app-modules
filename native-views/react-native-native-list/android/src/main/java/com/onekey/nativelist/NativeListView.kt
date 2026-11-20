@@ -4538,9 +4538,10 @@ class NativeListView(
     reorderTouchHandler = handler
     val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
     reorderTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
-      private var candidate: RecyclerView.ViewHolder? = null
+      private var candidate: NativeListViewHolder? = null
       private var candidateItem: NativeListItem? = null
       private var candidateHandle: View? = null
+      private var candidateBindingEpoch = 0L
       private var rawDownX = 0f
       private var rawDownY = 0f
       private var downX = 0f
@@ -4554,14 +4555,18 @@ class NativeListView(
         }
         val item = adapter.itemAt(holder.bindingAdapterPosition) ?: return@Runnable
         val acceptedIndex = acceptedKeyIndex?.get(original.key) ?: return@Runnable
-        val accepted = config?.items?.getOrNull(acceptedIndex) ?: return@Runnable
+        val current = config ?: return@Runnable
+        val accepted = current.items.getOrNull(acceptedIndex) ?: return@Runnable
         if (item.key != original.key || accepted.key != original.key || !accepted.isReorderable)
           return@Runnable
         val handle = candidateHandle
-        if (handle != null &&
-          (accepted.content != original.content ||
-            findReorderHandle(holder.itemView, rawDownX, rawDownY) !== handle)
-        ) return@Runnable
+        if (handle != null) {
+          val controlled = current.selectionMode == "single" || current.selectionMode == "multiple"
+          if (holder.rowView.bindingEpoch != candidateBindingEpoch ||
+            (accepted.content != original.content && !isStableSelectionUpdate(original, accepted, controlled)) ||
+            findReorderHandle(holder.itemView, rawDownX, rawDownY) !== handle
+          ) return@Runnable
+        }
         dragStarted = true
         beginDrag(holder)
       }
@@ -4593,7 +4598,8 @@ class NativeListView(
             candidate = child
               ?.let(recyclerView::getChildViewHolder)
               // Container-slot holders report binding position 0 in their own adapter.
-              ?.takeIf { holder -> holder is NativeListViewHolder && holder.bindingAdapter === adapter }
+              ?.let { it as? NativeListViewHolder }
+              ?.takeIf { holder -> holder.bindingAdapter === adapter }
               ?.takeIf { holder ->
                 adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
                   // OneKey patch: any wallet group member can initiate the group drag.
@@ -4607,11 +4613,10 @@ class NativeListView(
                   if (config?.reorderFromHandleOnly == true) {
                     candidateHandle = findReorderHandle(holder.itemView, rawDownX, rawDownY)
                     if (candidateHandle == null) return@let false
+                    candidateBindingEpoch = holder.rowView.bindingEpoch
                   }
                   item.isReorderable &&
-                    (holder as? NativeListViewHolder)?.rowView?.canStartWalletGroupReorder(
-                      event.y - holder.itemView.top,
-                    ) != false
+                    holder.rowView.canStartWalletGroupReorder(event.y - holder.itemView.top)
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)

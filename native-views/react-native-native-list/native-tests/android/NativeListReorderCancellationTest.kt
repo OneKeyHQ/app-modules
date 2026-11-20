@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Canvas
 import android.os.SystemClock
 import android.test.InstrumentationTestCase
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -57,6 +58,69 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
       activity.finish()
     }
     super.tearDown()
+  }
+
+  fun testPendingHandleReorderSurvivesSelectionEcho() {
+    checkPendingHandleUpdate(removeHandle = false)
+  }
+
+  fun testPendingHandleReorderRejectsRemovedHandle() {
+    checkPendingHandleUpdate(removeHandle = true)
+  }
+
+  private fun checkPendingHandleUpdate(removeHandle: Boolean) {
+    fun fixture(selected: Boolean): String {
+      val row = JSONObject().put("type", "identity").put("key", "source")
+        .put("title", "Source").put("height", 60).put("draggable", true)
+        .put("selected", selected)
+        .put("trailing", JSONArray().put(JSONObject().put("kind", "drag")))
+      return JSONObject().put("schemaVersion", 1).put("generation", 1)
+        .put("layout", JSONObject().put("kind", "linear"))
+        .put("capabilities", JSONObject().put("reorderable", true).put("reorderActivation", "handle"))
+        .put("selection", JSONObject().put("mode", "multiple")
+          .put("selectedKeys", if (selected) JSONArray().put("source") else JSONArray()))
+        .put("rows", JSONArray().put(row)).toString()
+    }
+    fun findHandle(view: View): View? {
+      if (view.getTag(R.id.onekey_native_list_reorder_handle) == true) return view
+      if (view is ViewGroup) {
+        for (index in 0 until view.childCount) {
+          findHandle(view.getChildAt(index))?.let { return it }
+        }
+      }
+      return null
+    }
+
+    onMain { list.applySnapshot(fixture(selected = false)) }
+    awaitRows(listOf("source"))
+    onMain {
+      val origin = IntArray(2).also(recycler::getLocationOnScreen)
+      val row = holder(0).rowView
+      val handle = checkNotNull(findHandle(row))
+      val location = IntArray(2).also(handle::getLocationOnScreen)
+      val now = SystemClock.uptimeMillis()
+      val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
+        location[0] + handle.width / 2f, location[1] + handle.height / 2f, 0)
+      down.offsetLocation(-origin[0].toFloat(), -origin[1].toFloat())
+      val listener = field<RecyclerView.OnItemTouchListener>(list, "reorderTouchListener")
+      listener.onInterceptTouchEvent(recycler, down)
+      down.recycle()
+      assertSame(holder(0), field<NativeListViewHolder?>(listener, "candidate"))
+      if (removeHandle) {
+        val patch = JSONObject().put("type", "identity").put("key", "source")
+          .put("changes", JSONObject().put("trailing", JSONArray()))
+        list.applyPatches(JSONArray().put(patch).toString())
+      } else {
+        list.applySnapshot(fixture(selected = true))
+      }
+      // Run the production delayed callback synchronously so the async adapter
+      // diff cannot hide the result of checking the latest accepted model.
+      val start = field<Runnable>(listener, "startDrag")
+      field<android.os.Handler>(list, "reorderTouchHandler").removeCallbacks(start)
+      start.run()
+      val active = field<NativeListViewHolder?>(list, "activeReorderHolder")
+      if (removeHandle) assertNull(active) else assertSame(holder(0), active)
+    }
   }
 
   fun testIdentityLongPressKeepsGesturePointAndProgrammaticAnchor() {

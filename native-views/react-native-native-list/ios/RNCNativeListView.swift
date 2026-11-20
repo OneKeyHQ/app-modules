@@ -8,15 +8,13 @@ enum NativeListTopScrollEdgeEffect {
 }
 
 private final class NativeListReorderLongPress: UILongPressGestureRecognizer {
-  var sourceKey: String?
-  var sourceContent: String?
+  var sourceItem: NativeListItem?
   var bindingEpoch: Int?
   weak var handle: NativeListAccessoryButton?
 
   override func reset() {
     super.reset()
-    sourceKey = nil
-    sourceContent = nil
+    sourceItem = nil
     bindingEpoch = nil
     handle = nil
   }
@@ -2939,24 +2937,21 @@ final class NativeListView: UIView {
           current.fixedFooter?.content == next.fixedFooter?.content,
           current.items.count == next.items.count else { return false }
 
+    let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
     return zip(current.items, next.items).allSatisfy { old, new in
-      guard old.key == new.key, old.type == new.type else { return false }
-      if old.content == new.content { return true }
-      // OneKey patch: controlled echoes can also update row and checkbox selection fields.
-      // guard old.type == "sectionHeader",
-      //       old.data.string("variant") == "summary",
-      //       new.data.string("variant") == "summary" else { return false }
-      // var oldData = old.data
-      // var newData = new.data
-      // oldData.removeValue(forKey: "title")
-      // oldData.removeValue(forKey: "value")
-      // newData.removeValue(forKey: "title")
-      // newData.removeValue(forKey: "value")
-      let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
-      guard let oldData = selectionComparisonData(old.data, controlled: controlled),
-            let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
-      return jsonData(oldData) == jsonData(newData)
+      isStableSelectionUpdate(from: old, to: new, controlled: controlled)
     }
+  }
+
+  // The lightweight selection rebind leaves the original row and controls mounted.
+  private func isStableSelectionUpdate(
+    from old: NativeListItem, to new: NativeListItem, controlled: Bool
+  ) -> Bool {
+    guard old.key == new.key, old.type == new.type else { return false }
+    if old.content == new.content { return true }
+    guard let oldData = selectionComparisonData(old.data, controlled: controlled),
+          let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
+    return jsonData(oldData) == jsonData(newData)
   }
 
   private func canDeferSnapshotDuringInteractiveReorder(
@@ -3419,13 +3414,16 @@ final class NativeListView: UIView {
     guard config?.reorderFromHandleOnly == true else {
       return collectionView.indexPathForItem(at: point)
     }
-    guard let key = reorderLongPress.sourceKey,
+    let controlled = config?.selectionMode == "single" || config?.selectionMode == "multiple"
+    guard let original = reorderLongPress.sourceItem,
           let handle = reorderLongPress.handle, handle.isReorderHandle,
-          let indexPath = dataSource.indexPath(for: key),
+          let indexPath = dataSource.indexPath(for: original.key),
           let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost,
           cell.bindingEpoch == reorderLongPress.bindingEpoch,
           handle.isDescendant(of: cell),
-          item(at: indexPath)?.content == reorderLongPress.sourceContent else { return nil }
+          let current = item(at: indexPath),
+          isStableSelectionUpdate(from: original, to: current, controlled: controlled)
+    else { return nil }
     return indexPath
   }
 
@@ -3472,7 +3470,7 @@ extension NativeListView: UIGestureRecognizerDelegate {
     }
     if gestureRecognizer === listBodyGestureGuard { return true }
     if gestureRecognizer === reorderLongPress, config?.reorderFromHandleOnly == true {
-      guard reorderLongPress.sourceKey == nil else { return false }
+      guard reorderLongPress.sourceItem == nil else { return false }
       var view = touch.view
       var handle: NativeListAccessoryButton?
       while let current = view, current !== footerCell, current !== collectionView {
@@ -3484,8 +3482,7 @@ extension NativeListView: UIGestureRecognizerDelegate {
            let item = item(at: indexPath), item.isReorderable,
            !isInertPresentationKey(item.key),
            cell.canStartWalletGroupReorder(at: touch.location(in: cell)) {
-          reorderLongPress.sourceKey = item.key
-          reorderLongPress.sourceContent = item.content
+          reorderLongPress.sourceItem = item
           reorderLongPress.bindingEpoch = cell.bindingEpoch
           reorderLongPress.handle = handle
           return true

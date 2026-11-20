@@ -2023,7 +2023,8 @@ export class NativeListWebEngine {
   private reorderSettlingKey: string | undefined;
   private reorderCompactKey: string | undefined;
   private reorderExpandingKey: string | undefined;
-  private suppressClickUntil = 0;
+  private reorderClickPointerId: number | undefined;
+  private lastPrimaryPointerId: number | undefined;
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
@@ -2267,6 +2268,7 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.addEventListener('click', this.handleClick);
+    this.root.addEventListener('pointerdown', this.trackPrimaryPress, true);
     this.root.addEventListener('contextmenu', this.handleMarketContextMenu);
     this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
     this.root.addEventListener('pointermove', this.handleMarketPointerMove);
@@ -3175,6 +3177,7 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.removeEventListener('click', this.handleClick);
+    this.root.removeEventListener('pointerdown', this.trackPrimaryPress, true);
     this.root.removeEventListener('contextmenu', this.handleMarketContextMenu);
     this.cancelMarketPointer();
     this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
@@ -4818,8 +4821,26 @@ export class NativeListWebEngine {
       this.invalidateActionAnchor('pointerLeave');
   };
 
+  private trackPrimaryPress = (event: PointerEvent) => {
+    if (event.isPrimary === false || event.button !== 0) return;
+    this.lastPrimaryPointerId = event.pointerId;
+    if (this.reorderClickPointerId === event.pointerId)
+      this.reorderClickPointerId = undefined;
+  };
+
   private handleClick = (event: Event) => {
-    if (this.marketLongPressFired || Date.now() < this.suppressClickUntil) {
+    // Older browsers dispatch MouseEvent for clicks. Non-pointer activations
+    // have detail 0, or pointerId -1 on browsers that dispatch PointerEvent.
+    const pointerId =
+      (event as PointerEvent).pointerId ??
+      ((event as MouseEvent).detail > 0
+        ? this.lastPrimaryPointerId
+        : undefined);
+    const clickFromReorder =
+      this.reorderClickPointerId !== undefined &&
+      pointerId === this.reorderClickPointerId;
+    if (clickFromReorder) this.reorderClickPointerId = undefined;
+    if (this.marketLongPressFired || clickFromReorder) {
       this.marketLongPressFired = false;
       event.preventDefault();
       event.stopPropagation();
@@ -5313,6 +5334,7 @@ export class NativeListWebEngine {
     state.originalRows = this.snapshot.rows;
     state.workingRows = [...this.snapshot.rows];
     state.active = true;
+    this.reorderClickPointerId = state.pointerId;
     this.cancelMarketPointer();
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();
@@ -5793,7 +5815,6 @@ export class NativeListWebEngine {
     this.pointerReorder = undefined;
     this.stopReorderMove();
     this.stopReorderAutoScroll();
-    this.suppressClickUntil = Date.now() + 300;
     this.updateReorderVisualState();
     if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
   }
@@ -5829,7 +5850,6 @@ export class NativeListWebEngine {
         this.selectedKeys
       );
     }
-    if (state.active) this.suppressClickUntil = Date.now() + 300;
     if (state.active && restore) this.animateReorderPreviewToCurrent(state);
     else this.hideReorderPreview();
     this.updateReorderVisualState();
