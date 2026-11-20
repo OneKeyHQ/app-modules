@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
+import android.widget.OverScroller
 import android.widget.ScrollView
 // OneKey patch: FrameLayout is inherited through NestedScrollableHost.
 // import android.widget.FrameLayout
@@ -242,6 +243,15 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var headerHasHorizontalChild = false
   private var forwardedScrollable: View? = null
   private var pendingRefreshPull: WeakReference<SwipeRefreshLayout>? = null
+  // A platform ScrollView flings without nested callbacks, so the coordinator
+  // carries a release that leaves the header between its ends.
+  private val headerFlingScroller = OverScroller(context)
+  private var headerFlingOwner: WeakReference<ScrollView>? = null
+  private var headerFlingKey: String? = null
+  private var headerFlingGeneration = -1
+  private var headerFlingTravel = 0
+  private var headerFlingJoinsContent = false
+  private val headerFlingFrame = Runnable { stepHeaderFling() }
   private var nativeGestureStarted = false
   private var pressCancelled = false
   private val pageContentLayoutListener = ViewTreeObserver.OnPreDrawListener {
@@ -301,6 +311,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   var retainedPages: String = "[]"
   var onHeaderOffsetChanged: (() -> Unit)? = null
   var nativeSmoothHeaderScrollEnabled = false
+    set(value) {
+      if (field == value) return
+      field = value
+      // A motion started in smooth mode must not move the header after it.
+      if (!value) cancelHeaderFling()
+    }
   var onNativeTabPress: ((Int, String) -> Unit)? = null
   var onNativeSubHeaderPress: ((Int, String) -> Unit)? = null
 
@@ -1172,6 +1188,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     if (ownerKey != key || !view.isAttachedToWindow || primaryScrollableForPage(selectedPage) !== view) return false
     // Finish old child notifications before installing the new Pager-owned target.
     cancelPagerTop()
+    cancelHeaderFling()
     if (view is RecyclerView) {
       (view.getTag(R.id.onekey_native_scroll_coordinator_command_cancel_listener) as? Runnable)?.run()
       view.stopScroll()
@@ -1314,7 +1331,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       content?.height ?: 0, headerView?.height ?: 0).joinToString(":")
     val busy = forceBusy || pager.isFakeDragging || pager.scrollState != ViewPager2.SCROLL_STATE_IDLE ||
       transitionHeaderOffsets != null || syntheticPageRestore || pagerTopRequest != null ||
-      headerCommandOwner?.get() === owner ||
+      headerCommandOwner?.get() === owner || headerFlingOwner != null ||
       nestedScrollingParentHelper.nestedScrollAxes and ViewCompat.SCROLL_AXIS_VERTICAL != 0 ||
       (recycler != null && (recycler.scrollState != RecyclerView.SCROLL_STATE_IDLE ||
         recycler.isComputingLayout || recycler.layoutManager?.isSmoothScrolling == true)) ||
@@ -2307,6 +2324,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
+        // A new touch stops the header the way it stops a flinging list.
+        cancelHeaderFling(byTouch = true)
         headerDownEvent?.recycle()
         headerDownEvent = null
         headerGestureOwner = HeaderGestureOwner.NONE
@@ -2428,7 +2447,10 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     axes and ViewCompat.SCROLL_AXIS_VERTICAL != 0 && isCurrentPageTarget(target)
 
   override fun onNestedScrollAccepted(child: View, target: View, axes: Int, type: Int) {
-    if (type == ViewCompat.TYPE_TOUCH) pendingRefreshPull = null
+    if (type == ViewCompat.TYPE_TOUCH) {
+      pendingRefreshPull = null
+      cancelHeaderFling(byTouch = true)
+    }
     nestedScrollingParentHelper.onNestedScrollAccepted(child, target, axes, type)
     updateHeaderSettledState(forceBusy = true)
     if (type == ViewCompat.TYPE_TOUCH) {
@@ -2529,7 +2551,79 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       // content upward and make its first positive offset collapse the header.
       return true
     }
+    if (beginHeaderFling(target, velocityY)) return true
     return super.onNestedPreFling(target, velocityX, velocityY)
+  }
+
+  private fun beginHeaderFling(target: View, velocityY: Float): Boolean {
+    val owner = observedNativeScroller ?: return false
+    val key = currentPageKey()
+    if (!nativeSmoothHeaderScrollEnabled || observedNativeScrollerKey != key ||
+      !isAttachedToWindow || !owner.isAttachedToWindow ||
+      pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || transitionHeaderOffsets != null ||
+      syntheticPageRestore || pagerTopRequest != null) return false
+    // A refresh wrapper forwards a release as its own, which hides who was flung.
+    if (target !== owner) return false
+    val direction = collapsiblePagerHeaderFlingDirection(
+      headerOffsetPx, headerHeightPx, velocityY, owner.canScrollVertically(-1),
+    )
+    if (direction == 0) return false
+    cancelHeaderFling()
+    // Unbounded travel: the header range is applied per frame.
+    headerFlingScroller.fling(0, 0, 0, velocityY.roundToInt(), 0, 0, Int.MIN_VALUE, Int.MAX_VALUE)
+    val joinsContent = collapsiblePagerHeaderFlingJoinsContent(
+      headerOffsetPx, headerHeightPx, direction, headerFlingScroller.finalY,
+    )
+    headerFlingOwner = WeakReference(owner)
+    headerFlingKey = key
+    headerFlingGeneration = attachmentGeneration
+    headerFlingTravel = 0
+    headerFlingJoinsContent = joinsContent
+    updateHeaderSettledState(forceBusy = true)
+    postOnAnimation(headerFlingFrame)
+    log(
+      "header-fling-begin inner=$selectedPage key=$key direction=$direction " +
+        "velocity=${velocityY.roundToInt()} headerOffset=$headerOffsetPx joinsContent=$joinsContent",
+    )
+    // Left unconsumed, the scroller starts its own fling now and the header
+    // collapses beside it; nothing is handed back to the scroller later.
+    return !joinsContent
+  }
+
+  private fun stepHeaderFling() {
+    val owner = headerFlingOwner?.get()
+    if (owner == null || owner !== observedNativeScroller || headerFlingKey != currentPageKey() ||
+      headerFlingGeneration != attachmentGeneration || !nativeSmoothHeaderScrollEnabled ||
+      !isAttachedToWindow || !owner.isAttachedToWindow ||
+      pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || transitionHeaderOffsets != null ||
+      syntheticPageRestore || pagerTopRequest != null) {
+      cancelHeaderFling()
+      return
+    }
+    // The last frame of a fling still moves to its final position.
+    headerFlingScroller.computeScrollOffset()
+    val travelled = headerFlingScroller.currY
+    val step = collapsiblePagerHeaderFlingStep(
+      headerOffsetPx, headerHeightPx, travelled - headerFlingTravel, headerFlingScroller.isFinished,
+    )
+    headerFlingTravel = travelled
+    setHeaderOffset(step.offset)
+    if (step.ended) cancelHeaderFling() else postOnAnimation(headerFlingFrame)
+  }
+
+  private fun cancelHeaderFling(notify: Boolean = true, byTouch: Boolean = false) {
+    if (headerFlingOwner == null) return
+    // The content is already flinging under this collapse; stopping the header
+    // alone would leave it partly collapsed over moved content.
+    if (byTouch && headerFlingJoinsContent) return
+    removeCallbacks(headerFlingFrame)
+    headerFlingScroller.forceFinished(true)
+    headerFlingOwner = null
+    headerFlingKey = null
+    headerFlingJoinsContent = false
+    if (!notify) return
+    updateHeaderSettledState()
+    onHeaderOffsetChanged?.invoke()
   }
 
   override fun getNestedScrollAxes() = nestedScrollingParentHelper.nestedScrollAxes
@@ -2562,6 +2656,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     headerCommandOwner = null
     publishHeaderSettledState(false)
     pendingRefreshPull = null
+    cancelHeaderFling(notify = false)
     releaseRefreshForeground()
     attachmentGeneration += 1
     headerDownEvent?.recycle()
