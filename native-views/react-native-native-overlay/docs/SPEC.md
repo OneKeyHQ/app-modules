@@ -140,6 +140,10 @@ come only from props.
   separate handler; the old removal cannot invoke or delete the new handler.
 - `dismissAll({ scope, belowLevel, reason })`, `setPageVisible(ownerKey,
 visible)`, `removePage(ownerKey)`.
+- Web navigation calls `setFocusedPageHost(hostKey)` with a root-route host key.
+  `null` makes every page host inactive. The default `undefined` clears
+  the focus restriction, including when navigation unmounts.
+  `isPageHostFocused(hostKey)` reports whether a page host is eligible.
 - `resolveBack(focusedHostKey?)` returns `dismiss(id)`, `block`, or `pass`.
 - `getBlockingTop()` returns the entry that makes everything below it inert.
 - `subscribe` and `getSnapshot` are compatible with `useSyncExternalStore`.
@@ -610,7 +614,15 @@ the first/last child respectively. With no tabbable children, focus stays on
 the entry root. Disabled, negative-tabindex, hidden and inert subtrees are
 excluded. Positive tabindex values precede ordinary DOM-order tab stops.
 Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
-focus loop. Existing focus entry/restore and Escape policies are unchanged.
+focus loop. When a page or global dialog becomes the top blocker, it takes
+focus on its entry root if focus is currently outside the dialog.
+Focus restoration starts after a dialog actually moves focus inside.
+A dialog taking over from an exiting overlay keeps its saved
+opener, or inherits the exiting overlay's restoration target when it has
+none. On exit, focus can return through a chain of nested openers, skipping
+closed overlays and detached targets, when focus is still inside the
+dialog or has fallen back to the document body. An active control outside
+the dialog keeps focus.
 
 A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
 when its entry is non-blocking. This permits a transparent outside-click
@@ -705,6 +717,16 @@ mounts after its owner was suspended. Such entries MUST remain hidden and inert
 until that owner resumes. Resuming an owner MUST NOT clear isolation imposed by
 a higher blocking entry. Web page isolation compares level first, then request
 order within that level; dismissal restores entries no longer below a blocker.
+
+On Web, a covered root route can keep its page overlays visible. Its overlay
+host is inert, and its entries cannot block the foreground route or consume
+Escape. Switching focus restores eligibility without dismissing or remounting
+entries. Host registration and unregistration recalculate DOM isolation. A
+page entry requires a connected, registered host to block the DOM or consume
+Escape. If its host detaches, the next eligible overlay takes precedence, or
+the page becomes interactive if none remains. Global overlays remain eligible
+regardless of the focused page host. iOS and Android use their native host
+lifecycle for page visibility and back handling.
 
 On Android, a blocking page entry MUST hide underlying page/navigation siblings
 from accessibility while preserving the page host and the blocking entry. Entries
@@ -829,7 +851,16 @@ Automated (P0):
   verification pending.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
-  the blocking entry is removed.
+  the blocking entry is removed. It also verifies host isolation and Escape
+  handling when root-route focus changes or the top page host detaches.
+- `tests/browser/pageIsolation.test.cjs` verifies in Chromium that removing a
+  host while its dialog stays visible restores page clicks and focus, and that
+  a dialog opened on a covered route regains focus and contains Tab when its
+  route returns. It also checks that closing a covered dialog preserves
+  foreground typing and that focus acquired after a route returns can be
+  restored on close. Stacked-dialog cases verify focus when a global dialog
+  becomes the top blocker and restoration after nested and concurrent exits.
+  It uses the same browser dependencies as the toast tests (§5.14).
 - `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
   Android views: page/navigation siblings, entries above the blocker, original
   flags, global/page transitions, detached hosts and changing blockers. These
