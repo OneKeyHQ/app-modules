@@ -108,16 +108,35 @@ export function classifyNodeError(error: unknown) {
         : failure(NodeRangeDownloadCode.integrityFailed);
     }
     if (error instanceof NodeRangeDownloadError) return error;
-    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    const properties = error as {
+      code?: unknown;
+      httpStatus?: unknown;
+      name?: unknown;
+    } | null | undefined;
+    const code = properties?.code;
+    const downloadCode = Object.values(NodeRangeDownloadCode).find(
+      (value) => value === code
+    );
+    if (downloadCode !== undefined) {
+      const status =
+        downloadCode === NodeRangeDownloadCode.httpError
+          ? properties?.httpStatus
+          : undefined;
+      return failure(
+        downloadCode,
+        typeof status === 'number' ? status : undefined
+      );
+    }
+    const errnoCode = typeof code === 'string' ? code : '';
     if (code === 'ENOENT' || code === 'ENOTDIR')
       return failure(NodeRangeDownloadCode.packageMissing);
     if (
       ['ENOSPC', 'EACCES', 'EPERM', 'EIO', 'EBUSY', 'EROFS'].includes(
-        code ?? ''
+        errnoCode
       )
     )
       return failure(NodeRangeDownloadCode.storageError);
-    if (['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code ?? ''))
+    if (['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(errnoCode))
       return failure(NodeRangeDownloadCode.timeout);
     if (
       [
@@ -127,7 +146,7 @@ export function classifyNodeError(error: unknown) {
         'EHOSTUNREACH',
         'EAI_AGAIN',
         'ENOTFOUND',
-      ].includes(code ?? '')
+      ].includes(errnoCode)
     )
       return failure(NodeRangeDownloadCode.networkError);
     if (
@@ -136,10 +155,10 @@ export function classifyNodeError(error: unknown) {
         'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
         'SELF_SIGNED_CERT_IN_CHAIN',
         'ERR_TLS_CERT_ALTNAME_INVALID',
-      ].includes(code ?? '')
+      ].includes(errnoCode)
     )
       return failure(NodeRangeDownloadCode.securityRejected);
-    if ((error as Error | undefined)?.name === 'AbortError')
+    if (properties?.name === 'AbortError')
       return failure(NodeRangeDownloadCode.cancelled);
     return failure(NodeRangeDownloadCode.unknown);
   } catch {

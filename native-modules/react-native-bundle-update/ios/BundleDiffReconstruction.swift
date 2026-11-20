@@ -118,6 +118,21 @@ enum BundleDiffReconstruction {
         }
     }
 
+    struct SingleStreamResumeSnapshot {
+        private(set) var rejected = false
+
+        mutating func invalidateIfRejected(httpStatus: Int?, archivePath: String) throws -> Bool {
+            guard httpStatus == 416 else { return false }
+            rejected = true
+            let resumePath = "\(archivePath).resume"
+            let files = FileManager.default
+            if files.fileExists(atPath: resumePath) {
+                try files.removeItem(atPath: resumePath)
+            }
+            return true
+        }
+    }
+
     static func shouldContinueAfterRangeError(
         code: String, httpStatus: Int?, rangeIsTransient: Bool, hasRetryBudget: Bool
     ) -> Bool {

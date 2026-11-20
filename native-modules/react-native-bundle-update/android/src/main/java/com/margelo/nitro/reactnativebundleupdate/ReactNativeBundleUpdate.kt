@@ -10,6 +10,7 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import com.margelo.nitro.reactnativebundlecrypto.AndroidBundleFileSystem
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
 import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystemException
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileType
 import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
@@ -2668,21 +2669,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (downloadDir.exists() && downloadDir.isDirectory) {
                 downloadDir.listFiles()?.forEach { file ->
                     val name = file.name
-                    if (name == BundleDiffReconstruction.DIFF_DOWNLOAD_DIR_NAME && file.isDirectory) {
+                    if (name == BundleDiffReconstruction.DIFF_DOWNLOAD_DIR_NAME) {
+                        val type = try {
+                            AndroidBundleFileSystem.lstat(file)?.type
+                        } catch (e: IOException) {
+                            OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to inspect diff directory: ${e.message}")
+                            return@forEach
+                        }
+                        if (type != BundleFileType.DIRECTORY) return@forEach
                         file.listFiles()?.forEach { diffFile ->
-                            var diffStem = diffFile.name.replace(Regex("""\.seg\d+$"""), "")
-                            for (suffix in listOf(".meta.json", ".resume", ".progress", ".partial", ".diff.zip")) {
-                                if (diffStem.endsWith(suffix)) {
-                                    diffStem = diffStem.substring(0, diffStem.length - suffix.length)
-                                }
-                            }
-                            if (shouldKeep(diffStem)) return@forEach
                             try {
-                                if (diffFile.isDirectory) {
-                                    BundleUpdateStoreAndroid.deleteDir(diffFile)
-                                } else {
-                                    diffFile.delete()
-                                }
+                                BundleDiffReconstruction.pruneDiffDownload(diffFile, AndroidBundleFileSystem, ::shouldKeep)
                             } catch (e: Exception) {
                                 OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete diff download ${diffFile.name}: ${e.message}")
                             }

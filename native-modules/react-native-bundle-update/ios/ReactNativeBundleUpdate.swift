@@ -1080,6 +1080,7 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
             exceededMaxBytes = true
             return
         }
+        if (downloadTask.response as? HTTPURLResponse)?.statusCode == 416 { return }
         // Copy to a temp location because the file at `location` is deleted after this method returns
         let tempPath = NSTemporaryDirectory() + UUID().uuidString
         let dest = URL(fileURLWithPath: tempPath)
@@ -1102,6 +1103,12 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         if exceededMaxBytes {
             self.lastResumeData = nil
             cont?.resume(throwing: BundleUpdateError(.security, .download))
+            return
+        }
+
+        if (task.response as? HTTPURLResponse)?.statusCode == 416 {
+            self.lastResumeData = nil
+            cont?.resume(throwing: BundleUpdateError(.http, .download, httpStatus: 416))
             return
         }
 
@@ -1288,6 +1295,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         let session: URLSession
         var filePath: String?
         var rangeTaskId: String?
+        var singleStreamResumeSnapshot = BundleDiffReconstruction.SingleStreamResumeSnapshot()
         var published = false
 
         init(owner: ReactNativeBundleUpdate, targetKey: String) {
@@ -1496,6 +1504,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                             guard self.process.activeDownload === run,
                                   !self.process.clearingDownloads,
                                   run.filePath == filePath,
+                                  !run.singleStreamResumeSnapshot.rejected,
                                   !run.delegate.wasCancelledByClear else { return }
                             do {
                                 let dir = (resumeDataPath as NSString).deletingLastPathComponent
@@ -1568,6 +1577,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             guard !runDelegate.wasCancelledByClear else { throw BundleUpdateError(.cancelled, step) }
             run.filePath = filePath
             run.rangeTaskId = rangeTaskId
+            run.singleStreamResumeSnapshot = .init()
         }
         listenerQueue.sync { lastReportedProgress = 0 }
         if runDelegate.wasCancelledByClear {
@@ -1733,20 +1743,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
         switch downloadOutcome {
         case .failure(let error):
-            if let resumeData = delegate.lastResumeData {
-                do {
-                    let dir = (resumeDataPath as NSString).deletingLastPathComponent
-                    if !FileManager.default.fileExists(atPath: dir) {
-                        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-                    }
-                    try resumeData.write(to: URL(fileURLWithPath: resumeDataPath), options: .atomic)
-                    OneKeyLog.info("BundleUpdate", "downloadBundle: persisted resumeData (\(resumeData.count) bytes) at \(resumeDataPath)")
-                } catch {
-                    OneKeyLog.warn("BundleUpdate", "downloadBundle: failed to persist resumeData: \(error)")
-                }
-            } else {
-                try? FileManager.default.removeItem(atPath: resumeDataPath)
-            }
             let nsError = error as NSError
             OneKeyLog.error("BundleUpdate", "downloadBundle: download failed: \(nsError.domain) \(nsError.code) \(nsError.localizedDescription)")
             let intentionallyCancelled = delegate.wasCancelledByClear
@@ -1755,6 +1751,27 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 : (delegate.wasInsecureRedirectRejected
                     ? BundleUpdateError(.security, step)
                     : bundleUpdateError(error, step: step))
+            let rejectedResume = try process.queue.sync {
+                try run.singleStreamResumeSnapshot.invalidateIfRejected(
+                    httpStatus: updateError.httpStatus, archivePath: filePath
+                )
+            }
+            if !rejectedResume {
+                if let resumeData = delegate.lastResumeData {
+                    do {
+                        let dir = (resumeDataPath as NSString).deletingLastPathComponent
+                        if !FileManager.default.fileExists(atPath: dir) {
+                            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+                        }
+                        try resumeData.write(to: URL(fileURLWithPath: resumeDataPath), options: .atomic)
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: persisted resumeData (\(resumeData.count) bytes) at \(resumeDataPath)")
+                    } catch {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: failed to persist resumeData: \(error)")
+                    }
+                } else {
+                    try? FileManager.default.removeItem(atPath: resumeDataPath)
+                }
+            }
             if !intentionallyCancelled && emitErrorEvents {
                 self.sendEvent(type: "update/error", message: updateError.description)
             }

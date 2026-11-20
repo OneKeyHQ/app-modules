@@ -37,13 +37,35 @@ entry does not initialize React Native or require Electron. The range downloader
 owns the existing probe, parallel and single-stream transfer, resume manifest,
 bounded retries and deadline, cancellation, checksum validation, and atomic
 publication. Its default transport uses Node HTTPS. Callers may inject a
-transport, which can report structured `NodeRangeDownloadError` failures. The
-bundle updater keeps its existing public download entry and translates errors at
-its boundary. The range package does not depend on the bundle updater.
+transport, which can report structured `NodeRangeDownloadError` failures.
+Known download error codes and integer HTTP statuses from 100 through 599
+retain their meaning across ESM and CommonJS. An HTTP status is accepted only
+for `HTTP_ERROR` and feeds the same bounded retry policy. The bundle updater
+keeps its existing public download entry and translates errors at its boundary.
+The range package does not depend on the bundle updater.
 
 `FirmwareArtifactNode` owns the Desktop firmware cache. Its constructor takes
 the managed cache directory and may accept a fetch implementation and artifact
 error class. Electron supplies its session fetch and App error class. Standalone
 Node uses its built-in fetch and the package error class. Existing hostname
 admission, redirect policy, integrity checks, cache names, archive validation,
-read limits, cancellation, and leases apply to both hosts.
+read limits, cancellation, and leases apply to both hosts. One authoritative
+Desktop or standalone Node adapter owns each managed cache directory.
+
+- Concurrent calls for the same firmware download token, task, and transaction
+  share one transfer. Each successful caller is checked against its own size,
+  checksum, and byte limit, and its own lease retains the returned artifact.
+  Transaction cancellation stays in effect until its last lease and download
+  are gone.
+- A trusted SHA-256 can identify and promote a completed partial even without an
+  expected size. If a range request for an incomplete partial returns HTTP 416,
+  the store discards the partial and makes at most one request from byte zero
+  under the original transfer deadline.
+- Firmware ZIP validation counts files and directory entries toward the 4,096
+  entry limit. Every archive must contain a materializable file, including when
+  the caller omits expected entries.
+- The store orders artifact removal with cache reuse, lease acquisition and
+  reader opening. Active downloads, leases, readers, and archive materialization
+  protect their artifacts during a sweep. At seven days, an inactive root-level
+  `archive-<UUID>/` scratch directory may be removed. The sweep reports one
+  deleted entry for the directory and the bytes of its regular files.

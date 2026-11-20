@@ -11,7 +11,9 @@ import { test } from 'node:test';
 import {
   FirmwareArtifactNode,
   FirmwareArtifactNodeError,
+  NodeRangeDownloadCode,
   NodeRangeDownloadError,
+  classifyNodeError,
   downloadNodeFile,
 } from '@onekeyfe/react-native-range-downloader/node';
 
@@ -52,6 +54,62 @@ test('the CommonJS entry exposes the same Node services as ESM', () => {
   assert.equal(typeof commonjs.downloadNodeFile, 'function');
   assert.equal(typeof commonjs.FirmwareArtifactNode, 'function');
   assert.equal(typeof commonjs.NodeRangeDownloadError, 'function');
+});
+
+test('Node downloads retry HTTP 503 errors from a transport using the other entry point', async (t) => {
+  const commonjs = require(`${packageName}/node`);
+  const data = Buffer.from('download across module formats');
+
+  for (const [format, download, TransportError] of [
+    ['esm', downloadNodeFile, commonjs.NodeRangeDownloadError],
+    ['commonjs', commonjs.downloadNodeFile, NodeRangeDownloadError],
+  ]) {
+    const targetPath = join(scratch(t), `${format}.bin`);
+    const attempts = { probe: 0, transfer: 0 };
+    await download({
+      url: binaryUrl,
+      targetPath,
+      identity: format,
+      expectedSha256: sha256(data),
+      expectedBytes: data.length,
+      async transport(url, headers) {
+        const isProbe = headers.Range === 'bytes=0-0';
+        const phase = isProbe ? 'probe' : 'transfer';
+        if (++attempts[phase] === 1) {
+          throw new TransportError(NodeRangeDownloadCode.httpError, 503);
+        }
+        return isProbe
+          ? rangeResponse(url, data, 0, 0)
+          : response(url, 200, data);
+      },
+    });
+    assert.deepEqual(attempts, { probe: 2, transfer: 2 });
+    assert.deepEqual(readFileSync(targetPath), data);
+  }
+});
+
+test('structured errors preserve known codes and only valid numeric HTTP statuses', () => {
+  const commonjs = require(`${packageName}/node`);
+  const foreign = new commonjs.NodeRangeDownloadError(NodeRangeDownloadCode.httpError, 404);
+  const normalized = classifyNodeError(foreign);
+  assert.ok(normalized instanceof NodeRangeDownloadError);
+  assert.equal(normalized.code, NodeRangeDownloadCode.httpError);
+  assert.equal(normalized.httpStatus, 404);
+
+  for (const httpStatus of ['503', 99, 600, 503.5, Infinity]) {
+    const error = classifyNodeError({ code: NodeRangeDownloadCode.httpError, httpStatus });
+    assert.equal(error.code, NodeRangeDownloadCode.httpError);
+    assert.equal(error.httpStatus, undefined);
+  }
+  const networkError = classifyNodeError({ code: NodeRangeDownloadCode.networkError, httpStatus: 503 });
+  assert.equal(networkError.code, NodeRangeDownloadCode.networkError);
+  assert.equal(networkError.httpStatus, undefined);
+  assert.equal(classifyNodeError({ code: 'OTHER', httpStatus: 503 }).code, NodeRangeDownloadCode.unknown);
+  assert.equal(classifyNodeError({
+    get code() {
+      throw new Error('code unavailable');
+    },
+  }).code, NodeRangeDownloadCode.unknown);
 });
 
 test('shipped declarations resolve through both strict NodeNext conditions', (t) => {

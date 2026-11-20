@@ -6,6 +6,9 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 // Dependency-free JVM tests compile the shipping BundleDiffReconstruction.kt directly.
 fun main() {
@@ -505,6 +508,55 @@ fun main() {
         expect(BundleDiffReconstruction.writeDescriptor(signedDesc, metaFile, JvmBundleFileSystem), "atomically replace an existing descriptor")
         val reloadedSigned = BundleDiffReconstruction.readDescriptor(metaFile, "6.8.0", "20260103")
         expect(reloadedSigned?.signature == "VALID_PGP_SIGNATURE" && reloadedSigned.fallbackRequired, "signed descriptor with fallbackRequired persisted")
+
+        val diffDownloads = File(tempRoot, ".diff").apply { mkdir() }
+        val staleDesc = desc.copy(appVersion = "6.7.0-beta", bundleVersion = "b".repeat(220))
+        val staleTarget = File(diffDownloads, "${staleDesc.appVersion}-${staleDesc.bundleVersion}${BundleDiffReconstruction.DIFF_META_EXTENSION}")
+        expect(BundleDiffReconstruction.writeDescriptor(staleDesc, staleTarget, JvmBundleFileSystem), "write a long versioned descriptor")
+        val currentTarget = File(diffDownloads, "6.8.0-rc-2026-01-03.diff.zip.meta.json").apply { createNewFile() }
+        val abandonedTemp = File(diffDownloads, "diff-descriptor-1234.tmp").apply { createNewFile() }
+        val legacyTemp = File(diffDownloads, "${currentTarget.name}.tmp").apply { createNewFile() }
+        fun prune(entry: File) = BundleDiffReconstruction.pruneDiffDownload(entry, JvmBundleFileSystem) {
+            it.startsWith("6.8.0-rc-")
+        }
+
+        val readyToRename = CountDownLatch(1)
+        val resumeRename = CountDownLatch(1)
+        lateinit var activeTemp: File
+        val pausedRename = object : BundleFileSystem by JvmBundleFileSystem {
+            override fun rename(source: File, destination: File) {
+                activeTemp = source
+                readyToRename.countDown()
+                check(resumeRename.await(5, TimeUnit.SECONDS)) { "Timed out waiting for prune" }
+                JvmBundleFileSystem.rename(source, destination)
+                prune(destination)
+                check(destination.exists()) { "Prune removed the published descriptor before the writer exited" }
+            }
+        }
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val updated = staleDesc.copy(signature = "VALID_PGP_SIGNATURE", fallbackRequired = true)
+            val writing = worker.submit<Boolean> { BundleDiffReconstruction.writeDescriptor(updated, staleTarget, pausedRename) }
+            expect(readyToRename.await(5, TimeUnit.SECONDS), "writer reaches rename before prune")
+            val original = staleTarget.readText()
+            diffDownloads.listFiles().orEmpty().forEach(::prune)
+            expect(activeTemp.parentFile == diffDownloads.canonicalFile, "active temp remains on the destination filesystem")
+            expect(activeTemp.isFile && activeTemp.name.length < 64, "prune protects the bounded temporary name")
+            expect(staleTarget.readText() == original, "prune protects the stale-version destination during replacement")
+            expect(currentTarget.isFile, "prune preserves a completed descriptor under the exact current app-version prefix")
+            expect(!abandonedTemp.exists(), "prune reclaims an abandoned random temporary descriptor")
+            expect(!legacyTemp.exists(), "prune reclaims an abandoned legacy temporary descriptor")
+            resumeRename.countDown()
+            expect(writing.get(5, TimeUnit.SECONDS), "the descriptor write publishes successfully after concurrent prune")
+            val written = BundleDiffReconstruction.readDescriptor(staleTarget, updated.appVersion, updated.bundleVersion)
+            expect(written == updated.copy(diffSha256 = diffSha), "published descriptor retains its exact version fields and updated state")
+            expect(!activeTemp.exists(), "successful publication leaves no temporary file")
+            prune(staleTarget)
+            expect(!staleTarget.exists(), "prune can remove the stale descriptor after the writer exits")
+        } finally {
+            resumeRename.countDown()
+            worker.shutdownNow()
+        }
 
         val mergedDesc = BundleDiffReconstruction.descriptorPreservingVerifiedSignature(
             newDescriptor = desc,

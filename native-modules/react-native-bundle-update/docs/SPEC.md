@@ -164,13 +164,18 @@ lifecycle acceptance remain pending.
      Android single-stream `206` responses must begin at the requested offset.
      The downloader appends only to a partial file of exactly that positive
      length. An offset of zero starts a new stream and truncates any old partial.
+     On iOS, HTTP 416 from a single-stream download invalidates that archive's
+     URLSession resume snapshot, including a pending background snapshot write.
+     It returns retryable `HTTP_ERROR` with status 416 so the next caller retry
+     can start a fresh single-stream request if needed. Diff eligibility and
+     surviving Range segments are retained.
    - Full fallback parameters are recorded only after single-flight download
      registration succeeds so a rejected duplicate call cannot overwrite an
      in-flight download's fallback parameters.
    - If the diff download encounters a retryable transport interruption
      (`NETWORK_ERROR` or `TIMEOUT`, including iOS background pause resume-data
      snapshots, and retryable HTTP responses on iOS and Desktop), the module
-     preserves partial/resume artifacts and diff eligibility and rejects with
+     preserves usable partial/resume artifacts and diff eligibility and rejects with
      that retryable error so the caller can resume. On iOS, a transient Range
      HTTP result keeps using the bounded segmented retry budget. After that
      budget is exhausted, the updater returns `HTTP_ERROR` with the original
@@ -310,8 +315,11 @@ versions. Android supports API 24 and later from full and diff download
 admission through extraction, verification, and bundle promotion. Managed-path
 checks reject symbolic links in and below the managed root, including dangling
 links. Android syncs each new diff descriptor before atomically renaming it
-from a temporary file in the same directory. A failed rename leaves the prior
-record in place.
+from a uniquely named temporary file in the same directory. The native process
+protects the temporary file and its versioned destination from stale-version
+pruning for the lifetime of the write. Pruning can reclaim abandoned temporary
+files, including the legacy versioned names, without following symbolic links.
+A failed rename leaves the prior record in place.
 ZIP download and uncompressed payload limits remain 512 MiB, and the
 extraction entry limit remains 4,096. The updater and its Range Downloader
 peer are released together so the native byte-limit contract is present.

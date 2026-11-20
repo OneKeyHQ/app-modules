@@ -40,6 +40,13 @@ internal object BundleDiffReconstruction {
     const val DIFF_DOWNLOAD_DIR_NAME = ".diff"
     const val DIFF_ZIP_EXTENSION = ".diff.zip"
     const val DIFF_META_EXTENSION = ".diff.zip.meta.json"
+    private const val DESCRIPTOR_TEMP_PREFIX = "diff-descriptor-"
+    private const val DESCRIPTOR_TEMP_SUFFIX = ".tmp"
+
+    // Temporary file to versioned destination, shared by native module instances.
+    private val activeDescriptorWrites = mutableMapOf<File, File>()
+    private val diffSegmentSuffix = Regex("""\.seg\d+$""")
+    private val diffStageSuffixes = listOf(".meta.json", ".resume", ".progress", ".partial", DIFF_ZIP_EXTENSION)
 
     class ArchiveSizeLimitExceeded : SecurityException("Bundle archive exceeds size limit")
 
@@ -81,7 +88,7 @@ internal object BundleDiffReconstruction {
 
     fun releaseStagingDirectory(directory: File, fileSystem: BundleFileSystem) {
         synchronized(liveStagingDirectories) {
-            deleteStagingEntry(directory, fileSystem)
+            deleteEntryWithoutFollowingLinks(directory, fileSystem)
             liveStagingDirectories.remove(directory.absoluteFile)
         }
     }
@@ -91,12 +98,12 @@ internal object BundleDiffReconstruction {
             val rootType = try { fileSystem.lstat(root)?.type } catch (_: IOException) { return }
             if (rootType != BundleFileType.DIRECTORY) return
             root.listFiles()?.forEach { entry ->
-                if (entry.absoluteFile !in liveStagingDirectories) deleteStagingEntry(entry, fileSystem)
+                if (entry.absoluteFile !in liveStagingDirectories) deleteEntryWithoutFollowingLinks(entry, fileSystem)
             }
         }
     }
 
-    private fun deleteStagingEntry(entry: File, fileSystem: BundleFileSystem) {
+    private fun deleteEntryWithoutFollowingLinks(entry: File, fileSystem: BundleFileSystem) {
         try {
             // Walk without following links, including an abandoned symlink entry.
             val pending = ArrayDeque<Pair<File, Boolean>>()
@@ -286,9 +293,9 @@ internal object BundleDiffReconstruction {
     }
 
     fun writeDescriptor(descriptor: DiffArchiveDescriptor, file: File, fileSystem: BundleFileSystem): Boolean {
-        val target = file.absoluteFile
-        val parent = target.parentFile ?: return false
         return try {
+            val parent = file.absoluteFile.parentFile?.canonicalFile ?: return false
+            val target = File(parent, file.name)
             parent.mkdirs()
             val json = buildString {
                 append('{')
@@ -304,7 +311,11 @@ internal object BundleDiffReconstruction {
                 }
                 append('}')
             }
-            val tmpFile = File.createTempFile("diff-descriptor-", ".tmp", parent)
+            val tmpFile = synchronized(activeDescriptorWrites) {
+                File.createTempFile(DESCRIPTOR_TEMP_PREFIX, DESCRIPTOR_TEMP_SUFFIX, parent).also {
+                    activeDescriptorWrites[it] = target
+                }
+            }
             try {
                 FileOutputStream(tmpFile).use { fos ->
                     fos.write(json.toByteArray(Charsets.UTF_8))
@@ -314,10 +325,36 @@ internal object BundleDiffReconstruction {
                 fileSystem.rename(tmpFile, target)
                 true
             } finally {
-                tmpFile.delete()
+                synchronized(activeDescriptorWrites) {
+                    try {
+                        tmpFile.delete()
+                    } finally {
+                        activeDescriptorWrites.remove(tmpFile)
+                    }
+                }
             }
         } catch (_: Exception) {
             false
+        }
+    }
+
+    fun pruneDiffDownload(file: File, fileSystem: BundleFileSystem, shouldKeepVersion: (String) -> Boolean) {
+        val name = file.name
+        val isDescriptorTemp = name.endsWith(DESCRIPTOR_TEMP_SUFFIX) &&
+            (name.startsWith(DESCRIPTOR_TEMP_PREFIX) || name.endsWith(DIFF_META_EXTENSION + DESCRIPTOR_TEMP_SUFFIX))
+        if (!isDescriptorTemp) {
+            var stem = name.replace(diffSegmentSuffix, "")
+            for (suffix in diffStageSuffixes) stem = stem.removeSuffix(suffix)
+            if (shouldKeepVersion(stem)) return
+        }
+
+        if (isDescriptorTemp || name.endsWith(DIFF_META_EXTENSION)) {
+            val entry = File(file.absoluteFile.parentFile?.canonicalFile ?: return, name)
+            synchronized(activeDescriptorWrites) {
+                if (entry !in activeDescriptorWrites && entry !in activeDescriptorWrites.values) file.delete()
+            }
+        } else {
+            deleteEntryWithoutFollowingLinks(file, fileSystem)
         }
     }
 

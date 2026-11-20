@@ -423,6 +423,35 @@ final class BundleDiffReconstructionTests: XCTestCase {
         }
     }
 
+    func testSingleStreamRangeRejectionOnlyRemovesTheRejectedResumeSnapshot() throws {
+        try withTempDir { root in
+            let archive = root.appendingPathComponent("6.8.0-42.diff.zip")
+            let resume = URL(fileURLWithPath: "\(archive.path).resume")
+            let rangeSegment = URL(fileURLWithPath: "\(archive.path).seg0")
+            let rangePartial = URL(fileURLWithPath: "\(archive.path).partial")
+            let diffDescriptor = URL(fileURLWithPath: "\(archive.path).meta.json")
+            let fullResume = root.appendingPathComponent("6.8.0-42.zip.resume")
+            let fixture = Data("download state".utf8)
+            for path in [resume, rangeSegment, rangePartial, diffDescriptor, fullResume] {
+                try fixture.write(to: path)
+            }
+            var snapshot = BundleDiffReconstruction.SingleStreamResumeSnapshot()
+            for status in [408, 429, 500, 503, 599] {
+                XCTAssertFalse(try snapshot.invalidateIfRejected(httpStatus: status, archivePath: archive.path))
+                XCTAssertFalse(snapshot.rejected)
+                XCTAssertEqual(try Data(contentsOf: resume), fixture)
+            }
+
+            XCTAssertTrue(try snapshot.invalidateIfRejected(httpStatus: 416, archivePath: archive.path))
+            XCTAssertTrue(snapshot.rejected, "Pending background callbacks must skip this snapshot")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: resume.path))
+            XCTAssertTrue(try snapshot.invalidateIfRejected(httpStatus: 416, archivePath: archive.path))
+            for path in [rangeSegment, rangePartial, diffDescriptor, fullResume] {
+                XCTAssertEqual(try Data(contentsOf: path), fixture)
+            }
+        }
+    }
+
     func testPermanentHTTPAndStorageErrorsDoNotEnterSegmentedRetry() {
         for status: Int? in [nil, 401, 403, 404, 410, 501, 505, 600] {
             XCTAssertFalse(BundleDiffReconstruction.shouldContinueAfterRangeError(
