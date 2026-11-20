@@ -7930,6 +7930,75 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 
+  it.each(['wheel', 'Tab', 'another row receives a key'] as const)(
+    'does not commit a stale keyboard reorder after %s',
+    (interruption) => {
+      const { document, host, engine } = mount(
+        'handle',
+        handleRows.map((row) => ({ ...row, pressDisabled: true }))
+      );
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onReorder });
+      const original = Object.getOwnPropertyDescriptor(
+        globalThis,
+        'HTMLElement'
+      );
+      Object.defineProperty(globalThis, 'HTMLElement', {
+        configurable: true,
+        value: document.defaultView!.HTMLElement,
+      });
+      try {
+        const viewport = host.querySelector<HTMLElement>(
+          '.ok-native-list-viewport'
+        )!;
+        viewport.scrollTo = jest.fn();
+        const source = host.querySelector<HTMLElement>(
+          '[data-native-list-row-key="a"]'
+        )!;
+        const destination = host.querySelector<HTMLElement>(
+          '[data-native-list-row-key="b"]'
+        )!;
+        const keyDown = (key: string) =>
+          document.activeElement!.dispatchEvent(
+            new document.defaultView!.KeyboardEvent('keydown', {
+              key,
+              bubbles: true,
+              cancelable: true,
+            })
+          );
+
+        source.focus();
+        expect(document.activeElement).toBe(source);
+        keyDown(' ');
+        keyDown('ArrowDown');
+        expect(source.dataset.nativeListRowIndex).toBe('1');
+
+        if (interruption === 'wheel') {
+          source.dispatchEvent(
+            new document.defaultView!.WheelEvent('wheel', { bubbles: true })
+          );
+        } else if (interruption === 'Tab') {
+          expect(keyDown('Tab')).toBe(true);
+        }
+        if (interruption !== 'another row receives a key') {
+          expect(source.dataset.nativeListRowIndex).toBe('0');
+        }
+
+        destination.focus();
+        keyDown(' ');
+        expect(onReorder).not.toHaveBeenCalled();
+        expect(source.dataset.nativeListRowIndex).toBe('0');
+        expect(destination.getAttribute('aria-grabbed')).toBe('true');
+        expect(document.activeElement).toBe(destination);
+      } finally {
+        if (original)
+          Object.defineProperty(globalThis, 'HTMLElement', original);
+        else Reflect.deleteProperty(globalThis, 'HTMLElement');
+        engine.destroy();
+      }
+    }
+  );
+
   it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
     const { document, host, engine, dragging } = mount('row', [
       { ...(handleRows[0] as IdentityRow), draggable: true, trailing: [] },
