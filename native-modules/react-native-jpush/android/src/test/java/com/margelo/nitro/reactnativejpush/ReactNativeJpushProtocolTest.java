@@ -688,6 +688,7 @@ public class ReactNativeJpushProtocolTest {
         };
         broadcastReceiver.onReceive(null, alreadyDispatchedIntent);
         assertEquals(null, cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver.NOTIFICATION_BUNDLE);
+        ActionHelper.getInstance().unregisterReceiver(receiver);
         JPushHelper.clearNitroListeners();
 
         // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
