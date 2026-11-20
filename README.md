@@ -163,6 +163,21 @@ initialize new packages from the checked-in template (`yarn create:module` /
 `yarn create:view`), define the public contract in the package `docs/SPEC.md`
 before implementing it, and keep the spec and code in the same change.
 
+### Re-running native PR checks
+
+If a `native-tests` job fails and you want to retry the same PR revision,
+choose **Re-run failed jobs** on that run, or run:
+
+```sh
+gh run rerun RUN_ID --failed --repo OneKeyHQ/app-modules
+```
+
+GitHub reuses successful independent jobs from the original revision. It also
+re-runs jobs that depend on the retried job, such as `ios-xctest` when an iOS
+job is retried. For code fixes, push the new commit and use its fresh PR run.
+Use **Re-run all jobs** when diagnosing an issue that needs fresh results from
+every job on the same revision. This guidance applies to PR `native-tests` runs.
+
 ## Releases
 
 All publishable packages share one version tied to the target App baseline:
