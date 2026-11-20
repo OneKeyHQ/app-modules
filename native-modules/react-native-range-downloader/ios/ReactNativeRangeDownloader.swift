@@ -426,22 +426,18 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     /// side effects. `serverIgnoredRange` (Permanent) is the historical default
     /// for the bare `fellBack` path (status 200).
     var fellBackKind: RangeFallbackClass = .serverIgnoredRange
+    var sizeLimitFailure: RangeDownloadSizeLimitError?
     /// Set when a segment could not be stashed (move/size-check failure). Carries
     /// the terminal error so didCompleteWithError finalizes instead of hanging.
     var stashError: Error?
     var httpStatus: Int?
-    /// §4/§5.4: per-segment indexes whose finished body was a TRANSIENT HTTP
-    /// status (429/5xx/408/416) — the body is discarded and the segment is
-    /// re-enqueued (G2) instead of failing the whole run. Optional Retry-After
-    /// seconds captured from that response, used to override backoff.
-    var transientSegmentRetryAfter: [Int: Double?] = [:]
-    /// §4 (416): segment indexes that returned `416 Range Not Satisfiable`. A
-    /// bare 416 must NOT re-request the same range blindly: the total size /
-    /// validator is re-evaluated (re-probe) first. If the total or ETag changed
-    /// the object changed under us → object-change (wipe + restart, Permanent);
-    /// otherwise the range is still valid and we keep the resumable `.segN` and
-    /// retry. Set in didFinishDownloadingTo, consumed in didCompleteWithError.
-    var sizeReevalIndexes: Set<Int> = []
+    struct TransientResponse {
+      let statusCode: Int?
+      let retryAfter: Double?
+      let cancelledTaskIdentifier: Int?
+    }
+
+    var transientResponses: [Int: TransientResponse] = [:]
     /// Whether a strong validator (ETag) was captured for this run. When false,
     /// resumable `.segN` state must not be trusted across attempts.
     var hasValidator = false
@@ -467,6 +463,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     /// §5.11 (single-run portion): wall-clock deadline; nil = unbounded. The
     /// cross-restart budget/deadline is owned by the shared-JS track.
     let deadline: Date?
+    let maxTotalBytes: Int64?
     /// §5.4: last time ANY segment of this run made progress (didWriteData),
     /// used by the stall watchdog. Only foreground/active time should count.
     var lastProgressAt = Date()
@@ -476,7 +473,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
     init(channel: DownloadChannel, taskId: String, filePath: String,
          segmentCount: Int, sessionIdentifier: String,
-         maxSegmentAttempts: Int, deadline: Date?) {
+         maxSegmentAttempts: Int, deadline: Date?, maxTotalBytes: Int64?) {
       self.channel = channel
       self.taskId = taskId
       self.filePath = filePath
@@ -484,6 +481,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       self.sessionIdentifier = sessionIdentifier
       self.maxSegmentAttempts = maxSegmentAttempts
       self.deadline = deadline
+      self.maxTotalBytes = maxTotalBytes
     }
 
     func segPath(_ index: Int) -> String { "\(filePath).seg\(index)" }
@@ -725,7 +723,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     maxSegmentAttempts: Int? = nil,
     requestTimeoutSeconds: Double? = nil,
     stallTimeoutSeconds: Double? = nil,
-    overallDeadlineSeconds: Double? = nil
+    overallDeadlineSeconds: Double? = nil,
+    maxTotalBytes: Int64? = nil,
+    isCancelled: (() -> Bool)? = nil
   ) async -> (RangeDownloadClass, String, String?, RangeFallbackClass?, Error?) {
     let segCount = max(1, segmentCount ?? Self.defaultSegmentCount)
     let minBytes = minConcurrentBytes ?? Self.defaultMinConcurrentBytes
@@ -766,9 +766,15 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
               "another run is already active for this destination", .budgetExhausted, nil)
     }
 
+    if isCancelled?() == true {
+      return (.fallbackTransient, filePath, "cancelled", .transientNetwork, CancellationError())
+    }
+
     let probe: ProbeResult
     do {
-      probe = try await self.probe(url: url)
+      probe = try await self.probe(url: url, maxTotalBytes: maxTotalBytes)
+    } catch let fallback as FallbackError {
+      return (fallback.kind.failureClass, filePath, fallback.reason, fallback.kind, fallback.underlyingError)
     } catch {
       let retryable = Self.isRetryableNetworkError(error)
       let klass: RangeDownloadClass = retryable ? .fallbackTransient : .fallbackPermanent
@@ -784,7 +790,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       channel: channel, taskId: taskId, filePath: filePath,
       segmentCount: segCount,
       sessionIdentifier: Self.sessionIdentifier(for: channel),
-      maxSegmentAttempts: maxAttempts, deadline: deadline
+      maxSegmentAttempts: maxAttempts, deadline: deadline, maxTotalBytes: maxTotalBytes
     )
     state.totalSize = probe.total
     state.etag = probe.etag
@@ -801,6 +807,10 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // half-initialized run (continuation not yet assigned, or the synchronous
     // fast path that never assigns one) is still observed as live by any racer.
     lock.lock()
+    if isCancelled?() == true {
+      lock.unlock()
+      return (.fallbackTransient, filePath, "cancelled", .transientNetwork, CancellationError())
+    }
     if runs[key] != nil || cancellationWaiters[key] != nil {
       lock.unlock()
       return (.fallbackTransient, filePath,
@@ -810,18 +820,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     lock.unlock()
 
     let ranges = state.ranges
-
-    // Without a strong validator (ETag) we cannot pin stashed `.segN` to a
-    // specific server object via If-Range, so any leftover segments from a prior
-    // attempt are untrustworthy. Start fresh and only proceed on the resumable
-    // path when expectedSha256 will gate the assembled file (verified below).
-    if !state.hasValidator {
-      guard beginFileMutation(state) else {
-        return (.fallbackTransient, filePath, "cancelled", .transientNetwork, CancellationError())
-      }
-      cleanupSegments(state: state, ranges: ranges)
-      endFileMutation(state)
-    }
 
     if isActive(state) {
       emit(channel: channel, taskId: taskId, type: "start", progress: 0, message: "")
@@ -834,6 +832,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     startStallWatchdog(state: state, stallSeconds: stallSeconds)
 
     do {
+      try validateSavedSegments(state: state, ranges: ranges)
       // If every segment is already on disk (resume after suspension/kill), skip
       // straight to concatenation.
       if allSegmentsPresent(state: state, ranges: ranges) {
@@ -934,36 +933,116 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   // (parseRetryAfterSeconds), Content-Range parsing and backoff math now live on
   // `RangeDownloadLogic` (OCDS §4 / §5). Callsites use `RangeDownloadLogic.<fn>`.
 
-  /// One-byte Range request on a default (foreground) session to learn total
-  /// size + ETag + Range support. Background sessions can't do data tasks, so
-  /// the probe uses an ephemeral session.
-  private func probe(url: URL) async throws -> ProbeResult {
-    var req = URLRequest(url: url)
-    req.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-    let cfg = URLSessionConfiguration.ephemeral
-    cfg.tlsMinimumSupportedProtocolVersion = .TLSv12
-    let probeSession = URLSession(configuration: cfg)
-    defer { probeSession.finishTasksAndInvalidate() }
+  private final class HeaderProbeDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let completion: (Result<URLResponse, Error>) -> Void
+    private var result: Result<URLResponse, Error>?
 
-    return try await withCheckedThrowingContinuation { cont in
-      let task = probeSession.dataTask(with: req) { _, response, error in
-        if let error = error { cont.resume(throwing: error); return }
-        guard let http = response as? HTTPURLResponse else {
-          cont.resume(throwing: FallbackError(reason: "no http response")); return
-        }
-        let etag = http.value(forHTTPHeaderField: "ETag")
-        if http.statusCode == 206,
-           let cr = http.value(forHTTPHeaderField: "Content-Range"),
-           let total = RangeDownloadLogic.parseContentRangeTotal(cr) {
-          cont.resume(returning: ProbeResult(total: total, etag: etag, supportsRange: true))
-        } else if http.statusCode == 200 || http.statusCode == 206 {
-          // Range ignored, or an unusable 206 → single-stream.
-          cont.resume(returning: ProbeResult(total: 0, etag: etag, supportsRange: false))
-        } else {
-          cont.resume(throwing: HTTPStatusError(statusCode: http.statusCode))
-        }
+    init(completion: @escaping (Result<URLResponse, Error>) -> Void) {
+      self.completion = completion
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+      if result == nil { result = .success(response) }
+      completionHandler(.cancel)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+      if request.url?.scheme?.lowercased() != "https" {
+        result = .failure(FallbackError(reason: "rejected non-HTTPS redirect", kind: .redirectRejected))
+        completionHandler(nil)
+      } else {
+        completionHandler(request)
       }
-      task.resume()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+      completion(result ?? .failure(error ?? URLError(.badServerResponse)))
+    }
+  }
+
+  /// One-byte Range request on an ephemeral session to learn the total size and validator.
+  private func probe(url: URL, maxTotalBytes: Int64?) async throws -> ProbeResult {
+    var request = URLRequest(url: url)
+    request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+    let config = URLSessionConfiguration.ephemeral
+    config.tlsMinimumSupportedProtocolVersion = .TLSv12
+
+    let response: URLResponse = try await withCheckedThrowingContinuation { continuation in
+      if maxTotalBytes != nil {
+        let delegate = HeaderProbeDelegate { continuation.resume(with: $0) }
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        session.dataTask(with: request).resume()
+        session.finishTasksAndInvalidate()
+      } else {
+        let session = URLSession(configuration: config)
+        session.dataTask(with: request) { _, response, error in
+          if let error {
+            continuation.resume(throwing: error)
+          } else if let response {
+            continuation.resume(returning: response)
+          } else {
+            continuation.resume(throwing: FallbackError(reason: "no http response"))
+          }
+        }.resume()
+        session.finishTasksAndInvalidate()
+      }
+    }
+
+    guard let http = response as? HTTPURLResponse else {
+      throw FallbackError(reason: "no http response")
+    }
+    let etag = http.value(forHTTPHeaderField: "ETag")
+    if http.statusCode == 206,
+       let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
+       let total = RangeDownloadLogic.parseContentRangeTotal(contentRange) {
+      if let maxTotalBytes {
+        try RangeDownloadLogic.validateSize(incoming: total, maximum: maxTotalBytes)
+      }
+      return ProbeResult(total: total, etag: etag, supportsRange: true)
+    }
+    if http.statusCode == 200 || http.statusCode == 206 {
+      if let maxTotalBytes, http.expectedContentLength >= 0 {
+        try RangeDownloadLogic.validateSize(incoming: http.expectedContentLength, maximum: maxTotalBytes)
+      }
+      return ProbeResult(total: 0, etag: etag, supportsRange: false)
+    }
+    throw HTTPStatusError(statusCode: http.statusCode)
+  }
+
+  private func validateSavedSegments(state: RunState, ranges: [(start: Int64, end: Int64)]) throws {
+    guard beginFileMutation(state) else { throw CancellationError() }
+    defer { endFileMutation(state) }
+
+    // Without an ETag the saved bytes cannot be tied to this server object.
+    if !state.hasValidator {
+      cleanupSegments(state: state, ranges: ranges)
+      return
+    }
+    guard let maximum = state.maxTotalBytes else { return }
+
+    let fm = FileManager.default
+    var savedBytes: Int64 = 0
+    do {
+      for (idx, range) in ranges.enumerated() {
+        let path = state.segPath(idx)
+        guard fm.fileExists(atPath: path) else { continue }
+        let attrs = try fm.attributesOfItem(atPath: path)
+        if let size = attrs[.size] as? Int64 {
+          try RangeDownloadLogic.validateSize(written: savedBytes, incoming: size, maximum: maximum)
+          savedBytes += size
+          if attrs[.type] as? FileAttributeType == .typeRegular, size == range.end - range.start + 1 {
+            continue
+          }
+        }
+        try fm.removeItem(atPath: path)
+      }
+    } catch is RangeDownloadSizeLimitError {
+      cleanupSegments(state: state, ranges: ranges)
+      throw RangeDownloadSizeLimitError()
     }
   }
 
@@ -994,6 +1073,15 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
           decoded.channel.stringValue == state.channel.stringValue
             && decoded.taskId == state.taskId
         if belongsToThisRun {
+          if state.maxTotalBytes != nil {
+            let idx = decoded.segIndex
+            guard ranges.indices.contains(idx), !liveIndexes.contains(idx),
+                  !FileManager.default.fileExists(atPath: state.segPath(idx)),
+                  t.originalRequest?.value(forHTTPHeaderField: "Range") == Self.rangeHeader(ranges[idx]) else {
+              if self.isActive(state) { t.cancel() }
+              continue
+            }
+          }
           if let turl = t.originalRequest?.url,
              turl.absoluteString == url.absoluteString,
              t.state == .running || t.state == .suspended {
@@ -1031,10 +1119,14 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   /// `reconcileAndStartTasks` so the delegate can re-enqueue ONE segment on a
   /// transient failure (§5.4) without touching the others. Caller must ensure no
   /// live task already exists for this index (double-enqueue guard).
+  private static func rangeHeader(_ range: (start: Int64, end: Int64)) -> String {
+    "bytes=\(range.start)-\(range.end)"
+  }
+
   private func enqueueSegment(state: RunState, session: URLSession, url: URL,
                               idx: Int, range: (start: Int64, end: Int64)) {
     var req = URLRequest(url: url)
-    req.setValue("bytes=\(range.start)-\(range.end)", forHTTPHeaderField: "Range")
+    req.setValue(Self.rangeHeader(range), forHTTPHeaderField: "Range")
     if let etag = state.etag { req.setValue(etag, forHTTPHeaderField: "If-Range") }
     let task = session.downloadTask(with: req)
     task.taskDescription = Self.encodeTaskDescription(
@@ -1047,7 +1139,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     lock.lock()
     guard runs[Self.runKey(channel: state.channel, taskId: state.taskId)] === state,
           cancellationWaiters[Self.runKey(channel: state.channel, taskId: state.taskId)] == nil,
-          state.continuation != nil else {
+          state.continuation != nil, !state.fellBack else {
       lock.unlock()
       task.cancel()
       return
@@ -1060,12 +1152,25 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     lock.unlock()
   }
 
-  /// Marks a segment's finished body as a TRANSIENT HTTP outcome (§4) so
-  /// didCompleteWithError re-enqueues just that segment instead of failing the run.
-  private func markSegmentTransient(state: RunState, idx: Int, retryAfter: Double?) {
-    lock.lock()
-    state.transientSegmentRetryAfter[idx] = retryAfter
-    lock.unlock()
+  private func recordNonPartialResponse(_ response: HTTPURLResponse, state: RunState,
+                                        index: Int, cancelledTaskIdentifier: Int?) {
+    let status = response.statusCode
+    let kind = RangeDownloadLogic.classifyStatus(status)
+    lock.withLockValue {
+      guard !state.fellBack else { return }
+      if kind.failureClass == .fallbackTransient {
+        let previous = state.transientResponses[index]
+        state.transientResponses[index] = RunState.TransientResponse(
+          statusCode: status,
+          retryAfter: RangeDownloadLogic.parseRetryAfterSeconds(response.value(forHTTPHeaderField: "Retry-After")),
+          cancelledTaskIdentifier: cancelledTaskIdentifier ?? previous?.cancelledTaskIdentifier
+        )
+      } else {
+        state.httpStatus = status
+        state.fellBack = true
+        state.fellBackKind = kind
+      }
+    }
   }
 
   /// §5.4: re-enqueue a single transient-failed segment under its attempt budget,
@@ -1171,7 +1276,8 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                                        ranges: [(start: Int64, end: Int64)]) {
     guard let url = lock.withLockValue({ state.url }) else {
       finalizeTransientFallback(state: state, idx: idx,
-                                reason: "segment \(idx) 416 but url missing", ranges: ranges)
+                                reason: "segment \(idx) 416 but url missing", ranges: ranges,
+                                underlyingError: HTTPStatusError(statusCode: 416))
       return
     }
     let priorTotal = lock.withLockValue { state.totalSize }
@@ -1187,14 +1293,18 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       guard stillLive else { return }
       let probe: ProbeResult
       do {
-        probe = try await self.probe(url: url)
+        probe = try await self.probe(url: url, maxTotalBytes: state.maxTotalBytes)
+      } catch let error as RangeDownloadSizeLimitError {
+        self.markSizeLimitFailure(state, error: error)
+        self.finalizePermanentFallback(state: state, session: session, ranges: ranges)
+        return
       } catch {
         // Re-probe itself failed → transient network condition. Retry the
         // segment in place; the original range is unchanged and `.segN` is kept.
         if self.retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: retryAfter) { return }
         self.finalizeTransientFallback(state: state, idx: idx,
                                        reason: "segment \(idx) 416; re-probe failed, retry budget exhausted",
-                                       ranges: ranges)
+                                       ranges: ranges, underlyingError: HTTPStatusError(statusCode: 416))
         return
       }
       let totalChanged = !probe.supportsRange || probe.total != priorTotal
@@ -1220,7 +1330,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       if self.retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: retryAfter) { return }
       self.finalizeTransientFallback(state: state, idx: idx,
                                      reason: "segment \(idx) 416; size unchanged, retry budget exhausted",
-                                     ranges: ranges)
+                                     ranges: ranges, underlyingError: HTTPStatusError(statusCode: 416))
     }
   }
 
@@ -1296,12 +1406,67 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     return true
   }
 
+  private func markSizeLimitFailure(_ state: RunState, error: RangeDownloadSizeLimitError) {
+    lock.withLockValue {
+      state.sizeLimitFailure = error
+      state.fellBack = true
+      state.fellBackKind = .multipartOrBadTotal
+    }
+  }
+
+  private func checkSegmentBudget(state: RunState, index: Int, received: Int64,
+                                  expected: Int64, response: HTTPURLResponse?,
+                                  cancelledTaskIdentifier: Int?) -> Bool {
+    guard let maximum = state.maxTotalBytes else { return true }
+    let status = response?.statusCode
+    do {
+      // A 200 response reports the size of the full object. Error bodies are
+      // discarded immediately so their length cannot obscure the HTTP status.
+      if status == 200 || status == 206 || status == nil {
+        try RangeDownloadLogic.validateSize(incoming: max(received, expected), maximum: maximum)
+      }
+      if status == 206,
+         let total = response?.value(forHTTPHeaderField: "Content-Range").flatMap(RangeDownloadLogic.parseContentRangeTotal) {
+        try RangeDownloadLogic.validateSize(incoming: total, maximum: maximum)
+      }
+    } catch {
+      markSizeLimitFailure(state, error: RangeDownloadSizeLimitError())
+      return false
+    }
+    if let response, response.statusCode != 206 {
+      recordNonPartialResponse(response, state: state, index: index,
+                               cancelledTaskIdentifier: cancelledTaskIdentifier)
+      return false
+    }
+    return lock.withLockValue {
+      guard !state.fellBack, state.ranges.indices.contains(index) else { return false }
+      // The probe partitions its bounded total into disjoint slices, with
+      // only one stored or live segment per slice during reconciliation.
+      let range = state.ranges[index]
+      guard RangeDownloadLogic.isWithinSegmentBounds(
+        received: received, expected: expected, segmentBytes: range.end - range.start + 1
+      ) else {
+        state.fellBack = true
+        state.fellBackKind = .multipartOrBadTotal
+        return false
+      }
+      return true
+    }
+  }
+
   // MARK: - URLSessionDownloadDelegate
 
   public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                   didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                   totalBytesExpectedToWrite: Int64) {
     guard let (state, idx) = run(for: downloadTask, in: session) else { return }
+    guard checkSegmentBudget(state: state, index: idx, received: totalBytesWritten,
+                             expected: totalBytesExpectedToWrite,
+                             response: downloadTask.response as? HTTPURLResponse,
+                             cancelledTaskIdentifier: downloadTask.taskIdentifier) else {
+      downloadTask.cancel()
+      return
+    }
     lock.lock()
     if idx < state.segmentWritten.count { state.segmentWritten[idx] = totalBytesWritten }
     // §5.4: stamp last-progress for the stall watchdog. Any byte on any segment
@@ -1335,35 +1500,19 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     guard idx < ranges.count else { return }
     let range = ranges[idx]
     let expectedLen = range.end - range.start + 1
+    guard checkSegmentBudget(state: state, index: idx, received: downloadTask.countOfBytesReceived,
+                             expected: downloadTask.countOfBytesExpectedToReceive,
+                             response: downloadTask.response as? HTTPURLResponse,
+                             cancelledTaskIdentifier: nil) else { return }
 
-    // We require a 206 Partial Content that matches the requested byte range.
-    // Anything else is classified per §4: a Permanent status (200/401/403/404/
-    // 410/501/505/other-4xx) flags the whole run for discard+single-stream; a
-    // Transient status (408/416/429/5xx) marks just THIS segment for in-place
-    // retry (G2) and keeps the other segments / `.segN`. Finalize/retry happens
-    // in didCompleteWithError.
     guard let http = downloadTask.response as? HTTPURLResponse else {
-      // No HTTP response on a finished body is anomalous → treat as transient.
-      markSegmentTransient(state: state, idx: idx, retryAfter: nil)
+      lock.withLockValue {
+        state.transientResponses[idx] = .init(statusCode: nil, retryAfter: nil, cancelledTaskIdentifier: nil)
+      }
       return
     }
     if http.statusCode != 206 {
-      let kind = RangeDownloadLogic.classifyStatus(http.statusCode)
-      lock.withLockValue { state.httpStatus = http.statusCode }
-      if kind.failureClass == .fallbackTransient {
-        // §4 (416): a 416 is transient but the requested range may no longer be
-        // satisfiable (the object shrank/changed). Flag this segment for a size
-        // re-evaluation (re-probe) BEFORE the range is re-requested, instead of
-        // blindly re-asking for the same bytes.
-        if http.statusCode == 416 {
-          lock.lock(); state.sizeReevalIndexes.insert(idx); lock.unlock()
-        }
-        let retryAfter = RangeDownloadLogic.parseRetryAfterSeconds(
-          http.value(forHTTPHeaderField: "Retry-After"))
-        markSegmentTransient(state: state, idx: idx, retryAfter: retryAfter)
-      } else {
-        lock.lock(); state.fellBack = true; state.fellBackKind = kind; lock.unlock()
-      }
+      recordNonPartialResponse(http, state: state, index: idx, cancelledTaskIdentifier: nil)
       return
     }
     // §5.5: reject multipart/byteranges — we requested exactly one range and can
@@ -1402,6 +1551,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     do {
       let attrs = try FileManager.default.attributesOfItem(atPath: location.path)
       let size = attrs[.size] as? Int64
+      if let maximum = state.maxTotalBytes, let size {
+        try RangeDownloadLogic.validateSize(incoming: size, maximum: maximum)
+      }
       guard let size = size, size == expectedLen else {
         throw NSError(domain: "RangeDownloader", code: -2, userInfo: [
           NSLocalizedDescriptionKey:
@@ -1417,6 +1569,8 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         try FileManager.default.removeItem(atPath: dest)
       }
       try FileManager.default.moveItem(at: location, to: URL(fileURLWithPath: dest))
+    } catch let error as RangeDownloadSizeLimitError {
+      markSizeLimitFailure(state, error: error)
     } catch {
       OneKeyLog.error("RangeDownloader",
                       "\(state.channel.stringValue)/\(state.taskId): failed to stash segment \(idx): \(error)")
@@ -1441,7 +1595,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       return
     }
 
-    if let error = error {
+    let response = lock.withLockValue { state.transientResponses.removeValue(forKey: idx) }
+    let cancelledAfterHTTPResponse = response?.cancelledTaskIdentifier == task.taskIdentifier
+    if let error = error, !RangeDownloadLogic.canUseRecordedHTTPResponse(
+      completionError: error, locallyCancelledBody: cancelledAfterHTTPResponse
+    ) {
       let nsErr = error as NSError
       if nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled {
         // Distinguish a stall-watchdog cancel (transient → retry this segment)
@@ -1471,28 +1629,19 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       return
     }
 
-    // §4: this segment's finished body was a Transient HTTP status (429/5xx/408/
-    // 416). Discard the body and re-enqueue just this segment under its budget.
-    let transientRetryAfter = lock.withLockValue { () -> (present: Bool, retryAfter: Double?) in
-      if let ra = state.transientSegmentRetryAfter[idx] {
-        state.transientSegmentRetryAfter.removeValue(forKey: idx)
-        return (true, ra)
-      }
-      return (false, nil)
-    }
-    if transientRetryAfter.present {
-      // §4 (416): a 416 segment must re-evaluate the total/validator (re-probe)
-      // BEFORE re-requesting the same range. If the object changed → object-change
-      // (wipe + restart, Permanent); otherwise keep `.segN` and retry normally.
-      let needsSizeReeval = lock.withLockValue { state.sizeReevalIndexes.remove(idx) != nil }
-      if needsSizeReeval {
+    if let response {
+      // Re-evaluate the object before retrying a 416 on the old range.
+      if response.statusCode == 416 {
         reevaluateSizeThenRetry(state: state, session: session, idx: idx,
-                                retryAfter: transientRetryAfter.retryAfter, ranges: ranges)
+                                retryAfter: response.retryAfter, ranges: ranges)
         return
       }
-      if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: transientRetryAfter.retryAfter) { return }
-      finalizeTransientFallback(state: state, idx: idx,
-                                reason: "segment \(idx) throttled/5xx; retry budget exhausted", ranges: ranges)
+      if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: response.retryAfter) { return }
+      finalizeTransientFallback(
+        state: state, idx: idx,
+        reason: "segment \(idx) throttled/5xx; retry budget exhausted", ranges: ranges,
+        underlyingError: response.statusCode.map { HTTPStatusError(statusCode: $0) }
+      )
       return
     }
 
@@ -1595,11 +1744,12 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       case .checksumMismatch: reason = "whole-file checksum mismatch"
       case .transientNetwork, .throttled, .budgetExhausted: reason = "permanent fallback"
       }
-      let status = self.lock.withLockValue { state.httpStatus }
+      let (status, sizeLimitFailure) = self.lock.withLockValue { (state.httpStatus, state.sizeLimitFailure) }
       let statusError = status.flatMap { $0 >= 400 ? HTTPStatusError(statusCode: $0) : nil }
+      let underlyingError: Error? = sizeLimitFailure.map { $0 as Error } ?? statusError
       self.finishContinuation(state: state,
                               with: FallbackError(reason: reason, kind: kind,
-                                                  underlyingError: statusError), ranges: ranges)
+                                                  underlyingError: underlyingError), ranges: ranges)
     }
   }
 
@@ -1609,11 +1759,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   private func finalizeTransientFallback(state: RunState, idx: Int, reason: String,
                                          ranges: [(start: Int64, end: Int64)],
                                          underlyingError: Error? = nil) {
-    let status = lock.withLockValue { state.httpStatus }
-    let statusError = status.flatMap { $0 >= 400 ? HTTPStatusError(statusCode: $0) : nil }
     finishContinuation(state: state,
                        with: FallbackError(reason: reason, kind: .budgetExhausted,
-                                           underlyingError: statusError ?? underlyingError),
+                                           underlyingError: underlyingError),
                        ranges: ranges)
   }
 
@@ -1694,8 +1842,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // Stream each segment in fixed-size chunks so a full segment is never held
     // in RAM (mirrors the streamed SHA256 backstop below).
     let chunkSize = 1 * 1024 * 1024
-    for idx in 0..<ranges.count {
+    var written: Int64 = 0
+    for (idx, range) in ranges.enumerated() {
       let segPath = state.segPath(idx)
+      let expectedSize = range.end - range.start + 1
+      var segmentBytes: Int64 = 0
       guard let inHandle = FileHandle(forReadingAtPath: segPath) else {
         throw NSError(domain: "RangeDownloader", code: -3,
                       userInfo: [NSLocalizedDescriptionKey: "cannot open segment \(idx) for read"])
@@ -1704,9 +1855,19 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       while try autoreleasepool(invoking: { () -> Bool in
         let data = inHandle.readData(ofLength: chunkSize)
         if data.isEmpty { return false }
+        if let maximum = state.maxTotalBytes {
+          let count = Int64(data.count)
+          try RangeDownloadLogic.validateSize(written: written, incoming: count, maximum: maximum)
+          try RangeDownloadLogic.validateSize(written: segmentBytes, incoming: count, maximum: expectedSize)
+          written += count
+          segmentBytes += count
+        }
         try out.write(contentsOf: data)
         return true
       }) {}
+      if state.maxTotalBytes != nil, segmentBytes != expectedSize {
+        throw URLError(.networkConnectionLost)
+      }
     }
     try? out.close()
     if FileManager.default.fileExists(atPath: filePath) {

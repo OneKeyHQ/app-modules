@@ -2580,10 +2580,10 @@ PODS:
     - React-utils
     - ReactCodegen
     - ReactCommon/turbomodule/core
-    - ReactNativeBundleCrypto
+    - ReactNativeBundleCrypto (= 6.8.0-1)
     - ReactNativeDependencies
     - ReactNativeNativeLogger
-    - ReactNativeRangeDownloader
+    - ReactNativeRangeDownloader (= 6.8.0-1)
     - SSZipArchive (>= 2.5.4)
     - Yoga
   - ReactNativeCaptureProtection (6.8.0-1):
@@ -3833,7 +3833,7 @@ SPEC CHECKSUMS:
   ReactCommon: 145a14b942b19fc2fe38927f261955ada56978aa
   ReactNativeAppUpdate: 84781f0c39397b50502471aa69979742292f762f
   ReactNativeBundleCrypto: 866bc82b4732b3765089e34e036dd5d4ea9c7eaa
-  ReactNativeBundleUpdate: 51c97009c09c3513717aedad429d087bddb82b0b
+  ReactNativeBundleUpdate: a137ff29e601822d5639f0a5513dc6b6701ff5fe
   ReactNativeCaptureProtection: ac103d5f2311fc6cb7412b49ebdc821b845bf97a
   ReactNativeCheckBiometricAuthChanged: 9028250455b331bd52a29bf8223ffd29c158e60f
   ReactNativeDependencies: d3b7423ba1e52525e42085c8470109abde583d2e

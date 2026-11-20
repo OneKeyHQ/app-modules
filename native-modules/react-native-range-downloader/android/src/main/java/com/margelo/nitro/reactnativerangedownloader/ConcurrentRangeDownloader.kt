@@ -1,7 +1,9 @@
 package com.margelo.nitro.reactnativerangedownloader
 
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -10,7 +12,9 @@ import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -93,52 +97,59 @@ class ConcurrentRangeDownloader(
     class TransientHttpException(val code: Int, val retryAfterMillis: Long?) :
         java.io.IOException("HTTP $code")
 
-    /**
-     * Cooperative-cancel handle the caller can register a download against. The
-     * adapter keeps these in a per-taskId registry so `cancel`/`discardArtifacts`
-     * can flip [aborted] and `shutdownNow()` the worker pool BEFORE deleting the
-     * segment files, so no in-flight worker resurrects a deleted file.
-     */
+    class SizeLimitExceededException : SecurityException("Range download exceeds caller size limit")
+
+    /** Explicit caller cancellation persists across sequential transfers. */
     class CancelHandle {
-        // Only an explicit caller cancellation sets aborted. Worker failures use
-        // workerStop to stop sibling segments without changing that intent.
         val aborted = AtomicBoolean(false)
-        internal val workerStop = AtomicBoolean(false)
 
-        @Volatile
-        private var pool: java.util.concurrent.ExecutorService? = null
+        private val lock = Any()
+        private val calls = mutableSetOf<Call>()
+        private val workers = mutableMapOf<ExecutorService, AtomicBoolean>()
 
-        internal fun attach(pool: java.util.concurrent.ExecutorService) {
-            this.pool = pool
-            // If cancel() already raced in before the pool was attached, honor it.
-            if (workerStop.get()) pool.shutdownNow()
+        internal fun attach(pool: ExecutorService, stop: AtomicBoolean) = synchronized(lock) {
+            if (aborted.get()) stop.set(true)
+            workers[pool] = stop
         }
 
-        /**
-         * Flip the abort flag and stop the worker pool, then wait (bounded) for
-         * in-flight workers to actually terminate. `shutdownNow()` only
-         * *interrupts*; a worker blocked in a native `write()` may run a moment
-         * longer, so without this wait the caller's subsequent `.segN` delete
-         * could be resurrected by that straggler — the exact race §5.8 forbids.
-         * Idempotent.
-         */
-        fun cancel() {
-            aborted.set(true)
-            workerStop.set(true)
-            pool?.let { p ->
-                p.shutdownNow()
-                try {
-                    p.awaitTermination(AWAIT_TERMINATION_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
-                } catch (e: InterruptedException) {
-                    // Preserve the interrupt status; the bounded wait is best-effort.
-                    Thread.currentThread().interrupt()
-                }
+        internal fun detach(pool: ExecutorService) = synchronized(lock) {
+            workers.remove(pool)
+        }
+
+        fun <T> execute(call: Call, consume: (Response) -> T): T {
+            synchronized(lock) {
+                ensureActive()
+                calls.add(call)
+            }
+            try {
+                return call.execute().use(consume)
+            } finally {
+                synchronized(lock) { calls.remove(call) }
             }
         }
 
-        private companion object {
-            /** Bounded wait for worker termination on cancel (cancel-then-delete). */
-            const val AWAIT_TERMINATION_SECONDS = 3L
+        internal fun ensureActive() {
+            if (aborted.get()) throw java.io.InterruptedIOException("Download cancelled")
+        }
+
+        fun requestCancel() = synchronized(lock) {
+            aborted.set(true)
+            workers.values.forEach { it.set(true) }
+            calls.forEach { it.cancel() }
+        }
+
+        fun cancel() {
+            requestCancel()
+            val pools = synchronized(lock) { workers.keys.toList() }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            for (pool in pools) {
+                try {
+                    pool.awaitTermination((deadline - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
         }
     }
 
@@ -163,21 +174,27 @@ class ConcurrentRangeDownloader(
         maxTotalBytes: Long = Long.MAX_VALUE,
         onProgress: (transferred: Long, total: Long) -> Unit,
     ): Outcome {
+        val transferHandle = cancelHandle ?: CancelHandle()
+        transferHandle.ensureActive()
         val partialFile = File(partialFilePath)
         val segFile: (Int) -> File = { index -> File("$partialFilePath.seg$index") }
 
         // A bare `.partial` with NO segment files is a single-stream leftover;
         // let the caller's single-stream path resume it instead of touching it.
+        if (partialFile.length() > maxTotalBytes ||
+            (0 until segmentCount).any { segFile(it).length() > maxTotalBytes }
+        ) {
+            throw SizeLimitExceededException()
+        }
         val anyLeftoverSeg = (0 until segmentCount).any { segFile(it).exists() }
         if (partialFile.exists() && !anyLeftoverSeg) {
             log("concurrent: single-stream partial present, deferring to single-stream")
             return Outcome.FALLBACK
         }
 
-        val probe = probe(url) ?: return Outcome.FALLBACK
-        if (probe.totalSize > maxTotalBytes) {
-            throw SecurityException("Range download exceeds caller size limit")
-        }
+        val probe = probe(url, transferHandle) ?: return Outcome.FALLBACK
+        transferHandle.ensureActive()
+        if (probe.totalSize > maxTotalBytes) throw SizeLimitExceededException()
         if (!probe.supportsRange || probe.totalSize < minConcurrentBytes) {
             log("concurrent: not eligible (supportsRange=${probe.supportsRange}, size=${probe.totalSize})")
             return Outcome.FALLBACK
@@ -212,7 +229,12 @@ class ConcurrentRangeDownloader(
         // `.segN` may have been deleted by an interrupted concat. Such prefix
         // segments are DONE — they must not be re-fetched (that would waste the
         // network and break the "~1x + one segment" footprint target).
-        val committedBytes = if (partialFile.exists()) partialFile.length() else 0L
+        val committedBytes = partialFile.length().let { size ->
+            if (size <= total) size else {
+                if (!partialFile.delete()) throw java.io.IOException("Unable to discard oversized partial")
+                0L
+            }
+        }
         // A segment is "committed" when `.partial` already covers its full extent.
         val isCommitted: (Part) -> Boolean = { committedBytes >= it.start + it.length }
 
@@ -227,7 +249,7 @@ class ConcurrentRangeDownloader(
 
         // External cancel also stops workers; internal fallback/failure must not
         // mark the caller's explicit-cancellation flag.
-        val aborted = cancelHandle?.workerStop ?: AtomicBoolean(false)
+        val aborted = AtomicBoolean(false)
         val fallback = AtomicBoolean(false)
         val firstError = AtomicReference<Exception?>(null)
 
@@ -237,17 +259,20 @@ class ConcurrentRangeDownloader(
         val pending = parts.filterNot(isCommitted).filter { segFile(it.index).length() < it.length }
         if (pending.isNotEmpty()) {
             val pool = Executors.newFixedThreadPool(minOf(segmentCount, pending.size))
-            cancelHandle?.attach(pool)
+            transferHandle.attach(pool, aborted)
             try {
                 val futures = pending.map { part ->
                     pool.submit {
                         try {
-                            downloadSegment(url, segFile(part.index), part, total, aborted) { delta ->
+                            downloadSegment(url, segFile(part.index), part, total, maxTotalBytes, transferHandle, aborted) { delta ->
                                 onProgress(transferred.addAndGet(delta), total)
                             }
                         } catch (e: FallbackException) {
                             fallback.set(true)
                             firstError.compareAndSet(null, e)
+                            aborted.set(true)
+                        } catch (e: SizeLimitExceededException) {
+                            firstError.set(e)
                             aborted.set(true)
                         } catch (e: Exception) {
                             firstError.compareAndSet(null, e)
@@ -258,15 +283,18 @@ class ConcurrentRangeDownloader(
                 futures.forEach { it.get() }
             } finally {
                 pool.shutdownNow()
+                transferHandle.detach(pool)
             }
         }
 
+        transferHandle.ensureActive()
+        val err = firstError.get()
+        if (err is SizeLimitExceededException) throw err
         if (fallback.get()) {
             // Stale/unusable bytes — clear before the caller falls back.
             wipeArtifacts(partialFile, segFile)
             return Outcome.FALLBACK
         }
-        val err = firstError.get()
         if (err != null) {
             // Transient. Always keep the segment files so the next attempt
             // resumes — resume is unconditional now (no validator gate).
@@ -282,19 +310,20 @@ class ConcurrentRangeDownloader(
         }
 
         // All segments complete → assemble the `.partial`.
-        concatenate(partialFile, parts, segFile, total)
+        concatenate(partialFile, parts, segFile, total, transferHandle)
+        transferHandle.ensureActive()
         log("concurrent: completed ($total bytes)")
         return Outcome.COMPLETED
     }
 
     private fun planRanges(total: Long): List<Part> {
         val parts = ArrayList<Part>()
-        val chunk = (total + segmentCount - 1) / segmentCount
+        val chunk = (total - 1) / segmentCount + 1
         var i = 0
         while (i < segmentCount) {
             val start = i * chunk
             if (start >= total) break
-            val end = minOf(start + chunk - 1, total - 1)
+            val end = start + minOf(chunk, total - start) - 1
             parts.add(Part(parts.size, start, end))
             i += 1
         }
@@ -307,10 +336,10 @@ class ConcurrentRangeDownloader(
     // verify after promotion is the sole correctness backstop, so resume is
     // always allowed. OkHttp follows redirects (the caller's client enforces
     // HTTPS on each hop).
-    private fun probe(url: String): Probe? {
+    private fun probe(url: String, handle: CancelHandle): Probe? {
         return try {
             val req = Request.Builder().url(url).addHeader("Range", "bytes=0-0").build()
-            httpClient.newCall(req).execute().use { response ->
+            handle.execute(httpClient.newCall(req)) { response ->
                 when (response.code) {
                     206 -> {
                         val total = response.header("Content-Range")
@@ -348,6 +377,7 @@ class ConcurrentRangeDownloader(
         parts: List<Part>,
         segFile: (Int) -> File,
         total: Long,
+        handle: CancelHandle,
     ) {
         var written = if (partialFile.exists()) partialFile.length() else 0L
         if (written > total) {
@@ -357,7 +387,9 @@ class ConcurrentRangeDownloader(
         }
         FileOutputStream(partialFile, /* append = */ true).use { out ->
             var cursor = 0L
+            val buffer = ByteArray(8192)
             for (part in parts) {
+                handle.ensureActive()
                 val segEndInFinal = cursor + part.length
                 if (written < segEndInFinal) {
                     val seg = segFile(part.index)
@@ -371,7 +403,15 @@ class ConcurrentRangeDownloader(
                             if (s <= 0) break
                             toSkip -= s
                         }
-                        input.copyTo(out)
+                        if (toSkip != 0L) throw ProtocolException("Incomplete segment during assembly")
+                        var remaining = segEndInFinal - written
+                        while (remaining > 0) {
+                            handle.ensureActive()
+                            val read = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+                            if (read < 0) throw ProtocolException("Incomplete segment during assembly")
+                            out.write(buffer, 0, read)
+                            remaining -= read
+                        }
                     }
                     out.flush()
                     written = segEndInFinal
@@ -402,6 +442,8 @@ class ConcurrentRangeDownloader(
         segFile: File,
         part: Part,
         total: Long,
+        maxTotalBytes: Long,
+        handle: CancelHandle,
         aborted: AtomicBoolean,
         onBytes: (delta: Long) -> Unit,
     ) {
@@ -412,7 +454,7 @@ class ConcurrentRangeDownloader(
             if (have >= part.length) return
             val rangeStart = part.start + have
             try {
-                fetchSegment(url, segFile, part, total, rangeStart, aborted, onBytes)
+                fetchSegment(url, segFile, part, total, maxTotalBytes, rangeStart, handle, aborted, onBytes)
                 return
             } catch (e: FallbackException) {
                 throw e
@@ -469,18 +511,23 @@ class ConcurrentRangeDownloader(
         segFile: File,
         part: Part,
         total: Long,
+        maxTotalBytes: Long,
         rangeStart: Long,
+        handle: CancelHandle,
         aborted: AtomicBoolean,
         onBytes: (delta: Long) -> Unit,
     ) {
         val request = Request.Builder().url(url)
             .addHeader("Range", "bytes=$rangeStart-${part.end}")
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        handle.execute(httpClient.newCall(request)) { response ->
             // A 200 (full body) to a Range request is the one validator-free
             // safety net we keep: appending a from-zero body onto a partially
             // filled segment would corrupt it, so bail to the single-stream path.
             if (response.code == 200) {
+                if ((response.body?.contentLength() ?: -1L) > maxTotalBytes) {
+                    throw SizeLimitExceededException()
+                }
                 throw FallbackException("server returned 200 to a Range request")
             }
             if (response.code != 206) {
@@ -508,6 +555,8 @@ class ConcurrentRangeDownloader(
                 ?: throw java.io.IOException("206 without Content-Range")
             val bounds = parseContentRangeBounds(contentRange)
                 ?: throw java.io.IOException("unparseable Content-Range: $contentRange")
+            val parsedTotal = bounds.third
+            if (parsedTotal != null && parsedTotal > maxTotalBytes) throw SizeLimitExceededException()
             if (bounds.first != rangeStart || bounds.second != part.end) {
                 throw java.io.IOException(
                     "Content-Range mismatch: got ${bounds.first}-${bounds.second}, " +
@@ -519,7 +568,6 @@ class ConcurrentRangeDownloader(
             // changed size behind us (different build) — that is permanent for
             // this window; an unknown `*` total cannot be reconciled either. Both
             // make concurrency unusable → fall back to single-stream.
-            val parsedTotal = bounds.third
             if (parsedTotal == null || parsedTotal != total) {
                 throw FallbackException(
                     "Content-Range total mismatch: got ${parsedTotal ?: "*"}, expected $total"
@@ -528,29 +576,31 @@ class ConcurrentRangeDownloader(
             val body = response.body ?: throw java.io.IOException("Empty segment body")
             // Append the fetched tail to the segment file. Append mode keeps
             // resume correct: we only ever request the bytes not yet on disk.
-            FileOutputStream(segFile, /* append = */ true).use { out ->
-                body.byteStream().use { input ->
-                    val buffer = ByteArray(8192)
-                    while (true) {
-                        if (aborted.get()) throw java.io.IOException("aborted")
-                        val read = input.read(buffer)
-                        if (read == -1) break
-                        out.write(buffer, 0, read)
-                        onBytes(read.toLong())
+            var remaining = part.end - rangeStart + 1
+            try {
+                FileOutputStream(segFile, /* append = */ true).use { out ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            if (aborted.get()) throw java.io.IOException("aborted")
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            if (read > remaining) throw SegmentOverrunException(part.index)
+                            if (aborted.get()) throw java.io.IOException("aborted")
+                            out.write(buffer, 0, read)
+                            remaining -= read
+                            onBytes(read.toLong())
+                        }
                     }
                 }
+            } catch (e: SegmentOverrunException) {
+                segFile.delete()
+                throw e
             }
         }
-        // A 206 can still over-deliver (server ignored our end bound). A segment
-        // longer than its planned length is unusable — drop it so the next
-        // attempt re-fetches cleanly rather than concatenating misaligned bytes.
-        if (segFile.length() > part.length) {
-            segFile.delete()
-            throw java.io.IOException(
-                "Segment ${part.index} overran (${segFile.length()}/${part.length})"
-            )
-        }
     }
+
+    private class SegmentOverrunException(index: Int) : ProtocolException("Segment $index overran its range")
 
     // Parse "bytes <start>-<end>/<total>" → (start, end, total). Returns null
     // when the header lacks concrete bounds (e.g. "bytes */1234") or is otherwise

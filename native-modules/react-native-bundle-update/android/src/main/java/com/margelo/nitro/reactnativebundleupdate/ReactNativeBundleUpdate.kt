@@ -7,26 +7,24 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.margelo.nitro.reactnativebundlecrypto.AndroidBundleFileSystem
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystemException
+import com.margelo.nitro.reactnativebundlecrypto.BundleFileType
 import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.internal.http2.StreamResetException
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -55,19 +53,19 @@ private fun bundleUpdateError(error: Exception, step: String): BundleUpdateError
     if (error is BundleUpdateError) {
         return if (error.step == step) error else BundleUpdateError(error.code, step, error.httpStatus)
     }
-    val code = when (error) {
-        is ConcurrentRangeDownloader.PermanentHttpException,
-        is ConcurrentRangeDownloader.TransientHttpException -> "HTTP_ERROR"
-        is java.net.SocketTimeoutException -> "TIMEOUT"
-        is java.net.UnknownHostException,
-        is java.net.ConnectException,
-        is java.net.ProtocolException,
-        is java.net.SocketException -> "NETWORK_ERROR"
-        is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
-        is java.io.FileNotFoundException,
-        is java.nio.file.AccessDeniedException -> "STORAGE_ERROR"
-        is IllegalArgumentException -> "INVALID_ARGUMENT"
-        is SecurityException -> "SECURITY_REJECTED"
+    val code = when {
+        error is BundleUpdateOperations.AdmissionException ->
+            if (error.reason == BundleUpdateOperations.Refusal.CANCELLED) "CANCELLED" else "INVALID_ARGUMENT"
+        error is ConcurrentRangeDownloader.PermanentHttpException ||
+            error is ConcurrentRangeDownloader.TransientHttpException -> "HTTP_ERROR"
+        error is java.net.SocketTimeoutException ||
+            error is java.io.InterruptedIOException -> "TIMEOUT"
+        error is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
+        error is java.io.FileNotFoundException ||
+            error is BundleFileSystemException -> "STORAGE_ERROR"
+        error is StreamResetException || BundleDiffReconstruction.isRetryableNetworkIOException(error) -> "NETWORK_ERROR"
+        error is IllegalArgumentException -> "INVALID_ARGUMENT"
+        error is SecurityException -> "SECURITY_REJECTED"
         else -> "UNKNOWN"
     }
     val status = when (error) {
@@ -362,7 +360,7 @@ object BundleUpdateStoreAndroid {
             val folderName = "$appVersion-$bundleVersion"
             val baseBundleDir = File(getBundleDir(context)).canonicalPath
             val bundleDirPath = File(getBundleDir(context), folderName)
-            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(bundleDirPath) ||
                 !bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
@@ -371,7 +369,7 @@ object BundleUpdateStoreAndroid {
             }
             val sigFile = File(getSignatureFilePath(context, folderName))
             val baseAscDir = File(getAscDir(context)).canonicalPath
-            if (Files.isSymbolicLink(sigFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(sigFile) ||
                 !sigFile.canonicalPath.startsWith(baseAscDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: signature path outside asc directory: ${sigFile.canonicalPath}")
@@ -529,7 +527,7 @@ object BundleUpdateStoreAndroid {
             key == BundleStorageSchemaPolicy.METADATA_KEY
     }
 
-    private fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
+    internal fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
         return metadata.filterKeys { key -> !isReservedMetadataKey(key) }
     }
 
@@ -581,6 +579,7 @@ object BundleUpdateStoreAndroid {
         expectedAppVersion: String? = null,
         expectedBundleVersion: String? = null,
         expectedAppType: String? = "android",
+        expectedFileName: String = "metadata.json",
     ): String? {
         if (signature.isNullOrEmpty()) return null
 
@@ -590,6 +589,7 @@ object BundleUpdateStoreAndroid {
             expectedAppVersion = expectedAppVersion,
             expectedBundleVersion = expectedBundleVersion,
             expectedAppType = expectedAppType,
+            expectedFileName = expectedFileName,
         )
         if (gpgResult != null) return gpgResult
 
@@ -607,7 +607,7 @@ object BundleUpdateStoreAndroid {
     }
 
     fun isSafeVersionString(version: String): Boolean {
-        return version.isNotEmpty() && version.all { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' }
+        return BundleDiffReconstruction.isSafeVersionComponent(version)
     }
 
     /**
@@ -627,12 +627,14 @@ object BundleUpdateStoreAndroid {
         expectedAppVersion: String? = null,
         expectedBundleVersion: String? = null,
         expectedAppType: String? = "android",
+        expectedFileName: String = "metadata.json",
     ): String? {
         val result = BundleCryptoCore.verifyGpgCleartext(
             signature,
             expectedAppVersion = expectedAppVersion,
             expectedBundleVersion = expectedBundleVersion,
             expectedAppType = expectedAppType,
+            expectedFileName = expectedFileName,
         )
         if (!result.valid) {
             OneKeyLog.error("BundleUpdate", "GPG verification failed: ${result.reason}")
@@ -659,16 +661,27 @@ object BundleUpdateStoreAndroid {
         return secureCompare(calculated, extractedSha256)
     }
 
-    fun validateAllFilesInDir(context: Context, dirPath: String, metadata: Map<String, String>, appVersion: String, bundleVersion: String): Boolean {
+    @JvmOverloads
+    fun validateAllFilesInDir(
+        context: Context,
+        dirPath: String,
+        metadata: Map<String, String>,
+        appVersion: String,
+        bundleVersion: String,
+        allowStaging: Boolean = false,
+    ): Boolean {
         val dir = File(dirPath)
         if (!dir.exists() || !dir.isDirectory) return false
 
         // The walked directory must be the managed extraction root for this
-        // identity. Callers legitimately pass either the absolute or the
-        // canonical form of it (verifyBundleASC extracts to the canonical
-        // path), so compare resolved paths instead of trusting the string.
+        // identity (or an isolated per-run directory under .diff-staging during diff reconstruction).
         val expectedDir = File(getBundleDir(context), "$appVersion-$bundleVersion")
-        if (!isSameDirectory(dir, expectedDir)) {
+        val stagingRootDir = File(getBundleDir(context), BundleDiffReconstruction.STAGING_ROOT_DIR_NAME)
+        val isValidStaging = allowStaging &&
+            dir.parentFile != null &&
+            isSameDirectory(dir.parentFile!!, stagingRootDir) &&
+            dir.name.startsWith("$appVersion-$bundleVersion-")
+        if (!isSameDirectory(dir, expectedDir) && !isValidStaging) {
             OneKeyLog.error(
                 "BundleUpdate",
                 "[bundle-verify] unexpected bundle directory: ${dir.absolutePath}",
@@ -676,69 +689,25 @@ object BundleUpdateStoreAndroid {
             return false
         }
 
-        val fileEntries = getFileMetadataEntries(metadata)
-
-        // Derive every metadata key from the directory actually walked. Never
-        // rebuild the root from Context here: on devices where filesDir is a
-        // symlinked path the two string forms differ and no file would match.
-        if (!validateFilesRecursive(dir, fileEntries, dir)) return false
-
-        // Verify completeness
-        for (entry in fileEntries.entries) {
-            val expectedFile = File(dir, entry.key)
-            if (!expectedFile.exists()) {
-                OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: ${entry.key}")
-                return false
-            }
-        }
-        return true
+        return verifyExtractedFiles(dir, dir, getFileMetadataEntries(metadata), "bundle-verify")
     }
 
-    private fun validateFilesRecursive(dir: File, metadata: Map<String, String>, rootDir: File): Boolean {
-        val files = dir.listFiles()
-        if (files == null) {
-            // listFiles() returns null on I/O error or unreadable directory.
-            // Fail closed instead of treating an unlistable subtree as
-            // "nothing to verify" — that would silently allow a tampered
-            // bundle asset whose containing dir was made unreadable.
-            OneKeyLog.error(
-                "BundleUpdate",
-                "[bundle-verify] failed to list directory: ${dir.absolutePath}",
-            )
-            return false
-        }
-        for (file in files) {
-            if (file.isDirectory) {
-                if (!validateFilesRecursive(file, metadata, rootDir)) return false
-            } else {
-                if (file.name == "metadata.json" || file.name == ".DS_Store") continue
-                val relativePath = bundleRelativePath(rootDir, file)
-                if (relativePath == null) {
-                    OneKeyLog.error(
-                        "BundleUpdate",
-                        "[bundle-verify] file outside the walked bundle directory: " +
-                            "${file.absolutePath} (root=${rootDir.absolutePath})",
-                    )
-                    return false
-                }
-                val expectedSHA256 = metadata[relativePath]
-                if (expectedSHA256 == null) {
-                    OneKeyLog.error("BundleUpdate", "[bundle-verify] File on disk not found in metadata: $relativePath")
-                    return false
-                }
-                val actualSHA256 = calculateSHA256(file.absolutePath)
-                if (actualSHA256 == null) {
-                    OneKeyLog.error("BundleUpdate", "[bundle-verify] Failed to calculate SHA256 for file: $relativePath")
-                    return false
-                }
-                if (!secureCompare(expectedSHA256, actualSHA256)) {
-                    OneKeyLog.error("BundleUpdate", "[bundle-verify] SHA256 mismatch for $relativePath")
-                    return false
-                }
-            }
-        }
-        return true
-    }
+    private fun verifyExtractedFiles(
+        root: File,
+        subtree: File,
+        metadata: Map<String, String>,
+        logPrefix: String,
+    ): Boolean = verifyBundleFiles(
+        root = root,
+        subtree = subtree,
+        metadata = metadata,
+        fileSystem = AndroidBundleFileSystem,
+        verifyHash = { file, expected ->
+            val actual = calculateSHA256(file.absolutePath)
+            actual != null && secureCompare(expected, actual)
+        },
+        logError = { OneKeyLog.error("BundleUpdate", "[$logPrefix] $it") },
+    )
 
     fun readFileContent(file: File): String {
         return file.readText(Charsets.UTF_8)
@@ -1107,73 +1076,7 @@ object BundleUpdateStoreAndroid {
             return true
         }
 
-        val bundleDirRoot = File(bundleDir)
-        if (!validateWebEmbedRecursive(webEmbedRoot, webEmbedEntries, bundleDirRoot)) {
-            return false
-        }
-        for ((key, _) in webEmbedEntries) {
-            val expectedFile = File(bundleDirRoot, key)
-            if (!expectedFile.exists()) {
-                OneKeyLog.error(
-                    "BundleUpdate",
-                    "[web-embed-verify] file listed in metadata but missing on disk: $key",
-                )
-                return false
-            }
-        }
-        return true
-    }
-
-    private fun validateWebEmbedRecursive(
-        dir: File,
-        webEmbedEntries: Map<String, String>,
-        rootDir: File,
-    ): Boolean {
-        val files = dir.listFiles()
-        if (files == null) {
-            // listFiles() returns null on I/O error or unreadable directory.
-            // Fail closed instead of treating an unlistable subtree as
-            // "nothing to verify" — that would silently allow a tampered
-            // web-embed asset whose containing dir was made unreadable.
-            OneKeyLog.error(
-                "BundleUpdate",
-                "[web-embed-verify] failed to list directory: ${dir.absolutePath}",
-            )
-            return false
-        }
-        for (file in files) {
-            if (file.isDirectory) {
-                if (!validateWebEmbedRecursive(file, webEmbedEntries, rootDir)) return false
-                continue
-            }
-            if (file.name == ".DS_Store") continue
-            val relativePath = bundleRelativePath(rootDir, file)
-            if (relativePath == null) {
-                OneKeyLog.error(
-                    "BundleUpdate",
-                    "[web-embed-verify] file outside the walked bundle directory: " +
-                        "${file.absolutePath} (root=${rootDir.absolutePath})",
-                )
-                return false
-            }
-            val expected = webEmbedEntries[relativePath]
-            if (expected.isNullOrEmpty()) {
-                OneKeyLog.error(
-                    "BundleUpdate",
-                    "[web-embed-verify] file on disk not in metadata: $relativePath",
-                )
-                return false
-            }
-            val actual = calculateSHA256(file.absolutePath)
-            if (actual == null || !secureCompare(expected, actual)) {
-                OneKeyLog.error(
-                    "BundleUpdate",
-                    "[web-embed-verify] sha256 mismatch for $relativePath",
-                )
-                return false
-            }
-        }
-        return true
+        return verifyExtractedFiles(File(bundleDir), webEmbedRoot, webEmbedEntries, "web-embed-verify")
     }
 
     /**
@@ -1229,53 +1132,8 @@ object BundleUpdateStoreAndroid {
 
     fun deleteDir(dir: File): Boolean = deleteDirectory(dir)
 
-    private const val MAX_UNZIPPED_SIZE = 512L * 1024 * 1024  // 512 MB limit
-    private const val MAX_ZIP_ENTRIES = 4096
-
     fun unzipFile(zipFilePath: String, destDirectory: String) {
-        val destDir = File(destDirectory)
-        if (!destDir.exists()) destDir.mkdirs()
-
-        val destDirPath: Path = Paths.get(destDir.canonicalPath)
-        var totalBytesWritten = 0L
-        var entryCount = 0
-        ZipInputStream(FileInputStream(zipFilePath)).use { zipIn ->
-            var entry: ZipEntry? = zipIn.nextEntry
-            while (entry != null) {
-                entryCount++
-                if (entryCount > MAX_ZIP_ENTRIES) {
-                    throw SecurityException("Zip entry count exceeds maximum allowed ($MAX_ZIP_ENTRIES)")
-                }
-                val outFile = File(destDir, entry.name)
-                val outPath: Path = Paths.get(outFile.canonicalPath)
-                if (!outPath.startsWith(destDirPath)) {
-                    throw java.io.IOException("Entry is outside of the target dir: ${entry.name}")
-                }
-                if (!entry.isDirectory) {
-                    outFile.parentFile?.mkdirs()
-                    FileOutputStream(outFile).use { fos ->
-                        val buffer = ByteArray(8192)
-                        var length: Int
-                        while (zipIn.read(buffer).also { length = it } > 0) {
-                            totalBytesWritten += length
-                            if (totalBytesWritten > MAX_UNZIPPED_SIZE) {
-                                throw java.io.IOException("Decompression bomb detected: extracted size exceeds ${MAX_UNZIPPED_SIZE / 1024 / 1024} MB")
-                            }
-                            fos.write(buffer, 0, length)
-                        }
-                    }
-                    // Validate no symlink was created (zip slip via symlink attack)
-                    if (Files.isSymbolicLink(outFile.toPath())) {
-                        outFile.delete()
-                        throw java.io.IOException("Symlink detected in zip entry: ${entry.name}")
-                    }
-                } else {
-                    outFile.mkdirs()
-                }
-                zipIn.closeEntry()
-                entry = zipIn.nextEntry
-            }
-        }
+        BundleDiffReconstruction.unzipFile(zipFilePath, destDirectory, AndroidBundleFileSystem)
     }
 }
 
@@ -1290,24 +1148,33 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         // to ConcurrentRangeDownloader (currently the default 8). Every place
         // that cleans up `.segN` files must iterate `0 until CONCURRENT_SEGMENT_COUNT`.
         private const val CONCURRENT_SEGMENT_COUNT = 8
+        private val operations = BundleUpdateOperations()
+        private val diffFallbackDigests = ConcurrentHashMap<ReleaseIdentity, String>()
+        private val fullBundleParamsByRelease = ConcurrentHashMap<ReleaseIdentity, FullBundleParams>()
+        private val diffVerifiedMetadataByRelease = ConcurrentHashMap<ReleaseIdentity, BundleDiffReconstruction.VerifiedDiffMetadata>()
     }
+
+    private data class ReleaseIdentity(val appVersion: String, val bundleVersion: String) {
+        val key: String get() = "$appVersion-$bundleVersion"
+    }
+
+    private data class FullBundleParams(
+        val downloadUrl: String,
+        val fileSize: Double,
+        val sha256: String,
+    )
 
     private val listeners = CopyOnWriteArrayList<BundleListener>()
     private val nextListenerId = AtomicLong(1)
 
-    // Per-destination single-flight (OCDS §5.8): one in-flight run per final
-    // bundle path, keyed by `filePath`. `putIfAbsent` makes a second
-    // downloadBundle for the SAME dest fail fast ("Already downloading"), while
-    // different dests now run concurrently (the old global boolean serialized
-    // everything). The value is the live CancelHandle so clearDownload/clearBundle
-    // can stop the 8 workers BEFORE deleting the directory (cancel-then-delete),
-    // preventing a worker from re-creating a just-deleted `.segN`. Being an
-    // in-memory map, a crashed run leaves no stale lock — the entry is gone on
-    // relaunch, giving inherent stale-lock recovery (OCDS §5.8).
-    private val activeDownloads =
-        ConcurrentHashMap<String, Pair<ConcurrentRangeDownloader.CancelHandle, CountDownLatch>>()
-    private val clearDownloadsLock = Any()
-    private var clearingDownloads = false
+    private fun startOperation(
+        context: Context,
+        release: ReleaseIdentity,
+        handle: ConcurrentRangeDownloader.CancelHandle? = null,
+    ): BundleUpdateOperations.Operation {
+        return operations.start(File(context.filesDir.canonicalFile, release.key).path) { handle?.requestCancel() }
+    }
+
     private val httpClient = OkHttpClient.Builder()
         // OCDS §5.4 timeouts. `readTimeout` is the primary inter-byte stall
         // window: OkHttp raises SocketTimeoutException when no bytes arrive within
@@ -1393,353 +1260,198 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun downloadBundle(params: BundleDownloadParams): Promise<BundleDownloadResult> {
-        return updatePromise("download") {
-            // Per-dest single-flight is acquired below once `filePath` is known.
-            // Input validation (version/HTTPS) runs FIRST and is intentionally
-            // NOT gated by the lock — a malformed request must fail the same way
-            // whether or not a download is in flight, and must never register a
-            // lock entry it then has to unwind.
-            var acquiredKey: String? = null
-            var cancelHandle: ConcurrentRangeDownloader.CancelHandle? = null
-            var completionLatch: CountDownLatch? = null
-            var duplicateDownload = false
+    private fun cleanupDownloadArtifacts(filePath: String) {
+        val file = File(filePath)
+        if (file.exists()) file.delete()
+        val metaFile = File("$filePath.meta.json")
+        if (metaFile.exists()) metaFile.delete()
+        val partialPath = "$filePath.partial"
+        val partialFile = File(partialPath)
+        if (partialFile.exists()) partialFile.delete()
+        File("$partialPath.progress").delete()
+        for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialPath.seg$i").delete()
+    }
 
-            try {
-            val context = getContext()
-            val appVersion = params.latestVersion
-            val bundleVersion = params.bundleVersion
-            val downloadUrl = params.downloadUrl
-            val sha256 = params.sha256
+    private fun downloadFileWithResumeAndVerify(
+        downloadUrl: String,
+        filePath: String,
+        expectedSize: Long,
+        sha256: String,
+        handle: ConcurrentRangeDownloader.CancelHandle,
+        step: String,
+    ) {
+        fun ensureNotCancelled() {
+            if (handle.aborted.get()) throw BundleUpdateError("CANCELLED", step)
+        }
 
-            OneKeyLog.info("BundleUpdate", "downloadBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, fileSize=${params.fileSize}, url=$downloadUrl")
+        BundleDiffReconstruction.requireArchiveBytes(expectedSize)
+        val partialFilePath = "$filePath.partial"
+        val downloadedFile = File(filePath)
+        val partialFile = File(partialFilePath)
 
-            if (!BundleUpdateStoreAndroid.isSafeVersionString(appVersion) ||
-                !BundleUpdateStoreAndroid.isSafeVersionString(bundleVersion)) {
-                OneKeyLog.error("BundleUpdate", "downloadBundle: invalid version string format: appVersion=$appVersion, bundleVersion=$bundleVersion")
-                throw BundleUpdateError("INVALID_ARGUMENT", "download")
-            }
-
-            if (!downloadUrl.startsWith("https://")) {
-                OneKeyLog.error("BundleUpdate", "downloadBundle: URL is not HTTPS: $downloadUrl")
-                throw BundleUpdateError("SECURITY_REJECTED", "download")
-            }
-
-            val fileName = "$appVersion-$bundleVersion.zip"
-            val filePath = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context), fileName).absolutePath
-            // Resume support: download to <filename>.partial; rename to <filename>
-            // only after the full transfer + SHA256 verify pass. Mirrors the
-            // Desktop convention so a corrupt completion can never poison the
-            // "exists at filePath -> already valid" cache check above.
-            val partialFilePath = "$filePath.partial"
-
-            // OCDS §5.8 per-destination single-flight. Register a CancelHandle for
-            // THIS dest; a second downloadBundle for the same `filePath` fails fast
-            // ("Already downloading"). Different dests are allowed to run
-            // concurrently. The handle is passed to the concurrent downloader so
-            // clearDownload/clearBundle can stop its workers before deleting files.
-            val handle = ConcurrentRangeDownloader.CancelHandle()
-            val finished = CountDownLatch(1)
-            val registration = handle to finished
-            val wasActive = synchronized(activeDownloads) {
-                clearingDownloads || activeDownloads.putIfAbsent(filePath, registration) != null
-            }
-            if (wasActive) {
-                OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading $filePath")
-                duplicateDownload = true
-                throw BundleUpdateError("INVALID_ARGUMENT", "download")
-            }
-            acquiredKey = filePath
-            cancelHandle = handle
-            completionLatch = finished
-            fun ensureNotCancelled() {
-                if (handle.aborted.get()) throw BundleUpdateError("CANCELLED", "download")
-            }
-
-            val result = BundleDownloadResult(
-                downloadUrl = downloadUrl,
-                latestVersion = appVersion,
-                bundleVersion = bundleVersion,
-                sha256 = sha256
-            )
-
-            OneKeyLog.info("BundleUpdate", "downloadBundle: filePath=$filePath")
-
-            val downloadedFile = File(filePath)
-            val partialFile = File(partialFilePath)
-            if (downloadedFile.exists()) {
-                OneKeyLog.info("BundleUpdate", "downloadBundle: file already exists, verifying SHA256...")
-                if (verifyBundleSHA256(filePath, sha256)) {
-                    ensureNotCancelled()
-                    OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
-                    // Final file is authoritative — drop any stale concurrent
-                    // partial + segment files left by an earlier interrupted
-                    // attempt. (".progress" is a legacy manifest from the old
-                    // pre-allocated model; deleting it is a harmless no-op now.)
-                    if (partialFile.exists()) partialFile.delete()
-                    File("$partialFilePath.progress").delete()
-                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
-                    // Keep the per-dest lock held across the skip delay below.
-                    // The `finally` removes the lock entry AFTER this return runs,
-                    // so the lock spans the whole sleep — closing the ~1s window
-                    // where a second downloadBundle for this dest could otherwise
-                    // pass the single-flight guard and run concurrently.
-                    Thread.sleep(1000)
-                    ensureNotCancelled()
-                    sendEvent("update/complete")
-                    return@updatePromise result
-                } else {
-                    OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
-                    downloadedFile.delete()
-                    // Stale completed file invalidates any partial too — including
-                    // the concurrent segment files, otherwise the next resume would
-                    // pick up bytes belonging to the rejected build.
-                    if (partialFile.exists()) partialFile.delete()
-                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
-                }
-            }
-
-            // === Concurrent multi-range download (P2) ===
-            // Try the 8-range concurrent path first. On COMPLETED the .partial
-            // is fully on disk, so we promote + verify here and finish. On
-            // FALLBACK we fall through to the original single-stream path below.
-            // Transient errors bubble to the outer catch (the concurrent
-            // downloader keeps its partial + manifest for resume).
+        fun promotePartial() {
             ensureNotCancelled()
-            sendEvent("update/start")
-            run {
-                // onProgress is invoked concurrently by all 8 worker threads, so
-                // a plain `var` read-compare-write races (duplicate/out-of-order
-                // progress events). Use AtomicInteger + CAS: only the thread that
-                // wins the compareAndSet to a strictly higher value emits, which
-                // also keeps progress monotonic. (Worst case a race only affects
-                // progress eventing, never file bytes.)
-                val concurrentProgress = AtomicInteger(-1)
-                val concurrentOutcome = ConcurrentRangeDownloader(
-                    httpClient = httpClient,
-                    log = { msg -> OneKeyLog.info("BundleUpdate", msg) },
-                ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
-                    if (handle.aborted.get()) return@download
-                    if (total > 0) {
-                        val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-                        val prev = concurrentProgress.get()
-                        if (p > prev && concurrentProgress.compareAndSet(prev, p)) {
-                            sendEvent("update/downloading", progress = p)
-                        }
+            if (!partialFile.renameTo(downloadedFile)) {
+                throw BundleUpdateError("STORAGE_ERROR", step)
+            }
+        }
+
+        fun verifyAndPromote() {
+            ensureNotCancelled()
+            BundleDiffReconstruction.requireArchiveBytes(partialFile.length())
+            val calculated = BundleUpdateStoreAndroid.calculateSHA256(partialFilePath)
+                ?: throw BundleUpdateError("STORAGE_ERROR", step)
+            ensureNotCancelled()
+            if (!BundleUpdateStoreAndroid.secureCompare(calculated, sha256)) {
+                partialFile.delete()
+                throw BundleUpdateError("INTEGRITY_FAILED", step)
+            }
+            promotePartial()
+        }
+
+        ensureNotCancelled()
+        sendEvent("update/start")
+        run {
+            val concurrentProgress = AtomicInteger(-1)
+            val concurrentOutcome = ConcurrentRangeDownloader(
+                httpClient = httpClient,
+                log = { msg -> OneKeyLog.info("BundleUpdate", msg) },
+            ).download(downloadUrl, partialFilePath, handle, maxTotalBytes = BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES) { transferred, total ->
+                if (handle.aborted.get()) return@download
+                if (total > 0) {
+                    val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
+                    val prev = concurrentProgress.get()
+                    if (p > prev && concurrentProgress.compareAndSet(prev, p)) {
+                        sendEvent("update/downloading", progress = p)
                     }
                 }
-                ensureNotCancelled()
-                if (concurrentOutcome == ConcurrentRangeDownloader.Outcome.COMPLETED) {
-                    // Promote .partial -> final, then SHA256 verify — identical
-                    // finalize to the single-stream path below.
-                    if (downloadedFile.exists()) downloadedFile.delete()
-                    if (!File(partialFilePath).renameTo(downloadedFile)) {
-                        OneKeyLog.error("BundleUpdate", "downloadBundle: concurrent rename .partial -> final failed")
-                        throw BundleUpdateError("STORAGE_ERROR", "download")
-                    }
-                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent download finished, verifying SHA256...")
-                    ensureNotCancelled()
-                    val calculatedHash = BundleUpdateStoreAndroid.calculateSHA256(filePath)
-                        ?: throw BundleUpdateError("STORAGE_ERROR", "download")
-                    if (!BundleUpdateStoreAndroid.secureCompare(calculatedHash, sha256)) {
+            }
+            ensureNotCancelled()
+            if (concurrentOutcome == ConcurrentRangeDownloader.Outcome.COMPLETED) {
+                verifyAndPromote()
+                return
+            }
+            OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent not used, falling back to single-stream")
+        }
+
+        var partialBytes = 0L
+        val hasConcurrentSegments = (0 until CONCURRENT_SEGMENT_COUNT).any { File("$partialFilePath.seg$it").exists() }
+        if (partialFile.exists() && !hasConcurrentSegments) {
+            val partialSize = partialFile.length()
+            BundleDiffReconstruction.requireArchiveBytes(partialSize)
+            when {
+                expectedSize > 0 && partialSize == expectedSize -> {
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: partial matches expected size ($partialSize), verifying before promotion")
+                    if (verifyBundleSHA256(partialFilePath, sha256)) {
+                        promotePartial()
                         ensureNotCancelled()
-                        val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
-                        File(filePath).delete()
-                        OneKeyLog.error("BundleUpdate", "downloadBundle: concurrent SHA256 verification failed, reason=$reason")
-                        throw BundleUpdateError("INTEGRITY_FAILED", "download")
-                    }
-                    ensureNotCancelled()
-                    sendEvent("update/complete")
-                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
-                    return@updatePromise result
-                }
-                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent not used, falling back to single-stream")
-            }
-
-            // Resume: if a partial from a previous run exists and is smaller
-            // than the expected size, send `Range: bytes=<offset>-` so the
-            // server fills in the rest. If the partial is exactly the
-            // expected size it's a process-killed-just-before-rename case
-            // (full body on disk but never promoted): try SHA verify
-            // before discarding so we save a full re-download.
-            val expectedSize = if (params.fileSize > 0) params.fileSize.toLong() else 0L
-            var partialBytes = 0L
-            // If any concurrent `.segN` files survive, the `.partial` here is the
-            // concurrent committed cursor, not a single-stream partial. Defer to
-            // the concurrent downloader (which already ran above and may resume on
-            // a later attempt) and skip size-based promote/discard, which would
-            // otherwise misjudge a bare `.partial` when the concurrent path
-            // returned FALLBACK but left `.segN` residue. Mirrors app-update.
-            val hasConcurrentSegments = (0 until CONCURRENT_SEGMENT_COUNT).any { File("$partialFilePath.seg$it").exists() }
-            if (partialFile.exists() && !hasConcurrentSegments) {
-                val partialSize = partialFile.length()
-                when {
-                    expectedSize > 0 && partialSize == expectedSize -> {
-                        OneKeyLog.info("BundleUpdate", "downloadBundle: partial matches expected size ($partialSize), trying promote+verify")
-                        if (downloadedFile.exists()) downloadedFile.delete()
-                        if (partialFile.renameTo(downloadedFile) && verifyBundleSHA256(filePath, sha256)) {
-                            ensureNotCancelled()
-                            OneKeyLog.info("BundleUpdate", "downloadBundle: recovered crashed-before-rename bundle, skipping download")
-                            // The `finally` removes the per-dest lock after this
-                            // return; the lock therefore spans the skip delay,
-                            // same as the existing-file cache-hit path above.
-                            Thread.sleep(1000)
-                            ensureNotCancelled()
-                            sendEvent("update/complete")
-                            return@updatePromise result
-                        } else {
-                            OneKeyLog.warn("BundleUpdate", "downloadBundle: promote+verify failed, discarding both files")
-                            if (downloadedFile.exists()) downloadedFile.delete()
-                            // partialFile is gone (renamed); nothing to delete
-                        }
-                    }
-                    expectedSize > 0 && partialSize > expectedSize -> {
-                        OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>expected), discarding: $partialSize/$expectedSize")
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: recovered crashed-before-rename bundle, skipping download")
+                        Thread.sleep(1000)
+                        ensureNotCancelled()
+                        return
+                    } else {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: partial verification failed, discarding")
                         partialFile.delete()
-                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                     }
-                    partialSize > 0 -> {
-                        partialBytes = partialSize
-                        OneKeyLog.info("BundleUpdate", "downloadBundle: resuming from $partialBytes bytes (expected=$expectedSize)")
-                    }
-                    else -> partialFile.delete()
                 }
+                expectedSize > 0 && partialSize > expectedSize -> {
+                    OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>expected), discarding: $partialSize/$expectedSize")
+                    partialFile.delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
+                }
+                partialSize > 0 -> {
+                    partialBytes = partialSize
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: resuming from $partialBytes bytes (expected=$expectedSize)")
+                }
+                else -> partialFile.delete()
             }
+        }
 
-            // update/start already emitted before the concurrent attempt above.
-            OneKeyLog.info("BundleUpdate", "downloadBundle: starting single-stream download (resume=${partialBytes > 0})...")
-
-            val requestBuilder = Request.Builder().url(downloadUrl)
-            if (partialBytes > 0) {
-                requestBuilder.addHeader("Range", "bytes=$partialBytes-")
-            }
-            val response = httpClient.newCall(requestBuilder.build()).execute()
+        OneKeyLog.info("BundleUpdate", "downloadBundle: starting single-stream download (resume=${partialBytes > 0})...")
+        val requestBuilder = Request.Builder().url(downloadUrl)
+        if (partialBytes > 0) {
+            requestBuilder.addHeader("Range", "bytes=$partialBytes-")
+        }
+        handle.execute(httpClient.newCall(requestBuilder.build())) { response ->
             ensureNotCancelled()
 
-            // 416 Range Not Satisfiable: server says our offset is past the
-            // file length. Two sub-cases distinguishable from
-            // `Content-Range: bytes */<total>`:
-            //   (a) total == partialBytes → file is exactly complete on
-            //       server; our partial is the whole bundle and just
-            //       needs SHA verify + rename. Recover instead of wipe.
-            //   (b) anything else → partial is corrupt or bundle changed.
-            //       Wipe and bubble up.
             if (response.code == 416) {
                 val contentRange = response.header("Content-Range")
-                response.close()
                 val totalFromHeader = contentRange
                     ?.let { Regex("""bytes\s+\*\s*/\s*(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
+                totalFromHeader?.let { BundleDiffReconstruction.requireArchiveBytes(it) }
                 if (totalFromHeader != null && totalFromHeader == partialBytes && partialFile.exists()) {
-                    OneKeyLog.info("BundleUpdate", "downloadBundle: HTTP 416 with total==$totalFromHeader matches partial, attempting promote+verify")
-                    if (downloadedFile.exists()) downloadedFile.delete()
-                    if (partialFile.renameTo(downloadedFile) && verifyBundleSHA256(filePath, sha256)) {
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: HTTP 416 with total==$totalFromHeader matches partial, verifying before promotion")
+                    if (verifyBundleSHA256(partialFilePath, sha256)) {
+                        promotePartial()
                         ensureNotCancelled()
                         OneKeyLog.info("BundleUpdate", "downloadBundle: 416 recovery succeeded, skipping download")
-                        sendEvent("update/complete")
-                        return@updatePromise result
+                        return@execute
                     }
                     OneKeyLog.warn("BundleUpdate", "downloadBundle: 416 recovery failed verify, discarding")
-                    if (downloadedFile.exists()) downloadedFile.delete()
+                    partialFile.delete()
                 }
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
                 if (partialFile.exists()) partialFile.delete()
                 for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
-                // The outer catch emits one error event for this failure.
-                throw BundleUpdateError("HTTP_ERROR", "download", 416)
+                throw BundleUpdateError("HTTP_ERROR", step, 416)
             }
 
             val expectsResume = partialBytes > 0
-            var isPartialResponse = response.code == 206
+            val isPartialResponse = response.code == 206
 
             if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=${response.code}")
-                response.close()
-                // outer catch is the single source of update/error events.
-                throw BundleUpdateError("HTTP_ERROR", "download", response.code)
+                throw BundleUpdateError("HTTP_ERROR", step, response.code)
             }
 
-            // Server can ignore `Range` and return the full body with 200; in
-            // that case our partial is meaningless — restart fresh.
             if (expectsResume && !isPartialResponse) {
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: requested Range but server returned 200, restarting from scratch")
                 if (partialFile.exists()) partialFile.delete()
                 for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
-                partialBytes = 0L
             }
 
-            // On a 206 the server's `Content-Range` start MUST equal the offset
-            // we asked to resume from (`partialBytes`). A misconfigured server or
-            // proxy can return a 206 whose range starts somewhere else; appending
-            // that slice onto our `.partial` would splice mismatched bytes and the
-            // final SHA256 would fail only after a full download. Guard here: if
-            // the start is missing or != partialBytes, drop the partial+segments
-            // and abort this attempt. We must NOT reuse this body as a 200-style
-            // full rewrite: a mismatched 206 body is still a range slice, not the
-            // whole file, so writing it would produce a corrupt bundle. Close the
-            // response and throw a retryable error — with partial+segN already
-            // gone, the next attempt naturally restarts from 0.
-            if (isPartialResponse && partialBytes > 0) {
-                val contentRangeStart = response.header("Content-Range")
-                    ?.let { Regex("""bytes\s+(\d+)-\d+/\d+""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
-                if (contentRangeStart == null || contentRangeStart != partialBytes) {
-                    OneKeyLog.warn(
-                        "BundleUpdate",
-                        "downloadBundle: 206 Content-Range start=$contentRangeStart != partialBytes=$partialBytes, discarding partial and aborting attempt"
-                    )
+            val offset = if (isPartialResponse) partialBytes else 0L
+            val rangeTotal = if (isPartialResponse) {
+                BundleDiffReconstruction.singleStreamRangeTotal(response.header("Content-Range"), offset) ?: run {
+                    OneKeyLog.warn("BundleUpdate", "downloadBundle: invalid 206 range at offset $offset, discarding partial")
                     if (partialFile.exists()) partialFile.delete()
                     for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
-                    response.close()
-                    throw java.io.IOException("206 Content-Range start mismatch (got=$contentRangeStart, want=$partialBytes); discarded partial, retry from scratch")
+                    throw BundleUpdateError("INTEGRITY_FAILED", step)
                 }
-            }
+            } else null
 
-            // Close the response before throwing on a null body — OkHttp
-            // holds connection resources on the response wrapper itself,
-            // and `throw` here exits the function before any byteStream()
-            // consumption would close it for us.
             val body = response.body ?: run {
-                response.close()
-                throw BundleUpdateError("NETWORK_ERROR", "download")
+                throw BundleUpdateError("NETWORK_ERROR", step)
             }
             val contentLength = body.contentLength()
-            // Total size of the whole resource (not the slice). On 206 prefer
-            // Content-Range's "/total" tail; fall back to partial+contentLength.
-            val totalSize: Long = if (isPartialResponse) {
-                val contentRange = response.header("Content-Range")
-                val parsedTotal = contentRange
-                    ?.let { Regex("""bytes \d+-\d+/(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
-                parsedTotal ?: (partialBytes + contentLength.coerceAtLeast(0L))
-            } else {
-                if (contentLength > 0) contentLength else expectedSize
-            }
+            BundleDiffReconstruction.requireArchiveBytes(offset, contentLength.coerceAtLeast(0L))
+            val totalSize = rangeTotal ?: if (contentLength > 0) contentLength else expectedSize
+            BundleDiffReconstruction.requireArchiveBytes(totalSize)
             OneKeyLog.info(
                 "BundleUpdate",
-                "downloadBundle: HTTP ${response.code}, contentLength=$contentLength, totalSize=$totalSize, partialBytes=$partialBytes, downloading..."
+                "downloadBundle: HTTP ${response.code}, contentLength=$contentLength, totalSize=$totalSize, offset=$offset, downloading..."
             )
 
-            // Ensure parent directory exists before writing
             val parentDir = File(partialFilePath).parentFile
             if (parentDir != null && !parentDir.exists()) {
                 parentDir.mkdirs()
-                OneKeyLog.info("BundleUpdate", "downloadBundle: created parent directory: ${parentDir.absolutePath}")
             }
 
-            // Append iff server granted us a 206 partial; otherwise overwrite.
-            val maxDownloadBytes = 512L * 1024 * 1024
-            val appendMode = isPartialResponse
-            var totalBytesRead = if (isPartialResponse) partialBytes else 0L
             body.byteStream().use { inputStream ->
-                FileOutputStream(partialFilePath, appendMode).use { outputStream ->
+                FileOutputStream(partialFile, offset > 0L).use { outputStream ->
+                    var totalBytesRead = outputStream.channel.size()
+                    if (totalBytesRead != offset) {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: partial file length changed before writing")
+                        partialFile.delete()
+                        throw BundleUpdateError("STORAGE_ERROR", step)
+                    }
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
-
                     var prevProgress = -1
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         ensureNotCancelled()
-                        totalBytesRead += bytesRead
-                        if (totalBytesRead > maxDownloadBytes) {
-                            throw BundleUpdateError("SECURITY_REJECTED", "download")
-                        }
+                        totalBytesRead = BundleDiffReconstruction.requireArchiveBytes(totalBytesRead, bytesRead.toLong())
                         outputStream.write(buffer, 0, bytesRead)
                         if (totalSize > 0) {
                             val progress = ((totalBytesRead * 100) / totalSize).toInt().coerceIn(0, 100)
@@ -1753,66 +1465,215 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
 
-            val partialAfter = File(partialFilePath)
-            ensureNotCancelled()
-            OneKeyLog.info(
-                "BundleUpdate",
-                "downloadBundle: download finished, totalBytesRead=$totalBytesRead, partialExists=${partialAfter.exists()}, partialSize=${if (partialAfter.exists()) partialAfter.length() else -1}, finalizing..."
-            )
+            verifyAndPromote()
+        }
+    }
 
-            // Promote .partial to final ONLY after the full transfer; renaming
-            // first means a SHA256 mismatch leaves no half-baked filePath that
-            // the next call would mistake for a cached good bundle.
-            if (downloadedFile.exists()) downloadedFile.delete()
-            if (!partialAfter.renameTo(downloadedFile)) {
-                OneKeyLog.error("BundleUpdate", "downloadBundle: rename .partial -> final failed")
-                // outer catch is the single source of update/error events;
-                // The outer catch emits one error event for this failure.
-                throw BundleUpdateError("STORAGE_ERROR", "download")
-            }
+    override fun downloadBundle(params: BundleDownloadParams): Promise<BundleDownloadResult> {
+        return updatePromise("download") {
+            var operation: BundleUpdateOperations.Operation? = null
+            val handle = ConcurrentRangeDownloader.CancelHandle()
 
-            OneKeyLog.info("BundleUpdate", "downloadBundle: verifying SHA256...")
-            ensureNotCancelled()
-            val calculatedHash = BundleUpdateStoreAndroid.calculateSHA256(filePath)
-                ?: throw BundleUpdateError("STORAGE_ERROR", "download")
-            if (!BundleUpdateStoreAndroid.secureCompare(calculatedHash, sha256)) {
-                ensureNotCancelled()
-                val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
-                File(filePath).delete()
-                OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download, reason=$reason")
-                // The outer catch emits the fixed integrity failure wire.
-                throw BundleUpdateError("INTEGRITY_FAILED", "download")
-            }
+            try {
+                val context = getContext()
+                val appVersion = params.latestVersion
+                val bundleVersion = params.bundleVersion
+                val downloadUrl = params.downloadUrl
+                val sha256 = BundleDiffReconstruction.normalizeSha256(params.sha256) ?: params.sha256.lowercase()
 
-            ensureNotCancelled()
-            sendEvent("update/complete")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
-            result
+                OneKeyLog.info("BundleUpdate", "downloadBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, fileSize=${params.fileSize}, url=$downloadUrl")
+
+                if (!BundleUpdateStoreAndroid.isSafeVersionString(appVersion) ||
+                    !BundleUpdateStoreAndroid.isSafeVersionString(bundleVersion)) {
+                    OneKeyLog.error("BundleUpdate", "downloadBundle: invalid version string format: appVersion=$appVersion, bundleVersion=$bundleVersion")
+                    throw BundleUpdateError("INVALID_ARGUMENT", "download")
+                }
+
+                if (!downloadUrl.startsWith("https://")) {
+                    OneKeyLog.error("BundleUpdate", "downloadBundle: URL is not HTTPS: $downloadUrl")
+                    throw BundleUpdateError("SECURITY_REJECTED", "download")
+                }
+
+                val release = ReleaseIdentity(appVersion, bundleVersion)
+                val run = startOperation(context, release, handle)
+                operation = run
+                val bundleKey = release.key
+                val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+                val fullFile = File(downloadDir, "$bundleKey.zip")
+                resolveManagedFile(downloadDir, fullFile, "download")
+                val filePath = fullFile.absolutePath
+                val partialFilePath = "$filePath.partial"
+                run.ensureActive()
+
+                fun complete(result: BundleDownloadResult, publish: () -> Unit = {}): BundleDownloadResult {
+                    operations.publish(run, publish)
+                    sendEvent("update/complete")
+                    return result
+                }
+
+                fullBundleParamsByRelease[release] = FullBundleParams(
+                    downloadUrl = downloadUrl,
+                    fileSize = params.fileSize,
+                    sha256 = sha256,
+                )
+
+                val fullResult = BundleDownloadResult(
+                    downloadUrl = downloadUrl,
+                    latestVersion = appVersion,
+                    bundleVersion = bundleVersion,
+                    sha256 = sha256,
+                    diffDownloadUrl = null,
+                    diffFileSize = null,
+                    diffSha256 = null,
+                    diffSignature = null,
+                )
+
+                OneKeyLog.info("BundleUpdate", "downloadBundle: filePath=$filePath")
+
+                val downloadedFile = File(filePath)
+                val partialFile = File(partialFilePath)
+                if (downloadedFile.exists()) {
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: file already exists, verifying SHA256...")
+                    if (verifyBundleSHA256(filePath, sha256)) {
+                        run.ensureActive()
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
+                        if (partialFile.exists()) partialFile.delete()
+                        File("$partialFilePath.progress").delete()
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
+                        Thread.sleep(1000)
+                        run.ensureActive()
+                        return@updatePromise complete(fullResult)
+                    } else {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
+                        downloadedFile.delete()
+                        if (partialFile.exists()) partialFile.delete()
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
+                    }
+                }
+
+                val diffDir = File(downloadDir, BundleDiffReconstruction.DIFF_DOWNLOAD_DIR_NAME)
+                val diffFilePath = File(diffDir, "$bundleKey${BundleDiffReconstruction.DIFF_ZIP_EXTENSION}").absolutePath
+                val diffMetaFile = File(diffDir, "$bundleKey${BundleDiffReconstruction.DIFF_META_EXTENSION}")
+                resolveManagedFile(downloadDir, File(diffFilePath), "download")
+                resolveManagedFile(downloadDir, diffMetaFile, "download")
+                val existingDesc = BundleDiffReconstruction.readDescriptor(diffMetaFile, appVersion, bundleVersion)
+                val isFallbackMarked = diffFallbackDigests[release] == sha256 ||
+                    (existingDesc?.fallbackRequired == true &&
+                        BundleDiffReconstruction.constantTimeEqualHex(existingDesc.sha256, sha256))
+
+                // Priority 1: Incremental diff download if usable diff params are provided
+                val usableDiff = BundleDiffReconstruction.isUsableDiffParams(
+                    diffDownloadUrl = params.diffDownloadUrl,
+                    diffSha256 = params.diffSha256,
+                    diffSignature = params.diffSignature,
+                    isFallbackMarked = isFallbackMarked,
+                )
+                if (usableDiff) {
+                    if (!diffDir.exists()) diffDir.mkdirs()
+                    val diffUrl = params.diffDownloadUrl!!
+                    val diffSha256 = BundleDiffReconstruction.normalizeSha256(params.diffSha256)!!
+                    val diffSignature = params.diffSignature!!
+                    val diffFile = File(diffFilePath)
+                    val diffDescriptor = BundleDiffReconstruction.descriptorPreservingVerifiedSignature(
+                        newDescriptor = BundleDiffReconstruction.DiffArchiveDescriptor(
+                            appVersion = appVersion,
+                            bundleVersion = bundleVersion,
+                            downloadUrl = downloadUrl,
+                            fileSize = params.fileSize,
+                            sha256 = sha256,
+                            diffSha256 = diffSha256,
+                            signature = null,
+                        ),
+                        existingDescriptor = existingDesc,
+                    )
+                    val diffResult = BundleDownloadResult(
+                        downloadUrl = downloadUrl,
+                        latestVersion = appVersion,
+                        bundleVersion = bundleVersion,
+                        sha256 = sha256,
+                        diffDownloadUrl = diffUrl,
+                        diffFileSize = params.diffFileSize,
+                        diffSha256 = diffSha256,
+                        diffSignature = diffSignature,
+                    )
+
+                    if (diffFile.exists()) {
+                        if (verifyBundleSHA256(diffFilePath, diffSha256)) {
+                            run.ensureActive()
+                            OneKeyLog.info("BundleUpdate", "downloadBundle: existing diff file SHA256 valid, skipping download")
+                            val diffPartial = "$diffFilePath.partial"
+                            File(diffPartial).delete()
+                            File("$diffPartial.progress").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$diffPartial.seg$i").delete()
+                            Thread.sleep(1000)
+                            return@updatePromise complete(diffResult) {
+                                if (!BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile, AndroidBundleFileSystem)) {
+                                    throw BundleUpdateError("STORAGE_ERROR", "download")
+                                }
+                            }
+                        } else {
+                            cleanupDownloadArtifacts(diffFilePath)
+                        }
+                    }
+
+                    try {
+                        val expectedDiffSize = (params.diffFileSize ?: 0.0).let { if (it > 0) it.toLong() else 0L }
+                        downloadFileWithResumeAndVerify(
+                            downloadUrl = diffUrl,
+                            filePath = diffFilePath,
+                            expectedSize = expectedDiffSize,
+                            sha256 = diffSha256,
+                            handle = handle,
+                            step = "download",
+                        )
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: diff download completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
+                        return@updatePromise complete(diffResult) {
+                            if (!BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile, AndroidBundleFileSystem)) {
+                                throw BundleUpdateError("STORAGE_ERROR", "download")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        run.ensureActive()
+                        val updateError = bundleUpdateError(e, "download")
+                        if (updateError.code == "CANCELLED" || updateError.code == "STORAGE_ERROR") throw updateError
+                        if (BundleDiffReconstruction.isRetryableDiffDownloadError(updateError.code)) {
+                            OneKeyLog.warn("BundleUpdate", "downloadBundle: transient diff download interruption for $bundleKey, preserving resume progress: ${updateError.code}")
+                            BundleDiffReconstruction.writeDescriptor(diffDescriptor, diffMetaFile, AndroidBundleFileSystem)
+                            throw updateError
+                        }
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: diff download failed for $bundleKey, falling back to full bundle: ${e.message}")
+                        diffFallbackDigests[release] = sha256
+                        cleanupDownloadArtifacts(diffFilePath)
+                    }
+                }
+
+                // Priority 2: Full bundle download
+                val expectedSize = if (params.fileSize > 0) params.fileSize.toLong() else 0L
+                downloadFileWithResumeAndVerify(
+                    downloadUrl = downloadUrl,
+                    filePath = filePath,
+                    expectedSize = expectedSize,
+                    sha256 = sha256,
+                    handle = handle,
+                    step = "download",
+                )
+                OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
+                complete(fullResult)
             } catch (e: Exception) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: failed: ${e.javaClass.simpleName}: ${e.message}")
-                val intentionallyCancelled = cancelHandle?.aborted?.get() == true
+                val intentionallyCancelled = operation?.cancelled == true ||
+                    (e is BundleUpdateOperations.AdmissionException && e.reason == BundleUpdateOperations.Refusal.CANCELLED)
                 val updateError = if (intentionallyCancelled) {
                     BundleUpdateError("CANCELLED", "download")
                 } else {
                     bundleUpdateError(e, "download")
                 }
-                if (!duplicateDownload && !intentionallyCancelled) {
+                if (e !is BundleUpdateOperations.AdmissionException && !intentionallyCancelled) {
                     sendEvent("update/error", message = updateError.message.orEmpty())
                 }
                 throw updateError
             } finally {
-                // Release THIS run's per-dest single-flight lock. Keyed remove
-                // (only if we actually acquired it — input-validation failures
-                // throw before acquisition, leaving acquiredKey null). The
-                // value-checked remove avoids deleting an entry a later run for
-                // the same dest may have re-registered after a concurrent cancel.
-                val key = acquiredKey
-                val handle = cancelHandle
-                val finished = completionLatch
-                finished?.countDown()
-                if (key != null && handle != null && finished != null) {
-                    activeDownloads.remove(key, handle to finished)
-                }
+                operation?.let(operations::finish)
             }
         }
     }
@@ -1824,6 +1685,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
      * mismatch (reason == null).
      */
     private fun verifyBundleSHA256(bundlePath: String, sha256: String): Boolean {
+        if (File(bundlePath).length() > BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES) return false
         val calculated = BundleUpdateStoreAndroid.calculateSHA256(bundlePath)
         if (calculated == null) {
             val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "UNKNOWN"
@@ -1858,7 +1720,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val storageKey = "$appVersion-$bundleVersion"
             val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
             val signatureFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, storageKey))
-            if (Files.isSymbolicLink(signatureFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(signatureFile) ||
                 !signatureFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)
             ) {
                 throw BundleUpdateError("SECURITY_REJECTED", "downloadASC")
@@ -1866,144 +1728,553 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    private fun verifyAndExtractFullZip(
+        context: Context,
+        resolvedFilePath: String,
+        verificationDir: File,
+        release: ReleaseIdentity,
+        sha256: String,
+        signature: String,
+        isInstalled: Boolean,
+        skipGPG: Boolean,
+        operation: BundleUpdateOperations.Operation,
+    ) {
+        operation.ensureActive()
+        if (File(resolvedFilePath).length() > BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES) {
+            throw BundleUpdateError("SECURITY_REJECTED", "verifyASC")
+        }
+        val expectedMetadataSha = if (skipGPG) null else {
+            val metadataSha = BundleUpdateStoreAndroid.readMetadataFileSha256(
+                signature,
+                expectedAppVersion = release.appVersion,
+                expectedBundleVersion = release.bundleVersion,
+                expectedAppType = "android",
+            ) ?: throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            val actualZipSha = BundleUpdateStoreAndroid.calculateSHA256(resolvedFilePath)
+                ?: throw BundleUpdateError("STORAGE_ERROR", "verifyASC")
+            if (!BundleUpdateStoreAndroid.secureCompare(actualZipSha, sha256)) {
+                throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            }
+            metadataSha
+        }
+
+        operation.ensureActive()
+        val verificationPath = verificationDir.canonicalPath
+        if (!isInstalled) BundleUpdateStoreAndroid.unzipFile(resolvedFilePath, verificationPath)
+        operation.ensureActive()
+
+        val metadataFile = File(verificationDir, "metadata.json")
+        if (!metadataFile.isFile) throw BundleUpdateError("PACKAGE_MISSING", "verifyASC")
+        if (expectedMetadataSha != null) {
+            val actualMetadataSha = BundleUpdateStoreAndroid.calculateSHA256(metadataFile.absolutePath)
+                ?: throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            if (!BundleUpdateStoreAndroid.secureCompare(actualMetadataSha, expectedMetadataSha)) {
+                throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            }
+        }
+
+        val metadata = BundleUpdateStoreAndroid.parseMetadataJson(BundleUpdateStoreAndroid.readFileContent(metadataFile))
+        if (!BundleUpdateStoreAndroid.validateAllFilesInDir(
+                context, verificationPath, metadata, release.appVersion, release.bundleVersion, allowStaging = !isInstalled,
+            )
+        ) {
+            throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+        }
+        if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, verificationPath, metadata)) {
+            throw BundleUpdateError(if (isInstalled) "INTEGRITY_FAILED" else "INCOMPATIBLE", "verifyASC")
+        }
+    }
+
+    private fun collectCandidateOtaDirs(
+        context: Context,
+        appVersion: String,
+        excludingFolder: String,
+    ): List<File> {
+        val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+        val candidates = ArrayList<File>()
+        val seen = HashSet<String>()
+
+        val activeFolder = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
+        if (!activeFolder.isNullOrEmpty() &&
+            activeFolder != excludingFolder &&
+            activeFolder != BundleDiffReconstruction.STAGING_ROOT_DIR_NAME &&
+            BundleUpdateStoreAndroid.bundleVersionInFolder(activeFolder, appVersion) != null
+        ) {
+            val activeDir = File(bundleDir, activeFolder)
+            if (activeDir.exists() && activeDir.isDirectory) {
+                candidates.add(activeDir)
+                seen.add(activeFolder)
+            }
+        }
+
+        val children = bundleDir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.sortedByDescending { it.name }
+            .orEmpty()
+        for (child in children) {
+            val name = child.name
+            if (name == "asc" ||
+                name == BundleDiffReconstruction.STAGING_ROOT_DIR_NAME ||
+                name == excludingFolder ||
+                seen.contains(name)
+            ) {
+                continue
+            }
+            if (BundleUpdateStoreAndroid.bundleVersionInFolder(name, appVersion) == null) {
+                continue
+            }
+            candidates.add(child)
+            seen.add(name)
+        }
+        return candidates
+    }
+
+    private fun copyBuiltinAssetFile(
+        context: Context,
+        relativePath: String,
+        destinationFile: File,
+        expectedHash: String,
+    ): Boolean {
+        val candidateAssetPaths = BundleDiffReconstruction.builtinCandidateAssetPaths(relativePath)
+        for (assetPath in candidateAssetPaths) {
+            val ok = try {
+                context.assets.open(assetPath).use { input ->
+                    FileOutputStream(destinationFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count <= 0) break
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                val hash = BundleUpdateStoreAndroid.calculateSHA256(destinationFile.absolutePath)
+                if (hash != null && BundleDiffReconstruction.constantTimeEqualHex(hash, expectedHash)) {
+                    true
+                } else {
+                    if (destinationFile.exists()) destinationFile.delete()
+                    false
+                }
+            } catch (_: Exception) {
+                if (destinationFile.exists()) destinationFile.delete()
+                false
+            }
+            if (ok) return true
+        }
+
+        val apkResEntries = BundleDiffReconstruction.builtinCandidateApkResZipEntries(relativePath)
+        if (apkResEntries.isNotEmpty()) {
+            val appInfo = try { context.applicationInfo } catch (_: Exception) { null }
+            val apkPaths = BundleDiffReconstruction.collectInstalledApkPaths(
+                sourceDir = appInfo?.sourceDir,
+                splitSourceDirs = appInfo?.splitSourceDirs,
+            )
+            if (BundleDiffReconstruction.copyMatchingZipEntryFromApks(
+                    apkPaths = apkPaths,
+                    candidateEntryNames = apkResEntries,
+                    destinationFile = destinationFile,
+                    expectedHash = expectedHash,
+                    sha256OfFile = { BundleUpdateStoreAndroid.calculateSHA256(it) },
+                )
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun reconstructAndVerifyDiffZip(
+        context: Context,
+        resolvedDiffZipPath: String,
+        stagingDir: File,
+        stagingPath: String,
+        destinationDir: File,
+        release: ReleaseIdentity,
+        diffSha256: String,
+        diffSignature: String,
+        signature: String,
+        isInstalled: Boolean,
+        skipGPG: Boolean,
+        operation: BundleUpdateOperations.Operation,
+    ): String {
+        operation.ensureActive()
+        val appVersion = release.appVersion
+        val bundleVersion = release.bundleVersion
+        val folderName = "$appVersion-$bundleVersion"
+        var expectedDiffManifestSha256: String? = null
+        var expectedMetadataSha256: String? = null
+
+        if (!skipGPG) {
+            expectedDiffManifestSha256 = BundleUpdateStoreAndroid.readMetadataFileSha256(
+                diffSignature,
+                expectedAppVersion = appVersion,
+                expectedBundleVersion = bundleVersion,
+                expectedAppType = "android",
+                expectedFileName = "diff-manifest.json",
+            )?.lowercase()
+            if (expectedDiffManifestSha256.isNullOrEmpty()) {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: diffSignature GPG verification failed")
+                throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            }
+            expectedMetadataSha256 = BundleUpdateStoreAndroid.readMetadataFileSha256(
+                signature,
+                expectedAppVersion = appVersion,
+                expectedBundleVersion = bundleVersion,
+                expectedAppType = "android",
+                expectedFileName = "metadata.json",
+            )?.lowercase()
+            if (expectedMetadataSha256.isNullOrEmpty()) {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: metadata signature GPG verification failed")
+                throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            }
+        }
+
+        // a. Verify .diff.zip SHA-256 before checking isInstalled so a corrupted
+        // managed diff archive cannot pass ASC verification.
+        if (File(resolvedDiffZipPath).length() > BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES) {
+            throw BundleUpdateError("SECURITY_REJECTED", "verifyASC")
+        }
+        if (!skipGPG) {
+            val actualDiffZipSha = BundleUpdateStoreAndroid.calculateSHA256(resolvedDiffZipPath)
+            if (actualDiffZipSha == null || !BundleDiffReconstruction.constantTimeEqualHex(actualDiffZipSha, diffSha256)) {
+                throw BundleDiffReconstructionException.FallbackRequired("diff zip sha256 mismatch")
+            }
+        }
+
+        if (isInstalled) {
+            if (!skipGPG && !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature, appVersion, bundleVersion)) {
+                throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            }
+            val destination = destinationDir.canonicalPath
+            val installedMetaFile = File(destination, "metadata.json")
+            val installedMetaSha = BundleUpdateStoreAndroid.calculateSHA256(installedMetaFile.absolutePath)
+                ?: throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            val metadata = BundleUpdateStoreAndroid.parseMetadataJson(
+                BundleUpdateStoreAndroid.readFileContent(installedMetaFile)
+            )
+            if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, destination, metadata, appVersion, bundleVersion) ||
+                !BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, destination, metadata)
+            ) {
+                throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+            }
+            return installedMetaSha.lowercase()
+        }
+
+        // b. Extract .diff.zip into isolated staging directory (enforces entry count, size, symlink, traversal checks)
+        stagingDir.parentFile?.mkdirs()
+        try {
+            BundleUpdateStoreAndroid.unzipFile(resolvedDiffZipPath, stagingPath)
+        } catch (e: SecurityException) {
+            throw BundleDiffReconstructionException.SecurityRejected(e.message ?: "diff zip security violation")
+        } catch (e: Exception) {
+            throw BundleDiffReconstructionException.FallbackRequired("diff zip extraction failed: ${e.message}")
+        }
+
+        operation.ensureActive()
+
+        if (!BundleCryptoCore.validateExtractedPathSafety(stagingPath)) {
+            throw BundleDiffReconstructionException.SecurityRejected("symlink or path traversal in diff staging")
+        }
+
+        // c. Verify diff-manifest.json byte cap and streaming SHA-256 BEFORE reading into memory
+        val diffManifestFile = File(stagingDir, "diff-manifest.json")
+        if (!diffManifestFile.exists() || !diffManifestFile.isFile) {
+            throw BundleDiffReconstructionException.FallbackRequired("diff-manifest.json missing")
+        }
+        if (diffManifestFile.length() > BundleDiffReconstruction.MAX_CONTROL_JSON_BYTES) {
+            throw BundleDiffReconstructionException.SecurityRejected("diff-manifest.json exceeds size cap")
+        }
+        if (!skipGPG && expectedDiffManifestSha256 != null) {
+            val actualManifestSha = BundleUpdateStoreAndroid.calculateSHA256(diffManifestFile.absolutePath)
+            if (actualManifestSha == null || !BundleDiffReconstruction.constantTimeEqualHex(actualManifestSha, expectedDiffManifestSha256)) {
+                throw BundleDiffReconstructionException.IntegrityFailed("diff-manifest.json sha256 mismatch")
+            }
+        }
+
+        // d & e. Parse & validate diff-manifest.json, verify metadata.json streaming SHA-256 BEFORE reading into memory
+        val manifestContent = BundleUpdateStoreAndroid.readFileContent(diffManifestFile)
+        val manifest = BundleDiffReconstruction.parseAndValidateManifest(
+            jsonContent = manifestContent,
+            expectedAppType = "android",
+            expectedAppVersion = appVersion,
+            expectedBundleVersion = bundleVersion,
+        )
+
+        val stagedMetadataFile = File(stagingDir, "metadata.json")
+        if (!stagedMetadataFile.exists() || !stagedMetadataFile.isFile) {
+            throw BundleDiffReconstructionException.FallbackRequired("staged metadata.json missing")
+        }
+        if (stagedMetadataFile.length() > BundleDiffReconstruction.MAX_CONTROL_JSON_BYTES) {
+            throw BundleDiffReconstructionException.SecurityRejected("staged metadata.json exceeds size cap")
+        }
+        val actualMetadataSha = BundleUpdateStoreAndroid.calculateSHA256(stagedMetadataFile.absolutePath)?.lowercase()
+            ?: throw BundleDiffReconstructionException.FallbackRequired("failed to hash staged metadata.json")
+        if (!skipGPG && expectedMetadataSha256 != null) {
+            if (!BundleDiffReconstruction.constantTimeEqualHex(actualMetadataSha, expectedMetadataSha256)) {
+                throw BundleDiffReconstructionException.IntegrityFailed("metadata.json gpg sha256 mismatch")
+            }
+        }
+        if (!BundleDiffReconstruction.constantTimeEqualHex(actualMetadataSha, manifest.targetMetadataSha256)) {
+            throw BundleDiffReconstructionException.IntegrityFailed("metadata.json targetMetadataSha256 mismatch")
+        }
+
+        val targetMetadata = try {
+            BundleUpdateStoreAndroid.parseMetadataJson(
+                BundleUpdateStoreAndroid.readFileContent(stagedMetadataFile),
+            )
+        } catch (e: Exception) {
+            throw BundleDiffReconstructionException.FallbackRequired("failed to parse staged metadata.json: ${e.message}")
+        }
+        val targetFileEntries = BundleUpdateStoreAndroid.getFileMetadataEntries(targetMetadata)
+        BundleDiffReconstruction.validateManifestAgainstTargetMetadata(manifest, targetFileEntries)
+
+        operation.ensureActive()
+
+        // f & g. Verify changedFiles and reconstruct reusedFiles
+        val candidateDirs = collectCandidateOtaDirs(context, appVersion, folderName)
+        BundleDiffReconstruction.reconstruct(
+            stagingDir = stagingDir,
+            manifest = manifest,
+            candidateBundleDirs = candidateDirs,
+            sha256OfFile = { BundleUpdateStoreAndroid.calculateSHA256(it) },
+            fileSystem = AndroidBundleFileSystem,
+            builtinCopy = { relPath, destFile, expectedHash ->
+                copyBuiltinAssetFile(context, relPath, destFile, expectedHash)
+            },
+        )
+
+        operation.ensureActive()
+
+        // h. Delete diff-manifest.json before full directory validation
+        diffManifestFile.delete()
+
+        // i. Validate all files in .diff-staging and bundle compatibility
+        if (!BundleCryptoCore.validateExtractedPathSafety(stagingPath)) {
+            throw BundleDiffReconstructionException.SecurityRejected("path safety check failed after reconstruction")
+        }
+        if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, stagingPath, targetMetadata, appVersion, bundleVersion, allowStaging = true)) {
+            throw BundleDiffReconstructionException.FallbackRequired("final diff-staging file verification failed")
+        }
+        if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, stagingPath, targetMetadata)) {
+            throw BundleUpdateError("INCOMPATIBLE", "verifyASC")
+        }
+
+        return actualMetadataSha
+    }
+
     override fun verifyBundleASC(params: BundleVerifyASCParams): Promise<Unit> {
         return updatePromise("verifyASC") {
-            val sha256 = params.sha256
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
-            val signature = params.signature
-
             if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
                 throw BundleUpdateError("INVALID_ARGUMENT", "verifyASC")
             }
 
+            val sha256 = BundleDiffReconstruction.normalizeSha256(params.sha256) ?: params.sha256.lowercase()
+            val signature = params.signature
             val context = getContext()
-            val filePath = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context),
-                "$appVersion-$bundleVersion.zip").absolutePath
-            val downloadBaseCanonical = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
-            val resolvedFilePath = File(filePath).canonicalPath
-            if (!resolvedFilePath.startsWith(downloadBaseCanonical + File.separator)) {
-                OneKeyLog.error("BundleUpdate", "verifyBundleASC: ZIP outside download directory: $resolvedFilePath")
-                throw BundleUpdateError("SECURITY_REJECTED", "verifyASC")
-            }
-            if (!File(resolvedFilePath).isFile) {
-                throw BundleUpdateError("PACKAGE_MISSING", "verifyASC")
-            }
-
-            val folderName = "$appVersion-$bundleVersion"
-            val isInstalled = BundleUpdateStoreAndroid.getCurrentBundleVersion(context) == folderName ||
-                BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context).any {
-                    it["appVersion"] == appVersion && it["bundleVersion"] == bundleVersion
-                }
-            val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
-            val destinationDir = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
-            val destination = destinationDir.canonicalPath
-            if (!destination.startsWith(bundleBaseCanonical + File.separator)) {
-                OneKeyLog.error("BundleUpdate", "verifyBundleASC: destination outside bundle directory: $destination")
-                throw BundleUpdateError("SECURITY_REJECTED", "verifyASC")
-            }
-
-            OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath, signatureLength=${signature.length}")
-
-            // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
-            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
-            OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: skipGPG=$skipGPG")
-
-            if (!skipGPG) {
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: pre-verifying GPG signature before extraction...")
-                if (BundleUpdateStoreAndroid.readMetadataFileSha256(
-                        signature,
-                        expectedAppVersion = appVersion,
-                        expectedBundleVersion = bundleVersion,
-                        expectedAppType = "android",
-                    ).isNullOrEmpty()
-                ) {
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: pre-extraction GPG signature verification failed")
-                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
-                }
-
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
-                val calculatedHash = BundleUpdateStoreAndroid.calculateSHA256(resolvedFilePath)
-                    ?: throw BundleUpdateError("STORAGE_ERROR", "verifyASC")
-                if (!BundleUpdateStoreAndroid.secureCompare(calculatedHash, sha256)) {
-                    // Keep the detailed hash reason in the local log only.
-                    val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: SHA256 verification failed for file=$filePath, reason=$reason")
-                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
-                }
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: SHA256 verified OK")
-            } else {
-                OneKeyLog.warn("BundleUpdate", "verifyBundleASC: SHA256 + GPG verification skipped (DevSettings enabled)")
-            }
-
-            if (isInstalled) {
-                if (!skipGPG && !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature, appVersion, bundleVersion)) {
-                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
-                }
-                val metadata = BundleUpdateStoreAndroid.parseMetadataJson(
-                    BundleUpdateStoreAndroid.readFileContent(File(destination, "metadata.json"))
-                )
-                if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, destination, metadata, appVersion, bundleVersion) ||
-                    !BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, destination, metadata)
-                ) {
-                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
-                }
-                return@updatePromise
-            }
-
+            val release = ReleaseIdentity(appVersion, bundleVersion)
+            val folderName = release.key
+            val handle = ConcurrentRangeDownloader.CancelHandle()
+            val operation = startOperation(context, release, handle)
+            var retainedStaging: File? = null
             try {
-                if (destinationDir.exists()) {
-                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
-                }
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: extracting zip to $destination...")
-                BundleUpdateStoreAndroid.unzipFile(resolvedFilePath, destination)
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: extraction completed")
+                operation.ensureActive()
+                val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+                val fullFile = File(downloadDir, "$folderName.zip")
+                val diffDir = File(downloadDir, BundleDiffReconstruction.DIFF_DOWNLOAD_DIR_NAME)
+                val diffFile = File(diffDir, "$folderName${BundleDiffReconstruction.DIFF_ZIP_EXTENSION}")
+                val diffMetaFile = File(diffDir, "$folderName${BundleDiffReconstruction.DIFF_META_EXTENSION}")
+                val resolvedFullPath = resolveManagedFile(downloadDir, fullFile, "verifyASC")
 
-                val metadataFile = File(destination, "metadata.json")
-                if (!metadataFile.exists()) {
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: metadata.json not found after extraction")
-                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
-                    throw BundleUpdateError("PACKAGE_MISSING", "verifyASC")
-                }
-
-                val currentBundleVersion = "$appVersion-$bundleVersion"
-                if (!skipGPG) {
-                    OneKeyLog.info("BundleUpdate", "verifyBundleASC: validating GPG signature for metadata...")
-                    if (!BundleUpdateStoreAndroid.validateMetadataFileSha256(context, currentBundleVersion, signature, appVersion, bundleVersion)) {
-                        OneKeyLog.error("BundleUpdate", "verifyBundleASC: GPG signature verification failed")
-                        BundleUpdateStoreAndroid.deleteDir(destinationDir)
-                        throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+                val isInstalled = BundleUpdateStoreAndroid.getCurrentBundleVersion(context) == folderName ||
+                    BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context).any {
+                        it["appVersion"] == appVersion && it["bundleVersion"] == bundleVersion
                     }
-                    OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG signature verified OK")
+                val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+                val destinationDir = File(bundleDir, folderName)
+                resolveManagedFile(bundleDir, destinationDir, "verifyASC")
+                val stagingRootDir = File(bundleDir, BundleDiffReconstruction.STAGING_ROOT_DIR_NAME)
+                val runId = java.util.UUID.randomUUID().toString().replace("-", "")
+                val stagingDir = File(stagingRootDir, "$folderName-$runId")
+                val stagingPath = resolveManagedFile(bundleDir, stagingDir, "verifyASC")
+                val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+
+                BundleDiffReconstruction.sweepStagingDirectory(stagingRootDir, AndroidBundleFileSystem)
+                BundleDiffReconstruction.retainStagingDirectory(stagingDir)
+                retainedStaging = stagingDir
+
+                fun verifyFullZip(downloadedFallback: Boolean = false) {
+                    verifyAndExtractFullZip(
+                        context = context,
+                        resolvedFilePath = resolvedFullPath,
+                        verificationDir = if (isInstalled) destinationDir else stagingDir,
+                        release = release,
+                        sha256 = sha256,
+                        signature = signature,
+                        isInstalled = isInstalled,
+                        skipGPG = skipGPG,
+                        operation = operation,
+                    )
+                    operations.publish(operation) {
+                        if (!isInstalled) {
+                            BundleCryptoCore.safeRename(stagingPath, destinationDir.absolutePath)
+                        }
+                        diffMetaFile.delete()
+                        diffVerifiedMetadataByRelease.remove(release)
+                    }
+                    if (downloadedFallback) sendEvent("update/complete")
                 }
 
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: validating all extracted files against metadata...")
-                val metadataContent = BundleUpdateStoreAndroid.readFileContent(metadataFile)
-                val metadata = BundleUpdateStoreAndroid.parseMetadataJson(metadataContent)
-                if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, destination, metadata, appVersion, bundleVersion)) {
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: file integrity check failed")
-                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
-                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
-                }
-                if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, destination, metadata)) {
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: bundle pair compatibility check failed")
-                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
-                    throw BundleUpdateError("INCOMPATIBLE", "verifyASC")
+                // The completed full archive takes precedence over any diff state.
+                if (File(resolvedFullPath).isFile) {
+                    verifyFullZip()
+                    return@updatePromise
                 }
 
-                OneKeyLog.info("BundleUpdate", "verifyBundleASC: all verifications passed, appVersion=$appVersion, bundleVersion=$bundleVersion")
+                val resolvedDiffPath = resolveManagedFile(downloadDir, diffFile, "verifyASC")
+                resolveManagedFile(downloadDir, diffMetaFile, "verifyASC")
+                val normalizedDiffSha = BundleDiffReconstruction.normalizeSha256(params.diffSha256)
+                val descriptor = BundleDiffReconstruction.readDescriptor(diffMetaFile, appVersion, bundleVersion)
+
+                fun downloadAndVerifyFullFallback() {
+                    operation.ensureActive()
+                    val inMemory = fullBundleParamsByRelease[release]?.let {
+                        Triple(it.downloadUrl, it.fileSize, it.sha256)
+                    }
+                    val fallbackParams = BundleDiffReconstruction.resolveFallbackDownloadParams(
+                        expectedFullSha256 = sha256,
+                        expectedDiffSha256 = normalizedDiffSha,
+                        explicitDownloadUrl = params.downloadUrl,
+                        explicitFileSize = params.fileSize,
+                        inMemoryFullParams = inMemory,
+                        descriptor = descriptor,
+                    ) ?: throw BundleUpdateError("PACKAGE_MISSING", "verifyASC")
+                    val matchingDescriptor = descriptor?.takeIf { it.sha256 == sha256 && it.diffSha256 == normalizedDiffSha }
+                    val fallbackDescriptor = BundleDiffReconstruction.DiffArchiveDescriptor(
+                        appVersion = appVersion,
+                        bundleVersion = bundleVersion,
+                        downloadUrl = fallbackParams.first,
+                        fileSize = fallbackParams.second,
+                        sha256 = sha256,
+                        diffSha256 = normalizedDiffSha ?: descriptor?.takeIf { it.sha256 == sha256 }?.diffSha256 ?: sha256,
+                        signature = matchingDescriptor?.signature,
+                        fallbackRequired = true,
+                    )
+                    if (!BundleDiffReconstruction.writeDescriptor(fallbackDescriptor, diffMetaFile, AndroidBundleFileSystem)) {
+                        throw BundleUpdateError("STORAGE_ERROR", "verifyASC")
+                    }
+                    operation.ensureActive()
+                    diffFallbackDigests[release] = sha256
+                    diffFile.delete()
+                    val diffPartial = "${diffFile.absolutePath}.partial"
+                    File(diffPartial).delete()
+                    File("$diffPartial.progress").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$diffPartial.seg$i").delete()
+
+                    BundleDiffReconstruction.releaseStagingDirectory(stagingDir, AndroidBundleFileSystem)
+                    BundleDiffReconstruction.retainStagingDirectory(stagingDir)
+                    operation.ensureActive()
+                    downloadFileWithResumeAndVerify(
+                        downloadUrl = fallbackParams.first,
+                        filePath = fullFile.absolutePath,
+                        expectedSize = fallbackParams.second.toLong().coerceAtLeast(0L),
+                        sha256 = sha256,
+                        handle = handle,
+                        step = "verifyASC",
+                    )
+                    verifyFullZip(downloadedFallback = true)
+                }
+
+                val diffAvailable = File(resolvedDiffPath).isFile
+                if (diffAvailable && normalizedDiffSha != null && (skipGPG || !params.diffSignature.isNullOrEmpty())) {
+                    val matchingDescriptor = descriptor?.takeIf {
+                        BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(sha256, normalizedDiffSha, it) != null
+                    }
+                    if (matchingDescriptor == null) {
+                        downloadAndVerifyFullFallback()
+                        return@updatePromise
+                    }
+                    try {
+                        val metadataSha = reconstructAndVerifyDiffZip(
+                            context = context,
+                            resolvedDiffZipPath = resolvedDiffPath,
+                            stagingDir = stagingDir,
+                            stagingPath = stagingPath,
+                            destinationDir = destinationDir,
+                            release = release,
+                            diffSha256 = normalizedDiffSha,
+                            diffSignature = params.diffSignature.orEmpty(),
+                            signature = signature,
+                            isInstalled = isInstalled,
+                            skipGPG = skipGPG,
+                            operation = operation,
+                        )
+                        operations.publish(operation) {
+                            if (!skipGPG && !BundleDiffReconstruction.writeDescriptor(
+                                    matchingDescriptor.copy(signature = signature), diffMetaFile, AndroidBundleFileSystem,
+                                )
+                            ) {
+                                throw BundleUpdateError("STORAGE_ERROR", "verifyASC")
+                            }
+                            if (!isInstalled) {
+                                try {
+                                    BundleCryptoCore.safeRename(stagingPath, destinationDir.absolutePath)
+                                } catch (e: Exception) {
+                                    throw BundleDiffReconstructionException.FallbackRequired("Failed to promote diff staging: ${e.message}")
+                                }
+                            }
+                            if (skipGPG) {
+                                diffVerifiedMetadataByRelease.remove(release)
+                            } else {
+                                diffVerifiedMetadataByRelease[release] = BundleDiffReconstruction.VerifiedDiffMetadata(
+                                    fullSha256 = sha256,
+                                    diffSha256 = normalizedDiffSha,
+                                    metadataSha256 = metadataSha,
+                                )
+                            }
+                        }
+                        return@updatePromise
+                    } catch (e: BundleDiffReconstructionException.IntegrityFailed) {
+                        OneKeyLog.error("BundleUpdate", "verifyBundleASC: diff integrity failed: ${e.message}")
+                        throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
+                    } catch (e: BundleDiffReconstructionException.SecurityRejected) {
+                        OneKeyLog.error("BundleUpdate", "verifyBundleASC: diff security rejected: ${e.message}")
+                        throw BundleUpdateError("SECURITY_REJECTED", "verifyASC")
+                    } catch (e: BundleDiffReconstructionException.FallbackRequired) {
+                        OneKeyLog.warn("BundleUpdate", "verifyBundleASC: diff reconstruction failed (${e.message}), falling back to full bundle")
+                        downloadAndVerifyFullFallback()
+                        return@updatePromise
+                    }
+                }
+
+                if (diffFallbackDigests[release] == sha256 ||
+                    (descriptor?.fallbackRequired == true && descriptor.sha256 == sha256)
+                ) {
+                    downloadAndVerifyFullFallback()
+                    return@updatePromise
+                }
+                throw BundleUpdateError("PACKAGE_MISSING", "verifyASC")
             } catch (e: Exception) {
-                if (destinationDir.exists()) {
-                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
-                }
+                operation.ensureActive()
                 throw e
+            } finally {
+                try {
+                    retainedStaging?.let { BundleDiffReconstruction.releaseStagingDirectory(it, AndroidBundleFileSystem) }
+                } finally {
+                    operations.finish(operation)
+                }
             }
         }
     }
 
+    private fun resolveManagedFile(root: File, file: File, step: String): String =
+        resolveManagedBundlePath(root, file, AndroidBundleFileSystem)
+            ?: throw BundleUpdateError("SECURITY_REJECTED", step)
+
     override fun verifyBundle(params: BundleVerifyParams): Promise<Unit> {
         return updatePromise("verifyPackage") {
-            val sha256 = params.sha256
+            val sha256 = BundleDiffReconstruction.normalizeSha256(params.sha256) ?: params.sha256.lowercase()
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
 
@@ -2012,31 +2283,137 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             val context = getContext()
-            val filePath = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context),
-                "$appVersion-$bundleVersion.zip").absolutePath
-            val downloadBaseCanonical = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
-            val resolvedFilePath = File(filePath).canonicalPath
-            if (!resolvedFilePath.startsWith(downloadBaseCanonical + File.separator)) {
-                throw BundleUpdateError("SECURITY_REJECTED", "verifyPackage")
-            }
-            if (!File(resolvedFilePath).isFile) {
-                throw BundleUpdateError("PACKAGE_MISSING", "verifyPackage")
-            }
+            val release = ReleaseIdentity(appVersion, bundleVersion)
+            val folderName = release.key
+            val operation = startOperation(context, release)
+            try {
+                operation.ensureActive()
+                val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+                val filePath = File(downloadDir, "$folderName.zip").absolutePath
+                val resolvedFilePath = resolveManagedFile(downloadDir, File(filePath), "verifyPackage")
+                if (File(resolvedFilePath).isFile) {
+                    if (File(resolvedFilePath).length() > BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES) {
+                        throw BundleUpdateError("SECURITY_REJECTED", "verifyPackage")
+                    }
+                    OneKeyLog.info("BundleUpdate", "verifyBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath")
 
-            OneKeyLog.info("BundleUpdate", "verifyBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath")
+                    val calculated = BundleUpdateStoreAndroid.calculateSHA256(resolvedFilePath)
+                    if (calculated == null) {
+                        OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=$filePath")
+                        throw BundleUpdateError("STORAGE_ERROR", "verifyPackage")
+                    }
+                    if (!BundleUpdateStoreAndroid.secureCompare(calculated.lowercase(), sha256)) {
+                        OneKeyLog.error("BundleUpdate", "verifyBundle: SHA256 mismatch, expected=${sha256.take(16)}..., got=${calculated.take(16)}...")
+                        throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                    }
 
-            // Verify SHA256 of the downloaded file
-            val calculated = BundleUpdateStoreAndroid.calculateSHA256(resolvedFilePath)
-            if (calculated == null) {
-                OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=$filePath")
-                throw BundleUpdateError("STORAGE_ERROR", "verifyPackage")
-            }
-            if (!BundleUpdateStoreAndroid.secureCompare(calculated, sha256)) {
-                OneKeyLog.error("BundleUpdate", "verifyBundle: SHA256 mismatch, expected=${sha256.take(16)}..., got=${calculated.take(16)}...")
-                throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
-            }
+                    OneKeyLog.info("BundleUpdate", "verifyBundle: SHA256 verified OK for appVersion=$appVersion, bundleVersion=$bundleVersion")
+                    operations.publish(operation)
+                    return@updatePromise
+                }
 
-            OneKeyLog.info("BundleUpdate", "verifyBundle: SHA256 verified OK for appVersion=$appVersion, bundleVersion=$bundleVersion")
+                val diffDir = File(downloadDir, BundleDiffReconstruction.DIFF_DOWNLOAD_DIR_NAME)
+                val diffFilePath = File(diffDir, "$folderName${BundleDiffReconstruction.DIFF_ZIP_EXTENSION}").absolutePath
+                val diffMetaFile = File(diffDir, "$folderName${BundleDiffReconstruction.DIFF_META_EXTENSION}")
+                val resolvedDiffPath = resolveManagedFile(downloadDir, File(diffFilePath), "verifyPackage")
+                val diffZip = File(resolvedDiffPath)
+                if (!diffZip.isFile) {
+                    throw BundleUpdateError("PACKAGE_MISSING", "verifyPackage")
+                }
+                if (diffZip.length() > BundleDiffReconstruction.MAX_BUNDLE_ARCHIVE_BYTES) {
+                    throw BundleUpdateError("SECURITY_REJECTED", "verifyPackage")
+                }
+                resolveManagedFile(downloadDir, diffMetaFile, "verifyPackage")
+                val descriptor = BundleDiffReconstruction.readDescriptor(diffMetaFile, appVersion, bundleVersion)
+                val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+                val bundleDirPath = File(bundleDir, folderName)
+                resolveManagedFile(bundleDir, bundleDirPath, "verifyPackage")
+                val metadataFile = File(bundleDirPath, "metadata.json")
+                resolveManagedFile(bundleDir, metadataFile, "verifyPackage")
+                val metadataSize = try {
+                    BundleDiffReconstruction.targetMetadataSizeIfPresent(bundleDirPath, metadataFile, AndroidBundleFileSystem)
+                } catch (_: BundleDiffReconstructionException.IntegrityFailed) {
+                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                } catch (_: IOException) {
+                    throw BundleUpdateError("STORAGE_ERROR", "verifyPackage")
+                }
+                val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+
+                if (metadataSize != null) {
+                    if (metadataSize > BundleDiffReconstruction.MAX_CONTROL_JSON_BYTES) {
+                        throw BundleUpdateError("SECURITY_REJECTED", "verifyPackage")
+                    }
+                    val liveRecord = diffVerifiedMetadataByRelease[release]
+                    val matchingDescriptor = descriptor?.takeIf {
+                        BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(sha256, params.diffSha256, it) != null
+                    }
+                    if (liveRecord?.matches(sha256, params.diffSha256) != true && matchingDescriptor == null) {
+                        throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                    }
+                    if (!skipGPG) {
+                        val expectedMetaSha = BundleDiffReconstruction.resolveTrustedMetadataSha256ForPackageVerify(
+                            suppliedFullSha256 = sha256,
+                            suppliedSignature = params.signature,
+                            suppliedDiffSha256 = params.diffSha256,
+                            inMemoryVerified = liveRecord,
+                            descriptor = matchingDescriptor,
+                            persistedAscSignature = BundleUpdateStoreAndroid.readSignatureFile(context, folderName),
+                            verifySignatureAndExtractMetadataSha256 = { sig ->
+                                BundleUpdateStoreAndroid.readMetadataFileSha256(
+                                    sig,
+                                    expectedAppVersion = appVersion,
+                                    expectedBundleVersion = bundleVersion,
+                                    expectedAppType = "android",
+                                    expectedFileName = "metadata.json",
+                                )
+                            },
+                        ) ?: run {
+                            OneKeyLog.error("BundleUpdate", "verifyBundle: missing or invalid trust anchor for reconstructed bundle $folderName")
+                            throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                        }
+                        val actualMetaSha = BundleUpdateStoreAndroid.calculateSHA256(metadataFile.absolutePath)
+                        if (actualMetaSha == null || !BundleDiffReconstruction.constantTimeEqualHex(actualMetaSha, expectedMetaSha)) {
+                            throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                        }
+                    }
+                    val metadata = BundleUpdateStoreAndroid.parseMetadataJson(
+                        BundleUpdateStoreAndroid.readFileContent(metadataFile)
+                    )
+                    if (!BundleCryptoCore.validateExtractedPathSafety(bundleDirPath.canonicalPath) ||
+                        !BundleUpdateStoreAndroid.validateAllFilesInDir(context, bundleDirPath.canonicalPath, metadata, appVersion, bundleVersion)
+                    ) {
+                        throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                    }
+                    if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, bundleDirPath.canonicalPath, metadata)) {
+                        throw BundleUpdateError("INCOMPATIBLE", "verifyPackage")
+                    }
+                    OneKeyLog.info("BundleUpdate", "verifyBundle: diff-reconstructed bundle verified OK for appVersion=$appVersion, bundleVersion=$bundleVersion")
+                    operations.publish(operation)
+                    return@updatePromise
+                }
+
+                // Before reconstruction, verify the downloaded archive against its record.
+                val expectedDiffSha = BundleDiffReconstruction.resolveExpectedDiffSha256ForPackageVerify(
+                    suppliedFullSha256 = sha256,
+                    suppliedDiffSha256 = params.diffSha256,
+                    descriptor = descriptor,
+                ) ?: run {
+                    OneKeyLog.error("BundleUpdate", "verifyBundle: missing or mismatched expected diffSha256 for $folderName")
+                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                }
+                val calculatedDiffSha = BundleUpdateStoreAndroid.calculateSHA256(resolvedDiffPath)
+                    ?: throw BundleUpdateError("STORAGE_ERROR", "verifyPackage")
+                if (!BundleDiffReconstruction.constantTimeEqualHex(calculatedDiffSha, expectedDiffSha)) {
+                    throw BundleUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                }
+                OneKeyLog.info("BundleUpdate", "verifyBundle: downloaded diff archive verified OK for $folderName")
+                operations.publish(operation)
+            } catch (e: Exception) {
+                operation.ensureActive()
+                throw e
+            } finally {
+                operations.finish(operation)
+            }
         }
     }
 
@@ -2072,14 +2449,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // Verify bundle directory exists and is canonically confined inside getBundleDir(context)
             val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
-            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(bundleDirPath) ||
                 !bundleDirPath.canonicalPath.startsWith(bundleBaseCanonical + File.separator)
             ) {
                 throw BundleUpdateError("SECURITY_REJECTED", "install")
             }
             val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
             val sigFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, folderName))
-            if (Files.isSymbolicLink(sigFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(sigFile) ||
                 !sigFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)
             ) {
                 throw BundleUpdateError("SECURITY_REJECTED", "install")
@@ -2169,55 +2546,28 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    private fun clearDownloadFiles(context: Context, includeInstalled: Boolean) {
-        synchronized(clearDownloadsLock) {
-            try {
-                val active = synchronized(activeDownloads) {
-                    clearingDownloads = true
-                    activeDownloads.entries.map { it.key to it.value }
-                }
-                active.forEach { (_, run) -> run.first.aborted.set(true) }
-                active.forEach { (key, run) ->
-                    OneKeyLog.info("BundleUpdate", "cancelling in-flight download: $key")
-                    run.first.cancel()
-                }
-                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(65)
-                for ((_, run) in active) {
-                    val remaining = deadline - System.nanoTime()
-                    val completed = try {
-                        remaining > 0 && run.second.await(remaining, TimeUnit.NANOSECONDS)
-                    } catch (e: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        false
-                    }
-                    if (!completed) throw BundleUpdateError("UNKNOWN", "cleanup")
-                }
-                synchronized(activeDownloads) {
-                    if (active.any { (key, run) ->
-                            val current = activeDownloads[key]
-                            current != null && current !== run
-                        }) {
-                        throw BundleUpdateError("UNKNOWN", "cleanup")
-                    }
-                    val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
-                    if (downloadDir.exists()) {
-                        if (!BundleUpdateStoreAndroid.deleteDir(downloadDir)) throw BundleUpdateError("STORAGE_ERROR", "cleanup")
-                        OneKeyLog.info("BundleUpdate", "download directory deleted")
-                    }
-                    if (includeInstalled) {
-                        val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
-                        if (bundleDir.exists()) {
-                            if (!BundleUpdateStoreAndroid.deleteDir(bundleDir)) throw BundleUpdateError("STORAGE_ERROR", "cleanup")
-                            OneKeyLog.info("BundleUpdate", "bundle directory deleted")
-                        }
-                    }
-                }
-            } finally {
-                synchronized(activeDownloads) {
-                    clearingDownloads = false
-                }
+    private fun clearDownloadFiles(context: Context, includeInstalled: Boolean, afterClear: () -> Unit = {}) {
+        val cleared = operations.cleanup(65, TimeUnit.SECONDS) {
+            diffFallbackDigests.clear()
+            fullBundleParamsByRelease.clear()
+            if (includeInstalled) diffVerifiedMetadataByRelease.clear()
+
+            val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+            if (downloadDir.exists() && !BundleUpdateStoreAndroid.deleteDir(downloadDir)) {
+                throw BundleUpdateError("STORAGE_ERROR", "cleanup")
             }
+            val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+            if (includeInstalled) {
+                if (bundleDir.exists() && !BundleUpdateStoreAndroid.deleteDir(bundleDir)) {
+                    throw BundleUpdateError("STORAGE_ERROR", "cleanup")
+                }
+            } else {
+                val stagingDir = File(bundleDir, BundleDiffReconstruction.STAGING_ROOT_DIR_NAME)
+                if (stagingDir.exists()) BundleUpdateStoreAndroid.deleteDir(stagingDir)
+            }
+            afterClear()
         }
+        if (!cleared) throw BundleUpdateError("UNKNOWN", "cleanup")
     }
 
     override fun clearDownload(): Promise<Unit> {
@@ -2296,6 +2646,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     val name = child.name
                     // Skip non-version entries (asc dir, fallback json, etc.)
                     if (name == "asc" || name == "fallbackUpdateBundleData.json") return@forEach
+                    if (name == BundleDiffReconstruction.STAGING_ROOT_DIR_NAME) {
+                        BundleDiffReconstruction.sweepStagingDirectory(child, AndroidBundleFileSystem)
+                        return@forEach
+                    }
                     if (shouldKeep(name)) return@forEach
                     try {
                         if (BundleUpdateStoreAndroid.deleteDir(child)) {
@@ -2310,14 +2664,30 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
 
-            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume)
+            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume) and .diff/* stages
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists() && downloadDir.isDirectory) {
                 downloadDir.listFiles()?.forEach { file ->
                     val name = file.name
+                    if (name == BundleDiffReconstruction.DIFF_DOWNLOAD_DIR_NAME) {
+                        val type = try {
+                            AndroidBundleFileSystem.lstat(file)?.type
+                        } catch (e: IOException) {
+                            OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to inspect diff directory: ${e.message}")
+                            return@forEach
+                        }
+                        if (type != BundleFileType.DIRECTORY) return@forEach
+                        file.listFiles()?.forEach { diffFile ->
+                            try {
+                                BundleDiffReconstruction.pruneDiffDownload(diffFile, AndroidBundleFileSystem, ::shouldKeep)
+                            } catch (e: Exception) {
+                                OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete diff download ${diffFile.name}: ${e.message}")
+                            }
+                        }
+                        return@forEach
+                    }
                     // Strip the trailing extension chain to recover the
-                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial", or a
-                    // concurrent segment file "6.3.0-123.zip.partial.seg3").
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial").
                     var stem = name
                     // Concurrent segment files end in ".segN" — peel that off
                     // first so the rest of the chain strips as usual.
@@ -2407,18 +2777,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return updatePromise("cleanup") {
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")
             val context = getContext()
-            val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
-            if (downloadDir.exists()) {
-                BundleUpdateStoreAndroid.deleteDir(downloadDir)
-                OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: deleted download dir")
+            clearDownloadFiles(context, includeInstalled = true) {
+                BundleUpdateStoreAndroid.clearUpdateBundleData(context)
+                BundleUpdateStoreAndroid.clearNativeVersionPrefs(context)
             }
-            val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
-            if (bundleDir.exists()) {
-                BundleUpdateStoreAndroid.deleteDir(bundleDir)
-                OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: deleted bundle dir")
-            }
-            BundleUpdateStoreAndroid.clearUpdateBundleData(context)
-            BundleUpdateStoreAndroid.clearNativeVersionPrefs(context)
 
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: completed successfully")
             TestResult(success = true, message = "Successfully cleared all JS bundle data")
@@ -2454,7 +2816,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), bundleVersion)
-            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(bundleDirPath) ||
                 !bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
@@ -2462,7 +2824,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
             val sigFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, bundleVersion))
             val baseAscDir = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
-            if (Files.isSymbolicLink(sigFile.toPath()) ||
+            if (AndroidBundleFileSystem.isSymbolicLink(sigFile) ||
                 !sigFile.canonicalPath.startsWith(baseAscDir + File.separator)
             ) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: signature path outside asc directory: ${sigFile.canonicalPath}")
@@ -2710,6 +3072,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
                 bundleDir.listFiles()?.forEach { child ->
                     if (!child.isDirectory) return@forEach
                     val name = child.name
+                    if (name == BundleDiffReconstruction.STAGING_ROOT_DIR_NAME) return@forEach
                     val bundleVersion = BundleUpdateStoreAndroid.bundleVersionInFolder(name, appVersion) ?: return@forEach
                     results.add(LocalBundleInfo(appVersion = appVersion, bundleVersion = bundleVersion))
                 }
