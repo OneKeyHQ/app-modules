@@ -64,6 +64,8 @@ export class OverlayStore {
 
   private readonly pageVisibility = new Map<string, boolean>();
 
+  private focusedPageHost: string | null | undefined;
+
   private readonly listeners = new Set<() => void>();
 
   private snapshot: IOverlaySnapshot = {
@@ -198,6 +200,18 @@ export class OverlayStore {
     dropped.forEach((e) => this.notifyRemoved(e.id, reason));
   }
 
+  setFocusedPageHost(hostKey: string | null | undefined): void {
+    if (this.focusedPageHost === hostKey) return;
+    this.focusedPageHost = hostKey;
+    this.emit();
+  }
+
+  isPageHostFocused(hostKey: string | undefined): boolean {
+    return (
+      this.focusedPageHost === undefined || this.focusedPageHost === hostKey
+    );
+  }
+
   /** Native / navigation signal: the owning page was covered, detached or restored. */
   setPageVisible(ownerKey: string, visible: boolean): void {
     if ((this.pageVisibility.get(ownerKey) ?? true) === visible) {
@@ -248,8 +262,8 @@ export class OverlayStore {
         !e.suspended &&
         (e.blocking || e.dismissible) &&
         (e.scope === 'global' ||
-          focusedHostKey === undefined ||
-          e.hostKey === focusedHostKey)
+          (this.isPageHostFocused(e.hostKey) &&
+            (focusedHostKey === undefined || e.hostKey === focusedHostKey)))
     );
     const top = candidates[candidates.length - 1];
     if (!top) {
@@ -274,7 +288,8 @@ export class OverlayStore {
         entry &&
         entry.phase !== 'closing' &&
         !entry.suspended &&
-        entry.blocking
+        entry.blocking &&
+        (entry.scope === 'global' || this.isPageHostFocused(entry.hostKey))
       ) {
         return entry;
       }

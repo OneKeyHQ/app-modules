@@ -116,6 +116,10 @@ export function syncOverlayInert() {
   pageInertElements = nextPageInert;
 
   for (const [hostKey, host] of pageHosts) {
+    setInert(
+      host,
+      nextPageInert.has(host) || !overlayStore.isPageHostFocused(hostKey)
+    );
     inertEntriesBelow(
       host,
       top?.scope === 'page' && top.hostKey === hostKey ? top : undefined
@@ -194,10 +198,12 @@ export function registerOverlayPageHost(
 ): () => void {
   installOverlayWebManager();
   pageHosts.set(hostKey, element);
+  syncOverlayInert();
   pageHostListeners.get(hostKey)?.forEach((listener) => listener());
   return () => {
     if (pageHosts.get(hostKey) === element) {
       pageHosts.delete(hostKey);
+      syncOverlayInert();
       pageHostListeners.get(hostKey)?.forEach((listener) => listener());
     }
   };

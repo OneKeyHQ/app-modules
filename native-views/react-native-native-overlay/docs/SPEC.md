@@ -140,6 +140,10 @@ come only from props.
   separate handler; the old removal cannot invoke or delete the new handler.
 - `dismissAll({ scope, belowLevel, reason })`, `setPageVisible(ownerKey,
 visible)`, `removePage(ownerKey)`.
+- Web navigation calls `setFocusedPageHost(hostKey)` with a root-route host key.
+  `null` makes every page host inactive. The default `undefined` clears
+  the focus restriction, including when navigation unmounts.
+  `isPageHostFocused(hostKey)` reports whether a page host is eligible.
 - `resolveBack(focusedHostKey?)` returns `dismiss(id)`, `block`, or `pass`.
 - `getBlockingTop()` returns the entry that makes everything below it inert.
 - `subscribe` and `getSnapshot` are compatible with `useSyncExternalStore`.
@@ -706,6 +710,13 @@ until that owner resumes. Resuming an owner MUST NOT clear isolation imposed by
 a higher blocking entry. Web page isolation compares level first, then request
 order within that level; dismissal restores entries no longer below a blocker.
 
+On Web, a covered root route can keep its page overlays visible. Its overlay
+host is inert, and its entries cannot block the foreground route or consume
+Escape. Switching focus restores eligibility without dismissing or remounting
+entries. Host registration and unregistration recalculate DOM isolation. Global
+overlays remain eligible regardless of the focused page host. iOS and Android
+retain their existing page visibility and back handling.
+
 On Android, a blocking page entry MUST hide underlying page/navigation siblings
 from accessibility while preserving the page host and the blocking entry. Entries
 above it, including non-blocking global overlays, remain accessible. Global
@@ -829,7 +840,8 @@ Automated (P0):
   verification pending.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
-  the blocking entry is removed.
+  the blocking entry is removed. It also verifies host isolation and Escape
+  handling when root-route focus changes.
 - `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
   Android views: page/navigation siblings, entries above the blocker, original
   flags, global/page transitions, detached hosts and changing blockers. These
