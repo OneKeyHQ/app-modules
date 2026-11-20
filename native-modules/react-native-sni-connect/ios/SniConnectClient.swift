@@ -821,12 +821,9 @@ final class SniConnectClient {
     // Per-request connect timeout (avoids the process-global setter race).
     EMASCurlProtocol.setConnectTimeoutIntervalFor(mutableRequest, connectTimeoutInterval: connectTimeoutSeconds)
     if let uploadProgress = config.uploadProgress {
-      EMASCurlProtocol.setUploadProgressUpdateBlockFor(
-        mutableRequest,
-        uploadProgressUpdateBlock: { _, _, totalBytesSent, _ in
-          uploadProgress.record(totalBytesSent)
-        }
-      )
+      EMASCurlProtocol.setUploadProgressUpdateBlockFor(mutableRequest) { _, _, totalBytesSent, _ in
+        uploadProgress.record(totalBytesSent)
+      }
     }
     let request = mutableRequest as URLRequest
 
