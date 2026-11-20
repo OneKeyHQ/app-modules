@@ -949,4 +949,222 @@ public class ReactNativeJpushProtocolTest {
         JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
         JCoreTcpEngine.getInstance().stop(null);
     }
+
+    @Test
+    public void testCloudParityLoginThirdTokenAndMsgType4Filtering() throws Exception {
+        final String fcmToken142 =
+            "fcm_token_142_bytes_APA91bH0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345";
+        final long testUid = 88971093104L;
+        final ServerSocket serverSocket = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        final int port = serverSocket.getLocalPort();
+        final List<JCoreWireCodec.LoginRequest> logins = new java.util.concurrent.CopyOnWriteArrayList<JCoreWireCodec.LoginRequest>();
+        final List<JCoreWireCodec.MessageAck> acks = new java.util.concurrent.CopyOnWriteArrayList<JCoreWireCodec.MessageAck>();
+        final CountDownLatch secondLoginLatch = new CountDownLatch(1);
+        final CountDownLatch ackLatch = new CountDownLatch(2);
+
+        Thread serverThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    serverSocket.setSoTimeout(10000);
+                    for (int connIdx = 0; connIdx < 2; connIdx++) {
+                        Socket client = serverSocket.accept();
+                        client.setSoTimeout(5000);
+                        try {
+                            InputStream in = client.getInputStream();
+                            OutputStream out = client.getOutputStream();
+                            int sid = 55000 + connIdx;
+                            boolean validLogin = false;
+
+                            while (!client.isClosed()) {
+                                JCoreWireCodec.DecodedFrame req = JCoreWireCodec.readClientFrameFromStream(in, testUid);
+                                if (req == null) {
+                                    break;
+                                }
+                                if (req.command == JCoreWireCodec.CMD_LOGIN) {
+                                    JCoreWireCodec.LoginRequest parsedLogin = JCoreWireCodec.parseLoginRequest(req.body);
+                                    logins.add(parsedLogin);
+                                    validLogin = parsedLogin != null
+                                        && "328192|387328".equals(parsedLogin.sdkVerInfo)
+                                        && "4|64".equals(parsedLogin.gSdkTypeInfo)
+                                        && parsedLogin.romPlatformMask == (connIdx == 0 ? (byte) 8 : (byte) (8 | 32));
+                                    byte[] loginResp = JCoreWireCodec.buildLoginResponsePayload(sid, 520, "", 1700002000);
+                                    out.write(JCoreWireCodec.encodeResponseFrame(
+                                        JCoreWireCodec.CMD_LOGIN,
+                                        JCoreWireCodec.VER_LOGIN,
+                                        req.requestId,
+                                        sid,
+                                        testUid,
+                                        0,
+                                        loginResp
+                                    ));
+                                    out.flush();
+                                    if (connIdx == 1) {
+                                        secondLoginLatch.countDown();
+                                    }
+                                } else if (req.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                                    // Match real JPush cloud server: respond with cmd=19 generic heartbeat ACK
+                                    out.write(JCoreWireCodec.encodeResponseFrame(
+                                        19,
+                                        JCoreWireCodec.VER_HEARTBEAT,
+                                        req.requestId,
+                                        0,
+                                        testUid,
+                                        513,
+                                        new byte[9]
+                                    ));
+                                    out.flush();
+                                    if (connIdx == 0) {
+                                        // Push internal msgType=4 msgId=999999 followed by valid msgType=2 custom message with _j_data_
+                                        byte[] internalPush = JCoreWireCodec.buildPushMessagePayload(
+                                            (byte) 4,
+                                            999999L,
+                                            "com.example.jpushdemo\n3af172b794896c3e1de43fe7"
+                                        );
+                                        out.write(JCoreWireCodec.encodeServerFrame(
+                                            JCoreWireCodec.CMD_PUSH_MESSAGE,
+                                            1,
+                                            JCoreWireCodec.ALG_AES_CBC,
+                                            0,
+                                            10000L,
+                                            testUid,
+                                            sid,
+                                            internalPush
+                                        ));
+                                        byte[] validCustomPush = JCoreWireCodec.buildPushMessagePayload(
+                                            (byte) 2,
+                                            888888L,
+                                            DEMO_TEST_PACKAGE_NAME + "\n" + DEMO_TEST_APP_KEY
+                                                + "\n{\"message\":\"real_user_msg\",\"_j_data_\":\"jdata_unit_01\"}"
+                                        );
+                                        out.write(JCoreWireCodec.encodeServerFrame(
+                                            JCoreWireCodec.CMD_PUSH_MESSAGE,
+                                            JCoreWireCodec.VER_PUSH_MESSAGE,
+                                            JCoreWireCodec.ALG_AES_CBC,
+                                            0,
+                                            10001L,
+                                            testUid,
+                                            sid,
+                                            validCustomPush
+                                        ));
+                                        out.flush();
+                                    }
+                                } else if (req.command == JCoreWireCodec.CMD_MESSAGE_ACK) {
+                                    JCoreWireCodec.MessageAck ack = JCoreWireCodec.parseMessageAck(req.body);
+                                    if (ack != null) {
+                                        acks.add(ack);
+                                        ackLatch.countDown();
+                                    }
+                                } else if (req.command == JCoreWireCodec.CMD_THIRD_TOKEN) {
+                                    // Match real JPush cloud server: if Login sdkVerInfo/romPlatformMask/gSdkTypeInfo was invalid, close socket (EOF)!
+                                    if (!validLogin) {
+                                        client.close();
+                                        break;
+                                    }
+                                    out.write(JCoreWireCodec.encodeResponseFrame(
+                                        JCoreWireCodec.CMD_THIRD_TOKEN,
+                                        JCoreWireCodec.VER_THIRD_TOKEN,
+                                        req.requestId,
+                                        sid,
+                                        testUid,
+                                        0,
+                                        new byte[0]
+                                    ));
+                                    out.flush();
+                                }
+                            }
+                        } finally {
+                            try { client.close(); } catch (Throwable ignored) {}
+                        }
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    try { serverSocket.close(); } catch (Throwable ignored) {}
+                }
+            }
+        }, "test-cloud-parity-unit-server");
+        serverThread.setDaemon(true);
+        serverThread.start();
+
+        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        final JPushModuleReceiver receiver = new JPushModuleReceiver();
+        final List<String> customMessages = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        final CountDownLatch customMsgLatch = new CountDownLatch(1);
+        final CountDownLatch thirdTokenLatch = new CountDownLatch(3);
+        int listenerId = 0;
+
+        try {
+            engine.stop(null);
+            JCoreStorage.clearRegistration(null);
+            JCoreStorage.setAppKey(null, DEMO_TEST_APP_KEY);
+            JCoreStorage.setChannel(null, "prod");
+            JCoreStorage.saveThirdToken(null, (byte) 8, "");
+            JCoreStorage.updateRegistration(null, testUid, "parity_pwd", "100d8559081eb0a0367", "dev_parity_unit");
+            JCoreStorage.setServerRegistered(null, true);
+
+            ActionHelper.getInstance().clearRegisteredReceivers();
+            ActionHelper.getInstance().registerReceiver(receiver);
+            listenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+                @Override
+                public void onEvent(String eventName, String payloadJson) {
+                    if ("CustomMessageEvent".equals(eventName)) {
+                        customMessages.add(payloadJson);
+                        if (payloadJson.contains("888888")) {
+                            customMsgLatch.countDown();
+                        }
+                    } else if ("CommandEvent".equals(eventName)
+                        && payloadJson.contains("10000")
+                        && payloadJson.contains("\"commandResult\":0")) {
+                        thirdTokenLatch.countDown();
+                    }
+                }
+            });
+
+            engine.setCustomEndpoint("127.0.0.1", port);
+            engine.triggerReconnectNow(null);
+            assertTrue(engine.awaitHandshake(5000L));
+            assertTrue(engine.isLoggedIn());
+
+            // Enqueue 3 concurrent 142-byte FCM token bindings (matching Android startup)
+            ActionHelper.getInstance().setThirdTokenWithCallBack(null, fcmToken142, (byte) 8, false);
+            ActionHelper.getInstance().setThirdTokenWithCallBack(null, fcmToken142, (byte) 8, false);
+            ActionHelper.getInstance().setThirdTokenWithCallBack(null, fcmToken142, (byte) 8, false);
+            assertTrue("All 3 CMD_THIRD_TOKEN requests must succeed when Login sdkVerInfo matches binary parity",
+                thirdTokenLatch.await(5000L, TimeUnit.MILLISECONDS));
+            assertEquals(fcmToken142, JCoreStorage.getThirdToken(null, (byte) 8));
+
+            assertTrue("Valid custom message 888888 must be delivered", customMsgLatch.await(5000L, TimeUnit.MILLISECONDS));
+            assertTrue("Both downlink frames must be ACKed", ackLatch.await(5000L, TimeUnit.MILLISECONDS));
+            assertEquals("Internal msgType=4 msgId=999999 must be filtered out", 1, customMessages.size());
+            assertTrue(!customMessages.get(0).contains("999999"));
+
+            boolean sawJDataAck = false;
+            for (JCoreWireCodec.MessageAck ack : acks) {
+                if (ack.messageId == 888888L && "jdata_unit_01".equals(ack.extData)) {
+                    sawJDataAck = true;
+                }
+            }
+            assertTrue("CMD_MESSAGE_ACK must echo _j_data_", sawJDataAck);
+
+            // Trigger Fast-Login reconnect and verify romPlatformMask upgrades from 0x08 to 0x28 (8 | 32)
+            engine.triggerReconnectNow(null);
+            assertTrue(engine.awaitHandshake(5000L));
+            assertTrue(secondLoginLatch.await(5000L, TimeUnit.MILLISECONDS));
+            assertEquals(2, logins.size());
+            assertEquals("328192|387328", logins.get(0).sdkVerInfo);
+            assertEquals("4|64", logins.get(0).gSdkTypeInfo);
+            assertEquals((byte) 8, logins.get(0).romPlatformMask);
+            assertEquals((byte) (8 | 32), logins.get(1).romPlatformMask);
+        } finally {
+            if (listenerId > 0) {
+                JPushHelper.unregisterNitroListener(listenerId);
+            }
+            ActionHelper.getInstance().unregisterReceiver(receiver);
+            JCoreStorage.saveThirdToken(null, (byte) 8, "");
+            engine.setCustomEndpoint("", 0);
+            engine.stop(null);
+            JCoreStorage.clearRegistration(null);
+            try { serverSocket.close(); } catch (Throwable ignored) {}
+        }
+    }
 }
