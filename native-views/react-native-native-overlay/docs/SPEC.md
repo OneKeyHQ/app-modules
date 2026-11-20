@@ -614,12 +614,15 @@ the first/last child respectively. With no tabbable children, focus stays on
 the entry root. Disabled, negative-tabindex, hidden and inert subtrees are
 excluded. Positive tabindex values precede ordinary DOM-order tab stops.
 Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
-focus loop. When a page dialog becomes the top blocker again, it takes focus
-on its entry root if focus is currently outside the dialog.
-The dialog records a focus restoration target only when it actually moves
-focus inside. On exit, it restores that target when focus is still inside
-the dialog or has fallen back to the document body. An active control
-outside the dialog keeps focus.
+focus loop. When a page or global dialog becomes the top blocker, it takes
+focus on its entry root if focus is currently outside the dialog.
+Focus restoration starts after a dialog actually moves focus inside.
+A dialog taking over from an exiting overlay keeps its saved
+opener, or inherits the exiting overlay's restoration target when it has
+none. On exit, focus can return through a chain of nested openers, skipping
+closed overlays and detached targets, when focus is still inside the
+dialog or has fallen back to the document body. An active control outside
+the dialog keeps focus.
 
 A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
 when its entry is non-blocking. This permits a transparent outside-click
@@ -855,8 +858,9 @@ Automated (P0):
   a dialog opened on a covered route regains focus and contains Tab when its
   route returns. It also checks that closing a covered dialog preserves
   foreground typing and that focus acquired after a route returns can be
-  restored on close. It uses the same browser dependencies as the toast tests
-  (§5.14).
+  restored on close. Stacked-dialog cases verify focus when a global dialog
+  becomes the top blocker and restoration after nested and concurrent exits.
+  It uses the same browser dependencies as the toast tests (§5.14).
 - `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
   Android views: page/navigation siblings, entries above the blocker, original
   flags, global/page transitions, detached hosts and changing blockers. These

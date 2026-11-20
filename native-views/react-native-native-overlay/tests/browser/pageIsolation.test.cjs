@@ -44,6 +44,30 @@ before(async () => {
           ));
         window.getEntryCount = () => overlayStore.getSnapshot().entries.length;
         window.resolveBack = () => overlayStore.resolveBack().kind;
+        const timing = (durationMs) => ({
+          type: 'timing', timing: { durationMs, easing: [0, 0, 1, 1] },
+        });
+        const stackAnimation = {
+          enter: { type: 'none' },
+          exit: { type: 'fade', motion: timing(2000) },
+          backdrop: { motion: timing(10) },
+        };
+        window.renderStack = ({ lower = false, upper = false, lowerScope = 'global' } = {}) =>
+          flushSync(() => root.render(
+            createElement(Fragment, null,
+              createElement('button', null, 'Stack opener'),
+              createElement(OverlayPageHost, { hostKey: 'main' }),
+              createElement(OverlayView, {
+                visible: lower, scope: lowerScope, hostKey: 'main',
+                ownerKey: 'screen', testID: 'lower', animation: stackAnimation,
+              }, createElement('button', null, 'Lower action')),
+              createElement(OverlayView, {
+                visible: upper, level: 'secure', testID: 'upper', animation: stackAnimation,
+              }, createElement('button', null, 'Upper action'))
+            )
+          ));
+        window.dismissGlobalStack = () =>
+          flushSync(() => overlayStore.dismissAll({ scope: 'global', reason: 'system' }));
       `,
     },
   });
@@ -163,3 +187,90 @@ test('closing a resumed dialog restores the focus displaced on route return', as
     true
   );
 });
+
+async function hasFocus(locator) {
+  return locator.evaluate((node) => node === document.activeElement);
+}
+
+async function finishExit(dialog) {
+  await dialog.evaluate((node) =>
+    node.getAnimations({ subtree: true }).forEach((animation) => animation.finish())
+  );
+  await dialog.waitFor({ state: 'detached', timeout: 2000 });
+}
+
+test('promoting a page dialog during a nested exit preserves its original opener', async (t) => {
+  const page = await createPage(t);
+  const opener = page.getByRole('button', { name: 'Stack opener' });
+  const lower = page.getByTestId('lower');
+  const upper = page.getByTestId('upper');
+  await page.evaluate(() => window.renderStack());
+  await opener.focus();
+  await page.evaluate(() => window.renderStack({ lower: true, lowerScope: 'page' }));
+  assert.equal(await hasFocus(lower), true);
+  await page.evaluate(() =>
+    window.renderStack({ lower: true, upper: true, lowerScope: 'page' })
+  );
+  await upper.getByRole('button', { name: 'Upper action' }).focus();
+
+  await page.evaluate(() => window.renderStack({ lower: true, lowerScope: 'page' }));
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  assert.equal(await hasFocus(lower), true);
+  await finishExit(upper);
+  await page.evaluate(() => window.renderStack({ lowerScope: 'page' }));
+  await finishExit(lower);
+  assert.equal(await hasFocus(opener), true);
+});
+
+for (const exitTiming of ['before', 'after']) {
+  test(`a promoted global dialog takes focus when the upper exit finishes ${exitTiming} the handoff frame`, async (t) => {
+    const page = await createPage(t);
+    const opener = page.getByRole('button', { name: 'Stack opener' });
+    const lower = page.getByTestId('lower');
+    const upper = page.getByTestId('upper');
+    await page.evaluate(() => window.renderStack());
+    await opener.focus();
+    await page.evaluate(() => window.renderStack({ upper: true }));
+    assert.equal(await hasFocus(upper), true);
+    await page.evaluate(() => window.renderStack({ lower: true, upper: true }));
+    assert.equal(await hasFocus(upper), true);
+
+    await page.evaluate((timing) => {
+      window.renderStack({ lower: true });
+      if (timing === 'before') {
+        document
+          .querySelector('[data-testid="upper"]')
+          .getAnimations({ subtree: true })
+          .forEach((animation) => animation.finish());
+      }
+    }, exitTiming);
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.equal(await hasFocus(lower), true);
+    await page.keyboard.press('Tab');
+    assert.equal(await hasFocus(lower.getByRole('button')), true);
+    if (exitTiming === 'after') await finishExit(upper);
+    await page.evaluate(() => window.renderStack());
+    await finishExit(lower);
+    assert.equal(await hasFocus(opener), true);
+  });
+}
+
+for (const firstExit of ['lower', 'upper']) {
+  test(`concurrent global exits preserve the stack opener when the ${firstExit} dialog finishes first`, async (t) => {
+    const page = await createPage(t);
+    const opener = page.getByRole('button', { name: 'Stack opener' });
+    const lower = page.getByTestId('lower');
+    const upper = page.getByTestId('upper');
+    await page.evaluate(() => window.renderStack());
+    await opener.focus();
+    await page.evaluate(() => window.renderStack({ lower: true }));
+    await lower.getByRole('button', { name: 'Lower action' }).focus();
+    await page.evaluate(() => window.renderStack({ lower: true, upper: true }));
+    assert.equal(await hasFocus(upper), true);
+
+    await page.evaluate(() => window.dismissGlobalStack());
+    const exitOrder = firstExit === 'lower' ? [lower, upper] : [upper, lower];
+    for (const dialog of exitOrder) await finishExit(dialog);
+    assert.equal(await hasFocus(opener), true);
+  });
+}

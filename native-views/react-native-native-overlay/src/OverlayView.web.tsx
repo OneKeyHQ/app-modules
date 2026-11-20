@@ -310,7 +310,7 @@ function WebOverlayEntry({
   return (
     <div
       ref={entryRef}
-      {...{ [ENTRY_ATTRIBUTE]: '' }}
+      {...{ [ENTRY_ATTRIBUTE]: entryId }}
       {...(ownerKey ? { [OVERLAY_OWNER_ATTRIBUTE]: ownerKey } : {})}
       data-stack-order={stackOrder}
       data-overlay-level-order={levelOrder}
