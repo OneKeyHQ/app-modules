@@ -727,9 +727,18 @@ and retain the currently accepted snapshot.
 Toggling `reorderActivation` or `reorderable` cancels pending and active
 pointer reorder without emitting a reorder event. An accepted full Web
 snapshot supersedes a provisional reorder; accepted row patches retain their
-content even if a gesture is cancelled. Web keyboard sorting remains available
-from the focused row if it has a rendered handle in `handle` mode. The
-capability travels in snapshot JSON; the Nitro ABI is unchanged.
+content even if a gesture is cancelled. The capability travels in snapshot JSON;
+the Nitro ABI is unchanged.
+
+Web reorderable rows can receive keyboard focus even when `pressDisabled`.
+In `handle` mode the focused row must have a rendered handle to start
+keyboard sorting. Space starts the preview, arrow keys move it, and Space
+on the focused source row commits. Escape restores the original order and
+returns focus to the source while it is mounted. Tab, wheel scrolling,
+virtualization of the source, or starting a valid pointer reorder discards
+the preview without emitting `onReorder` or reclaiming focus. A key event
+from a different row cannot commit the previous source's preview. A pointer
+reorder starts from the selected row's position in the restored order.
 
 Leading visual `borderWidth` supports values in (0, 4]. Development rejects
 out-of-range widths; production discards the invalid width in full snapshots
