@@ -28,7 +28,9 @@ Status: **Implemented in source**; native device/network acceptance remains open
   acknowledgement. Once the body is prepared, `totalBytes` is its declared
   length, 1 through 20 MiB; before preparation it is zero. `bytesSent` is
   between zero and `totalBytes`. iOS counts bytes read by EMASCurl into
-  libcurl; Android counts bytes accepted by OkHttp's sink. Built-in transport
+  libcurl; Android counts bytes accepted by OkHttp's sink; Node
+  (`@onekeyfe/react-native-sni-connect/node`) counts bytes whose
+  `ClientRequest.write` callback has completed. Built-in transport
   recovery may replay a body. Android resets its write count for each OkHttp
   `writeTo` and retains the largest prefix. EMASCurl's public callback counts
   reads over one URLProtocol instance without an exposed retry boundary, so
@@ -102,7 +104,7 @@ an unconfigured library. Redirect restrictions below are explicit SDK choices.
 | --- | --- | --- |
 | Android / OkHttp 4.12.0 | `retryOnConnectionFailure` is unset, retaining `true`; connection recovery and 408/503 follow-ups remain subject to the library gates below. Normal connection pooling is retained; no SDK retry loop. | `followRedirects(false)` and `followSslRedirects(false)`. |
 | iOS / URLSession + EMASCurl 1.5.5 | Unmodified EMASCurl/libcurl may recover when a reused connection loses its response; body replayability matters. No SDK retry loop. Bundled `curlver.h` identifies `8.17.0-DEV`, not a separately pinned public libcurl release or a runtime `curl_version()` measurement. | `enableBuiltInRedirection = false`; the native request session delegate also rejects redirection. |
-| External App Node/Desktop backend | Electron main-process `https.request` with a keep-alive `https.Agent`, not fetch/Undici. This implementation has no connection-recovery or HTTP-status retry loop; 408/503 are returned directly. It is not an SDK Node branch. | No 3xx-following loop. |
+| Node / Desktop (`@onekeyfe/react-native-sni-connect/node`) | `SniNodeClient` using Node `https.request` with a keep-alive `https.Agent`, not fetch/Undici. This implementation has no connection-recovery or HTTP-status retry loop; 408/503 are returned directly. | No 3xx-following loop. |
 | React Native JS facade | `request` and supported `uploadFile` each forward to native once. TurboModuleRegistry takes priority over NativeModules; a missing module throws the linking error. Unsupported upload rejects with `SNI_UNSUPPORTED`. No JS retry loop; one forwarding call does not imply one HTTP send. | Determined by the native transport above. |
 | App native adapter | Routes to the native SDK when the App SNI gate permits it; Mac Catalyst is excluded by the App capability check. | Native SNI restrictions above; ordinary domain routing is a separate layer. |
 | App desktop adapter | Forwards through `desktopApiProxy` to the external Node backend when available and enabled. | Node backend behavior above. |

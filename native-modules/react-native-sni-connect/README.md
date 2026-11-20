@@ -100,13 +100,14 @@ owns the target IP, the request id lifecycle and higher-level retry policy.
 | Export | Signature | Platforms | Description |
 | --- | --- | :-: | --- |
 | `request` | `(config: SniConnectRequest) => Promise<SniConnectResponse>` | iOS, Android | Sends one HTTPS request over the pinned SNI transport. |
-| `uploadFile` | `(config: SniConnectUploadFileRequest) => Promise<SniConnectResponse>` | iOS, Android | Sends a local file body (`POST`/`PUT`, 1 byte–20 MiB). |
+| `uploadFile` | `(config: SniConnectUploadFileRequest) => Promise<SniConnectResponse>` | iOS, Android, Node (`./node`) | Sends a local file body (`POST`/`PUT`, 1 byte–20 MiB). |
 | `isUploadFileSupported` | `() => boolean` | iOS, Android | Reports whether the loaded native module exposes `uploadFile`. |
-| `cancelRequest` | `(requestId: string) => Promise<{ success: boolean }>` | iOS, Android | Cancels the active request with that id. |
-| `cancelAllRequests` | `() => Promise<{ success: boolean }>` | iOS, Android | Cancels every request owned by the current runtime. |
-| `clearDNSCache` | `() => Promise<{ success: boolean }>` | iOS, Android | Evicts cached pinned destinations, clients and idle connections. |
-| `getDebugSnapshot` | `({ hostname, ip }) => Promise<SniConnectDebugSnapshot>` | iOS, Android | Reads active/pending counters and request ids for one pair. |
-| `isProxyActiveForUrl` | `(url: string) => Promise<boolean>` | iOS, Android | Preflight proxy probe; does not enable proxying for SNI requests. |
+| `getUploadProgress` | `(requestId: string) => Promise<SniConnectUploadProgress \| null>` | iOS, Android, Node (`./node`) | Reads the active upload byte progress snapshot for `requestId`. |
+| `cancelRequest` | `(requestId: string) => Promise<{ success: boolean }>` | iOS, Android, Node (`./node`) | Cancels the active request with that id. |
+| `cancelAllRequests` | `() => Promise<{ success: boolean }>` | iOS, Android, Node (`./node`) | Cancels every request owned by the current runtime. |
+| `clearDNSCache` | `() => Promise<{ success: boolean }>` | iOS, Android, Node (`./node`) | Evicts cached pinned destinations, clients and idle connections. |
+| `getDebugSnapshot` | `({ hostname, ip }) => Promise<SniConnectDebugSnapshot>` | iOS, Android, Node (`./node`) | Reads active/pending counters and request ids for one pair. |
+| `isProxyActiveForUrl` | `(url: string) => Promise<boolean>` | iOS, Android, Node (`./node`) | Preflight proxy probe; does not enable proxying for SNI requests. |
 
 `SniConnectResponse` contains `data` (string), `status`, `statusText`, `headers`
 and an optional `multiValueHeaders`. Limits: 1 MiB body, 8 KiB path/query, 64
