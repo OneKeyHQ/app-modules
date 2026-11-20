@@ -4,6 +4,7 @@ import NativeSniConnect, {
   type SniConnectRequest,
   type SniConnectResponse,
   type SniConnectUploadFileRequest,
+  type SniConnectUploadProgress,
 } from './NativeSniConnect';
 
 export function request(
@@ -25,6 +26,12 @@ export async function uploadFile(
     });
   }
   return NativeSniConnect.uploadFile(config);
+}
+
+export function getUploadProgress(
+  requestId: string
+): Promise<SniConnectUploadProgress | null> {
+  return NativeSniConnect.getUploadProgress(requestId);
 }
 
 export function cancelRequest(
@@ -62,4 +69,5 @@ export type {
   SniConnectResponse,
   SniConnectUploadFileMethod,
   SniConnectUploadFileRequest,
+  SniConnectUploadProgress,
 } from './NativeSniConnect';
