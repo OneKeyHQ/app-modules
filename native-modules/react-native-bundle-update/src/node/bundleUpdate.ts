@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import AdmZip from 'adm-zip';
 import semver from 'semver';
+import { ArchiveSizeError, hashArchive } from '@onekeyfe/react-native-range-downloader/node';
 
 import { downloadNodeFile, stripSensitiveHeaders } from './download.js';
 import {
@@ -15,8 +16,6 @@ import { assertSafeBundleVersion, resolveBundlePath } from './paths.js';
 import {
   calculateSHA256,
   checkFileSha512,
-  ArchiveSizeError,
-  hashArchive,
   readSignedMetadataSha256,
   SignedMetadataError,
   verifySha256,

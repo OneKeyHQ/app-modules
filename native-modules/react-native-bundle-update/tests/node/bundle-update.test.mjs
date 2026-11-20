@@ -31,6 +31,7 @@ import {
 } from 'openpgp';
 import {
   BundleUpdateNode,
+  BundleUpdateNodeError,
   DIFF_DOWNLOAD_DIR_NAME,
   DIFF_STAGING_DIR_NAME,
   downloadNodeFile,
@@ -45,6 +46,44 @@ const keys = generateKey({
   type: 'ecc',
   curve: 'p256',
   userIDs: [{ name: 'OTA Test Fixture' }],
+});
+
+test('the legacy download entry preserves typed errors from an injected response body', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'bundle-range-transport-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const data = Buffer.from('typed transport fixture');
+  const error = new BundleUpdateNodeError({
+    code: 'SECURITY_REJECTED',
+    step: 'download',
+  });
+  let requests = 0;
+  await assert.rejects(
+    downloadNodeFile({
+      url: downloadUrl,
+      targetPath: join(root, 'bundle.zip'),
+      identity: 'transport-body-error',
+      expectedSha256: hash('sha256', data),
+      async transport(url, headers) {
+        requests += 1;
+        if (headers.Range === 'bytes=0-0') {
+          return fixtureResponse(url, 200, data);
+        }
+        const body = Readable.from((async function* () {
+          yield data.subarray(0, 1);
+          throw error;
+        })());
+        return {
+          url,
+          response: Object.assign(body, {
+            statusCode: 200,
+            headers: { 'content-length': String(data.length) },
+          }),
+        };
+      },
+    }),
+    hasCode('SECURITY_REJECTED', 'download')
+  );
+  assert.equal(requests, 2);
 });
 
 function hash(algorithm, value) {
@@ -392,6 +431,14 @@ test('shipped declarations typecheck in strict ESM and CommonJS NodeNext consume
   mkdirSync(installed, { recursive: true });
   cpSync(join(packageDir, 'package.json'), join(installed, 'package.json'));
   cpSync(join(packageDir, 'lib'), join(installed, 'lib'), { recursive: true });
+  const rangePackageName = '@onekeyfe/react-native-range-downloader';
+  const rangeManifest = require.resolve(`${rangePackageName}/package.json`);
+  const installedRange = join(temp, 'node_modules', rangePackageName);
+  mkdirSync(installedRange, { recursive: true });
+  cpSync(rangeManifest, join(installedRange, 'package.json'));
+  cpSync(join(dirname(rangeManifest), 'lib'), join(installedRange, 'lib'), {
+    recursive: true,
+  });
   // Keep unrelated dependencies from ancestor workspaces out of module resolution.
   const nodeTypes = dirname(require.resolve('@types/node/package.json'));
   const undiciTypes = dirname(

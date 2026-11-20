@@ -3,12 +3,24 @@
   "version": "6.8.0-1",
   "description": "react-native-range-downloader",
   "main": "./lib/module/index.js",
-  "types": "./lib/typescript/src/index.d.ts",
+  "module": "./lib/module/index.js",
+  "types": "./lib/typescript/module/src/index.d.ts",
   "exports": {
     ".": {
       "source": "./src/index.tsx",
-      "types": "./lib/typescript/src/index.d.ts",
+      "types": "./lib/typescript/module/src/index.d.ts",
       "default": "./lib/module/index.js"
+    },
+    "./node": {
+      "source": "./src/node/index.ts",
+      "import": {
+        "types": "./lib/typescript/module/src/node/index.d.ts",
+        "default": "./lib/module/node/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/src/node/index.d.ts",
+        "default": "./lib/commonjs/node/index.js"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -40,7 +52,8 @@
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "yarn prepare && npm whoami && npm publish --access public"
+    "release": "yarn prepare && npm whoami && npm publish --access public",
+    "test:node": "node --test tests/node/*.test.mjs"
   },
   "keywords": [
     "react-native",
@@ -70,7 +83,9 @@
     "@react-native/eslint-config": "0.88.0",
     "@release-it/conventional-changelog": "^10.0.1",
     "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
     "@types/react": "^19.3.0",
+    "@types/yauzl": "2.10.3",
     "commitlint": "^19.8.1",
     "del-cli": "^6.0.0",
     "eslint": "^9.35.0",
@@ -103,6 +118,12 @@
         {
           "script": "nitrogen",
           "clean": "nitrogen/"
+        }
+      ],
+      [
+        "commonjs",
+        {
+          "esm": true
         }
       ],
       [
@@ -167,5 +188,8 @@
       "release-it"
     ],
     "version": "0.56.0"
+  },
+  "dependencies": {
+    "yauzl": "2.10.0"
   }
 }

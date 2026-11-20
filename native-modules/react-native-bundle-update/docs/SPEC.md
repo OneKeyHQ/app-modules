@@ -70,6 +70,11 @@ directory is best effort. An explicit cache clear rejects with
 `STORAGE_ERROR` if an extracted directory cannot be deleted, before clearing
 the active bundle record.
 
+The Desktop range transfer implementation is provided by
+`@onekeyfe/react-native-range-downloader/node`. The bundle updater preserves its
+download exports and translates transport failures to its existing OTA error
+contract.
+
 Desktop installation reads the active bundle and fallback list after
 verification, then commits them synchronously. Rollback history follows the
 order in which verified installs commit. Before recording full fallback or

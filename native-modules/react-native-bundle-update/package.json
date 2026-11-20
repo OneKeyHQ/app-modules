@@ -113,7 +113,6 @@
   "peerDependencies": {
     "@onekeyfe/react-native-bundle-crypto": "6.8.0-1",
     "@onekeyfe/react-native-native-logger": "*",
-    "@onekeyfe/react-native-range-downloader": "6.8.0-1",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"
@@ -200,6 +199,7 @@
   },
   "module": "./lib/module/index.js",
   "dependencies": {
+    "@onekeyfe/react-native-range-downloader": "6.8.0-1",
     "adm-zip": "0.6.1",
     "openpgp": "5.11.3",
     "semver": "7.5.4"

@@ -28,3 +28,22 @@ deleting artifacts, while newly arriving callbacks cannot restart segments or
 write files. The owning updater must not parse
 exception prose for status. Runtime acceptance of the enclosing update flow
 remains with each updater.
+
+## Node entry point
+
+`@onekeyfe/react-native-range-downloader/node` provides the Desktop range
+downloader and firmware artifact store through ESM and CommonJS. Importing this
+entry does not initialize React Native or require Electron. The range downloader
+owns the existing probe, parallel and single-stream transfer, resume manifest,
+bounded retries and deadline, cancellation, checksum validation, and atomic
+publication. Its default transport uses Node HTTPS. Callers may inject a
+transport, which can report structured `NodeRangeDownloadError` failures. The
+bundle updater keeps its existing public download entry and translates errors at
+its boundary. The range package does not depend on the bundle updater.
+
+`FirmwareArtifactNode` owns the Desktop firmware cache. Its constructor takes
+the managed cache directory and may accept a fetch implementation and artifact
+error class. Electron supplies its session fetch and App error class. Standalone
+Node uses its built-in fetch and the package error class. Existing hostname
+admission, redirect policy, integrity checks, cache names, archive validation,
+read limits, cancellation, and leases apply to both hosts.
