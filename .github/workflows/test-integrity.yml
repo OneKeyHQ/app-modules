@@ -28,3 +28,8 @@ jobs:
         run: node --test development/lint/test-integrity.node-test.js
       - name: Check repository tests
         run: yarn lint:test-integrity
+      - name: Test bundle updater Node package
+        run: |
+          yarn workspace @onekeyfe/react-native-bundle-update typecheck
+          yarn workspace @onekeyfe/react-native-bundle-update prepare
+          yarn workspace @onekeyfe/react-native-bundle-update test:node

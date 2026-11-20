@@ -11,6 +11,44 @@ signature file, and their cleanup. Callers do not choose a local ZIP path.
 The main and background JavaScript runtimes have separate heaps, while native
 files and preferences are shared resources.
 
+## Desktop Node entry point
+
+`@onekeyfe/react-native-bundle-update/node` exports `BundleUpdateNode` in
+ESM and CommonJS. Run one instance per managed user-data directory in the
+Desktop main process. The Node updater and its callers share a single JS
+runtime. Electron supplies the directory, native app version and build number,
+trusted PGP public key, active/fallback bundle state, restart, and optional
+download, progress and logger hooks. The package defaults to Node HTTPS for
+downloads. Electron supplies its proxy-aware transport to the packaged downloader. The React Native package
+root continues to expose the Nitro module.
+
+The Node updater owns the managed `onekey-bundle-download` and `onekey-bundle`
+directories, including partial download state and diff descriptors. Its
+download, package verification, ASC verification, installation, listing,
+pruning, and cleanup methods use the Desktop OTA wire contract. Install and
+switch verify the extracted bundle before updating the host's active pointer
+or requesting a restart. Current and up to three fallback bundles retain their
+existing on-disk layout. Node failures provide the existing
+`ONEKEY_UPDATE_ERROR` payload with code, step, and optional HTTP status.
+
+Desktop retains `build/` archives and SHA-512 per-file metadata. The signed
+JSON and ZIP digests use SHA-256. Both cleartext signatures must use the
+configured trusted key and bind the file name, Electron app type, app version,
+and bundle version. Diff verification limits control JSON to 16 MiB and bounds
+extraction/reconstruction to 4,096 entries and 512 MiB. It reuses files from
+the current version's local bundles and configured built-in/resource
+locations. Unavailable reuse or an unusable archive may trigger full-bundle
+fallback. Signature failures and archive security violations are terminal.
+Only the trusted Desktop host can enable its existing development-only
+verification setting.
+
+Same-destination downloads join for the same checksum. Archive and verification
+operations track cancellation until settled so cleanup waits before removing
+their files. Persisted descriptors allow full fallback to resume across Node
+instances. The Node package tests exercise the shipped entry points, signed
+full and diff archives, local reuse, persisted fallback and cleanup. Electron
+launch and installation runs are separate acceptance checks.
+
 ## Public API and identity
 
 `downloadBundle` takes an HTTPS `downloadUrl`, `latestVersion`, `bundleVersion`,
