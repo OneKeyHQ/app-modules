@@ -70,7 +70,7 @@ function render(props: IRenderProps = {}, { acceptChanges = false } = {}) {
 
 function pointer(
   el: Element,
-  type: 'pointerdown' | 'pointermove' | 'pointerup',
+  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
   clientX: number,
   pointerId = 1,
   button = 0
@@ -94,6 +94,9 @@ const thumb = () =>
 const mark = (i: number) =>
   container.querySelector<HTMLDivElement>(`[data-segment-mark="${i}"]`)!;
 const markDot = (i: number) => mark(i).firstElementChild as HTMLDivElement;
+const bubbleOpacity = () =>
+  container.querySelector<HTMLDivElement>('[data-segment-bubble]')!.style
+    .opacity;
 
 it('moves through the integer values used by integer-aligned marks', () => {
   const { slider, onChange } = render(
@@ -173,6 +176,127 @@ it('lets a drag stay free with snapTapToSegment', () => {
   pointer(slider, 'pointermove', TRACK_LEFT + 66);
   pointer(slider, 'pointerup', TRACK_LEFT + 66);
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([33]);
+});
+
+describe('bubble after a tap', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('lingers with the landed value, then fades', () => {
+    const { slider } = render(
+      { value: 0, snapTapToSegment: true },
+      { acceptChanges: true }
+    );
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    // A snap-mode tap candidate would only show the old value.
+    expect(bubbleOpacity()).toBe('0');
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    const bubble = container.querySelector('[data-segment-bubble]')!;
+    expect(bubble.textContent).toBe('25%');
+    expect(bubbleOpacity()).toBe('1');
+    act(() => jest.advanceTimersByTime(799));
+    expect(bubbleOpacity()).toBe('1');
+    act(() => jest.advanceTimersByTime(1));
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('lingers after a plain tap without snapping', () => {
+    const { slider } = render({ value: 0 });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    expect(bubbleOpacity()).toBe('1');
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(bubbleOpacity()).toBe('1');
+    act(() => jest.advanceTimersByTime(800));
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('hides on release after a drag and cancels a pending linger', () => {
+    const { slider } = render({ value: 0, snapTapToSegment: true });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointermove', TRACK_LEFT + 120);
+    expect(bubbleOpacity()).toBe('1');
+    pointer(slider, 'pointerup', TRACK_LEFT + 120);
+    expect(bubbleOpacity()).toBe('0');
+    act(() => jest.advanceTimersByTime(800));
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('hides the previous tap bubble while a new snap press is pending', () => {
+    const { slider } = render(
+      { value: 0, snapTapToSegment: true },
+      { acceptChanges: true }
+    );
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(bubbleOpacity()).toBe('1');
+    // Held without moving: the old 25% must not stay up until release.
+    pointer(slider, 'pointerdown', TRACK_LEFT + 150);
+    expect(bubbleOpacity()).toBe('0');
+    act(() => jest.advanceTimersByTime(1050));
+    expect(bubbleOpacity()).toBe('0');
+    // A long press changes nothing and shows no bubble on release.
+    pointer(slider, 'pointerup', TRACK_LEFT + 150);
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('does not linger after a cancelled press', () => {
+    const onSlideComplete = jest.fn();
+    const { slider } = render({ value: 0, onSlideComplete });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    expect(bubbleOpacity()).toBe('1');
+    pointer(slider, 'pointercancel', TRACK_LEFT + 60);
+    expect(bubbleOpacity()).toBe('0');
+    expect(onSlideComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the tap value when the parent accepts it', () => {
+    const { slider, rerender } = render(
+      { value: 0, snapTapToSegment: true },
+      { acceptChanges: true }
+    );
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    rerender({ value: 25 });
+    expect(bubbleOpacity()).toBe('1');
+    expect(container.querySelector('[data-segment-bubble]')!.textContent).toBe(
+      '25%'
+    );
+  });
+
+  it('ends the linger when another value replaces the tap value', () => {
+    const { slider, rerender } = render(
+      { value: 0, snapTapToSegment: true },
+      { acceptChanges: true }
+    );
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    rerender({ value: 60 });
+    expect(bubbleOpacity()).toBe('0');
+
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(bubbleOpacity()).toBe('1');
+    key(slider, 'ArrowRight');
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('shows the bubble when enabled during a drag', () => {
+    const { slider, rerender } = render(
+      { value: 0, segments: 0, showBubble: false },
+      { acceptChanges: true }
+    );
+    pointer(slider, 'pointerdown', TRACK_LEFT + 20);
+    pointer(slider, 'pointermove', TRACK_LEFT + 100);
+    rerender({ showBubble: true });
+    expect(bubbleOpacity()).toBe('1');
+    expect(container.querySelector('[data-segment-bubble]')!.textContent).toBe(
+      '50%'
+    );
+    pointer(slider, 'pointerup', TRACK_LEFT + 100);
+    expect(bubbleOpacity()).toBe('0');
+  });
 });
 
 it('applies a value the parent changed during the drag once it ends', () => {

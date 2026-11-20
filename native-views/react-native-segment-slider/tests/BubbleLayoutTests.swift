@@ -219,9 +219,81 @@ enum BubbleLayoutTests {
     check(starts == 1 && completions == 1, "interaction callbacks changed")
     check(bubble.opacity == 0, "bubble not hidden after completion")
     control.onTouchBegan?(12 + 0.3 * 296)
+    check(bubble.opacity == 0, "snap tap candidate shows the old value")
     control.onTouchEnded?()
     verify(slider, value: 25, label: "tap snap")
     check(changes.last == 25, "tap no longer snaps to segment")
+    check(bubble.opacity == 1, "bubble hidden right after a tap")
+    try await Task.sleep(nanoseconds: 400_000_000)
+    check(bubble.opacity == 1, "bubble hidden before the tap linger ends")
+    try await Task.sleep(nanoseconds: 600_000_000)
+    check(bubble.opacity == 0, "bubble still visible after the tap linger")
+    // A drag that follows a tap hides on release and cancels the linger.
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchEnded?()
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchMoved?(12 + 0.6 * 296)
+    check(bubble.opacity == 1, "bubble hidden during drag")
+    control.onTouchEnded?()
+    check(bubble.opacity == 0, "bubble lingers after a drag")
+    slider.showBubble = false
+    slider.showBubble = true
+    check(bubble.opacity == 0, "re-enabling showBubble resurrected the bubble")
+    // A new snap press hides the previous tap's bubble until it lands.
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchEnded?()
+    check(bubble.opacity == 1, "bubble hidden right after a second tap")
+    control.onTouchBegan?(12 + 0.8 * 296)
+    check(bubble.opacity == 0, "pending snap press kept the previous tap bubble")
+    control.onTouchEnded?()
+    check(bubble.opacity == 1, "bubble hidden after the follow-up tap landed")
+    // A system cancel is not a tap: no linger, one completion.
+    let completionsBeforeCancel = completions
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchCancelled?()
+    check(bubble.opacity == 0, "cancelled press lingered the bubble")
+    check(completions == completionsBeforeCancel + 1, "cancelled press completions changed")
+    slider.snapTapToSegment = false
+    control.onTouchBegan?(12 + 0.5 * 296)
+    check(bubble.opacity == 1, "plain press hid the bubble")
+    control.onTouchCancelled?()
+    check(bubble.opacity == 0, "cancelled plain press lingered the bubble")
+    slider.snapTapToSegment = true
+
+    // The lingering bubble belongs to its tap: unrelated value updates end it.
+    let owned = makeSlider(width: 320, value: 0)
+    owned.snapTapToSegment = true
+    var ownedId: Double = 0
+    owned.onSlideComplete = { id, _ in ownedId = id }
+    let ownedControl = sliderControl(for: owned)
+    let ownedBubble: CALayer = layer(owned, "bubbleLayer")
+    let ownedText: CATextLayer = layer(owned, "bubbleTextLayer")
+    ownedControl.onTouchBegan?(12 + 0.3 * 296)
+    ownedControl.onTouchEnded?()
+    try owned.setValue(value: 25, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 1 && ownedText.string as? String == "25%",
+          "accepting the tap value ended its linger")
+    try owned.setValue(value: 60, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 0, "controlled update kept the tap bubble")
+    ownedControl.onTouchBegan?(12 + 0.3 * 296)
+    ownedControl.onTouchEnded?()
+    check(ownedBubble.opacity == 1, "bubble hidden after a tap")
+    ownedControl.accessibilityIncrement()
+    check(ownedBubble.opacity == 0, "accessibility step kept the tap bubble")
+
+    // Turning showBubble on during a drag shows the drag's bubble.
+    let toggled = makeSlider(width: 320, value: 0)
+    toggled.showBubble = false
+    let toggledControl = sliderControl(for: toggled)
+    let toggledBubble: CALayer = layer(toggled, "bubbleLayer")
+    toggledControl.onTouchBegan?(12 + 0.2 * 296)
+    toggledControl.onTouchMoved?(12 + 0.5 * 296)
+    toggled.showBubble = true
+    check(toggledBubble.opacity == 1, "showBubble enabled mid-drag stayed hidden")
+    toggledControl.onTouchEnded?()
+    check(toggledBubble.opacity == 0, "drag bubble lingered after enabling showBubble")
     for (x, value): (CGFloat, Double) in [(0, 0), (320, 100)] {
       control.onTouchBegan?(x)
       control.onTouchEnded?()
