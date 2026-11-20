@@ -764,6 +764,7 @@ public final class JCoreTcpEngine {
     }
 
     private void closeOwnedSocket(Attempt owner) {
+        List<QueuedRequest> canceled = Collections.emptyList();
         synchronized (this) {
             if (activeAttempt != owner) {
                 if (owner.socket != null) try { owner.socket.close(); } catch (Exception ignored) {}
@@ -786,6 +787,22 @@ public final class JCoreTcpEngine {
                 ResponseSlot slot = entry.getValue();
                 if (slot.owner == owner && pendingRequests.remove(entry.getKey(), slot)) slot.complete(null);
             }
+            if (!preLoginQueue.isEmpty()) {
+                List<QueuedRequest> retained = new ArrayList<QueuedRequest>();
+                canceled = new ArrayList<QueuedRequest>();
+                QueuedRequest queued;
+                while ((queued = preLoginQueue.poll()) != null) {
+                    if (queued.owner == owner) {
+                        canceled.add(queued);
+                    } else {
+                        retained.add(queued);
+                    }
+                }
+                preLoginQueue.addAll(retained);
+            }
+        }
+        for (QueuedRequest req : canceled) {
+            ioExecutor.execute(() -> req.complete(null, JPushInterface.ErrorCode.TIMEOUT));
         }
     }
 
@@ -891,7 +908,14 @@ public final class JCoreTcpEngine {
 
             long uid = JCoreStorage.getUid(context);
             String password = JCoreStorage.getPassword(context);
-            byte[] loginBody = JCoreWireCodec.buildLoginPayload(password, appKey, deviceId, countryCode);
+            byte romPlatformMask = (byte) (!JCoreStorage.getThirdToken(context, (byte) 8).isEmpty() ? (8 | 32) : 8);
+            byte[] loginBody = JCoreWireCodec.buildLoginPayload(
+                password,
+                appKey,
+                deviceId,
+                countryCode,
+                romPlatformMask
+            );
             JCoreWireCodec.DecodedFrame loginFrame = sendRequestOnSocket(owner,
                 JCoreWireCodec.CMD_LOGIN,
                 JCoreWireCodec.VER_LOGIN,
@@ -922,7 +946,14 @@ public final class JCoreTcpEngine {
                 }
                 uid = JCoreStorage.getUid(context);
                 password = JCoreStorage.getPassword(context);
-                loginBody = JCoreWireCodec.buildLoginPayload(password, appKey, deviceId, countryCode);
+                romPlatformMask = (byte) (!JCoreStorage.getThirdToken(context, (byte) 8).isEmpty() ? (8 | 32) : 8);
+                loginBody = JCoreWireCodec.buildLoginPayload(
+                    password,
+                    appKey,
+                    deviceId,
+                    countryCode,
+                    romPlatformMask
+                );
                 loginFrame = sendRequestOnSocket(owner,
                     JCoreWireCodec.CMD_LOGIN,
                     JCoreWireCodec.VER_LOGIN,
@@ -1249,7 +1280,8 @@ public final class JCoreTcpEngine {
                 );
                 long ackRid = frame.requestId != 0L ? frame.requestId : JCoreStorage.nextRid();
                 long uid = frame.uid != 0L ? frame.uid : JCoreStorage.getUid(context);
-                byte[] ackBody = JCoreWireCodec.buildMessageAckPayload(envelope.messageType, envelope.messageId);
+                String jdata = JCoreWireCodec.extractJsonString(envelope.content, "_j_data_");
+                byte[] ackBody = JCoreWireCodec.buildMessageAckPayload(0, envelope.messageType, envelope.messageId, jdata);
                 sendFrameOwned(owner, socket,
                     JCoreWireCodec.CMD_MESSAGE_ACK,
                     JCoreWireCodec.VER_MESSAGE_ACK,

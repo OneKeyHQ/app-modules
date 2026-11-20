@@ -760,6 +760,9 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             [self sendReceiptLockedForMessageType:envelope.messageType
                                         messageId:envelope.messageId
                                         requestId:frame.requestId];
+            if (envelope.messageType == 4 && ![envelope.jsonPayload isKindOfClass:[NSDictionary class]]) {
+                return;
+            }
             NSMutableDictionary *payload = [NSMutableDictionary dictionary];
             if ([envelope.jsonPayload isKindOfClass:[NSDictionary class]]) {
                 [payload addEntriesFromDictionary:envelope.jsonPayload];
