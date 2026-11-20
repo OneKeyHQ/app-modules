@@ -31,6 +31,9 @@ const THUMB_Z_INDEX = 4;
 // Tap-vs-drag thresholds for `snapTapToSegment`, matching native.
 const TAP_MOVE_THRESHOLD = 8;
 const TAP_MAX_DURATION_MS = 300;
+// A tap's press is ~100ms, too short to read the bubble, so after a tap the
+// bubble stays up for this long before fading. Drags still hide on release.
+const TAP_BUBBLE_LINGER_MS = 800;
 
 // Clamps an integer result into [ceil(min), floor(max)] so fractional bounds
 // never produce a value past them.
@@ -179,6 +182,7 @@ function SegmentSliderComponent({
   const hasDraggedRef = useRef(false);
   // True when the active press started on a mark (already snapped to it).
   const pressedMarkRef = useRef(false);
+  const bubbleHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [focusVisible, setFocusVisible] = useState(false);
 
   const range = max - min;
@@ -377,33 +381,64 @@ function SegmentSliderComponent({
     [segments, segmentIndexToPct, valueToPct]
   );
 
-  const setBubbleVisible = useCallback((visible: boolean) => {
-    const bubble = bubbleRef.current;
-    if (!bubble) return;
-    bubble.style.opacity = visible ? '1' : '0';
+  const clearBubbleHideTimer = useCallback(() => {
+    if (bubbleHideTimerRef.current !== null) {
+      clearTimeout(bubbleHideTimerRef.current);
+      bubbleHideTimerRef.current = null;
+    }
   }, []);
 
+  const setBubbleVisible = useCallback(
+    (visible: boolean) => {
+      clearBubbleHideTimer();
+      const bubble = bubbleRef.current;
+      if (!bubble) return;
+      bubble.style.opacity = visible ? '1' : '0';
+    },
+    [clearBubbleHideTimer]
+  );
+
+  // Shows the bubble (with the value the tap landed on), then fades it out
+  // after TAP_BUBBLE_LINGER_MS. A new press cancels the pending fade.
+  const lingerThenHideBubble = useCallback(() => {
+    setBubbleVisible(true);
+    bubbleHideTimerRef.current = setTimeout(() => {
+      bubbleHideTimerRef.current = null;
+      const bubble = bubbleRef.current;
+      if (bubble) bubble.style.opacity = '0';
+    }, TAP_BUBBLE_LINGER_MS);
+  }, [setBubbleVisible]);
+
+  useEffect(() => clearBubbleHideTimer, [clearBubbleHideTimer]);
+
   /**
-   * Ends the active pointer interaction: releases capture, hides the bubble,
-   * reconciles a value the parent changed during the drag (without emitting
-   * `onChange`) and fires `onSlideComplete`.
+   * Ends the active interaction: releases capture, hides the bubble (or lets
+   * it linger after a tap), reconciles a value the parent changed during the
+   * drag (without emitting `onChange`) and fires `onSlideComplete`.
    */
-  const endInteraction = useCallback(() => {
-    const pointerId = pointerIdRef.current;
-    pointerIdRef.current = null;
-    draggingRef.current = false;
-    if (pointerId !== null) {
-      try {
-        containerRef.current?.releasePointerCapture(pointerId);
-      } catch {
-        /* ignore */
+  const endInteraction = useCallback(
+    (tap = false) => {
+      const pointerId = pointerIdRef.current;
+      pointerIdRef.current = null;
+      draggingRef.current = false;
+      if (pointerId !== null) {
+        try {
+          containerRef.current?.releasePointerCapture(pointerId);
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    setBubbleVisible(false);
-    // Repaint even when the value matched: marks or colors may have changed.
-    reconcileValue();
-    onSlideComplete?.();
-  }, [onSlideComplete, reconcileValue, setBubbleVisible]);
+      // Repaint even when the value matched: marks or colors may have changed.
+      reconcileValue();
+      if (tap) {
+        lingerThenHideBubble();
+      } else {
+        setBubbleVisible(false);
+      }
+      onSlideComplete?.();
+    },
+    [onSlideComplete, reconcileValue, setBubbleVisible, lingerThenHideBubble]
+  );
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -420,7 +455,6 @@ function SegmentSliderComponent({
         /* setPointerCapture can throw on some browsers; ignore */
       }
       onSlideStart?.();
-      setBubbleVisible(true);
       pressStartXRef.current = e.clientX;
       pressLastXRef.current = e.clientX;
       pressStartTimeRef.current = Date.now();
@@ -432,6 +466,13 @@ function SegmentSliderComponent({
           : null;
       const markIndex = mark?.getAttribute('data-segment-mark') ?? null;
       pressedMarkRef.current = markIndex !== null;
+      // A deferred snap-mode tap shows no bubble yet: it would show the old
+      // value. It appears once the press becomes a drag or the tap lands.
+      if (snapTapsActive && markIndex === null) {
+        clearBubbleHideTimer();
+      } else {
+        setBubbleVisible(true);
+      }
       if (markIndex !== null) {
         snapToStep(Number(markIndex));
       } else if (!snapTapsActive) {
@@ -442,7 +483,7 @@ function SegmentSliderComponent({
         if (snapTapsActive && markIndex === null) {
           snapToStep(nearestMarkIndex(valueFromClientX(e.clientX)));
         }
-        endInteraction();
+        endInteraction(true);
         return;
       }
       draggingRef.current = true;
@@ -451,6 +492,7 @@ function SegmentSliderComponent({
       disabled,
       onSlideStart,
       endInteraction,
+      clearBubbleHideTimer,
       setBubbleVisible,
       snapTapsActive,
       snapToStep,
@@ -469,12 +511,13 @@ function SegmentSliderComponent({
         Math.abs(e.clientX - pressStartXRef.current) > TAP_MOVE_THRESHOLD
       ) {
         hasDraggedRef.current = true;
+        if (snapTapsActive && !pressedMarkRef.current) setBubbleVisible(true);
       }
       // Still a tap candidate in snap mode: keep the thumb put.
       if (snapTapsActive && !hasDraggedRef.current) return;
       emit(valueFromClientX(e.clientX));
     },
-    [emit, snapTapsActive, valueFromClientX]
+    [emit, snapTapsActive, setBubbleVisible, valueFromClientX]
   );
 
   const finishDrag = useCallback(
@@ -483,16 +526,16 @@ function SegmentSliderComponent({
       // A quick tap (no drag) in snap mode lands on the nearest mark; a long
       // press does nothing; a drag keeps its free value. A press that started
       // on a mark already landed on it.
-      if (
-        snapTapsActive &&
-        !pressedMarkRef.current &&
-        !hasDraggedRef.current &&
-        e.type === 'pointerup' &&
-        Date.now() - pressStartTimeRef.current <= TAP_MAX_DURATION_MS
-      ) {
-        snapToStep(nearestMarkIndex(valueFromClientX(pressLastXRef.current)));
+      let isTap = !hasDraggedRef.current && e.type === 'pointerup';
+      if (isTap && snapTapsActive && !pressedMarkRef.current) {
+        if (Date.now() - pressStartTimeRef.current <= TAP_MAX_DURATION_MS) {
+          snapToStep(nearestMarkIndex(valueFromClientX(pressLastXRef.current)));
+        } else {
+          // Long press in snap mode changes nothing; no value to show.
+          isTap = false;
+        }
       }
-      endInteraction();
+      endInteraction(isTap);
     },
     [
       endInteraction,
@@ -731,7 +774,9 @@ function SegmentSliderComponent({
           <div style={thumbStyle} />
         </div>
 
-        {showBubble ? <div ref={bubbleRef} style={bubbleStyle} /> : null}
+        {showBubble ? (
+          <div ref={bubbleRef} data-segment-bubble="" style={bubbleStyle} />
+        ) : null}
       </div>
     </div>
   );

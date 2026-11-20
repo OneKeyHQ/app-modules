@@ -219,9 +219,26 @@ enum BubbleLayoutTests {
     check(starts == 1 && completions == 1, "interaction callbacks changed")
     check(bubble.opacity == 0, "bubble not hidden after completion")
     control.onTouchBegan?(12 + 0.3 * 296)
+    check(bubble.opacity == 0, "snap tap candidate shows the old value")
     control.onTouchEnded?()
     verify(slider, value: 25, label: "tap snap")
     check(changes.last == 25, "tap no longer snaps to segment")
+    check(bubble.opacity == 1, "bubble hidden right after a tap")
+    try await Task.sleep(nanoseconds: 400_000_000)
+    check(bubble.opacity == 1, "bubble hidden before the tap linger ends")
+    try await Task.sleep(nanoseconds: 600_000_000)
+    check(bubble.opacity == 0, "bubble still visible after the tap linger")
+    // A drag that follows a tap hides on release and cancels the linger.
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchEnded?()
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchMoved?(12 + 0.6 * 296)
+    check(bubble.opacity == 1, "bubble hidden during drag")
+    control.onTouchEnded?()
+    check(bubble.opacity == 0, "bubble lingers after a drag")
+    slider.showBubble = false
+    slider.showBubble = true
+    check(bubble.opacity == 0, "re-enabling showBubble resurrected the bubble")
     for (x, value): (CGFloat, Double) in [(0, 0), (320, 100)] {
       control.onTouchBegan?(x)
       control.onTouchEnded?()

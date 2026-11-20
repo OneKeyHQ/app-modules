@@ -115,6 +115,7 @@ class BubbleLayoutActivity : Activity() {
         runFractionalEndpointCases()
         runAccessibilityNotificationCases(root) {
           runLayoutCases {
+            runTapLingerCases(root) {
             verifyDelayedValueSync(root) {
               File(filesDir, "result.json").writeText(JSONObject().apply {
                 put("checks", checks); put("failures", org.json.JSONArray(failures))
@@ -122,10 +123,50 @@ class BubbleLayoutActivity : Activity() {
               title.text = "${checks - failures.size}/$checks native Android checks passed"
               android.util.Log.i("SliderBubbleTest", title.text.toString())
             }
+            }
           }
         }
       }, 250)
     }
+  }
+
+  // A tap keeps the bubble up for 800 ms (showing the landed value); a snap-mode
+  // tap candidate shows no bubble; a drag hides it on release.
+  private fun runTapLingerCases(root: FrameLayout, done: () -> Unit) {
+    val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
+      segments = 4.0; defaultValue = 0.0; showBubble = true; snapTapToSegment = true
+    }
+    root.addView(slider.view, FrameLayout.LayoutParams(px(320), px(24)))
+    slider.view.layout(0, 0, px(320), px(24))
+    val inset = field(slider, "insetPx") as Float
+    fun x(fraction: Float) = inset + fraction * (slider.view.width - 2 * inset)
+    fun shown() = field(slider, "bubbleAlphaTarget") == 1f
+
+    touch(slider, MotionEvent.ACTION_DOWN, x(0.3f))
+    check(!shown(), "snap tap candidate shows the old value")
+    touch(slider, MotionEvent.ACTION_UP, x(0.3f))
+    check(field(slider, "currentValue") == 25.0, "tap no longer snaps to segment")
+    check(shown(), "bubble hidden right after a tap")
+    handler.postDelayed({
+      check(shown(), "bubble hidden before the tap linger ends")
+      handler.postDelayed({
+        check(!shown(), "bubble still visible after the tap linger")
+        touch(slider, MotionEvent.ACTION_DOWN, x(0.3f))
+        touch(slider, MotionEvent.ACTION_UP, x(0.3f))
+        touch(slider, MotionEvent.ACTION_DOWN, x(0.3f))
+        touch(slider, MotionEvent.ACTION_MOVE, x(0.6f))
+        check(shown(), "bubble hidden during drag")
+        touch(slider, MotionEvent.ACTION_UP, x(0.6f))
+        check(!shown(), "bubble lingers after a drag")
+        slider.showBubble = false
+        slider.showBubble = true
+        check(field(slider, "bubbleAlpha") == 0f && !shown(),
+          "re-enabling showBubble resurrected the bubble")
+        root.removeView(slider.view)
+        slider.dispose()
+        done()
+      }, 600)
+    }, 400)
   }
 
   private fun verifyDelayedValueSync(root: FrameLayout, done: () -> Unit) {
