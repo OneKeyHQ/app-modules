@@ -191,6 +191,26 @@ function normalizePositiveInt(value: unknown): number | undefined {
     : undefined;
 }
 
+function readBundleIdentity(
+  appVersion: unknown,
+  bundleVersion: unknown
+): IBundleUpdateIdentity | undefined {
+  try {
+    assertSafeBundleVersion(appVersion);
+    assertSafeBundleVersion(bundleVersion);
+    return { appVersion, bundleVersion };
+  } catch {
+    return undefined;
+  }
+}
+
+function sameBundleIdentity(
+  a: IBundleUpdateIdentity,
+  b: IBundleUpdateIdentity
+): boolean {
+  return a.appVersion === b.appVersion && a.bundleVersion === b.bundleVersion;
+}
+
 interface IDiffManifest {
   schemaVersion: number;
   appType: string;
@@ -219,6 +239,10 @@ interface IDownloadRun {
   controller: AbortController;
   fullWriter: boolean;
   run: Promise<IUpdateDownloadedEvent>;
+}
+
+interface ICachedBundleIdentity extends IBundleUpdateIdentity {
+  canPrune: boolean;
 }
 
 const diffGpgErrors = new WeakSet<object>();
@@ -308,11 +332,12 @@ export class BundleUpdateNode {
     }
   }
 
+  private getDownloadDirPath() {
+    return path.join(this.options.userDataDir(), 'onekey-bundle-download');
+  }
+
   getDownloadDir() {
-    const tempDir = path.join(
-      this.options.userDataDir(),
-      'onekey-bundle-download'
-    );
+    const tempDir = this.getDownloadDirPath();
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
@@ -372,6 +397,14 @@ export class BundleUpdateNode {
   ): IDiffArchiveDescriptor | null {
     const metaPath = this.getDestDiffDescriptorPath(diffZipPath);
     try {
+      const downloadDir = this.getDownloadDirPath();
+      if (
+        path.dirname(path.resolve(diffZipPath)) !==
+          path.resolve(downloadDir, DIFF_DOWNLOAD_DIR_NAME) ||
+        hasSymlinkOnPathWithinRoot(downloadDir, metaPath)
+      ) {
+        return null;
+      }
       const stat = fs.lstatSync(metaPath, { throwIfNoEntry: false });
       if (!stat || !stat.isFile() || stat.size <= 0 || stat.size > 65_536) {
         return null;
@@ -379,14 +412,13 @@ export class BundleUpdateNode {
       const raw = JSON.parse(
         fs.readFileSync(metaPath, 'utf8')
       ) as Partial<IDiffArchiveDescriptor>;
+      const identity = readBundleIdentity(raw?.appVersion, raw?.bundleVersion);
       const sha256 = normalizeSha256Hex(raw?.sha256);
       const diffSha256 = normalizeSha256Hex(raw?.diffSha256);
       if (
-        !raw ||
-        typeof raw.appVersion !== 'string' ||
-        !raw.appVersion ||
-        typeof raw.bundleVersion !== 'string' ||
-        !raw.bundleVersion ||
+        !identity ||
+        path.basename(diffZipPath) !==
+          `${identity.appVersion}-${identity.bundleVersion}.diff.zip` ||
         !isValidHttpsUrl(raw.downloadUrl) ||
         !sha256 ||
         !diffSha256
@@ -394,8 +426,7 @@ export class BundleUpdateNode {
         return null;
       }
       return {
-        appVersion: raw.appVersion,
-        bundleVersion: raw.bundleVersion,
+        ...identity,
         downloadUrl: raw.downloadUrl,
         fileSize: normalizePositiveInt(raw.fileSize),
         sha256,
@@ -1173,51 +1204,30 @@ export class BundleUpdateNode {
     };
 
     const activeBundle = this.options.store.getUpdateBundleData();
-    if (
-      activeBundle?.appVersion === appVersion &&
-      activeBundle.bundleVersion &&
-      activeBundle.bundleVersion !== targetBundleVersion
-    ) {
-      try {
-        addCandidateBuildDir(
-          this.getBundleBuildPath({
-            appVersion,
-            bundleVersion: activeBundle.bundleVersion,
-          })
-        );
-      } catch {
-        // ignore invalid stored bundle version
-      }
-    }
-
     const bundleDir = this.getBundleDirName();
-    if (bundleDir && fs.existsSync(bundleDir)) {
+    if (fs.lstatSync(bundleDir, { throwIfNoEntry: false })?.isDirectory()) {
+      const resolveIdentity = this.createCachedBundleIdentityResolver(
+        this.options.appVersion(),
+        activeBundle
+      );
       const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
+      const otherBuildDirs: string[] = [];
       for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          const lastDash = entry.name.lastIndexOf('-');
-          if (lastDash > 0) {
-            const entryAppVersion = entry.name.substring(0, lastDash);
-            const entryBundleVersion = entry.name.substring(lastDash + 1);
-            if (
-              entryAppVersion === appVersion &&
-              entryBundleVersion &&
-              entryBundleVersion !== targetBundleVersion
-            ) {
-              try {
-                addCandidateBuildDir(
-                  this.getBundleBuildPath({
-                    appVersion: entryAppVersion,
-                    bundleVersion: entryBundleVersion,
-                  })
-                );
-              } catch {
-                // ignore unsafe directory name
-              }
-            }
+        if (!entry.isDirectory()) continue;
+        const identity = resolveIdentity(entry.name);
+        if (
+          identity?.appVersion === appVersion &&
+          identity.bundleVersion !== targetBundleVersion
+        ) {
+          const buildDir = path.join(bundleDir, entry.name, 'build');
+          if (activeBundle && sameBundleIdentity(activeBundle, identity)) {
+            addCandidateBuildDir(buildDir);
+          } else {
+            otherBuildDirs.push(buildDir);
           }
         }
       }
+      otherBuildDirs.forEach(addCandidateBuildDir);
     }
 
     const builtInBuildDir = this.options.builtInBuildDir?.();
@@ -2154,61 +2164,124 @@ export class BundleUpdateNode {
     return fs.existsSync(extractDir);
   }
 
-  async listLocalBundles(): Promise<
-    { appVersion: string; bundleVersion: string }[]
-  > {
+  async listLocalBundles(): Promise<IBundleUpdateIdentity[]> {
     const bundleDir = this.getBundleDirName();
-    if (!fs.existsSync(bundleDir)) {
+    if (!fs.lstatSync(bundleDir, { throwIfNoEntry: false })?.isDirectory()) {
       return [];
     }
-    const appVersion = this.options.appVersion();
+    const resolveIdentity = this.createCachedBundleIdentityResolver(
+      this.options.appVersion(),
+      this.options.store.getUpdateBundleData()
+    );
     const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
-    const results: { appVersion: string; bundleVersion: string }[] = [];
+    const results: IBundleUpdateIdentity[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const bundleVersion = this.getLocalBundleVersion(entry.name, appVersion);
-      if (bundleVersion) {
-        results.push({ appVersion, bundleVersion });
-      } else if (this.isVersionedBundleName(entry.name)) {
-        const separator = entry.name.lastIndexOf('-');
+      const identity = resolveIdentity(entry.name);
+      if (identity) {
         results.push({
-          appVersion: entry.name.slice(0, separator),
-          bundleVersion: entry.name.slice(separator + 1),
+          appVersion: identity.appVersion,
+          bundleVersion: identity.bundleVersion,
         });
       }
     }
     return results;
   }
 
-  private getLocalBundleVersion(name: string, appVersion: string): string {
-    const prefix = `${appVersion}-`;
-    return !name.startsWith('.') && name.startsWith(prefix)
-      ? name.slice(prefix.length)
-      : '';
-  }
-
-  private isVersionedBundleName(name: string): boolean {
-    const separator = name.lastIndexOf('-');
-    return (
-      !name.startsWith('.') && separator > 0 && separator < name.length - 1
-    );
-  }
-
-  private getBundleNameFromDownloadArtifact(name: string): string {
-    let base = name;
-    for (const suffix of [
-      '.meta.json.tmp',
-      '.meta.json',
-      '.progress.json',
-      '.partial',
-      '.diff.zip',
-      '.zip',
-    ] as const) {
-      if (base.endsWith(suffix)) {
-        base = base.slice(0, -suffix.length);
-      }
+  private createCachedBundleIdentityResolver(
+    runningAppVersion: string,
+    activeBundle: IInstalledBundle | undefined
+  ): (name: string) => ICachedBundleIdentity | undefined {
+    const stored = new Map<string, IBundleUpdateIdentity | null>();
+    const addStoredIdentity = (bundle: IInstalledBundle | undefined) => {
+      const identity = readBundleIdentity(
+        bundle?.appVersion,
+        bundle?.bundleVersion
+      );
+      if (!identity) return;
+      const name = `${identity.appVersion}-${identity.bundleVersion}`;
+      const existing = stored.get(name);
+      stored.set(
+        name,
+        existing === null ||
+          (existing && !sameBundleIdentity(existing, identity))
+          ? null
+          : identity
+      );
+    };
+    addStoredIdentity(activeBundle);
+    try {
+      const fallbacks = this.options.store.getFallbackUpdateBundleData();
+      if (Array.isArray(fallbacks)) fallbacks.forEach(addStoredIdentity);
+    } catch {
+      // The store can be unavailable while the filesystem cache is still readable.
     }
-    return base;
+
+    const diffDir = path.join(
+      this.getDownloadDirPath(),
+      DIFF_DOWNLOAD_DIR_NAME
+    );
+    const resolve = (name: string): ICachedBundleIdentity | undefined => {
+      if (name.startsWith('.')) return;
+      const record = stored.get(name);
+      const descriptor = this.readDiffDescriptor(
+        path.join(diffDir, `${name}.diff.zip`)
+      );
+      if (
+        record === null ||
+        (record && descriptor && !sameBundleIdentity(record, descriptor))
+      )
+        return;
+      const known = record ?? descriptor;
+      if (known) {
+        return {
+          appVersion: known.appVersion,
+          bundleVersion: known.bundleVersion,
+          canPrune: true,
+        };
+      }
+
+      const firstDash = name.indexOf('-');
+      if (firstDash <= 0) return;
+      const prefix = name.slice(0, firstDash);
+      const numericAppVersion = /^\d+\.\d+\.\d+$/.test(prefix);
+      const separator = name.startsWith(`${runningAppVersion}-`)
+        ? runningAppVersion.length
+        : numericAppVersion
+          ? firstDash
+          : name.lastIndexOf('-');
+      const identity = readBundleIdentity(
+        name.slice(0, separator),
+        name.slice(separator + 1)
+      );
+      return identity && { ...identity, canPrune: numericAppVersion };
+    };
+
+    const resolved = new Map<string, ICachedBundleIdentity | undefined>();
+    return (name) => {
+      if (!resolved.has(name)) resolved.set(name, resolve(name));
+      return resolved.get(name);
+    };
+  }
+
+  private getBundleNameFromDownloadArtifact(
+    name: string,
+    isDiff: boolean
+  ): string | undefined {
+    const auxiliarySuffixes = [
+      '.partial.progress.json.tmp',
+      '.partial.progress.json',
+      '.partial',
+    ];
+    if (isDiff) auxiliarySuffixes.push('.meta.json.tmp', '.meta.json');
+    const suffix = auxiliarySuffixes.find((candidate) =>
+      name.endsWith(candidate)
+    );
+    const archiveName = suffix ? name.slice(0, -suffix.length) : name;
+    const extension = isDiff ? '.diff.zip' : '.zip';
+    return archiveName.endsWith(extension)
+      ? archiveName.slice(0, -extension.length)
+      : undefined;
   }
 
   /**
@@ -2235,12 +2308,22 @@ export class BundleUpdateNode {
     const activeBundleData = this.options.store.getUpdateBundleData();
     const activeAppV = activeBundleData?.appVersion;
     const activeBundleV = activeBundleData?.bundleVersion;
+    const resolveIdentity = this.createCachedBundleIdentityResolver(
+      currentAppV,
+      activeBundleData
+    );
+    const unresolvedNames = new Set<string>();
+    const isStale = (name: string): boolean => {
+      const identity = resolveIdentity(name);
+      if (!identity) unresolvedNames.add(name);
+      return identity?.canPrune === true && identity.appVersion !== currentAppV;
+    };
 
     let deletedDirCount = 0;
 
     // 1) Extract dirs: onekey-bundle/{appV}-{bV}/
     const bundleDir = this.getBundleDirName();
-    if (bundleDir && fs.existsSync(bundleDir)) {
+    if (fs.lstatSync(bundleDir, { throwIfNoEntry: false })?.isDirectory()) {
       const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory() && entry.name === DIFF_STAGING_DIR_NAME) {
@@ -2254,19 +2337,14 @@ export class BundleUpdateNode {
               // ignore
             }
           }
-        } else {
+        } else if (entry.isDirectory()) {
           // Safety net: keep current appVersion AND the active install dir.
           const isActiveInstall = Boolean(
             activeAppV &&
             activeBundleV &&
             entry.name === `${activeAppV}-${activeBundleV}`
           );
-          if (
-            entry.isDirectory() &&
-            this.isVersionedBundleName(entry.name) &&
-            !this.getLocalBundleVersion(entry.name, currentAppV) &&
-            !isActiveInstall
-          ) {
+          if (isStale(entry.name) && !isActiveInstall) {
             const dirPath = path.join(bundleDir, entry.name);
             try {
               fs.rmSync(dirPath, { recursive: true, force: true });
@@ -2288,21 +2366,21 @@ export class BundleUpdateNode {
     }
 
     // 2) Download artifacts: onekey-bundle-download/ and onekey-bundle-download/.diff/
-    const pruneDownloadDirFiles = (dir: string) => {
-      if (!fs.existsSync(dir)) {
+    const downloadDir = this.getDownloadDir();
+    const pruneDownloadDirFiles = (dir: string, isDiff: boolean) => {
+      if (
+        hasSymlinkOnPathWithinRoot(downloadDir, dir) ||
+        !fs.lstatSync(dir, { throwIfNoEntry: false })?.isDirectory()
+      ) {
         return;
       }
       const downloadEntries = fs.readdirSync(dir, {
         withFileTypes: true,
       });
       for (const entry of downloadEntries) {
-        const name = this.getBundleNameFromDownloadArtifact(entry.name);
-        // Safety net: never delete current appVersion's download artifacts.
-        if (
-          entry.isFile() &&
-          this.isVersionedBundleName(name) &&
-          !this.getLocalBundleVersion(name, currentAppV)
-        ) {
+        if (!entry.isFile()) continue;
+        const name = this.getBundleNameFromDownloadArtifact(entry.name, isDiff);
+        if (name && isStale(name)) {
           const filePath = path.join(dir, entry.name);
           try {
             fs.rmSync(filePath, { force: true });
@@ -2320,9 +2398,8 @@ export class BundleUpdateNode {
         }
       }
     };
-    const downloadDir = this.getDownloadDir();
-    pruneDownloadDirFiles(downloadDir);
-    pruneDownloadDirFiles(path.join(downloadDir, DIFF_DOWNLOAD_DIR_NAME));
+    pruneDownloadDirFiles(downloadDir, false);
+    pruneDownloadDirFiles(path.join(downloadDir, DIFF_DOWNLOAD_DIR_NAME), true);
 
     // 3) Store fallback entries: drop appVersion != currentAppV so the store
     // stays consistent with disk (no ghost dev-switcher entries, no orphan asc
@@ -2330,9 +2407,19 @@ export class BundleUpdateNode {
     try {
       const fallbackUpdateBundleData =
         this.options.store.getFallbackUpdateBundleData();
-      const keptFallback = fallbackUpdateBundleData.filter(
-        (item) => item?.appVersion === currentAppV
-      );
+      const keptFallback = fallbackUpdateBundleData.filter((item) => {
+        if (item?.appVersion === currentAppV) return true;
+        const identity = readBundleIdentity(
+          item?.appVersion,
+          item?.bundleVersion
+        );
+        return (
+          identity &&
+          unresolvedNames.has(
+            `${identity.appVersion}-${identity.bundleVersion}`
+          )
+        );
+      });
       if (keptFallback.length !== fallbackUpdateBundleData.length) {
         this.options.store.setFallbackUpdateBundleData(keptFallback);
         this.options.logger?.info(

@@ -51,8 +51,8 @@ final class BundleDiffReconstructionTests: XCTestCase {
     }
 
     func testVerifiedReleaseIdentityUsesBothVersionFields() {
-        let first = BundleDiffReconstruction.ReleaseIdentity(appVersion: "6.8-beta", bundleVersion: "123")
-        let second = BundleDiffReconstruction.ReleaseIdentity(appVersion: "6.8", bundleVersion: "beta-123")
+        let first = BundleDiffReconstruction.ReleaseIdentity(appVersion: "host-a", bundleVersion: "123")
+        let second = BundleDiffReconstruction.ReleaseIdentity(appVersion: "host", bundleVersion: "a-123")
         let records = [first: "verified"]
         XCTAssertNil(records[second])
     }

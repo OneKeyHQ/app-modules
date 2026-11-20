@@ -9,6 +9,7 @@ import fs, {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   truncateSync,
   writeFileSync,
 } from 'node:fs';
@@ -81,7 +82,7 @@ async function fixture(
     transport,
     diffStatus = 200,
     logger,
-    nativeVersion = appVersion,
+    hostVersion = appVersion,
   } = {}
 ) {
   const root = mkdtempSync(join(tmpdir(), 'bundle-update-node-'));
@@ -141,7 +142,7 @@ async function fixture(
   const { publicKey } = await keys;
   const options = {
     userDataDir: () => root,
-    appVersion: () => nativeVersion,
+    appVersion: () => hostVersion,
     buildNumber: () => '1',
     builtInBuildDir: () => builtInBuildDir,
     publicKey,
@@ -692,12 +693,11 @@ test('diff package verification requires its archive and checks an existing targ
   );
 });
 
-test('lists and prunes using the exact native version prefix', async (t) => {
-  const nativeVersion = '6.8.0-beta.2';
-  const f = await fixture(t, { nativeVersion });
+test('lists and prunes numeric releases without splitting hyphenated bundle versions', async (t) => {
+  const f = await fixture(t);
   const client = f.makeClient();
-  const current = `${nativeVersion}-41-diff`;
-  const stale = '6.7.0-beta.2-40';
+  const current = `${appVersion}-41-diff`;
+  const stale = '6.7.0-40-previous';
   const extractRoot = dirname(f.bundleDir);
   const downloadRoot = client.getDownloadDir();
   for (const name of [current, stale]) {
@@ -707,6 +707,7 @@ test('lists and prunes using the exact native version prefix', async (t) => {
   const artifacts = (prefix) => [
     join(downloadRoot, `${prefix}.zip`),
     join(downloadRoot, `${prefix}.zip.partial.progress.json`),
+    join(downloadRoot, `${prefix}.zip.partial.progress.json.tmp`),
     join(f.diffDir, `${prefix}.diff.zip`),
     join(f.diffDir, `${prefix}.diff.zip.meta.json`),
   ];
@@ -716,19 +717,153 @@ test('lists and prunes using the exact native version prefix', async (t) => {
   assert.deepEqual(
     new Set(await client.listLocalBundles()),
     new Set([
-      { appVersion: '6.7.0-beta.2', bundleVersion: '40' },
-      { appVersion: nativeVersion, bundleVersion: '41-diff' },
+      { appVersion: '6.7.0', bundleVersion: '40-previous' },
+      { appVersion, bundleVersion: '41-diff' },
     ])
   );
   assert.equal(await client.pruneStaleAppVersionBundles(), 1);
   assert.deepEqual(await client.listLocalBundles(), [
-    { appVersion: nativeVersion, bundleVersion: '41-diff' },
+    { appVersion, bundleVersion: '41-diff' },
   ]);
   assert.equal(existsSync(join(extractRoot, current)), true);
   for (const artifact of artifacts(current))
     assert.equal(existsSync(artifact), true);
   for (const artifact of artifacts(stale))
     assert.equal(existsSync(artifact), false);
+});
+
+test('stored and sidecar pairs take precedence over legacy names', async (t) => {
+  const hostVersion = 'host-current';
+  const f = await fixture(t, { hostVersion });
+  const client = f.makeClient();
+  const previousHost = `${hostVersion}-archive`;
+  const active = { appVersion: previousHost, bundleVersion: '38-active' };
+  const fallback = { appVersion: previousHost, bundleVersion: '39' };
+  const recorded = { appVersion: previousHost, bundleVersion: '40.diff' };
+  const disputed = { appVersion: previousHost, bundleVersion: '41' };
+  const name = (identity) => `${identity.appVersion}-${identity.bundleVersion}`;
+  const extractRoot = dirname(f.bundleDir);
+  for (const identity of [active, fallback, recorded, disputed]) {
+    mkdirSync(join(extractRoot, name(identity)), { recursive: true });
+  }
+  const oldFullZip = join(client.getDownloadDir(), `${name(recorded)}.zip`);
+  writeFileSync(oldFullZip, '');
+  f.store.setUpdateBundleData({ ...active, signature: f.params.signature });
+  f.store.setFallbackUpdateBundleData(
+    [fallback, disputed].map((identity) => ({
+      ...identity,
+      signature: f.params.signature,
+    }))
+  );
+  const writeDescriptor = (identity) => {
+    const descriptor = join(f.diffDir, `${name(identity)}.diff.zip.meta.json`);
+    writeFileSync(
+      descriptor,
+      JSON.stringify({
+        ...identity,
+        downloadUrl,
+        sha256: f.params.sha256,
+        diffSha256: f.params.diffSha256,
+      })
+    );
+    return descriptor;
+  };
+  mkdirSync(f.diffDir, { recursive: true });
+  const oldDescriptor = writeDescriptor(recorded);
+  const conflictingDescriptor = writeDescriptor({
+    appVersion: hostVersion,
+    bundleVersion: 'archive-41',
+  });
+
+  assert.deepEqual(
+    new Set(await client.listLocalBundles()),
+    new Set([active, fallback, recorded])
+  );
+  assert.equal(await client.pruneStaleAppVersionBundles(), 2);
+  for (const file of [
+    oldFullZip,
+    oldDescriptor,
+    join(extractRoot, name(fallback)),
+    join(extractRoot, name(recorded)),
+  ]) {
+    assert.equal(existsSync(file), false);
+  }
+  for (const file of [
+    conflictingDescriptor,
+    join(extractRoot, name(active)),
+    join(extractRoot, name(disputed)),
+  ]) {
+    assert.equal(existsSync(file), true);
+  }
+  assert.deepEqual(f.store.getFallbackUpdateBundleData(), [
+    { ...disputed, signature: f.params.signature },
+  ]);
+  assert.equal(await client.pruneStaleAppVersionBundles(), 0);
+  assert.deepEqual(await client.listLocalBundles(), [active]);
+});
+
+test('invalid and symlinked descriptors cannot decide a cache identity', async (t) => {
+  const hostVersion = 'host-current';
+  const f = await fixture(t, { hostVersion });
+  const client = f.makeClient();
+  const extractRoot = dirname(f.bundleDir);
+  const downloadRoot = client.getDownloadDir();
+  mkdirSync(f.diffDir, { recursive: true });
+  const mismatched = `${hostVersion}-archive-40`;
+  const linked = `${hostVersion}-archive-41`;
+  const unknown = 'unknown-host-42';
+  const descriptorData = JSON.stringify({
+    appVersion: `${hostVersion}-archive`,
+    bundleVersion: '41',
+    downloadUrl,
+    sha256: f.params.sha256,
+    diffSha256: f.params.diffSha256,
+  });
+  const externalDescriptor = join(f.root, 'external-descriptor.json');
+  writeFileSync(externalDescriptor, descriptorData);
+  writeFileSync(
+    join(f.diffDir, `${mismatched}.diff.zip.meta.json`),
+    descriptorData
+  );
+  symlinkSync(
+    externalDescriptor,
+    join(f.diffDir, `${linked}.diff.zip.meta.json`)
+  );
+  for (const name of [mismatched, linked, unknown]) {
+    mkdirSync(join(extractRoot, name), { recursive: true });
+    writeFileSync(join(downloadRoot, `${name}.zip`), '');
+  }
+  assert.deepEqual(
+    new Set(await client.listLocalBundles()),
+    new Set([
+      { appVersion: hostVersion, bundleVersion: 'archive-40' },
+      { appVersion: hostVersion, bundleVersion: 'archive-41' },
+      { appVersion: 'unknown-host', bundleVersion: '42' },
+    ])
+  );
+  assert.equal(await client.pruneStaleAppVersionBundles(), 0);
+  for (const name of [mismatched, linked, unknown]) {
+    assert.equal(existsSync(join(downloadRoot, `${name}.zip`)), true);
+  }
+});
+
+test('diff reconstruction discovers a cached source with a hyphenated bundle version', async (t) => {
+  const f = await fixture(t, { base: false });
+  const client = f.makeClient();
+  const source = join(
+    dirname(f.bundleDir),
+    `${appVersion}-41-local`,
+    'build/assets/reused.txt'
+  );
+  mkdirSync(dirname(source), { recursive: true });
+  writeFileSync(source, f.asset);
+  const result = await client.downloadBundle(f.params);
+  await client.verifyBundleASC(result);
+  assert.equal(
+    readFileSync(join(f.bundleDir, 'build/assets/reused.txt'), 'utf8'),
+    f.asset
+  );
+  assert.equal(f.calls.includes(downloadUrl), false);
 });
 
 test('retryable HTTP errors preserve the partial diff for the next download', async (t) => {

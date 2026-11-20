@@ -101,10 +101,22 @@ Signed metadata binds the supplied app and bundle versions as separate fields;
 verification never recovers them by splitting the combined directory name.
 Startup derives the bundle version only by removing the exact running native
 app-version prefix and separator from the stored directory name. An absent or
-empty suffix fails closed. Local bundle listing and stale-version pruning use
+empty suffix fails closed. Native bundle listing and stale-version pruning use
 the complete running app-version prefix to preserve bundle versions containing
 hyphens. Native listing returns bundles for the running app version. Desktop
 also lists older cached versions until they are removed by best-effort pruning.
+Desktop listing, pruning, and diff source discovery use explicit app-version
+and bundle-version pairs from the active and fallback records and from a
+matching, regular sidecar in the managed diff directory. The sidecar filename
+must match its safe version fields. Conflicting records leave the cache
+identity unresolved, and pruning retains the corresponding cached artifacts
+and fallback records. An unrecorded legacy name first matches the complete
+running app-version prefix. For other legacy names with a numeric
+`major.minor.patch` app-version prefix, the first hyphen separates the release
+from the entire bundle-version suffix. Remaining legacy names retain the previous
+listing behavior and require an explicit record before stale pruning can delete
+them. Full downloads strip the `.zip` extension and diff downloads strip the
+`.diff.zip` extension within their respective directories.
 `downloadBundleASC` validates the signature and its managed destination; the
 installed signature sidecar (`asc/<latestVersion>-<bundleVersion>-signature.asc`)
 is committed only when installation succeeds.
