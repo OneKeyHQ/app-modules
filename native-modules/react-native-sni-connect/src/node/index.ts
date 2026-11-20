@@ -10,6 +10,7 @@ const MAX_TIMEOUT_MS = 120_000;
 const MAX_PATH_BYTES = 8 * 1024;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_OPEN_UPLOAD_FILES = 64;
 const MAX_RESPONSE_BODY_BYTES = 10 * 1024 * 1024;
 const MAX_HEADER_COUNT = 64;
 const MAX_HEADER_NAME_BYTES = 128;
@@ -691,10 +692,11 @@ function isSameFile(left: fs.BigIntStats, right: fs.BigIntStats): boolean {
 }
 
 async function resolveUploadFile(
-  filePath: unknown,
+  config: SniNodeUploadFileConfig,
   options?: SniNodeUploadValidationOptions,
   signal?: AbortSignal
 ): Promise<OpenedUploadFile> {
+  const { filePath } = config;
   if (typeof filePath !== 'string' || !filePath || hasControlChar(filePath)) {
     invalidConfig('Invalid filePath');
   }
@@ -745,10 +747,15 @@ async function resolveUploadFile(
   if (!pathStat.isFile()) {
     invalidConfig('Upload file is not a regular file');
   }
-  signal?.throwIfAborted();
+  const releaseFileSlot = await sharedUploadFileLimiter.acquire(
+    config.hostname,
+    config.ip,
+    { signal }
+  );
 
   let handle: fsPromises.FileHandle;
   try {
+    signal?.throwIfAborted();
     // Windows does not expose the optional Unix open flags. Identity is
     // checked on every platform before accepting the file.
     const flags =
@@ -757,13 +764,18 @@ async function resolveUploadFile(
       (fs.constants.O_NONBLOCK ?? 0);
     handle = await fsPromises.open(realPath, flags);
   } catch {
+    releaseFileSlot();
+    signal?.throwIfAborted();
     invalidConfig('Upload file is not readable');
   }
 
   let closing: Promise<void> | undefined;
   const close = () => {
     signal?.removeEventListener('abort', close);
-    return (closing ??= handle.close().catch(() => undefined));
+    return (closing ??= handle
+      .close()
+      .catch(() => undefined)
+      .finally(releaseFileSlot));
   };
   signal?.addEventListener('abort', close, { once: true });
 
@@ -860,7 +872,7 @@ export async function validateSniUploadFileConfig(
   signal?: AbortSignal
 ): Promise<NormalizedSniRequestConfig> {
   const normalized = normalizeSniUploadFileConfig(config, options);
-  const file = await resolveUploadFile(config.filePath, options, signal);
+  const file = await resolveUploadFile(config, options, signal);
   await file.close();
   signal?.throwIfAborted();
   return {
@@ -1316,11 +1328,17 @@ export class SniRequestLimiter {
 const limiterKey = Symbol.for(
   '@onekeyfe/react-native-sni-connect.requestLimiter'
 );
+const fileLimiterKey = Symbol.for(
+  '@onekeyfe/react-native-sni-connect.uploadFileLimiter'
+);
 const sniProcess = process as typeof process & {
   [limiterKey]?: SniRequestLimiter;
+  [fileLimiterKey]?: SniRequestLimiter;
 };
 const sharedRequestLimiter = (sniProcess[limiterKey] ??=
   new SniRequestLimiter());
+const sharedUploadFileLimiter = (sniProcess[fileLimiterKey] ??=
+  new SniRequestLimiter(MAX_OPEN_UPLOAD_FILES, MAX_OPEN_UPLOAD_FILES));
 
 export class SniNodeClient {
   private options: SniNodeClientOptions;
@@ -1573,15 +1591,12 @@ export class SniNodeClient {
       file = await new Promise<OpenedUploadFile>((resolve, reject) => {
         rejectOnAbort = () => reject(signal.reason);
         signal.addEventListener('abort', rejectOnAbort, { once: true });
-        resolveUploadFile(config.filePath, this.options, signal).then(
-          resolve,
-          reject
-        );
+        resolveUploadFile(config, this.options, signal).then(resolve, reject);
       });
       requestState.checkDeadline();
     } catch (error) {
       this.removeRequestState(requestState, undefined, undefined);
-      await file?.close();
+      file?.close();
       this.logInvalidConfig(config, 0, error, startedAt);
       throw error;
     } finally {
@@ -1599,7 +1614,7 @@ export class SniNodeClient {
         file
       );
     } finally {
-      await file.close();
+      file.close();
     }
   }
 
@@ -1679,6 +1694,9 @@ export class SniNodeClient {
       let responseStarted = false;
       const cleanup = () => {
         signal.removeEventListener('abort', onAbort);
+        // Close through the handle first so the file slot tracks its close
+        // Promise even when destroying the stream initiates descriptor cleanup.
+        bodyFile?.close();
         activeFileStream?.destroy();
         this.removeRequestState(requestState, activeRequest, activeAgentState);
         releaseRequestSlot?.();

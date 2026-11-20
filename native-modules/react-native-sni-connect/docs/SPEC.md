@@ -85,12 +85,20 @@ Status: **Implemented in source**; native device/network acceptance remains open
   `POST` or `PUT` to `/wallet/v1/client/log` on
   `https://wallet.onekeycn.com` or `https://wallet.onekeytest.com`.
 - After checking the canonical path against the allowed roots, the client
-  opens a read-only handle and checks its identity against the canonical path.
-  The regular-file and size checks use that handle. Optional verification
-  receives the canonical path and size from that check. The same handle is
-  retained through admission and used to stream the body. It is closed on
-  validation failure, timeout, cancellation, transport failure, or success.
-  The caller remains responsible for keeping file contents unchanged.
+  reserves a file slot, opens a read-only handle and checks its identity
+  against the canonical path. The regular-file and size checks use that
+  handle. Optional verification receives the canonical path and size from
+  that check. The client retains the handle through admission and streams
+  the body from it. The caller owns the file contents and keeps them unchanged.
+- CommonJS and ESM clients and the standalone validation helper share a
+  process-wide limit of 64 upload files being opened, held, or closed.
+  The file queue holds at most 256 waiters and rejects overflow with
+  `SNI_RESOURCE_LIMIT`. For an upload, waiting for a file slot uses its
+  original deadline and cancellation signal.
+- Validation failure, timeout, cancellation, transport failure and success
+  start file cleanup. Cancelling or timing out can settle the upload Promise
+  while a file read or close finishes in the background. The file slot is
+  released after the handle finishes closing, or when opening fails.
 - Electron consumers supply their session's `resolveProxy(url)` to the
   client. The proxy preflight rejects with `SNI_UNSUPPORTED` when no resolver
   is available or the resolver returns an empty route. Direct SNI transport
@@ -324,7 +332,10 @@ retain the generic logger's sensitive-data filtering.
 - Node tests cover method and response handling, shared admission, upload
   deadlines and cancellation, file-error logging, proxy preflight and agent
   cleanup. Upload tests check that the client retains the opened file across
-  admission, closes it on cancellation, and aborts a short body.
+  admission, closes it on cancellation, and aborts a short body. The file
+  admission tests hold verification and close operations open to exercise the
+  shared limit. Slow-read tests confirm cancellation and timeout settle before
+  the handle closes.
 - After building the package, `node --test tests/node-entrypoints.test.mjs`
   verifies that the later-loaded Node entry sees a shared queue overflow as a
   `SniRequestError`. A packed-package smoke test checks NodeNext declarations.

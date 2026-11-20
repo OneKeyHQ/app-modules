@@ -131,26 +131,43 @@ file must be a readable `.zip` directly under a configured root, between
 
 ## API
 
-Node methods and their types are available through the `/node` entry. Call
-these methods on a `SniNodeClient` instance.
+### React Native
 
-| Export | Signature | Platforms | Description |
-| --- | --- | :-: | --- |
-| `request` | `(config: SniConnectRequest) => Promise<SniConnectResponse>` | iOS, Android, Node (`./node`) | Sends one HTTPS request over the pinned SNI transport. |
-| `uploadFile` | `(config: SniConnectUploadFileRequest) => Promise<SniConnectResponse>` | iOS, Android, Node (`./node`) | Sends a local file body (`POST`/`PUT`, 1 byte–20 MiB). |
-| `isUploadFileSupported` | `() => boolean` | iOS, Android | Reports whether the loaded native module exposes `uploadFile`. |
-| `getUploadProgress` | `(requestId: string) => Promise<SniConnectUploadProgress \| null>` | iOS, Android, Node (`./node`) | Reads the active upload byte progress snapshot for `requestId`. |
-| `cancelRequest` | `(requestId: string) => Promise<{ success: boolean }>` | iOS, Android, Node (`./node`) | Cancels the active request with that id. |
-| `cancelAllRequests` | `() => Promise<{ success: boolean }>` | iOS, Android, Node (`./node`) | Cancels every request owned by the current runtime. |
-| `clearDNSCache` | `() => Promise<{ success: boolean }>` | iOS, Android, Node (`./node`) | Evicts cached pinned destinations, clients and idle connections. |
-| `getDebugSnapshot` | `({ hostname, ip }) => Promise<SniConnectDebugSnapshot>` | iOS, Android, Node (`./node`) | Reads active/pending counters for one pair. Native also reports request IDs. |
-| `isProxyActiveForUrl` | `(url: string) => Promise<boolean>` | iOS, Android, Node (`./node`) | Preflight proxy probe; does not enable proxying for SNI requests. |
+Import these functions and types from `@onekeyfe/react-native-sni-connect`.
 
-`SniConnectResponse` contains `data` (string), `status`, `statusText`, `headers`
-and an optional `multiValueHeaders`. Limits: 1 MiB body, 8 KiB path/query, 64
-headers / 32 KiB total, 10 MiB response. Exported types include
-`SniConnectRequest`, `SniConnectResponse` and `SniConnectUploadFileRequest`; see
-[`src/NativeSniConnect.ts`](src/NativeSniConnect.ts).
+| Export | Signature | Description |
+| --- | --- | --- |
+| `request` | `(config: SniConnectRequest) => Promise<SniConnectResponse>` | Sends an HTTPS request over the pinned SNI transport. |
+| `uploadFile` | `(config: SniConnectUploadFileRequest) => Promise<SniConnectResponse>` | Sends a local file body (`POST` or `PUT`, 1 byte–20 MiB). |
+| `isUploadFileSupported` | `() => boolean` | Reports whether the loaded native module exposes `uploadFile`. |
+| `getUploadProgress` | `(requestId: string) => Promise<SniConnectUploadProgress \| null>` | Reads the active upload progress for an ID. |
+| `getDebugSnapshot` | `(target: SniConnectDebugTarget) => Promise<SniConnectDebugSnapshot>` | Reads active and pending counters and request IDs for one pair. |
+
+### Node/Desktop
+
+Import `SniNodeClient` and these types from
+`@onekeyfe/react-native-sni-connect/node`. Call the methods on a client
+instance. Use `body: null` for a GET or HEAD request.
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `request` | `(config: SniNodeRequestConfig) => Promise<SniNodeResponse>` | Sends an HTTPS request over the pinned SNI transport. |
+| `uploadFile` | `(config: SniNodeUploadFileConfig) => Promise<SniNodeResponse>` | Streams a file from a configured app directory. |
+| `getUploadProgress` | `(requestId: string) => Promise<SniNodeUploadProgress \| null>` | Reads the active upload progress for an ID. |
+| `getDebugSnapshot` | `(target: Pick<SniNodeRequestConfig, 'hostname' \| 'ip'>) => Promise<SniNodeDebugSnapshot>` | Reads active and pending request counters for one pair. |
+
+### Shared methods
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `cancelRequest` | `(requestId: string) => Promise<{ success: boolean }>` | Cancels the active request with that ID. |
+| `cancelAllRequests` | `() => Promise<{ success: boolean }>` | Cancels requests owned by the module or client instance. |
+| `clearDNSCache` | `() => Promise<{ success: boolean }>` | Evicts cached pinned destinations, clients and idle connections. |
+| `isProxyActiveForUrl` | `(url: string) => Promise<boolean>` | Reports whether the URL would use a proxy. |
+
+Responses contain `data` (string), `status`, `statusText`, `headers` and
+optional `multiValueHeaders`. Limits are 1 MiB for string bodies, 8 KiB for
+path/query, 64 headers and 32 KiB total header bytes, and 10 MiB for responses.
 
 ## Platform support
 

@@ -123,6 +123,14 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function observeRejection<T>(promise: Promise<T>): Promise<T> {
   promise.catch(() => undefined);
   return promise;
@@ -1131,6 +1139,165 @@ describe('SniNodeClient.uploadFile and getUploadProgress', () => {
       finishVerification(true);
       await client.cancelAllRequests();
       release();
+      jest.useRealTimers();
+    }
+  });
+
+  test('shares the upload file limit across clients and releases a slot after close', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const verification = deferred<boolean>();
+    const firstVerificationStarted = deferred();
+    const allFilesOpen = deferred();
+    const closeStarted = deferred();
+    const allowClose = deferred();
+    let verifyingCount = 0;
+
+    const holder = makeClient({
+      verifyUploadFile: () => {
+        verifyingCount += 1;
+        if (verifyingCount === 1) firstVerificationStarted.resolve();
+        if (verifyingCount === 64) allFilesOpen.resolve();
+        return verification.promise;
+      },
+    });
+    const waitingClient = makeClient();
+    const open = jest.mocked(fsPromises.open);
+    const realFs = jest.requireActual<typeof fsPromises>('fs/promises');
+    open.mockImplementationOnce(async (...args) => {
+      const file = await realFs.open(...args);
+      const close = file.close.bind(file);
+      jest.spyOn(file, 'close').mockImplementationOnce(async () => {
+        closeStarted.resolve();
+        await allowClose.promise;
+        await close();
+      });
+      return file;
+    });
+
+    const acquire = SniRequestLimiter.prototype.acquire;
+    const acquireSpy = jest.spyOn(SniRequestLimiter.prototype, 'acquire');
+    function onFileQueued(): Promise<number> {
+      const queued = deferred<number>();
+      acquireSpy.mockImplementationOnce(function (
+        this: SniRequestLimiter,
+        ...args
+      ) {
+        const result = acquire.apply(this, args);
+        queued.resolve(this.snapshot().pendingRequests);
+        return result;
+      });
+      return queued.promise;
+    }
+
+    const first = observeRejection(
+      holder.uploadFile(baseUploadConfig({ requestId: 'first-handle' }))
+    );
+    const operations = [first];
+    try {
+      await firstVerificationStarted.promise;
+      for (let index = 1; index < 64; index += 1) {
+        operations.push(
+          observeRejection(holder.uploadFile(baseUploadConfig()))
+        );
+      }
+      await allFilesOpen.promise;
+      expect(open).toHaveBeenCalledTimes(64);
+      expect(holder.getRequestLimiter().snapshot().activeRequests).toBe(0);
+
+      const expiringQueued = onFileQueued();
+      const expiring = observeRejection(
+        waitingClient.uploadFile(baseUploadConfig({ timeout: 100 }))
+      );
+      operations.push(expiring);
+      await expect(expiringQueued).resolves.toBe(1);
+      jest.advanceTimersByTime(100);
+      await expect(expiring).rejects.toMatchObject({ code: 'SNI_TIMEOUT' });
+      expect(open).toHaveBeenCalledTimes(64);
+
+      const nextQueued = onFileQueued();
+      const next = observeRejection(
+        waitingClient.uploadFile(baseUploadConfig())
+      );
+      operations.push(next);
+      await expect(nextQueued).resolves.toBe(1);
+
+      await holder.cancelRequest('first-handle');
+      await expect(first).rejects.toMatchObject({ code: 'SNI_CANCELLED' });
+      await closeStarted.promise;
+      expect(open).toHaveBeenCalledTimes(64);
+      expect(requestSpy).not.toHaveBeenCalled();
+
+      allowClose.resolve();
+      await expect(next).resolves.toMatchObject({ statusCode: 200 });
+      expect(open).toHaveBeenCalledTimes(65);
+    } finally {
+      allowClose.resolve();
+      await waitingClient.cancelAllRequests();
+      await holder.cancelAllRequests();
+      verification.resolve(false);
+      await Promise.allSettled(operations);
+      acquireSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  test.each([
+    ['cancel', 'SNI_CANCELLED'],
+    ['timeout', 'SNI_TIMEOUT'],
+  ])('settles %s before a pending file read finishes', async (action, code) => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const readStarted = deferred();
+    const allowRead = deferred();
+    const open = jest.mocked(fsPromises.open);
+    const realFs = jest.requireActual<typeof fsPromises>('fs/promises');
+    open.mockImplementationOnce(async (...args) => {
+      const file = await realFs.open(...args);
+      jest.spyOn(file, 'read').mockImplementationOnce(async () => {
+        readStarted.resolve();
+        await allowRead.promise;
+        return { bytesRead: 0, buffer: Buffer.alloc(0) };
+      });
+      return file;
+    });
+
+    const client = makeClient();
+    const requestId = 'pending-file-read';
+    const result = observeRejection(
+      client.uploadFile(
+        baseUploadConfig({
+          requestId,
+          timeout: 100,
+        })
+      )
+    );
+    try {
+      await readStarted.promise;
+      const opened = await open.mock.results[0]!.value;
+      const close = jest.spyOn(opened, 'close');
+      if (action === 'cancel') {
+        await client.cancelRequest(requestId);
+      } else {
+        jest.advanceTimersByTime(100);
+      }
+
+      await expect(
+        Promise.race([
+          result.catch((error: SniRequestError) => error.code),
+          new Promise((resolve) => setImmediate(() => resolve('pending'))),
+        ])
+      ).resolves.toBe(code);
+      expect(requests[0]?.destroy).toHaveBeenCalledTimes(1);
+      expect(client.getRequestLimiter().snapshot().activeRequests).toBe(0);
+      expect(close).toHaveBeenCalled();
+      expect(opened.fd).toBeGreaterThanOrEqual(0);
+
+      allowRead.resolve();
+      await close.mock.results[0]?.value;
+      expect(opened.fd).toBe(-1);
+    } finally {
+      allowRead.resolve();
+      await client.cancelAllRequests();
+      await result.catch(() => undefined);
       jest.useRealTimers();
     }
   });
