@@ -566,8 +566,23 @@ public final class JCoreStorage {
             return;
         }
         Set<String> set = new LinkedHashSet<String>(loadCsvList(context, KEY_FAILED_IPS));
+        set.remove(ipPort);
         set.add(ipPort);
+        while (set.size() > 32) {
+            String oldest = set.iterator().next();
+            set.remove(oldest);
+        }
         saveCsvSet(context, KEY_FAILED_IPS, set);
+    }
+
+    public static synchronized void removeFailedIp(Context context, String ipPort) {
+        if (isEmpty(ipPort)) {
+            return;
+        }
+        Set<String> set = new LinkedHashSet<String>(loadCsvList(context, KEY_FAILED_IPS));
+        if (set.remove(ipPort)) {
+            saveCsvSet(context, KEY_FAILED_IPS, set);
+        }
     }
 
     public static synchronized List<String> getFailedIps(Context context) {

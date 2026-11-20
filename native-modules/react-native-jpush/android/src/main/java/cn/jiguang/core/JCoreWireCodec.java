@@ -446,6 +446,9 @@ public final class JCoreWireCodec {
             effectiveUid = 0L;
             cryptoSeed = lastRegisterSeed;
         } else {
+            if (command == CMD_LOGIN) {
+                headerSeedOrSid = 0;
+            }
             cryptoSeed = (uid > 0L) ? uid : lastRegisterSeed;
         }
 

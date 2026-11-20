@@ -2670,7 +2670,8 @@ public final class SdkHostRegressionTest {
                     try (Socket socket1 = listener.accept()) {
                         socket1.setSoTimeout(3000);
                         JCoreWireCodec.DecodedFrame login1 = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
-                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #1");
+                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN && login1.sessionId == 0,
+                            "Expected fast login with sessionId=0 on connection #1");
                         writeLoopbackAck(socket1, login1, 870001L, 8701, 0, JCoreWireCodec.buildLoginResponsePayload(8701, 520, "", 1700000000));
 
                         JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
@@ -2724,7 +2725,8 @@ public final class SdkHostRegressionTest {
                     try (Socket socket2 = listener.accept()) {
                         socket2.setSoTimeout(3000);
                         JCoreWireCodec.DecodedFrame login2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
-                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #2");
+                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN && login2.sessionId == 0,
+                            "Expected fast login with sessionId=0 on connection #2");
                         writeLoopbackAck(socket2, login2, 870001L, 8702, 0, JCoreWireCodec.buildLoginResponsePayload(8702, 520, "", 1700000001));
 
                         JCoreWireCodec.DecodedFrame hb2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
@@ -2761,8 +2763,8 @@ public final class SdkHostRegressionTest {
                         try (Socket socket3 = listener.accept()) {
                             socket3.setSoTimeout(3000);
                             JCoreWireCodec.DecodedFrame login3 = JCoreWireCodec.readClientFrameFromStream(socket3.getInputStream(), 870001L);
-                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN,
-                                "Expected fast login on connection #3 after heartbeat timeout");
+                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN && login3.sessionId == 0,
+                                "Expected fast login with sessionId=0 on connection #3 after heartbeat timeout");
                             writeLoopbackAck(socket3, login3, 870001L, 8703, 0, JCoreWireCodec.buildLoginResponsePayload(8703, 520, "", 1700000002));
                             reconnectedAfterHbTimeout.countDown();
                         }
@@ -2824,6 +2826,13 @@ public final class SdkHostRegressionTest {
                     "Engine must auto-reconnect when periodic heartbeat ACK times out");
                 check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("TCP heartbeat timed out, scheduling reconnect"),
                     "OneKeyLog must record WARN when periodic heartbeat ACK times out");
+                byte[] encodedLoginWithStaleSid = JCoreWireCodec.encodeClientFrame(
+                    JCoreWireCodec.CMD_LOGIN, JCoreWireCodec.VER_LOGIN, JCoreWireCodec.ALG_AES_CBC, 0,
+                    99L, 46453, 870001L, JCoreWireCodec.buildLoginPayload("hb-password", "hb-ack-and-resume-noop", "hb-device", "US")
+                );
+                JCoreWireCodec.DecodedFrame decodedLoginWithStaleSid = JCoreWireCodec.decodeClientFrame(encodedLoginWithStaleSid, 870001L);
+                check(decodedLoginWithStaleSid != null && decodedLoginWithStaleSid.sessionId == 0,
+                    "encodeClientFrame must force sessionId=0 on CMD_LOGIN frames");
             } finally {
                 engine.stop(context);
                 server.join(3000L);

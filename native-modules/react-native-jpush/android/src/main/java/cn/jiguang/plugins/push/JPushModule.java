@@ -775,7 +775,11 @@ public class JPushModule extends ReactContextBaseJavaModule {
 
             @Override
             public void onActivityResumed(Activity activity) {
+                boolean wasForeground = isAppForeground;
                 isAppForeground = true;
+                if (!wasForeground && activity != null) {
+                    JPushInterface.onResume(activity.getApplicationContext());
+                }
             }
 
             @Override

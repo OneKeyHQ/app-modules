@@ -279,6 +279,7 @@ public final class JCoreTcpEngine {
                                     }
                                 }
                                 if (shouldReconnect) {
+                                    ActionHelper.getInstance().dispatchConnectedEvent(context, false);
                                     JLogger.w("TCP heartbeat timed out, scheduling reconnect");
                                     scheduleReconnect(context, owner);
                                 }
@@ -488,8 +489,12 @@ public final class JCoreTcpEngine {
             owner = activeAttempt;
             if (owner != null && owner.stopScheduled && JCoreStorage.isPushStopped(context)) return;
             if (owner == null || !loggedIn || activeSocket == null || !JCoreStorage.isPushStopped(context)) {
+                boolean wasLoggedIn = loggedIn;
                 closeSocket();
                 started = false;
+                if (wasLoggedIn) {
+                    ActionHelper.getInstance().dispatchConnectedEvent(context, false);
+                }
                 return;
             }
             owner.stopScheduled = true;
@@ -509,6 +514,7 @@ public final class JCoreTcpEngine {
             canceled = new ArrayList<QueuedRequest>(preLoginQueue);
             preLoginQueue.clear();
         }
+        ActionHelper.getInstance().dispatchConnectedEvent(context, false);
         final ScheduledFuture<?> deadline = heartbeatExecutor.schedule(() -> closeOwnedSocket(owner),
             STOP_CONTROL_GRACE_MS, TimeUnit.MILLISECONDS);
         ioExecutor.execute(() -> {
@@ -573,6 +579,71 @@ public final class JCoreTcpEngine {
             owner = beginAttempt(context);
         }
         if (owner != null) ioExecutor.execute(() -> connectAndHandshake(context, owner));
+    }
+
+    public void onAppForeground(final Context context) {
+        final Attempt current;
+        final Socket currentSocket;
+        final Attempt reconnectOwner;
+        synchronized (this) {
+            if (!started || JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)
+                || !terminalConfiguration.isEmpty()) {
+                return;
+            }
+            if (loggedIn) {
+                current = activeAttempt;
+                currentSocket = activeSocket;
+                reconnectOwner = null;
+            } else if (activeAttempt == null || activeAttempt.latch.getCount() == 0L) {
+                reconnectAttempt = 0;
+                current = null;
+                currentSocket = null;
+                reconnectOwner = beginAttempt(context);
+            } else {
+                return;
+            }
+        }
+        if (reconnectOwner != null) {
+            ioExecutor.execute(() -> connectAndHandshake(context, reconnectOwner));
+            return;
+        }
+        if (current != null && currentSocket != null && !currentSocket.isClosed()
+            && current.heartbeatProbePending.compareAndSet(false, true)) {
+            ioExecutor.execute(() -> {
+                try {
+                    if (!owns(current, context) || activeSocket != currentSocket || !loggedIn) return;
+                    long currentUid = JCoreStorage.getUid(context);
+                    byte[] hbPayload = JCoreWireCodec.buildHeartbeatPayload(JCoreStorage.isPushStopped(context));
+                    JCoreWireCodec.DecodedFrame ack = sendRequestOnSocket(
+                        current,
+                        JCoreWireCodec.CMD_HEARTBEAT,
+                        JCoreWireCodec.VER_HEARTBEAT,
+                        sessionId,
+                        currentUid,
+                        hbPayload,
+                        defaultRequestTimeoutMs
+                    );
+                    if (ack == null) {
+                        boolean shouldReconnect = false;
+                        synchronized (JCoreTcpEngine.this) {
+                            if (owns(current, context) && activeSocket == currentSocket && loggedIn) {
+                                closeOwnedSocket(current);
+                                JCoreStorage.setConnected(context, false);
+                                shouldReconnect = true;
+                            }
+                        }
+                        if (shouldReconnect) {
+                            ActionHelper.getInstance().dispatchConnectedEvent(context, false);
+                            JLogger.w("TCP heartbeat timed out, scheduling reconnect");
+                            scheduleReconnect(context, current);
+                        }
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    current.heartbeatProbePending.set(false);
+                }
+            });
+        }
     }
 
     public void executeAsync(Runnable task) {
@@ -739,7 +810,12 @@ public final class JCoreTcpEngine {
                 String[] hp = splitHostPort(endpoint);
                 if (hp == null) continue;
                 if (tryConnectAndHandshakeEndpoint(context, hp[0], Integer.parseInt(hp[1]), owner)) {
-                    synchronized (this) { if (owns(owner, context)) JCoreStorage.setLastGoodIp(context, endpoint); }
+                    synchronized (this) {
+                        if (owns(owner, context)) {
+                            JCoreStorage.setLastGoodIp(context, endpoint);
+                            JCoreStorage.removeFailedIp(context, endpoint);
+                        }
+                    }
                     return;
                 }
                 if (!owns(owner, context) || !terminalConfiguration.isEmpty()) return;
@@ -1154,6 +1230,7 @@ public final class JCoreTcpEngine {
                 }
             }
             if (reconnect) {
+                ActionHelper.getInstance().dispatchConnectedEvent(context, false);
                 JLogger.w("TCP connection closed, scheduling reconnect");
                 scheduleReconnect(context, owner);
             }
@@ -1342,6 +1419,7 @@ public final class JCoreTcpEngine {
                 synchronized (this) {
                     if (owner != null && !owns(owner, context)) return null;
                     JCoreStorage.saveSisConfig(context, decodedJson);
+                    JCoreStorage.clearFailedIps(context);
                 }
             }
             Set<String> ips = JCoreWireCodec.extractJsonStringArray(decodedJson, "ips");
@@ -1418,6 +1496,7 @@ public final class JCoreTcpEngine {
                     synchronized (this) {
                         if (owner != null && !owns(owner, context)) return null;
                         JCoreStorage.saveSisConfig(context, plainStr);
+                        JCoreStorage.clearFailedIps(context);
                     }
                     Set<String> ips = JCoreWireCodec.extractJsonStringArray(plainStr, "ips");
                     if (ips.isEmpty()) {

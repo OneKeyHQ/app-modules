@@ -312,6 +312,7 @@ public class JPushInterface {
     }
 
     public static void onResume(Context context) {
+        JCoreTcpEngine.getInstance().onAppForeground(JCoreStorage.getAppContext(context));
     }
 
     public static void onPause(Context context) {

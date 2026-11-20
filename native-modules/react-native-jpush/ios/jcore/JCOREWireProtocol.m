@@ -167,6 +167,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         } else {
             [JCOREConfiguration shared].lastRegisterSeed = seedOrSid;
         }
+    } else if (command == JCOREWireCommandLogin) {
+        seedOrSid = 0;
     }
 
     uint64_t encryptionSeed = (command == JCOREWireCommandRegister || packetUid == 0)
