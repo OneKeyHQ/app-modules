@@ -20,32 +20,33 @@ internal fun collapsiblePagerHeaderFlingDirection(
   else -> 0
 }
 
-internal enum class CollapsiblePagerHeaderFlingOutcome {
-  CONTINUE,
-  // The header is fully collapsed; what is left of the fling belongs to the content.
-  HAND_OVER,
-  END,
-}
+/**
+ * Whether the scroller keeps its own fling. `reach` is the signed travel the
+ * release can cover. A collapse that covers the rest of the header leaves the
+ * scroller to fling its content from the first frame, so its momentum is one
+ * uninterrupted run; a shorter release and every expansion stay on the header.
+ */
+internal fun collapsiblePagerHeaderFlingJoinsContent(
+  headerOffset: Int,
+  headerRange: Int,
+  direction: Int,
+  reach: Int,
+): Boolean = direction > 0 && reach.toLong() >= headerRange.toLong() - headerOffset
 
-internal data class CollapsiblePagerHeaderFlingStep(
-  val offset: Int,
-  val outcome: CollapsiblePagerHeaderFlingOutcome,
-)
+internal data class CollapsiblePagerHeaderFlingStep(val offset: Int, val ended: Boolean)
 
-/** Applies one frame of fling travel to the header offset. */
+/**
+ * Applies one frame of fling travel to the header offset. `finished` is the
+ * fling's own end; its last frame still carries the travel to apply.
+ */
 internal fun collapsiblePagerHeaderFlingStep(
   headerOffset: Int,
   headerRange: Int,
   travel: Int,
-  running: Boolean,
+  finished: Boolean,
 ): CollapsiblePagerHeaderFlingStep {
   val range = headerRange.coerceAtLeast(0)
   val offset = (headerOffset.toLong() + travel).coerceIn(0L, range.toLong()).toInt()
-  val outcome = when {
-    travel > 0 && offset >= range -> CollapsiblePagerHeaderFlingOutcome.HAND_OVER
-    travel < 0 && offset <= 0 -> CollapsiblePagerHeaderFlingOutcome.END
-    !running -> CollapsiblePagerHeaderFlingOutcome.END
-    else -> CollapsiblePagerHeaderFlingOutcome.CONTINUE
-  }
-  return CollapsiblePagerHeaderFlingStep(offset, outcome)
+  val ended = finished || (travel > 0 && offset >= range) || (travel < 0 && offset <= 0)
+  return CollapsiblePagerHeaderFlingStep(offset, ended)
 }
