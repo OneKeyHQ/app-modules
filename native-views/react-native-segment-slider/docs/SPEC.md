@@ -26,7 +26,7 @@ including marks added during a drag. Reconciliation never emits `onChange`.
 
 An interaction is one drag or tap (one pointer and, on Web, only the primary
 button; extra pointers are ignored until it ends), an accepted Android or Web
-key press, or an Android accessibility action that changes the value. Each
+key press, or a native accessibility action that changes the value. Each
 interaction fires `onSlideStart` once and `onSlideComplete` once.
 Setting `disabled` during a drag cancels it on every platform: the bubble and
 pressed thumb reset, ancestor gestures are restored, `onSlideComplete` fires,
@@ -105,7 +105,7 @@ Each mounted view owns its resources; separate JavaScript runtimes do not share
 the view's interaction state. Initialization does not depend on another runtime.
 
 User interaction and queued imperative value updates run on the UI thread.
-Each native touch begins a new view-local interaction ID. The internal
+Each native interaction begins a new view-local interaction ID. The internal
 completion callback reports its ID and final value to JS. The UI thread
 applies a value update only while idle and only if its ID matches the most
 recent interaction, so a delayed update cannot alter or interrupt a newer
@@ -131,18 +131,23 @@ track for a 20-point bubble and its 8-point gap.
 | Mark tick | `UIImpactFeedbackGenerator(.light)`, intensity 0.6 | `CLOCK_TICK` | None |
 | Step tick (`hapticStep`) | `UISelectionFeedbackGenerator` | `TEXT_HANDLE_MOVE` (API 27+), else `CLOCK_TICK` | None |
 | Keyboard | None | Left / Right move by 1 unit following layout direction; Home / End select minimum / maximum | Arrow keys move to the next mark value (1 unit without marks), Home / End jump to the ends |
-| Adjustable accessibility range | — | SeekBar role with integer range and progress, one-unit forward/backward actions and direct progress setting | DOM slider role with range and current value |
+| Adjustable accessibility range | UIKit adjustable element with a localized current value and VoiceOver increment/decrement actions | SeekBar role with integer range and progress, one-unit forward/backward actions and direct progress setting | DOM slider role with range and current value |
 | RTL layout | Minimum at left | Minimum at right, with mirrored fill, marks, thumb and touch mapping | Minimum at left |
 | Pressed thumb | Scales to 18.4 points, plain thumb colors; the node halo stays under it | Scales to 18.4 dp, plain thumb colors; the node halo stays under it | Stays 16 px; plain thumb colors |
 | Mark hover | None (no pointer) | None (no pointer) | Ring while the pointer hovers a mark |
 
-Android accessibility actions and keyboard adjustments emit the same start,
-change and completion callbacks as a touch interaction, without drag haptics.
-A step selects the next integer in its direction. At a bound, a step past it
+Native accessibility actions and Android keyboard adjustments emit the same
+start, change and completion callbacks as a touch interaction, without drag
+haptics. A step selects the next integer in its direction. At a bound, a step past it
 leaves the current value unchanged, including a controlled fractional
 endpoint. While disabled or mid-drag, discrete adjustments leave the active
-value alone. Android exposes the numeric accessibility range only when it
-contains a selectable integer. When the current value or range changes, an
+value alone. The iOS element exposes the latest value after both native
+interactions and controlled updates, and exposes the disabled trait while
+disabled. The Nitro content view is a non-accessible container so the Fabric
+host leaves accessibility focus and actions on the UIKit slider control.
+
+Android exposes the numeric accessibility range only when it contains a
+selectable integer. When the current value or range changes, an
 attached view schedules an accessibility progress event. Multiple updates
 within 100 ms share one event reporting the latest state. Android 11 and later
 send `TYPE_WINDOW_CONTENT_CHANGED` with
@@ -241,8 +246,12 @@ adjustment actions, dragging, controlled value updates, and range updates.
   with only the generated Nitro base replaced by an NSObject test stub. Checks
   actual UIKit layer frames (including the scaled thumb and visible halo), text
   and callback values at endpoints, intermediate values, resized widths and
-  signed ranges. Mac Catalyst execution does not
-  establish React Native/Fabric or iPhone acceptance.
+  signed ranges. It also invokes the UIKit accessibility actions and checks
+  the element's label, value, traits, callback order, endpoint behavior and
+  controlled updates. The harness checks that the Nitro content view exposes
+  the slider control as its sole accessibility element and lays it out to fill
+  the content bounds. Mac Catalyst execution does not establish React
+  Native/Fabric or iPhone acceptance.
 - `tests/android/BubbleLayoutActivity.kt`: Android View/Canvas rendering,
   text raster bounds, touch events, keyboard adjustments, accessibility actions
   and RTL regression coverage. An RN-like wrapper
@@ -291,6 +300,8 @@ xcrun swiftc -sdk "$slider_sdk" -target arm64-apple-ios15.0-macabi \
 
 Required iPhone acceptance: in the Perps Add Position sheet, drag through 0%,
 50% and 100%, confirm full bubble text and complete thumb/halo circles at each
-point, correct amount updates,
-and normal tap/drag completion. Capture light/dark screenshots. Do not submit
-an order as part of this display check.
+point, correct amount updates, and normal tap/drag completion. Capture light/dark
+screenshots. Do not submit an order as part of this display check.
+With VoiceOver enabled, focus the `TOP` slider
+in the developer overlay, swipe up and down, and confirm that the slider reads
+the new value and moves the overlay for both directions.

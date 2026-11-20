@@ -102,6 +102,22 @@ final class SegmentSliderUIView: UIControl {
   var onTouchMoved: ((CGFloat) -> Void)?
   /// Touch ended or was cancelled.
   var onTouchEnded: (() -> Void)?
+  var onAccessibilityStep: ((Bool) -> Void)?
+  var accessibilityValueProvider: (() -> String?)?
+
+  override var accessibilityValue: String? {
+    // Read the current value on demand so drag frames never format a string.
+    get { accessibilityValueProvider?() ?? super.accessibilityValue }
+    set { super.accessibilityValue = newValue }
+  }
+
+  override func accessibilityIncrement() {
+    onAccessibilityStep?(true)
+  }
+
+  override func accessibilityDecrement() {
+    onAccessibilityStep?(false)
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()

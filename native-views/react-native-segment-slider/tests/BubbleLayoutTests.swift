@@ -35,6 +35,10 @@ enum BubbleLayoutTests {
     return slider
   }
 
+  static func sliderControl(for slider: HybridSegmentSlider) -> SegmentSliderUIView {
+    slider.view.subviews.first as! SegmentSliderUIView
+  }
+
   static func verify(_ slider: HybridSegmentSlider, value: Double, label: String) {
     let bubble: CALayer = layer(slider, "bubbleLayer")
     let text: CATextLayer = layer(slider, "bubbleTextLayer")
@@ -73,7 +77,7 @@ enum BubbleLayoutTests {
   @MainActor
   static func verifyDelayedValueSync() async throws {
     let slider = makeSlider(width: 320, value: 0)
-    let control = slider.view as! SegmentSliderUIView
+    let control = sliderControl(for: slider)
     var changes: [Double] = []
     var completedIds: [Double] = []
     var completedValues: [Double] = []
@@ -104,20 +108,97 @@ enum BubbleLayoutTests {
   }
 
   @MainActor
+  static func verifyAccessibilityAdjustments() async throws {
+    let slider = makeSlider(width: 320, value: 99)
+    slider.min = 1
+    slider.sliderAccessibilityLabel = "TOP"
+    let control = sliderControl(for: slider)
+    var callbacks: [String] = []
+    var haptics: [String] = []
+    slider.onSlideStart = { callbacks.append("start") }
+    slider.onChange = { callbacks.append("change \($0)") }
+    slider.onSlideComplete = { id, value in callbacks.append("complete \(id) \(value)") }
+    slider.hapticTickRecorder = { haptics.append($0) }
+
+    check(!slider.view.isAccessibilityElement, "Nitro content view does not claim accessibility focus")
+    let elements = slider.view.accessibilityElements as? [UIView]
+    check(elements == [control], "content view exposes only the adjustable control")
+    check(control.frame == slider.view.bounds, "slider fills its Nitro content view")
+    let edge = CGPoint(x: slider.view.bounds.maxX - 1, y: slider.view.bounds.midY)
+    check(slider.view.hitTest(edge, with: nil) === control, "outer edge hits the slider control")
+    check(control.isAccessibilityElement, "slider is a VoiceOver focus target")
+    check(control.accessibilityTraits.contains(.adjustable), "slider has the adjustable trait")
+    check(control.accessibilityLabel == "TOP", "slider retains its provided accessibility label")
+    check(control.accessibilityValue == 99.0.formatted(), "slider exposes its initial value")
+
+    try slider.setValue(value: 40, interactionId: 0)
+    control.accessibilityIncrement()
+    control.accessibilityIncrement()
+    await flushQueuedValueSync()
+    check(control.accessibilityValue == 100.0.formatted(), "increment reaches max and rejects stale sync")
+    control.accessibilityDecrement()
+    check(control.accessibilityValue == 99.0.formatted(), "decrement updates the accessibility value")
+    verify(slider, value: 99, label: "VoiceOver decrement")
+    check(callbacks == ["start", "change 100.0", "complete 1.0 100.0",
+                        "start", "change 99.0", "complete 2.0 99.0"],
+          "VoiceOver steps emit one ordered interaction each: \(callbacks)")
+    check(haptics.isEmpty, "VoiceOver steps do not fire drag haptics")
+
+    try slider.setValue(value: 1, interactionId: 2)
+    await flushQueuedValueSync()
+    check(control.accessibilityValue == 1.0.formatted(), "controlled update changes the accessibility value")
+    control.accessibilityDecrement()
+    slider.disabled = true
+    check(control.accessibilityTraits.contains(.notEnabled), "disabled slider has the disabled trait")
+    check(slider.view.hitTest(edge, with: nil) == nil, "disabled slider passes through touches")
+    control.accessibilityIncrement()
+    check(control.accessibilityValue == 1.0.formatted() && callbacks.count == 6,
+          "minimum and disabled actions leave state and callbacks unchanged")
+    slider.disabled = false
+    check(!control.accessibilityTraits.contains(.notEnabled), "enabled slider clears the disabled trait")
+
+    control.onTouchBegan?(12 + 296 / 2)
+    let dragValue = control.accessibilityValue
+    let dragCallbacks = callbacks
+    control.accessibilityIncrement()
+    control.accessibilityDecrement()
+    check(control.accessibilityValue == dragValue && callbacks == dragCallbacks,
+          "VoiceOver actions leave an active drag alone")
+    check(dragValue == 51.0.formatted(), "touch changes the accessibility value")
+    control.onTouchEnded?()
+
+    let bounded = makeSlider(width: 320, value: 0.5)
+    bounded.min = 0.5
+    bounded.max = 10.5
+    let boundedControl = sliderControl(for: bounded)
+    var values: [Double] = []
+    bounded.onChange = { values.append($0) }
+    boundedControl.accessibilityDecrement()
+    check(boundedControl.accessibilityValue == 0.5.formatted(), "fractional minimum is retained at the bound")
+    boundedControl.accessibilityIncrement()
+    try bounded.setValue(value: 10.5, interactionId: 1)
+    await flushQueuedValueSync()
+    boundedControl.accessibilityIncrement()
+    check(boundedControl.accessibilityValue == 10.5.formatted(), "fractional maximum is retained at the bound")
+    boundedControl.accessibilityDecrement()
+    check(values == [1, 10], "VoiceOver selects the next in-range integer: \(values)")
+  }
+
+  @MainActor
   static func main() async throws {
     for width: CGFloat in [160, 320, 600] {
       for value: Double in [0, 1, 25, 50, 75, 99, 100] {
         let slider = makeSlider(width: width, value: value)
         verify(slider, value: value, label: "width \(width), value \(value)")
         slider.view.frame.size.width = 120
-        slider.view.setNeedsLayout()
         slider.view.layoutIfNeeded()
+        check(sliderControl(for: slider).frame == slider.view.bounds, "slider fills resized bounds")
         verify(slider, value: value, label: "resized value \(value)")
       }
     }
 
     let slider = makeSlider(width: 320, value: 50)
-    let control = slider.view as! SegmentSliderUIView
+    let control = sliderControl(for: slider)
     var changes: [Double] = []
     var starts = 0
     var completions = 0
@@ -153,7 +234,7 @@ enum BubbleLayoutTests {
     signed.max = 100
     signed.centerOrigin = true
     signed.view.layoutIfNeeded()
-    let signedControl = signed.view as! SegmentSliderUIView
+    let signedControl = sliderControl(for: signed)
     signedControl.onTouchBegan?(12)
     verify(signed, value: -100, label: "signed minimum")
     signedControl.onTouchMoved?(308)
@@ -167,7 +248,7 @@ enum BubbleLayoutTests {
       let sample = makeSlider(width: 320, value: 0)
       sample.hapticStep = step
       sample.hapticTickRecorder = { ticks.append($0) }
-      let control = sample.view as! SegmentSliderUIView
+      let control = sliderControl(for: sample)
       func x(_ v: Double) -> CGFloat { 12 + CGFloat(v / 100) * 296 }
       control.onTouchBegan?(x(0))
       for v in [1.0, 1.2, 2.0, 25.0, 26.0] { control.onTouchMoved?(x(v)) }
@@ -185,7 +266,7 @@ enum BubbleLayoutTests {
     let tap = makeSlider(width: 320, value: 0)
     tap.hapticStep = 1
     tap.hapticTickRecorder = { tapTicks.append($0) }
-    let tapControl = tap.view as! SegmentSliderUIView
+    let tapControl = sliderControl(for: tap)
     tapControl.onTouchBegan?(12 + 0.2 * 296)
     tapControl.onTouchEnded?()
     check(tapTicks.isEmpty, "tap without movement ticked: \(tapTicks)")
@@ -196,7 +277,7 @@ enum BubbleLayoutTests {
     let cancel = makeSlider(width: 320, value: 0)
     cancel.onChange = { cancelChanges.append($0) }
     cancel.onSlideComplete = { _, _ in cancelCompletes += 1 }
-    let cancelControl = cancel.view as! SegmentSliderUIView
+    let cancelControl = sliderControl(for: cancel)
     cancelControl.onTouchBegan?(12 + 0.3 * 296)
     cancel.disabled = true
     cancelControl.onTouchMoved?(12 + 0.8 * 296)
@@ -212,13 +293,14 @@ enum BubbleLayoutTests {
     bounded.segments = 0
     bounded.view.layoutIfNeeded()
     bounded.onChange = { boundChanges.append($0) }
-    let boundedControl = bounded.view as! SegmentSliderUIView
+    let boundedControl = sliderControl(for: bounded)
     boundedControl.onTouchBegan?(320)
     boundedControl.onTouchMoved?(0)
     boundedControl.onTouchEnded?()
     check(boundChanges == [10, 1], "fractional bound values: \(boundChanges)")
 
     try await verifyDelayedValueSync()
+    try await verifyAccessibilityAdjustments()
 
     // Render with a horizontally clipping ancestor, matching the failing sheet.
     // This is a UIKit layer preview, not a React Native or iPhone screenshot.
@@ -233,7 +315,7 @@ enum BubbleLayoutTests {
         canvas.addSubview(container)
         let sample = makeSlider(width: 320, value: value)
         container.addSubview(sample.view)
-        (sample.view as! SegmentSliderUIView).onTouchBegan?(12 + CGFloat(value / 100) * 296)
+        sliderControl(for: sample).onTouchBegan?(12 + CGFloat(value / 100) * 296)
         retained.append(sample)
       }
       let image = UIGraphicsImageRenderer(bounds: canvas.bounds).image { context in
