@@ -191,7 +191,9 @@ internal object ToastFont {
 /**
  * Named icons come from the image package's process-wide registry. It is
  * reached reflectively so this module needs no dependency on it; without the
- * registry the icon stays blank.
+ * registry the icon stays blank. The image package's consumer R8 rules keep
+ * `OneKeyNamedSVG.INSTANCE`, `request` and `cancel` unrenamed for this lookup;
+ * its own startup provider sets the cache directory.
  */
 private object ToastNamedIcon {
   private val registry: Any? by lazy {
@@ -204,9 +206,6 @@ private object ToastNamedIcon {
   }
   private val cancel by lazy {
     registry?.javaClass?.methods?.firstOrNull { it.name == "cancel" && it.parameterTypes.size == 1 }
-  }
-  private val setCacheDir by lazy {
-    registry?.javaClass?.methods?.firstOrNull { it.name == "setCacheDirIfNeeded" }
   }
 
   fun request(
@@ -227,7 +226,6 @@ private object ToastNamedIcon {
     }
     val appContext = context.applicationContext ?: context
     runCatching {
-      setCacheDir?.invoke(target, appContext.cacheDir)
       val callback: (Bitmap?) -> Unit = { bitmap -> mainHandler.post { complete(bitmap) } }
       method.invoke(target, owner, appContext.assets as AssetManager, name, color, width, height, scale, callback)
     }.onFailure { complete(null) }

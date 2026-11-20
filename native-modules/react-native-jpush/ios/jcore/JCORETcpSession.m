@@ -74,6 +74,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     BOOL _connecting;
     BOOL _connected;
     BOOL _loggedIn;
+    BOOL _pushResumeInFlight;
+    NSString *_loggedInAppKey;
     BOOL _userDisconnected;
     BOOL _initialized;
     NSUInteger _policyGeneration;
@@ -224,8 +226,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             self->_reconnectAttempt = 0;
             [self startLockedForceReconnect:NO];
         } else if (self->_connected && self->_loggedIn) {
-            NSData *hb = [JCOREWireProtocol buildHeartbeatPayloadWithPushStopped:[JCOREConfiguration shared].pushStopped];
-            [self sendRawCommandLocked:JCOREWireCommandHeartbeat version:8 bodyData:hb completion:nil];
+            [self sendHeartbeatProbeLocked];
         }
     });
 }
@@ -562,8 +563,9 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 
 - (void)sendLoginRequestLocked {
     JCOREConfiguration *config = [JCOREConfiguration shared];
+    NSString *loginAppKey = config.appKey ?: @"";
     NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:config.password ?: @""
-                                                                  appKey:config.appKey ?: @""];
+                                                                  appKey:loginAppKey];
     nw_connection_t activeConnection = _connection;
     __weak typeof(self) weakSelf = self;
     [self sendRawCommandLocked:JCOREWireCommandLogin
@@ -578,23 +580,28 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             ? strongSelf->_candidateEndpoints[strongSelf->_currentEndpointIndex]
             : nil;
         if (error != nil || responseFrame == nil) {
+            [JCOREConfiguration logWarn:[NSString stringWithFormat:@"TCP login failed error=%@",
+                                         error.localizedDescription ?: @"no_response"]];
             [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:currentEndpoint];
             return;
         }
         JCORELoginResponse *login = [JCOREWireProtocol parseLoginResponse:responseFrame];
         if (login != nil && login.statusCode == 108) {
             // Status 108: uid unregistered/invalid on server -> clear credentials and re-register immediately
+            [JCOREConfiguration logWarn:@"TCP login rejected code=108, resetting registration and re-registering"];
             [config resetRegistration];
             [strongSelf sendRegisterRequestLocked];
             return;
         }
         if (login != nil && login.statusCode == 1012) {
             // Status 1012: server requests SIS cache reset and re-resolution
+            [JCOREConfiguration logWarn:@"TCP login rejected code=1012, resetting SIS cache"];
             [config resetSisCache];
             [strongSelf startLockedForceReconnect:YES];
             return;
         }
         if (login != nil && login.statusCode != 0) {
+            [JCOREConfiguration logWarn:[NSString stringWithFormat:@"TCP login failed code=%u", login.statusCode]];
             [strongSelf postNotificationOnMain:kJPFServiceErrorNotification
                                       userInfo:@{@"code": @(login.statusCode)}];
             [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:currentEndpoint];
@@ -607,6 +614,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             strongSelf->_serverTimestamp = login.serverTimestamp;
         }
         strongSelf->_loggedIn = YES;
+        strongSelf->_loggedInAppKey = loginAppKey;
         strongSelf->_reconnectAttempt = 0;
         [config clearFailedIps];
         [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP login success uid=%llu sid=%u registrationId=%@",
@@ -616,6 +624,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         [strongSelf startHeartbeatLocked];
         [strongSelf reportDeviceTokenLocked];
         [strongSelf reportVoipTokenLocked];
+        [strongSelf sendPendingPushResumeLocked];
         [strongSelf flushQueuedRequestsLocked];
         [strongSelf postNotificationOnMain:kJPFNetworkDidLoginNotification
                                   userInfo:@{
@@ -645,11 +654,38 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         if (!strongSelf || ![strongSelf ownsCurrentPolicy] || !strongSelf->_connected || !strongSelf->_loggedIn) {
             return;
         }
-        NSData *hb = [JCOREWireProtocol buildHeartbeatPayloadWithPushStopped:[JCOREConfiguration shared].pushStopped];
-        [strongSelf sendRawCommandLocked:JCOREWireCommandHeartbeat version:8 bodyData:hb completion:nil];
+        [strongSelf sendHeartbeatProbeLocked];
     });
     _heartbeatTimer = timer;
     dispatch_resume(timer);
+}
+
+- (void)sendHeartbeatProbeLocked {
+    if (![self ownsCurrentPolicy] || !_connected || !_loggedIn || _connection == nil) {
+        return;
+    }
+    for (JCOREInFlightRequest *request in _inFlightRequests.objectEnumerator) {
+        if (request.command == JCOREWireCommandHeartbeat) { return; }
+    }
+    nw_connection_t activeConnection = _connection;
+    NSUInteger generation = _policyGeneration;
+    NSData *hb = [JCOREWireProtocol buildHeartbeatPayloadWithPushStopped:[JCOREConfiguration shared].pushStopped];
+    __weak typeof(self) weakSelf = self;
+    [self sendRawCommandLocked:JCOREWireCommandHeartbeat
+                       version:8
+                      bodyData:hb
+                    completion:^(JCOREWireFrame *responseFrame, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || strongSelf->_connection != activeConnection || strongSelf->_policyGeneration != generation ||
+            ![strongSelf ownsCurrentPolicy] || !strongSelf->_connected || !strongSelf->_loggedIn) {
+            return;
+        }
+        if (error != nil || responseFrame == nil) {
+            [JCOREConfiguration logWarn:@"TCP heartbeat timed out, reconnecting"];
+            [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
+            [strongSelf startLockedForceReconnect:YES];
+        }
+    }];
 }
 
 - (void)stopHeartbeatLocked {
@@ -754,6 +790,22 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 
     NSNumber *key = @(frame.requestId);
     JCOREInFlightRequest *inFlight = _inFlightRequests[key];
+    BOOL genericHeartbeatAck = (frame.command == 0 && frame.version == 0) || frame.command == 19;
+    if (inFlight != nil && inFlight.command != frame.command &&
+        !(genericHeartbeatAck && inFlight.command == JCOREWireCommandHeartbeat)) {
+        return;
+    }
+    if (inFlight == nil && frame.requestId == 0 &&
+        (frame.command == JCOREWireCommandHeartbeat || genericHeartbeatAck)) {
+        for (NSNumber *candidateKey in _inFlightRequests) {
+            JCOREInFlightRequest *candidate = _inFlightRequests[candidateKey];
+            if (candidate.command == JCOREWireCommandHeartbeat) {
+                if (inFlight != nil) { return; }
+                key = candidateKey;
+                inFlight = candidate;
+            }
+        }
+    }
     if (inFlight != nil) {
         [inFlight cancelTimers];
         [_inFlightRequests removeObjectForKey:key];
@@ -767,6 +819,37 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     dispatch_async(_sessionQueue, ^{
         [self reportDeviceTokenLocked];
     });
+}
+
+- (void)retryPendingPushResume {
+    dispatch_async(_sessionQueue, ^{
+        [self sendPendingPushResumeLocked];
+    });
+}
+
+- (void)sendPendingPushResumeLocked {
+    if (!_loggedIn || _connection == nil || _pushResumeInFlight || ![self ownsCurrentPolicy]) { return; }
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    NSString *appKey = _loggedInAppKey;
+    if (appKey.length == 0 || ![config hasPendingPushResumeForAppKey:appKey]) { return; }
+    NSUInteger generation = _policyGeneration;
+    nw_connection_t connection = _connection;
+    _pushResumeInFlight = YES;
+    [JCOREConfiguration logInfo:@"Push resume requested"];
+    __weak typeof(self) weakSelf = self;
+    [self sendRawCommandLocked:JCOREWireCommandPushCtrl version:1
+        bodyData:[JCOREWireProtocol buildPushControlPayloadWithStopped:NO]
+        completion:^(JCOREWireFrame *frame, NSError *error) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf || strongSelf->_connection != connection) { return; }
+            strongSelf->_pushResumeInFlight = NO;
+            if (error == nil && frame != nil && frame.statusCode == 0) {
+                [config acknowledgePushResumeForAppKey:appKey policyGeneration:generation];
+            } else {
+                NSInteger code = frame != nil ? (NSInteger)frame.statusCode : (error != nil ? error.code : 6002);
+                [JCOREConfiguration logWarn:[NSString stringWithFormat:@"Push resume not acknowledged code=%ld", (long)code]];
+            }
+        }];
 }
 
 - (void)cancelTokenRequestsLockedForCommand:(uint8_t)command {
@@ -804,6 +887,10 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         self->_inFlightDeviceTokenHex = nil;
         if (error == nil && frame != nil && frame.statusCode == 0 && [config.deviceTokenHex isEqualToString:token]) {
             self->_lastReportedDeviceTokenHex = [token copy];
+            [JCOREConfiguration logInfo:@"APNs device token reported code=0"];
+        } else {
+            NSInteger errCode = frame != nil ? (NSInteger)frame.statusCode : (error != nil ? error.code : 6002);
+            [JCOREConfiguration logWarn:[NSString stringWithFormat:@"APNs device token report failed code=%ld", (long)errCode]];
         }
     }];
 }
@@ -833,6 +920,10 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         self->_inFlightVoipTokenHex = nil;
         if (error == nil && frame != nil && frame.statusCode == 0 && [config.voipTokenHex isEqualToString:token]) {
             self->_lastReportedVoipTokenHex = [token copy];
+            [JCOREConfiguration logInfo:@"VoIP token reported code=0"];
+        } else {
+            NSInteger errCode = frame != nil ? (NSInteger)frame.statusCode : (error != nil ? error.code : 6002);
+            [JCOREConfiguration logWarn:[NSString stringWithFormat:@"VoIP token report failed code=%ld", (long)errCode]];
         }
     }];
 }
@@ -984,7 +1075,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         NSTimeInterval timeoutSec = config.requestTimeoutInterval > 0 ? config.requestTimeoutInterval : 20.0;
         NSTimeInterval resendSec = config.requestResendInterval > 0 ? config.requestResendInterval : 10.0;
 
-        if (resendSec > 0 && resendSec < timeoutSec) {
+        if (command != JCOREWireCommandHeartbeat && command != JCOREWireCommandPushCtrl &&
+            resendSec > 0 && resendSec < timeoutSec) {
             uint64_t resendNs = (uint64_t)(resendSec * (double)NSEC_PER_SEC);
             dispatch_source_t rTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _sessionQueue);
             dispatch_source_set_timer(rTimer,
@@ -1075,6 +1167,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     [_receiveBuffer setLength:0];
     _connected = NO;
     _loggedIn = NO;
+    _pushResumeInFlight = NO;
+    _loggedInAppKey = nil;
     if (_inFlightRequests.count > 0) {
         NSError *err = [NSError errorWithDomain:@"cn.jiguang.jpush"
                                            code:6002

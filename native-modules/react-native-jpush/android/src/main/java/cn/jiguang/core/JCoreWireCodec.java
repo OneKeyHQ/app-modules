@@ -661,7 +661,7 @@ public final class JCoreWireCodec {
         }
 
         int statusCode = 0;
-        if (hasResponseStatusPrefix(command) && body.length >= 2) {
+        if ((hasResponseStatusPrefix(command) || command == CMD_PUSH_CTRL || command == CMD_DEVICE_TOKEN || command == 0) && body.length >= 2) {
             statusCode = ((body[0] & 0xFF) << 8) | (body[1] & 0xFF);
         }
         return new DecodedFrame(version, command, algorithm, flag, rid, 0, uid, statusCode, body);
@@ -1542,11 +1542,11 @@ public final class JCoreWireCodec {
     }
 
     public static byte[] buildPushControlPayload(boolean stopped) {
-        return new byte[] { (byte) (stopped ? 1 : 0) };
+        return new byte[] { (byte) (stopped ? 0 : 1) };
     }
 
     public static boolean parsePushControlPayload(byte[] body) {
-        return body != null && body.length > 0 && body[0] != 0;
+        return body != null && body.length > 0 && body[0] == 0;
     }
 
     public static void writeString(ByteBuffer buffer, String value) {

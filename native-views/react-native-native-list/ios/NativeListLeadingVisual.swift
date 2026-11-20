@@ -2,6 +2,14 @@ import UIKit
 
 // Bounded visual primitive: three source slots, two optional overlays. It knows
 // visual descriptors and request lifetimes, never row types or business keys.
+/// A leading visual's solid border width: `borderWidth` when valid, else 1 point.
+func nativeListBorderWidth(_ value: Any?) -> CGFloat {
+  guard let width = (value as? NSNumber)?.doubleValue, width.isFinite, width > 0, width <= 4 else {
+    return 1
+  }
+  return CGFloat(width)
+}
+
 final class NativeListLeadingVisual: UIView {
   var fonts = NativeListFontFamilies()
   var glyphSize: CGFloat = 18

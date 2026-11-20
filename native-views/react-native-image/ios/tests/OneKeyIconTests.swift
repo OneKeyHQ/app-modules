@@ -525,24 +525,34 @@ final class OneKeyIconTests: XCTestCase {
       try? FileManager.default.removeItem(at: tempFile)
     }
     OneKeyNamedSVG.shared.resetStartupForTesting(fileURL: tempFile)
-    OneKeyMainThreadDecode.resetForTesting()
-
-    // Warm one raster to disk so diskRender and prewarm can replay it.
-    let disk = SDImageCache(namespace: "onekey-named-svg-raster-v1")
-    _ = try XCTUnwrap(resolve("DotVerSolid", color: "rgba(0,0,0,1)", width: 48, height: 48, scale: 2))
-    eventually("Disk raster written for DotVerSolid 48x48") {
-      OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
-      return OneKeyNamedSVG.shared.diskRender(
+    let rasterPath = try XCTUnwrap(
+      OneKeyNamedSVG.shared.rasterDiskCachePathForTesting(
         name: "DotVerSolid",
         color: "rgba(0,0,0,1)",
         width: 48,
         height: 48,
         scale: 2
-      ) != nil
+      )
+    )
+    let rasterURL = URL(fileURLWithPath: rasterPath)
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: rasterPath) {
+      try fileManager.removeItem(at: rasterURL)
     }
-    _ = disk
+    defer { try? fileManager.removeItem(at: rasterURL) }
 
-    // 1. Synchronous callback on OneKeyNamedSVGBridge.request (BottomTabs path).
+    // Poll for the worker's atomic write independently of the frame decode budget.
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
+    _ = try XCTUnwrap(resolve("DotVerSolid", color: "rgba(0,0,0,1)", width: 48, height: 48, scale: 2))
+    eventually("Disk raster written for DotVerSolid 48x48") {
+      fileManager.fileExists(atPath: rasterPath)
+    }
+    let originalRasterData = try Data(contentsOf: rasterURL)
+
+    // 1. Synchronous callback from a disk hit on the BottomTabs bridge path.
+    OneKeyNamedSVG.shared.clearMemoryCacheForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
     var syncCallbackFired = false
     let owner = NSObject()
     OneKeyNamedSVGBridge.request(
@@ -570,22 +580,8 @@ final class OneKeyIconTests: XCTestCase {
         scale: 2
       )
     )
-    let rasterPath = try XCTUnwrap(
-      OneKeyNamedSVG.shared.rasterDiskCachePathForTesting(
-        name: "DotVerSolid",
-        color: "rgba(0,0,0,1)",
-        width: 48,
-        height: 48,
-        scale: 2
-      )
-    )
-    let rasterURL = URL(fileURLWithPath: rasterPath)
-    let originalRasterData = try Data(contentsOf: rasterURL)
     try Data(repeating: 0, count: OneKeyMainThreadDecode.maximumEncodedBytes + 1024)
       .write(to: rasterURL, options: .atomic)
-    defer {
-      try? originalRasterData.write(to: rasterURL, options: .atomic)
-    }
     XCTAssertNil(
       OneKeyNamedSVG.shared.diskRender(
         name: "DotVerSolid",
@@ -595,7 +591,9 @@ final class OneKeyIconTests: XCTestCase {
         scale: 2
       )
     )
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().limitRejections, 1)
     try originalRasterData.write(to: rasterURL, options: .atomic)
+    OneKeyMainThreadDecode.resetForTesting()
     XCTAssertNotNil(
       OneKeyNamedSVG.shared.diskRender(
         name: "DotVerSolid",
@@ -605,9 +603,7 @@ final class OneKeyIconTests: XCTestCase {
         scale: 2
       )
     )
-    let decodeMetrics = OneKeyMainThreadDecode.metricsSnapshot()
-    XCTAssertEqual(decodeMetrics.hits, 1)
-    XCTAssertEqual(decodeMetrics.limitRejections, 1)
+    XCTAssertEqual(OneKeyMainThreadDecode.metricsSnapshot().hits, 1)
 
     // 2b. Synchronous diskRender must not wait on SDImageCache.ioQueue when a concurrent
     // write or cache cleanup is occupying ioQueue, and must handle removed files cleanly.

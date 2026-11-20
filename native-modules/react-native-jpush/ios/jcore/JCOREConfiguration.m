@@ -16,6 +16,7 @@ static NSString *const kJCoreKeyDeviceToken = @"com.onekey.jcore.device_token";
 static NSString *const kJCoreKeyVoipToken = @"com.onekey.jcore.voip_token";
 static NSString *const kJCoreKeyAuth = @"com.onekey.jcore.collection_auth";
 static NSString *const kJCoreKeyPushStopped = @"com.onekey.jcore.push_stopped";
+static NSString *const kJCoreKeyPendingResumeAppKey = @"com.onekey.jcore.pending_push_resume_app_key";
 static NSString *const kJCoreKeyTags = @"com.onekey.jcore.tags";
 static NSString *const kJCoreKeyAlias = @"com.onekey.jcore.alias";
 static NSString *const kJCoreKeyProperties = @"com.onekey.jcore.properties";
@@ -91,6 +92,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 
 @synthesize collectionAuthorized = _collectionAuthorized;
 @synthesize pushStopped = _pushStopped;
+@synthesize appKey = _appKey;
 
 + (instancetype)shared {
     static JCOREConfiguration *instance = nil;
@@ -165,7 +167,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
                isProduction:(BOOL)isProduction
       advertisingIdentifier:(NSString *)advertisingId {
     dispatch_sync(_stateQueue, ^{
-        self->_appKey = [appKey copy];
+        self.appKey = appKey;
         if (channel.length > 0) {
             self->_channel = [channel copy];
         }
@@ -174,6 +176,23 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         self->_apsType = isProduction ? 1 : 0;
         self->_advertisingIdentifier = [advertisingId copy];
     });
+}
+
+- (NSString *)appKey {
+    @synchronized (self) { return _appKey; }
+}
+
+- (void)setAppKey:(NSString *)appKey {
+    @synchronized (self) {
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        id pending = [defaults objectForKey:kJCoreKeyPendingResumeAppKey];
+        if ([pending isKindOfClass:NSNumber.class]) {
+            if (appKey.length > 0) [defaults setObject:appKey forKey:kJCoreKeyPendingResumeAppKey];
+        } else if (pending != nil && ![pending isEqual:appKey]) {
+            [defaults removeObjectForKey:kJCoreKeyPendingResumeAppKey];
+        }
+        _appKey = [appKey copy];
+    }
 }
 
 - (void)setCustomConnectHost:(NSString *)host
@@ -233,12 +252,45 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 - (void)setPushStopped:(BOOL)pushStopped {
     NSUInteger generation;
     @synchronized (self) {
+        if (pushStopped) {
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyPendingResumeAppKey];
+        }
         if (_pushStopped == pushStopped) { return; }
         _pushStopped = pushStopped;
         generation = ++_policyGeneration;
         [[NSUserDefaults standardUserDefaults] setBool:pushStopped forKey:kJCoreKeyPushStopped];
     }
     [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:self userInfo:@{@"generation": @(generation)}];
+}
+
+- (void)resumePushLocally {
+    NSUInteger generation;
+    @synchronized (self) {
+        if (!_pushStopped) { return; }
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        id pending = _appKey.length > 0 ? (id)_appKey : @YES;
+        [defaults setObject:pending forKey:kJCoreKeyPendingResumeAppKey];
+        _pushStopped = NO;
+        generation = ++_policyGeneration;
+        [defaults setBool:NO forKey:kJCoreKeyPushStopped];
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:self
+        userInfo:@{@"generation": @(generation)}];
+}
+
+- (BOOL)hasPendingPushResumeForAppKey:(NSString *)appKey {
+    @synchronized (self) {
+        NSString *pending = [[NSUserDefaults standardUserDefaults] stringForKey:kJCoreKeyPendingResumeAppKey];
+        return _collectionAuthorized && !_pushStopped && [_appKey isEqualToString:appKey] && [pending isEqualToString:appKey];
+    }
+}
+
+- (void)acknowledgePushResumeForAppKey:(NSString *)appKey policyGeneration:(NSUInteger)generation {
+    @synchronized (self) {
+        if (generation == _policyGeneration && [self hasPendingPushResumeForAppKey:appKey]) {
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyPendingResumeAppKey];
+        }
+    }
 }
 
 - (void)setDeviceTokenHex:(NSString *)deviceTokenHex {
@@ -647,22 +699,11 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     return rid;
 }
 
-+ (NSMutableArray<NSString *> *)recentLogsStorage {
-    static NSMutableArray<NSString *> *storage = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        storage = [NSMutableArray array];
-    });
-    return storage;
-}
-
 + (void)setLocalLogEnabled:(BOOL)enabled {
     JCOREConfiguration *config = [self shared];
-    config.localLogEnabled = enabled;
-    config.forceLocalLogWhenLogOff = enabled;
-    if (!enabled) {
-        [self clearRecentLogs];
-    }
+    config.localLogEnabled = NO;
+    config.forceLocalLogWhenLogOff = NO;
+    (void)enabled;
 }
 
 + (void)dispatchLogWithLevel:(NSString *)level selectorName:(NSString *)selectorName message:(NSString *)message {
@@ -670,16 +711,6 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         return;
     }
     JCOREConfiguration *config = [self shared];
-    NSString *entry = [NSString stringWithFormat:@"[%@] %@", level, message];
-    if (config.localLogEnabled && (!config.logOff || config.forceLocalLogWhenLogOff)) {
-        NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-        @synchronized (storage) {
-            if (storage.count >= 200) {
-                [storage removeObjectAtIndex:0];
-            }
-            [storage addObject:entry];
-        }
-    }
     if (config.logOff) {
         return;
     }
@@ -692,7 +723,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         return;
     }
     if (config.debugEnabled) {
-        NSLog(@"[RN-JPush] %@", entry);
+        NSLog(@"[RN-JPush] [%@] %@", level, message);
     }
 }
 
@@ -713,17 +744,10 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 }
 
 + (NSArray<NSString *> *)recentLogs {
-    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-    @synchronized (storage) {
-        return [storage copy];
-    }
+    return @[];
 }
 
 + (void)clearRecentLogs {
-    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-    @synchronized (storage) {
-        [storage removeAllObjects];
-    }
 }
 
 - (void)log:(NSString *)format, ... {

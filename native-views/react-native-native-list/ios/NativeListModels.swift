@@ -104,6 +104,8 @@ struct NativeListConfig {
   let rowPressToggles: Bool
   var selectedKeys: Set<String>
   let reorderable: Bool
+  /// `handle` starts a reorder only from a long press on a trailing `drag` accessory.
+  let reorderFromHandleOnly: Bool
   let pullToRefresh: Bool
   let refreshTriggerDistance: CGFloat?
   var refreshing: Bool
@@ -139,6 +141,10 @@ struct NativeListConfig {
     let selectedKeys = Set(selection?["selectedKeys"] as? [String] ?? [])
     guard selectedKeys.isSubset(of: keys) else { throw NativeListModelError.unknownSelectionKey }
     let capabilities = root["capabilities"] as? [String: Any]
+    let reorderActivation = capabilities?["reorderActivation"]
+    if let reorderActivation, !["row", "handle"].contains(reorderActivation as? String ?? "") {
+      throw NativeListModelError.invalidSnapshot
+    }
     let sectionIndex = capabilities?["sectionIndex"] as? [String: Any]
     let footer = try (root["fixedFooter"] as? [String: Any]).map(NativeListItem.init)
     let transition = root["structuralTransition"] as? [String: Any]
@@ -196,6 +202,7 @@ struct NativeListConfig {
       rowPressToggles: selection?["rowPressToggles"] as? Bool ?? false,
       selectedKeys: selectedKeys,
       reorderable: capabilities?["reorderable"] as? Bool ?? false,
+      reorderFromHandleOnly: reorderActivation as? String == "handle",
       pullToRefresh: capabilities?["pullToRefresh"] as? Bool ?? false,
       refreshTriggerDistance: (capabilities?["refreshTriggerDistance"] as? Double)
         .flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil },

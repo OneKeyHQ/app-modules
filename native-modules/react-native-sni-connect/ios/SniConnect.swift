@@ -61,11 +61,29 @@ final class SniConnectImpl: NSObject {
     }
   }
 
-  private func handleRequest(
-    config: SniConnectClient.RequestConfig,
+  @objc
+  public func getUploadProgress(
+    _ requestId: String,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
+    if let progress = client.getUploadProgress(requestId: requestId) {
+      resolve(progress)
+    } else {
+      resolve(NSNull())
+    }
+  }
+
+  private func handleRequest(
+    config originalConfig: SniConnectClient.RequestConfig,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    var configured = originalConfig
+    if configured.bodyFileURL != nil && configured.requestId != nil {
+      configured.uploadProgress = SniConnectUploadProgress()
+    }
+    let config = configured
     do {
       try Self.validate(config)
     } catch {
@@ -92,7 +110,11 @@ final class SniConnectImpl: NSObject {
       return try await client.performRequest(config: config)
     }
 
-    let registrationToken = client.registerTask(task, for: config.requestId)
+    let registrationToken = client.registerTask(
+      task,
+      for: config.requestId,
+      uploadProgress: config.uploadProgress
+    )
 
     // Handle the task result asynchronously
     Task {
@@ -102,6 +124,7 @@ final class SniConnectImpl: NSObject {
 
       do {
         let result = try await task.value
+        client.finishUploadProgress(token: registrationToken)
         resolve([
           "data": result.data,
           "status": result.status,
@@ -110,10 +133,13 @@ final class SniConnectImpl: NSObject {
           "multiValueHeaders": result.multiValueHeaders,
         ])
       } catch let error as SniConnectClient.SniConnectError {
+        client.finishUploadProgress(token: registrationToken)
         reject(error.code, error.message, error)
       } catch is CancellationError {
+        client.finishUploadProgress(token: registrationToken)
         reject("SNI_CANCELLED", "Request cancelled", nil)
       } catch {
+        client.finishUploadProgress(token: registrationToken)
         SniConnectLog.error(SniConnectLog.event("sni_request_result", [
           ("result", "error"),
           ("code", "SNI_UNKNOWN_ERROR"),

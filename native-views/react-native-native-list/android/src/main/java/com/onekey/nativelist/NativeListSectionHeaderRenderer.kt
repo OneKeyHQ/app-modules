@@ -773,6 +773,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    applyNativeListTextSpacing(view, style, defaultLetterSpacing = view.letterSpacing)
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or
@@ -790,15 +791,21 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
         setOf("accountSelector", "networkSelector", "walletSidebar")
     )
       return
+    val rowStyle = item.json.optJSONObject("style")
     fun visit(view: View) {
       if (view is TextView) {
-        view.fontFeatureSettings = "tnum"
+        val explicit = when (view) {
+          title -> rowStyle?.optJSONObject("title")
+          subtitle -> rowStyle?.optJSONObject("subtitle")
+          trailingViews[0] -> rowStyle?.optJSONObject("value")
+          else -> null
+        }
         if (sourceScale) {
           paintDefaults.putIfAbsent(view, view.paintFlags)
           view.paintFlags = view.paintFlags or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG
           val (fontSize, line) =
             selectorTextMetrics.getOrPut(view) { view.textSize to view.lineHeight }
-          view.setTextSize(
+          if (explicit?.has("fontSize") != true) view.setTextSize(
             TypedValue.COMPLEX_UNIT_PX,
             kotlin.math
               .ceil(
@@ -808,8 +815,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
               )
               .toFloat(),
           )
-          view.letterSpacing = 0f
-          if (view.text.isNotEmpty()) {
+          if (explicit?.has("lineHeight") != true && view.text.isNotEmpty()) {
             val text = SpannableStringBuilder(view.text)
             text
               .getSpans(0, text.length, NativeListLineHeightSpan::class.java)
@@ -824,6 +830,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
             view.text = text
           }
         }
+        applyNativeListTextSpacing(view, explicit, defaultLetterSpacing = view.letterSpacing)
       }
       if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
     }

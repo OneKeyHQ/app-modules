@@ -33,6 +33,8 @@ public final class JCoreStorage {
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_SERVER_REGISTERED = "server_registered";
     private static final String KEY_PUSH_STOPPED = "push_stopped";
+    private static final String KEY_PENDING_RESUME_APP_KEY = "pending_push_resume_app_key";
+    private static final String UNCONFIGURED_RESUME_APP_KEY = "__jpush_unconfigured__";
     private static final String KEY_COLLECTION_AUTH = "collection_auth";
     private static final String KEY_DEBUG_MODE = "debug_mode";
     private static final String KEY_TAGS = "tags";
@@ -65,12 +67,21 @@ public final class JCoreStorage {
     private static final String KEY_SILENCE_END_HOUR = "silence_end_hour";
     private static final String KEY_SILENCE_END_MIN = "silence_end_min";
 
-    private static final int MAX_LOCAL_LOG_CHARS = 32768;
     private static final AtomicInteger REQUEST_ID = new AtomicInteger(100);
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
-    private static final StringBuilder LOCAL_LOG_BUFFER = new StringBuilder();
     private static volatile Context sAppContext;
     private static volatile boolean sDebugMode = false;
+    private static PushResumeClaim inFlightResume;
+
+    static final class PushResumeClaim {
+        final String appKey;
+        final long policyGeneration;
+
+        PushResumeClaim(String appKey, long policyGeneration) {
+            this.appKey = appKey;
+            this.policyGeneration = policyGeneration;
+        }
+    }
 
     private JCoreStorage() {
     }
@@ -248,6 +259,12 @@ public final class JCoreStorage {
     }
 
     public static String getAppKey(Context context) {
+        Object cached = MEMORY_FALLBACK.get(KEY_APP_KEY);
+        if (cached instanceof String && !isEmpty((String) cached)) return (String) cached;
+        return loadAppKey(context);
+    }
+
+    private static synchronized String loadAppKey(Context context) {
         String cached = getStringPref(context, KEY_APP_KEY, "");
         if (!isEmpty(cached)) {
             return cached;
@@ -274,8 +291,14 @@ public final class JCoreStorage {
         return "";
     }
 
-    public static void setAppKey(Context context, String appKey) {
+    public static synchronized void setAppKey(Context context, String appKey) {
         if (!isEmpty(appKey)) {
+            String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
+            if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
+                putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
+            } else if (!pending.isEmpty() && !pending.equals(appKey)) {
+                clearPendingPushResume(context);
+            }
             putStringPref(context, KEY_APP_KEY, appKey);
         }
     }
@@ -318,38 +341,19 @@ public final class JCoreStorage {
     }
 
     public static void enableSDKLocalLog(Context context, boolean enable, boolean uploadToServer) {
-        putBooleanPref(context, KEY_LOCAL_LOG_ENABLED, enable);
-        if (enable) {
-            appendLocalLog("SDKLocalLog enabled (upload=" + uploadToServer + ")");
-        }
+        // Deprecated: logs are forwarded directly to OneKeyLog without in-memory buffering.
+        putBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
     }
 
     public static boolean isLocalLogEnabled(Context context) {
-        return getBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
+        return false;
     }
 
-    public static synchronized void appendLocalLog(String line) {
-        if (line != null && !line.isEmpty()) {
-            if (LOCAL_LOG_BUFFER.length() > 0) {
-                LOCAL_LOG_BUFFER.append('\n');
-            }
-            LOCAL_LOG_BUFFER.append(line);
-            if (LOCAL_LOG_BUFFER.length() > MAX_LOCAL_LOG_CHARS) {
-                int excess = LOCAL_LOG_BUFFER.length() - MAX_LOCAL_LOG_CHARS;
-                int newlineIdx = LOCAL_LOG_BUFFER.indexOf("\n", excess);
-                if (newlineIdx >= 0 && newlineIdx + 1 < LOCAL_LOG_BUFFER.length()) {
-                    LOCAL_LOG_BUFFER.delete(0, newlineIdx + 1);
-                } else {
-                    LOCAL_LOG_BUFFER.delete(0, excess);
-                }
-            }
-        }
+    public static void appendLocalLog(String line) {
     }
 
-    public static synchronized String readNewLogs(Context context) {
-        String logs = LOCAL_LOG_BUFFER.toString();
-        LOCAL_LOG_BUFFER.setLength(0);
-        return logs;
+    public static String readNewLogs(Context context) {
+        return "";
     }
 
     public static synchronized void ensureRegistration(Context context) {
@@ -438,7 +442,54 @@ public final class JCoreStorage {
     public static synchronized void setPushStopped(Context context, boolean stopped) {
         putBooleanPref(context, KEY_PUSH_STOPPED, stopped);
         if (stopped) {
+            clearPendingPushResume(context);
             CONTENT_GENERATION.incrementAndGet();
+        }
+    }
+
+    public static synchronized void resumePushLocally(Context context) {
+        if (isPushStopped(context)) {
+            String appKey = getAppKey(context);
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY,
+                appKey.isEmpty() ? UNCONFIGURED_RESUME_APP_KEY : appKey);
+            setPushStopped(context, false);
+        }
+    }
+
+    static synchronized PushResumeClaim claimPendingPushResume(Context context) {
+        String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
+        if (pending.isEmpty() || !isCollectionAuth(context) || isPushStopped(context) || inFlightResume != null) {
+            return null;
+        }
+        String appKey = getAppKey(context);
+        if (appKey.isEmpty() || (!pending.equals(appKey) && !UNCONFIGURED_RESUME_APP_KEY.equals(pending))) {
+            return null;
+        }
+        if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
+        }
+        inFlightResume = new PushResumeClaim(appKey, getContentGeneration());
+        return inFlightResume;
+    }
+
+    static synchronized boolean isPushResumeClaimCurrent(Context context, PushResumeClaim claim) {
+        return claim != null && claim == inFlightResume && claim.policyGeneration == getContentGeneration()
+            && claim.appKey.equals(getAppKey(context)) && isCollectionAuth(context) && !isPushStopped(context);
+    }
+
+    static synchronized void completePushResume(Context context, PushResumeClaim claim, boolean acknowledged) {
+        if (claim != inFlightResume) return;
+        if (acknowledged && isPushResumeClaimCurrent(context, claim)) {
+            clearPendingPushResume(context);
+        } else {
+            inFlightResume = null;
+        }
+    }
+
+    private static void clearPendingPushResume(Context context) {
+        inFlightResume = null;
+        if (!getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "").isEmpty()) {
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
         }
     }
 

@@ -113,6 +113,7 @@ internal object SniRequestTransmissionEventListenerFactory : EventListener.Facto
 internal class SniUploadFileRequestBody(
   private val file: File,
   private val mediaType: MediaType?,
+  private val onProgress: ((Long, Long) -> Unit)? = null,
 ) : RequestBody() {
   private val length = file.length().also {
     if (it <= 0 || it > SniConnectValidation.MAX_UPLOAD_FILE_BYTES) {
@@ -125,6 +126,7 @@ internal class SniUploadFileRequestBody(
   override fun contentLength(): Long = length
 
   override fun writeTo(sink: BufferedSink) {
+    onProgress?.invoke(0, length)
     file.source().use { source ->
       val buffer = Buffer()
       var totalBytes = 0L
@@ -137,6 +139,7 @@ internal class SniUploadFileRequestBody(
         }
         sink.write(buffer, read)
         totalBytes += read
+        onProgress?.invoke(totalBytes, length)
       }
       if (totalBytes != length) {
         throw IOException("Upload file was truncated during transmission")

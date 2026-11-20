@@ -97,15 +97,14 @@ public class JPushInterface {
     }
 
     public static void stopPush(Context context) {
-        JCoreStorage.setPushStopped(context, true);
-        JCoreTcpEngine.getInstance().stop(context);
+        JCoreTcpEngine.getInstance().stopPush(context);
     }
 
     public static void resumePush(Context context) {
-        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.resumePushLocally(context);
         JCoreManager.init(context);
         JThirdPlatFormInterface.initializeFcm(context);
-        ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 1);
+        JCoreTcpEngine.getInstance().sendPendingPushResume(context);
     }
 
     public static boolean isPushStopped(Context context) {

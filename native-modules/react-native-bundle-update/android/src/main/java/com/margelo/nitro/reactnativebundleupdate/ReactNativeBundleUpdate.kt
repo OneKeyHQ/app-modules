@@ -87,7 +87,7 @@ object BundleUpdateStoreAndroid {
     private const val METADATA_REQUIRES_COMMON_BUNDLE_KEY = "requiresCommonBundle"
     private const val METADATA_BUNDLE_FORMAT_KEY = "bundleFormat"
     private const val BUNDLE_FORMAT_THREE_BUNDLE = "three-bundle"
-    private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "1"
+    private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "2"
 
     // In-memory cache for getValidatedCurrentBundleInfo. Without this, every
     // bundleURL / common / main / background path getter on startup re-runs

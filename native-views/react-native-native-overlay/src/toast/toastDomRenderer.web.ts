@@ -21,6 +21,8 @@ const TOAST_WIDTH = 356;
 const GAP = 14;
 const SWIPE_THRESHOLD = 20;
 const SWIPE_VELOCITY = 0.11; // px per ms
+const TOUCH_START_THRESHOLD = 10;
+const POINTER_START_THRESHOLD = 2;
 // Equal to the exit transition.
 const TIME_BEFORE_UNMOUNT = 200;
 const DEFAULT_POSITION: IOverlayToastPosition = 'bottom-right';
@@ -45,14 +47,20 @@ interface IToastNode {
   initialHeight: number;
   closeTimer?: ReturnType<typeof setTimeout>;
   unmountTimer?: ReturnType<typeof setTimeout>;
-  pointerStart: { x: number; y: number } | null;
-  dragStartedAt: number;
+  swipePointerId?: number;
+}
+
+interface IToastPress {
+  node: IToastNode;
+  x: number;
+  y: number;
+  startedAt: number;
+  moved: boolean;
 }
 
 interface IToastGroup {
   position: IOverlayToastPosition;
   ol: HTMLOListElement;
-  hovered: boolean;
   /** Newest first, leaving cards included until they unmount. */
   toasts: IToastNode[];
   /** Newest first, without leaving cards. */
@@ -128,14 +136,17 @@ export function createToastDomRenderer(
 
   const nodes = new Map<string, IToastNode>();
   const groups = new Map<IOverlayToastPosition, IToastGroup>();
+  const presses = new Map<number, IToastPress>();
+  const hoveredGroups = new Map<number, IToastGroup>();
   let config: IOverlayToasterConfig = {};
   let section: HTMLElement | null = null;
-  let expanded = false;
-  let interacting = false;
+  let keyboardExpanded = false;
+  let touchExpandedGroup: IToastGroup | undefined;
   let destroyed = false;
 
-  const isHovered = (): boolean =>
-    [...groups.values()].some((group) => group.hovered);
+  const isExpanded = (): boolean =>
+    nodes.size > 1 &&
+    (keyboardExpanded || !!touchExpandedGroup || hoveredGroups.size > 0);
 
   const positionOf = (spec: IOverlayToastSpec): IOverlayToastPosition =>
     spec.position ?? config.position ?? DEFAULT_POSITION;
@@ -158,21 +169,14 @@ export function createToastDomRenderer(
     return section;
   }
 
-  function setExpanded(value: boolean) {
-    if (expanded !== value) {
-      expanded = value;
-      update();
-    }
+  function groupContaining(target: Node | null): IToastGroup | undefined {
+    return [...groups.values()].find((group) => group.ol.contains(target));
   }
 
-  function setInteracting(value: boolean) {
-    if (interacting !== value) {
-      interacting = value;
-      if (!value && !isHovered()) {
-        expanded = false;
-      }
-      update();
-    }
+  function pointerHit(event: PointerEvent): Node | null {
+    return typeof document.elementFromPoint === 'function'
+      ? document.elementFromPoint(event.clientX, event.clientY)
+      : (event.target as Node | null);
   }
 
   function ensureGroup(position: IOverlayToastPosition): IToastGroup {
@@ -184,33 +188,30 @@ export function createToastDomRenderer(
       const nextGroup: IToastGroup = {
         position,
         ol,
-        hovered: false,
         toasts: [],
         heights: [],
       };
-      ol.addEventListener('mouseenter', () => {
-        nextGroup.hovered = true;
-        expanded = nodes.size > 1;
-        update();
-      });
-      ol.addEventListener('mousemove', () => {
-        if (!nextGroup.hovered || (nodes.size > 1 && !expanded)) {
-          nextGroup.hovered = true;
-          expanded = nodes.size > 1;
+      const hover = (event: PointerEvent) => {
+        if (
+          event.pointerType !== 'touch' &&
+          !presses.has(event.pointerId) &&
+          hoveredGroups.get(event.pointerId) !== nextGroup
+        ) {
+          hoveredGroups.set(event.pointerId, nextGroup);
+          update();
+        }
+      };
+      ol.addEventListener('pointerenter', hover);
+      ol.addEventListener('pointermove', hover);
+      ol.addEventListener('pointerleave', (event) => {
+        if (
+          !presses.has(event.pointerId) &&
+          hoveredGroups.get(event.pointerId) === nextGroup
+        ) {
+          hoveredGroups.delete(event.pointerId);
           update();
         }
       });
-      ol.addEventListener('mouseleave', () => {
-        nextGroup.hovered = false;
-        // Keep the stack open while a card is being dragged.
-        if (!interacting && !isHovered()) {
-          expanded = false;
-        }
-        update();
-      });
-      ol.addEventListener('pointerdown', () => setInteracting(true));
-      ol.addEventListener('pointerup', () => setInteracting(false));
-      ol.addEventListener('pointercancel', () => setInteracting(false));
       group = nextGroup;
       groups.set(position, group);
     }
@@ -265,7 +266,7 @@ export function createToastDomRenderer(
   }
 
   function syncTimers() {
-    const paused = expanded || isHovered() || interacting;
+    const paused = isExpanded() || hoveredGroups.size > 0 || presses.size > 0;
     nodes.forEach((node) => {
       if (node.removed || !Number.isFinite(node.spec.duration)) {
         clearCloseTimer(node);
@@ -286,6 +287,7 @@ export function createToastDomRenderer(
   }
 
   function unmount(node: IToastNode, reason: IOverlayToastDismissReason) {
+    clearNodePresses(node);
     if (node.unmountTimer !== undefined) {
       clearTimeout(node.unmountTimer);
       node.unmountTimer = undefined;
@@ -316,6 +318,7 @@ export function createToastDomRenderer(
     if (node.removed) {
       return;
     }
+    clearNodePresses(node);
     const group = groups.get(node.position);
     node.removed = true;
     // Keep the offset the card had, for the exit transition.
@@ -340,71 +343,144 @@ export function createToastDomRenderer(
     update();
   }
 
-  function attachSwipe(node: IToastNode) {
-    const { li } = node;
-    li.addEventListener('pointerdown', (event) => {
-      if (node.removed) {
+  function clearPress(pointerId: number, { node }: IToastPress) {
+    presses.delete(pointerId);
+    if (node.swipePointerId === pointerId) {
+      node.swipePointerId = undefined;
+      node.swiping = false;
+      node.li.setAttribute('data-swiping', 'false');
+      node.li.style.setProperty('--swipe-amount', '0px');
+      if (node.li.hasPointerCapture?.(pointerId)) {
+        node.li.releasePointerCapture(pointerId);
+      }
+    }
+  }
+
+  function clearNodePresses(node: IToastNode) {
+    presses.forEach((press, pointerId) => {
+      if (press.node === node) {
+        clearPress(pointerId, press);
+        hoveredGroups.delete(pointerId);
+      }
+    });
+  }
+
+  function swipeAmount(node: IToastNode, deltaY: number): number {
+    return node.position.startsWith('top')
+      ? Math.min(0, deltaY)
+      : Math.max(0, deltaY);
+  }
+
+  function onGlobalPointerMove(event: PointerEvent) {
+    const press = presses.get(event.pointerId);
+    if (!press) {
+      return;
+    }
+    const { node } = press;
+    const dx = Math.abs(event.clientX - press.x);
+    const dy = event.clientY - press.y;
+    const threshold =
+      event.pointerType === 'touch'
+        ? TOUCH_START_THRESHOLD
+        : POINTER_START_THRESHOLD;
+    press.moved ||= Math.max(dx, Math.abs(dy)) > threshold;
+    if (node.swipePointerId !== event.pointerId) {
+      return;
+    }
+    const amount = swipeAmount(node, dy);
+    if (!node.swiping) {
+      if (Math.abs(amount) <= threshold || Math.abs(amount) < dx) {
         return;
       }
-      node.dragStartedAt = Date.now();
-      const group = groups.get(node.position);
-      node.offsetBeforeRemove = group ? offsetOf(group, node) : 0;
-      const target = event.target as HTMLElement;
-      if (target.closest?.('button, [data-okt-link]')) {
-        return;
-      }
-      // Keep the pointer while it travels outside the card.
-      target.setPointerCapture?.(event.pointerId);
+      // Preserve the descendant's native click until an actual swipe starts.
+      node.li.setPointerCapture?.(event.pointerId);
       node.swiping = true;
-      node.pointerStart = { x: event.clientX, y: event.clientY };
-      update();
-    });
-    li.addEventListener('pointerup', () => {
-      if (node.swipeOut || node.removed) {
-        return;
-      }
-      node.pointerStart = null;
-      const swipeAmount = Number(
-        li.style.getPropertyValue('--swipe-amount').replace('px', '') || 0
-      );
-      const timeTaken = Date.now() - node.dragStartedAt;
-      const velocity = Math.abs(swipeAmount) / timeTaken;
+      node.li.setAttribute('data-swiping', 'true');
+    }
+    node.li.style.setProperty('--swipe-amount', `${amount}px`);
+  }
+
+  function onGlobalPointerEnd(event: PointerEvent) {
+    const { pointerId, pointerType } = event;
+    const press = presses.get(pointerId);
+    if (!press) {
+      return;
+    }
+    const { node } = press;
+    const released = event.type === 'pointerup';
+    const amount =
+      released && node.swipePointerId === pointerId && node.swiping
+        ? swipeAmount(node, event.clientY - press.y)
+        : 0;
+    const velocity =
+      Math.abs(amount) / Math.max(1, Date.now() - press.startedAt);
+    const dismissed =
+      Math.abs(amount) >= SWIPE_THRESHOLD || velocity > SWIPE_VELOCITY;
+    clearPress(pointerId, press);
+
+    // The swipe pseudo-element must be gone before checking where we landed.
+    const hit = released ? groupContaining(pointerHit(event)) : undefined;
+    if (pointerType === 'touch') {
       if (
-        Math.abs(swipeAmount) >= SWIPE_THRESHOLD ||
-        velocity > SWIPE_VELOCITY
+        hit &&
+        nodes.size > 1 &&
+        hit === groups.get(node.position) &&
+        !press.moved &&
+        Math.max(
+          Math.abs(event.clientX - press.x),
+          Math.abs(event.clientY - press.y)
+        ) <= TOUCH_START_THRESHOLD
       ) {
-        node.swipeOut = true;
-        deleteToast(node, 'swipe', true);
+        touchExpandedGroup = hit;
+      }
+    } else if (hit) {
+      hoveredGroups.set(pointerId, hit);
+    } else {
+      hoveredGroups.delete(pointerId);
+    }
+
+    if (dismissed) {
+      node.swipeOut = true;
+      node.li.style.setProperty('--swipe-amount', `${amount}px`);
+      deleteToast(node, 'swipe', true);
+    } else {
+      update();
+    }
+  }
+
+  function attachPointerHandlers(node: IToastNode) {
+    const { li } = node;
+    li.addEventListener('dragstart', (event) => {
+      event.preventDefault();
+    });
+    li.addEventListener('pointerdown', (event) => {
+      if (node.removed || event.button !== 0) {
         return;
       }
-      li.style.setProperty('--swipe-amount', '0px');
-      node.swiping = false;
+      const target = event.target as HTMLElement | null;
+      if (
+        node.swipePointerId === undefined &&
+        !target?.closest?.('button, [data-okt-link]')
+      ) {
+        node.swipePointerId = event.pointerId;
+      }
+      presses.set(event.pointerId, {
+        node,
+        x: event.clientX,
+        y: event.clientY,
+        startedAt: Date.now(),
+        moved: false,
+      });
       update();
     });
-    li.addEventListener('pointercancel', () => {
-      if (node.swipeOut || node.removed) {
-        return;
-      }
-      node.pointerStart = null;
-      li.style.setProperty('--swipe-amount', '0px');
-      node.swiping = false;
-      update();
-    });
-    li.addEventListener('pointermove', (event) => {
-      if (!node.pointerStart) {
-        return;
-      }
-      const yPosition = event.clientY - node.pointerStart.y;
-      const xPosition = event.clientX - node.pointerStart.x;
-      const isTop = node.position.startsWith('top');
-      // Top toasts leave upwards, bottom toasts downwards.
-      const clampedY = isTop ? Math.min(0, yPosition) : Math.max(0, yPosition);
-      const swipeStartThreshold = event.pointerType === 'touch' ? 10 : 2;
-      if (Math.abs(clampedY) > swipeStartThreshold) {
-        li.style.setProperty('--swipe-amount', `${yPosition}px`);
-      } else if (Math.abs(xPosition) > swipeStartThreshold) {
-        // A sideways drag ends the gesture for this press.
-        node.pointerStart = null;
+    li.addEventListener('lostpointercapture', (event) => {
+      // A touch's implicit capture may move from a descendant to the card.
+      if (
+        event.target === li &&
+        node.swipePointerId === event.pointerId &&
+        !li.hasPointerCapture?.(event.pointerId)
+      ) {
+        onGlobalPointerEnd(event);
       }
     });
   }
@@ -460,8 +536,6 @@ export function createToastDomRenderer(
       swipeOut: false,
       offsetBeforeRemove: 0,
       initialHeight: 0,
-      pointerStart: null,
-      dragStartedAt: 0,
     };
     closeButton.addEventListener('click', () =>
       deleteToast(node, 'close', true)
@@ -483,7 +557,7 @@ export function createToastDomRenderer(
       }
     });
     renderContent(node);
-    attachSwipe(node);
+    attachPointerHandlers(node);
     return node;
   }
 
@@ -555,7 +629,7 @@ export function createToastDomRenderer(
       li.setAttribute('data-front', String(index === 0));
       li.setAttribute('data-swiping', String(node.swiping));
       li.setAttribute('data-swipe-out', String(node.swipeOut));
-      li.setAttribute('data-expanded', String(expanded));
+      li.setAttribute('data-expanded', String(isExpanded()));
       li.style.setProperty('--index', String(index));
       li.style.setProperty('--toasts-before', String(index));
       li.style.setProperty('--z-index', String(group.toasts.length - index));
@@ -571,31 +645,29 @@ export function createToastDomRenderer(
     if (destroyed) {
       return;
     }
-    let releasedHover = false;
     groups.forEach((group, position) => {
       if (group.toasts.length === 0) {
-        if (group.hovered) {
-          releasedHover = true;
+        hoveredGroups.forEach((hoveredGroup, pointerId) => {
+          if (hoveredGroup === group) {
+            hoveredGroups.delete(pointerId);
+          }
+        });
+        if (touchExpandedGroup === group) {
+          touchExpandedGroup = undefined;
         }
         group.ol.remove();
         groups.delete(position);
       }
     });
-    const hovered = isHovered();
-    if (nodes.size <= 1 && expanded) {
-      // One card has nothing to fan out.
-      expanded = false;
-    } else if (releasedHover && !hovered && !interacting) {
-      expanded = false;
-    } else if (nodes.size > 1 && hovered && !expanded) {
-      expanded = true;
+    if (nodes.size <= 1) {
+      keyboardExpanded = false;
+      touchExpandedGroup = undefined;
     }
     groups.forEach((group) => {
       applyGroup(group);
     });
     if (nodes.size === 0) {
       section?.remove();
-      interacting = false;
     }
     syncTimers();
   }
@@ -604,6 +676,7 @@ export function createToastDomRenderer(
     node: IToastNode,
     position: IOverlayToastPosition
   ): IToastGroup {
+    clearNodePresses(node);
     const previous = groups.get(node.position);
     if (previous) {
       previous.toasts = previous.toasts.filter((entry) => entry !== node);
@@ -640,7 +713,8 @@ export function createToastDomRenderer(
     }
     const lists = [...groups.values()].map((group) => group.ol);
     if (event.altKey && event.code === 'KeyT') {
-      setExpanded(true);
+      keyboardExpanded = true;
+      update();
       lists[0]?.focus();
     }
     if (
@@ -651,7 +725,9 @@ export function createToastDomRenderer(
           list.contains(document.activeElement)
       )
     ) {
-      setExpanded(false);
+      keyboardExpanded = false;
+      touchExpandedGroup = undefined;
+      update();
     }
   }
 
@@ -661,8 +737,32 @@ export function createToastDomRenderer(
     }
   }
 
+  function onGlobalPointerDown(event: PointerEvent) {
+    if (
+      (touchExpandedGroup || keyboardExpanded) &&
+      !groupContaining(event.target as Node | null)
+    ) {
+      touchExpandedGroup = undefined;
+      keyboardExpanded = false;
+      update();
+    }
+  }
+
+  function onWindowBlur() {
+    presses.forEach((press, pointerId) => clearPress(pointerId, press));
+    hoveredGroups.clear();
+    keyboardExpanded = false;
+    touchExpandedGroup = undefined;
+    update();
+  }
+
   document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('pointerdown', onGlobalPointerDown, true);
+  document.addEventListener('pointermove', onGlobalPointerMove, true);
+  document.addEventListener('pointerup', onGlobalPointerEnd, true);
+  document.addEventListener('pointercancel', onGlobalPointerEnd, true);
   globalThis.addEventListener('resize', onResize);
+  globalThis.addEventListener('blur', onWindowBlur);
 
   return {
     sync(items, nextConfig) {
@@ -708,6 +808,7 @@ export function createToastDomRenderer(
         }
         if (node.generation !== item.generation) {
           // Shown again: the toast starts its lifetime over.
+          clearNodePresses(node);
           node.generation = item.generation;
           clearCloseTimer(node);
         }
@@ -732,7 +833,14 @@ export function createToastDomRenderer(
     destroy() {
       destroyed = true;
       document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onGlobalPointerDown, true);
+      document.removeEventListener('pointermove', onGlobalPointerMove, true);
+      document.removeEventListener('pointerup', onGlobalPointerEnd, true);
+      document.removeEventListener('pointercancel', onGlobalPointerEnd, true);
       globalThis.removeEventListener('resize', onResize);
+      globalThis.removeEventListener('blur', onWindowBlur);
+      presses.forEach((press, pointerId) => clearPress(pointerId, press));
+      hoveredGroups.clear();
       nodes.forEach((node) => {
         clearCloseTimer(node);
         if (node.unmountTimer !== undefined) {

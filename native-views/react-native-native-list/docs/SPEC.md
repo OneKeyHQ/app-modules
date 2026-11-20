@@ -116,6 +116,17 @@ Status: implemented in local source for the Select Address and Swap selectors;
 native device and broader Web runtime verification remain pending. These fields travel in snapshot/patch JSON
 and do not change the Nitro ABI.
 
+Snapshot and patch validation requires a boolean for `collapseEmptyTrailing`;
+a patch with `null` restores the default. Automatic height uses the same
+trailing geometry, font features and tracking as the rendered text.
+
+An `identity` row may set `collapseEmptyTrailing: true`: when it has no trailing
+accessories, iOS drops the (empty) trailing column and its 12-point gap so the
+text column reaches the row's trailing padding, as a React Native `ListItem`
+without children does. Omission keeps the legacy iOS reservation. Android and
+Web already give an empty trailing column no width or gap, so the flag does not
+change them.
+
 An `identity` row may opt into `subtitleLines: 0`, meaning the complete subtitle
 wraps at its measured text-column width without a line cap. Existing omitted,
 one-line and two-line behavior stays unchanged. An identity row with
@@ -193,6 +204,15 @@ names through the same DOM helper; their previous coverage does not expand.
 Image preserves raw path order, fill rules, fixed colors, opacity and viewBoxes.
 NativeList retains its layout, button bounds, actions and snapshot interfaces.
 
+The registries are aliases and native geometry, not a whitelist. iOS and Android
+already resolve any other name through image's `OneKeyNamedSVG` catalog. Web now
+does the same: a name missing from the Web registry is passed to
+`createNamedIcon` unchanged, so every host-catalog icon (for example
+`DeleteOutline`, `MinusCircleSolid`) renders as artwork on all three platforms.
+Only a name the host catalog also lacks keeps the legacy text glyph. The
+trailing `drag` accessory renders the `DragOutline` artwork on Web instead of
+`≡` when the host provides it.
+
 Focused SDK fixture acceptance covers native attached lifecycle/rebinding,
 legacy iOS asset comparisons, shared alpha semantics and real Web/Electron
 source/lib consumers. This is not full App, balance, transaction or signed
@@ -202,7 +222,8 @@ Identity trailing accessories stack vertically, except for the pairs every
 platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
 `valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
 `valuePair` + `chevron`, a `RefreshCcwOutline` icon without an action key +
-`chevron`, and `PencilOutline` + `DragOutline` icons. iOS decides this in
+`chevron`, and a `PencilOutline` icon followed by a `DragOutline` icon or a
+`drag` accessory. iOS decides this in
 `configureTrailingStack`; Android in `nativeListIdentityTrailingIsHorizontal`
 (JVM test `NativeListIdentityTrailingAxisTest`). The `valuePair` + menu-icon
 pair is the Swap token selector's balance column and row menu; stacking it
@@ -444,7 +465,13 @@ existing appearance.
 
 Identity leading visuals consume the existing `borderColor` as a one-point/dp
 solid bitmap border when supplied without `borderStyle: 'dashed'`; omission or
-a dashed style clears the solid border on every bind.
+a dashed style clears the solid border on every bind. An optional `borderWidth`
+(`0 < width <= 4` logical units, default 1) sets that solid border's width; a
+host hairline (`StyleSheet.hairlineWidth`) draws one physical pixel on iOS and
+Android (rounded up to at least one pixel) and a fractional CSS border on Web.
+Web insets the main image into the bordered frame's content box, as iOS and
+Android do, and a sized `fallbackIcon` keeps its requested size there instead
+of shrinking to the content box.
 The image is inset by that border width. An overlay may optionally set
 `fontWeight` to one of the existing text weight names
 (`regular | medium | semibold | bold`). This changes only overlay text;
@@ -553,6 +580,38 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### iOS cell requests during snapshot replacement
+
+Status: implemented, unreleased. On iOS 17.5 and 26.0, a focused UIKit fixture
+reproduced the assertion on version 6.7.0-62 and completed the same layout
+with the fix. Three focused UIKit tests passed on both runtimes, including
+fixed-footer action routing. Consuming-app acceptance of the fix remains
+pending.
+
+When a snapshot removes rows, UIKit may request cells from its outgoing
+snapshot while the new logical rows are already active. The iOS host MUST
+provide a valid reusable cell for such requests. Until UIKit completes the
+removal, the host retains only the removed row descriptors needed for pending
+snapshot applications. These descriptors are presentation-only and cannot
+emit actions, expose accessibility elements, or become selectable. Repeated
+updates must preserve the descriptors still needed by in-flight applications
+and must release them on completion or host disposal. A request with no
+available descriptor receives an inert empty cell. The accepted snapshot,
+patch validation, row identity, and structural-transition behavior retain
+their existing contracts.
+
+The action and interaction restrictions apply to the presenting collection
+row. Its top-level key determines whether its actions can be delivered,
+including actions whose payload comes from a child renderer. The fixed footer
+is a separate host and retains its normal interaction, even when it shares a
+key with a retiring row.
+
+Conformance scrolls an unmaterialized outgoing row into UIKit's viewport
+during removal and checks its renderer, inert state, and the binding of the
+first filtered row. It also covers fixed-footer actions with a shared key
+during a structural transition. A separate consuming-app check covers address
+input in the Send recipient picker.
+
 ### Android vertical-drag React touch cancellation
 
 Status: implemented; four real Android MotionEvent/JSTouchDispatcher regressions
@@ -592,6 +651,90 @@ and React Native's JSTouchDispatcher: vertical drag produces one touch-cancel
 and one native end, a tap produces touch-end, and cancellation/removal followed
 by reuse leaves the next tap functional. This proves native touch delivery, not
 execution of a JavaScript press handler or physical-device gesture feel.
+
+### Handle-only reorder activation
+
+`capabilities.reorderActivation` selects where a reorder may start. `row`
+(default, also when omitted) keeps the existing behavior: a long press anywhere
+on a reorderable row. `handle` restricts the start to the row's trailing `drag`
+accessory; a long press elsewhere on the row is an ordinary press or long press
+and never begins a reorder. Development and production reject any other value
+and retain the currently accepted snapshot.
+
+- **Gesture:** iOS and Android keep their reorder long-press duration (200 ms)
+  and movement tolerance. Web keeps its touch long press and mouse drag
+  threshold; only the pointer-down target is narrowed.
+- **Hit area:** the visible `drag` accessory. Android accepts its 24dp glyph
+  slot plus 7dp on each side (its actual 38dp button frame). Android maps
+  the screen press into the handle's local coordinates at press and at
+  recognition, accounting for transforms and scrolling between ancestors.
+  iOS also uses the button frame. Recognition remains tied to the row and handle that
+  received the initial touch, even if the finger moves across a row boundary.
+  A removed handle or a recycled binding cancels a pending start and keeps
+  accepted data updates. An iOS or Android selection echo that retains the row
+  binding and its handle preserves the pending press.
+- **Eligibility:** row reorder eligibility (`draggable`, a `drag` accessory,
+  `disabled`) is unchanged. A row without a `drag` accessory cannot start a
+  reorder in `handle` mode.
+- **Accessory:** a `drag` without an action swallows a short tap on iOS and
+  passes it to the row on Android and Web. In Web handle mode a `drag` with
+  an `actionKey` can start a reorder and still emits its action on a short
+  tap. A recognized reorder suppresses the click generated by that press,
+  including release after cancellation. Overlapping pointer sequences retain
+  their own suppression until a matching click or new press with that pointer
+  ID, native cancellation, or 500 ms after release. A click without a pointer ID
+  matches the most recent release at the same action or row and client position
+  (within one CSS pixel), using the input type when the browser supplies it.
+  For a press and release on different elements, the match uses their nearest
+  shared ancestor as the click target. Releases outside the list cannot replace
+  that match. A new short tap or
+  keyboard activation can still emit the action. Icons beside the handle keep
+  their own actions.
+  Callers can use `pressDisabled` to disable row opening.
+- **Web cursor:** in `handle` mode the row keeps the default cursor and the
+  handle shows `grab`.
+- **Handle appearance:** every platform tints the `DragOutline` glyph
+  `iconSubdued`, matching `ListItem.IconButton`; Web centers it in a 24-point
+  box so it lines up with neighbouring icon buttons instead of the text line.
+  iOS and Android draw the handle as a medium tertiary button (38-point frame,
+  glyph inset 7), like the source `IconButton`, so a `PencilOutline` + `drag`
+  pair keeps 24 points between glyph slots (Android gives the second frame a
+  17dp start margin after its m=-7); Web applies the same 24-point gap.
+- **Tertiary text gap:** when the first trailing accessory is a tertiary icon,
+  the text column ends 12 points before its glyph slot, as `ListItem` lays it
+  out. iOS absorbs the button's m=-7 on the text side (it clipped 9 points
+  early), Android adds the 12dp end margin the -7 had eaten (text ran into the
+  button), and Web already does this through CSS margins.
+- **Leading action geometry:** an identity `leadingAction` reproduces
+  `ListItem.IconButton` (medium tertiary: 6-point padding plus a 1-point
+  border, m=-7) on all three platforms, so its glyph sits on a 24-point slot at
+  the 12-point row padding and the leading visual starts at 48. iOS and Android
+  use a 36-point frame with a 6-point inset and 6-point following gap; Web
+  applies the tertiary icon frame and reports the inner glyph slot's window
+  rect, including any ancestor transform. Web icon buttons use an explicit
+  accessibility label where supplied and otherwise retain their fallback
+  glyph as a name even when host SVG artwork is present.
+
+- **Enclosing pans (iOS):** once a reorder has started, the list disables the
+  enabled `UIPanGestureRecognizer`s of its ancestors (for example a sheet's
+  dismiss pan or a pager) and restores them when the reorder finishes, is
+  cancelled by a structural update, or the list is torn down. Before the long
+  press is recognized those pans behave as before, so a quick pull still drags
+  the sheet. This applies to both activation modes. The NativeOverlay page
+  sheet combines temporary suppression with the current `dismissOnPanDown`
+  setting, including prop changes during the drag.
+
+Toggling `reorderActivation` or `reorderable` cancels pending and active
+pointer reorder without emitting a reorder event. An accepted full Web
+snapshot supersedes a provisional reorder; accepted row patches retain their
+content even if a gesture is cancelled. Web keyboard sorting remains available
+from the focused row if it has a rendered handle in `handle` mode. The
+capability travels in snapshot JSON; the Nitro ABI is unchanged.
+
+Leading visual `borderWidth` supports values in (0, 4]. Development rejects
+out-of-range widths; production discards the invalid width in full snapshots
+and patches so the border uses its existing default of 1. Production also
+discards invalid tracking and digit-spacing overrides so template defaults apply.
 
 ### Android reorder cancellation
 

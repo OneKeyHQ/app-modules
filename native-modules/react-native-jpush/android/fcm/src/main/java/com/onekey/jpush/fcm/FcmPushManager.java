@@ -44,7 +44,6 @@ public final class FcmPushManager extends JThirdPlatFormInterface {
         result.putString(KEY_TOKEN, token);
         result.putByte(KEY_PLATFORM, (byte) 8);
         doAction(context, ACTION_REGISTER_TOKEN, result);
-        JLogger.i("FCM token submitted to JCore");
     }
 
     @Override

@@ -255,10 +255,12 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       v.ellipsize = null
       v.setLineSpacing(0f, 1f)
       v.letterSpacing = 0f
+      v.fontFeatureSettings = null
     }
     trailingIcons.forEach {
       it.visibility = GONE
       it.setOnClickListener(null)
+      it.setTag(R.id.onekey_native_list_reorder_handle, null)
       it.background = null
       it.useSourceScale = selectorUsesSourceScale
       it.glyphSizeDp = null
@@ -441,13 +443,20 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
             theme,
           )
         "menu" -> showTrailingMenu(textIndex++, accessory.optString("actionKey"))
-        "drag" ->
+        "drag" -> {
+          val handleIndex = textIndex++
           showTrailingIcon(
-            textIndex++,
+            handleIndex,
             item,
-            JSONObject(accessory.toString()).apply { put("name", "DragOutline") },
+            // ListItem draws the handle as a medium tertiary IconButton.
+            JSONObject(accessory.toString()).apply {
+              put("name", "DragOutline")
+              put("buttonStyle", "tertiary")
+            },
             theme,
           )
+          trailingIcons.getOrNull(handleIndex)?.setTag(R.id.onekey_native_list_reorder_handle, true)
+        }
         "icon" -> showTrailingIcon(textIndex++, item, accessory, theme)
         "spinner" -> spinner.visibility = VISIBLE
         "progress" ->
@@ -719,9 +728,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     icon.contentDescription = data.optString("accessibilityLabel").takeIf { it.isNotEmpty() }
     if (data.optString("buttonStyle") == "tertiary") {
       icon.glyphSizeDp = 24
+      // A rename + drag pair sits in ListItem's <XStack gap="$6">: 24dp between
+      // the buttons' 24dp layout slots, after the second frame's m=-7.
+      val pairGap =
+        orientation == HORIZONTAL && index > 0 && data.optString("name") == "DragOutline"
       icon.layoutParams = LayoutParams(dp(38), dp(38)).apply {
         gravity = Gravity.CENTER_VERTICAL
-        marginStart = -dp(7)
+        marginStart = if (pairGap) dp(24) - dp(7) else -dp(7)
         marginEnd = -dp(7)
       }
       icon.background = StateListDrawable().apply {
@@ -895,6 +908,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    applyNativeListTextSpacing(view, style, view.fontFeatureSettings)
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or

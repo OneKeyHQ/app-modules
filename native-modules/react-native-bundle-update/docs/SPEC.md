@@ -285,6 +285,19 @@ extraction; Android counts entries during extraction. The extracted-path
 constraints remain in force. Failure rejects the Promise; neither platform
 falls back to a caller-provided path.
 
+## Native bundle protocol
+
+For split-runtime OTA bundles, `metadata.json` declares
+`requiresBackgroundBundle` and `backgroundProtocolVersion`. The installer
+requires the metadata version to match the host's supported protocol before
+activating the main and background bundle pair, including in developer mode.
+Startup rechecks the protocol before returning the active downloaded bundle.
+
+Protocol 2 requires the two-argument Nitro SegmentSlider `setValue` ABI.
+Protocol 1 hosts reject protocol 2 OTA bundles. Protocol 2 hosts reject
+protocol 1 OTA bundles, whose older JS can call the one-argument method.
+The app-monorepo native OTA packager must emit the same protocol as the host.
+
 ## OTA storage-schema guard
 
 Status: implemented on iOS and Android. The policy unit suites

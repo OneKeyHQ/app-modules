@@ -947,6 +947,10 @@ P2 sheet notes:
 - `keepContentMounted` renders content while closed so callers can measure it
   before opening (Popover waits for header / scroll measurements).
 - `pan` dismissals cannot be vetoed; `onRequestDismiss('pan')` is informative.
+- An active iOS NativeList reorder temporarily suppresses the enclosing page
+  sheet's dismiss pan. The sheet owns the latest `dismissOnPanDown` setting
+  throughout the suppression. Releasing the reorder restores eligibility
+  only when the current setting allows it.
 
 P4a toast notes:
 
@@ -1350,6 +1354,9 @@ above them. Web has no bridge: the DOM renderer subscribes to the store.
 Named icons come from `@onekeyfe/react-native-image`'s native registry,
 reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
 package takes no dependency on it; without the registry an icon stays blank.
+On Android the lookup is `OneKeyNamedSVG.INSTANCE` plus its `request` (8
+arguments) and `cancel` methods; the image package's consumer R8 rules keep
+those names, since release app builds minify and would otherwise rename them.
 Web draws an SVG `<use>` of the `href` the caller supplies.
 
 ### Platform behaviour
@@ -1359,14 +1366,21 @@ Each platform keeps the look and motion of the renderer it replaced.
 | Behaviour | Web | iOS / Android |
 | --- | --- | --- |
 | Position | Per toast or toaster; default bottom-right | Always top-centre |
-| Stack | Newest in front, 3 visible, collapsed until hovered | Oldest at the top, newest under it, 8 pt apart, all visible |
+| Stack | Newest in front, 3 visible. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Oldest at the top, newest under it, 8 pt apart, all visible |
 | Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
 | Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
 | `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
-| Timer pause | While the stack is hovered or pressed; resuming restarts the full lifetime | While a card is pressed; resuming continues the remaining time |
-| Swipe | Away from the anchored edge; 20 px or 0.11 px/ms | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
+| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed; resuming continues the remaining time |
+| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
 | Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
+
+On Web, the card captures the pointer after recognizing a swipe. Ordinary
+clicks and taps activate the pressable row, buttons, or links through their
+own handlers. Each press ends independently on release or cancellation.
+Card removal, reuse, or repositioning clears its presses, and window blur
+clears all presses and expansion. A touch drag that did not dismiss the card
+ends the press without creating hover or tap expansion.
 
 Divergences from the renderers replaced:
 
@@ -1384,6 +1398,11 @@ Divergences from the renderers replaced:
   renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
   dark, wide light) matched the previous renderer's card boxes, text line
   rects, icon and button boxes and computed styles within 0.5 px.
+- Web pointer regression: `tests/browser/overlayToast.test.cjs` exercises
+  browser-generated mouse clicks, touch taps, mixed input, and swipes in
+  Chromium. Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
+  Make `esbuild` and `playwright-core` available via `NODE_PATH` or the local
+  install, and set `CHROMIUM_EXECUTABLE_PATH` if using a system Chrome.
 - iOS: built into app-monorepo and run on an iPhone 17 Pro simulator (iOS
   26.0) beside the previous renderer. In 13 scenarios the card frames and
   every text line box matched to the pixel; the only differing pixels were
