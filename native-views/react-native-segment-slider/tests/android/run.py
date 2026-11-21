@@ -43,8 +43,9 @@ for name in ["defaultValue", "min", "max", "segments", "sliderHeight"]:
     base += f"abstract var {name}: Double\n"
 base += "abstract var hapticStep: Double\n"
 base += "abstract var sliderAccessibilityLabel: String\n"
-for name in ["disabled", "showBubble", "centerOrigin", "snapTapToSegment", "hapticFeedbackEnabled"]:
+for name in ["disabled", "showBubble", "centerOrigin", "snapTapToSegment"]:
     base += f"abstract var {name}: Boolean\n"
+base += "open var hapticFeedbackEnabled: Boolean = true\n"
 for name in ["fillColor", "trackColor", "thumbColor", "thumbBorderColor", "markActiveColor",
              "markInactiveColor", "markBorderColor", "bubbleColor", "bubbleTextColor"]:
     base += f"abstract var {name}: String\n"
