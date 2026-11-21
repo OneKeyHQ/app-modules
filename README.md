@@ -165,8 +165,13 @@ before implementing it, and keep the spec and code in the same change.
 
 ### Re-running native PR checks
 
-If a `native-tests` job fails and you want to retry the same PR revision,
-choose **Re-run failed jobs** on that run, or run:
+Before retrying a failed `native-tests` run, confirm its head SHA matches
+the PR's current head SHA. If the PR has a newer commit, open that commit's
+run from the PR's **Checks** tab. Retrying an older run can cancel a
+newer run for the same PR.
+
+To retry failed jobs on the current revision, choose **Re-run failed jobs**
+on that run, or run:
 
 ```sh
 gh run rerun RUN_ID --failed --repo OneKeyHQ/app-modules
