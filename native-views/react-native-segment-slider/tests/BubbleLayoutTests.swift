@@ -243,10 +243,11 @@ enum BubbleLayoutTests {
 
     // Per-step haptics: one tick per value bucket during a drag; entering a
     // mark fires the mark tick instead of the step tick; 0 keeps mark-only.
-    func hapticTicks(step: Double) -> [String] {
+    func hapticTicks(step: Double, enabled: Bool = true) -> [String] {
       var ticks: [String] = []
       let sample = makeSlider(width: 320, value: 0)
       sample.hapticStep = step
+      sample.hapticFeedbackEnabled = enabled
       sample.hapticTickRecorder = { ticks.append($0) }
       let control = sliderControl(for: sample)
       func x(_ v: Double) -> CGFloat { 12 + CGFloat(v / 100) * 296 }
@@ -260,6 +261,8 @@ enum BubbleLayoutTests {
           "hapticStep 1 ticks: \(stepTicks)")
     let markTicks = hapticTicks(step: 0)
     check(markTicks == ["mark", "mark"], "hapticStep 0 ticks: \(markTicks)")
+    let silentTicks = hapticTicks(step: 1, enabled: false)
+    check(silentTicks.isEmpty, "hapticFeedbackEnabled false ticked: \(silentTicks)")
 
     // A tap that never moves fires no step tick (20% is away from any mark).
     var tapTicks: [String] = []

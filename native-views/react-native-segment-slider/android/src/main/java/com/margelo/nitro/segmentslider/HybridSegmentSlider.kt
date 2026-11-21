@@ -315,6 +315,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) { field = v }
 
+  // Master haptic switch; no visual change.
+  override var hapticFeedbackEnabled: Boolean = true
+    get() = field
+    set(v) { field = v }
+
   /** Test seam (not a Nitro prop): receives "mark" or "step" for each tick. */
   internal var hapticTickRecorder: ((String) -> Unit)? = null
 
@@ -489,8 +494,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     if (best != hoverMarkIndex) {
       hoverMarkIndex = best
       if (best != -1) {
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-        hapticTickRecorder?.invoke("mark")
+        if (hapticFeedbackEnabled) {
+          view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+          hapticTickRecorder?.invoke("mark")
+        }
         markTickedThisCommit = true
       }
     }
@@ -531,7 +538,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     val bucket = hapticBucket(v)
     if (bucket == lastHapticBucket) return
     lastHapticBucket = bucket
-    if (markTickedThisCommit) return
+    if (markTickedThisCommit || !hapticFeedbackEnabled) return
     val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
       HapticFeedbackConstants.TEXT_HANDLE_MOVE
     } else {

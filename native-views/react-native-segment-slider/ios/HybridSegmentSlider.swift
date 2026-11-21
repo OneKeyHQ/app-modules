@@ -113,6 +113,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var snapTapToSegment: Bool = false
   // Gates the per-step tick only; no visual change.
   var hapticStep: Double = 0
+  // Master haptic switch; no visual change.
+  var hapticFeedbackEnabled: Bool = true
   /// Test seam (not a Nitro prop): receives "mark" or "step" for each tick.
   var hapticTickRecorder: ((String) -> Void)?
 
@@ -388,9 +390,11 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       setHalo(visible: false, index: 0)
     } else {
       setHalo(visible: true, index: best)
-      haptic.impactOccurred(intensity: 0.6)
-      haptic.prepare()
-      hapticTickRecorder?("mark")
+      if hapticFeedbackEnabled {
+        haptic.impactOccurred(intensity: 0.6)
+        haptic.prepare()
+        hapticTickRecorder?("mark")
+      }
       markTickedThisCommit = true
     }
   }
@@ -424,9 +428,9 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     touchStartX = x
     lastTouchX = x
     touchStartTime = CACurrentMediaTime()
-    haptic.prepare()
+    if hapticFeedbackEnabled { haptic.prepare() }
     stepTicksArmed = false
-    if hapticStep > 0 { stepHaptic.prepare() }
+    if hapticFeedbackEnabled && hapticStep > 0 { stepHaptic.prepare() }
     onSlideStart?()
     animateThumbScale(activeThumbScale)
     setBubbleVisible(true)
@@ -551,7 +555,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     let bucket = hapticBucket(v)
     guard bucket != lastHapticBucket else { return }
     lastHapticBucket = bucket
-    guard !markTickedThisCommit else { return }
+    guard !markTickedThisCommit, hapticFeedbackEnabled else { return }
     stepHaptic.selectionChanged()
     stepHaptic.prepare()
     hapticTickRecorder?("step")
