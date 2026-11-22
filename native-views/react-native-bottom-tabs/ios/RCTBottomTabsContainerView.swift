@@ -20,6 +20,35 @@ import React
   )
 }
 
+/// Root view of one tab's view controller. It sizes the hosted React scene to
+/// its own bounds on every layout pass instead of autoresizing it.
+/// Autoresizing applies the change in bounds: a tab view controller's view
+/// starts at screen size, Fabric sizes the scene to the narrower container
+/// (an iPad split pane), and the first resize to that pane width then
+/// subtracted the difference again, leaving the scene 0 points wide. Its
+/// content still drew but no longer received touches.
+final class BottomTabsPageView: UIView {
+  weak var hostedView: UIView?
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if let hostedView, hostedView.superview === self, hostedView.frame != bounds {
+      hostedView.frame = bounds
+    }
+  }
+}
+
+final class BottomTabsPageViewController: UIViewController {
+  var pageView: BottomTabsPageView { view as! BottomTabsPageView }
+
+  override func loadView() {
+    let pageView = BottomTabsPageView()
+    pageView.backgroundColor = .clear
+    pageView.clipsToBounds = true
+    view = pageView
+  }
+}
+
 /// Bridges to OneKeyNamedSVG.shared in OneKeyImage without importing the OneKeyImage
 /// Swift module (which transitively imports NitroModules C++ headers).
 private enum OneKeyNamedSVGLoader {
@@ -138,7 +167,7 @@ class RCTBottomTabsContainerView: UIView {
   private var lastPressedTabKey: String?
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
-  private var cachedViewControllers: [String: UIViewController] = [:]
+  private var cachedViewControllers: [String: BottomTabsPageViewController] = [:]
   private var pendingIconUpdates = Set<Int>()
   private var isIconUpdateScheduled = false
   // Vertical tab bar (iPhone Duo side strip): last reported placement and the
@@ -578,13 +607,11 @@ class RCTBottomTabsContainerView: UIView {
       usedKeys.insert(tabData.key)
 
       // Reuse cached VC or create a new one
-      let vc: UIViewController
+      let vc: BottomTabsPageViewController
       if let cached = cachedViewControllers[tabData.key] {
         vc = cached
       } else {
-        vc = UIViewController()
-        vc.view.backgroundColor = .clear
-        vc.view.clipsToBounds = true
+        vc = BottomTabsPageViewController()
         cachedViewControllers[tabData.key] = vc
       }
 
@@ -594,12 +621,15 @@ class RCTBottomTabsContainerView: UIView {
         if childView.superview !== vc.view {
           childView.removeFromSuperview()
           vc.view.addSubview(childView)
-          // Use autoresizingMask instead of Auto Layout constraints — Fabric sets
-          // frames directly and constraints conflict with that on subsequent mounts.
+          // Neither Auto Layout constraints (they conflict with the frames
+          // Fabric sets on later mounts) nor autoresizing (it applies bounds
+          // deltas to a frame Fabric already set): BottomTabsPageView sizes
+          // the scene to its bounds on every layout pass.
           childView.translatesAutoresizingMaskIntoConstraints = true
-          childView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          childView.autoresizingMask = []
           childView.frame = vc.view.bounds
         }
+        vc.pageView.hostedView = childView
       }
 
       // Configure tab bar item

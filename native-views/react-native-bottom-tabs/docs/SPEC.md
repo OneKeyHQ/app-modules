@@ -548,6 +548,30 @@ placement and can draw one round accessory button above the vertical bar.
   layout, tab rebuilds, tab bar hiding, icon loads, and changes to the traits
   affecting `verticalBarEdge`.
 
+## iOS tab scene sizing
+
+Each tab's React scene is hosted in the root view of that tab's
+`UIViewController`. The host view sets the scene's frame to its own bounds on
+every layout pass. The scene has no autoresizing mask and no Auto Layout
+constraints.
+
+- Autoresizing is not used because it applies the change in host bounds to the
+  scene's current frame. A tab view controller's view starts at screen size and
+  Fabric sizes the scene to the container. When the container is narrower than
+  the screen (an iPad split pane), the first resize to the container width
+  subtracted that difference from a frame Fabric had already set. The scene
+  became 0 points wide: its content still drew outside the scene's bounds, but
+  UIKit hit-testing skipped it, so the tab ignored every touch and scroll.
+- Fabric may also set the scene frame. Both sides use the container size
+  (`onNativeLayout` feeds the scene style), so they agree; the host view wins
+  while JS has not received a new size yet, for example during rotation.
+- A scene that is unmounted and reused by Fabric elsewhere keeps no mask, so it
+  is never resized by its next superview.
+
+Acceptance: on an iPad in landscape split view, first-open every tab in each
+pane after another tab, and after rotating. Each tab scene's frame equals its
+view controller's view bounds, and the tab responds to taps and scrolls.
+
 ## Threading and ownership
 
 All gesture handling, animations, and timers run on the platform UI thread in
