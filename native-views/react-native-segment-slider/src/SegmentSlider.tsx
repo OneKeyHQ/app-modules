@@ -62,6 +62,7 @@ function SegmentSliderComponent({
   centerOrigin = false,
   snapTapToSegment = false,
   hapticStep = 0,
+  hapticFeedbackEnabled = true,
   onSlideStart,
   onSlideComplete,
   'aria-label': ariaLabel,
@@ -172,6 +173,7 @@ function SegmentSliderComponent({
       centerOrigin={centerOrigin}
       snapTapToSegment={snapTapToSegment}
       hapticStep={hapticStep}
+      hapticFeedbackEnabled={hapticFeedbackEnabled}
       fillColor={fillColor}
       trackColor={trackColor}
       thumbColor={thumbColor}

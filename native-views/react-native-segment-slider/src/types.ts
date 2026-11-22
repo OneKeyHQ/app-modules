@@ -72,6 +72,11 @@ export interface ISegmentSliderProps extends Partial<ISegmentSliderColors> {
    */
   'hapticStep'?: number;
   /**
+   * iOS / Android: false turns off every haptic tick (mark and step), e.g. to
+   * honor an app-level haptic setting. Default true. Web has no haptics.
+   */
+  'hapticFeedbackEnabled'?: boolean;
+  /**
    * Web only: places marks on the integer values the slider emits, so keyboard
    * steps and marks agree when the range does not divide evenly. Default false.
    */

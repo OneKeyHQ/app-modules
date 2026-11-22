@@ -59,6 +59,11 @@ export interface SegmentSliderProps extends HybridViewProps {
    * both apply. 0 = mark-only ticks.
    */
   hapticStep: number;
+  /**
+   * Master switch for every haptic tick (mark and step). False silences the
+   * slider entirely, e.g. when the app-level haptic setting is off.
+   */
+  hapticFeedbackEnabled: boolean;
 
   // --- Resolved theme colors (hex `#rgb`/`#rrggbb`/`#rrggbbaa` or rgba()) ---
   /** Active fill bar color (Tamagui `bgPrimary`). */

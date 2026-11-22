@@ -95,6 +95,12 @@ it('passes hapticStep and colors through to the native view', () => {
   expect(viewProps.hapticStep).toBe(1);
   expect(viewProps.fillColor).toBe('#00ff00');
   expect(viewProps.trackColor).toBe('#E3E3E3');
+  expect(viewProps.hapticFeedbackEnabled).toBe(true);
+});
+
+it('passes hapticFeedbackEnabled false through to the native view', () => {
+  setup({ hapticFeedbackEnabled: false });
+  expect(viewProps.hapticFeedbackEnabled).toBe(false);
 });
 
 it('maps the public ARIA label to the native host and updates it with the caller', () => {
