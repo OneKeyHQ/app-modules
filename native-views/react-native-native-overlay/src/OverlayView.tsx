@@ -1,0 +1,323 @@
+import { useCallback, useMemo, useRef, useState } from 'react';
+
+import {
+  Platform,
+  PlatformColor,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+
+import NativeOverlay from './NativeOverlayNativeComponent';
+import { OverlayLevelProvider } from './OverlayLevelContext';
+import { isBlockingLevel } from './OverlayLevels';
+import { resolveContentSize } from './contentSize';
+import { resolveSheetWidth } from './sheetWidth';
+import { useOverlayController } from './useOverlayController';
+
+import type {
+  IOverlayRequestDismissReason,
+  IOverlayViewProps,
+} from './OverlayViewTypes';
+import type { ComponentRef } from 'react';
+import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
+
+const DEFAULT_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.4)';
+const DEFAULT_SHEET_MAX_RATIO = 0.92;
+const DEFAULT_SHEET_CORNER_RADIUS = 24;
+// Taller than any bottom safe area; the sheet clips the rest.
+const SHEET_SURFACE_TAIL_HEIGHT = 120;
+// The tail is a second drawn view under the content surface. Both edges sit on
+// the fitted sheet's fractional height, so each edge antialiases against the
+// transparent platform sheet and their coverages do not add up to one; the
+// seam shows as a hairline once the frame is scaled (Simulator window,
+// screenshots, screen recordings). Pull the tail up behind the opaque surface
+// (it renders first) so the boundary always lands on a painted pixel.
+const SHEET_SURFACE_TAIL_OVERLAP = 2;
+
+const REQUEST_REASONS: Record<string, IOverlayRequestDismissReason> = {
+  back: 'back',
+  backdrop: 'backdrop',
+  pan: 'pan',
+};
+
+const styles = StyleSheet.create({
+  // The host view never draws: native moves its child into the level host
+  // and clips it (zero width) while hidden. The height stays auto on
+  // purpose; a fixed 0 makes Yoga measure a fitted sheet's content at most
+  // 0 tall, so the sheet would never learn its height.
+  host: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 0,
+  },
+  sheetMarginLeft: { position: 'absolute', top: 0, bottom: 0, left: 0 },
+  sheetMarginRight: { position: 'absolute', top: 0, bottom: 0, right: 0 },
+  sheetSurface: { borderCurve: 'continuous', overflow: 'hidden', flexGrow: 1 },
+  // The platform sheet extends below the content (home indicator area); the
+  // drawn surface continues into it so no backdrop shows under the content.
+  // It starts slightly above the surface bottom so the fractional boundary
+  // between the two views can never leave an unpainted row.
+  sheetSurfaceTail: {
+    position: 'absolute',
+    top: '100%',
+    height: SHEET_SURFACE_TAIL_HEIGHT,
+    marginTop: -SHEET_SURFACE_TAIL_OVERLAP,
+  },
+});
+
+export function OverlayView(props: IOverlayViewProps) {
+  const {
+    level = 'modal',
+    presentation = 'center',
+    backdrop,
+    blocking,
+    dismissOnBackPress,
+    sheet,
+    keepContentMounted = false,
+    statusBarStyle,
+    children,
+    testID,
+    windowOffsetRequest,
+    onWindowOffset,
+    contentSize,
+  } = props;
+  // A plain sibling at the host's spot: its JS-measured origin shares the
+  // modal-relative space of the caller's measurements, while native reports
+  // the true one (the host's own shadow node reports the content origin).
+  const offsetProbeRef = useRef<ComponentRef<typeof View>>(null);
+  const onHostWindowOrigin = useCallback(
+    (event: NativeSyntheticEvent<{ x: number; y: number }>) => {
+      const { x: nativeX, y: nativeY } = event.nativeEvent;
+      offsetProbeRef.current?.measureInWindow((x, y) => {
+        onWindowOffset?.({ x: nativeX - x, y: nativeY - y });
+      });
+    },
+    [onWindowOffset]
+  );
+  const isSheet = presentation === 'sheet';
+  const controller = useOverlayController(props);
+  const { width, height } = useWindowDimensions();
+  const {
+    entry,
+    mounted,
+    presented,
+    ownsStatusBar,
+    scope,
+    hostKey,
+    ownerKey,
+    animation,
+    onHostPresented,
+    onHostDismissed,
+    onHostRequestDismiss,
+  } = controller;
+
+  const [measuredSheetHeight, setMeasuredSheetHeight] = useState(0);
+  // iOS sizes a sheet itself (narrower than the window on wide windows), so
+  // the content follows the width native reports; Android sheets span the
+  // window and never report.
+  const [reportedSheetWidth, setReportedSheetWidth] = useState<number>();
+  const { containerWidth: sheetContainerWidth, inset: sheetInset } =
+    resolveSheetWidth({
+      windowWidth: width,
+      reportedWidth: reportedSheetWidth,
+      maxWidth: sheet?.maxWidth,
+    });
+  // `maxWidth` turns on the drawn surface even while it spans the whole sheet,
+  // so a width change never swaps who paints the background.
+  const hasSheetSurface = isSheet && sheet?.maxWidth !== undefined;
+  const sheetSurfaceBackgroundColor =
+    sheet?.backgroundColor ??
+    PlatformColor(
+      Platform.OS === 'ios'
+        ? 'systemBackground'
+        : '?android:attr/colorBackground'
+    );
+  const dismissOnBackdropPress = backdrop ? !!backdrop.dismissOnPress : false;
+  const onSheetMarginPress = useCallback(() => {
+    // The margins beside a max-width surface stand in for the backdrop.
+    if (dismissOnBackdropPress) onHostRequestDismiss('backdrop');
+  }, [dismissOnBackdropPress, onHostRequestDismiss]);
+  const onSheetLayoutReport = useCallback(
+    (event: NativeSyntheticEvent<{ width: number }>) => {
+      setReportedSheetWidth(event.nativeEvent.width);
+    },
+    []
+  );
+  const maxSheetHeight = sheet?.maxHeight ?? height * DEFAULT_SHEET_MAX_RATIO;
+  const sheetHeight = Math.min(
+    sheet?.height ?? measuredSheetHeight,
+    maxSheetHeight
+  );
+  const onSheetLayout = useCallback((event: LayoutChangeEvent) => {
+    setMeasuredSheetHeight(event.nativeEvent.layout.height);
+  }, []);
+
+  const animationConfig = useMemo(() => JSON.stringify(animation), [animation]);
+  const isBlocking = blocking ?? isBlockingLevel(level);
+
+  const onDismissed = useCallback(() => onHostDismissed(), [onHostDismissed]);
+  const onRequestDismiss = useCallback(
+    (event: NativeSyntheticEvent<{ reason: string }>) => {
+      onHostRequestDismiss(REQUEST_REASONS[event.nativeEvent.reason] ?? 'back');
+    },
+    [onHostRequestDismiss]
+  );
+
+  if (!keepContentMounted && (!mounted || !entry)) {
+    return null;
+  }
+
+  // The app drives the status bar through React Native's StatusBar stack
+  // (iOS runs without view-controller-based appearance), so the owning
+  // overlay pushes onto the same stack.
+  const statusBar =
+    ownsStatusBar && statusBarStyle ? (
+      <StatusBar
+        animated
+        barStyle={statusBarStyle === 'light' ? 'light-content' : 'dark-content'}
+      />
+    ) : null;
+
+  return (
+    <>
+      {statusBar}
+      {onWindowOffset ? (
+        <View
+          ref={offsetProbeRef}
+          collapsable={false}
+          pointerEvents="none"
+          style={styles.host}
+        />
+      ) : null}
+      <NativeOverlay
+        style={styles.host}
+        // A fitted sheet presents once its content height is known.
+        visible={presented && (!isSheet || sheetHeight > 0)}
+        level={level}
+        scope={scope}
+        hostKey={hostKey ?? ''}
+        ownerKey={ownerKey ?? ''}
+        presentation={presentation}
+        stackOrder={entry?.seq ?? 0}
+        blocking={isBlocking}
+        dismissOnBackPress={dismissOnBackPress ?? isBlocking}
+        dismissOnBackdropPress={backdrop ? !!backdrop.dismissOnPress : false}
+        backdropColor={
+          backdrop ? backdrop.color ?? DEFAULT_BACKDROP_COLOR : undefined
+        }
+        sheetHeight={isSheet ? sheetHeight : 0}
+        sheetCornerRadius={sheet?.cornerRadius}
+        showHandle={sheet?.showHandle}
+        // A max-width sheet draws its own surface, so the platform sheet
+        // stays transparent beside it.
+        sheetBackgroundColor={
+          hasSheetSurface ? 'transparent' : sheet?.backgroundColor
+        }
+        // Android hosts the sheet inside the activity content view, so the JS
+        // safe-area tail below the content root is not composited there. Have
+        // native paint the padded bottom inset with the drawn surface color.
+        sheetBottomInsetColor={
+          hasSheetSurface ? sheetSurfaceBackgroundColor : undefined
+        }
+        sheetBottomInsetHorizontal={hasSheetSurface ? sheetInset : 0}
+        dismissOnPanDown={sheet?.dismissOnPanDown ?? true}
+        animationConfig={animationConfig}
+        onPresented={onHostPresented}
+        onDismissed={onDismissed}
+        onRequestDismiss={onRequestDismiss}
+        onSheetLayout={isSheet ? onSheetLayoutReport : undefined}
+        hostOriginRequest={onWindowOffset ? windowOffsetRequest ?? 0 : 0}
+        onHostWindowOrigin={onWindowOffset ? onHostWindowOrigin : undefined}
+        testID={testID}
+      >
+        {isSheet ? (
+          <View
+            collapsable={false}
+            onLayout={onSheetLayout}
+            style={{
+              width: sheetContainerWidth,
+              paddingHorizontal: sheetInset,
+              height: sheet?.height,
+              maxHeight: maxSheetHeight,
+              // The host is 0x0; without this Yoga shrinks the content to 0 and
+              // a fitted sheet never learns its height.
+              flexShrink: 0,
+            }}
+          >
+            {hasSheetSurface ? (
+              <>
+                {sheetInset > 0 ? (
+                  <>
+                    <Pressable
+                      accessible={false}
+                      importantForAccessibility="no-hide-descendants"
+                      onPress={onSheetMarginPress}
+                      style={[styles.sheetMarginLeft, { width: sheetInset }]}
+                    />
+                    <Pressable
+                      accessible={false}
+                      importantForAccessibility="no-hide-descendants"
+                      onPress={onSheetMarginPress}
+                      style={[styles.sheetMarginRight, { width: sheetInset }]}
+                    />
+                  </>
+                ) : null}
+                <View
+                  style={[
+                    styles.sheetSurfaceTail,
+                    {
+                      left: sheetInset,
+                      right: sheetInset,
+                      backgroundColor: sheetSurfaceBackgroundColor,
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.sheetSurface,
+                    {
+                      backgroundColor: sheetSurfaceBackgroundColor,
+                      borderTopLeftRadius:
+                        sheet?.cornerRadius ?? DEFAULT_SHEET_CORNER_RADIUS,
+                      borderTopRightRadius:
+                        sheet?.cornerRadius ?? DEFAULT_SHEET_CORNER_RADIUS,
+                    },
+                  ]}
+                >
+                  <OverlayLevelProvider value={level}>
+                    {children}
+                  </OverlayLevelProvider>
+                </View>
+              </>
+            ) : (
+              <OverlayLevelProvider value={level}>
+                {children}
+              </OverlayLevelProvider>
+            )}
+          </View>
+        ) : (
+          <View
+            collapsable={false}
+            pointerEvents="box-none"
+            style={{
+              ...resolveContentSize({
+                windowWidth: width,
+                windowHeight: height,
+                contentSize,
+              }),
+              flexShrink: 0,
+            }}
+          >
+            <OverlayLevelProvider value={level}>
+              {children}
+            </OverlayLevelProvider>
+          </View>
+        )}
+      </NativeOverlay>
+    </>
+  );
+}

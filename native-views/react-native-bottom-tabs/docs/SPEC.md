@@ -1,0 +1,589 @@
+# Native Tab View behavioral contract
+
+## Shared image SVG decoder — Implemented
+
+BottomTabs depends on the matching image SDK peer/native module and delegates
+SVG byte decoding to its native facade. No new third-party dependency or SVG
+renderer is introduced. JavaScript props, source resolution and existing tab
+behavior remain unchanged. There is no independent Web SVG reader to migrate.
+
+iOS keeps the existing SvgDecoder RCTImageDataDecoder registration (which is
+available to the React image loader beyond tabs), source detection, failure
+delivery and its no-op cancellation block; only data-to-image implementation
+moves out of the local CoreSVG fork. Existing URI loaders, selected/unselected
+and side-accessory paths, SF Symbols, resize/tint and source ordering remain.
+Raw decoding may retain intrinsic/vector dimensions where the old decoder
+ignored target dimensions; it does not use named-icon workers or wait for a
+main-thread callback.
+
+Android retains Coil fetching, cache and ordinary image decoders. Its SVG factory
+uses image's parse/render facility with the existing requested dimensions,
+Scale.FILL and Precision.EXACT semantics. The independent coil-svg dependency is
+removed once that route is replaced; no URI loading is moved to Glide. Decoder
+execution remains in Coil's existing worker/cancellation/error lifecycle, with
+no additional pool, cache or main-queue hop. Mutable drawable bounds are owned
+per request, while shared raster data remains immutable.
+
+Focused SDK fixtures cover raw SVG and ordinary images through actual RCTImageLoader
+and Coil/BottomTabs consumers, source sizing/non-square art and iOS SF Symbols.
+The current iOS 18.6 fixture does not accept iOS 27.1 side placement; complete
+App styling, platform navigation and signed release acceptance remain separate. Existing source callback races are
+not silently repaired as part of decoding unification. Builds and runtime
+evidence are reported separately. This implementation does not change global image
+loader registration or default-device configuration.
+
+## Tab icon source resolution
+
+String names matching `[A-Z][A-Za-z0-9]*` and explicit `{ iconName }` sources
+resolve to `onekey-icon://` resources. An already prefixed string keeps that
+scheme. Ordinary URI strings (including HTTP(S), file, data and other schemes,
+absolute/relative paths and protocol-relative URLs) use the existing React Native
+image-source path with `{ uri }`; they MUST NOT receive the named-icon prefix.
+Whitespace-only strings resolve to an empty source. Numeric assets, URI objects
+and SF Symbols retain their existing resolution. The shared resolver is used for
+focused/unfocused icons and the iOS side-accessory icon.
+
+The default `getIcon` resolver has a stable identity. With the same routes array
+and resolver, both iOS and Android retain normal (`icons`) and selected
+(`selectedIcons`) icon-source arrays across tab selection and unrelated renders,
+and `items` does not recompute solely because `selectedPage` changes. Replacing
+the routes array or supplying a new resolver recomputes both arrays. On Android,
+`BottomTabsView` pre-loads both `icons` and `selectedIcons` into `drawableCache`
+and swaps each `MenuItem`'s icon synchronously on the UI thread when selection
+changes.
+
+## iOS icon completion updates
+
+When normal or selected artwork arrives, update the existing `UITabBarItem`
+images without rebuilding controllers or replacing items. Coalesce completed
+indices into one main-queue update; use the current source/token ownership and
+current tints, including SF Symbol and normal-image fallbacks. Item identity,
+selection, labels, badges and accessibility identifiers remain intact. Structural
+item changes retain the existing rebuild path. Android is unchanged.
+
+Consumer simulator evidence covers cold launch, tab switching and light/dark
+icon tint. Physical-device and rapid source/reorder acceptance remain pending.
+
+## Native left drawer
+
+Status: implemented in module source. Package TypeScript, iOS/Android Fabric
+code generation, iOS Objective-C++ Fabric bridge compilation against RN 0.86.2,
+13 React wrapper checks, twelve Android API 36 native tests and four real-Fabric
+iOS review cases passed (shared-header/body arbitration and bar-height switches).
+The static Home example also passed a focused TypeScript check.
+Detailed iOS runtime evidence is recorded separately; physical-device and exact
+reference-video acceptance remain pending.
+
+Reference-recording motion revision: implemented on iOS and Android. iOS is
+runtime verified in the consumer app on an iPhone 17 simulator; Android is
+source-complete with updated native tests that still need an emulator run (see
+Conformance below).
+
+`renderDrawerContent?: () => React.ReactNode` supplies an optional menu slot.
+`drawerOpen?: boolean` defaults to false and requests its stable open state.
+`onDrawerOpenChange?: (open: boolean) => void` reports a completed user transition;
+controlled consumers MUST mirror it into `drawerOpen`. Prop-driven transitions,
+initial layout and cancellation emit no event. A user transition returning to
+the previous stable state emits only when it overrides an in-flight external
+target, so the consumer can reconcile that target. `drawerSwipeEnabled?: boolean`
+defaults to false; callers MUST enable it only where drawer navigation is appropriate (normally a root
+screen). Existing `hapticFeedbackEnabled` enables one light native haptic when a
+user's release, dim tap or Back/escape commits to the other stable state: it
+plays at that decision, not when the drawer lands, and once per transition, so
+a drag that takes over and releases toward the same target does not repeat it.
+Releases that return to the current stable state, programmatic updates and
+cancelled gestures do not vibrate.
+
+`onDrawerProgress?: (event) => void` receives `{ progress }`, the displayed
+progress clamped to [0, 1], while the drawer moves. Native emits it only while
+a handler is set (the wrapper derives the internal `progressEventsEnabled` prop
+from the handler's presence), at most once per frame, when progress changed by
+at least .002, and always on reaching 0 or 1. Enabling it emits the current
+value once, so a new subscriber starts in sync. The wrapper enables it one
+commit after mount, once the host's event emitter and an animated host's
+worklet handler are attached; on iOS the host also re-sends the current value
+when Fabric attaches the event emitter after a mount's first props. The handler is passed to the
+host unchanged, so `drawerHostComponent?` (default: the native host) can be an
+animated wrapper such as `Animated.createAnimatedComponent(BottomTabsDrawerNative)`
+whose worklet handler consumes the event on the UI thread. The package does
+not depend on Reanimated; `BottomTabsDrawerNative` is exported for this use.
+`drawerColorScheme?: "light" | "dark"` selects the page palette below; when
+omitted the internal `colorScheme` prop is `"system"` and follows the iOS trait
+collection or the Android configuration's night mode. Pass the app theme when
+it can differ from those (an app-level iOS window style override is followed
+without it).
+
+The drawer is physically left on both iOS and Android, including RTL. Its width
+is 80 percent of the host, and the React menu slot is laid out at the same
+80 percent so its descendants reach the menu's edge. The foreground is the full tab container, including
+the native tab bar and an optional custom JS bar. It keeps its full width and
+height while moving right, without scaling, scene reparenting or remounting.
+The native host and two slots remain mounted when the drawer is disabled or its
+content changes. Missing content disables the drawer, resets it closed without
+an event, and passes foreground input through. Web omits the drawer host/menu
+and passes the existing tab content through; it implements no drawer gestures.
+The existing tab view's other Web support is unchanged.
+
+For normalized progress `p` in [0, 1], foreground translation is `.8 * width * p`
+and its left circular corner radius is `62 * min(1, p / .1)` points/dp, so
+screens with other display corners never show a radius jump. The dim surface
+washes the page linearly: white at `.5 * p` in the light palette, RGB 36/36/36
+at `.58 * p` in the dark palette. In the light palette the page also casts a
+black shadow under its left edge and corners, opacity .16, Gaussian sigma 18
+points/dp, no offset, following the current corner radius; in the dark palette it instead draws a one-physical-pixel
+white edge at 17 percent opacity. The menu scales from .97 to 1 about its
+left-center edge (1 throughout when motion is reduced, see below) and its
+opacity is `min(1, p / .6)`. The host itself is transparent, so whatever lies
+behind it shows through the fading menu and its scaled-down margins.
+These values were measured frame by frame from the reference recording.
+Closed menus are hidden from touch/accessibility;
+while visible, the foreground is blocked by a native dim surface. Tapping that
+surface closes the drawer. iOS accessibility escape and Android Back close an
+open drawer; the dim surface exposes an accessible close action.
+On Android the dim surface MUST retain full foreground bounds even while hidden
+and after React/Fabric ancestors suppress `requestLayout`. Internal containers
+and both slots MUST be measured and laid out on host layout and slot changes,
+without relying on a later ancestor layout pass. Visible dim input MUST prevent
+native foreground controls from receiving the same touch.
+While closed, that retained dim surface MUST also be excluded from React Native
+touch-target lookup, so JS Pressable taps reach the foreground. Visibility alone
+is insufficient for React Native's native target traversal.
+
+The reported native tab-bar height MUST become zero when hidden and restore the
+current height when shown. The context and drawer exclusion use one effective
+height: a rendered custom bar's own measured height takes precedence; otherwise
+`tabBarHidden` forces zero. Native hide measurements MUST NOT overwrite a custom
+bar's height, including across native/custom presentation switches.
+
+The iOS drawer MUST NOT receive touches inside the native tab bar at any
+placement, because a vertical bar reports no bottom height. That covers
+everything under the tab controller's view outside tab content, including the
+floating item platter and side accessory.
+
+With opening swipes enabled, a one-finger rightward gesture may start anywhere
+in the foreground content. At the first confirmed direction, the actual native
+touch target and its ancestor chain determine ownership. A horizontal scroll
+view, list or pager which can consume that physical direction takes priority;
+only when every such ancestor is at its boundary may the drawer open. Vertical
+scroll views do not block horizontal drawer intent. Once selected, the owner is
+locked until up/cancel: reaching a boundary mid-gesture does not hand off.
+Disabled pager input does not claim a gesture based on its retained scroll
+range; an independently enabled horizontal child inside that page still can.
+An ancestor pager which explicitly excludes the touched shared header MUST NOT
+claim that header gesture solely because its horizontal offset is nonzero.
+The header's own nested horizontal content retains its normal boundary priority.
+On iOS this uses the repository's existing `excludedHeaderView` Objective-C
+getter on the native smooth pager and the real touch target's ancestry. It does
+not invoke another scroll view's UIKit recognition lifecycle hook, add a Pager
+API, or infer a header exclusion from a pager's selected page.
+The iOS UIPageViewController boundary uses its public data-source query once per
+decision, skipping its internally centered scroll offset. Android observes
+pending direction even when a nested pager initially disallows interception,
+but stops overriding that request after the child wins. Sliders and editing controls,
+web/graphics surfaces, system back gestures and starts in the bottom tab-bar
+footprint take priority. When open, closing gestures
+remain enabled even if opening swipes are disabled. The exposed foreground
+accepts a closing pan in either direction; inside the menu a leftward
+horizontal pan closes it too, while sliders and editing controls keep their
+touches and vertical menu scrolling remains the consumer's own. Inside the
+menu the direction is read from the distance moved as well as the current
+speed, and a horizontal swipe in either direction cancels React touches under
+it, so the row under the finger never fires its press. Whenever a drawer pan
+takes ownership it cancels React touches the same way (iOS cycles the surface
+touch handler, which a descendant recognizer cannot prevent; Android notifies
+the native gesture start, and its end once the touch stops however it stops,
+since React's pointer dispatcher drops input until it does). Vertical gestures fail before taking ownership. Active touches interrupted by
+a second finger, system cancellation, disabling, detach or a newer prop update
+cannot later emit an event. Cancellation returns to the previous stable state,
+or resumes an external target whose programmatic animation the gesture interrupted.
+Gesture progress crosses the JS bridge only through the opt-in `onDrawerProgress`.
+
+Both platforms settle on their UI thread with the same curves. A tap, dim
+close, Back/escape or prop change starting from rest eases with
+cubic-bezier(.55, .6, .2, 1) over `max(.12, D * |target - p0|)` seconds, where D
+is .36 to open and .29 to close. A released drag settles on a spring with
+natural frequency 25.5 rad/s and damping ratio .84, starting from its normalized
+finger velocity `v0` clamped to [-12, 12] per second; release targets open when
+`p + v0*.12 >= .5`. Only this spring may carry the page past open, by at most
+3 percent of the drawer width; reported progress and touch/accessibility state
+stay clamped to [0, 1]. The spring ends once within .0005 of its target and
+slower than .02 per second, or at 600 ms. A request for a different target
+while animating continues from the displayed progress with its current
+velocity on the spring; a request for the same target keeps the running
+animation and only replaces whether its completion is a user transition. A
+touch starts from the current displayed progress and cancels the previous
+completion. When the system asks for less motion (iOS Reduce Motion; Android
+with animator duration scale 0), the menu does not scale. On iOS a tap,
+close or prop change from rest then cross-fades from a snapshot to the final
+state over 200 ms instead of moving, and a released drag settles critically
+damped (damping ratio 1) without travelling past its target. A cross-fade is
+an in-flight transition like an animation: its final state shows at once under
+the snapshot, but the stable state and `onDrawerOpenChange` follow only when
+the fade ends. A newer cross-fade replaces the previous snapshot
+(capturing it as currently shown). A request for the target already being
+faded to leaves the fade running and only replaces whether its completion is a
+user transition. A touch, an animated settle, a newer cross-fade, disabling or
+detach removes the snapshot without completing it, as a touch does a running
+animation, so a drag that begins during a faded close never receives that
+close's prop echo; a resize completes it at once. While the snapshot shows, the
+host takes every touch itself, so none reaches a page, menu or dim control that
+is already in the final state under it; the drawer pan still receives them.
+Android has no separate reduced-motion setting and lands such transitions
+immediately.
+Resize snaps a pending settlement to its target, emitting its user event once
+if appropriate; an active drag follows the same cancellation rule. Detach cancels
+animations and callbacks; reattachment reapplies the latest external target.
+The host retains at most one display-link/animator, one touch
+sequence, two React child slots, and native dim surfaces; on iOS one transient
+snapshot during a reduced-motion cross-fade, removed when it ends; on Android
+one hardware layer on the menu while its opacity is strictly between 0 and 1,
+and three gradient shaders for the page shadow, rebuilt only when the corner
+radius, height or palette changes. It owns no workers, persistence, JS
+animation objects, RNGH or Reanimated dependency.
+
+Implementation boundaries: `src/BottomTabs.tsx` owns slots and settled callbacks;
+`src/BottomTabsDrawerNativeComponent.ts` defines the Fabric boundary;
+`ios/RCTBottomTabsDrawerContainerView.swift` and
+`android/src/main/java/com/onekey/bottomtabs/BottomTabsDrawerView.kt` own native
+input, layout, animation and cleanup. The iOS Fabric component and Android manager only forward children,
+props, the settled event and the opt-in progress event. Required acceptance includes both bar styles,
+custom bars, content/vertical gestures, dim close, rapid reversal, cancellation,
+disable/remove-content, resize, detach, accessibility, RTL and bottom-bar
+gesture ownership, including a real pager, nested horizontal list and vertical
+scrolling in the complete Fabric example. Source checks and emulator checks do not establish physical
+device smoothness or exact reference-video fidelity.
+The Android native suite also exercises generated drawer prop forwarding in RTL,
+physical-left placement, and closing pans while opening swipes are disabled.
+For the reference-recording revision it asserts the 80 percent travel, the
+light and dark wash, the menu's final scale/opacity/layer, and that progress
+events are opt-in, start in sync and end on the stable state; the wrapper tests
+assert that progress stays off without a handler and during the mount commit,
+that the handler, a replacement host and the color scheme reach native
+unchanged, and that the menu slot is 80 percent wide. The iOS suite
+`ios/tests/BottomTabsDrawerReduceMotionTests.swift` runs without an app host,
+forcing Reduce Motion and supplying the fade snapshot through internal test
+hooks. It asserts that a user close reports once, after the snapshot is gone;
+that a drag taking over the fade drops the faded close and reports only its own
+release; that a resize lands the fade at once; that same-target and newer
+requests, disabling and detach take over or drop the pending report; and that
+touches during an opening or closing fade land on the host, not on the menu,
+page or dim under the snapshot.
+Recorded evidence so far: on the iPhone 17 simulator (iOS 26) in the consumer
+app, tap open/close timing, fling overshoot (about 2 points), smooth reversal,
+the corner ramp, the reduced-motion cross-fade, the light/dark palettes and a
+UI-thread Reanimated progress handler were compared frame by frame with the
+reference recording. After the review fixes, the same setup showed menu content
+reaching 20 points from the 80 percent edge, the header avatar hidden at full
+open through the deferred progress event, no travel past open on a
+reduced-motion fling, and three toggles within 120 ms under Reduce Motion
+cross-fading to the final state with no leftover image (snapshot replacement
+itself is source-verified). The Android suite has not yet been run for this revision;
+physical-device smoothness on either platform remains unverified.
+
+The standalone `example/react-native/pages/BottomTabsHomeDrawerExample.tsx`
+reproduces Home’s wallet toolbar, balance/actions/banner shared header and
+Spot/Perps/Earn/NFT/History hierarchy using static data, native CollapsiblePager
+and standard React Native scroll views. It is an equivalent interaction fixture;
+the application’s existing JS collapsible-header implementation and business
+NativeList pages are not migrated or exercised by this fixture.
+
+## Tab presses and double press
+
+Status: implemented in module source. Runtime verification status is recorded
+under Conformance and acceptance.
+
+Every tab press that the native tab bar accepts emits `onPageSelected` with the
+tab key, including a press on the already selected tab (reselection). A
+reselection never changes the selected page. A tab with `preventsDefault` emits
+`onPageSelected` but keeps the current page selected.
+
+`onTabDoublePress` fires when two consecutive accepted presses target the same
+tab within the platform double-tap timeout (iOS 0.3 s; Android
+`ViewConfiguration.getDoubleTapTimeout()`, 300 ms by default). Both presses still
+emit `onPageSelected` first; the double press is an additional event, emitted
+after the second press. A rejected pager top request with no accepted scroll
+suppresses this additional event; both `onPageSelected` events still fire.
+After the pair is handled, tracking resets, so a third quick press
+starts a new pair. Double press is derived from accepted selections only: no
+extra gesture recognizer is attached and single-press latency is unchanged.
+JS-driven `selectedPage` changes do not count as presses.
+
+Before `onTabDoublePress` is emitted, the selected tab's visible vertical
+scrollers animate back to their top only when the pressed key matches the
+selected scene. If `preventsDefault` leaves another tab selected, its scene
+MUST remain untouched and `didScrollToTop` MUST be false. A prevented tab that
+is already selected retains normal scroll-to-top behavior.
+The event carries `didScrollToTop`: true only when at least one scroller was
+away from its top and accepted the top request, false when all were already
+there, so the host can decide what a double press at the top means. Rejection
+MUST NOT be reported as success or as proof that the page is already at top.
+On iOS, a standalone NativeList collection view delegates back to its direct
+owner's `onekeyScrollToOffset:animated:` selector with offset zero and animation
+enabled. This uses NativeList's existing explicit-command path to end an active
+structural tail, invalidate stale scroll completions and own pending layout
+before scrolling; BottomTabs MUST NOT also write that collection view's offset.
+BottomTabs and NativeList native sources must ship together for this selector.
+Scrollers inside a `CollapsiblePagerView` are never moved directly because the pager owns
+their header state; the module calls the pager's own `tryScrollToTop` by name, as
+it has no package dependency on the pager. A pager also counts as away from its
+top when its `isAwayFromPageTop` reports a collapsed header over a body at top. Only visible scrollers count: hidden
+tabs and off-screen pager pages are skipped. On iOS visibility is intersected
+with the window and every clipping ancestor; a retained page fully clipped by
+its pager MUST NOT count. On iOS a scroller must have content
+taller than its viewport. Runtime verification: iOS 27 simulator (collapsible
+pagers, pushed list pages, and a double press that also switches tabs). The
+Android pressed-scene isolation regression passed on an API 36 emulator for
+docked and floating bars; Android pager integration has not been run. The
+Android pager lookup is reflective, so a minified release build still needs a run.
+BottomTabs and Pager native sources must ship together for the acceptance-returning
+entry point. Clipping-ancestor visibility and rejected-command event handling
+are implemented in source; runtime acceptance for these cases remains pending.
+
+Tab long press is not supported. The former `onTabLongPress` prop/event and the
+native long-press recognizers were removed.
+
+## iOS native tab bar gestures
+
+The iOS tab bar keeps UIKit's own gesture handling. On iOS 26 this includes the
+Liquid Glass press-and-drag selection: pressing a tab lifts the lens and dragging
+scrubs across tabs, selecting on release through the normal
+`tabBarController(_:shouldSelect:)` path. The module MUST NOT install recognizers
+that delay, cancel, or require failure of the system tab bar gestures.
+
+The previous drag-cancellation guard (which refused selection for any touch that
+moved more than 10 points) was removed because it disabled drag-to-switch.
+
+## iOS bottom tab bar hide and show transition
+
+Status: implemented in module source and verified on iOS 27.0 Simulator XCTest.
+
+When `tabBarHidden` changes dynamically while the container view is attached to a
+window, laid out with nonzero bounds, and in `bottom` placement, `RCTBottomTabsContainerView`
+animates `UITabBar.transform` vertically with a critically damped 0.28 s spring
+(`usingSpringWithDamping: 1.0`, `.beginFromCurrentState`, `.curveEaseOut`,
+`.allowUserInteraction`) by `max(tabBar.bounds.height, 62) + 12` points so the
+floating Liquid Glass capsule slides smoothly off and back onto the bottom edge.
+
+- **Immediate state & measurement:** `tabBar.isUserInteractionEnabled` and
+  `onTabBarMeasured` (`0` when hiding, `tabBar.bounds.height` when showing)
+  update immediately when `tabBarHidden` changes, without waiting for animation
+  completion.
+- **Hide transition:** UIKit's system visibility (`setTabBarHidden(false, animated: false)`)
+  stays active while the bar slides down so layout passes triggered by concurrent
+  child navigation pushes do not snap `tabBar.alpha` to zero. When the slide-out
+  completes (and no newer `tabBarHidden` transition has superseded it), the view
+  resets `tabBar.transform = .identity` and applies `setTabBarHidden(true, animated: false)`
+  inside `UIView.performWithoutAnimation`.
+- **Show transition & reversal:** showing unhides the system bar without animation,
+  seeds `tabBar.transform` at the downward offset when transitioning from a
+  settled hidden state (or preserves the in-flight transform on mid-transition
+  reversal), and animates back to `.identity`.
+- **Non-animated cases:** initial setup, detached views (`window == nil`), zero-sized
+  containers, and `leading`/`trailing` vertical placements apply visibility
+  immediately without animation, strip active layer animations, and reset
+  `tabBar.transform` to `.identity`.
+
+## Android tab bar style
+
+`androidTabBarStyle` selects the Android presentation; iOS ignores it.
+
+- `default` (default): Material `BottomNavigationView` docked at the bottom,
+  with the blur-controlled scene underlap described below.
+- `floating`: a capsule bar modeled on the iOS 26 tab bar. Scene content extends
+  underneath it.
+
+Floating geometry (dp): bar height 62, side margin 20 plus the navigation-bar
+side insets, bottom gap `max(bottomInset, 20) + 4`, fully rounded corners. The
+bottom inset is the navigation-bar inset (0 when `ignoreBottomInsets`) or the
+keyboard inset when `ignoreKeyboardInsets` is false, whichever is larger. Icons
+are 26, labels 10 sp in both states unless `fontSize` is set, and item content is
+vertically centered. The reported tab bar height is the bar height plus its
+bottom gap, or 0 while hidden.
+
+Floating appearance with background blur disabled: the bar surface is `barTintColor` (or the theme background)
+at 95% opacity (lightened slightly for dark colors), with
+a hairline rim and an outline shadow. When background blur is enabled (see below), the live blur and translucent
+surface tint are confined and clipped to the capsule bounds; the region above,
+beside, and beneath the capsule remains unblurred. The existing capsule keeps its rim/shadow and uses a 12 percent
+surface fill over the blurred capsule backdrop; its lens and navigation controls remain
+sharp. The selected tab sits on a capsule pill inset 4 dp
+(`activeIndicatorColor` when provided). The Material ripple is disabled; the
+lens provides press feedback.
+
+Floating interaction (single finger; motion splitting is disabled):
+
+1. Touch down on any tab moves the pill to that tab and lifts it into a lens
+   (grows past the bar edges, gains a rim) and magnifies that tab's content.
+2. Movement beyond touch slop starts a drag: the lens follows the finger with
+   edge resistance and stretches with velocity; the tab nearest the lens center
+   becomes the candidate, is magnified, and ticks haptically when it changes.
+   No page change or event happens during the drag.
+3. Release without drag performs the tab's click (selection or reselection).
+   Release displacement is also checked against touch slop, including when no
+   MOVE was delivered or the last MOVE remained within slop. If release crosses
+   slop, it starts a drag and updates the candidate from the release position.
+   Release after a drag selects the candidate once, only if it differs from the
+   current tab. Cancel selects nothing.
+4. The lens then settles back into the pill on the selected tab, which stays on
+   the old tab for cancelled or `preventsDefault` presses. When a stationary tap
+   releases while the indicator slide is still in flight, the lifted lens holds
+   briefly (proportional to the remaining slide fraction) before settling into
+   the resting pill as it arrives at the target tab.
+
+Both press-initiated and JS-driven selection changes slide the pill with a
+520 ms underdamped spring (`dampingRatio = 0.82`, `angularFrequency = 7.5`) and
+frame-rate-normalized velocity stretch (16 ms reference step). An in-flight
+slide animator already targeting the selected tab's X position is preserved
+across touch release and subsequent JS `selectedPage` or `items` syncs instead
+of being restarted or snapped.
+When `tabBarHidden` changes dynamically while attached and laid out in `floating`
+style, `BottomTabsView` animates `floatingBar.translationY` across its visible
+bottom clearance (`DecelerateInterpolator`), preserving in-flight translation on
+rapid reversals, keeping the live blur backdrop active while the bar slides off
+screen, immediately reporting the updated measured height (`0` when hidden), and
+setting `floatingBar.visibility = GONE` upon hide completion.
+Switching style at runtime rebuilds the bar and restores Material's label sizes,
+icon size, ripple, padding, and gravity when returning to `default`.
+
+## Android bottom background blur
+
+Status: implemented in module source. The renamed package passed TypeScript
+checking, Android compilation with regenerated Fabric bindings, eight React
+wrapper tests, and ten direct-native API 36 tests (five each for docked and
+floating styles). Style switching with blur active received focused regression
+coverage. Complete consumer-app and physical-device acceptance remain pending;
+API 31-35 and visual dark-mode acceptance have not been reverified for this port.
+
+`androidBottomBlurEnabled?: boolean` controls the native Android tab bar's live
+background blur and translucent surface tint behind the bar.
+Omitting it (including `undefined`) MUST enable the effect only on Android 16
+(API 36) and newer. `false` MUST restore the existing appearance and layout for the current
+`androidTabBarStyle`: docked scenes reserve bar height; floating scenes retain
+their existing underlap and lens gestures. `true` MAY enable it on Android 12 (API 31) and newer; older
+Android versions and software-rendered windows MUST retain the existing layout
+and appearance. iOS and custom JS tab bars MUST ignore this option.
+
+When active, the selected scene MUST fill the native container behind the tab
+bar; icons, labels, badges, and the style's press feedback MUST stay sharp and interactive.
+The reported scene dimensions MUST include this underlap, while tab-bar height
+MUST retain its existing meaning (including system/IME padding unless ignored).
+Callers MUST use `useBottomTabBarHeight` to pad scrollable content when its final
+row must scroll clear of the bar. Hiding the bar MUST remove the effect and
+report zero bar height. Toggling, resizing, theme changes, and system/keyboard
+insets MUST refresh geometry and appearance without remounting scenes.
+
+The module owns the GPU resources on the UI thread. It MUST sample only the
+scene layer directly behind the active tab bar bounds (the docked bar rectangle
+in `default` style or the capsule bounds in `floating` style), excluding the
+tab bar and its own output, and clip the blurred backdrop and tint to those
+bounds (including the capsule corner radius in `floating` style) with no blur
+or fade bleeding above or outside the bar. It MUST use hardware
+RenderNode/RenderEffect rendering of the bar bounds at one-quarter resolution
+in each dimension, with a 20 dp blur radius. It MUST NOT capture bitmaps, read
+pixels back to the CPU, emit scroll events to JS, or run a recurring frame
+callback for this effect. Rendering MUST follow the normal view invalidation
+cycle, using the scene's existing display lists. The translucent tint MUST
+follow `tabBarStyle.backgroundColor` when set, otherwise the docked Material
+surface color or floating theme background, with opacity capped at 78 percent.
+
+Only one blur RenderNode and cached paints/paths MAY be retained per mounted
+tab view. Its offscreen dimensions MUST be bounded by one-quarter of the bar
+width and one-quarter of the bar height (rounded up).
+Disabling, hiding, detaching, and dropping the native view MUST discard the
+display list; no scene snapshots, disk cache, timers, or background workers are
+owned. SurfaceView content is outside the normal View display list and is not
+supported as a blur source. Liquid Glass refraction and shape morphing are out
+of scope.
+
+Acceptance MUST cover API 35/36 default behavior and explicit overrides, live
+scrolling under the bar with sharp controls, on/off restoration, hidden bars,
+tab changes, resize, dark/light themes, ignored bottom insets, and both keyboard
+inset modes. A representative scroll comparison MUST distinguish UI/RenderThread
+timings and missed frames from visual correctness. Source/type checks and
+emulator measurements MUST NOT be reported as physical-device performance.
+
+Implementation: `src/BottomTabs.tsx` owns the public default and custom-bar guard;
+`src/BottomTabsNativeComponent.ts` and `BottomTabsViewManager.kt` define the Fabric
+boundary; `BottomTabsView.kt` owns scene geometry, appearance, and disposal;
+`BottomBarBlurRenderer.kt` owns the bounded GPU pipeline. Focused native tests
+and runner instructions are in `native-tests/android`. The example's settings
+page exposes the switch and its scrolling scene reserves the reported bar height.
+
+## iOS vertical tab bar placement and side accessory
+
+Status: Implemented. Runtime results are in Conformance.
+
+On iOS 27.1+, devices such as iPhone Duo can place the `UITabBarController`
+bar vertically in a side strip next to the status bar. The view reports that
+placement and can draw one round accessory button above the vertical bar.
+
+- **Placement:** `onTabBarPlacementChange({ placement })` fires with `bottom`,
+  `leading`, or `trailing`, read from `traitCollection.verticalBarEdge` of the
+  tab bar controller. It fires once after the bar is created and again on every
+  change (rotation, folding, window resizing). Builds without the iOS 27.1 SDK
+  and earlier systems always report `bottom`. Android never fires it.
+- **Height on placement change:** every placement event is followed by
+  `onTabBarMeasured` with the bar's current height, because the height reported
+  for the previous placement no longer applies. A vertical bar reports its full
+  column height, so `BottomTabs` MUST expose 0 through
+  `BottomTabBarHeightContext` and the drawer's `bottomBarHeight` for `leading`
+  and `trailing` placement, and the measured height only for `bottom`.
+- **Side accessory:** `sideAccessoryIcon` (an image source, loaded with the
+  React image loader and drawn as a template tinted with `inactiveTintColor`),
+  `sideAccessoryLabel` (accessibility label), and `onSideAccessoryPress`. The
+  button is 48 pt, a Liquid Glass capsule on iOS 26+, centered horizontally on
+  the vertical bar's item platter and 12 pt above it.
+- Android MUST accept `sideAccessoryIcon` and `sideAccessoryLabel`, including
+  null resets, as no-ops through its generated ViewManager interface. It MUST
+  NOT create a side accessory or emit placement/accessory events. Shared Fabric
+  props still require Android setters even when the feature is iOS-only.
+- The button shows only when all hold: the placement is `leading` or
+  `trailing`, the tab bar is not hidden, the icon has loaded, and the platter
+  is found. Otherwise it is hidden; a bottom bar never shows it.
+- UIKit does not expose the platter frame. The view finds the platter by its
+  view class name below the tab bar controller (skipping tab content views),
+  reads its frame, and calls no private API. If a later system renames or
+  restructures it, the accessory hides; no other behavior depends on it.
+- Layout re-runs, coalesced on the next main-queue turn, after container
+  layout, tab rebuilds, tab bar hiding, icon loads, and changes to the traits
+  affecting `verticalBarEdge`.
+
+## Threading and ownership
+
+All gesture handling, animations, and timers run on the platform UI thread in
+the main-runtime native view. The view owns no background-runtime or shared JS
+objects. The tab bar retains the current touch sequence, the last pressed tab
+and timestamp, and at most two running animators. The optional drawer's additional
+single animation and touch ownership are bounded in the Native left drawer section.
+
+## Conformance and acceptance
+
+Implementation:
+- iOS: `ios/RCTBottomTabsContainerView.swift` (`shouldSelectTab`,
+  `emitDoublePressIfNeeded`), `ios/RCTBottomTabsComponentView.mm` event forwarding.
+- Android: `android/src/main/java/com/onekey/bottomtabs/BottomTabsView.kt` (floating
+  layout, `handleFloatingTabTouch`, `emitDoublePressIfNeeded`),
+  `FloatingTabBarStyle.kt`, `events/TabDoublePressEvent.kt`.
+
+Required runtime cases per platform: stationary tap selects; reselect emits
+`onPageSelected` without page change; two quick taps on one tab emit
+`onTabDoublePress` exactly once; slow taps do not. iOS 26: press-and-drag across
+tabs selects the tab under the finger on release. Android floating: press on a
+non-selected tab lifts the lens there; drag crossing tab centers does not change
+pages; release selects the nearest tab once; cancel restores; hidden bar, dark
+mode, and 3-button navigation insets lay out correctly. Source compilation is
+recorded separately from runtime acceptance.
+
+`native-tests/android/BottomBlurTest.kt` includes
+`testDoublePressOnlyScrollsThePressedScene`, inherited by the floating-style
+suite. It covers a prevented press on another scene (no scroll, false), a
+prevented press on the selected scene (scroll, true), and normal tab switching
+followed by scroll-to-top, while preserving the other scene's offset. The same
+cases remain required on iOS.
+
+Vertical tab bar: `RCTBottomTabsContainerView.swift` (`currentTabBarPlacement`,
+`updateTabBarPlacementAndSideAccessory`, `verticalTabBarPlatterFrame`).
+Required iOS runtime cases on iPhone Duo: the outer display and landscape inner
+display report `trailing` and show the accessory above the platter; the
+portrait inner display reports `bottom` and hides it; hiding the tab bar hides
+it; a press emits `onSideAccessoryPress` once.

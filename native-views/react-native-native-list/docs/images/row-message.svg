@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="272" viewBox="0 0 900 272" role="img" aria-labelledby="title desc">
+<title id="title">message · bounded text with time / thumbnail</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">message · bounded text with time / thumbnail</text>
+<rect x="24" y="66" width="852" height="154" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="40" y="84" width="110" height="116" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="52" y="147.0" font-size="15" fill="#294766" font-weight="400">leading</text>
+<rect x="166" y="84" width="430" height="40" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="178" y="109.0" font-size="15" fill="#294766" font-weight="400">title</text>
+<rect x="608" y="84" width="98" height="40" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="620" y="109.0" font-size="15" fill="#294766" font-weight="400">time</text>
+<rect x="166" y="136" width="540" height="64" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="178" y="173.0" font-size="15" fill="#294766" font-weight="400">body · bounded line count</text>
+<rect x="722" y="84" width="134" height="116" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="734" y="147.0" font-size="15" fill="#294766" font-weight="400">thumbnail</text>
+<text x="24" y="252" font-size="13" fill="#64798b" font-weight="400">Timestamp and thumbnail retain their regions; body wrapping cannot move controls or adjacent rows.</text>
+</g>
+</svg>

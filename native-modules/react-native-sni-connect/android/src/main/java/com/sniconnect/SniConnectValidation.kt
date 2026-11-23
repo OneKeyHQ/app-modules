@@ -1,6 +1,9 @@
 package com.sniconnect
 
+import java.io.File
+import java.io.IOException
 import java.net.Inet6Address
+import java.net.URI
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -22,6 +25,7 @@ internal object SniConnectValidation {
   const val MAX_PATH_BYTES = 8 * 1024
   const val MAX_REQUEST_BODY_BYTES = 1024 * 1024
   const val MAX_RESPONSE_BODY_BYTES = 10 * 1024 * 1024L
+  const val MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024L
   const val MAX_HEADER_COUNT = 64
   const val MAX_HEADER_NAME_BYTES = 128
   const val MAX_HEADER_VALUE_BYTES = 8 * 1024
@@ -92,6 +96,70 @@ internal object SniConnectValidation {
     if ((method == "POST" || method == "PUT" || method == "PATCH") && body == null) {
       throw ValidationException("Body required for method: $method")
     }
+  }
+
+  /** File uploads always carry a body, so only body-bearing write methods apply. */
+  fun validateUploadMethod(method: String) {
+    if (method != "POST" && method != "PUT") {
+      throw ValidationException("Invalid upload method: $method")
+    }
+  }
+
+  /**
+   * Resolve a caller-supplied upload path to a regular file inside one of
+   * [allowedRoots] (the app's own storage). Canonicalization resolves symlinks
+   * before the containment check so a link cannot point the upload elsewhere.
+   */
+  fun resolveUploadFile(rawPath: String, allowedRoots: List<File>): File {
+    if (rawPath.isEmpty() || containsControlChars(rawPath)) {
+      throw ValidationException("Invalid file path")
+    }
+    val file = when {
+      rawPath.startsWith("file:") -> {
+        val uri = try {
+          URI(rawPath)
+        } catch (error: Exception) {
+          throw ValidationException("Invalid file URL")
+        }
+        val path = uri.path
+        if (uri.scheme != "file" || path.isNullOrEmpty()) {
+          throw ValidationException("Invalid file URL")
+        }
+        File(path)
+      }
+      rawPath.startsWith("/") -> File(rawPath)
+      else -> throw ValidationException("File path must be absolute")
+    }
+
+    val canonicalFile = try {
+      file.canonicalFile
+    } catch (error: IOException) {
+      throw ValidationException("File path cannot be resolved")
+    }
+    val canonicalPath = canonicalFile.path
+    val isInsideAllowedRoot = allowedRoots.any { root ->
+      val rootPath = try {
+        root.canonicalPath
+      } catch (error: IOException) {
+        return@any false
+      }
+      val prefix = if (rootPath.endsWith(File.separator)) rootPath else rootPath + File.separator
+      canonicalPath.startsWith(prefix)
+    }
+    if (!isInsideAllowedRoot) {
+      throw ValidationException("File is outside the app sandbox")
+    }
+    if (!canonicalFile.isFile || !canonicalFile.canRead()) {
+      throw ValidationException("Not a readable regular file")
+    }
+    val sizeBytes = canonicalFile.length()
+    if (sizeBytes <= 0L) {
+      throw ValidationException("File is empty")
+    }
+    if (sizeBytes > MAX_UPLOAD_FILE_BYTES) {
+      throw ValidationException("File is too large")
+    }
+    return canonicalFile
   }
 
   fun normalizeMethod(method: String): String {

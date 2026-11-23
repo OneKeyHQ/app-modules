@@ -1,0 +1,884 @@
+import UIKit
+
+final class NativeListIdentityCell: NativeListRendererCell {
+  override class func appliesSizePreset(_ item: NativeListItem) -> Bool {
+    !["walletSidebar", "networkSelector"].contains(item.data.string("presentation"))
+  }
+  private class func configureTrailingStack(
+    _ stack: NativeListAccessoryStack, descriptors: [[String: Any]]
+  ) {
+    stack.axis = .vertical
+    stack.alignment = .trailing
+    stack.spacing = 2
+    if descriptors.contains(where: { $0.string("kind") == "checkbox" })
+      && descriptors.contains(where: { $0.string("kind") == "value" })
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      stack.spacing = 12
+    } else if descriptors.count == 2,
+      descriptors[0].string("kind") == "valuePair",
+      (descriptors[1].string("kind") == "menu"
+        || (descriptors[1].string("kind") == "icon"
+          && descriptors[1].string("name") == "DotVerSolid"
+          && descriptors[1].string("actionKey") == "menu"))
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      stack.spacing = 8
+    } else if descriptors.count == 2,
+      (descriptors[0].string("kind") == "valuePair"
+        && descriptors[1].string("kind") == "chevron")
+        || (descriptors[0].string("kind") == "icon"
+          && descriptors[0].string("name") == "RefreshCcwOutline"
+          && descriptors[0].string("actionKey").isEmpty
+          && descriptors[1].string("kind") == "chevron")
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      stack.spacing = 12
+    } else if descriptors.count == 2,
+      descriptors[0].string("kind") == "icon",
+      descriptors[0].string("name") == "PencilOutline",
+      (descriptors[1].string("kind") == "icon"
+        && descriptors[1].string("name") == "DragOutline")
+        || descriptors[1].string("kind") == "drag"
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      // Source 36-point icon frames with -7 margins need a 10-point gap.
+      stack.spacing = 10
+    }
+  }
+  private static func collapsesTrailing(_ item: NativeListItem, descriptors: [[String: Any]]) -> Bool {
+    descriptors.isEmpty && item.data.bool("collapseEmptyTrailing")
+  }
+
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
+  ) -> CGFloat? {
+    if item.data.string("presentation") == "walletSidebar" {
+      return item.data.dictionaries("badges").isEmpty ? 68 : 92
+    }
+    if item.data.string("presentation") == "networkSelector" { return 47 }
+    if item.data.string("contentHeight") == "auto" {
+      let style = item.data.dictionary("style") ?? [:]
+      let horizontalPadding = CGFloat(style.double("horizontalPadding", default: layout == "table" ? 16 : 12))
+      let verticalPadding = CGFloat(style.double("verticalPadding", default: 8))
+      let imageWidth = CGFloat(style.dictionary("image")?.double("width", default: 40) ?? 40)
+      let imageHeight = CGFloat(style.dictionary("image")?.double("height", default: 40) ?? 40)
+      let leadingGap = CGFloat(style.double("leadingGap", default: 12))
+      let accessories = item.data.dictionaries("trailing")
+      let trailing = NativeListAccessoryStack(frame: .zero)
+      configureTrailingStack(trailing, descriptors: accessories)
+      trailing.bind(
+        item, descriptors: accessories, theme: theme, style: style,
+        defaultSpacing: trailing.spacing, checkboxState: { _, _, fallback in fallback }, fonts: fonts)
+      let collapsed = collapsesTrailing(item, descriptors: accessories)
+      let trailingSize = collapsed ? .zero
+        : trailing.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+      let rightInset = style["horizontalPadding"] != nil
+        ? horizontalPadding : trailing.endInset ?? horizontalPadding
+      let contentGap = collapsed ? 0 : trailing.contentGap ?? 12
+      let textWidth = max(1,
+        width - horizontalPadding - rightInset - imageWidth - leadingGap
+          - trailingSize.width - contentGap)
+      let title = NativeListResolvedText(
+        item.data.string("title"), style: style.dictionary("title"), size: 16,
+        weight: .medium, color: .black, lineHeight: 24,
+        lines: item.data.int("titleLines", default: 1), fonts: fonts)
+      let subtitle = NativeListResolvedText(
+        item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 14,
+        color: .black, lineHeight: 20,
+        lines: item.data.int("subtitleLines", default: 1),
+        breakMode: item.data.int("subtitleLines", default: 1) == 0 ? .byWordWrapping : .byTruncatingTail,
+        fonts: fonts)
+      let tertiary = NativeListResolvedText(
+        item.data.string("tertiary"), style: style.dictionary("tertiary"), size: 14,
+        color: .black, lineHeight: 20, lines: 1, fonts: fonts)
+      let titleImageSize = CGFloat(item.data.dictionary("titleImage")?.dictionary("image")?.double("width") ?? 0)
+      let titleImageWidth = titleImageSize > 0
+        ? titleImageSize + 4 + (item.data.dictionary("titleIcon") == nil ? 0 : 24) : 0
+      let textHeight = max(titleImageSize, title.measure(width: max(1, textWidth - titleImageWidth)))
+        + subtitle.measure(width: textWidth)
+        + tertiary.measure(width: textWidth)
+        + (item.data.string("subtitle").isEmpty ? 0 : CGFloat(style.double("lineGap", default: 0)))
+      return max(item.data.string("subtitle").isEmpty ? 56 : 60,
+        verticalPadding * 2 + max(imageHeight, textHeight, trailingSize.height))
+    }
+    return !item.data.string("tertiary").isEmpty
+      ? 72 : !item.data.string("subtitle").isEmpty ? 60 : 56
+  }
+  private let visual = NativeListLeadingVisual(frame: .zero)
+  private var fallbackLabel: UILabel { visual.fallbackTextView }
+  private let mainStack = UIStackView()
+  private let titleRowStack = UIStackView()
+  private let titleLabel = NativeListTextLabel()
+  private let titleIconView = NativeListIconImageView()
+  private var titleImageSlot: NativeListImageSlot?
+  private var titleImageConstraints: [NSLayoutConstraint] = []
+  // Absorbs the title row's slack so the title keeps its intrinsic width and the
+  // title icon / badge follow the text (OK-66041); Android's PackedTitleLineLayout
+  // and the Web flex row already pack the title row at its start.
+  private let titleRowFiller = UIView()
+  private let subtitleLabel = NativeListTextLabel()
+  private let tertiaryLabel = NativeListTextLabel()
+  private let badgeLabel = NativeListInsetLabel()
+  private let trailingStack = NativeListAccessoryStack(frame: .zero)
+  private let leadingActionButton = NativeListIconButton(type: .system)
+  private var leadingWidth: NSLayoutConstraint!
+  private var leadingHeight: NSLayoutConstraint!
+  private var leftInset: CGFloat = 12
+  private var rightInset: CGFloat = -12
+  private var topInset: CGFloat = 8
+  private var bottomInset: CGFloat = -8
+  private var selectorConstraints: [NSLayoutConstraint] = []
+  private var selectorViews: [UIView] = []
+  private var selectorTypographyRestorers: [() -> Void] = []
+  private var semanticBadgeLabels: [UILabel] = []
+  private var semanticSubtitleLabels: [UILabel] = []
+  private weak var walletBadgeLine: UIStackView?
+  private var currentItem: NativeListItem?
+  private var currentTheme: [String: Any]?
+  private var leadingActionKey: String?
+  override var assetFields: [String] { ["leading", "titleImage"] }
+  override var defaultSeparatorInset: CGFloat { 60 }
+  override var defaultCornerRadius: CGFloat {
+    guard let item = currentItem else { return 0 }
+    let presentation = item.data.string("presentation")
+    if presentation == "walletSidebar", isHighlighted || item.hasExplicitHeight { return 20 }
+    if isHighlighted
+      || (item.hasExplicitHeight
+        && ["accountSelector", "networkSelector"].contains(presentation))
+    {
+      return 12
+    }
+    return 0
+  }
+  private var isWalletSidebar: Bool { currentItem?.data.string("presentation") == "walletSidebar" }
+  override var pressedCornerRadius: CGFloat? { isWalletSidebar ? 20 : 12 }
+  // Legacy grouped wallet sidebar rows used the sidebar radius.
+  override var groupCornerRadius: CGFloat { isWalletSidebar ? 20 : 12 }
+  override var defaultCornerCurve: CALayerCornerCurve {
+    currentItem?.data.string("presentation") == "walletSidebar" ? .continuous : .circular
+  }
+  override var defaultVerticalAlignment: String? {
+    currentItem?.data.string("presentation") == "walletSidebar" ? "center" : nil
+  }
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    root.axis = .horizontal
+    root.alignment = .center
+    mainStack.axis = .vertical
+    mainStack.alignment = .fill
+    mainStack.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    mainStack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    titleRowStack.axis = .horizontal
+    titleRowStack.alignment = .center
+    titleRowStack.addArrangedSubview(titleLabel)
+    titleRowStack.addArrangedSubview(titleIconView)
+    titleRowStack.addArrangedSubview(badgeLabel)
+    titleRowStack.addArrangedSubview(titleRowFiller)
+    titleRowFiller.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    titleRowFiller.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
+    titleIconView.translatesAutoresizingMaskIntoConstraints = false
+    let titleIconWidth = titleIconView.widthAnchor.constraint(equalToConstant: 20)
+    titleIconWidth.priority = UILayoutPriority(999)
+    NSLayoutConstraint.activate([
+      titleIconWidth,
+      titleIconView.heightAnchor.constraint(equalToConstant: 20),
+    ])
+    titleIconView.contentMode = .scaleAspectFit
+    titleIconView.setContentHuggingPriority(.required, for: .horizontal)
+    [titleRowStack, subtitleLabel, tertiaryLabel].forEach(mainStack.addArrangedSubview)
+    visual.translatesAutoresizingMaskIntoConstraints = false
+    leadingWidth = visual.widthAnchor.constraint(equalToConstant: 40)
+    leadingHeight = visual.heightAnchor.constraint(equalToConstant: 40)
+    leadingActionButton.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      leadingWidth, leadingHeight, leadingActionButton.widthAnchor.constraint(equalToConstant: 36),
+      leadingActionButton.heightAnchor.constraint(equalToConstant: 36),
+    ])
+    leadingActionButton.adjustsImageWhenDisabled = false
+    leadingActionButton.tintAdjustmentMode = .normal
+    leadingActionButton.addTarget(self, action: #selector(leadingPressed), for: .touchUpInside)
+    trailingStack.onAction = { [weak self] key, view, slot, target in
+      self?.emitAction(
+        key, from: view, source: "trailingAccessory", slot: slot, target: target,
+        anchorInset: self?.trailingStack.anchorInset(for: view) ?? 0)
+    }
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func bindContent(
+    _ item: NativeListItem, theme: [String: Any]?, layout: String,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
+    selectorTypographyRestorers.reversed().forEach { $0() }
+    selectorTypographyRestorers = []
+    currentItem = item
+    currentTheme = theme
+    NSLayoutConstraint.deactivate(selectorConstraints)
+    selectorConstraints = []
+    selectorViews.forEach {
+      if let stack = $0.superview as? UIStackView { stack.removeArrangedSubview($0) }
+      $0.removeFromSuperview()
+    }
+    selectorViews = []
+    walletBadgeLine = nil
+    semanticBadgeLabels = []
+    semanticSubtitleLabels = []
+    root.arrangedSubviews.forEach {
+      root.removeArrangedSubview($0)
+      $0.removeFromSuperview()
+    }
+    root.axis = .horizontal
+    root.alignment = .center
+    root.spacing = 12
+    leftInset = layout == "table" ? 16 : 12
+    rightInset = -leftInset
+    topInset = 8
+    bottomInset = -8
+    mainStack.alignment = .fill
+    mainStack.spacing = 2
+    mainStack.arrangedSubviews.forEach {
+      mainStack.setCustomSpacing(UIStackView.spacingUseDefault, after: $0)
+    }
+    titleRowStack.arrangedSubviews.forEach {
+      titleRowStack.setCustomSpacing(UIStackView.spacingUseDefault, after: $0)
+    }
+    titleRowStack.spacing = 8
+    titleIconView.image = nil
+    titleIconView.isHidden = true
+    titleIconView.accessibilityLabel = nil
+    titleIconView.isAccessibilityElement = false
+    titleImageSlot?.view.isHidden = true
+    titleImageSlot?.view.accessibilityLabel = nil
+    titleImageSlot?.view.isAccessibilityElement = false
+    NSLayoutConstraint.deactivate(titleImageConstraints)
+    titleImageConstraints = []
+    titleRowStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    titleRowStack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    for label in [titleLabel, subtitleLabel, tertiaryLabel, badgeLabel] {
+      label.attributedText = nil
+      label.text = nil
+      label.isHidden = true
+      label.numberOfLines = 1
+      label.textAlignment = .natural
+      label.lineBreakMode = .byTruncatingTail
+      label.transform = .identity
+      label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+      label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      if let text = label as? NativeListTextLabel {
+        text.rowOffsetY = 0
+        text.rowVerticalAlignment = nil
+      }
+    }
+    titleLabel.font = nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
+    titleLabel.textColor = nativeListColor(theme, "primaryText", "#202020")
+    titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+    subtitleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
+    subtitleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
+    tertiaryLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
+    tertiaryLabel.textColor = subtitleLabel.textColor
+    badgeLabel.font = nativeListFont(ofSize: 12, weight: .medium, fonts: fonts)
+    badgeLabel.horizontalInset = 0
+    badgeLabel.topInset = 0
+    badgeLabel.bottomInset = 0
+    badgeLabel.setContentHuggingPriority(.required, for: .horizontal)
+    leadingWidth.constant = 40
+    leadingHeight.constant = 40
+    visual.glyphSize = 18
+    let leadingDescriptor = item.data.dictionary("leading")
+    visual.bitmapBorderWidth =
+      leadingDescriptor?.string("borderColor").isEmpty == false
+      && leadingDescriptor?.string("borderStyle") != "dashed"
+      ? nativeListBorderWidth(leadingDescriptor?["borderWidth"]) : 0
+    fallbackLabel.attributedText = nil
+    fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
+    trailingStack.reset()
+    trailingStack.axis = .vertical
+    trailingStack.alignment = .trailing
+    trailingStack.spacing = 2
+    leadingActionKey = nil
+    leadingActionButton.setImage(nil, for: .normal)
+    bindIdentity(item, theme: theme, selected: item.data.bool("selected"), checkboxState)
+    let style = item.data.dictionary("style") ?? [:]
+    if let titleIcon = item.data.dictionary("titleIcon") {
+      titleIconView.bindIcon(titleIcon.string("name"))
+      titleIconView.tintColor = UIColor(
+        nativeListHex: titleIcon.string("tintColor",
+          default: theme?["iconSubdued"] as? String ?? "#8D8D8D"),
+        fallback: .gray)
+      titleIconView.isHidden = false
+      let label = titleIcon.string("accessibilityLabel")
+      titleIconView.accessibilityLabel = label.isEmpty ? nil : label
+      titleIconView.isAccessibilityElement = !label.isEmpty
+      titleRowStack.setCustomSpacing(4, after: titleLabel)
+      // A long title truncates ahead of the 20pt glyph (Android caps the title
+      // at row width minus accessories, Web shrinks the title first); with the
+      // title at `.required` the icon's 999 width constraint collapsed to 0.
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    }
+    if let descriptor = item.data.dictionary("titleImage"),
+      let image = descriptor.dictionary("image"), !image.string("uri").isEmpty
+    {
+      let size = CGFloat(image.double("width"))
+      let slot = titleImageSlot ?? NativeListImageSlot()
+      titleImageSlot = slot
+      let view = slot.view
+      if view.superview == nil {
+        let index = titleRowStack.arrangedSubviews.firstIndex(of: titleIconView)! + 1
+        titleRowStack.insertArrangedSubview(view, at: index)
+      }
+      view.clipsToBounds = true
+      view.setContentHuggingPriority(.required, for: .horizontal)
+      view.setContentCompressionResistancePriority(.required, for: .horizontal)
+      view.translatesAutoresizingMaskIntoConstraints = false
+      view.layer.cornerRadius = size / 2
+      view.isHidden = false
+      let label = descriptor.string("accessibilityLabel")
+      view.accessibilityLabel = label.isEmpty ? nil : label
+      view.isAccessibilityElement = !label.isEmpty
+      titleImageConstraints = [
+        view.widthAnchor.constraint(equalToConstant: size),
+        view.heightAnchor.constraint(equalToConstant: size),
+      ]
+      titleImageConstraints.forEach { $0.priority = UILayoutPriority(999) }
+      NSLayoutConstraint.activate(titleImageConstraints)
+      titleRowStack.setCustomSpacing(4, after: titleIconView.isHidden ? titleLabel : titleIconView)
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      slot.bind(image, key: "\(item.key):titleImage", placeholder: "#00000000")
+    } else {
+      titleImageSlot?.recycle()
+    }
+    if let ratio = style["leadingContentMaxWidthRatio"] as? NSNumber,
+      root.arrangedSubviews.contains(visual)
+    {
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      let visualWidth = CGFloat(style.dictionary("image")?.double("width", default: 40) ?? 40)
+      let leadingGap = CGFloat(style.double("leadingGap", default: 12))
+      let constraint = mainStack.widthAnchor.constraint(
+        lessThanOrEqualTo: root.widthAnchor,
+        multiplier: CGFloat(ratio.doubleValue),
+        constant: -(visualWidth + leadingGap))
+      constraint.isActive = true
+      selectorConstraints.append(constraint)
+    }
+    if style["horizontalPadding"] != nil {
+      leftInset = CGFloat(style.double("horizontalPadding"))
+      rightInset = -leftInset
+    }
+    if style["verticalPadding"] != nil {
+      topInset = CGFloat(style.double("verticalPadding"))
+      bottomInset = -topInset
+    }
+    if style["lineGap"] != nil {
+      mainStack.spacing = CGFloat(style.double("lineGap"))
+      mainStack.arrangedSubviews.forEach {
+        mainStack.setCustomSpacing(mainStack.spacing, after: $0)
+      }
+    }
+    if style["leadingGap"] != nil, root.arrangedSubviews.contains(visual) {
+      root.setCustomSpacing(CGFloat(style.double("leadingGap")), after: visual)
+    }
+    if style["titleBadgeGap"] != nil {
+      if walletBadgeLine != nil {
+        mainStack.setCustomSpacing(CGFloat(style.double("titleBadgeGap")), after: titleRowStack)
+      } else {
+        titleRowStack.setCustomSpacing(
+          CGFloat(style.double("titleBadgeGap")),
+          after: titleImageSlot?.view.isHidden == false ? titleImageSlot!.view
+            : titleIconView.isHidden ? titleLabel : titleIconView)
+      }
+    }
+    if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
+    for (slot, labels) in [
+      ("title", [titleLabel]),
+      ("subtitle", semanticSubtitleLabels.isEmpty ? [subtitleLabel] : semanticSubtitleLabels),
+      ("tertiary", [tertiaryLabel]),
+      ("badge", semanticBadgeLabels.isEmpty ? [badgeLabel] : semanticBadgeLabels),
+    ] {
+      if let text = style.dictionary(slot) {
+        labels.forEach { NativeListTextStyles.applyStyledText($0, text, fonts: fonts) }
+      }
+    }
+    contentInsets = UIEdgeInsets(
+      top: topInset, left: leftInset, bottom: -bottomInset, right: -rightInset)
+    if root.axis == .horizontal {
+      root.alignment =
+        style.dictionary("container")?.string("contentVerticalAlignment") == "top"
+        ? .top
+        : style.dictionary("container")?.string("contentVerticalAlignment") == "bottom"
+          ? .bottom : .center
+    }
+    settleTitleRowFillerSpacing()
+    applySelectorTypography(item)
+
+  }
+
+  /// The filler is the title row's last arranged view; the stack's default
+  /// spacing before it would shave 8pt off the title's available width (visible
+  /// under `leadingContentMaxWidthRatio`), so the gap before the filler is zero.
+  private func settleTitleRowFillerSpacing() {
+    let visible = titleRowStack.arrangedSubviews.filter { $0 !== titleRowFiller && !$0.isHidden }
+    if let last = visible.last {
+      titleRowStack.setCustomSpacing(0, after: last)
+    }
+  }
+  override func bindSelectionContent(
+    _ item: NativeListItem,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
+    currentItem = item
+    trailingStack.updateSelection(item, checkboxState: checkboxState)
+    if item.data.string("presentation") == "walletSidebar" {
+      let color = nativeListColor(
+        currentTheme, selectedState ? "primaryText" : "secondaryText",
+        selectedState ? "#FFFFFFED" : "#FFFFFFAF")
+      titleLabel.textColor = color
+      if let original = titleLabel.attributedText {
+        let text = NSMutableAttributedString(attributedString: original)
+        text.addAttribute(
+          .foregroundColor, value: color, range: NSRange(location: 0, length: text.length))
+        titleLabel.attributedText = text
+      }
+      if let style = item.data.dictionary("style")?.dictionary("title") {
+        NativeListTextStyles.applyStyledText(titleLabel, style, fonts: fonts)
+      }
+    }
+
+  }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if currentItem?.hasExplicitHeight == true,
+      currentItem?.data.string("presentation") == "accountSelector",
+      currentItem?.data.dictionary("style")?.dictionary("container")?["contentVerticalAlignment"]
+        == nil, let descriptor = currentItem?.data.dictionaries("trailing").first,
+      descriptor.string("kind") == "icon", descriptor.string("name") == "PlusSmallOutline",
+      let control = trailingStack.firstVisibleControl
+    {
+      control.transform = .identity
+      let origin = control.convert(control.bounds, to: contentView).minY
+      control.transform = CGAffineTransform(translationX: 0, y: 11 - origin)
+    }
+  }
+  override func recycleContent() {
+    visual.recycle()
+    titleImageSlot?.recycle()
+    titleImageSlot?.view.isHidden = true
+    titleImageSlot?.view.accessibilityLabel = nil
+    titleImageSlot?.view.isAccessibilityElement = false
+    trailingStack.reset()
+    currentItem = nil
+  }
+  @objc private func leadingPressed() {
+    if let key = leadingActionKey {
+      emitAction(key, from: leadingActionButton, source: "leadingAction")
+    }
+  }
+  private func show(_ label: UILabel, _ value: String, lines: Int) {
+    label.text = value
+    label.numberOfLines = lines
+    label.isHidden = value.isEmpty
+  }
+  private func addLeading(_ descriptor: [String: Any]?, key: String) {
+    root.addArrangedSubview(visual)
+    guard let descriptor else {
+      // Legacy reset the leading container: no stale avatar, initials, border or overlays.
+      visual.clear()
+      return
+    }
+    let image = currentItem?.data.dictionary("style")?.dictionary("image") ?? [:]
+    if image["width"] != nil { leadingWidth.constant = CGFloat(image.double("width")) }
+    if image["height"] != nil { leadingHeight.constant = CGFloat(image.double("height")) }
+    let wallet =
+      currentItem?.data.string("presentation") == "walletSidebar"
+      && currentItem?.hasExplicitHeight == true
+    visual.singleOuterMask =
+      currentItem?.data.string("presentation") == "networkSelector"
+      && currentItem?.hasExplicitHeight == true
+    visual.dashedBorderWidth = wallet ? 1 : 2
+    visual.overlayTextFontSize = wallet ? 12 : 10
+    visual.overlayTextLineHeight = wallet ? 16 : nil
+    visual.overlayTextHorizontalInset = wallet ? 2 : nil
+    if let fallback = descriptor.dictionary("fallbackIcon") {
+      visual.glyphSize =
+        wallet && fallback.string("name") == "LockSolid"
+        ? 40
+        : descriptor.dictionary("image") != nil
+          ? min(leadingWidth.constant, leadingHeight.constant)
+            * (fallback.string("name") == "GlobusOutline" ? 1.2 : 1) : 18
+    }
+    visual.bind(
+      descriptor, style: image, key: key, theme: currentTheme, isUnread: false, fonts: fonts)
+  }
+  private func bindIdentity(
+    _ item: NativeListItem,
+    theme: [String: Any]?,
+    selected: Bool,
+    _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    if item.data.string("presentation") == "walletSidebar" {
+      root.axis = .vertical
+      root.alignment = .center
+      root.spacing = 4
+      leftInset = 4
+      rightInset = -4
+      topInset = 4
+      bottomInset = -4
+      mainStack.alignment = .center
+      mainStack.spacing = 0
+      titleRowStack.setContentHuggingPriority(.required, for: .horizontal)
+      titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+      titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+      titleLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
+      titleLabel.textAlignment = .center
+      fallbackLabel.font = nativeListFont(ofSize: 28, fonts: fonts)
+      addLeading(item.data.dictionary("leading"), key: item.key)
+      root.addArrangedSubview(mainStack)
+      // OneKey patch: activate width constraints only after both stacks share an ancestor.
+      if item.hasExplicitHeight {
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleRowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let width = mainStack.widthAnchor.constraint(equalTo: root.widthAnchor)
+        width.isActive = true
+        selectorConstraints.append(width)
+        let titleWidth = titleRowStack.widthAnchor.constraint(
+          lessThanOrEqualTo: mainStack.widthAnchor)
+        titleWidth.isActive = true
+        selectorConstraints.append(titleWidth)
+      }
+      show(titleLabel, item.data.string("title"), lines: 1)
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 16)
+      titleLabel.textColor = nativeListColor(
+        theme,
+        selected ? "primaryText" : "secondaryText",
+        selected ? "#FFFFFFED" : "#FFFFFFAF"
+      )
+      // OneKey patch: wallet tags belong below the centered name.
+      let badges = item.data.dictionaries("badges")
+      if !badges.isEmpty {
+        let line = UIStackView()
+        line.axis = .horizontal
+        line.spacing = 4
+        line.alignment = .center
+        for badge in badges {
+          let label = NativeListInsetLabel()
+          let isSelector = item.hasExplicitHeight
+          let isWarning = badge.string("tone") == "warning"
+          label.font = nativeListFont(ofSize: isSelector ? 11 : 12, fonts: fonts)
+          label.textColor = nativeListColor(
+            theme, isSelector && isWarning ? "caution" : "secondaryText",
+            isSelector && isWarning ? "#AB6400" : "#646464")
+          label.backgroundColor = nativeListColor(
+            theme,
+            isSelector
+              ? (isWarning ? "cautionBackground" : "subduedBackground") : "strongBackground",
+            isSelector && isWarning ? "#FFF8C5" : "#F0F0F0")
+          label.horizontalInset = isSelector ? 6 : 4
+          label.topInset = 2
+          label.bottomInset = 2
+          label.layer.cornerRadius = 4
+          label.clipsToBounds = true
+          setLineHeight(label, text: badge.string("text"), lineHeight: isSelector ? 14 : 16)
+          semanticBadgeLabels.append(label)
+          line.addArrangedSubview(label)
+        }
+        walletBadgeLine = line
+        mainStack.spacing = 4
+        mainStack.addArrangedSubview(line)
+        selectorViews.append(line)
+      }
+      let accessories = item.data.dictionaries("trailing")
+      if !accessories.isEmpty {
+        trailingStack.axis = .horizontal
+        trailingStack.alignment = .center
+        trailingStack.spacing = 8
+        root.addArrangedSubview(trailingStack)
+        trailingStack.bind(
+          item, descriptors: accessories, theme: theme,
+          style: item.data.dictionary("style") ?? [:], defaultSpacing: 8,
+          checkboxState: checkboxState, fonts: fonts)
+      }
+      return
+    }
+    if item.data.string("presentation") == "accountSelector" {
+      leadingWidth.constant = 32
+      leadingHeight.constant = 32
+      titleLabel.font = nativeListFont(ofSize: 16, fonts: fonts)
+    }
+    if item.data.dictionary("leading")?.string("kind") == "network" {
+      leadingWidth.constant = 32
+      leadingHeight.constant = 32
+    }
+    if let leadingAction = item.data.dictionary("leadingAction") {
+      leadingActionButton.isHidden = false
+      let tintColor = UIColor(
+        nativeListHex: leadingAction.string("tintColor", default: "#646464"),
+        fallback: .darkGray
+      )
+      leadingActionButton.tintColor = tintColor
+      leadingActionButton.bindIcon(leadingAction.string("name"))
+      leadingActionButton.isEnabled = !leadingAction.bool("disabled")
+      leadingActionButton.alpha = leadingActionButton.isEnabled ? 1 : 0.4
+      leadingActionKey = leadingAction.string("actionKey")
+      root.addArrangedSubview(leadingActionButton)
+      // ListItem.IconButton is a medium tertiary button: p=6 plus a 1-point
+      // border makes a 38-point frame with m=-7, so its glyph sits exactly on
+      // a 24-point slot at the 12-point padding and the avatar starts at 48.
+      // This 36-point frame centers the same glyph with a 6-point inset and
+      // 6-point following gap, keeping the 24-point SVG and its hit target.
+      leftInset = 6
+      root.setCustomSpacing(6, after: leadingActionButton)
+    }
+    addLeading(item.data.dictionary("leading"), key: item.key)
+    // OneKey patch: custom network initials match LetterAvatar size 32.
+    if item.data.string("presentation") == "networkSelector",
+      let leading = item.data.dictionary("leading"), leading.dictionary("image") == nil,
+      leading.dictionary("fallbackIcon") == nil, !leading.string("fallbackText").isEmpty
+    {
+      fallbackLabel.font = nativeListFont(ofSize: 19, weight: .semibold, fonts: fonts)
+      fallbackLabel.textColor = nativeListColor(theme, "inverseText", "#FCFCFC")
+      setLineHeight(fallbackLabel, text: leading.string("fallbackText"), lineHeight: 27)
+    }
+    root.addArrangedSubview(mainStack)
+    show(titleLabel, item.data.string("title"), lines: item.data.int("titleLines", default: 1))
+    let titleSuffixes = item.data.dictionaries("titleSuffixes")
+    if !titleSuffixes.isEmpty {
+      titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+      let minimumTitleWidth = titleLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 80)
+      minimumTitleWidth.priority = UILayoutPriority(751)
+      minimumTitleWidth.isActive = true
+      selectorConstraints.append(minimumTitleWidth)
+      for suffix in titleSuffixes {
+        let label = NativeListTextLabel()
+        label.font = nativeListFont(ofSize: 12, fonts: fonts)
+        label.textColor = dataTextColor(suffix.string("tone", default: "secondary"), theme: theme)
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        label.setContentCompressionResistancePriority(UILayoutPriority(749), for: .horizontal)
+        setLineHeight(label, text: suffix.string("text"), lineHeight: 16)
+        if let maxWidth = suffix["maxWidth"] as? NSNumber {
+          let limit = label.widthAnchor.constraint(lessThanOrEqualToConstant: CGFloat(truncating: maxWidth))
+          limit.isActive = true
+          selectorConstraints.append(limit)
+        }
+        titleRowStack.insertArrangedSubview(
+          label,
+          at: titleRowStack.arrangedSubviews.firstIndex(of: badgeLabel)
+            ?? titleRowStack.arrangedSubviews.count)
+        selectorViews.append(label)
+      }
+    }
+    show(
+      subtitleLabel, item.data.string("subtitle"), lines: item.data.int("subtitleLines", default: 1)
+    )
+    if item.data.int("subtitleLines", default: 1) == 0 {
+      subtitleLabel.lineBreakMode = .byWordWrapping
+    }
+    show(tertiaryLabel, item.data.string("tertiary"), lines: 1)
+    if !item.data.string("subtitle").isEmpty, item.data.string("tertiary").isEmpty {
+      mainStack.spacing = 0
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
+      setLineHeight(subtitleLabel, text: item.data.string("subtitle"), lineHeight: 20)
+    }
+    // OneKey patch: preserve independent balance/address truncation and warning tones.
+    let segments = item.data.dictionaries("subtitleSegments")
+    if !segments.isEmpty {
+      subtitleLabel.isHidden = true
+      mainStack.spacing = 0
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
+      let line = UIStackView()
+      line.axis = .horizontal
+      line.alignment = .center
+      line.spacing = 0
+      for segment in segments {
+        if segment.bool("separatorBefore") {
+          let gap = UIView()
+          gap.translatesAutoresizingMaskIntoConstraints = false
+          let dot = UIView()
+          dot.translatesAutoresizingMaskIntoConstraints = false
+          dot.backgroundColor = nativeListColor(theme, "disabledText", "#8D8D8D")
+          dot.layer.cornerRadius = 2
+          gap.addSubview(dot)
+          NSLayoutConstraint.activate([
+            gap.widthAnchor.constraint(equalToConstant: 16),
+            gap.heightAnchor.constraint(equalToConstant: 20),
+            dot.widthAnchor.constraint(equalToConstant: 4),
+            dot.heightAnchor.constraint(equalToConstant: 4),
+            dot.centerXAnchor.constraint(equalTo: gap.centerXAnchor),
+            dot.centerYAnchor.constraint(equalTo: gap.centerYAnchor),
+          ])
+          line.addArrangedSubview(gap)
+        }
+        let label = NativeListTextLabel()
+        label.font = nativeListFont(ofSize: 14, fonts: fonts)
+        label.lineBreakMode = .byTruncatingTail
+        // Match V1: the balance may shrink, but keep the shortened address intact.
+        label.setContentCompressionResistancePriority(
+          item.data.string("presentation") == "accountSelector" && segment.bool("separatorBefore")
+            ? .defaultHigh
+            : .defaultLow,
+          for: .horizontal
+        )
+        label.textColor = dataTextColor(segment.string("tone", default: "secondary"), theme: theme)
+        setLineHeight(label, text: segment.string("text"), lineHeight: 20)
+        let runs = segment.dictionaries("textSegments")
+        if !runs.isEmpty {
+          let value = NSMutableAttributedString(string: "")
+          let paragraph = NSMutableParagraphStyle()
+          paragraph.minimumLineHeight = 20
+          paragraph.maximumLineHeight = 20
+          for run in runs {
+            value.append(
+              NSAttributedString(
+                string: run.string("text"),
+                attributes: [
+                  .font: nativeListFont(
+                    ofSize: run.string("style") == "subscript" ? 9 : 14, fonts: fonts),
+                  .foregroundColor: label.textColor as Any,
+                  .paragraphStyle: paragraph,
+                  .baselineOffset: max(
+                    0, (20 - nativeListFont(ofSize: 14, fonts: fonts).lineHeight) / 2)
+                ]))
+          }
+          label.attributedText = value
+        }
+        semanticSubtitleLabels.append(label)
+        line.addArrangedSubview(label)
+      }
+      let filler = UIView()
+      filler.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+      line.addArrangedSubview(filler)
+      mainStack.insertArrangedSubview(line, at: 2)
+      selectorViews.append(line)
+    }
+    let matches = item.data.dictionaries("titleMatch")
+    if !matches.isEmpty {
+      let text = NSMutableAttributedString(
+        attributedString: titleLabel.attributedText
+          ?? NSAttributedString(string: item.data.string("title")))
+      for match in matches {
+        let start = match.int("start")
+        let end = match.int("end")
+        if start >= 0 && end > start && end <= text.length {
+          text.addAttribute(
+            .foregroundColor, value: nativeListColor(theme, "info", "#0D74CE"),
+            range: NSRange(location: start, length: end - start))
+        }
+      }
+      titleLabel.attributedText = text
+    }
+    tertiaryLabel.textColor = nativeListColor(
+      theme,
+      item.data.string("tertiaryTone") == "info" ? "info" : "secondaryText",
+      item.data.string("tertiaryTone") == "info" ? "#0D74CE" : "#646464"
+    )
+    let badges = item.data.dictionaries("badges").prefix(2).map { $0.string("text") }
+    if !badges.isEmpty {
+      let badgeText = badges.joined(separator: " · ")
+      show(badgeLabel, badgeText, lines: 1)
+      badgeLabel.horizontalInset = 8
+      badgeLabel.topInset = 2
+      badgeLabel.bottomInset = 2
+      setLineHeight(badgeLabel, text: badgeText, lineHeight: 16)
+      badgeLabel.backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
+      badgeLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
+      badgeLabel.layer.cornerRadius = 4
+      badgeLabel.clipsToBounds = true
+    }
+    root.addArrangedSubview(trailingStack)
+    let accessories = item.data.dictionaries("trailing")
+    Self.configureTrailingStack(trailingStack, descriptors: accessories)
+    trailingStack.bind(
+      item, descriptors: accessories, theme: theme, style: item.data.dictionary("style") ?? [:],
+      defaultSpacing: trailingStack.spacing, checkboxState: checkboxState, fonts: fonts)
+    // Legacy kept the (possibly empty) trailing stack arranged, so the text column always
+    // ends 12 points before the trailing edge inset.
+    trailingStack.isHidden = Self.collapsesTrailing(item, descriptors: accessories)
+    if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
+    if let inset = trailingStack.endInset { rightInset = -inset }
+    if accessories.count == 1,
+      (item.data.string("presentation") == "accountSelector"
+        || accessories[0].string("kind") == "valuePair"),
+      let accessory = trailingStack.firstVisibleControl
+    {
+      // The vertical trailing stack has no stable intrinsic width, so keep its
+      // flexible space in the title and subtitle column.
+      let width = trailingStack.widthAnchor.constraint(equalTo: accessory.widthAnchor)
+      width.isActive = true
+      selectorConstraints.append(width)
+    } else if item.data.string("presentation") == "accountSelector" {
+      // Keep flexible space in the text column when there is no accessory button.
+      // Stay below visible controls' compression resistance and the hidden checkbox's width.
+      let width = trailingStack.widthAnchor.constraint(equalToConstant: 0)
+      width.priority = UILayoutPriority(749)
+      width.isActive = true
+      selectorConstraints.append(width)
+    }
+  }
+  private func dataTextColor(_ tone: String, theme: [String: Any]?) -> UIColor {
+    switch tone.isEmpty ? "primary" : tone {
+    // OneKey patch: account warnings and hidden balances use existing theme tokens.
+    case "disabled": return nativeListColor(theme, "disabledText", "#8D8D8D")
+    case "caution": return nativeListColor(theme, "caution", "#AB6400")
+    case "secondary": return nativeListColor(theme, "secondaryText", "#646464")
+    case "positive": return nativeListColor(theme, "positive", "#218358")
+    case "negative": return nativeListColor(theme, "negative", "#CE2C31")
+    default: return nativeListColor(theme, "primaryText", "#202020")
+    }
+  }
+  private func applySelectorTypography(_ item: NativeListItem) {
+    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(
+      item.data.string("presentation")
+    ) else { return }
+    let style = item.data.dictionary("style") ?? [:]
+    selectorTypographyRestorers = NativeListTextStyles.applySelectorDefaults(in: contentView) { view in
+      if view === titleLabel { return style.dictionary("title") }
+      if view === subtitleLabel || semanticSubtitleLabels.contains(where: { $0 === view }) {
+        return style.dictionary("subtitle")
+      }
+      if view === tertiaryLabel { return style.dictionary("tertiary") }
+      if view === badgeLabel || semanticBadgeLabels.contains(where: { $0 === view }) {
+        return style.dictionary("badge")
+      }
+      return trailingStack.explicitTextStyle(for: view, style: style)
+    }
+  }
+  private func setLineHeight(
+    _ label: UILabel,
+    text: String,
+    lineHeight: CGFloat,
+    letterSpacing: CGFloat = 0
+  ) {
+    let paragraphStyle = NSMutableParagraphStyle()
+    paragraphStyle.minimumLineHeight = lineHeight
+    paragraphStyle.maximumLineHeight = lineHeight
+    paragraphStyle.alignment = label.textAlignment
+    let presentation = currentItem?.data.string("presentation") ?? ""
+    if presentation == "walletSidebar" {
+      paragraphStyle.lineBreakMode = label.lineBreakMode
+    }
+    var attributes: [NSAttributedString.Key: Any] = [
+      .font: label.font as Any,
+      .foregroundColor: label.textColor as Any,
+      .paragraphStyle: paragraphStyle,
+    ]
+    let isNetworkFallback = label === fallbackLabel && presentation == "networkSelector"
+    if (currentItem?.hasExplicitHeight == true
+      && ["accountSelector", "walletSidebar"].contains(presentation)) || isNetworkFallback
+    {
+      attributes[.baselineOffset] = max(0, (lineHeight - label.font.lineHeight) / 2)
+    }
+    if letterSpacing != 0 { attributes[.kern] = letterSpacing }
+    label.attributedText = NSAttributedString(string: text, attributes: attributes)
+  }
+}

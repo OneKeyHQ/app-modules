@@ -2,6 +2,7 @@ import type { IdentityRow, NativeListSnapshot } from '../models';
 import {
   checkboxStateForKeys,
   checkboxStateForSection,
+  isRowPressEnabled,
   reduceSelection,
   selectionStateFromSnapshot,
 } from '../selection';
@@ -47,6 +48,49 @@ const snapshot: NativeListSnapshot = {
 };
 
 describe('NativeList native-style selection reducer', () => {
+  it('keeps passive and press-disabled rows out of whole-row interaction', () => {
+    const candidates: NativeListSnapshot['rows'] = [
+      rows[0],
+      { ...rows[0], key: 'press-disabled', pressDisabled: true },
+      { ...rows[0], key: 'disabled', disabled: true },
+      {
+        type: 'system',
+        key: 'retry',
+        variant: 'retry',
+        message: 'Retry',
+        actionKey: 'retry',
+      },
+      { type: 'system', key: 'loading', variant: 'loading' },
+      {
+        type: 'system',
+        key: 'no-match',
+        variant: 'noMatch',
+        message: 'No results',
+      },
+      {
+        type: 'system',
+        key: 'warning',
+        variant: 'warning',
+        title: 'Warning',
+        message: 'Try again later',
+      },
+      { type: 'system', key: 'end', variant: 'end' },
+      { type: 'system', key: 'spacer', variant: 'spacer', height: 12 },
+    ];
+
+    expect(candidates.map(isRowPressEnabled)).toEqual([
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
   it('returns one incremental row delta', () => {
     const result = reduceSelection(
       selectionStateFromSnapshot(snapshot),

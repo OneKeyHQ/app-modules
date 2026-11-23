@@ -3,11 +3,618 @@ import CoreFoundation
 import UIKit
 import UniformTypeIdentifiers
 
+enum NativeListTopScrollEdgeEffect {
+  case none, hard, soft
+}
+
+private final class NativeListReorderLongPress: UILongPressGestureRecognizer {
+  var sourceItem: NativeListItem?
+  var bindingEpoch: Int?
+  weak var handle: NativeListAccessoryButton?
+
+  override func reset() {
+    super.reset()
+    sourceItem = nil
+    bindingEpoch = nil
+    handle = nil
+  }
+}
+
 final class NativeListView: UIView {
+  private var fonts = NativeListFontFamilies()
+
+  func setFontFamiliesJson(_ json: String) {
+    guard let next = NativeListFontFamilies(json: json), next != fonts else { return }
+    fonts = next
+    if interactiveReorderSource != nil { cancelInteractiveReorderForStructuralUpdate() }
+    sectionIndexView.refreshFonts(fonts)
+    sectionIndexPreview.refreshFonts(fonts)
+    invalidateActionAnchor(reason: "layout")
+    configureFooterIfPresent()
+    var snapshot = dataSource.snapshot()
+    snapshot.reconfigureItems(snapshot.itemIdentifiers)
+    dataSource.apply(snapshot, animatingDifferences: false)
+    flowLayout.invalidateLayout()
+    setNeedsLayout()
+  }
+
+  private func configureFooterIfPresent() {
+    if let config { configureFooter(config) }
+  }
+  private var refreshEmittedForDrag = false
+  private var minimumDragOffset: CGFloat = 0
+  private var containerSlotHeights: [CGFloat] = [0, 0, 0, 0, 0, 0]
+  private var containerHeaderHeightIsAuthoritative = false
+  private weak var currentHeaderRoot: UIView?
+  private var disclosureCVisibleHeight: CGFloat = 0
+  private var disclosureInset: CGFloat = 0
+  private var disclosureStartCHeight: CGFloat = 0
+  private var disclosureStartInset: CGFloat = 0
+  private var disclosureSegmentStartEased: CFTimeInterval = 0
+  private var deferredDisclosureGeometryInvalid = false
+  private var pendingDisclosureSettlement: (id: String, expanded: Bool)?
+  // Fabric keeps assigning each slot root the frame React computed (inset, 0, width, height).
+  // Each root therefore lives in a list-owned host whose origin the list alone controls, so a
+  // React layout update can never move a slot out of its native position, even for a frame.
+  private var reactContainerSlots: [(content: UIView, host: UIView)] = []
+  private var sidecarLayout: (width: CGFloat, gap: CGFloat, maxContentWidth: CGFloat)?
+  private let pagerStickyHeights = NSMapTable<AnyObject, NSNumber>(keyOptions: .weakMemory, valueOptions: .strongMemory)
+  private let topOverlayHost = UIView()
+  private weak var topOverlayContent: UIView?
+  private var topEdgeInteraction: UIInteraction?
+  private var topEdgeMarker: UILabel?
+  private var originalTopEdgeStyle: AnyObject?
+  private var topScrollEdgeEffect: NativeListTopScrollEdgeEffect = .none
+  private var requestedTopOverlayHeight: CGFloat = 0
+  private var appliedTopOverlayInset: CGFloat = 0
+
+  private var lastLaidOutContentHeight: CGFloat?
+  private var needsContentShrinkCorrection = false
+  private var contentShrinkCorrectionScheduled = false
+  private var consumedStructuralTransitionID: String?
+  private var structuralDisplayLink: CADisplayLink?
+  private var structuralScrollPhaseActive = false
+  private var structuralSpacerHeight: CGFloat = 0
+  private var structuralAnimationStart: CFTimeInterval = 0
+  private var structuralAnimationDuration: CFTimeInterval = 0
+  private var structuralStartSpacer: CGFloat = 0
+  private var structuralStartOffset: CGFloat = 0
+  private var structuralTargetOffset: CGFloat = 0
+  private var structuralScrollInterrupted = false
+  private var structuralFooterStartY: CGFloat?
+  private var structuralFooterProgress: CGFloat = 0
+  private var structuralRemovedItems: [String: NativeListItem] = [:]
+  private var structuralRemovedHeights: [String: CGFloat] = [:]
+  private var structuralRemovalProgress: CGFloat = 0
+  private final class StructuralTail {
+    var items: [NativeListItem]
+    let starts: [CGFloat]
+    let heights: [CGFloat]
+    let indexByKey: [String: Int]
+    let extent: CGFloat
+    let prefixCount: Int
+    let finalExtent: CGFloat
+    let retiringKeys: Set<String>
+    init(items: [NativeListItem], heights: [CGFloat], spacing: CGFloat,
+         prefixCount: Int, finalExtent: CGFloat) {
+      self.items = items
+      self.heights = heights
+      self.indexByKey = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($1.key, $0) })
+      self.prefixCount = prefixCount
+      self.finalExtent = finalExtent
+      self.retiringKeys = finalExtent == 0 ? Set(items.map(\.key)) : []
+      var edge: CGFloat = prefixCount == 0 ? 0 : spacing
+      var starts: [CGFloat] = []
+      for (index, height) in heights.enumerated() {
+        starts.append(edge)
+        edge += height + (index + 1 < heights.count ? spacing : 0)
+      }
+      self.starts = starts
+      self.extent = edge
+    }
+  }
+  private var structuralTail: StructuralTail?
+  private var structuralTailStartExtent: CGFloat = 0
+  private var structuralTailSegmentStartEased: CFTimeInterval = 0
+  private var structuralTailStartY: CGFloat = 0
+  private func prefixTailCount(from old: NativeListConfig, to next: NativeListConfig) -> Int? {
+    guard old.orientation == "vertical", next.orientation == "vertical",
+          old.layout == next.layout, next.layout == "linear" || next.layout == "table",
+          old.itemSpacing == next.itemSpacing,
+          old.contentPaddingTop == next.contentPaddingTop,
+          old.contentPaddingBottom == next.contentPaddingBottom,
+          old.contentPaddingHorizontal == next.contentPaddingHorizontal,
+          dictionariesEqual(old.theme, next.theme),
+          dictionariesEqual(old.listStyle, next.listStyle),
+          old.items.count != next.items.count,
+          structuralDisplayLink == nil || structuralTail != nil,
+          !old.items.contains(where: { $0.type == "sectionHeader" }),
+          !next.items.contains(where: { $0.type == "sectionHeader" }) else { return nil }
+    let prefix = min(old.items.count, next.items.count)
+    guard prefix > 0 else { return nil }
+    for index in 0..<prefix {
+      let before = old.items[index], after = next.items[index]
+      guard before.key == after.key, before.type == after.type,
+            rowHeight(before) == rowHeight(after) else { return nil }
+    }
+    return prefix
+  }
+
+  private func tailExceedsHostLimit(_ tail: StructuralTail) -> Bool {
+    let window = max(0, collectionView.bounds.height) * 3
+    var end = 0
+    for first in tail.items.indices {
+      end = max(end, first)
+      while end < tail.items.count && tail.starts[end] <= tail.starts[first] + window {
+        end += 1
+      }
+      if end - first > 128 { return true }
+    }
+    return false
+  }
+
+  private func clearStructuralTail() {
+    structuralTail = nil
+    flowLayout.animatedBodyContentHeight = nil
+    flowLayout.tailClip = nil
+    for case let cell as NativeListRowHost in collectionView.visibleCells {
+      let indexPath = collectionView.indexPath(for: cell)
+      let key = indexPath.flatMap { dataSource?.itemIdentifier(for: $0) }
+      let accepted = indexPath.flatMap { config?.items[safe: $0.item]?.key } == key && key != nil
+      cell.layer.mask = nil
+      cell.isHidden = !accepted
+      cell.accessibilityElementsHidden = !accepted
+      cell.isUserInteractionEnabled = accepted && !(key.flatMap { itemsByKey[$0] }?.data.bool("disabled") ?? false)
+    }
+  }
+
+  private func updateStructuralTailWindow() {
+    guard let tail = structuralTail else { return }
+    let clipEnd = structuralTailStartY + structuralSpacerHeight
+    flowLayout.animatedBodyContentHeight = clipEnd
+      + (config?.contentPaddingBottom ?? 0) + containerSlotHeights[2]
+      + (config?.disclosure == nil ? 0 : disclosureCVisibleHeight
+        + containerSlotHeights[5] + disclosureInset)
+    flowLayout.tailClip = (tail.prefixCount, clipEnd)
+    for case let cell as NativeListRowHost in collectionView.visibleCells {
+      guard let indexPath = collectionView.indexPath(for: cell),
+            let key = dataSource.itemIdentifier(for: indexPath) else { continue }
+      presentTailCell(cell, key: key, index: indexPath.item, tail: tail)
+    }
+  }
+
+  private func presentTailCell(_ cell: NativeListRowHost, key: String, index: Int,
+                               tail: StructuralTail) {
+    let clipEnd = structuralTailStartY + structuralSpacerHeight
+    let visibleHeight = index >= tail.prefixCount
+      ? max(0, min(cell.bounds.height, clipEnd - cell.frame.minY)) : cell.bounds.height
+    let clipped = visibleHeight < cell.bounds.height
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    cell.isHidden = visibleHeight <= 0
+    if clipped && visibleHeight > 0 {
+      let mask = cell.layer.mask ?? CALayer()
+      mask.backgroundColor = UIColor.black.cgColor
+      mask.frame = CGRect(x: 0, y: 0, width: cell.bounds.width, height: visibleHeight)
+      cell.layer.mask = mask
+    } else {
+      cell.layer.mask = nil
+    }
+    CATransaction.commit()
+    let inert = index >= tail.prefixCount || clipped
+    cell.isUserInteractionEnabled = !inert && !(itemsByKey[key]?.data.bool("disabled") ?? false)
+    cell.accessibilityElementsHidden = inert
+  }
+
+  private func finishStructuralTail(interrupted: Bool) {
+    guard let tail = structuralTail, let config else { return }
+    stopStructuralAnimation()
+    if !tail.retiringKeys.isEmpty {
+      var snapshot = dataSource.snapshot()
+      snapshot.deleteItems(Array(tail.retiringKeys))
+      let finishRetiringCells = replaceCellItems(
+        with: Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) }),
+        outgoingKeys: tail.retiringKeys)
+      dataSource.apply(snapshot, animatingDifferences: false, completion: finishRetiringCells)
+    }
+    clearStructuralTail()
+    structuralSpacerHeight = 0
+    disclosureCVisibleHeight = config.disclosure?.expanded == true ? containerSlotHeights[4] : 0
+    disclosureInset = config.disclosure?.expanded == true
+      ? config.disclosure?.expandedTrailingInset ?? 0 : 0
+    structuralFooterStartY = nil
+    structuralFooterProgress = 0
+    configureLayout(config)
+    collectionView.layoutIfNeeded()
+    if interrupted {
+      // A diffable deletion can leave UIKit's content-shrink scroll animation active.
+      // Cancel it without choosing a new offset for the user's gesture.
+      collectionView.setContentOffset(collectionView.contentOffset, animated: false)
+    } else if !collectionView.isTracking && !collectionView.isDragging
+      && !collectionView.isDecelerating {
+      let inset = collectionView.adjustedContentInset
+      let maximum = max(-inset.top,
+        collectionView.contentSize.height - collectionView.bounds.height + inset.bottom)
+      let target = min(max(-inset.top, structuralTargetOffset), maximum)
+      collectionView.setContentOffset(CGPoint(x: collectionView.contentOffset.x, y: target), animated: false)
+    }
+    layoutContainerSlots()
+    emitVisibleRangeIfNeeded()
+    checkEndReached()
+    settleDisclosure(interrupted ? "interrupted" : "completed")
+  }
+
+  private func updateStructuralTailTarget() {
+    guard let tail = structuralTail, let config else { return }
+    let inset = collectionView.adjustedContentInset
+    let leftHeight = structuralTailStartY + tail.finalExtent
+      + config.contentPaddingBottom + containerSlotHeights[2]
+      + (config.disclosure == nil ? 0 :
+          (config.disclosure?.expanded == true ? containerSlotHeights[4] : 0)
+            + containerSlotHeights[5]
+            + (config.disclosure?.expanded == true
+                ? config.disclosure?.expandedTrailingInset ?? 0 : 0))
+    let sidecarHeight = sidecarLayout == nil ? 0 :
+      config.contentPaddingTop + containerSlotHeights[3] + config.contentPaddingBottom
+    let finalHeight = max(leftHeight, sidecarHeight)
+    let maximum = max(-inset.top,
+      finalHeight - collectionView.bounds.height + inset.bottom)
+    var target = min(max(-inset.top, structuralStartOffset), maximum)
+    if tail.finalExtent == 0, config.disclosure != nil, containerSlotHeights[5] > 0 {
+      let toggleTop = structuralTailStartY
+      let toggleBottom = toggleTop + containerSlotHeights[5]
+      var sticky: CGFloat = 0
+      for case let value as NSNumber in pagerStickyHeights.objectEnumerator()?.allObjects ?? [] {
+        sticky += CGFloat(value.doubleValue)
+      }
+      let lower = toggleBottom - collectionView.bounds.height + inset.bottom
+      let upper = toggleTop - inset.top - sticky
+      target = lower <= upper ? min(max(target, lower), upper) : upper
+    } else if tail.finalExtent == 0, containerSlotHeights[2] > 0 {
+      let footerTop = structuralTailStartY
+      let footerBottom = footerTop + containerSlotHeights[2]
+      var sticky: CGFloat = 0
+      for case let value as NSNumber in pagerStickyHeights.objectEnumerator()?.allObjects ?? [] {
+        sticky += CGFloat(value.doubleValue)
+      }
+      let lower = footerBottom - collectionView.bounds.height + inset.bottom
+      let upper = footerTop - inset.top - sticky
+      target = lower <= upper ? min(max(target, lower), upper) : upper
+    }
+    structuralTargetOffset = min(max(-inset.top, target), maximum)
+  }
+
+  private func structuralTailSegmentProgress(_ eased: CFTimeInterval) -> CFTimeInterval {
+    if eased >= 1 { return 1 }
+    let remaining = max(0.001, 1 - structuralTailSegmentStartEased)
+    return min(1, max(0, (eased - structuralTailSegmentStartEased) / remaining))
+  }
+
+  private func disclosureSegmentProgress(_ eased: CFTimeInterval) -> CFTimeInterval {
+    if eased >= 1 { return 1 }
+    let remaining = max(0.001, 1 - disclosureSegmentStartEased)
+    return min(1, max(0, (eased - disclosureSegmentStartEased) / remaining))
+  }
+
+  @objc func mountContainerSlot(_ view: UIView, atIndex index: Int) {
+    if index == 6 {
+      topOverlayContent?.removeFromSuperview()
+      topOverlayContent = view
+      topOverlayHost.addSubview(view)
+      updateTopScrollEdge()
+      return
+    }
+    let host: UIView = index == 2 || index == 4 || index == 5
+      ? NativeListClippedSlotHost() : UIView()
+    // Clipping to the reported height keeps new content from overlapping rows until the list
+    // has reserved space for it.
+    host.clipsToBounds = true
+    host.addSubview(view)
+    reactContainerSlots.insert((view, host), at: min(index, reactContainerSlots.count))
+    collectionView.addSubview(host)
+    if index == 0 {
+      currentHeaderRoot = view
+      if !containerHeaderHeightIsAuthoritative { updatePendingHeaderHeight() }
+    }
+    layoutContainerSlots()
+    setNeedsLayout()
+  }
+
+  @objc func unmountContainerSlot(_ view: UIView) {
+    if topOverlayContent === view {
+      view.removeFromSuperview()
+      topOverlayContent = nil
+      updateTopScrollEdge()
+      return
+    }
+    let removedCurrentHeader = currentHeaderRoot === view
+    if removedCurrentHeader { currentHeaderRoot = nil }
+    reactContainerSlots.removeAll { slot in
+      guard slot.content === view else { return false }
+      view.removeFromSuperview()
+      slot.host.removeFromSuperview()
+      return true
+    }
+    if removedCurrentHeader && !containerHeaderHeightIsAuthoritative {
+      updatePendingHeaderHeight()
+    }
+  }
+
+  func setTopScrollEdge(effect: NativeListTopScrollEdgeEffect, overlayHeight: CGFloat) {
+    topScrollEdgeEffect = effect
+    requestedTopOverlayHeight = overlayHeight.isFinite ? max(0, overlayHeight) : 0
+    updateTopScrollEdge()
+    setNeedsLayout()
+  }
+
+  private func updateTopScrollEdge() {
+    if #available(iOS 26.0, *) {
+      let hasOverlay = topScrollEdgeEffect != .none && topOverlayContent != nil
+      let enabled = hasOverlay && window != nil
+      let nextInset = hasOverlay ? requestedTopOverlayHeight : 0
+      if nextInset != appliedTopOverlayInset {
+        // Do not interrupt UIKit's rebound after a refresh has ended.
+        let wasReturningFromPull =
+          collectionView.contentOffset.y < -collectionView.adjustedContentInset.top - 0.5
+        let logicalOffset = collectionView.contentOffset.y + collectionView.contentInset.top
+        var inset = collectionView.contentInset
+        inset.top += nextInset - appliedTopOverlayInset
+        collectionView.contentInset = inset
+        appliedTopOverlayInset = nextInset
+        if !wasReturningFromPull {
+          collectionView.setContentOffset(
+            CGPoint(x: collectionView.contentOffset.x, y: logicalOffset - inset.top),
+            animated: false)
+        }
+      }
+      if enabled && topEdgeInteraction == nil {
+        originalTopEdgeStyle = collectionView.topEdgeEffect.style
+        // UIKit needs a native element to shape the edge effect around React-drawn content.
+        let marker = UILabel(frame: topOverlayHost.bounds)
+        marker.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        marker.text = " "
+        marker.textColor = .clear
+        marker.backgroundColor = .clear
+        marker.isUserInteractionEnabled = false
+        marker.isAccessibilityElement = false
+        marker.accessibilityElementsHidden = true
+        topOverlayHost.addSubview(marker)
+        topEdgeMarker = marker
+        let interaction = UIScrollEdgeElementContainerInteraction()
+        interaction.edge = .top
+        interaction.scrollView = collectionView
+        topOverlayHost.addInteraction(interaction)
+        topEdgeInteraction = interaction
+      } else if !enabled, let interaction = topEdgeInteraction {
+        topOverlayHost.removeInteraction(interaction)
+        (interaction as? UIScrollEdgeElementContainerInteraction)?.scrollView = nil
+        topEdgeInteraction = nil
+        topEdgeMarker?.removeFromSuperview()
+        topEdgeMarker = nil
+        if let originalTopEdgeStyle = originalTopEdgeStyle as? UIScrollEdgeEffect.Style {
+          collectionView.topEdgeEffect.style = originalTopEdgeStyle
+        }
+        originalTopEdgeStyle = nil
+      }
+      if enabled { collectionView.topEdgeEffect.style = topScrollEdgeEffect == .soft ? .soft : .hard }
+    }
+  }
+
+  func setContainerSlotHeightsJson(_ json: String, followedBySnapshot: Bool = false) {
+    guard let data = json.data(using: .utf8),
+          var values = try? JSONSerialization.jsonObject(with: data) as? [Any],
+          (values.count == 4 || values.count == 6) else { return }
+    let headerPending = values[0] is NSNull
+    if headerPending { values[0] = 0.0 }
+    guard let heights = values as? [Double],
+          heights.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return }
+    containerHeaderHeightIsAuthoritative = !headerPending
+    var next = heights.map { CGFloat($0) } + (heights.count == 4 ? [0, 0] : [])
+    if headerPending { next[0] = pendingHeaderHeight() }
+    applyContainerSlotHeights(next, followedBySnapshot: followedBySnapshot)
+  }
+
+  private func pendingHeaderHeight() -> CGFloat {
+    guard let bounds = currentHeaderRoot?.bounds,
+          bounds.width.isFinite, bounds.width > 0,
+          bounds.height.isFinite, bounds.height >= 0 else { return 0 }
+    return ceil(bounds.height)
+  }
+
+  private func updatePendingHeaderHeight() {
+    let height = pendingHeaderHeight()
+    guard height != containerSlotHeights[0] else { return }
+    var next = containerSlotHeights
+    next[0] = height
+    applyContainerSlotHeights(next)
+  }
+
+  private func applyContainerSlotHeights(_ heights: [CGFloat], followedBySnapshot: Bool = false) {
+    let previousHeights = containerSlotHeights
+    let footerDelta = containerSlotHeights[2] - heights[2]
+    containerSlotHeights = heights
+    let contentHeightChanged = previousHeights[4] != containerSlotHeights[4]
+    let toggleHeightChanged = previousHeights[5] != containerSlotHeights[5]
+    let disclosureGeometryInvalid = structuralTail != nil && config?.disclosure != nil
+      && (toggleHeightChanged || footerDelta != 0
+        || containerSlotHeights[4] < disclosureCVisibleHeight - 0.5)
+    let surroundingSlotGeometryInvalid = structuralTail != nil
+      && (previousHeights[0] != containerSlotHeights[0]
+      || previousHeights[1] != containerSlotHeights[1]
+      || previousHeights[3] != containerSlotHeights[3])
+    if surroundingSlotGeometryInvalid || disclosureGeometryInvalid {
+      if followedBySnapshot, config?.disclosure != nil {
+        deferredDisclosureGeometryInvalid = true
+      }
+      else { finishStructuralTail(interrupted: true) }
+    }
+    if structuralTail != nil, contentHeightChanged, !disclosureGeometryInvalid,
+       !surroundingSlotGeometryInvalid,
+       config?.disclosure != nil, structuralDisplayLink != nil {
+      let progress = min(1, max(0,
+        (CACurrentMediaTime() - structuralAnimationStart) / max(0.001, structuralAnimationDuration)))
+      let eased = progress * progress * (3 - 2 * progress)
+      disclosureStartCHeight = disclosureCVisibleHeight
+      disclosureSegmentStartEased = eased
+    }
+    if structuralTail != nil, structuralDisplayLink != nil, footerDelta != 0,
+       config?.disclosure == nil {
+      let progress = min(1, max(0,
+        (CACurrentMediaTime() - structuralAnimationStart) / max(0.001, structuralAnimationDuration)))
+      let eased = progress * progress * (3 - 2 * progress)
+      // Rebase from the last extent actually presented, not elapsed wall time.
+      structuralTailStartExtent = structuralSpacerHeight + footerDelta
+      structuralSpacerHeight = structuralTailStartExtent
+      structuralTailSegmentStartEased = eased
+      disclosureStartCHeight = disclosureCVisibleHeight
+      disclosureSegmentStartEased = eased
+      disclosureStartInset = disclosureInset
+      structuralStartOffset = collectionView.contentOffset.y
+    } else if structuralTail == nil, structuralDisplayLink != nil,
+      footerDelta != 0, config?.disclosure == nil {
+      let progress = min(1, max(0,
+        (CACurrentMediaTime() - structuralAnimationStart) / max(0.001, structuralAnimationDuration)))
+      let eased = progress * progress * (3 - 2 * progress)
+      structuralStartSpacer = max(0, structuralStartSpacer + footerDelta)
+      structuralSpacerHeight = structuralStartSpacer * (1 - eased)
+      if let startY = structuralFooterStartY { structuralFooterStartY = startY + footerDelta }
+    }
+    if structuralTail == nil, let disclosure = config?.disclosure {
+      disclosureCVisibleHeight = disclosure.expanded ? containerSlotHeights[4] : 0
+      disclosureInset = disclosure.expanded ? disclosure.expandedTrailingInset : 0
+    }
+    if let config { configureLayout(config) }
+    if structuralTail != nil {
+      updateStructuralTailTarget()
+      updateStructuralTailWindow()
+      flowLayout.invalidateLayout()
+      collectionView.layoutIfNeeded()
+      updateStructuralTailWindow()
+    } else if structuralDisplayLink != nil {
+      collectionView.layoutIfNeeded()
+      let inset = collectionView.adjustedContentInset
+      let finalMaximum = max(-inset.top,
+        collectionView.contentSize.height - structuralSpacerHeight
+          - collectionView.bounds.height + inset.bottom)
+      structuralTargetOffset = min(structuralTargetOffset, finalMaximum)
+    }
+    layoutContainerSlots()
+    setNeedsLayout()
+  }
+
+  func setSidecarLayoutJson(_ json: String) {
+    if json.isEmpty {
+      sidecarLayout = nil
+    } else if let data = json.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
+              let width = value["width"], let gap = value["gap"],
+              let maxWidth = value["maxContentWidth"],
+              width.isFinite, width > 0, gap.isFinite, gap >= 0,
+              maxWidth.isFinite, maxWidth > width + gap {
+      sidecarLayout = (CGFloat(width), CGFloat(gap), CGFloat(maxWidth))
+    } else { return }
+    if structuralTail != nil { finishStructuralTail(interrupted: true) }
+    if let config { configureLayout(config) }
+    layoutContainerSlots()
+    setNeedsLayout()
+  }
+
+  private func sidecarBaseInset(_ width: CGFloat) -> CGFloat {
+    guard let sidecarLayout else { return 0 }
+    return max(0, (width - min(width, sidecarLayout.maxContentWidth)) / 2)
+  }
+
+  @objc(setPagerStickyHeight:forOwner:)
+  func setPagerStickyHeight(_ height: CGFloat, forOwner owner: AnyObject) {
+    let next = height.isFinite ? max(0, height) : 0
+    if next == 0 { pagerStickyHeights.removeObject(forKey: owner) }
+    else { pagerStickyHeights.setObject(NSNumber(value: Double(next)), forKey: owner) }
+    layoutContainerSlots()
+  }
+
+  private func layoutContainerSlots() {
+    let empty = config?.items.isEmpty ?? true
+    let header = containerSlotHeights[0]
+    let emptyHeight = empty ? containerSlotHeights[1] : 0
+    let footer = containerSlotHeights[2]
+    let paddingTop = config?.contentPaddingTop ?? 0
+    let paddingBottom = config?.contentPaddingBottom ?? 0
+    let naturalFooterY = flowLayout.bodyContentHeight - paddingBottom - footer
+    let footerY = structuralTail == nil
+      ? max(paddingTop + header + emptyHeight, naturalFooterY) : naturalFooterY
+    let footerPosition = structuralTail == nil && structuralRemovedItems.isEmpty ? structuralFooterStartY.map {
+      $0 + (footerY - $0) * structuralFooterProgress
+    } ?? footerY : footerY
+    let positions = [paddingTop, paddingTop + header, footerPosition]
+    for (index, slot) in reactContainerSlots.prefix(3).enumerated() {
+      slot.host.isHidden = index == 1 && !empty
+      // React places the root at the horizontal inset inside this full-width host.
+      slot.host.frame = CGRect(x: 0, y: positions[index],
+        width: collectionView.bounds.width, height: containerSlotHeights[index])
+    }
+    if reactContainerSlots.count > 3 {
+      let slot = reactContainerSlots[3]
+      let width = sidecarLayout?.width ?? 0
+      let base = sidecarBaseInset(collectionView.bounds.width)
+      slot.host.isHidden = sidecarLayout == nil || containerSlotHeights[3] <= 0
+      let x = effectiveUserInterfaceLayoutDirection == .rightToLeft
+        ? base : collectionView.bounds.width - base - width
+      slot.host.frame = CGRect(x: x,
+        y: paddingTop, width: width, height: containerSlotHeights[3])
+    }
+    if reactContainerSlots.count > 5 {
+      let disclosureEnabled = config?.disclosure != nil
+      let content = reactContainerSlots[4].host
+      let toggle = reactContainerSlots[5].host
+      let toggleHeight = disclosureEnabled ? containerSlotHeights[5] : 0
+      let contentY = footerPosition - disclosureInset - toggleHeight
+        - disclosureCVisibleHeight
+      content.frame = CGRect(x: 0, y: contentY, width: collectionView.bounds.width,
+        height: containerSlotHeights[4])
+      toggle.frame = CGRect(x: 0, y: contentY + disclosureCVisibleHeight,
+        width: collectionView.bounds.width, height: containerSlotHeights[5])
+      content.isHidden = !disclosureEnabled || disclosureCVisibleHeight <= 0
+      toggle.isHidden = !disclosureEnabled || toggleHeight <= 0
+      let contentSettled = structuralDisplayLink == nil && structuralTail == nil
+        && config?.disclosure?.expanded == true
+        && disclosureCVisibleHeight >= containerSlotHeights[4] - 0.5
+      content.isUserInteractionEnabled = contentSettled
+      content.accessibilityElementsHidden = !contentSettled
+      toggle.isUserInteractionEnabled = disclosureEnabled && toggleHeight > 0
+      toggle.accessibilityElementsHidden = !disclosureEnabled || toggleHeight <= 0
+    }
+    var stickyHeight: CGFloat = 0
+    for case let value as NSNumber in pagerStickyHeights.objectEnumerator()?.allObjects ?? [] {
+      stickyHeight += CGFloat(value.doubleValue)
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for (index, slot) in reactContainerSlots.enumerated() {
+      let stickyTop = max(0, collectionView.contentOffset.y + stickyHeight - slot.host.frame.minY)
+      let tailTop = index == 2 && structuralTail != nil ? max(0, -structuralSpacerHeight) : 0
+      let top = max(stickyHeight > 0 ? stickyTop : 0, tailTop)
+      let bottom = index == 4 && config?.disclosure != nil
+        ? min(slot.host.bounds.height, max(0, disclosureCVisibleHeight))
+        : slot.host.bounds.height
+      (slot.host as? NativeListClippedSlotHost)?.visibleTop = top
+      (slot.host as? NativeListClippedSlotHost)?.visibleBottom = index == 4 ? bottom : nil
+      guard top > 0 || bottom < slot.host.bounds.height else {
+        slot.host.layer.mask = nil
+        continue
+      }
+      let mask = slot.host.layer.mask ?? CALayer()
+      mask.backgroundColor = UIColor.black.cgColor
+      mask.frame = CGRect(x: 0, y: top, width: slot.host.bounds.width,
+        height: max(0, bottom - top))
+      slot.host.layer.mask = mask
+    }
+    CATransaction.commit()
+  }
+
   private final class ActionAnchorRecord {
     let token: String
     weak var sourceView: UIView?
-    weak var ownerCell: NativeListCell?
+    weak var ownerCell: NativeListRowHost?
     let bindingEpoch: Int
     var open = false
     var invalidatedReason: String?
@@ -47,11 +654,32 @@ final class NativeListView: UIView {
     case end(Bool)
   }
 
+  private var scrollPositionTracker = NativeListScrollPositionTracker()
+  var onScrollPositionThresholdChange: ((Bool) -> Void)? {
+    didSet {
+      scrollPositionTracker.resetDelivery()
+      emitScrollPositionThresholdIfNeeded()
+    }
+  }
+
+  func setScrollPositionThresholdsJson(_ json: String) {
+    scrollPositionTracker.configure(json: json)
+    emitScrollPositionThresholdIfNeeded()
+  }
+
+  private func emitScrollPositionThresholdIfNeeded() {
+    guard let callback = onScrollPositionThresholdChange,
+          let next = scrollPositionTracker.update(offset: Double(max(0,
+            collectionView.contentOffset.y + collectionView.contentInset.top))) else { return }
+    callback(next)
+  }
+
   var onRowAction: ((String) -> Void)?
   var onActionAnchorInvalidated: ((String) -> Void)?
   var onSelectionDelta: ((String) -> Void)?
   var onReorder: ((String) -> Void)?
   var onEndReached: ((String) -> Void)?
+  var onStructuralTransitionSettled: ((String) -> Void)?
   var onVisibleRangeChanged: ((String) -> Void)? {
     didSet {
       lastVisibleRange = nil
@@ -60,15 +688,37 @@ final class NativeListView: UIView {
   }
 
   private let flowLayout = NativeListFlowLayout()
-  private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: flowLayout)
+  private lazy var collectionView: NativeListCollectionView = {
+    let view = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
+    view.onContentLayout = { [weak self] in
+      self?.layoutContainerSlots()
+      self?.contentLayoutDidChange()
+    }
+    return view
+  }()
   private let footerContainer = UIView()
-  private let footerCell = NativeListCell(frame: .zero)
+  private var footerCell: NativeListRowHost = NativeListRendererRegistry.create(.action)
+  private var footerRendererKey = NativeListRendererKey.action
   private let sectionIndexView = NativeListSectionIndexView()
-  private let sectionIndexPreview = UILabel()
+  private let sectionIndexPreview = NativeListSectionIndexPreviewView()
+  private var sectionIndexLayoutConstraints: [NSLayoutConstraint] = []
+  private var sectionIndexHostHeightConstraint: NSLayoutConstraint?
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
+  private final class AcceptedRowIndex {
+    let byKey: [String: Int]
+
+    init(items: [NativeListItem]) {
+      byKey = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($1.key, $0) })
+    }
+  }
+
   private var config: NativeListConfig?
+  private var acceptedRowIndex: AcceptedRowIndex?
   private var itemsByKey: [String: NativeListItem] = [:]
+  private static let emptyCellReuseIdentifier = "NativeList.EmptyCell"
+  private var retiringCellItems: [String: (item: NativeListItem, update: UInt64)] = [:]
+  private var cellUpdate: UInt64 = 0
   private var endReachedGeneration: Int?
   private var lastVisibleRange: (first: Int, last: Int, firstKey: String?, lastKey: String?)?
   private var visibleEventScheduled = false
@@ -77,42 +727,93 @@ final class NativeListView: UIView {
   private var sectionIndexHapticsEnabled = true
   private var lastLayoutDirection: UIUserInterfaceLayoutDirection?
   private var lastLayoutSize: CGSize?
+  private var lastConfiguredCollectionWidth: CGFloat?
+  private var commandAcceptedForPendingScroll = false
+  private var performingExplicitScrollCommand = false
+  private var animatedExplicitScrollCommand = false
+  private var explicitScrollRevision = 0
+  private var pagerCommandCancelObserver: NSObjectProtocol?
   private var pendingScrollRequest: ScrollRequest?
   private let sectionIndexFeedback = UISelectionFeedbackGenerator()
-  private lazy var reorderLongPress = UILongPressGestureRecognizer(
+  private lazy var reorderLongPress = NativeListReorderLongPress(
     target: self,
     action: #selector(reorderLongPressChanged(_:))
   )
+  private lazy var marketLongPress = UILongPressGestureRecognizer(
+    target: self,
+    action: #selector(marketLongPressChanged(_:))
+  )
+  private lazy var keyboardTapRecognizer = UITapGestureRecognizer(
+    target: self,
+    action: #selector(keyboardTapRecognized(_:))
+  )
+  private lazy var keyboardDragRecognizer = UIPanGestureRecognizer(
+    target: self,
+    action: #selector(keyboardDragRecognized(_:))
+  )
   // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
   private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
+  private var keyboardDismissMode: NativeListKeyboardDismissMode = .none
+  private var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps = .never
   private var interactiveReorderSource: (key: String, index: Int)?
-  private weak var interactiveReorderCell: NativeListCell?
+  private weak var interactiveReorderCell: NativeListRowHost?
   private var interactiveReorderCompactKey: String?
   private var interactiveReorderUsesAtomicTargeting = false
   private var interactiveReorderTargetIndex: Int?
-  private var interactiveReorderTransformedCells: [NativeListCell] = []
+  private var interactiveReorderTargetKey: String?
+  private var interactiveReorderLockedCrossAxisPosition: CGFloat?
+  private var interactiveReorderTransformedCells: [NativeListRowHost] = []
+  private var deferredReorderReconfigureKeys = Set<String>()
   private let interactiveReorderPlaceholder = UIView()
   private var interactiveReorderAnimator: UIViewPropertyAnimator?
   private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
   private let reorderMoveFeedback = UISelectionFeedbackGenerator()
   private var interactiveReorderFeedbackIndex: Int?
+  /// Ancestor pans (for example a sheet's dismiss pan) paused while a reorder is active.
+  private var reorderSuspendedAncestorPans: [UIGestureRecognizer] = []
+  private var interactiveMovementKeys: [String]?
   private var actionAnchor: ActionAnchorRecord?
   private let actionAnchorInstanceID = UUID().uuidString
   private var actionAnchorCounter = 0
+  private var disposed = false
 
   private static let sectionIndexContentInset: CGFloat = 16
   private static let sectionIndexRailWidth: CGFloat = 32
-  private static let sectionIndexPreviewSize: CGFloat = 48
+  private static let sectionIndexPreviewWidth: CGFloat = 60
+  private static let sectionIndexPreviewHeight: CGFloat = 50
   private static let sectionIndexPreviewEndMargin: CGFloat = 40
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    collectionView.register(NativeListCell.self, forCellWithReuseIdentifier: NativeListCell.reuseIdentifier)
+    pagerCommandCancelObserver = NotificationCenter.default.addObserver(
+      forName: Notification.Name("OneKeyNativeListCancelScrollCommand"),
+      object: collectionView, queue: .main
+    ) { [weak self] notification in
+      guard let self, !self.disposed, (notification.object as? UICollectionView) === self.collectionView else { return }
+      self.pendingScrollRequest = nil
+      self.commandAcceptedForPendingScroll = false
+      self.scrollViewDidEndScrollingAnimation(self.collectionView)
+      self.performingExplicitScrollCommand = false
+      self.collectionView.setContentOffset(self.collectionView.contentOffset, animated: false)
+    }
+    NativeListRendererRegistry.register(in: collectionView)
+    collectionView.register(UICollectionViewCell.self,
+      forCellWithReuseIdentifier: Self.emptyCellReuseIdentifier)
     collectionView.backgroundColor = .clear
     collectionView.delegate = self
     collectionView.dragDelegate = self
     collectionView.dropDelegate = self
     collectionView.alwaysBounceVertical = true
+    keyboardTapRecognizer.cancelsTouchesInView = true
+    keyboardTapRecognizer.delegate = self
+    addGestureRecognizer(keyboardTapRecognizer)
+    keyboardDragRecognizer.cancelsTouchesInView = false
+    keyboardDragRecognizer.delegate = self
+    keyboardDragRecognizer.isEnabled = false
+    if #available(iOS 13.4, *) {
+      keyboardDragRecognizer.allowedScrollTypesMask = .all
+    }
+    collectionView.addGestureRecognizer(keyboardDragRecognizer)
     // OneKey patch: keep list-body drags from being claimed by an ancestor modal sheet.
     listBodyGestureGuard.cancelsTouchesInView = false
     listBodyGestureGuard.isEnabled = false
@@ -122,6 +823,10 @@ final class NativeListView: UIView {
     reorderLongPress.allowableMovement = ReorderAnimation.allowableMovement
     reorderLongPress.delegate = self
     collectionView.addGestureRecognizer(reorderLongPress)
+    marketLongPress.minimumPressDuration = 0.8
+    marketLongPress.allowableMovement = 10
+    marketLongPress.delegate = self
+    collectionView.addGestureRecognizer(marketLongPress)
     interactiveReorderPlaceholder.isHidden = true
     interactiveReorderPlaceholder.isUserInteractionEnabled = false
     interactiveReorderPlaceholder.layer.cornerRadius = ReorderAnimation.placeholderRadius
@@ -132,6 +837,7 @@ final class NativeListView: UIView {
     addSubview(footerContainer)
     addSubview(sectionIndexView)
     addSubview(sectionIndexPreview)
+    addSubview(topOverlayHost)
     footerContainer.addSubview(footerCell)
     collectionView.translatesAutoresizingMaskIntoConstraints = false
     footerContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -149,18 +855,15 @@ final class NativeListView: UIView {
       footerContainer.trailingAnchor.constraint(equalTo: trailingAnchor),
       footerContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
       footerHeightConstraint,
-      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-      sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
-      sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
-      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
       sectionIndexPreview.trailingAnchor.constraint(
         equalTo: safeAreaLayoutGuide.trailingAnchor,
         constant: -Self.sectionIndexPreviewEndMargin
       ),
       sectionIndexPreview.centerYAnchor.constraint(equalTo: collectionView.centerYAnchor),
-      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
-      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
+      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewWidth),
+      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewHeight),
     ])
+    attachSectionIndexToList()
 
     sectionIndexView.isHidden = true
     sectionIndexView.onSelect = { [weak self] index, interacting in
@@ -171,11 +874,6 @@ final class NativeListView: UIView {
     }
     sectionIndexPreview.isHidden = true
     sectionIndexPreview.alpha = 0
-    sectionIndexPreview.layer.cornerRadius = 14
-    sectionIndexPreview.layer.masksToBounds = true
-    sectionIndexPreview.textAlignment = .center
-    sectionIndexPreview.adjustsFontForContentSizeCategory = true
-    sectionIndexPreview.font = nativeListFont(ofSize: 22, weight: .semibold)
     sectionIndexPreview.isAccessibilityElement = false
 
     footerCell.onAction = { [weak self] item, action, target, origin in
@@ -197,14 +895,30 @@ final class NativeListView: UIView {
     footerCell.addGestureRecognizer(footerHighlight)
     dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collectionView) {
       [weak self] collectionView, indexPath, key in
-      guard let self,
-            let item = self.itemsByKey[key],
-            let cell = collectionView.dequeueReusableCell(
-              withReuseIdentifier: NativeListCell.reuseIdentifier,
-              for: indexPath
-            ) as? NativeListCell else { return nil }
+      guard let self, let item = self.itemsByKey[key] ?? self.retiringCellItems[key]?.item else {
+        let cell = collectionView.dequeueReusableCell(
+          withReuseIdentifier: NativeListView.emptyCellReuseIdentifier, for: indexPath)
+        cell.isUserInteractionEnabled = false
+        cell.accessibilityElementsHidden = true
+        return cell
+      }
+      let reusableCell = collectionView.dequeueReusableCell(
+        withReuseIdentifier: NativeListRendererRegistry.reuseIdentifier(for: item.rendererKey),
+        for: indexPath)
+      guard let cell = reusableCell as? NativeListRowHost else { return reusableCell }
+      if self.itemsByKey[key] == nil {
+        cell.onAction = nil
+        cell.onBindingInvalidated = nil
+        cell.isHidden = true
+        cell.isUserInteractionEnabled = false
+        cell.accessibilityElementsHidden = true
+        return cell
+      }
       cell.onAction = { [weak self] item, action, target, origin in
-        self?.handleAction(item: item, actionKey: action, target: target, origin: origin)
+        // A child renderer can emit a different key than the collection row that owns it.
+        guard let self, self.itemsByKey[key] != nil,
+              !self.isInertPresentationKey(key) else { return }
+        self.handleAction(item: item, actionKey: action, target: target, origin: origin)
       }
       cell.onBindingInvalidated = { [weak self] cell, epoch in
         self?.handleBindingInvalidated(cell: cell, epoch: epoch)
@@ -214,7 +928,8 @@ final class NativeListView: UIView {
     }
     dataSource.reorderingHandlers.canReorderItem = { [weak self] key in
       guard let self else { return false }
-      return self.config?.reorderable == true && self.itemsByKey[key]?.isReorderable == true
+      return self.config?.reorderable == true && !self.isInertPresentationKey(key)
+        && self.itemsByKey[key]?.isReorderable == true
     }
     dataSource.reorderingHandlers.didReorder = { [weak self] transaction in
       guard self?.interactiveReorderUsesAtomicTargeting != true else { return }
@@ -222,99 +937,788 @@ final class NativeListView: UIView {
     }
   }
 
+  func setKeyboardDismissMode(_ mode: NativeListKeyboardDismissMode) {
+    keyboardDismissMode = mode
+    keyboardDragRecognizer.isEnabled = mode == .onDrag
+    switch mode {
+    case .none:
+      collectionView.keyboardDismissMode = .none
+    case .onDrag:
+      collectionView.keyboardDismissMode = .onDrag
+    case .interactive:
+      collectionView.keyboardDismissMode = .interactive
+    }
+  }
+
+  func setKeyboardShouldPersistTaps(_ mode: NativeListKeyboardShouldPersistTaps) {
+    keyboardShouldPersistTaps = mode
+  }
+
+  @objc private func keyboardTapRecognized(_ gesture: UITapGestureRecognizer) {
+    guard gesture.state == .ended else { return }
+    window?.endEditing(true)
+  }
+
+  @objc private func keyboardDragRecognized(_ gesture: UIPanGestureRecognizer) {
+    guard gesture.state == .began, keyboardDismissMode == .onDrag else { return }
+    window?.endEditing(true)
+  }
+
+  private func focusedTextInput(in view: UIView?) -> UIView? {
+    guard let view else { return nil }
+    if view.isFirstResponder, view is any UITextInput { return view }
+    for child in view.subviews {
+      if let result = focusedTextInput(in: child) { return result }
+    }
+    return nil
+  }
+
+  private func keyboardTapIsHandled(_ touch: UITouch) -> Bool {
+    var touchedView = touch.view
+    while let current = touchedView, current !== self {
+      if let control = current as? UIControl, control.isEnabled { return true }
+      touchedView = current.superview
+    }
+    if let touchView = touch.view,
+       touchView === footerCell || touchView.isDescendant(of: footerCell) {
+      guard let footer = config?.fixedFooter else { return false }
+      return footer.isRowPressEnabled
+    }
+    let point = touch.location(in: collectionView)
+    guard collectionView.bounds.contains(point),
+          let indexPath = collectionView.indexPathForItem(at: point),
+          let item = item(at: indexPath), !isInertPresentationKey(item.key) else { return false }
+    return item.isRowPressEnabled
+  }
+
+  deinit {
+    if let pagerCommandCancelObserver { NotificationCenter.default.removeObserver(pagerCommandCancelObserver) }
+  }
+
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
   }
 
+  override func willMove(toWindow newWindow: UIWindow?) {
+    if newWindow == nil {
+      attachSectionIndexToList()
+      if structuralTail != nil { finishStructuralTail(interrupted: true) }
+    }
+    super.willMove(toWindow: newWindow)
+  }
+
+  private func notifyPagerScrollViewReadyIfNeeded() {
+    guard !disposed,
+          window != nil,
+          collectionView.delegate === self,
+          flowLayout.scrollDirection == .vertical,
+          collectionView.bounds.width > 0,
+          collectionView.bounds.height > 0 else { return }
+    NotificationCenter.default.post(
+      name: Notification.Name("OneKeyNativeScrollViewDidBecomeReady"),
+      object: collectionView
+    )
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateTopScrollEdge()
+    updateSectionIndexAttachment()
+    notifyPagerScrollViewReadyIfNeeded()
+  }
+
   override func layoutSubviews() {
+    let hadUsableBounds = (lastLayoutSize?.width ?? 0) > 0 && (lastLayoutSize?.height ?? 0) > 0
     super.layoutSubviews()
+    topOverlayHost.frame = CGRect(x: 0, y: 0, width: collectionView.bounds.width,
+                                  height: requestedTopOverlayHeight)
+    updateSectionIndexAttachment()
     let direction = effectiveUserInterfaceLayoutDirection
-    if let lastLayoutSize,
-       lastLayoutSize != bounds.size || lastLayoutDirection != nil && lastLayoutDirection != direction {
+    let sizeChanged = lastLayoutSize != nil && lastLayoutSize != bounds.size
+    if sizeChanged && structuralTail != nil { finishStructuralTail(interrupted: true) }
+    if sizeChanged || lastLayoutDirection != nil && lastLayoutDirection != direction {
       invalidateActionAnchor(reason: "layout")
     }
     lastLayoutSize = bounds.size
-    if lastLayoutDirection != direction, let config {
+    let collectionWidthChanged = collectionView.bounds.width > 0
+      && lastConfiguredCollectionWidth != collectionView.bounds.width
+    if (lastLayoutDirection != direction || collectionWidthChanged), let config {
       configureLayout(config)
+      if lastLayoutDirection != direction { rebindRowsForLayoutDirection(config) }
+    }
+    if !hadUsableBounds && collectionView.bounds.width > 0 && collectionView.bounds.height > 0 {
+      notifyPagerScrollViewReadyIfNeeded()
     }
     performPendingScrollIfNeeded()
+    layoutContainerSlots()
+  }
+
+  // A layout-direction change may arrive without a layout pass (semantic attribute or trait).
+  override var semanticContentAttribute: UISemanticContentAttribute {
+    didSet { if semanticContentAttribute != oldValue { setNeedsLayout() } }
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    if previousTraitCollection?.layoutDirection != traitCollection.layoutDirection {
+      setNeedsLayout()
+    }
+  }
+
+  /// Renderers resolve start/end alignment at bind time, and the layout direction is one of a
+  /// cell's bound inputs; rebinding visible rows and the footer re-resolves it. A cell whose
+  /// bound direction already matches only refreshes selection and appearance. Offscreen rows
+  /// rebind when they are next dequeued.
+  private func rebindRowsForLayoutDirection(_ config: NativeListConfig) {
+    for case let cell as NativeListRowHost in collectionView.visibleCells {
+      guard let indexPath = collectionView.indexPath(for: cell),
+            let item = item(at: indexPath) else { continue }
+      bind(cell: cell, item: item, itemIndex: indexPath.item)
+    }
+    if let footer = config.fixedFooter, !footerCell.isHidden {
+      bind(cell: footerCell, item: footer, itemIndex: nil)
+    }
+  }
+
+  private func acceptRowIndex(for next: NativeListConfig, replacing previous: NativeListConfig?) {
+    if let previous, acceptedRowIndex != nil,
+       previous.generation == next.generation,
+       previous.items.count == next.items.count,
+       zip(previous.items, next.items).allSatisfy({ old, new in
+         old.key == new.key && old.type == new.type
+       }) {
+      return
+    }
+    acceptedRowIndex = AcceptedRowIndex(items: next.items)
+  }
+
+  // Layout can ask UIKit's outgoing snapshot for cells before apply starts or while it settles.
+  // Keep those descriptors outside the accepted row lookup and release each at its own commit.
+  private func replaceCellItems(
+    with nextItems: [String: NativeListItem], outgoingKeys: some Sequence<String>
+  ) -> (() -> Void)? {
+    cellUpdate &+= 1
+    let update = cellUpdate
+    var retiringKeys: [String] = []
+    for key in outgoingKeys where nextItems[key] == nil {
+      guard let item = itemsByKey[key] ?? retiringCellItems[key]?.item else { continue }
+      retiringCellItems[key] = (item, update)
+      retiringKeys.append(key)
+    }
+    itemsByKey = nextItems
+    guard !retiringKeys.isEmpty else { return nil }
+    return { [weak self] in
+      guard let self else { return }
+      for key in retiringKeys where self.retiringCellItems[key]?.update == update {
+        self.retiringCellItems.removeValue(forKey: key)
+      }
+    }
   }
 
   func applySnapshotJson(_ json: String) {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
+    if let current = config,
+       current.reorderable != next.reorderable ||
+        current.reorderFromHandleOnly != next.reorderFromHandleOnly {
+      cancelInteractiveReorderForStructuralUpdate()
+      reorderLongPress.isEnabled = false
+      reorderLongPress.isEnabled = true
+    }
+    let transition = next.structuralTransition
+    let isNewTransition = transition != nil && transition?.id != consumedStructuralTransitionID
+    let disclosureGeometryInvalid = deferredDisclosureGeometryInvalid
+    deferredDisclosureGeometryInvalid = false
+    let disclosureTargetChanged = config?.disclosure?.expanded != next.disclosure?.expanded
+    let disclosureInsetChanged = config?.disclosure?.expandedTrailingInset
+      != next.disclosure?.expandedTrailingInset
+    let disclosureStateChanged = disclosureTargetChanged || disclosureInsetChanged
+    let activePendingID = structuralTail == nil ? nil : pendingDisclosureSettlement?.id
+    let oldKeys = dataSource.snapshot().itemIdentifiers
+    let logicalOldKeys = config?.items.map(\.key) ?? []
+    let presentationItems = itemsByKey
+    let newKeys = next.items.map(\.key)
+    let newDisclosureCommand = config != nil && next.disclosure != nil && isNewTransition
+    if let transition { consumedStructuralTransitionID = transition.id }
+    if newDisclosureCommand, let transition, let disclosure = next.disclosure {
+      pendingDisclosureSettlement = (transition.id, disclosure.expanded)
+    } else if next.disclosure == nil || disclosureTargetChanged {
+      // A target change without a new command cannot settle the previous target.
+      pendingDisclosureSettlement = nil
+    }
+    let wantsStructure = config?.orientation == "vertical"
+      && (config?.layout == "linear" || config?.layout == "table")
+      && isNewTransition && logicalOldKeys != newKeys
+      && next.orientation == "vertical" && (next.layout == "linear" || next.layout == "table")
+      && !UIAccessibility.isReduceMotionEnabled
+      && (transition?.duration ?? 0) > 0
+    let tailPrefix = wantsStructure ? config.flatMap { prefixTailCount(from: $0, to: next) } : nil
+    // A carried tail extent belongs to its original prefix boundary.
+    // Commit a new boundary atomically instead of starting a legacy row animation.
+    let prefixChangedDuringTail = structuralTail != nil && tailPrefix != nil
+      && structuralTail?.prefixCount != tailPrefix
+    let rawTailCandidate: StructuralTail? = tailPrefix.flatMap { prefix in
+      guard let previous = config else { return nil }
+      let items = previous.items.count > next.items.count
+        ? Array(previous.items.dropFirst(prefix)) : Array(next.items.dropFirst(prefix))
+      let heights = items.map { rowHeight($0) }
+      let tail = StructuralTail(items: items, heights: heights,
+        spacing: next.itemSpacing, prefixCount: prefix,
+        finalExtent: previous.items.count > next.items.count ? 0 :
+          heights.reduce(0, +) + CGFloat(max(0, items.count - 1)) * next.itemSpacing
+            + (prefix == 0 ? 0 : next.itemSpacing))
+      return tail
+    }
+    let tailOverCap = rawTailCandidate.map(tailExceedsHostLimit) ?? false
+    let animateStructure = wantsStructure && !tailOverCap && !prefixChangedDuringTail
+      && !disclosureGeometryInvalid
+      && (next.disclosure == nil ||
+        (rawTailCandidate != nil && reactContainerSlots.count > 5))
+    let directDisclosureStatus: String? = newDisclosureCommand && !animateStructure
+      ? (disclosureGeometryInvalid || logicalOldKeys != newKeys && (transition?.duration ?? 0) > 0
+          && !UIAccessibility.isReduceMotionEnabled ? "interrupted" : "completed")
+      : nil
+    var interruptedPendingID: String?
+    let tailCandidate = animateStructure ? rawTailCandidate : nil
+    let presentationHeights: [String: CGFloat] = animateStructure ? Dictionary(uniqueKeysWithValues: oldKeys.compactMap { key -> (String, CGFloat)? in
+      guard let item = presentationItems[key] else { return nil }
+      let height = structuralRemovedHeights[key].map { $0 * (1 - structuralRemovalProgress) }
+        ?? rowHeight(item)
+      return (key, height)
+    }) : [:]
+    let previousOffset = collectionView.contentOffset.y
+    let oldLeftContentHeight = animateStructure ? flowLayout.bodyContentHeight : 0
+    let oldSpacerHeight = structuralSpacerHeight
+    let oldRowsHeight = animateStructure
+      ? presentationHeights.values.reduce(CGFloat(0), +)
+        + CGFloat(max(0, oldKeys.count - 1)) * (config?.itemSpacing ?? 0)
+      : 0
+    let newRowsHeight = animateStructure
+      ? next.items.reduce(CGFloat(0)) { $0 + rowHeight($1) }
+        + CGFloat(max(0, newKeys.count - 1)) * next.itemSpacing
+      : 0
+    let survivingKeys = animateStructure ? Set(newKeys) : Set<String>()
+    let visibleAnchor = animateStructure
+      ? collectionView.indexPathsForVisibleItems.sorted().first {
+          oldKeys.indices.contains($0.item) && survivingKeys.contains(oldKeys[$0.item])
+        }
+      : nil
+    let anchorKey = visibleAnchor.map { oldKeys[$0.item] }
+    let oldPrefix = (animateStructure ? anchorKey : nil).flatMap { key -> CGFloat? in
+      guard let index = oldKeys.firstIndex(of: key) else { return nil }
+      return oldKeys.prefix(index).reduce(CGFloat(0)) { $0 + (presentationHeights[$1] ?? 0) }
+        + CGFloat(index) * (config?.itemSpacing ?? 0)
+    } ?? 0
+    let newPrefix = (animateStructure ? anchorKey : nil).flatMap { key -> CGFloat? in
+      guard let index = newKeys.firstIndex(of: key) else { return nil }
+      return next.items.prefix(index).reduce(CGFloat(0)) { $0 + rowHeight($1) }
+        + CGFloat(index) * next.itemSpacing
+    } ?? 0
+    if animateStructure {
+      let carriedExtent = structuralTail == nil ? nil : structuralSpacerHeight
+      stopStructuralAnimation()
+      clearStructuralTail()
+      structuralScrollInterrupted = false
+      structuralFooterStartY = reactContainerSlots.count > 2
+        ? reactContainerSlots[2].host.frame.minY : nil
+      structuralFooterProgress = 0
+      let removedKeys = Set(oldKeys).subtracting(newKeys)
+      let retainsOrder = oldKeys.filter { survivingKeys.contains($0) } == newKeys
+      structuralRemovedItems = tailCandidate == nil && retainsOrder
+        ? presentationItems.filter { removedKeys.contains($0.key) } : [:]
+      structuralRemovedHeights = tailCandidate == nil && retainsOrder
+        ? presentationHeights.filter { removedKeys.contains($0.key) } : [:]
+      structuralRemovalProgress = 0
+      if let tail = tailCandidate {
+        structuralTail = tail
+        structuralTailStartExtent = carriedExtent ?? (tail.finalExtent == 0 ? tail.extent : 0)
+        structuralTailSegmentStartEased = 0
+        structuralSpacerHeight = structuralTailStartExtent
+        let prefixHeights = next.items.prefix(tail.prefixCount).reduce(CGFloat(0)) {
+          $0 + rowHeight($1)
+        }
+        structuralTailStartY = next.contentPaddingTop + containerSlotHeights[0]
+          + prefixHeights + CGFloat(max(0, tail.prefixCount - 1)) * next.itemSpacing
+        disclosureStartCHeight = disclosureCVisibleHeight
+        disclosureStartInset = disclosureInset
+        disclosureSegmentStartEased = 0
+      } else {
+        structuralSpacerHeight = structuralRemovedItems.isEmpty
+          ? max(0, structuralSpacerHeight + oldRowsHeight - newRowsHeight) : 0
+      }
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 0])
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 1])
+      structuralScrollPhaseActive = true
+      needsContentShrinkCorrection = false
+    } else if logicalOldKeys != newKeys
+      || (newDisclosureCommand || disclosureGeometryInvalid || disclosureStateChanged)
+        && structuralTail != nil {
+      if !newDisclosureCommand && !disclosureTargetChanged { interruptedPendingID = activePendingID }
+      stopStructuralAnimation()
+      clearStructuralTail()
+      structuralSpacerHeight = 0
+      structuralFooterStartY = nil
+      structuralRemovedItems.removeAll()
+      structuralRemovedHeights.removeAll()
+    }
     invalidateActionAnchor(reason: "snapshot")
-    if let current = config, isControlledSelectionSnapshotUpdate(from: current, to: next) {
-      let changedSummaryKeys = Set(zip(current.items, next.items).compactMap { old, new in
-        old.content != new.content ? new.key : nil
-      })
+    if let current = config, !newDisclosureCommand,
+       structuralRemovedItems.isEmpty, structuralTail == nil,
+       isControlledSelectionSnapshotUpdate(from: current, to: next) {
+      acceptRowIndex(for: next, replacing: current)
       config = next
       itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
-      refreshVisibleSelection(changedSummaryKeys: changedSummaryKeys)
+      // OneKey patch: A controlled selection echo is fully handled by the
+      // lightweight updater. Rebinding unchanged visuals clears cached images.
+      refreshVisibleSelection()
       return
     }
+    if let current = config, interactiveReorderSource != nil {
+      if !newDisclosureCommand && canDeferSnapshotDuringInteractiveReorder(from: current, to: next) {
+        deferSnapshotDuringInteractiveReorder(from: current, to: next)
+        return
+      }
+      cancelInteractiveReorderForStructuralUpdate()
+    }
     let oldItems = itemsByKey
+    // Chrome lives outside the row payload, so a changed list style must rebind
+    // rows whose own content is unchanged.
     let themeChanged = !dictionariesEqual(config?.theme, next.theme)
+      || !dictionariesEqual(config?.listStyle, next.listStyle)
+      || config?.layout != next.layout
+    let tailGeometryChanged = config.map { current in
+      current.disclosure?.expanded != next.disclosure?.expanded
+        || current.disclosure?.expandedTrailingInset != next.disclosure?.expandedTrailingInset
+        || current.orientation != next.orientation
+        || current.stickyHeaders != next.stickyHeaders
+        || current.sectionIndexEnabled != next.sectionIndexEnabled
+        || current.contentPadding != next.contentPadding
+        || current.itemSpacing != next.itemSpacing
+        || current.contentPaddingTop != next.contentPaddingTop
+        || current.contentPaddingBottom != next.contentPaddingBottom
+        || current.contentPaddingHorizontal != next.contentPaddingHorizontal
+        || current.items.count != next.items.count
+        || zip(current.items, next.items).contains { old, new in
+          old.key != new.key || old.rendererKey != new.rendererKey
+            || rowHeight(old) != rowHeight(new)
+        }
+    } ?? false
     if config?.generation != next.generation { endReachedGeneration = nil }
+    acceptRowIndex(for: next, replacing: config)
     config = next
-    itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
+    if structuralTail == nil {
+      disclosureCVisibleHeight = next.disclosure?.expanded == true ? containerSlotHeights[4] : 0
+      disclosureInset = next.disclosure?.expanded == true
+        ? next.disclosure?.expandedTrailingInset ?? 0 : 0
+    }
+    var nextItemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
+    nextItemsByKey.merge(structuralRemovedItems) { current, _ in current }
+    if let tail = structuralTail, !tail.retiringKeys.isEmpty {
+      nextItemsByKey.merge(presentationItems.filter { tail.retiringKeys.contains($0.key) }) {
+        current, _ in current
+      }
+    }
+    let finishRetiringCells = replaceCellItems(with: nextItemsByKey, outgoingKeys: oldKeys)
+    if !animateStructure, let tail = structuralTail {
+      if themeChanged || tailGeometryChanged {
+        if !newDisclosureCommand { interruptedPendingID = activePendingID }
+        stopStructuralAnimation()
+        clearStructuralTail()
+        structuralSpacerHeight = 0
+        structuralFooterStartY = nil
+        disclosureCVisibleHeight = next.disclosure?.expanded == true ? containerSlotHeights[4] : 0
+        disclosureInset = next.disclosure?.expanded == true
+          ? next.disclosure?.expandedTrailingInset ?? 0 : 0
+      } else {
+        for (index, previous) in tail.items.enumerated() {
+          guard let item = itemsByKey[previous.key], item.content != previous.content else { continue }
+          tail.items[index] = item
+        }
+      }
+    }
     configureSectionIndex(next)
     configureLayout(next)
     configureRefresh(next)
     configureFooter(next)
+    if structuralTail != nil { updateStructuralTailWindow() }
+
+    if animateStructure, let transition {
+      let inset = collectionView.adjustedContentInset
+      let finalLeftHeight = structuralTail.map { tail in
+        structuralTailStartY + tail.finalExtent + next.contentPaddingBottom + containerSlotHeights[2]
+          + (next.disclosure == nil ? 0 :
+              (next.disclosure?.expanded == true ? containerSlotHeights[4] : 0)
+                + containerSlotHeights[5]
+                + (next.disclosure?.expanded == true
+                    ? next.disclosure?.expandedTrailingInset ?? 0 : 0))
+      } ?? max(0, oldLeftContentHeight + newRowsHeight - oldRowsHeight - oldSpacerHeight)
+      let sidecarHeight = sidecarLayout == nil ? 0 :
+        next.contentPaddingTop + containerSlotHeights[3] + next.contentPaddingBottom
+      let finalHeight = max(finalLeftHeight, sidecarHeight)
+      let finalMaximum = max(-inset.top, finalHeight - collectionView.bounds.height + inset.bottom)
+      structuralStartSpacer = structuralSpacerHeight
+      structuralStartOffset = previousOffset
+      var targetOffset = structuralTail == nil
+        ? min(max(-inset.top, previousOffset + newPrefix - oldPrefix), finalMaximum)
+        : min(max(-inset.top, previousOffset), finalMaximum)
+      if let tail = structuralTail, tail.finalExtent == 0,
+         (next.disclosure != nil ? containerSlotHeights[5] : containerSlotHeights[2]) > 0 {
+        let targetTop = structuralTailStartY
+        let targetBottom = targetTop + (next.disclosure != nil
+          ? containerSlotHeights[5] : containerSlotHeights[2])
+        var sticky: CGFloat = 0
+        for case let value as NSNumber in pagerStickyHeights.objectEnumerator()?.allObjects ?? [] {
+          sticky += CGFloat(value.doubleValue)
+        }
+        let lower = targetBottom - collectionView.bounds.height + inset.bottom
+        let upper = targetTop - inset.top - sticky
+        targetOffset = lower <= upper
+          ? min(max(targetOffset, lower), upper) : upper
+        targetOffset = min(max(-inset.top, targetOffset), finalMaximum)
+      } else if structuralTail == nil, visibleAnchor == nil, let fallbackKey = transition.anchorKey,
+         let fallbackIndex = newKeys.firstIndex(of: fallbackKey) {
+        let fallbackY = next.contentPaddingTop + containerSlotHeights[0]
+          + next.items.prefix(fallbackIndex).reduce(CGFloat(0)) { $0 + rowHeight($1) }
+          + CGFloat(fallbackIndex) * next.itemSpacing
+        targetOffset = min(targetOffset, max(-inset.top, fallbackY - inset.top))
+      }
+      structuralTargetOffset = targetOffset
+      if structuralTail != nil { updateStructuralTailTarget() }
+      structuralAnimationDuration = transition.duration
+    }
 
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
     snapshot.appendSections([0])
-    let keys = next.items.map(\.key)
+    let keys = structuralTail.map { $0.retiringKeys.isEmpty ? newKeys : oldKeys }
+      ?? (structuralRemovedItems.isEmpty ? newKeys : oldKeys)
     snapshot.appendItems(keys, toSection: 0)
-    let changedKeys = keys.filter { key in
+    var changedKeys = Set(keys.filter { key in
       guard let old = oldItems[key], let new = itemsByKey[key] else { return false }
       return themeChanged || old.revision != new.revision || old.content != new.content
-    }
-    snapshot.reconfigureItems(changedKeys)
-    dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-      guard let self else { return }
+    })
+    changedKeys.formUnion(deferredReorderReconfigureKeys)
+    deferredReorderReconfigureKeys.removeAll()
+    let retainedKeys = Set(dataSource.snapshot().itemIdentifiers).intersection(keys)
+    let changedRetainedKeys = changedKeys.filter { retainedKeys.contains($0) }
+    // Reconfigure must keep its existing reuse identifier. A same-key renderer
+    // change needs reload so UIKit dequeues from the new structural pool.
+    let replacedKeys = changedRetainedKeys.filter { oldItems[$0]?.rendererKey != itemsByKey[$0]?.rendererKey }
+    snapshot.reloadItems(Array(replacedKeys))
+    snapshot.reconfigureItems(Array(changedRetainedKeys.subtracting(replacedKeys)))
+    let scrollRevisionAtApply = explicitScrollRevision
+    let explicitScrollPendingAtApply = pendingScrollRequest != nil
+    dataSource.apply(snapshot, animatingDifferences: animateStructure && structuralRemovedItems.isEmpty
+      && structuralTail == nil) { [weak self] in
+      finishRetiringCells?()
+      guard let self, !self.disposed else { return }
       self.collectionView.layoutIfNeeded()
+      self.updateStructuralTailWindow()
+      self.layoutContainerSlots()
+      self.notifyPagerScrollViewReadyIfNeeded()
       self.performPendingScrollIfNeeded()
+      if directDisclosureStatus == "completed", let transition {
+        self.revealDirectCollapsedToggle(expectedID: transition.id,
+          scrollRevision: scrollRevisionAtApply,
+          explicitScrollPendingAtApply: explicitScrollPendingAtApply)
+      }
       self.emitVisibleRangeIfNeeded()
       self.checkEndReached()
       self.syncSectionIndexToVisibleRows()
+      if let directDisclosureStatus, let transition {
+        self.settleDisclosure(directDisclosureStatus, expectedID: transition.id)
+      } else if let interruptedPendingID {
+        self.settleDisclosure("interrupted", expectedID: interruptedPendingID)
+      }
+    }
+    if animateStructure && (structuralTail != nil || tailCandidate == nil) {
+      updateStructuralTailWindow()
+      if tailCandidate != nil && structuralTail == nil { return }
+      structuralAnimationStart = CACurrentMediaTime()
+      let displayLink = CADisplayLink(target: self, selector: #selector(advanceStructuralAnimation(_:)))
+      structuralDisplayLink = displayLink
+      displayLink.add(to: .main, forMode: .common)
+    }
+  }
+
+  private func stopStructuralAnimation() {
+    if structuralScrollPhaseActive {
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 2])
+      structuralScrollPhaseActive = false
+    }
+    structuralDisplayLink?.invalidate()
+    structuralDisplayLink = nil
+  }
+
+  private func revealDirectCollapsedToggle(expectedID: String, scrollRevision: Int,
+                                           explicitScrollPendingAtApply: Bool) {
+    guard !disposed, let pending = pendingDisclosureSettlement,
+          pending.id == expectedID, !pending.expanded,
+          consumedStructuralTransitionID == expectedID,
+          config?.disclosure?.expanded == false,
+          structuralTail == nil, structuralDisplayLink == nil,
+          !structuralScrollPhaseActive, scrollRevision == explicitScrollRevision,
+          !explicitScrollPendingAtApply,
+          pendingScrollRequest == nil, !animatedExplicitScrollCommand,
+          !collectionView.isTracking, !collectionView.isDragging,
+          !collectionView.isDecelerating,
+          collectionView.bounds.height > 0, reactContainerSlots.count > 5 else { return }
+    let toggle = reactContainerSlots[5].host
+    guard !toggle.isHidden, toggle.bounds.height > 0 else { return }
+    let inset = collectionView.adjustedContentInset
+    let maximum = max(-inset.top,
+      collectionView.contentSize.height - collectionView.bounds.height + inset.bottom)
+    var sticky: CGFloat = 0
+    for case let value as NSNumber in pagerStickyHeights.objectEnumerator()?.allObjects ?? [] {
+      sticky += CGFloat(value.doubleValue)
+    }
+    let lower = toggle.frame.maxY - collectionView.bounds.height + inset.bottom
+    let upper = toggle.frame.minY - inset.top - sticky
+    let current = collectionView.contentOffset.y
+    let visibleTarget = lower <= upper ? min(max(current, lower), upper) : upper
+    let target = min(max(-inset.top, visibleTarget), maximum)
+    guard abs(target - current) > 0.5 else { return }
+    NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+      object: collectionView, userInfo: ["phase": 0])
+    defer {
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 2])
+    }
+    NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+      object: collectionView, userInfo: ["phase": 1])
+    collectionView.setContentOffset(CGPoint(x: collectionView.contentOffset.x, y: target), animated: false)
+    layoutContainerSlots()
+  }
+
+  private func settleDisclosure(_ status: String, expectedID: String? = nil) {
+    guard let pending = pendingDisclosureSettlement,
+          expectedID == nil || pending.id == expectedID,
+          consumedStructuralTransitionID == pending.id,
+          config?.disclosure?.expanded == pending.expanded else { return }
+    pendingDisclosureSettlement = nil
+    guard let callback = onStructuralTransitionSettled else { return }
+    emit(callback, [
+      "transitionId": pending.id,
+      "status": status,
+      "settledExpanded": pending.expanded,
+    ])
+  }
+
+  @objc private func advanceStructuralAnimation(_ link: CADisplayLink) {
+    guard let config else { stopStructuralAnimation(); return }
+    if structuralTail != nil && UIAccessibility.isReduceMotionEnabled {
+      finishStructuralTail(interrupted: false)
+      return
+    }
+    let elapsed = CACurrentMediaTime() - structuralAnimationStart
+    let progress = min(1, max(0, elapsed / max(0.001, structuralAnimationDuration)))
+    let eased = progress * progress * (3 - 2 * progress)
+    if let tail = structuralTail {
+      // Commit cell clipping, viewport movement, and slots together for this tick.
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      defer { CATransaction.commit() }
+      let segment = structuralTailSegmentProgress(eased)
+      structuralSpacerHeight = structuralTailStartExtent
+        + (tail.finalExtent - structuralTailStartExtent) * segment
+      if let disclosure = config.disclosure {
+        let targetC = disclosure.expanded ? containerSlotHeights[4] : 0
+        let targetInset = disclosure.expanded ? disclosure.expandedTrailingInset : 0
+        let contentSegment = disclosureSegmentProgress(eased)
+        disclosureCVisibleHeight = disclosureStartCHeight
+          + (targetC - disclosureStartCHeight) * contentSegment
+        disclosureInset = disclosureStartInset
+          + (targetInset - disclosureStartInset) * segment
+      }
+      structuralFooterProgress = CGFloat(eased)
+      updateStructuralTailWindow()
+      flowLayout.invalidateLayout()
+      collectionView.layoutIfNeeded()
+      if !structuralScrollInterrupted && !collectionView.isTracking
+        && !collectionView.isDragging && !collectionView.isDecelerating {
+        collectionView.contentOffset.y = structuralStartOffset
+          + (structuralTargetOffset - structuralStartOffset) * segment
+        collectionView.layoutIfNeeded()
+      }
+      updateStructuralTailWindow()
+      layoutContainerSlots()
+      if progress >= 1 { finishStructuralTail(interrupted: structuralScrollInterrupted) }
+      return
+    }
+    structuralSpacerHeight = structuralStartSpacer * (1 - eased)
+    structuralFooterProgress = CGFloat(eased)
+    structuralRemovalProgress = CGFloat(eased)
+    for case let cell as NativeListRowHost in collectionView.visibleCells {
+      guard let indexPath = collectionView.indexPath(for: cell),
+            let key = dataSource.itemIdentifier(for: indexPath) else { continue }
+      cell.structuralContentHeight = structuralRemovedItems[key].map {
+        rowHeight($0, allocatedWidth: cell.bounds.width)
+      }
+    }
+    var inset = flowLayout.sectionInset
+    inset.bottom = config.contentPaddingBottom + containerSlotHeights[2] + structuralSpacerHeight
+    flowLayout.sectionInset = inset
+    flowLayout.invalidateLayout()
+    collectionView.layoutIfNeeded()
+    if !structuralScrollInterrupted && !collectionView.isTracking
+      && !collectionView.isDragging && !collectionView.isDecelerating {
+      collectionView.contentOffset.y = structuralStartOffset
+        + (structuralTargetOffset - structuralStartOffset) * eased
+      // Materialize the new viewport before updating presentation cells.
+      collectionView.layoutIfNeeded()
+    }
+    for cell in collectionView.visibleCells {
+      guard let indexPath = collectionView.indexPath(for: cell),
+            let key = dataSource.itemIdentifier(for: indexPath) else { continue }
+      let retiring = structuralRemovedItems[key] != nil
+      if retiring { cell.clipsToBounds = true }
+      cell.alpha = retiring ? 1 - structuralRemovalProgress : 1
+      cell.isUserInteractionEnabled = !retiring && !(itemsByKey[key]?.data.bool("disabled") ?? false)
+    }
+    layoutContainerSlots()
+    if progress >= 1 {
+      if !structuralRemovedItems.isEmpty {
+        var snapshot = dataSource.snapshot()
+        let outgoingKeys = Array(structuralRemovedItems.keys)
+        snapshot.deleteItems(outgoingKeys)
+        structuralRemovedItems.removeAll()
+        structuralRemovedHeights.removeAll()
+        let finishRetiringCells = replaceCellItems(
+          with: Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) }),
+          outgoingKeys: outgoingKeys)
+        dataSource.apply(snapshot, animatingDifferences: false, completion: finishRetiringCells)
+        collectionView.layoutIfNeeded()
+        if !structuralScrollInterrupted && !collectionView.isTracking
+          && !collectionView.isDragging && !collectionView.isDecelerating {
+          let inset = collectionView.adjustedContentInset
+          let maximum = max(-inset.top,
+            collectionView.contentSize.height - collectionView.bounds.height + inset.bottom)
+          let target = min(max(-inset.top, structuralTargetOffset), maximum)
+          // Cancel UIKit's residual content-shrink scroll animation after deleting retired rows.
+          collectionView.setContentOffset(
+            CGPoint(x: collectionView.contentOffset.x, y: target), animated: false)
+          collectionView.layoutIfNeeded()
+        }
+      }
+      stopStructuralAnimation()
+      structuralSpacerHeight = 0
+      structuralFooterStartY = nil
+      layoutContainerSlots()
+      emitVisibleRangeIfNeeded()
+      checkEndReached()
+      scheduleContentShrinkCorrection()
     }
   }
 
   func applyPatchesJson(_ json: String) {
     guard var current = config,
+          let indexByKey = acceptedRowIndex?.byKey,
           let bytes = json.data(using: .utf8),
           let patches = try? JSONSerialization.jsonObject(with: bytes) as? [[String: Any]] else { return }
-    let indexByKey = Dictionary(uniqueKeysWithValues: current.items.enumerated().map { ($1.key, $0) })
     var seen = Set<String>()
     var pending: [(Int, [String: Any])] = []
     for patch in patches {
       let key = patch.string("key")
       guard let index = indexByKey[key],
+            current.items.indices.contains(index),
+            current.items[index].key == key,
             seen.insert(key).inserted,
             patch.string("type") == current.items[index].type,
             let changes = patch.dictionary("changes") else { return }
       pending.append((index, changes))
     }
 
-    var changedKeys: [String] = []
+    var changedKeys = Set<String>()
+    var marketQuoteKeys = Set<String>()
     var sizeChanged = false
+    var reorderStructureChanged = false
+    let marketQuoteFields: Set<String> = [
+      "revision", "price", "priceSegments", "change", "accessibilityLabel", "metrics",
+    ]
     for (index, changes) in pending {
+      let previous = current.items[index]
       var merged = current.items[index].data
       changes.forEach { key, value in
-        if key != "key" && key != "type" { merged[key] = value }
+        if key != "key" && key != "type" {
+          if value is NSNull { merged.removeValue(forKey: key) }
+          else { merged[key] = value }
+        }
       }
       guard let item = try? NativeListItem(data: merged) else { return }
-      if rowHeight(current.items[index]) != rowHeight(item) { sizeChanged = true }
+      if rowHeight(previous, usingCompactReorderHeight: false) != rowHeight(item, usingCompactReorderHeight: false) ||
+        current.orientation == "horizontal" && previous.type == "rail" && railWidth(previous) != railWidth(item) ||
+        current.sectionIndexEnabled && previous.type == "sectionHeader" &&
+        previous.data.string("indexTitle").isEmpty != item.data.string("indexTitle").isEmpty {
+        sizeChanged = true
+      }
+      if previous.sectionKey != item.sectionKey ||
+        previous.isReorderable != item.isReorderable ||
+        !hasSameNestedReorderStructure(previous, item) ||
+        previous.type == "identity" &&
+        previous.data.string("presentation") != item.data.string("presentation") {
+        reorderStructureChanged = true
+      }
       current.items[index] = item
-      changedKeys.append(item.key)
+      let previousMetrics = previous.data.dictionaries("metrics")
+      let nextMetrics = item.data.dictionaries("metrics")
+      let sameMetricStructure = previousMetrics.count == nextMetrics.count &&
+        previousMetrics.indices.allSatisfy { metricIndex in
+          let before = previousMetrics[metricIndex]
+          let after = nextMetrics[metricIndex]
+          return before.string("key") == after.string("key") &&
+            before.int("weight", default: 1) == after.int("weight", default: 1) &&
+            before.string("alignment", default: "end") ==
+              after.string("alignment", default: "end")
+        }
+      if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields),
+        sameMetricStructure
+      {
+        marketQuoteKeys.insert(item.key)
+      } else {
+        changedKeys.insert(item.key)
+      }
       if let selected = changes["selected"] as? Bool {
         if selected { current.selectedKeys.insert(item.key) } else { current.selectedKeys.remove(item.key) }
+      } else if changes["selected"] is NSNull {
+        current.selectedKeys.remove(item.key)
       }
     }
-    invalidateActionAnchor(reason: "snapshot")
+    if !changedKeys.isEmpty { invalidateActionAnchor(reason: "snapshot") }
+    if interactiveReorderSource != nil, sizeChanged || reorderStructureChanged {
+      cancelInteractiveReorderForStructuralUpdate()
+    }
     config = current
-    itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
+    for (index, _) in pending {
+      let item = current.items[index]
+      itemsByKey[item.key] = item
+    }
+    if let tail = structuralTail {
+      for key in changedKeys.union(marketQuoteKeys) {
+        guard let index = tail.indexByKey[key], let item = itemsByKey[key] else { continue }
+        tail.items[index] = item
+      }
+      if sizeChanged { finishStructuralTail(interrupted: true) }
+    }
+    for indexPath in collectionView.indexPathsForVisibleItems {
+      guard let item = item(at: indexPath),
+            marketQuoteKeys.contains(item.key),
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost else { continue }
+      cell.updateMarketQuote(item, theme: current.theme)
+    }
+    if changedKeys.isEmpty {
+      configureFooter(current)
+      emitVisibleRangeIfNeeded()
+      checkEndReached()
+      return
+    }
+    if interactiveReorderSource != nil {
+      deferredReorderReconfigureKeys.formUnion(changedKeys)
+      configureFooter(current)
+      return
+    }
+    changedKeys.formUnion(deferredReorderReconfigureKeys)
+    deferredReorderReconfigureKeys.removeAll()
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changedKeys.filter { snapshot.indexOfItem($0) != nil })
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
@@ -359,6 +1763,7 @@ final class NativeListView: UIView {
     requestScroll(.index(index, animated, alignment, viewPosition, viewOffset))
   }
 
+  @objc(onekeyScrollToOffset:animated:)
   func scrollToOffset(_ offset: Double, animated: Bool) {
     requestScroll(.offset(offset, animated))
   }
@@ -367,7 +1772,40 @@ final class NativeListView: UIView {
     requestScroll(.end(animated))
   }
 
+  private func explicitTopForScrollCommand(_ request: ScrollRequest) -> Bool? {
+    guard let config else { return nil }
+    let explicitTop: Bool
+    switch request {
+    case let .key(key, _, alignment, viewPosition, viewOffset):
+      guard config.items.contains(where: { $0.key == key }), viewPosition.isFinite, viewOffset.isFinite else { return nil }
+      explicitTop = config.items.first?.key == key && alignment == "start" && viewPosition == 0 && viewOffset == 0
+    case let .index(index, _, alignment, viewPosition, viewOffset):
+      guard index >= 0, index < config.items.count, viewPosition.isFinite, viewOffset.isFinite else { return nil }
+      explicitTop = index == 0 && alignment == "start" && viewPosition == 0 && viewOffset == 0
+    case let .offset(offset, _):
+      guard offset.isFinite else { return nil }
+      explicitTop = offset <= 0
+    case .end:
+      explicitTop = false
+    }
+    return explicitTop
+  }
+
+  private func acceptScrollCommand(_ request: ScrollRequest) {
+    guard !commandAcceptedForPendingScroll,
+          let explicitTop = explicitTopForScrollCommand(request) else { return }
+    commandAcceptedForPendingScroll = true
+    NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+      object: collectionView, userInfo: ["explicitTop": explicitTop, "phase": 0])
+  }
+
   private func requestScroll(_ request: ScrollRequest) {
+    if config != nil && explicitTopForScrollCommand(request) == nil { return }
+    explicitScrollRevision &+= 1
+    if structuralTail != nil { finishStructuralTail(interrupted: true) }
+    animatedExplicitScrollCommand = false
+    commandAcceptedForPendingScroll = false
+    acceptScrollCommand(request)
     if performScroll(request) {
       pendingScrollRequest = nil
     } else {
@@ -376,7 +1814,9 @@ final class NativeListView: UIView {
   }
 
   private func performPendingScrollIfNeeded() {
-    guard let request = pendingScrollRequest, performScroll(request) else { return }
+    guard let request = pendingScrollRequest else { return }
+    acceptScrollCommand(request)
+    guard performScroll(request) else { return }
     pendingScrollRequest = nil
   }
 
@@ -389,6 +1829,8 @@ final class NativeListView: UIView {
       : collectionView.bounds.height
     guard viewportLength > 0 else { return false }
     collectionView.layoutIfNeeded()
+    performingExplicitScrollCommand = commandAcceptedForPendingScroll
+    defer { performingExplicitScrollCommand = false }
 
     switch request {
     case let .key(key, animated, alignment, viewPosition, viewOffset):
@@ -463,10 +1905,15 @@ final class NativeListView: UIView {
     } else {
       resolvedPosition = CGFloat(min(1, max(0, viewPosition)))
     }
-    let target = itemStart
-      - startInset
-      - resolvedPosition * max(0, viewportLength - itemLength)
-      - CGFloat(viewOffset)
+    let target = nativeListAlignedScrollOffset(
+      itemStart: itemStart,
+      startInset: startInset,
+      viewportLength: viewportLength,
+      itemLength: itemLength,
+      viewPosition: resolvedPosition,
+      viewOffset: CGFloat(viewOffset),
+      nearest: alignment == "nearest"
+    )
     setScrollOffset(target, animated: animated)
     return true
   }
@@ -478,16 +1925,61 @@ final class NativeListView: UIView {
     let contentLength = isHorizontal
       ? collectionView.contentSize.width
       : collectionView.contentSize.height
-    let minimum = -(isHorizontal ? insets.left : insets.top)
-    let maximum = max(
-      minimum,
-      contentLength - viewportLength + (isHorizontal ? insets.right : insets.bottom)
+    let offset = nativeListClampedScrollOffset(
+      requestedOffset,
+      viewportLength: viewportLength,
+      contentLength: contentLength,
+      startInset: isHorizontal ? insets.left : insets.top,
+      endInset: isHorizontal ? insets.right : insets.bottom
     )
-    let offset = min(maximum, max(minimum, requestedOffset))
     let point = isHorizontal
       ? CGPoint(x: offset, y: collectionView.contentOffset.y)
       : CGPoint(x: collectionView.contentOffset.x, y: offset)
+    let moved = point != collectionView.contentOffset
+    if performingExplicitScrollCommand && moved {
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 1])
+    }
+    if performingExplicitScrollCommand && moved { animatedExplicitScrollCommand = animated }
     collectionView.setContentOffset(point, animated: animated)
+    if performingExplicitScrollCommand && moved && !animated {
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 2])
+    }
+  }
+
+  private func contentLayoutDidChange() {
+    let height = collectionView.contentSize.height
+    if config?.orientation != "horizontal",
+       let previous = lastLaidOutContentHeight, height < previous {
+      needsContentShrinkCorrection = true
+    }
+    lastLaidOutContentHeight = height
+    scheduleContentShrinkCorrection()
+  }
+
+  private func scheduleContentShrinkCorrection() {
+    guard needsContentShrinkCorrection, !contentShrinkCorrectionScheduled, !disposed else { return }
+    contentShrinkCorrectionScheduled = true
+    // Wait for the collection layout and ancestor pager inset observers to settle.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.contentShrinkCorrectionScheduled = false
+      guard !self.disposed, self.needsContentShrinkCorrection,
+            self.structuralDisplayLink == nil,
+            !self.collectionView.isTracking, !self.collectionView.isDragging,
+            !self.collectionView.isDecelerating,
+            self.collectionView.refreshControl?.isRefreshing != true,
+            self.config?.refreshing != true else { return }
+      self.needsContentShrinkCorrection = false
+      guard self.config?.orientation != "horizontal", self.collectionView.bounds.height > 0 else { return }
+      let insets = self.collectionView.adjustedContentInset
+      let maximum = max(-insets.top,
+        self.collectionView.contentSize.height - self.collectionView.bounds.height + insets.bottom)
+      if self.collectionView.contentOffset.y > maximum {
+        self.setScrollOffset(self.collectionView.contentOffset.y, animated: false)
+      }
+    }
   }
 
   func setRefreshing(_ refreshing: Bool) {
@@ -498,6 +1990,7 @@ final class NativeListView: UIView {
       collectionView.refreshControl?.beginRefreshing()
     } else {
       collectionView.refreshControl?.endRefreshing()
+      scheduleContentShrinkCorrection()
     }
   }
 
@@ -509,12 +2002,25 @@ final class NativeListView: UIView {
     flowLayout.scrollDirection = isHorizontal ? .horizontal : .vertical
     flowLayout.minimumLineSpacing = config.itemSpacing
     flowLayout.minimumInteritemSpacing = config.itemSpacing
+    let sidecarInset = sidecarBaseInset(collectionView.bounds.width)
+    let sidecarSpace = sidecarLayout.map { $0.width + $0.gap } ?? 0
+    let horizontalInset = config.contentPaddingHorizontal + sidecarInset
+    let disclosureHeight = config.disclosure == nil ? 0 :
+      disclosureCVisibleHeight + containerSlotHeights[5] + disclosureInset
     flowLayout.sectionInset = UIEdgeInsets(
-      top: config.contentPaddingTop,
-      left: config.contentPaddingHorizontal + (isRightToLeft ? indexGutter : 0),
-      bottom: config.contentPaddingBottom,
-      right: config.contentPaddingHorizontal + (isRightToLeft ? 0 : indexGutter)
+      top: config.contentPaddingTop + containerSlotHeights[0],
+      left: horizontalInset + (isRightToLeft ? sidecarSpace + indexGutter : 0),
+      bottom: config.contentPaddingBottom + containerSlotHeights[2] + disclosureHeight
+        + (structuralTail == nil ? structuralSpacerHeight : 0),
+      right: horizontalInset + (isRightToLeft ? 0 : sidecarSpace + indexGutter)
     )
+    let emptyMinimum = config.items.isEmpty
+      ? config.contentPaddingTop + config.contentPaddingBottom
+        + containerSlotHeights.prefix(3).reduce(0, +) + disclosureHeight
+      : 0
+    let sidecarMinimum = sidecarLayout == nil ? 0 :
+      config.contentPaddingTop + containerSlotHeights[3] + config.contentPaddingBottom
+    flowLayout.minimumContainerContentHeight = max(emptyMinimum, sidecarMinimum)
     flowLayout.stickyItemIndexes = config.stickyHeaders
       ? Set(config.items.enumerated().compactMap {
           $0.element.type == "sectionHeader" && $0.element.data.bool("sticky", default: true) && $0.element.data.string("variant") != "summary"
@@ -528,6 +2034,7 @@ final class NativeListView: UIView {
     listBodyGestureGuard.isEnabled = !isHorizontal
     collectionView.showsVerticalScrollIndicator = sectionIndexEntries.isEmpty
     collectionView.dragInteractionEnabled = false
+    lastConfiguredCollectionWidth = collectionView.bounds.width
     lastLayoutDirection = effectiveUserInterfaceLayoutDirection
   }
 
@@ -537,12 +2044,17 @@ final class NativeListView: UIView {
       let point = gesture.location(in: collectionView)
       guard let current = config,
             current.reorderable,
-            let indexPath = collectionView.indexPathForItem(at: point),
+            let indexPath = reorderSourceIndexPath(at: point),
             let item = item(at: indexPath),
             item.isReorderable,
-            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else {
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost,
+            (current.reorderFromHandleOnly ||
+             cell.canStartWalletGroupReorder(at: gesture.location(in: cell))) else {
         interactiveReorderSource = nil
         interactiveReorderCell = nil
+        interactiveReorderTargetIndex = nil
+        interactiveReorderTargetKey = nil
+        interactiveReorderLockedCrossAxisPosition = nil
         return
       }
       // OneKey patch: a hidden wallet child starts dragging its whole logical group.
@@ -557,6 +2069,11 @@ final class NativeListView: UIView {
         item.data.string("presentation") == "walletSidebar" &&
         current.items.contains { $0.type == "walletGroup" }
       interactiveReorderTargetIndex = indexPath.item
+      interactiveReorderTargetKey = item.key
+      let sourceCenter = flowLayout.layoutAttributesForItem(at: indexPath)?.center ?? cell.center
+      interactiveReorderLockedCrossAxisPosition = current.orientation == "horizontal"
+        ? sourceCenter.y
+        : sourceCenter.x
       if item.type == "walletGroup" {
         interactiveReorderCompactKey = item.key
         cell.setWalletGroupReorderCompact(true)
@@ -572,25 +2089,38 @@ final class NativeListView: UIView {
         interactiveReorderCell = nil
         interactiveReorderUsesAtomicTargeting = false
         interactiveReorderTargetIndex = nil
+        interactiveReorderTargetKey = nil
+        interactiveReorderLockedCrossAxisPosition = nil
         interactiveReorderFeedbackIndex = nil
         flowLayout.invalidateLayout()
         collectionView.layoutIfNeeded()
         return
       }
+      if !interactiveReorderUsesAtomicTargeting {
+        interactiveMovementKeys = dataSource.snapshot().itemIdentifiers
+      }
       interactiveReorderFeedbackIndex = indexPath.item
+      suspendAncestorPansForReorder()
       reorderStartFeedback.impactOccurred(intensity: 0.7)
       reorderStartFeedback.prepare()
       reorderMoveFeedback.prepare()
       showInteractiveReorderPlaceholder(at: indexPath, item: item, config: current)
     case .changed:
       guard interactiveReorderSource != nil else { return }
-      let point = gesture.location(in: collectionView)
+      var point = gesture.location(in: collectionView)
+      if let lockedPosition = interactiveReorderLockedCrossAxisPosition {
+        if config?.orientation == "horizontal" {
+          point.y = lockedPosition
+        } else {
+          point.x = lockedPosition
+        }
+      }
       collectionView.updateInteractiveMovementTargetPosition(point)
       if let indexPath = nearestReorderIndexPath(to: point),
          let item = item(at: indexPath) {
         let targetChanged = interactiveReorderFeedbackIndex != indexPath.item
         if interactiveReorderUsesAtomicTargeting {
-          updateAtomicReorderTarget(to: indexPath.item, animated: targetChanged)
+          updateAtomicReorderTarget(to: indexPath.item, key: item.key, animated: targetChanged)
         }
         if targetChanged {
           interactiveReorderFeedbackIndex = indexPath.item
@@ -604,6 +2134,7 @@ final class NativeListView: UIView {
       interactiveReorderCell?.setPressed(false)
       finishInteractiveReorder(cancelled: false)
     case .cancelled, .failed:
+      guard interactiveReorderSource != nil else { return }
       interactiveReorderCell?.setPressed(false)
       finishInteractiveReorder(cancelled: true)
     default:
@@ -611,11 +2142,54 @@ final class NativeListView: UIView {
     }
   }
 
+  // NativeOverlay implements this optional UIKit coordination hook to retain
+  // ownership of its current dismiss policy. The packages can load independently.
+  private static let setPanReorderSuppressed =
+    NSSelectorFromString("setOneKeyNativeListReorderSuppressed:")
+
+  /// A reorder that has started owns the drag: an enclosing sheet or pager must
+  /// not also pan (and dismiss or page) with the same finger.
+  private func suspendAncestorPansForReorder() {
+    resumeAncestorPansAfterReorder()
+    var view = collectionView.superview
+    while let current = view {
+      for recognizer in current.gestureRecognizers ?? []
+      where recognizer is UIPanGestureRecognizer && recognizer.delegate !== self {
+        if recognizer.responds(to: Self.setPanReorderSuppressed) {
+          _ = recognizer.perform(Self.setPanReorderSuppressed, with: NSNumber(value: true))
+        } else {
+          guard recognizer.isEnabled else { continue }
+          recognizer.isEnabled = false
+        }
+        reorderSuspendedAncestorPans.append(recognizer)
+      }
+      view = current.superview
+    }
+  }
+
+  private func resumeAncestorPansAfterReorder() {
+    for recognizer in reorderSuspendedAncestorPans {
+      if recognizer.responds(to: Self.setPanReorderSuppressed) {
+        _ = recognizer.perform(Self.setPanReorderSuppressed, with: NSNumber(value: false))
+      } else {
+        recognizer.isEnabled = true
+      }
+    }
+    reorderSuspendedAncestorPans.removeAll()
+  }
+
   private func nearestReorderIndexPath(to point: CGPoint) -> IndexPath? {
-    collectionView.indexPathsForVisibleItems.min { lhs, rhs in
+    let isHorizontal = config?.orientation == "horizontal"
+    return collectionView.indexPathsForVisibleItems.min { lhs, rhs in
       let lhsFrame = flowLayout.layoutAttributesForItem(at: lhs)?.frame ?? .zero
       let rhsFrame = flowLayout.layoutAttributesForItem(at: rhs)?.frame ?? .zero
-      return abs(lhsFrame.midY - point.y) < abs(rhsFrame.midY - point.y)
+      let lhsDistance = isHorizontal
+        ? abs(lhsFrame.midX - point.x)
+        : abs(lhsFrame.midY - point.y)
+      let rhsDistance = isHorizontal
+        ? abs(rhsFrame.midX - point.x)
+        : abs(rhsFrame.midY - point.y)
+      return lhsDistance < rhsDistance
     }
   }
 
@@ -661,6 +2235,8 @@ final class NativeListView: UIView {
   }
 
   private func finishInteractiveReorder(cancelled: Bool) {
+    resumeAncestorPansAfterReorder()
+    interactiveReorderLockedCrossAxisPosition = nil
     if interactiveReorderUsesAtomicTargeting {
       finishAtomicInteractiveReorder(cancelled: cancelled)
       return
@@ -668,9 +2244,11 @@ final class NativeListView: UIView {
     interactiveReorderAnimator?.stopAnimation(true)
     interactiveReorderFeedbackIndex = nil
     if cancelled {
+      interactiveMovementKeys = nil
       collectionView.cancelInteractiveMovement()
     } else {
       collectionView.endInteractiveMovement()
+      interactiveMovementKeys = nil
     }
     let animator = UIViewPropertyAnimator(
       duration: ReorderAnimation.duration,
@@ -691,10 +2269,58 @@ final class NativeListView: UIView {
       } else {
         self.interactiveReorderSource = nil
         self.interactiveReorderCell = nil
+        self.interactiveReorderTargetIndex = nil
+        self.interactiveReorderTargetKey = nil
+        self.scheduleDeferredReorderRefresh()
       }
     }
     interactiveReorderAnimator = animator
     animator.startAnimation()
+  }
+
+  private func cancelInteractiveReorderForStructuralUpdate() {
+    guard interactiveReorderSource != nil else { return }
+    resumeAncestorPansAfterReorder()
+    interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderAnimator = nil
+    interactiveMovementKeys = nil
+    collectionView.cancelInteractiveMovement()
+    interactiveReorderCell?.setPressed(false)
+    if interactiveReorderCompactKey != nil {
+      interactiveReorderCell?.setWalletGroupReorderCompact(false)
+      interactiveReorderCompactKey = nil
+      flowLayout.invalidateLayout()
+    }
+    resetAtomicReorderTransforms()
+    interactiveReorderSource = nil
+    interactiveReorderCell = nil
+    interactiveReorderFeedbackIndex = nil
+    clearAtomicInteractiveReorderState()
+  }
+
+  private func scheduleDeferredReorderRefresh() {
+    guard !deferredReorderReconfigureKeys.isEmpty else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.flushDeferredReorderRefresh()
+    }
+  }
+
+  private func flushDeferredReorderRefresh() {
+    guard interactiveReorderSource == nil,
+          interactiveReorderCompactKey == nil,
+          interactiveReorderAnimator == nil,
+          !deferredReorderReconfigureKeys.isEmpty else { return }
+    var snapshot = dataSource.snapshot()
+    let keys = deferredReorderReconfigureKeys.filter { snapshot.indexOfItem($0) != nil }
+    deferredReorderReconfigureKeys.removeAll()
+    guard !keys.isEmpty else { return }
+    snapshot.reconfigureItems(Array(keys))
+    dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+      guard let self else { return }
+      self.collectionView.layoutIfNeeded()
+      self.emitVisibleRangeIfNeeded()
+      self.checkEndReached()
+    }
   }
 
   private func completeInteractiveReorder(
@@ -705,6 +2331,10 @@ final class NativeListView: UIView {
     defer {
       interactiveReorderSource = nil
       interactiveReorderCell = nil
+      interactiveReorderTargetIndex = nil
+      interactiveReorderTargetKey = nil
+      interactiveReorderLockedCrossAxisPosition = nil
+      scheduleDeferredReorderRefresh()
     }
     let keys = snapshot.itemIdentifiers
     let items = keys.compactMap { itemsByKey[$0] }
@@ -712,6 +2342,7 @@ final class NativeListView: UIView {
           let toIndex = keys.firstIndex(of: source.key),
           items.count == keys.count else { return }
     current.items = items
+    acceptedRowIndex = AcceptedRowIndex(items: items)
     config = current
     guard source.index != toIndex else { return }
     var payload: [String: Any] = [
@@ -744,30 +2375,59 @@ final class NativeListView: UIView {
       self.walletGroupCell(for: key)?.finishWalletGroupReorderExpansion()
       self.interactiveReorderSource = nil
       self.interactiveReorderCell = nil
+      self.interactiveReorderTargetIndex = nil
+      self.interactiveReorderTargetKey = nil
+      self.interactiveReorderAnimator = nil
+      self.scheduleDeferredReorderRefresh()
     }
     interactiveReorderAnimator = animator
     animator.startAnimation()
   }
 
-  private func walletGroupCell(for key: String) -> NativeListCell? {
+  private func walletGroupCell(for key: String) -> NativeListRowHost? {
     guard let index = dataSource.snapshot().indexOfItem(key) else { return nil }
-    return collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? NativeListCell
+    return collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? NativeListRowHost
   }
 
-  private func item(at indexPath: IndexPath) -> NativeListItem? {
-    if let key = dataSource.itemIdentifier(for: indexPath), let item = itemsByKey[key] {
-      return item
+  // OneKey patch: flow layout sizes an interactive move in UIKit's in-flight order,
+  // while the diffable snapshot and cell index paths keep the pre-drag order until
+  // the move commits. Resolving sizes from the snapshot swaps row heights.
+  private func layoutItem(at indexPath: IndexPath) -> NativeListItem? {
+    guard let keys = interactiveMovementKeys else {
+      return item(at: indexPath, includeRetiringCell: true)
+    }
+    return keys[safe: indexPath.item].flatMap { itemsByKey[$0] }
+  }
+
+  private func updateInteractiveMovementKeys(movingFrom source: IndexPath, to target: IndexPath) {
+    guard interactiveMovementKeys != nil else { return }
+    var keys = dataSource.snapshot().itemIdentifiers
+    guard keys.indices.contains(source.item) else { return }
+    let key = keys.remove(at: source.item)
+    keys.insert(key, at: min(max(target.item, 0), keys.count))
+    interactiveMovementKeys = keys
+  }
+
+  private func item(at indexPath: IndexPath, includeRetiringCell: Bool = false) -> NativeListItem? {
+    if let key = dataSource.itemIdentifier(for: indexPath) {
+      return itemsByKey[key] ?? (includeRetiringCell ? retiringCellItems[key]?.item : nil)
     }
     return config?.items[safe: indexPath.item]
   }
 
-  private func updateAtomicReorderTarget(to targetIndex: Int, animated: Bool) {
+  private func isInertPresentationKey(_ key: String) -> Bool {
+    structuralTail?.indexByKey[key] != nil || structuralRemovedItems[key] != nil
+      || (itemsByKey[key] == nil && retiringCellItems[key] != nil)
+  }
+
+  private func updateAtomicReorderTarget(to targetIndex: Int, key targetKey: String, animated: Bool) {
     guard let source = interactiveReorderSource else { return }
     interactiveReorderTargetIndex = targetIndex
+    interactiveReorderTargetKey = targetKey
     let distance = CGFloat(68) + flowLayout.minimumLineSpacing
     let updates = { [weak self] in
       guard let self else { return }
-      for case let cell as NativeListCell in self.collectionView.visibleCells {
+      for case let cell as NativeListRowHost in self.collectionView.visibleCells {
         guard let indexPath = self.collectionView.indexPath(for: cell),
               indexPath.item != source.index else { continue }
         let offset: CGFloat
@@ -803,17 +2463,28 @@ final class NativeListView: UIView {
 
   private func finishAtomicInteractiveReorder(cancelled: Bool) {
     interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderAnimator = nil
     interactiveReorderFeedbackIndex = nil
     guard let source = interactiveReorderSource else { return }
-    let targetIndex = interactiveReorderTargetIndex ?? source.index
     collectionView.cancelInteractiveMovement()
 
-    if !cancelled, targetIndex != source.index {
+    if !cancelled {
       var snapshot = dataSource.snapshot()
       let keys = snapshot.itemIdentifiers
-      if targetIndex < source.index, let targetKey = keys[safe: targetIndex] {
+      guard let targetKey = interactiveReorderTargetKey,
+            targetKey != source.key,
+            let sourceIndex = keys.firstIndex(of: source.key),
+            let targetIndex = keys.firstIndex(of: targetKey) else {
+        resetAtomicReorderTransforms()
+        interactiveReorderSource = nil
+        interactiveReorderCell = nil
+        clearAtomicInteractiveReorderState()
+        scheduleDeferredReorderRefresh()
+        return
+      }
+      if targetIndex < sourceIndex {
         snapshot.moveItem(source.key, beforeItem: targetKey)
-      } else if let targetKey = keys[safe: targetIndex] {
+      } else {
         snapshot.moveItem(source.key, afterItem: targetKey)
       }
       dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
@@ -828,12 +2499,15 @@ final class NativeListView: UIView {
       interactiveReorderSource = nil
       interactiveReorderCell = nil
       clearAtomicInteractiveReorderState()
+      scheduleDeferredReorderRefresh()
     }
   }
 
   private func clearAtomicInteractiveReorderState() {
     interactiveReorderUsesAtomicTargeting = false
     interactiveReorderTargetIndex = nil
+    interactiveReorderTargetKey = nil
+    interactiveReorderLockedCrossAxisPosition = nil
     interactiveReorderPlaceholder.isHidden = true
     interactiveReorderPlaceholder.alpha = 1
   }
@@ -871,18 +2545,21 @@ final class NativeListView: UIView {
     sectionIndexHapticsEnabled = config.sectionIndexHapticsEnabled
     sectionIndexView.configure(
       titles: sectionIndexEntries.map(\.title),
-      textColor: nativeListColor(config.theme, "secondaryText", "#646464"),
-      activeColor: nativeListColor(config.theme, "accent", "#108303"),
-      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC"),
-      centeredInWindow: config.sectionIndexCenteredInWindow
+      textColor: nativeListColor(config.theme, "disabledText", "#8D8D8D"),
+      activeColor: nativeListColor(config.theme, "positive", "#218358"),
+      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC")
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
-    sectionIndexPreview.backgroundColor = nativeListColor(
-      config.theme,
-      "inverseBackground",
-      "#202020"
+    updateSectionIndexAttachment()
+    sectionIndexPreview.configure(
+      fillColor: UIColor(
+        red: 202.0 / 255.0,
+        green: 202.0 / 255.0,
+        blue: 202.0 / 255.0,
+        alpha: 1
+      ),
+      textColor: .white
     )
-    sectionIndexPreview.textColor = nativeListColor(config.theme, "inverseText", "#FCFCFC")
     if let previousKey,
        let index = sectionIndexEntries.firstIndex(where: { $0.key == previousKey }) {
       sectionIndexView.setActiveIndex(index)
@@ -890,6 +2567,76 @@ final class NativeListView: UIView {
       sectionIndexView.setActiveIndex(nil)
     }
     if sectionIndexEntries.isEmpty { finishSectionIndexInteraction(immediately: true) }
+  }
+
+  private func updateSectionIndexAttachment() {
+    guard config?.sectionIndexCenteredInWindow == true,
+          !sectionIndexEntries.isEmpty,
+          bounds.width > 0,
+          bounds.height > 0,
+          isVisibleInHierarchy,
+          let window,
+          let hostView = sectionIndexHostView,
+          hostView.window === window else {
+      attachSectionIndexToList()
+      return
+    }
+    attachSectionIndex(to: hostView, centeredIn: window)
+  }
+
+  private var sectionIndexHostView: UIView? {
+    var responder: UIResponder? = self
+    while let current = responder {
+      if let viewController = current as? UIViewController {
+        return viewController.view
+      }
+      responder = current.next
+    }
+    return nil
+  }
+
+  private var isVisibleInHierarchy: Bool {
+    var current: UIView? = self
+    while let view = current {
+      if view.isHidden || view.alpha <= 0.01 { return false }
+      current = view.superview
+    }
+    return true
+  }
+
+  private func attachSectionIndexToList() {
+    guard sectionIndexView.superview !== self || sectionIndexLayoutConstraints.isEmpty else { return }
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexHostHeightConstraint = nil
+    sectionIndexView.removeFromSuperview()
+    addSubview(sectionIndexView)
+    sectionIndexLayoutConstraints = [
+      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+      sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+      sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+    ]
+    NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
+  }
+
+  private func attachSectionIndex(to hostView: UIView, centeredIn window: UIWindow) {
+    let railHeight = sectionIndexView.preferredHeight(constrainedTo: hostView.bounds.height)
+    if sectionIndexView.superview === hostView {
+      sectionIndexHostHeightConstraint?.constant = railHeight
+      return
+    }
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexView.removeFromSuperview()
+    hostView.addSubview(sectionIndexView)
+    let heightConstraint = sectionIndexView.heightAnchor.constraint(equalToConstant: railHeight)
+    sectionIndexHostHeightConstraint = heightConstraint
+    sectionIndexLayoutConstraints = [
+      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+      sectionIndexView.centerYAnchor.constraint(equalTo: window.centerYAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+      heightConstraint,
+    ]
+    NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
   }
 
   private func selectSectionIndex(_ index: Int, interacting: Bool) {
@@ -901,6 +2648,7 @@ final class NativeListView: UIView {
     if interacting {
       sectionIndexPreview.layer.removeAllAnimations()
       sectionIndexPreview.text = entry.title
+      positionSectionIndexPreview(at: sectionIndexView.centerY(for: index))
       sectionIndexPreview.isHidden = false
       sectionIndexPreview.alpha = 1
       if changed && sectionIndexHapticsEnabled {
@@ -929,10 +2677,33 @@ final class NativeListView: UIView {
     }
   }
 
+  private func positionSectionIndexPreview(at sectionIndexY: CGFloat) {
+    layoutIfNeeded()
+    let targetY = sectionIndexView.convert(
+      CGPoint(x: sectionIndexView.bounds.midX, y: sectionIndexY),
+      to: self
+    ).y
+    let safeFrame = safeAreaLayoutGuide.layoutFrame
+    let halfHeight = Self.sectionIndexPreviewHeight / 2
+    let minimumY = safeFrame.minY + halfHeight
+    let maximumY = max(minimumY, safeFrame.maxY - halfHeight)
+    let clampedY = targetY.clamped(to: minimumY...maximumY)
+    sectionIndexPreview.transform = CGAffineTransform(
+      translationX: 0,
+      y: clampedY - sectionIndexPreview.center.y
+    )
+  }
+
   private func syncSectionIndexToVisibleRows() {
     guard !sectionIndexScrubbing, !sectionIndexEntries.isEmpty else { return }
-    let firstVisible = collectionView.indexPathsForVisibleItems.map(\.item).min() ?? 0
-    let index = sectionIndexEntries.lastIndex { $0.position <= firstVisible }
+    let offset = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    // Legacy semantics: a header at the first position is active even while overscrolled;
+    // no entry is active while rows above the first header are still visible.
+    let index = sectionIndexEntries.lastIndex {
+      if $0.position == 0 { return true }
+      guard let attributes = flowLayout.layoutAttributesForItem(at: IndexPath(item: $0.position, section: 0)) else { return false }
+      return attributes.frame.minY <= offset + 1
+    }
     sectionIndexView.setActiveIndex(index)
   }
 
@@ -948,6 +2719,7 @@ final class NativeListView: UIView {
     } else {
       collectionView.refreshControl = nil
     }
+    if !config.refreshing { scheduleContentShrinkCorrection() }
   }
 
   private func configureFooter(_ config: NativeListConfig) {
@@ -956,13 +2728,27 @@ final class NativeListView: UIView {
       footerCell.isHidden = true
       return
     }
+    if footer.rendererKey != footerRendererKey {
+      let previous = footerCell
+      previous.prepareForReuse()
+      footerCell = NativeListRendererRegistry.create(footer.rendererKey)
+      footerCell.onAction = previous.onAction
+      footerCell.onBindingInvalidated = previous.onBindingInvalidated
+      for recognizer in previous.gestureRecognizers ?? [] { footerCell.addGestureRecognizer(recognizer) }
+      previous.removeFromSuperview()
+      footerContainer.addSubview(footerCell)
+      footerCell.frame = footerContainer.bounds
+      footerCell.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      footerRendererKey = footer.rendererKey
+    }
     footerCell.isHidden = false
     footerHeightConstraint.constant = rowHeight(footer)
     bind(cell: footerCell, item: footer, itemIndex: nil)
   }
 
-  private func bind(cell: NativeListCell, item: NativeListItem, itemIndex: Int? = nil) {
+  private func bind(cell: NativeListRowHost, item: NativeListItem, itemIndex: Int? = nil) {
     guard let config else { return }
+    cell.listStyle = config.listStyle
     cell.bind(
       item: item,
       theme: config.theme,
@@ -971,27 +2757,56 @@ final class NativeListView: UIView {
       selected: item.data.bool("selected") || config.selectedKeys.contains(item.key),
       checkboxState: { [weak self] item, target, fallback in
         self?.resolveCheckboxState(item: item, target: target, fallback: fallback) ?? fallback
-      }
+      },
+      fonts: fonts
     )
     if item.key == interactiveReorderCompactKey {
       cell.setWalletGroupReorderCompact(true)
+    }
+    let retiring = cell !== footerCell && structuralRemovedItems[item.key] != nil
+    cell.structuralContentHeight = retiring
+      ? rowHeight(item, allocatedWidth: cell.bounds.width) : nil
+    if retiring { cell.clipsToBounds = true }
+    cell.alpha = retiring ? 1 - structuralRemovalProgress : 1
+    cell.isUserInteractionEnabled = !retiring && !item.data.bool("disabled")
+    cell.layer.mask = nil
+    cell.isHidden = false
+    cell.accessibilityElementsHidden = false
+    if let structuralTail, let itemIndex {
+      presentTailCell(cell, key: item.key, index: itemIndex, tail: structuralTail)
     }
   }
 
   private func handleRowPress(_ item: NativeListItem, origin: NativeListActionOrigin?) {
     // OneKey patch: missing-address rows keep accessory actions available.
-    guard let config, !item.data.bool("disabled"), !item.data.bool("pressDisabled") else { return }
+    guard let config, item.isRowPressEnabled else { return }
     if config.rowPressToggles && item.isSelectable && config.selectionMode != "none" {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
     }
-    if item.type == "action" {
+    if item.type == "market", !item.data.string("pressActionKey").isEmpty {
+      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("pressActionKey"), origin: origin))
+    } else if item.type == "action" {
       emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else if item.type == "system", item.data.string("variant") == "retry" {
       emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else {
       emit(onRowAction, rowActionPayload(item: item, actionKey: "press", origin: origin))
     }
+  }
+
+  @objc private func marketLongPressChanged(_ gesture: UILongPressGestureRecognizer) {
+    guard gesture.state == .began else { return }
+    let point = gesture.location(in: collectionView)
+    guard let indexPath = collectionView.indexPathForItem(at: point),
+          let item = item(at: indexPath), !isInertPresentationKey(item.key),
+          (item.type == "market" || item.type == "identity"),
+          item.isRowPressEnabled else { return }
+    let actionKey = item.data.string("longPressActionKey")
+    guard !actionKey.isEmpty else { return }
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListRowHost)?.rowActionOrigin()
+    origin?.windowPoint = gesture.location(in: window)
+    handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
   private func handleAction(
@@ -1070,8 +2885,8 @@ final class NativeListView: UIView {
       self?.resolveCheckboxState(item: item, target: target, fallback: fallback) ?? fallback
     }
     for indexPath in collectionView.indexPathsForVisibleItems {
-      guard let item = config.items[safe: indexPath.item],
-            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else { continue }
+      guard let item = item(at: indexPath), !isInertPresentationKey(item.key),
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost else { continue }
       if changedSummaryKeys.contains(item.key) {
         bind(cell: cell, item: item, itemIndex: indexPath.item)
         continue
@@ -1099,6 +2914,7 @@ final class NativeListView: UIView {
           current.layout == next.layout,
           current.orientation == next.orientation,
           current.gridColumns == next.gridColumns,
+          dictionariesEqual(current.listStyle, next.listStyle),
           current.stickyHeaders == next.stickyHeaders,
           current.contentPadding == next.contentPadding,
           current.contentPaddingHorizontal == next.contentPaddingHorizontal,
@@ -1108,7 +2924,9 @@ final class NativeListView: UIView {
           current.selectionMode == next.selectionMode,
           current.rowPressToggles == next.rowPressToggles,
           current.reorderable == next.reorderable,
+          current.reorderFromHandleOnly == next.reorderFromHandleOnly,
           current.pullToRefresh == next.pullToRefresh,
+          current.refreshTriggerDistance == next.refreshTriggerDistance,
           current.refreshing == next.refreshing,
           current.loadMore == next.loadMore,
           current.endReachedThreshold == next.endReachedThreshold,
@@ -1119,24 +2937,119 @@ final class NativeListView: UIView {
           current.fixedFooter?.content == next.fixedFooter?.content,
           current.items.count == next.items.count else { return false }
 
+    let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
     return zip(current.items, next.items).allSatisfy { old, new in
-      guard old.key == new.key, old.type == new.type else { return false }
-      if old.content == new.content { return true }
-      // OneKey patch: controlled echoes can also update row and checkbox selection fields.
-      // guard old.type == "sectionHeader",
-      //       old.data.string("variant") == "summary",
-      //       new.data.string("variant") == "summary" else { return false }
-      // var oldData = old.data
-      // var newData = new.data
-      // oldData.removeValue(forKey: "title")
-      // oldData.removeValue(forKey: "value")
-      // newData.removeValue(forKey: "title")
-      // newData.removeValue(forKey: "value")
-      let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
-      guard let oldData = selectionComparisonData(old.data, controlled: controlled),
-            let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
-      return jsonData(oldData) == jsonData(newData)
+      isStableSelectionUpdate(from: old, to: new, controlled: controlled)
     }
+  }
+
+  // The lightweight selection rebind leaves the original row and controls mounted.
+  private func isStableSelectionUpdate(
+    from old: NativeListItem, to new: NativeListItem, controlled: Bool
+  ) -> Bool {
+    guard old.key == new.key, old.type == new.type else { return false }
+    if old.content == new.content { return true }
+    guard let oldData = selectionComparisonData(old.data, controlled: controlled),
+          let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
+    return jsonData(oldData) == jsonData(newData)
+  }
+
+  private func canDeferSnapshotDuringInteractiveReorder(
+    from current: NativeListConfig,
+    to next: NativeListConfig
+  ) -> Bool {
+    guard current.layout == next.layout,
+          current.orientation == next.orientation,
+          current.gridColumns == next.gridColumns,
+          dictionariesEqual(current.listStyle, next.listStyle),
+          current.stickyHeaders == next.stickyHeaders,
+          current.contentPadding == next.contentPadding,
+          current.contentPaddingHorizontal == next.contentPaddingHorizontal,
+          current.contentPaddingTop == next.contentPaddingTop,
+          current.contentPaddingBottom == next.contentPaddingBottom,
+          current.itemSpacing == next.itemSpacing,
+          current.reorderable == next.reorderable,
+          current.reorderFromHandleOnly == next.reorderFromHandleOnly,
+          current.sectionIndexEnabled == next.sectionIndexEnabled,
+          current.items.count == next.items.count,
+          hasSameFooterGeometry(current.fixedFooter, next.fixedFooter) else { return false }
+
+    return zip(current.items, next.items).allSatisfy { old, new in
+      guard old.key == new.key,
+            old.type == new.type,
+            old.sectionKey == new.sectionKey,
+            old.isReorderable == new.isReorderable,
+            hasSameNestedReorderStructure(old, new),
+            rowHeight(old, usingCompactReorderHeight: false) == rowHeight(new, usingCompactReorderHeight: false) else {
+        return false
+      }
+      if current.orientation == "horizontal", old.type == "rail", railWidth(old) != railWidth(new) {
+        return false
+      }
+      if old.type == "identity", old.data.string("presentation") != new.data.string("presentation") {
+        return false
+      }
+      if current.sectionIndexEnabled,
+         old.type == "sectionHeader",
+         old.data.string("indexTitle").isEmpty != new.data.string("indexTitle").isEmpty {
+        return false
+      }
+      return true
+    }
+  }
+
+  private func hasSameNestedReorderStructure(_ current: NativeListItem, _ next: NativeListItem) -> Bool {
+    guard current.type == "walletGroup" else { return true }
+    guard let currentParent = current.data.dictionary("parent"),
+          let nextParent = next.data.dictionary("parent") else { return false }
+    let currentMembers = [currentParent] + current.data.dictionaries("children")
+    let nextMembers = [nextParent] + next.data.dictionaries("children")
+    guard currentMembers.count == nextMembers.count else { return false }
+    return zip(currentMembers, nextMembers).allSatisfy { old, new in
+      old.string("key") == new.string("key") &&
+        old.string("type") == new.string("type") &&
+        old.string("sectionKey") == new.string("sectionKey") &&
+        old.string("presentation") == new.string("presentation")
+    }
+  }
+
+  private func hasSameFooterGeometry(_ current: NativeListItem?, _ next: NativeListItem?) -> Bool {
+    switch (current, next) {
+    case (nil, nil):
+      return true
+    case let (current?, next?):
+      return current.key == next.key &&
+        current.type == next.type &&
+        rowHeight(current, usingCompactReorderHeight: false) == rowHeight(next, usingCompactReorderHeight: false)
+    default:
+      return false
+    }
+  }
+
+  private func deferSnapshotDuringInteractiveReorder(
+    from current: NativeListConfig,
+    to next: NativeListConfig
+  ) {
+    let oldItems = itemsByKey
+    let themeChanged = !dictionariesEqual(current.theme, next.theme)
+    let selectionChanged = current.selectionMode != next.selectionMode ||
+      current.selectedKeys != next.selectedKeys
+    if current.generation != next.generation { endReachedGeneration = nil }
+    acceptRowIndex(for: next, replacing: current)
+    config = next
+    itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
+    let changedKeys = next.items.compactMap { item -> String? in
+      guard let old = oldItems[item.key] else { return nil }
+      return themeChanged || selectionChanged || old.revision != item.revision || old.content != item.content
+        ? item.key
+        : nil
+    }
+    deferredReorderReconfigureKeys.formUnion(changedKeys)
+    configureSectionIndex(next)
+    configureRefresh(next)
+    configureFooter(next)
+    emitVisibleRangeIfNeeded()
+    checkEndReached()
   }
 
   // OneKey patch: remove only fields that the existing lightweight binder refreshes.
@@ -1202,131 +3115,32 @@ final class NativeListView: UIView {
     return try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
   }
 
-  private func rowHeight(_ item: NativeListItem) -> CGFloat {
+  private func rowHeight(
+    _ item: NativeListItem,
+    usingCompactReorderHeight: Bool = true,
+    allocatedWidth: CGFloat? = nil
+  ) -> CGFloat {
     // OneKey patch: honor selector baseline geometry; keep compact drag sizing.
-    if item.type != "walletGroup", item.data["height"] != nil { return CGFloat(item.data.double("height")) }
-    if item.type == "system", item.data.string("variant") == "spacer" {
-      return CGFloat(item.data.int("height"))
+    if item.type == "walletGroup", usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
+    if let height = item.styledHeight { return height }
+    // Legacy WalletGroup ignored `row.height` (its height comes from its members);
+    // `style.container.height` above still wins.
+    if item.type != "walletGroup", item.data["height"] != nil {
+      return CGFloat(item.data.double("height"))
     }
-    // OneKey patch: warning height follows the current native font and available width.
-    if item.type == "system", item.data.string("variant") == "warning" {
-      let textWidth = max(1, collectionView.bounds.width - (config?.contentPaddingHorizontal ?? 0) * 2 - 24)
-      func textHeight(_ key: String, weight: NativeListFontWeight) -> CGFloat {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = 20
-        paragraph.maximumLineHeight = 20
-        return ceil((item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: 14, weight: weight), .paragraphStyle: paragraph], context: nil).height / 20) * 20
-      }
-      return 32 + textHeight("title", weight: .medium) + textHeight("message", weight: .regular)
+    let availableWidth = max(0, collectionView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right)
+    let columnWidth = config?.layout == "grid"
+      ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))
+      : availableWidth
+    let rowWidth = allocatedWidth ?? (config?.orientation == "horizontal" ? 280 : columnWidth)
+    if let height = NativeListRendererRegistry.measure(
+      item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear", fonts: fonts)
+    {
+      return max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0) : 0))
     }
-    if item.type == "walletGroup" {
-      if item.key == interactiveReorderCompactKey { return 68 }
-      let childCount = item.data.dictionaries("children").count
-      // OneKey patch: wallet badges contribute their own member heights.
-      // return CGFloat((childCount + 1) * 68 + childCount * 12)
-      let members = [item.data.dictionary("parent")].compactMap { $0 } + item.data.dictionaries("children")
-      return members.reduce(CGFloat(childCount * 12 + (members.first?["height"] != nil ? 2 : 0))) { total, data in
-        total + CGFloat(data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92))
-      }
-    }
-    if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
-      // OneKey patch: default sidebar badge geometry is 24 points taller.
-      // return 68
-      return item.data.dictionaries("badges").isEmpty ? 68 : 92
-    }
-    if item.type == "identity", item.data.string("presentation") == "networkSelector" {
-      return 47
-    }
-    let base: CGFloat
-    switch item.type {
-    case "rail": base = 40
-    case "activity": base = item.data.dictionaries("footerActions").isEmpty ? 60 : 100
-    case "message": base = messageHeight(item)
-    case "mediaTile": base = 244
-    case "metricCard":
-      base = item.data.string("variant") == "activity"
-        ? 160 + 1 / UIScreen.main.scale
-        : item.data.string("variant") == "performance" ? 178 : 132
-    case "sectionHeader":
-      let variant = item.data.string("variant")
-      let isNetworkSelector = item.data.string("presentation") == "networkSelector"
-      let isHistory = variant == "history" ||
-        item.key.hasPrefix("history-") ||
-        (item.sectionKey?.hasPrefix("history-") ?? false)
-      base = config?.layout == "table"
-        ? 28
-        : isNetworkSelector
-          ? 47
-        : isHistory
-          ? 16
-          : variant == "summary"
-            ? 68
-            : variant == "gallery"
-              ? 32
-              : item.data.dictionary("checkbox") != nil
-                ? 56
-                : config?.layout == "linear" ? 30 : 36
-    case "system":
-      switch item.data.string("variant") {
-      case "noMatch", "end": base = 36
-      case "retry": base = 44
-      default: base = 56
-      }
-    case "action":
-      base = item.data.string("presentation") == "accountSelector"
-        ? 48
-        : item.data.dictionary("icon") == nil ? 44 : 60
-    case "dataRow":
-      base = item.data.dictionaries("columns").contains {
-        !$0.string("secondaryText").isEmpty
-      } ? 60 : 56
-    default:
-      if item.type == "identity", !item.data.string("tertiary").isEmpty {
-        base = 72
-      } else if item.type == "identity", !item.data.string("subtitle").isEmpty {
-        base = 60
-      } else {
-        base = 56
-      }
-    }
-    let hasFixedHeaderHeight = item.type == "sectionHeader" &&
-      ["summary", "gallery"].contains(item.data.string("variant"))
-    let modifier: CGFloat = hasFixedHeaderHeight
-      ? 0
-      : item.data.string("size", default: "medium") == "small"
-        ? -8
-        : item.data.string("size") == "large" ? 12 : 0
-    let sectionSpacing: CGFloat = 0
-    let tableAdjustment: CGFloat = config?.layout == "table" &&
-      item.type == "dataRow" &&
-      !item.data.dictionaries("columns").contains(where: { !$0.string("secondaryText").isEmpty })
-      ? -8
-      : 0
-    return max(0, base + modifier + sectionSpacing + tableAdjustment)
+    return 56
   }
 
-  private func messageHeight(_ item: NativeListItem) -> CGFloat {
-    let maximumBodyLines = min(3, max(1, item.data.int("bodyLines", default: 3)))
-    let horizontalInsets = (config?.contentPaddingHorizontal ?? 0) * 2 + 40
-    let leadingWidth: CGFloat = item.data.dictionary("leading") == nil ? 0 : 40
-    let thumbnailWidth: CGFloat = item.data.dictionary("thumbnail") == nil ? 0 : 76
-    let textWidth = max(1, collectionView.bounds.width - horizontalInsets - leadingWidth - thumbnailWidth)
-    let bodyBounds = (item.data.string("body") as NSString).boundingRect(
-      with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
-      options: [.usesLineFragmentOrigin, .usesFontLeading],
-      attributes: [.font: nativeListFont(ofSize: 14)],
-      context: nil
-    )
-    let titleBounds = (item.data.string("title") as NSString).boundingRect(
-      with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
-      options: [.usesLineFragmentOrigin, .usesFontLeading],
-      attributes: [.font: nativeListFont(ofSize: 14, weight: .semibold)],
-      context: nil
-    )
-    let bodyLines = min(maximumBodyLines, max(1, Int(ceil(bodyBounds.height / 20))))
-    let titleLines = min(2, max(1, Int(ceil(titleBounds.height / 20))))
-    return 32 + CGFloat(titleLines * 20 + bodyLines * 20) + 22
-  }
 
   private func emit(_ block: ((String) -> Void)?, _ value: [String: Any]) {
     guard JSONSerialization.isValidJSONObject(value),
@@ -1374,6 +3188,90 @@ final class NativeListView: UIView {
     actionAnchor = nil
   }
 
+  func dispose() {
+    guard !disposed else { return }
+    setTopScrollEdge(effect: .none, overlayHeight: 0)
+    disposed = true
+
+    disposeActionAnchor()
+    interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderAnimator = nil
+    if interactiveReorderSource != nil {
+      collectionView.cancelInteractiveMovement()
+    }
+    resetAtomicReorderTransforms()
+    interactiveReorderSource = nil
+    interactiveReorderCell = nil
+    interactiveMovementKeys = nil
+    deferredReorderReconfigureKeys.removeAll()
+
+    finishSectionIndexInteraction(immediately: true)
+    sectionIndexView.onSelect = nil
+    sectionIndexView.onInteractionEnded = nil
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexLayoutConstraints.removeAll()
+    sectionIndexHostHeightConstraint = nil
+    sectionIndexView.removeFromSuperview()
+
+    collectionView.refreshControl?.removeTarget(nil, action: nil, for: .allEvents)
+    collectionView.refreshControl = nil
+    collectionView.delegate = nil
+    collectionView.dragDelegate = nil
+    collectionView.dropDelegate = nil
+    keyboardTapRecognizer.delegate = nil
+    keyboardDragRecognizer.delegate = nil
+    listBodyGestureGuard.delegate = nil
+    reorderLongPress.delegate = nil
+    resumeAncestorPansAfterReorder()
+    marketLongPress.delegate = nil
+
+    for case let cell as NativeListRowHost in collectionView.visibleCells {
+      cell.onAction = nil
+      cell.onBindingInvalidated = nil
+      cell.prepareForReuse()
+    }
+    footerCell.onAction = nil
+    footerCell.onBindingInvalidated = nil
+    footerCell.prepareForReuse()
+    collectionView.dataSource = nil
+    dataSource = nil
+
+    config = nil
+    currentHeaderRoot = nil
+    containerHeaderHeightIsAuthoritative = false
+    containerSlotHeights[0] = 0
+    acceptedRowIndex = nil
+    pagerStickyHeights.removeAllObjects()
+    for slot in reactContainerSlots { slot.host.layer.mask = nil }
+    stopStructuralAnimation()
+    clearStructuralTail()
+    structuralSpacerHeight = 0
+    structuralFooterStartY = nil
+    itemsByKey.removeAll()
+    retiringCellItems.removeAll()
+    sectionIndexEntries.removeAll()
+    if let pagerCommandCancelObserver {
+      NotificationCenter.default.removeObserver(pagerCommandCancelObserver)
+      self.pagerCommandCancelObserver = nil
+    }
+    pendingScrollRequest = nil
+    performingExplicitScrollCommand = false
+    animatedExplicitScrollCommand = false
+    commandAcceptedForPendingScroll = false
+    needsContentShrinkCorrection = false
+    lastLaidOutContentHeight = nil
+    lastVisibleRange = nil
+    onRowAction = nil
+    onActionAnchorInvalidated = nil
+    onSelectionDelta = nil
+    onReorder = nil
+    onEndReached = nil
+    onStructuralTransitionSettled = nil
+    onVisibleRangeChanged = nil
+    onScrollPositionThresholdChange = nil
+    pendingDisclosureSettlement = nil
+  }
+
   private func createActionAnchor(origin: NativeListActionOrigin) -> [String: Any]? {
     guard let sourceView = origin.sourceView,
           let ownerCell = origin.ownerCell,
@@ -1401,6 +3299,9 @@ final class NativeListView: UIView {
         ? "rtl"
         : "ltr",
     ]
+    if let point = origin.windowPoint {
+      anchor["windowPoint"] = ["x": point.x, "y": point.y]
+    }
     if let slot = origin.slot { anchor["slot"] = slot }
     return anchor
   }
@@ -1414,7 +3315,7 @@ final class NativeListView: UIView {
       && (sourceView === ownerCell.contentView || sourceView.isDescendant(of: ownerCell.contentView))
   }
 
-  private func handleBindingInvalidated(cell: NativeListCell, epoch: Int) {
+  private func handleBindingInvalidated(cell: NativeListRowHost, epoch: Int) {
     guard let anchor = actionAnchor,
           anchor.ownerCell === cell,
           anchor.bindingEpoch == epoch else { return }
@@ -1434,6 +3335,9 @@ final class NativeListView: UIView {
   }
 
   @objc private func refreshTriggered() {
+    guard !disposed, config?.pullToRefresh == true,
+          config?.refreshing != true, !refreshEmittedForDrag else { return }
+    refreshEmittedForDrag = true
     emit(onRowAction, ["actionKey": "nativeList.refresh"])
   }
 
@@ -1443,6 +3347,10 @@ final class NativeListView: UIView {
   }
 
   @objc private func footerHighlightChanged(_ recognizer: UILongPressGestureRecognizer) {
+    guard config?.fixedFooter?.isRowPressEnabled == true else {
+      footerCell.setPressed(false)
+      return
+    }
     switch recognizer.state {
     case .began, .changed:
       footerCell.setPressed(footerCell.bounds.contains(recognizer.location(in: footerCell)))
@@ -1457,8 +3365,9 @@ final class NativeListView: UIView {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.visibleEventScheduled = false
-      guard let onVisibleRangeChanged = self.onVisibleRangeChanged else { return }
-      let indexes = self.collectionView.indexPathsForVisibleItems.map(\.item).sorted()
+      guard self.structuralRemovedItems.isEmpty,
+            let onVisibleRangeChanged = self.onVisibleRangeChanged else { return }
+      let indexes = self.acceptedVisibleIndexes()
       let first = indexes.first ?? -1
       let last = indexes.last ?? -1
       let firstKey = self.config?.items[safe: first]?.key
@@ -1476,11 +3385,11 @@ final class NativeListView: UIView {
   }
 
   private func checkEndReached() {
-    guard let config,
+    guard let config, structuralRemovedItems.isEmpty,
           config.loadMore,
           endReachedGeneration != config.generation,
           !config.items.isEmpty else { return }
-    let lastVisible = collectionView.indexPathsForVisibleItems.map(\.item).max() ?? -1
+    let lastVisible = acceptedVisibleIndexes().last ?? -1
     let threshold = max(1, Int(ceil(Double(config.items.count) * config.endReachedThreshold)))
     guard lastVisible >= config.items.count - threshold else { return }
     endReachedGeneration = config.generation
@@ -1489,7 +3398,53 @@ final class NativeListView: UIView {
     emit(onEndReached, payload)
   }
 
+  private func acceptedVisibleIndexes() -> [Int] {
+    guard let config else { return [] }
+    let presentedPrefix = structuralTail?.prefixCount
+    return collectionView.indexPathsForVisibleItems.compactMap { indexPath in
+      guard presentedPrefix.map({ indexPath.item < $0 }) ?? true,
+            let item = config.items[safe: indexPath.item],
+            dataSource.itemIdentifier(for: indexPath) == item.key,
+            let cell = collectionView.cellForItem(at: indexPath), !cell.isHidden else { return nil }
+      return indexPath.item
+    }.sorted()
+  }
+
+  private func reorderSourceIndexPath(at point: CGPoint) -> IndexPath? {
+    guard config?.reorderFromHandleOnly == true else {
+      return collectionView.indexPathForItem(at: point)
+    }
+    let controlled = config?.selectionMode == "single" || config?.selectionMode == "multiple"
+    guard let original = reorderLongPress.sourceItem,
+          let handle = reorderLongPress.handle, handle.isReorderHandle,
+          let indexPath = dataSource.indexPath(for: original.key),
+          let cell = collectionView.cellForItem(at: indexPath) as? NativeListRowHost,
+          cell.bindingEpoch == reorderLongPress.bindingEpoch,
+          handle.isDescendant(of: cell),
+          let current = item(at: indexPath),
+          isStableSelectionUpdate(from: original, to: current, controlled: controlled)
+    else { return nil }
+    return indexPath
+  }
+
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
+    }
+    if gestureRecognizer === reorderLongPress || gestureRecognizer === marketLongPress {
+      let point = gestureRecognizer.location(in: collectionView)
+      let sourceIndexPath = gestureRecognizer === reorderLongPress
+        ? reorderSourceIndexPath(at: point)
+        : collectionView.indexPathForItem(at: point)
+      guard let indexPath = sourceIndexPath,
+            let item = item(at: indexPath), !isInertPresentationKey(item.key),
+            !item.data.bool("disabled") else { return false }
+      if gestureRecognizer === reorderLongPress {
+        return config?.reorderable == true && item.isReorderable
+      }
+      return (item.type == "market" || item.type == "identity")
+        && item.isRowPressEnabled && !item.data.string("longPressActionKey").isEmpty
+    }
     guard gestureRecognizer === listBodyGestureGuard,
           let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: collectionView)
@@ -1499,7 +3454,43 @@ final class NativeListView: UIView {
 
 extension NativeListView: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
+    }
+    if gestureRecognizer === keyboardTapRecognizer {
+      guard focusedTextInput(in: window) != nil else { return false }
+      switch keyboardShouldPersistTaps {
+      case .never:
+        return true
+      case .always:
+        return false
+      case .handled:
+        return !keyboardTapIsHandled(touch)
+      }
+    }
     if gestureRecognizer === listBodyGestureGuard { return true }
+    if gestureRecognizer === reorderLongPress, config?.reorderFromHandleOnly == true {
+      guard reorderLongPress.sourceItem == nil else { return false }
+      var view = touch.view
+      var handle: NativeListAccessoryButton?
+      while let current = view, current !== footerCell, current !== collectionView {
+        if let button = current as? NativeListAccessoryButton, button.isReorderHandle {
+          handle = button
+        }
+        if let cell = current as? NativeListRowHost, let handle,
+           let indexPath = collectionView.indexPath(for: cell),
+           let item = item(at: indexPath), item.isReorderable,
+           !isInertPresentationKey(item.key),
+           cell.canStartWalletGroupReorder(at: touch.location(in: cell)) {
+          reorderLongPress.sourceItem = item
+          reorderLongPress.bindingEpoch = cell.bindingEpoch
+          reorderLongPress.handle = handle
+          return true
+        }
+        view = current.superview
+      }
+      return false
+    }
     var view = touch.view
     while let current = view, current !== footerCell {
       if current is UIControl { return false }
@@ -1512,6 +3503,18 @@ extension NativeListView: UIGestureRecognizerDelegate {
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
   ) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return otherGestureRecognizer === collectionView.panGestureRecognizer ||
+        otherGestureRecognizer === listBodyGestureGuard
+    }
+    if otherGestureRecognizer === keyboardDragRecognizer {
+      return gestureRecognizer === collectionView.panGestureRecognizer ||
+        gestureRecognizer === listBodyGestureGuard
+    }
+    if gestureRecognizer === keyboardTapRecognizer ||
+       otherGestureRecognizer === keyboardTapRecognizer {
+      return false
+    }
     if gestureRecognizer === listBodyGestureGuard {
       guard let otherView = otherGestureRecognizer.view else { return false }
       return otherView === collectionView || otherView.isDescendant(of: collectionView)
@@ -1543,7 +3546,9 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     atCurrentIndexPath currentIndexPath: IndexPath,
     toProposedIndexPath proposedIndexPath: IndexPath
   ) -> IndexPath {
-    interactiveReorderUsesAtomicTargeting ? currentIndexPath : proposedIndexPath
+    guard !interactiveReorderUsesAtomicTargeting else { return currentIndexPath }
+    updateInteractiveMovementKeys(movingFrom: originalIndexPath, to: proposedIndexPath)
+    return proposedIndexPath
   }
 
   func collectionView(
@@ -1551,7 +3556,9 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     targetIndexPathForMoveFromItemAt originalIndexPath: IndexPath,
     toProposedIndexPath proposedIndexPath: IndexPath
   ) -> IndexPath {
-    interactiveReorderUsesAtomicTargeting ? originalIndexPath : proposedIndexPath
+    guard !interactiveReorderUsesAtomicTargeting else { return originalIndexPath }
+    updateInteractiveMovementKeys(movingFrom: originalIndexPath, to: proposedIndexPath)
+    return proposedIndexPath
   }
 
   func collectionView(
@@ -1559,61 +3566,100 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     layout collectionViewLayout: UICollectionViewLayout,
     sizeForItemAt indexPath: IndexPath
   ) -> CGSize {
-    guard let config, let item = item(at: indexPath) else { return .zero }
+    guard let config, let item = layoutItem(at: indexPath) else { return .zero }
     let insets = flowLayout.sectionInset
     if config.orientation == "horizontal" {
       let width: CGFloat = item.type == "rail" ? railWidth(item) : item.type == "mediaTile" ? 200 : 280
       let availableHeight = max(0, collectionView.bounds.height - insets.top - insets.bottom)
-      let height = item.type == "rail" ? min(rowHeight(item), availableHeight) : availableHeight
+      let height = item.type == "walletGroup" && item.key == interactiveReorderCompactKey ? 68
+        : item.styledHeight ?? (item.data["height"] != nil ? rowHeight(item) : item.type == "rail" ? min(rowHeight(item), availableHeight) : availableHeight)
       return CGSize(width: width, height: height)
     }
     let available = max(0, collectionView.bounds.width - insets.left - insets.right)
-    let structural = item.type == "sectionHeader" || item.type == "system" || item.type == "action"
+    let structural = item.type == "sectionHeader" || item.type == "system" || item.type == "action" || item.type == "buttonGroup"
     if config.layout == "grid", !structural {
       let spacing = CGFloat(config.gridColumns - 1) * config.itemSpacing
       let width = floor((available - spacing) / CGFloat(config.gridColumns))
-      let height = item.type == "mediaTile" ? width + 48 : rowHeight(item)
+      let height = item.styledHeight ?? (item.type == "mediaTile" && item.data["height"] == nil ? width + 48 : rowHeight(item, allocatedWidth: width))
       return CGSize(width: width, height: height)
     }
-    return CGSize(width: available, height: rowHeight(item))
+    let height = structuralRemovedHeights[item.key].map { $0 * (1 - structuralRemovalProgress) }
+      ?? rowHeight(item, allocatedWidth: available)
+    return CGSize(width: available, height: max(0.01, height))
   }
 
   private func railWidth(_ item: NativeListItem) -> CGFloat {
-    let titleWidth = (item.data.string("title") as NSString).size(
-      withAttributes: [.font: nativeListFont(ofSize: 12, weight: .medium)]
-    ).width
-    let badge = item.data.dictionary("badge")?.string("text") ?? ""
-    let badgeWidth = (badge as NSString).size(
-      withAttributes: [.font: nativeListTabularFont(ofSize: 12, weight: .medium)]
-    ).width
-    let status = item.data.string("status")
-    let statusWidth = status.isEmpty || status == "none" ? 0 : (status as NSString).size(
-      withAttributes: [.font: nativeListTabularFont(ofSize: 12)]
-    ).width
-    let visibleTextCount = 1 + (badgeWidth > 0 ? 1 : 0) + (statusWidth > 0 ? 1 : 0)
-    let width = 4 + 20 + 6 + titleWidth + badgeWidth + statusWidth
-      + CGFloat(max(0, visibleTextCount - 1)) * 6 + 4
-    return min(288, max(72, ceil(width + 8)))
+    NativeListRailRenderer.Resolved(item, theme: config?.theme, fonts: fonts).horizontalWidth
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-    guard let item = config?.items[safe: indexPath.item] else { return }
+    guard let item = item(at: indexPath), !isInertPresentationKey(item.key) else { return }
     if item.type == "walletGroup" { return }
-    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListRowHost)?.rowActionOrigin()
     handleRowPress(item, origin: origin)
   }
 
   func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
-    guard let item = config?.items[safe: indexPath.item] else { return false }
-    return !item.data.bool("disabled")
+    guard let item = item(at: indexPath), !isInertPresentationKey(item.key) else { return false }
+    return item.isRowPressEnabled
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
+    guard let item = item(at: indexPath), !isInertPresentationKey(item.key),
+          item.type == "market" else { return }
+    let actionKey = item.data.string("pressInActionKey")
+    guard !actionKey.isEmpty else { return }
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListRowHost)?.rowActionOrigin()
+    handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
   func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
-    guard let item = config?.items[safe: indexPath.item] else { return false }
-    return !item.data.bool("disabled")
+    guard let item = item(at: indexPath), !isInertPresentationKey(item.key) else { return false }
+    return item.isRowPressEnabled
+  }
+
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    guard animatedExplicitScrollCommand else { return }
+    animatedExplicitScrollCommand = false
+    NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+      object: collectionView, userInfo: ["phase": 2])
+  }
+
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    if structuralDisplayLink != nil {
+      structuralScrollInterrupted = true
+      if structuralTail != nil { finishStructuralTail(interrupted: true) }
+      else {
+        NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+          object: collectionView, userInfo: ["phase": 2])
+        structuralScrollPhaseActive = false
+      }
+    }
+    scrollViewDidEndScrollingAnimation(scrollView)
+    minimumDragOffset = 0
+    refreshEmittedForDrag = false
+  }
+
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    defer { if !decelerate { scheduleContentShrinkCorrection() } }
+    minimumDragOffset = min(minimumDragOffset, scrollView.contentOffset.y + scrollView.contentInset.top)
+    guard let threshold = config?.refreshTriggerDistance,
+          config?.pullToRefresh == true, config?.refreshing != true,
+          minimumDragOffset <= -threshold, !refreshEmittedForDrag else { return }
+    collectionView.refreshControl?.beginRefreshing()
+    refreshTriggered()
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    scheduleContentShrinkCorrection()
   }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if scrollView.isDragging {
+      minimumDragOffset = min(minimumDragOffset, scrollView.contentOffset.y + scrollView.contentInset.top)
+    }
+    layoutContainerSlots()
+    emitScrollPositionThresholdIfNeeded()
     invalidateActionAnchor(reason: "scroll")
     syncSectionIndexToVisibleRows()
     emitVisibleRangeIfNeeded()
@@ -1627,7 +3673,7 @@ extension NativeListView: UICollectionViewDragDelegate, UICollectionViewDropDele
     itemsForBeginning session: UIDragSession,
     at indexPath: IndexPath
   ) -> [UIDragItem] {
-    guard config?.reorderable == true,
+    guard config?.reorderable == true, structuralDisplayLink == nil,
           let item = config?.items[safe: indexPath.item],
           item.isReorderable else { return [] }
     let dragItem = UIDragItem(itemProvider: NSItemProvider(object: item.key as NSString))
@@ -1654,6 +3700,7 @@ extension NativeListView: UICollectionViewDragDelegate, UICollectionViewDropDele
     guard sourceItem.isReorderable, targetItem.isReorderable, sourceItem.sectionKey == targetItem.sectionKey else { return }
     current.items.remove(at: source.item)
     current.items.insert(sourceItem, at: destination.item)
+    acceptedRowIndex = AcceptedRowIndex(items: current.items)
     config = current
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
@@ -1672,18 +3719,62 @@ extension NativeListView: UICollectionViewDragDelegate, UICollectionViewDropDele
   }
 }
 
+// UIScrollView holds touch-down for about 150 ms while it decides whether a touch scrolls, so a
+// quick tap highlighted and unhighlighted a row within one frame and the pressed background never
+// rendered. Deliver touches immediately, as Android rows do.
+private final class NativeListCollectionView: UICollectionView {
+  var onContentLayout: (() -> Void)?
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    onContentLayout?()
+  }
+
+  override init(frame: CGRect, collectionViewLayout layout: UICollectionViewLayout) {
+    super.init(frame: frame, collectionViewLayout: layout)
+    delaysContentTouches = false
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  // Without the delay, in-row buttons receive touches first; UIScrollView would otherwise refuse
+  // to cancel UIControl touches, so a drag starting on a badge or accessory could not scroll.
+  override func touchesShouldCancel(in view: UIView) -> Bool {
+    view is UIControl ? true : super.touchesShouldCancel(in: view)
+  }
+}
+
+private final class NativeListClippedSlotHost: UIView {
+  var visibleTop: CGFloat = 0
+  var visibleBottom: CGFloat?
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    super.point(inside: point, with: event) && point.y >= visibleTop
+      && point.y < (visibleBottom ?? bounds.height)
+  }
+}
+
 final class NativeListFlowLayout: UICollectionViewFlowLayout {
   var stickyItemIndexes: Set<Int> = []
+  var minimumContainerContentHeight: CGFloat = 0
+  var animatedBodyContentHeight: CGFloat?
+  var tailClip: (firstIndex: Int, endY: CGFloat)?
+  var bodyContentHeight: CGFloat {
+    animatedBodyContentHeight ?? super.collectionViewContentSize.height
+  }
   private var horizontalAttributes: [IndexPath: UICollectionViewLayoutAttributes] = [:]
   private var horizontalContentSize: CGSize = .zero
-
   override func prepare() {
     super.prepare()
     horizontalAttributes.removeAll(keepingCapacity: true)
     guard scrollDirection == .horizontal, let collectionView else { return }
 
     var nextX = sectionInset.left
-    let itemCount = collectionView.numberOfItems(inSection: 0)
+    let itemCount = collectionView.numberOfSections > 0
+      ? collectionView.numberOfItems(inSection: 0)
+      : 0
     for item in 0..<itemCount {
       let indexPath = IndexPath(item: item, section: 0)
       guard let attributes = super.layoutAttributesForItem(at: indexPath)?.copy()
@@ -1702,12 +3793,37 @@ final class NativeListFlowLayout: UICollectionViewFlowLayout {
   }
 
   override var collectionViewContentSize: CGSize {
-    scrollDirection == .horizontal ? horizontalContentSize : super.collectionViewContentSize
+    if scrollDirection == .horizontal { return horizontalContentSize }
+    let size = super.collectionViewContentSize
+    return CGSize(width: size.width, height: max(bodyContentHeight, minimumContainerContentHeight))
   }
 
   override func shouldInvalidateLayout(forBoundsChange newBounds: CGRect) -> Bool {
     if scrollDirection == .horizontal, collectionView?.bounds.size != newBounds.size { return true }
+    if crossAxisLengthChanged(to: newBounds) { return true }
     return !stickyItemIndexes.isEmpty || super.shouldInvalidateLayout(forBoundsChange: newBounds)
+  }
+
+  // OneKey patch: sizeForItemAt sizes rows from the list's cross-axis length, but
+  // the context UIKit builds for a bounds change does not query the delegate again.
+  // A list resized after its first layout (iPad rotation, a sheet that settles at its
+  // final width) kept its old row size, so a narrower row was centered in the list.
+  override func invalidationContext(
+    forBoundsChange newBounds: CGRect
+  ) -> UICollectionViewLayoutInvalidationContext {
+    let context = super.invalidationContext(forBoundsChange: newBounds)
+    if crossAxisLengthChanged(to: newBounds),
+       let flowContext = context as? UICollectionViewFlowLayoutInvalidationContext {
+      flowContext.invalidateFlowLayoutDelegateMetrics = true
+    }
+    return context
+  }
+
+  private func crossAxisLengthChanged(to newBounds: CGRect) -> Bool {
+    guard let collectionView else { return false }
+    return scrollDirection == .horizontal
+      ? collectionView.bounds.height != newBounds.height
+      : collectionView.bounds.width != newBounds.width
   }
 
   override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
@@ -1716,28 +3832,49 @@ final class NativeListFlowLayout: UICollectionViewFlowLayout {
         .filter { $0.frame.intersects(rect) }
         .sorted { $0.indexPath.item < $1.indexPath.item }
     }
-    guard scrollDirection == .vertical,
-          !stickyItemIndexes.isEmpty,
-          let collectionView else { return super.layoutAttributesForElements(in: rect) }
     let base = super.layoutAttributesForElements(in: rect)?.compactMap { $0.copy() as? UICollectionViewLayoutAttributes } ?? []
-    let firstVisible = collectionView.indexPathsForVisibleItems.map(\.item).min() ?? 0
-    guard let stickyIndex = stickyItemIndexes.filter({ $0 <= firstVisible }).max(),
-          let original = super.layoutAttributesForItem(at: IndexPath(item: stickyIndex, section: 0)),
-          let sticky = original.copy() as? UICollectionViewLayoutAttributes else { return base }
+    guard scrollDirection == .vertical else { return base }
+    let clipped = base.filter { attributes in
+      guard let tailClip, attributes.representedElementCategory == .cell,
+            attributes.indexPath.item >= tailClip.firstIndex else { return true }
+      return attributes.frame.minY < tailClip.endY
+    }
+    guard !stickyItemIndexes.isEmpty,
+          let collectionView else {
+      return clipped
+    }
     let pinY = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    // Visible cells can still describe the old viewport during an imperative
+    // scroll. Resolve the pinned header from unmodified layout positions.
+    guard let stickyIndex = stickyItemIndexes.filter({
+      guard let attributes = super.layoutAttributesForItem(at: IndexPath(item: $0, section: 0)) else { return false }
+      return attributes.frame.minY <= pinY
+    }).max(),
+          let original = super.layoutAttributesForItem(at: IndexPath(item: stickyIndex, section: 0)),
+          let sticky = original.copy() as? UICollectionViewLayoutAttributes else {
+      return clipped
+    }
     let nextHeaderY = stickyItemIndexes
       .filter { $0 > stickyIndex }
       .min()
       .flatMap { super.layoutAttributesForItem(at: IndexPath(item: $0, section: 0))?.frame.minY }
     sticky.frame.origin.y = min(max(pinY, original.frame.minY), (nextHeaderY ?? .greatestFiniteMagnitude) - sticky.frame.height)
     sticky.zIndex = 10_000
-    let filtered = base.filter { $0.indexPath != sticky.indexPath }
-    return filtered + [sticky]
+    let filtered = clipped.filter { $0.indexPath != sticky.indexPath }
+    let returned = filtered + [sticky]
+    return returned
   }
 
   override func layoutAttributesForItem(at indexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
     if scrollDirection == .horizontal { return horizontalAttributes[indexPath] }
-    return super.layoutAttributesForItem(at: indexPath)
+    guard let attributes = super.layoutAttributesForItem(at: indexPath) else {
+      return nil
+    }
+    if let tailClip, indexPath.item >= tailClip.firstIndex,
+       attributes.frame.minY >= tailClip.endY {
+      return nil
+    }
+    return attributes
   }
 
 }
@@ -1748,9 +3885,91 @@ private struct NativeListSectionIndexEntry {
   let position: Int
 }
 
+private final class NativeListSectionIndexPreviewView: UIView {
+  private var fonts = NativeListFontFamilies()
+  func refreshFonts(_ fonts: NativeListFontFamilies) {
+    self.fonts = fonts
+    label.font = nativeListFont(ofSize: 30, fonts: fonts)
+  }
+  private let shapeLayer = CAShapeLayer()
+  private let label = UILabel()
+
+  var text: String? {
+    get { label.text }
+    set { label.text = newValue }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    backgroundColor = .clear
+    layer.addSublayer(shapeLayer)
+    label.textAlignment = .center
+    label.adjustsFontForContentSizeCategory = true
+    label.font = nativeListFont(ofSize: 30, fonts: fonts)
+    label.isAccessibilityElement = false
+    addSubview(label)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func configure(fillColor: UIColor, textColor: UIColor) {
+    shapeLayer.fillColor = fillColor.cgColor
+    label.textColor = textColor
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let height = bounds.height
+    let bodyWidth = min(height, max(0, bounds.width - 10))
+    let midY = height / 2
+    let bodyMidX = bodyWidth / 2
+    let shoulderX = bodyWidth * 0.92
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: bodyMidX, y: 0))
+    path.addCurve(
+      to: CGPoint(x: 0, y: midY),
+      controlPoint1: CGPoint(x: bodyWidth * 0.22, y: 0),
+      controlPoint2: CGPoint(x: 0, y: height * 0.22)
+    )
+    path.addCurve(
+      to: CGPoint(x: bodyMidX, y: height),
+      controlPoint1: CGPoint(x: 0, y: height * 0.78),
+      controlPoint2: CGPoint(x: bodyWidth * 0.22, y: height)
+    )
+    path.addCurve(
+      to: CGPoint(x: shoulderX, y: height * 0.75),
+      controlPoint1: CGPoint(x: bodyWidth * 0.72, y: height),
+      controlPoint2: CGPoint(x: bodyWidth * 0.86, y: height * 0.88)
+    )
+    path.addLine(to: CGPoint(x: bounds.width, y: midY))
+    path.addLine(to: CGPoint(x: shoulderX, y: height * 0.25))
+    path.addCurve(
+      to: CGPoint(x: bodyMidX, y: 0),
+      controlPoint1: CGPoint(x: bodyWidth * 0.86, y: height * 0.12),
+      controlPoint2: CGPoint(x: bodyWidth * 0.72, y: 0)
+    )
+    path.close()
+    shapeLayer.frame = bounds
+    shapeLayer.path = path.cgPath
+    label.frame = CGRect(x: 0, y: 0, width: bodyWidth, height: height)
+  }
+}
+
 // OneKey patch: arbitrate index scrubbing against ancestor dismissal gestures.
 // private final class NativeListSectionIndexView: UIControl {
 private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDelegate {
+  private var fonts = NativeListFontFamilies()
+  func refreshFonts(_ fonts: NativeListFontFamilies) {
+    self.fonts = fonts
+    updateLabelStyles()
+  }
+  private static let edgePadding: CGFloat = 8
+  private static let labelSize: CGFloat = 14
+  private static let labelSpacing: CGFloat = 16
+
   var onSelect: ((Int, Bool) -> Void)?
   var onInteractionEnded: (() -> Void)?
   private var titles: [String] = []
@@ -1758,7 +3977,6 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   private var textColor: UIColor = .secondaryLabel
   private var activeColor: UIColor = .tintColor
   private var activeTextColor: UIColor = .white
-  private var centeredInWindow = false
   private var lastTouchIndex: Int?
   private(set) var activeIndex: Int?
 
@@ -1799,14 +4017,12 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     titles: [String],
     textColor: UIColor,
     activeColor: UIColor,
-    activeTextColor: UIColor,
-    centeredInWindow: Bool
+    activeTextColor: UIColor
   ) {
     self.titles = titles
     self.textColor = textColor
     self.activeColor = activeColor
     self.activeTextColor = activeTextColor
-    self.centeredInWindow = centeredInWindow
     labels.forEach { $0.removeFromSuperview() }
     labels = titles.map { title in
       let label = UILabel()
@@ -1833,16 +4049,28 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   override func layoutSubviews() {
     super.layoutSubviews()
     guard !labels.isEmpty else { return }
-    let height = min(16, max(8, bounds.height / CGFloat(labels.count)))
-    let originY = indexOriginY(cellHeight: height, count: labels.count)
-    for (index, label) in labels.enumerated() {
+    let metrics = indexMetrics(count: labels.count)
+    let visibleIndices = visibleLabelIndices(
+      count: labels.count,
+      trackHeight: metrics.trackHeight
+    )
+    labels.forEach { $0.isHidden = true }
+    for (visibleIndex, index) in visibleIndices.sorted().enumerated() {
+      let label = labels[index]
+      label.isHidden = false
+      let centerY = visibleLabelCenterY(
+        visibleIndex: visibleIndex,
+        visibleCount: visibleIndices.count,
+        metrics: metrics
+      )
       label.frame = CGRect(
-        x: 6,
-        y: originY + CGFloat(index) * height,
-        width: 20,
-        height: height
+        x: bounds.width - Self.labelSize - 3,
+        y: centerY - Self.labelSize / 2,
+        width: Self.labelSize,
+        height: Self.labelSize
       )
     }
+    updateLabelStyles()
   }
 
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -1879,23 +4107,68 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   }
 
   private func select(at y: CGFloat, interacting: Bool) {
-    let height = min(16, max(8, bounds.height / CGFloat(titles.count)))
-    let originY = indexOriginY(cellHeight: height, count: titles.count)
-    let index = Int(floor((y - originY) / height)).clamped(to: 0...(titles.count - 1))
+    let metrics = indexMetrics(count: titles.count)
+    guard metrics.trackHeight > 0 else { return }
+    let visibleIndices = visibleLabelIndices(
+      count: titles.count,
+      trackHeight: metrics.trackHeight
+    ).sorted()
+    let visibleTrackHeight = min(
+      metrics.trackHeight,
+      Self.labelSpacing * CGFloat(visibleIndices.count)
+    )
+    let visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2
+    let progress = ((y - visibleOriginY) / visibleTrackHeight).clamped(to: 0...1)
+    let slot = Int(floor(progress * CGFloat(visibleIndices.count)))
+      .clamped(to: 0...(visibleIndices.count - 1))
+    let index = visibleIndices[slot]
     if interacting && lastTouchIndex == index { return }
     lastTouchIndex = interacting ? index : nil
     select(index: index, interacting: interacting)
   }
 
-  private func indexOriginY(cellHeight: CGFloat, count: Int) -> CGFloat {
-    let totalHeight = cellHeight * CGFloat(count)
-    let centeredOriginY = (bounds.height - totalHeight) / 2
-    guard centeredInWindow, let window else { return centeredOriginY }
-    let windowCenterY = window.safeAreaLayoutGuide.layoutFrame.midY
-    let localCenterY = convert(CGPoint(x: 0, y: windowCenterY), from: window).y
-    return (localCenterY - totalHeight / 2).clamped(
-      to: 0...max(0, bounds.height - totalHeight)
-    )
+  func centerY(for index: Int) -> CGFloat {
+    entryCenterY(index: index, metrics: indexMetrics(count: titles.count))
+  }
+
+  func preferredHeight(constrainedTo maximumHeight: CGFloat) -> CGFloat {
+    min(maximumHeight, Self.edgePadding * 2 + Self.labelSpacing * CGFloat(titles.count))
+  }
+
+  private func indexMetrics(count: Int) -> (originY: CGFloat, trackHeight: CGFloat) {
+    guard count > 0 else { return (bounds.midY, 0) }
+    let availableHeight = max(0, bounds.height - Self.edgePadding * 2)
+    let trackHeight = min(availableHeight, Self.labelSpacing * CGFloat(count))
+    return ((bounds.height - trackHeight) / 2, trackHeight)
+  }
+
+  private func entryCenterY(
+    index: Int,
+    metrics: (originY: CGFloat, trackHeight: CGFloat)
+  ) -> CGFloat {
+    guard !titles.isEmpty else { return bounds.midY }
+    return metrics.originY + metrics.trackHeight * (CGFloat(index) + 0.5) / CGFloat(titles.count)
+  }
+
+  private func visibleLabelCenterY(
+    visibleIndex: Int,
+    visibleCount: Int,
+    metrics: (originY: CGFloat, trackHeight: CGFloat)
+  ) -> CGFloat {
+    let visibleTrackHeight = min(metrics.trackHeight, Self.labelSpacing * CGFloat(visibleCount))
+    let visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2
+    return visibleOriginY
+      + visibleTrackHeight * (CGFloat(visibleIndex) + 0.5) / CGFloat(max(visibleCount, 1))
+  }
+
+  private func visibleLabelIndices(count: Int, trackHeight: CGFloat) -> Set<Int> {
+    guard count > 0 else { return [] }
+    let maxVisible = max(1, Int(floor(trackHeight / Self.labelSpacing)))
+    guard count > maxVisible else { return Set(0..<count) }
+    guard maxVisible > 1 else { return [0] }
+    return Set((0..<maxVisible).map { slot in
+      Int(round(CGFloat(slot * (count - 1)) / CGFloat(maxVisible - 1)))
+    })
   }
 
   private func select(index: Int, interacting: Bool) {
@@ -1905,12 +4178,12 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
 
   private func updateLabelStyles() {
     for (index, label) in labels.enumerated() {
-      let active = index == activeIndex
+      let active = index == activeIndex && !label.isHidden
       label.textColor = active ? activeTextColor : textColor
       label.backgroundColor = active ? activeColor : .clear
-      label.layer.cornerRadius = 8
+      label.layer.cornerRadius = Self.labelSize / 2
       label.layer.masksToBounds = active
-      label.font = nativeListFont(ofSize: 10, weight: active ? .semibold : .medium)
+      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular, fonts: fonts)
     }
   }
 }

@@ -203,6 +203,14 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     }
   }
 
+  var keyboardAppearance: String? {
+    didSet {
+      let appearance = keyboardAppearanceFrom(keyboardAppearance)
+      singleLineInput.keyboardAppearance = appearance
+      multiLineInput.keyboardAppearance = appearance
+    }
+  }
+
   var returnKeyType: String? {
     didSet {
       let rkt = returnKeyTypeFrom(returnKeyType)
@@ -699,6 +707,14 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     case "emailAddress": return .emailAddress
     case "phonePad": return .phonePad
     case "url": return .URL
+    default: return .default
+    }
+  }
+
+  private func keyboardAppearanceFrom(_ appearance: String?) -> UIKeyboardAppearance {
+    switch appearance {
+    case "light": return .light
+    case "dark": return .dark
     default: return .default
     }
   }

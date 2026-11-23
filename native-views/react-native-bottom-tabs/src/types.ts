@@ -1,0 +1,42 @@
+import type { ImageSourcePropType, StyleProp, ViewStyle } from 'react-native';
+import type { SFSymbol } from 'sf-symbols-typescript';
+
+export type IconSource = string | ImageSourcePropType;
+
+export type AppleIcon = { sfSymbol: SFSymbol };
+
+export type NamedIcon = { iconName: string };
+
+export type BottomTabIconSource =
+  | ImageSourcePropType
+  | AppleIcon
+  | NamedIcon
+  | string;
+
+export type TabRole = 'search';
+
+// 'leading' and 'trailing' mean a vertical tab bar on that edge.
+export type TabBarPlacement = 'bottom' | 'leading' | 'trailing';
+
+export type BaseRoute = {
+  key: string;
+  title?: string;
+  badge?: string;
+  badgeBackgroundColor?: string;
+  badgeTextColor?: string;
+  lazy?: boolean;
+  focusedIcon?: BottomTabIconSource;
+  unfocusedIcon?: BottomTabIconSource;
+  activeTintColor?: string;
+  hidden?: boolean;
+  testID?: string;
+  role?: TabRole;
+  freezeOnBlur?: boolean;
+  style?: StyleProp<ViewStyle>;
+  preventsDefault?: boolean;
+};
+
+export type NavigationState<Route extends BaseRoute> = {
+  index: number;
+  routes: Route[];
+};

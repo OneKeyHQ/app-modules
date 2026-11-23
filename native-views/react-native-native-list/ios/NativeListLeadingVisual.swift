@@ -1,0 +1,484 @@
+import UIKit
+
+// Bounded visual primitive: three source slots, two optional overlays. It knows
+// visual descriptors and request lifetimes, never row types or business keys.
+/// A leading visual's solid border width: `borderWidth` when valid, else 1 point.
+func nativeListBorderWidth(_ value: Any?) -> CGFloat {
+  guard let width = (value as? NSNumber)?.doubleValue, width.isFinite, width > 0, width <= 4 else {
+    return 1
+  }
+  return CGFloat(width)
+}
+
+final class NativeListLeadingVisual: UIView {
+  var fonts = NativeListFontFamilies()
+  var glyphSize: CGFloat = 18
+  var bitmapBorderWidth: CGFloat = 0
+  private let fallback = NativeListTextLabel()
+  var fallbackTextView: UILabel { fallback }
+  var singleOuterMask = false
+  var alwaysClips = false
+  var dashedBorderWidth: CGFloat = 2
+  var overlayTextFontSize: CGFloat = 10
+  var overlayTextLineHeight: CGFloat?
+  var overlayTextHorizontalInset: CGFloat?
+  private let icon = NativeListIconImageView()
+  private let unread = UIView()
+  private let networkBackdrop = UIView()
+  // Ring under the secondary token of an Activity pair (SPEC "Activity leading pair").
+  private let pairBackdrop = UIView()
+  private let corner = NativeListIconImageView()
+  private let cornerBackdrop = UIView()
+  private var slots: [NativeListImageSlot] = []
+  private var overlaySlots: [NativeListImageSlot] = []
+  private var overlayFallbackIcons: [NativeListIconImageView] = []
+  private var overlays: [(UIView, [String: Any])] = []
+  private let dashedBorder = CAShapeLayer()
+  private var visual: [String: Any] = [:]
+  private var imageStyle: [String: Any] = [:]
+  private var sources: [([String: Any], String)] = []
+  // Roles inside `sources`: the token `networkImage` badge and the Activity
+  // `secondaryLeading` token; nil when absent.
+  private var networkIndex: Int?
+  private var pairIndex: Int?
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    [fallback, icon, pairBackdrop, networkBackdrop, cornerBackdrop, corner, unread].forEach(addSubview)
+    fallback.textAlignment = .center
+    fallback.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
+    icon.contentMode = .scaleAspectFit
+    corner.contentMode = .scaleAspectFit
+    unread.backgroundColor = UIColor(nativeListHex: "#E5484D", fallback: .red)
+    unread.layer.cornerRadius = 4
+    networkBackdrop.layer.cornerRadius = 10
+    cornerBackdrop.layer.cornerRadius = 10
+    layer.addSublayer(dashedBorder)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func bind(
+    _ visual: [String: Any], style: [String: Any], key: String, theme: [String: Any]?,
+    isUnread: Bool, secondaryVisual: [String: Any]? = nil,
+    fonts: NativeListFontFamilies
+  ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+    self.fonts = fonts
+    fallback.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
+    self.visual = visual
+    imageStyle = style
+    let kind = visual.string("kind")
+    let variant =
+      kind == "token"
+      ? "token"
+      : kind == "network" ? "network" : ["account", "wallet"].contains(kind) ? "avatar" : "generic"
+    networkIndex = nil
+    pairIndex = nil
+    sources =
+      kind == "stackedImages"
+      ? visual.dictionaries("images").prefix(3).map { ($0, "generic") }
+      : kind == "icon" ? [] : visual.dictionary("image").map { [($0, variant)] } ?? []
+    if kind == "token", !sources.isEmpty, let network = visual.dictionary("networkImage") {
+      networkIndex = sources.count
+      sources.append((network, "network"))
+    }
+    if let secondaryVisual {
+      let secondaryKind = secondaryVisual.string("kind")
+      let source =
+        secondaryKind == "stackedImages"
+        ? secondaryVisual.dictionaries("images").first
+        : secondaryKind == "icon" ? nil : secondaryVisual.dictionary("image")
+      if let source {
+        // A second token forms a pair only next to a primary image; without one
+        // it simply takes the primary's place (OK-66071).
+        if kind == "token", !sources.isEmpty { pairIndex = sources.count }
+        sources.append(
+          (
+            source,
+            secondaryKind == "token"
+              ? "token"
+              : secondaryKind == "network"
+                ? "network" : ["account", "wallet"].contains(secondaryKind) ? "avatar" : "generic"
+          ))
+      }
+    }
+    while slots.count < sources.count {
+      let slot = NativeListImageSlot()
+      slots.append(slot)
+      insertSubview(slot.view, belowSubview: slots.count == 1 ? networkBackdrop : cornerBackdrop)
+    }
+    let placeholder = theme?.string("strongBackground", default: "#0000000F") ?? "#0000000F"
+    let fallbackIcon = visual.dictionary("fallbackIcon")
+    let fallbackBackground = fallbackIcon?.string("backgroundColor", default: placeholder) ?? placeholder
+    let sourceFallback =
+      kind != "icon" && !sources.isEmpty
+      && sources[0].0.string("loadingStrategy", default: "none") != "none"
+      && (visual["fallbackText"] != nil || fallbackIcon != nil)
+    let fallbackKey = sourceFallback ? nativeListSourceFallbackStateKey(sources[0].0) : nil
+    let restored = fallbackKey.map(NativeListSourceFallbackState.has) ?? false
+    let fallbackData = kind == "icon" ? visual : fallbackIcon
+    fallback.text = String(visual.string("fallbackText").prefix(2))
+    fallback.textColor = UIColor(
+      nativeListHex: visual.string("fallbackTextColor", default: "#8D8D8D"), fallback: .gray)
+    icon.bindIcon(fallbackData?.string("name"))
+    icon.tintColor = UIColor(
+      nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",
+      fallback: .darkGray)
+    fallback.isHidden = kind == "icon" || fallbackIcon != nil || !sources.isEmpty && !restored
+    icon.isHidden = !(kind == "icon" || (sources.isEmpty || restored) && fallbackIcon != nil)
+    let visualBackground = UIColor(
+      nativeListHex: visual.string(
+        "backgroundColor", default: sources.isEmpty ? placeholder : "#00000000"), fallback: .clear)
+    backgroundColor =
+      sources.isEmpty && fallbackIcon?["backgroundColor"] != nil || restored
+      ? UIColor(nativeListHex: fallbackBackground, fallback: .clear)
+      : sourceFallback ? UIColor(nativeListHex: placeholder, fallback: .clear) : visualBackground
+    layer.borderWidth = kind == "icon" ? 1 / UIScreen.main.scale : 0
+    layer.borderColor = UIColor(nativeListHex: "#0000001F", fallback: .clear).cgColor
+    if bitmapBorderWidth > 0 {
+      layer.borderWidth = bitmapBorderWidth
+      layer.borderColor =
+        UIColor(nativeListHex: visual.string("borderColor"), fallback: .clear).cgColor
+    }
+    for (index, slot) in slots.enumerated() {
+      guard index < sources.count else {
+        slot.recycle()
+        slot.view.isHidden = true
+        continue
+      }
+      let source = sources[index]
+      slot.view.isHidden = index > 0 || restored
+      slot.bind(
+        source.0, key: "\(key):leading:\(index)", variant: source.1,
+        fit: index == 0 ? style["contentFit"] as? String : nil, placeholder: placeholder
+      ) { [weak self, weak slot] loaded in
+        slot?.view.isHidden = !loaded && (index > 0 || sourceFallback)
+        if let self, index == self.pairIndex { self.syncPairBackdrop() }
+        guard let self, index == 0, sourceFallback else { return }
+        if let fallbackKey {
+          if loaded {
+            NativeListSourceFallbackState.forget(fallbackKey)
+          } else {
+            NativeListSourceFallbackState.remember(fallbackKey)
+          }
+        }
+        self.backgroundColor =
+          loaded ? visualBackground : UIColor(nativeListHex: fallbackBackground, fallback: .clear)
+        self.fallback.isHidden = loaded || fallbackIcon != nil
+        self.icon.isHidden = loaded || fallbackIcon == nil
+      }
+    }
+    networkBackdrop.isHidden = networkIndex == nil
+    networkBackdrop.backgroundColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
+    pairBackdrop.backgroundColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
+    syncPairBackdrop()
+    // Stacking order by role: primary, pair ring, secondary token, badge
+    // backdrop, badge, corner icon. Slots are reused across binds with
+    // different roles, so the order is restored on every bind.
+    bringSubviewToFront(pairBackdrop)
+    if let pairIndex { bringSubviewToFront(slots[pairIndex].view) }
+    bringSubviewToFront(networkBackdrop)
+    if let networkIndex { bringSubviewToFront(slots[networkIndex].view) }
+    bringSubviewToFront(cornerBackdrop)
+    bringSubviewToFront(corner)
+    let badge = visual.dictionary("cornerIcon")
+    corner.isHidden = badge == nil
+    cornerBackdrop.isHidden = badge == nil
+    corner.bindIcon(badge?.string("name"))
+    corner.tintColor = UIColor(
+      nativeListHex: badge?.string("tintColor", default: "#646464") ?? "#646464",
+      fallback: .darkGray)
+    cornerBackdrop.backgroundColor = UIColor(
+      nativeListHex: badge?.string("backgroundColor", default: "#FFFFFF") ?? "#FFFFFF",
+      fallback: .white)
+    unread.isHidden = !isUnread
+    let previousOverlays = overlays
+    overlays.removeAll(keepingCapacity: true)
+    let descriptors = Array(visual.dictionaries("overlays").prefix(2))
+    while overlaySlots.count < descriptors.count { overlaySlots.append(NativeListImageSlot()) }
+    while overlayFallbackIcons.count < descriptors.count { overlayFallbackIcons.append(NativeListIconImageView()) }
+    for (index, data) in descriptors.enumerated() {
+      let frame = index < previousOverlays.count ? previousOverlays[index].0 : UIView()
+      let fallbackData = data.dictionary("fallbackIcon")
+      let fallbackGlyph = overlayFallbackIcons[index]
+      fallbackGlyph.bindIcon(fallbackData?.string("name"))
+      fallbackGlyph.tintColor = UIColor(
+        nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",
+        fallback: .darkGray)
+      fallbackGlyph.contentMode = .scaleAspectFit
+      fallbackGlyph.isHidden = true
+      frame.clipsToBounds = true
+      frame.backgroundColor = UIColor(
+        nativeListHex: data.string(
+          "backgroundColor",
+          default: theme?.string("rowBackground", default: "#00000000") ?? "#00000000"),
+        fallback: .clear)
+      let child: UIView
+      if let image = data.dictionary("image") {
+        let slot = overlaySlots[index]
+        child = slot.view
+        child.isHidden = true
+        slot.bind(image, key: "\(key):overlay:\(index)", placeholder: placeholder) {
+          [weak child, weak fallbackGlyph] loaded in
+          child?.isHidden = !loaded
+          fallbackGlyph?.isHidden = loaded || fallbackData == nil
+        }
+      } else if !data.string("text").isEmpty {
+        overlaySlots[index].recycle()
+        let label = frame.subviews.first as? UILabel ?? UILabel()
+        label.text = data.string("text")
+        label.textAlignment = .center
+        // A line-height box is the legacy wallet text badge: regular weight, centered metrics.
+        label.font = nativeListFont(
+          ofSize: overlayTextFontSize,
+          weight: NativeListTextStyles.marketFontWeight(
+            data.string("fontWeight"),
+            fallback: overlayTextLineHeight == nil ? .medium : .regular),
+          fonts: fonts)
+        if let line = overlayTextLineHeight {
+          let paragraph = NSMutableParagraphStyle()
+          paragraph.minimumLineHeight = line
+          paragraph.maximumLineHeight = line
+          paragraph.alignment = .center
+          label.attributedText = NSAttributedString(
+            string: data.string("text"),
+            attributes: [
+              .font: label.font as Any, .paragraphStyle: paragraph,
+              .baselineOffset: max(0, (line - label.font.lineHeight) / 2),
+            ])
+        }
+        label.textColor = UIColor(
+          nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
+        child = label
+      } else {
+        overlaySlots[index].recycle()
+        let glyph = frame.subviews.first as? NativeListIconImageView ?? NativeListIconImageView()
+        glyph.bindIcon(data.string("name"))
+        glyph.contentMode = .scaleAspectFit
+        glyph.tintColor = UIColor(
+          nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
+        child = glyph
+      }
+      frame.subviews.forEach { $0.removeFromSuperview() }
+      frame.addSubview(child)
+      if data.dictionary("image") != nil && fallbackData != nil { frame.addSubview(fallbackGlyph) }
+      if frame.superview == nil { addSubview(frame) } else { bringSubviewToFront(frame) }
+      overlays.append((frame, data))
+    }
+    previousOverlays.dropFirst(descriptors.count).forEach { $0.0.removeFromSuperview() }
+    for slot in overlaySlots.dropFirst(descriptors.count) { slot.recycle() }
+    bringSubviewToFront(unread)
+    setNeedsLayout()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let kind = visual.string("kind")
+    let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
+    func logical(_ rect: CGRect) -> CGRect {
+      rtl
+        ? CGRect(x: bounds.width - rect.maxX, y: rect.minY, width: rect.width, height: rect.height)
+        : rect
+    }
+    let shape = imageStyle.string(
+      "shape", default: visual.string("shape", default: kind == "image" ? "rounded" : "circle"))
+    let radius =
+      imageStyle["cornerRadius"] != nil
+      ? CGFloat(imageStyle.double("cornerRadius"))
+      : shape == "square"
+        ? 0
+        : shape == "rounded"
+          ? (imageStyle["shape"] != nil ? 10 : min(10, bounds.height / 4))
+          : min(bounds.width, bounds.height) / 2
+    layer.cornerRadius = radius
+    clipsToBounds =
+      alwaysClips
+      || sources.count < 2 && overlays.isEmpty && visual.dictionary("cornerIcon") == nil
+    let ellipse = imageStyle.string("shape") == "circle" && imageStyle["cornerRadius"] == nil
+    if ellipse && clipsToBounds {
+      let mask = layer.mask as? CAShapeLayer ?? CAShapeLayer()
+      mask.path = UIBezierPath(ovalIn: bounds).cgPath
+      layer.mask = mask
+    } else {
+      layer.mask = nil
+    }
+    fallback.frame = bounds
+    let fallbackIcon = visual.dictionary("fallbackIcon")
+    let explicitFallbackSize: CGFloat? = fallbackIcon.flatMap { data in
+      guard data["size"] != nil else { return nil }
+      let size = data.double("size")
+      return size > 0 ? CGFloat(size) : nil
+    }
+    let iconSize: CGFloat =
+      explicitFallbackSize
+      ?? (!sources.isEmpty && fallbackIcon != nil
+      ? min(bounds.width, bounds.height)
+        * (fallbackIcon?.string("name") == "GlobusOutline" ? 1.2 : 1) : glyphSize)
+    icon.frame = CGRect(
+      x: (bounds.width - iconSize) / 2, y: (bounds.height - iconSize) / 2, width: iconSize,
+      height: iconSize)
+    // Same geometry as Android's `nativeListLeadingSlotFrame` (SPEC "Activity leading pair").
+    let pairMember = (bounds.height * 0.6).rounded()
+    let pairRing: CGFloat = 2
+    for (index, slot) in slots.prefix(sources.count).enumerated() {
+      let frame: CGRect
+      if index == networkIndex {
+        frame = CGRect(x: bounds.width - 14, y: bounds.height - 14, width: 16, height: 16)
+      } else if pairIndex != nil {
+        frame =
+          index == pairIndex
+          ? CGRect(
+            x: bounds.width - pairMember - pairRing, y: bounds.height - pairMember - pairRing,
+            width: pairMember, height: pairMember)
+          : CGRect(x: 0, y: 0, width: pairMember, height: pairMember)
+      } else if sources.count == 1 || networkIndex != nil {
+        frame = bounds
+      } else {
+        let side = bounds.height * 0.72
+        frame = CGRect(
+          x: CGFloat(index) * (bounds.width - side) / CGFloat(max(1, sources.count - 1)),
+          y: (bounds.height - side) / 2, width: side, height: side)
+      }
+      slot.view.frame = logical(
+        index == 0 ? frame.insetBy(dx: bitmapBorderWidth, dy: bitmapBorderWidth) : frame)
+      slot.view.clipsToBounds =
+        !(singleOuterMask && sources.count == 1 && overlays.isEmpty
+        && visual.dictionary("cornerIcon") == nil)
+      let fillsFrame = index == 0 && pairIndex == nil && (sources.count == 1 || networkIndex != nil)
+      // Pair members keep the token shape at their own size (rounded NFTs use
+      // the box's 10pt rule scaled to the member).
+      let pairRadius: CGFloat = shape == "rounded" ? min(10, frame.height / 4) : frame.height / 2
+      slot.view.layer.cornerRadius =
+        index == 0 && singleOuterMask && sources.count == 1 && overlays.isEmpty
+          && visual.dictionary("cornerIcon") == nil
+        ? 0
+        : fillsFrame
+          ? radius : pairIndex != nil && index != networkIndex ? pairRadius : frame.height / 2
+    }
+    if pairIndex != nil {
+      let box = pairMember + 2 * pairRing
+      pairBackdrop.frame = logical(
+        CGRect(x: bounds.width - box, y: bounds.height - box, width: box, height: box))
+      pairBackdrop.layer.cornerRadius =
+        shape == "rounded" ? min(10, pairMember / 4) + pairRing : box / 2
+    }
+    for (index, slot) in slots.enumerated() {
+      if index == 0 && bitmapBorderWidth > 0 {
+        let mask = slot.view.layer.mask as? CAShapeLayer ?? CAShapeLayer()
+        mask.path =
+          UIBezierPath(
+            roundedRect: slot.view.bounds.insetBy(dx: -bitmapBorderWidth, dy: -bitmapBorderWidth),
+            cornerRadius: radius
+          ).cgPath
+        slot.view.layer.mask = mask
+        slot.view.layer.cornerRadius = 0
+      } else if ellipse && index == 0 {
+        let mask = slot.view.layer.mask as? CAShapeLayer ?? CAShapeLayer()
+        mask.path = UIBezierPath(ovalIn: slot.view.bounds).cgPath
+        slot.view.layer.mask = mask
+      } else {
+        slot.view.layer.mask = nil
+      }
+    }
+    networkBackdrop.frame = logical(
+      CGRect(x: bounds.width - 16, y: bounds.height - 16, width: 20, height: 20))
+    cornerBackdrop.frame = networkBackdrop.frame
+    corner.frame = cornerBackdrop.frame.insetBy(dx: 1, dy: 1)
+    unread.frame = logical(CGRect(x: bounds.width - 8, y: 0, width: 8, height: 8))
+    for (index, overlay) in overlays.enumerated() {
+      let (frame, data) = overlay
+      let size = CGFloat(data.double("size", default: 20))
+      // Legacy wallet text badges size to their text (tabular 12pt + 4) at the line height.
+      let textBadgeLine =
+        data.dictionary("image") == nil && !data.string("text").isEmpty
+          && data.string("name").isEmpty ? overlayTextLineHeight : nil
+      let naturalWidth = textBadgeLine.map { _ -> CGFloat in
+        let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
+        let textWidth = (data.string("text") as NSString).size(withAttributes: [
+          .font: nativeListTabularFont(ofSize: overlayTextFontSize, fonts: fonts), .kern: 0
+        ]).width
+        return ceil(textWidth * scale) / scale + 4
+      }
+      let width = CGFloat(data.double("width", default: Double(naturalWidth ?? size)))
+      let height = CGFloat(data.double("height", default: Double(textBadgeLine ?? size)))
+      let offset = data.double("offset", default: 2)
+      let x = CGFloat(data.double("offsetX", default: offset))
+      let y = CGFloat(data.double("offsetY", default: offset))
+      frame.frame = logical(
+        CGRect(
+          x: data.string("position") == "topLeft" ? -x : bounds.width - width + x,
+          y: data.string("position") == "topLeft" ? -y : bounds.height - height + y, width: width,
+          height: height))
+      frame.layer.cornerRadius = min(width, height) / 2
+      let inset = CGFloat(data.double("padding", default: 0))
+      let contentFrame = frame.bounds.insetBy(
+        dx: data["text"] != nil ? overlayTextHorizontalInset ?? inset : inset,
+        dy: data["text"] != nil && overlayTextHorizontalInset != nil ? 0 : inset)
+      frame.subviews.forEach { $0.frame = contentFrame }
+      let slot = overlaySlots[index].view
+      if data.dictionary("image") != nil {
+        let circularImage = inset > 0 && width == height
+        slot.layer.cornerRadius = circularImage ? min(contentFrame.width, contentFrame.height) / 2 : 0
+        slot.clipsToBounds = circularImage
+      } else {
+        slot.layer.cornerRadius = 0
+        slot.clipsToBounds = false
+      }
+    }
+    dashedBorder.isHidden = visual.string("borderStyle") != "dashed"
+    dashedBorder.strokeColor =
+      UIColor(nativeListHex: visual.string("borderColor", default: "#8D8D8D"), fallback: .gray)
+      .cgColor
+    dashedBorder.fillColor = UIColor.clear.cgColor
+    dashedBorder.lineWidth = dashedBorderWidth
+    dashedBorder.lineDashPattern = [4, 4]
+    dashedBorder.path =
+      UIBezierPath(ovalIn: bounds.insetBy(dx: dashedBorderWidth / 2, dy: dashedBorderWidth / 2))
+      .cgPath
+  }
+  /// The pair ring sits above the primary token, so it is shown only while the
+  /// secondary token image is actually displayed: hidden while that image loads,
+  /// after a failed load and once the slot is recycled, or it would cover the
+  /// primary's lower-right corner with a blank row-background disc.
+  private func syncPairBackdrop() {
+    guard let pairIndex, slots.indices.contains(pairIndex) else {
+      pairBackdrop.isHidden = true
+      return
+    }
+    pairBackdrop.isHidden = slots[pairIndex].view.isHidden
+  }
+
+  func recycle() {
+    slots.forEach { $0.recycle() }
+    overlaySlots.forEach { $0.recycle() }
+    pairBackdrop.isHidden = true
+  }
+  /// Empty slot (legacy leading container without a visual): no image, fallback, fill,
+  /// border or overlays from a previous binding.
+  func clear() {
+    recycle()
+    visual = [:]
+    sources = []
+    slots.forEach { $0.view.isHidden = true }
+    overlays.forEach { $0.0.removeFromSuperview() }
+    overlays.removeAll()
+    fallback.text = nil
+    fallback.isHidden = true
+    icon.image = nil
+    icon.isHidden = true
+    networkBackdrop.isHidden = true
+    pairBackdrop.isHidden = true
+    networkIndex = nil
+    pairIndex = nil
+    corner.isHidden = true
+    cornerBackdrop.isHidden = true
+    unread.isHidden = true
+    backgroundColor = .clear
+    layer.borderWidth = 0
+    layer.mask = nil
+    dashedBorder.isHidden = true
+    dashedBorder.path = nil
+    setNeedsLayout()
+  }
+}

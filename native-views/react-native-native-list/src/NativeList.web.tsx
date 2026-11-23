@@ -1,15 +1,17 @@
+import { useNativeListFontFamiliesJson } from './fonts';
 import React, {
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { View } from 'react-native';
 import type { NativeListProps, NativeListRef } from './NativeList.types';
-import type { NativeListSnapshot, RowPatch } from './models';
+import type { ImageSource, NativeListSnapshot } from './models';
 import {
   normalizeIndexScroll,
   normalizeKeyScroll,
@@ -19,15 +21,28 @@ import {
   validateOffset,
   type NormalizedPositionScroll,
 } from './scrolling';
-import { serializePatches, validateSnapshot } from './validation';
+import {
+  applyRowPatches,
+  containNativeListInput,
+  emptyNativeListSnapshot,
+  validateSnapshot,
+} from './validation';
 import {
   NativeListWebEngine,
   type NativeListWebCallbacks,
 } from './web/NativeListWebEngine';
+import {
+  acquireNativeListAvatar,
+  canonicalNativeListAvatarUri,
+} from './web/NativeListWebAvatarCache';
+
+const collapsedExpandedContentStyle = { display: 'none' } as const;
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
   ActionAnchorState,
+  NativeListKeyboardDismissMode,
+  NativeListKeyboardShouldPersistTaps,
   ScrollAlignment,
   ScrollPositionOptions,
   ScrollToEndParams,
@@ -39,17 +54,67 @@ export type {
   ScrollToOffsetParams,
 } from './NativeList.types';
 
+export function preloadNativeListAvatarImages(
+  sources: readonly ImageSource[]
+): Promise<boolean> {
+  if (typeof document === 'undefined') return Promise.resolve(false);
+  const uris = [
+    ...new Set(
+      sources
+        .map((source) => canonicalNativeListAvatarUri(source.uri))
+        .filter((uri): uri is string => uri !== undefined)
+    ),
+  ];
+  if (!uris.length) return Promise.resolve(false);
+  return Promise.all(
+    uris.map(
+      (uri) =>
+        new Promise<boolean>((resolve) => {
+          let release: (() => void) | undefined;
+          const settle = (success: boolean) => {
+            resolve(success);
+            queueMicrotask(() => release?.());
+          };
+          release = acquireNativeListAvatar(
+            document,
+            uri,
+            () => settle(true),
+            () => settle(false),
+            0
+          );
+        })
+    )
+  ).then((results) => results.every(Boolean));
+}
+
 export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
-      snapshot,
+      snapshot: inputSnapshot,
+      listHeader,
+      listEmpty,
+      listFooter,
+      listExpandedContent,
+      listStructureToggle,
+      listSidecar,
+      sidecarLayout,
+      topOverlay: _topOverlay,
+      topScrollEdgeEffect: _topScrollEdgeEffect,
+      webScrollHost,
+      webStickyInset: inputStickyInset = 0,
+      scrollPositionThresholds: _scrollPositionThresholds,
+      onScrollPositionThresholdChange: _onScrollPositionThresholdChange,
       webVirtualizationEnabled = true,
+      webSectionIndexContainerRef,
+      keyboardDismissMode: _keyboardDismissMode,
+      keyboardShouldPersistTaps: _keyboardShouldPersistTaps,
       onRowAction,
       onActionAnchorInvalidated,
       onSelectionDelta,
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onStructuralTransitionSettled: _onStructuralTransitionSettled,
       onRefresh,
       onScrollToIndexFailed,
       initialScrollIndex,
@@ -60,29 +125,185 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const acceptedSnapshotRef = useRef<NativeListSnapshot>(
+      emptyNativeListSnapshot()
+    );
+    const initializedSnapshot = useRef(false);
+    const webStickyInset = useMemo(
+      () =>
+        containNativeListInput(() => {
+          if (!Number.isFinite(inputStickyInset) || inputStickyInset < 0)
+            throw new Error('webStickyInset must be finite and non-negative');
+          return inputStickyInset;
+        }) ?? 0,
+      [inputStickyInset]
+    );
+    // Freshness is limited to this component invocation; later renders revalidate.
+    let freshlyValidatedSnapshot: NativeListSnapshot | undefined;
+    const preparedSnapshot = useMemo(() => {
+      const prepared = containNativeListInput(() =>
+        validateSnapshot(inputSnapshot)
+      );
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- The value is intentionally render-local.
+      freshlyValidatedSnapshot = prepared;
+      return prepared;
+    }, [inputSnapshot]);
+    const snapshot = preparedSnapshot ?? acceptedSnapshotRef.current;
+    const fontFamiliesJson = useNativeListFontFamiliesJson();
+    const fontFamiliesJsonRef = useRef(fontFamiliesJson);
+    fontFamiliesJsonRef.current = fontFamiliesJson;
+    const hasEmptySlot = listEmpty !== undefined;
+    const hasEmptySlotRef = useRef(hasEmptySlot);
+    hasEmptySlotRef.current = hasEmptySlot;
+    const [viewportWidth, setViewportWidth] = useState(0);
+    const [sidecarHeight, setSidecarHeight] = useState(0);
+    const normalizeWebSnapshot = (
+      next: NativeListSnapshot,
+      hasReactEmpty = hasEmptySlotRef.current,
+      hasSlotLayout = useSlotLayoutRef.current,
+      validatedInThisRender = false
+    ) => {
+      if (hasSlotLayout && next.layout.orientation === 'horizontal')
+        throw new Error(
+          'Web parent scrolling and container slots support vertical lists only'
+        );
+      const emptySlot = hasReactEmpty && next.rows.length === 0;
+      const normalized =
+        emptySlot && next.emptyState !== undefined
+          ? { ...next, emptyState: undefined }
+          : next;
+      const validated = validatedInThisRender
+        ? normalized
+        : validateSnapshot(normalized);
+      // Preserve an already normalized fallback's identity across rerenders.
+      return emptySlot && validated.layout.contentPaddingBottom !== 0
+        ? {
+            ...validated,
+            layout: { ...validated.layout, contentPaddingBottom: 0 },
+          }
+        : validated;
+    };
     const [host, setHost] = useState<HTMLElement | null>(null);
+    const [contentBounds, setContentBounds] = useState<HTMLElement | null>(
+      null
+    );
+    const [ownedScrollHost, setOwnedScrollHost] = useState<HTMLElement | null>(
+      null
+    );
+    const useSlotLayoutRef = useRef(false);
+    useSlotLayoutRef.current ||=
+      webScrollHost !== undefined ||
+      listHeader !== undefined ||
+      listEmpty !== undefined ||
+      listFooter !== undefined;
+    useSlotLayoutRef.current ||= listSidecar !== undefined;
+    useSlotLayoutRef.current ||=
+      listExpandedContent !== undefined || listStructureToggle !== undefined;
+    const useSlotLayout = useSlotLayoutRef.current;
+    const resolvedScrollHost =
+      webScrollHost === undefined
+        ? useSlotLayout
+          ? ownedScrollHost
+          : undefined
+        : webScrollHost;
     const engineRef = useRef<NativeListWebEngine | undefined>(undefined);
     const webVirtualizationEnabledRef = useRef(webVirtualizationEnabled);
     webVirtualizationEnabledRef.current = webVirtualizationEnabled;
     const validatedSnapshot = useMemo(
-      () => validateSnapshot(snapshot),
-      [snapshot]
+      () =>
+        containNativeListInput(() => {
+          if ((listSidecar !== undefined) !== (sidecarLayout !== undefined))
+            throw new Error(
+              'listSidecar and sidecarLayout must be supplied together'
+            );
+          if (sidecarLayout) {
+            const { width, gap, maxContentWidth } = sidecarLayout;
+            if (
+              snapshot.layout.kind !== 'linear' ||
+              !Number.isFinite(width) ||
+              width <= 0 ||
+              !Number.isFinite(gap) ||
+              gap < 0 ||
+              !Number.isFinite(maxContentWidth) ||
+              maxContentWidth <= width + gap
+            )
+              throw new Error('Invalid NativeList sidecar layout');
+          }
+          return normalizeWebSnapshot(
+            snapshot,
+            hasEmptySlot,
+            useSlotLayout,
+            preparedSnapshot !== undefined &&
+              preparedSnapshot === freshlyValidatedSnapshot
+          );
+        }) ?? acceptedSnapshotRef.current,
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Preserve the existing memo dependencies; freshness is render-local.
+      [snapshot, hasEmptySlot, useSlotLayout, listSidecar, sidecarLayout]
     );
+    const [slotState, setSlotState] = useState(() => ({
+      hasRows: validatedSnapshot.rows.length > 0,
+      emptyBottomPadding:
+        !validatedSnapshot.rows.length && hasEmptySlot
+          ? validatedSnapshot.layout.contentPaddingBottom ??
+            validatedSnapshot.layout.contentPadding ??
+            0
+          : 0,
+      padding:
+        validatedSnapshot.layout.contentPaddingHorizontal ??
+        validatedSnapshot.layout.contentPadding ??
+        0,
+      disclosurePresent: validatedSnapshot.disclosure !== undefined,
+      disclosureExpanded: validatedSnapshot.disclosure?.expanded === true,
+      hasExpandedContent: validatedSnapshot.disclosure?.expanded === true,
+      expandedTrailingInset:
+        validatedSnapshot.disclosure?.expandedTrailingInset ?? 0,
+    }));
+    const synchronizeSlots = (next: NativeListSnapshot) => {
+      const hasRows = next.rows.length > 0;
+      const padding =
+        next.layout.contentPaddingHorizontal ?? next.layout.contentPadding ?? 0;
+      const emptyBottomPadding =
+        !hasRows && hasEmptySlotRef.current
+          ? next.layout.contentPaddingBottom ?? next.layout.contentPadding ?? 0
+          : 0;
+      const disclosurePresent = next.disclosure !== undefined;
+      const disclosureExpanded = next.disclosure?.expanded === true;
+      const expandedTrailingInset = next.disclosure?.expandedTrailingInset ?? 0;
+      setSlotState((previous) => {
+        const hasExpandedContent =
+          previous.hasExpandedContent || disclosureExpanded;
+        return previous.hasRows === hasRows &&
+          previous.padding === padding &&
+          previous.emptyBottomPadding === emptyBottomPadding &&
+          previous.disclosurePresent === disclosurePresent &&
+          previous.disclosureExpanded === disclosureExpanded &&
+          previous.hasExpandedContent === hasExpandedContent &&
+          previous.expandedTrailingInset === expandedTrailingInset
+          ? previous
+          : {
+              hasRows,
+              padding,
+              emptyBottomPadding,
+              disclosurePresent,
+              disclosureExpanded,
+              hasExpandedContent,
+              expandedTrailingInset,
+            };
+      });
+    };
     const snapshotRef = useRef(validatedSnapshot);
     const snapshotPropRef = useRef(validatedSnapshot);
     // An imperative snapshot survives host mounting until the snapshot prop changes.
     if (snapshotPropRef.current !== validatedSnapshot) {
       snapshotPropRef.current = validatedSnapshot;
       snapshotRef.current = validatedSnapshot;
+      acceptedSnapshotRef.current = validatedSnapshot;
+      synchronizeSlots(validatedSnapshot);
     }
-    // OneKey patch: React refs can be ready before the DOM engine is mounted.
-    const pendingPatchesRef = useRef<
-      | {
-          snapshot: NativeListSnapshot;
-          batches: Array<readonly RowPatch[]>;
-        }
-      | undefined
-    >(undefined);
+    if (!initializedSnapshot.current) {
+      acceptedSnapshotRef.current = validatedSnapshot;
+      initializedSnapshot.current = true;
+    }
     const appliedSnapshotRef = useRef<NativeListSnapshot | undefined>(
       undefined
     );
@@ -105,43 +326,66 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }>
       | undefined
     >(
-      initialScrollIndex === undefined && initialScrollKey === undefined
-        ? undefined
-        : initialScrollIndex !== undefined
-        ? normalizeIndexScroll({
-            index: initialScrollIndex,
-            animated: false,
-            viewPosition: initialScrollViewPosition,
-            viewOffset: initialScrollViewOffset,
-          })
-        : {
-            key: initialScrollKey,
-            scroll: normalizePositionScroll(
-              {
-                animated: false,
-                viewPosition: initialScrollViewPosition,
-                viewOffset: initialScrollViewOffset,
-              },
-              'start'
-            ),
-          }
+      containNativeListInput(() =>
+        initialScrollIndex === undefined && initialScrollKey === undefined
+          ? undefined
+          : initialScrollIndex !== undefined
+          ? normalizeIndexScroll({
+              index: initialScrollIndex,
+              animated: false,
+              viewPosition: initialScrollViewPosition,
+              viewOffset: initialScrollViewOffset,
+            })
+          : {
+              key: initialScrollKey,
+              scroll: normalizePositionScroll(
+                {
+                  animated: false,
+                  viewPosition: initialScrollViewPosition,
+                  viewOffset: initialScrollViewOffset,
+                },
+                'start'
+              ),
+            }
+      )
     );
     const didApplyInitialScroll = useRef(false);
+    const scrollOptionsRef = useRef({
+      stickyInset: webStickyInset,
+      ownsRefresh: webScrollHost === undefined,
+    });
+    scrollOptionsRef.current = {
+      stickyInset: webStickyInset,
+      ownsRefresh: webScrollHost === undefined,
+    };
 
     useEffect(() => {
-      if (!host) return;
-      const engine = new NativeListWebEngine(
-        host,
-        snapshotRef.current,
-        callbacksRef.current,
-        webVirtualizationEnabledRef.current
+      if (
+        !host ||
+        resolvedScrollHost === null ||
+        (useSlotLayout && !contentBounds)
+      )
+        return;
+      const engine = containNativeListInput(
+        () =>
+          new NativeListWebEngine(
+            host,
+            snapshotRef.current,
+            callbacksRef.current,
+            webVirtualizationEnabledRef.current,
+            webSectionIndexContainerRef?.current as unknown as HTMLElement | null,
+            fontFamiliesJsonRef.current,
+            {
+              scrollHost: resolvedScrollHost as HTMLElement | undefined,
+              contentBounds: contentBounds ?? undefined,
+              ...scrollOptionsRef.current,
+            }
+          )
       );
+      if (!engine) return;
+      host.style.height = '';
       engineRef.current = engine;
       appliedSnapshotRef.current = snapshotRef.current;
-      const pending = pendingPatchesRef.current;
-      pendingPatchesRef.current = undefined;
-      if (pending?.snapshot === snapshotRef.current)
-        pending.batches.forEach((patches) => engine.applyPatches(patches));
       const initial = initialScrollRef.current;
       if (initial && !didApplyInitialScroll.current) {
         didApplyInitialScroll.current = true;
@@ -151,10 +395,26 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           engine.scrollToKey(initial.key, initial.scroll);
       }
       return () => {
+        // Keep the paused tab in normal flow until its engine is restored.
+        host.style.height = `${engine.currentContentHeight()}px`;
         engine.destroy();
         if (engineRef.current === engine) engineRef.current = undefined;
       };
-    }, [host]);
+    }, [
+      host,
+      webSectionIndexContainerRef,
+      resolvedScrollHost,
+      contentBounds,
+      useSlotLayout,
+    ]);
+
+    useEffect(() => {
+      engineRef.current?.setStickyInset(webStickyInset);
+    }, [webStickyInset]);
+
+    useEffect(() => {
+      engineRef.current?.setFontFamiliesJson(fontFamiliesJson);
+    }, [fontFamiliesJson]);
 
     useEffect(() => {
       engineRef.current?.setVirtualizationEnabled(webVirtualizationEnabled);
@@ -164,7 +424,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       engineRef.current?.updateCallbacks(callbacksRef.current);
     });
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const engine = engineRef.current;
       if (!engine || appliedSnapshotRef.current === validatedSnapshot) return;
       engine.applySnapshot(validatedSnapshot);
@@ -182,26 +442,28 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
 
     useImperativeHandle(forwardedRef, () => ({
       applySnapshot(nextSnapshot) {
-        const next = validateSnapshot(nextSnapshot);
-        pendingPatchesRef.current = undefined;
-        snapshotRef.current = next;
-        appliedSnapshotRef.current = next;
+        const next = containNativeListInput(() =>
+          normalizeWebSnapshot(nextSnapshot)
+        );
+        if (!next) return;
         engineRef.current?.applySnapshot(next);
+        snapshotRef.current = next;
+        acceptedSnapshotRef.current = next;
+        appliedSnapshotRef.current = next;
+        synchronizeSlots(next);
       },
       applyPatches(patches) {
-        if (patches.length > 0) {
-          serializePatches(patches);
-          // engineRef.current?.applyPatches(patches);
-          if (engineRef.current) engineRef.current.applyPatches(patches);
-          else {
-            if (pendingPatchesRef.current?.snapshot !== snapshotRef.current)
-              pendingPatchesRef.current = {
-                snapshot: snapshotRef.current,
-                batches: [],
-              };
-            pendingPatchesRef.current.batches.push(patches);
-          }
+        const engine = engineRef.current;
+        if (engine) {
+          engine.applyPatches(patches);
+          snapshotRef.current = engine.currentSnapshot();
+        } else {
+          const next = containNativeListInput(() =>
+            applyRowPatches(snapshotRef.current, patches)
+          );
+          if (next) snapshotRef.current = next;
         }
+        acceptedSnapshotRef.current = snapshotRef.current;
       },
       reconcileSelection(selectedKeys) {
         engineRef.current?.reconcileSelection(selectedKeys);
@@ -280,6 +542,154 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       []
     );
 
-    return <View {...viewProps} ref={setHostRef} />;
+    const setBoundsRef = useCallback(
+      (value: React.ComponentRef<typeof View> | null) => {
+        setContentBounds(value as unknown as HTMLElement | null);
+      },
+      []
+    );
+    const ownedScrollElementRef = useRef<HTMLElement | null>(null);
+    const setScrollHostRef = useCallback(
+      (value: React.ComponentRef<typeof View> | null) => {
+        const element = value as unknown as HTMLElement | null;
+        if (ownedScrollElementRef.current !== element)
+          ownedScrollElementRef.current?.removeAttribute(
+            'data-collapsible-pager-scroll'
+          );
+        element?.setAttribute('data-collapsible-pager-scroll', 'true');
+        ownedScrollElementRef.current = element;
+        setOwnedScrollHost(element);
+      },
+      []
+    );
+    if (!useSlotLayout) return <View {...viewProps} ref={setHostRef} />;
+    const padding = slotState.padding;
+    const footerBandStyle = { paddingHorizontal: padding };
+    const trailingInsetStyle = {
+      height: slotState.disclosureExpanded
+        ? slotState.expandedTrailingInset
+        : 0,
+    };
+    const hasFooterBand =
+      listFooter !== undefined ||
+      listExpandedContent !== undefined ||
+      listStructureToggle !== undefined;
+    const content = (
+      <View
+        ref={sidecarLayout ? undefined : setBoundsRef}
+        style={{ position: 'relative', flexShrink: 0, minWidth: 0 }}
+      >
+        {listHeader !== undefined ? (
+          <View style={{ paddingHorizontal: padding }}>{listHeader}</View>
+        ) : null}
+        <View ref={setHostRef} style={{ flexShrink: 0, minWidth: 0 }} />
+        {!slotState.hasRows && hasEmptySlot ? (
+          <View
+            style={{
+              paddingHorizontal: padding,
+              paddingBottom: slotState.emptyBottomPadding,
+            }}
+          >
+            {listEmpty}
+          </View>
+        ) : null}
+        {hasFooterBand ? (
+          <View testID="native-list-footer-slot" style={footerBandStyle}>
+            {listExpandedContent !== undefined &&
+            slotState.hasExpandedContent ? (
+              <View
+                testID="native-list-expanded-content-slot"
+                aria-hidden={!slotState.disclosureExpanded}
+                pointerEvents={slotState.disclosureExpanded ? 'auto' : 'none'}
+                style={
+                  slotState.disclosureExpanded
+                    ? undefined
+                    : collapsedExpandedContentStyle
+                }
+              >
+                {listExpandedContent}
+              </View>
+            ) : null}
+            {listStructureToggle !== undefined ? (
+              <View
+                testID="native-list-structure-toggle-slot"
+                aria-hidden={!slotState.disclosurePresent}
+                pointerEvents={slotState.disclosurePresent ? 'auto' : 'none'}
+                style={
+                  slotState.disclosurePresent
+                    ? { marginHorizontal: -padding }
+                    : collapsedExpandedContentStyle
+                }
+              >
+                {listStructureToggle}
+              </View>
+            ) : null}
+            {slotState.expandedTrailingInset > 0 &&
+            (listExpandedContent !== undefined ||
+              listStructureToggle !== undefined) ? (
+              <View
+                testID="native-list-trailing-inset-slot"
+                style={trailingInsetStyle}
+              />
+            ) : null}
+            {listFooter}
+          </View>
+        ) : null}
+      </View>
+    );
+    const bandWidth = sidecarLayout
+      ? Math.min(viewportWidth, sidecarLayout.maxContentWidth)
+      : 0;
+    const sidecarMargin = Math.max(0, (viewportWidth - bandWidth) / 2);
+    const leftWidth = Math.max(
+      0,
+      bandWidth - (sidecarLayout?.width ?? 0) - (sidecarLayout?.gap ?? 0)
+    );
+    const scrollContent = sidecarLayout ? (
+      <View
+        ref={setBoundsRef}
+        style={{ position: 'relative', minHeight: sidecarHeight }}
+      >
+        <View style={{ marginStart: sidecarMargin, width: leftWidth }}>
+          {content}
+        </View>
+        <View
+          style={{
+            position: 'absolute',
+            end: sidecarMargin,
+            top: 0,
+            width: sidecarLayout.width,
+          }}
+          onLayout={(event) =>
+            setSidecarHeight(event.nativeEvent.layout.height)
+          }
+        >
+          {listSidecar}
+        </View>
+      </View>
+    ) : (
+      content
+    );
+    return (
+      <View
+        {...viewProps}
+        onLayout={(event) => {
+          setViewportWidth(event.nativeEvent.layout.width);
+          viewProps.onLayout?.(event);
+        }}
+        style={[viewProps.style, { position: 'relative', minHeight: 0 }]}
+      >
+        {webScrollHost === undefined ? (
+          <View
+            ref={setScrollHostRef}
+            style={{ position: 'absolute', inset: 0, overflow: 'scroll' }}
+          >
+            {scrollContent}
+          </View>
+        ) : (
+          scrollContent
+        )}
+      </View>
+    );
   }
 );

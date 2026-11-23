@@ -21,7 +21,7 @@ import java.util.concurrent.CancellationException
 
 // Only source PNGs are persisted; transformed resources can have other dimensions.
 internal fun oneKeyImageMemoryDiskStrategy(uri: String): DiskCacheStrategy =
-  if (OneKeyBlockieAvatar.isAvatarUri(uri)) DiskCacheStrategy.DATA else DiskCacheStrategy.AUTOMATIC
+  if (OneKeyBlockieAvatar.isAvatarUri(uri) || uri.startsWith("data:")) DiskCacheStrategy.DATA else DiskCacheStrategy.AUTOMATIC
 
 internal val oneKeyAvatarCacheFileOption: Option<Boolean> =
   Option.memory("onekey-image.blockie-source-cache-v1", false)

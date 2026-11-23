@@ -1,0 +1,36 @@
+apply plugin: 'com.android.library'
+
+android {
+  namespace 'com.onekey.jpush.fcm'
+  compileSdkVersion rootProject.ext.compileSdkVersion
+
+  defaultConfig {
+    minSdkVersion rootProject.ext.minSdkVersion
+    targetSdkVersion rootProject.ext.targetSdkVersion
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
+
+  testOptions {
+    unitTests.includeAndroidResources = true
+  }
+}
+
+def coreProject = rootProject.subprojects.find {
+  it.projectDir.canonicalFile == projectDir.parentFile.canonicalFile
+}
+if (coreProject == null) {
+  throw new GradleException('The FCM library requires the autolinked JPush core project.')
+}
+
+dependencies {
+  implementation project(coreProject.path)
+  implementation 'com.google.firebase:firebase-messaging:25.0.1'
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.17'
+  testImplementation 'org.mockito:mockito-core:5.20.0'
+}

@@ -1,0 +1,47 @@
+diff --git a/src/call.rs b/src/call.rs
+index f46e5aa..c343eeb 100644
+--- a/src/call.rs
++++ b/src/call.rs
+@@ -23,7 +23,7 @@ pub async fn call(
+ 
+     let request = prepare_request(&base_url, headers, body)?;
+     let (init, abort) = options.request_init()?;
+-    let response = fetch(&request, &init).await?;
++    let response = fetch(&request, &init, options.fetch.as_ref()).await?;
+ 
+     let result = Response::builder().status(response.status());
+     let (result, content_type) = set_response_headers(result, &response)?;
+diff --git a/src/fetch.rs b/src/fetch.rs
+index af70088..59929fb 100644
+--- a/src/fetch.rs
++++ b/src/fetch.rs
+@@ -23,8 +23,13 @@ fn js_fetch(request: &Request, init: &RequestInit) -> Promise {
+     }
+ }
+ 
+-pub async fn fetch(request: &Request, init: &RequestInit) -> Result<Response, Error> {
+-    let js_response = JsFuture::from(js_fetch(request, init))
++pub async fn fetch(request: &Request, init: &RequestInit, handler: Option<&js_sys::Function>) -> Result<Response, Error> {
++    // OneKey patch: keep the upstream response/trailer parser and abort guard.
++    let promise = match handler {
++        Some(handler) => Promise::resolve(&handler.call2(&JsValue::NULL, request, init).map_err(Error::js_error)?),
++        None => js_fetch(request, init),
++    };
++    let js_response = JsFuture::from(promise)
+         .await
+         .map_err(Error::js_error)?;
+ 
+diff --git a/src/options/mod.rs b/src/options/mod.rs
+index 8d4868c..798c5b4 100644
+--- a/src/options/mod.rs
++++ b/src/options/mod.rs
+@@ -18,6 +18,9 @@ use web_sys::RequestInit;
+ /// Options for underlying `fetch` call
+ #[derive(Debug, Clone, Default)]
+ pub struct FetchOptions {
++    /// OneKey patch: per-client host transport, without replacing global fetch.
++    pub fetch: Option<js_sys::Function>,
++
+     /// Request's cache mode
+     pub cache: Option<Cache>,
+ 

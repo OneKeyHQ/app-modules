@@ -1,0 +1,103 @@
+#import "RCTBottomTabsDrawerComponentView.h"
+#import <react/renderer/components/RNBottomTabs/ComponentDescriptors.h>
+#import <react/renderer/components/RNBottomTabs/EventEmitters.h>
+#import <react/renderer/components/RNBottomTabs/Props.h>
+#import <React/RCTFabricComponentsPlugins.h>
+
+// Swift keeps the host internal to this module, so its framework compatibility
+// header does not export the class. Its explicit @objc name and selectors form
+// this private boundary, matching the existing tab container's runtime lookup.
+@protocol RNBottomTabsDrawerContainer <NSObject>
+@property(nonatomic) BOOL enabled;
+@property(nonatomic) BOOL open;
+@property(nonatomic) BOOL swipeEnabled;
+@property(nonatomic) BOOL hapticFeedbackEnabled;
+@property(nonatomic) double bottomBarHeight;
+@property(nonatomic, copy) NSString *colorScheme;
+@property(nonatomic) BOOL progressEventsEnabled;
+@property(nonatomic, copy) void (^onDrawerOpenChange)(BOOL open);
+@property(nonatomic, copy) void (^onDrawerProgress)(double progress);
+- (void)insertChild:(UIView *)child atIndex:(NSInteger)index;
+- (void)removeChildAtIndex:(NSInteger)index;
+- (void)resendProgress;
+@end
+
+using namespace facebook::react;
+
+@implementation RCTBottomTabsDrawerComponentView {
+  UIView<RNBottomTabsDrawerContainer> *_drawer;
+}
+
++ (ComponentDescriptorProvider)componentDescriptorProvider
+{
+  return concreteComponentDescriptorProvider<RNBottomTabsDrawerComponentDescriptor>();
+}
+
++ (BOOL)shouldBeRecycled { return NO; }
+
+- (instancetype)initWithFrame:(CGRect)frame
+{
+  if (self = [super initWithFrame:frame]) {
+    _props = std::make_shared<const RNBottomTabsDrawerProps>();
+    Class containerClass = NSClassFromString(@"RCTBottomTabsDrawerContainerView");
+    _drawer = (UIView<RNBottomTabsDrawerContainer> *)[[containerClass alloc] initWithFrame:frame];
+    self.contentView = _drawer;
+    __weak RCTBottomTabsDrawerComponentView *weakSelf = self;
+    _drawer.onDrawerOpenChange = ^(BOOL open) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNBottomTabsDrawerEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) emitter->onDrawerOpenChange({.open = (bool)open});
+    };
+    _drawer.onDrawerProgress = ^(double progress) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNBottomTabsDrawerEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) emitter->onDrawerProgress({.progress = progress});
+    };
+  }
+  return self;
+}
+
+- (void)mountChildComponentView:(UIView<RCTComponentViewProtocol> *)child index:(NSInteger)index
+{
+  [_drawer insertChild:child atIndex:index];
+}
+
+- (void)unmountChildComponentView:(UIView<RCTComponentViewProtocol> *)child index:(NSInteger)index
+{
+  [_drawer removeChildAtIndex:index];
+}
+
+- (void)updateEventEmitter:(EventEmitter::Shared const &)eventEmitter
+{
+  [super updateEventEmitter:eventEmitter];
+  // Fabric applies a mount's props before its emitter, so a position reported
+  // then never left native; send the current one now.
+  [_drawer resendProgress];
+}
+
+- (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
+{
+  const auto &next = *std::static_pointer_cast<const RNBottomTabsDrawerProps>(props);
+  const auto &previous = *std::static_pointer_cast<const RNBottomTabsDrawerProps>(_props);
+  if (next.enabled != previous.enabled) _drawer.enabled = next.enabled;
+  if (next.open != previous.open) _drawer.open = next.open;
+  if (next.swipeEnabled != previous.swipeEnabled) _drawer.swipeEnabled = next.swipeEnabled;
+  if (next.hapticFeedbackEnabled != previous.hapticFeedbackEnabled)
+    _drawer.hapticFeedbackEnabled = next.hapticFeedbackEnabled;
+  if (next.bottomBarHeight != previous.bottomBarHeight) _drawer.bottomBarHeight = next.bottomBarHeight;
+  if (next.colorScheme != previous.colorScheme) {
+    _drawer.colorScheme = next.colorScheme == RNBottomTabsDrawerColorScheme::Light ? @"light"
+      : next.colorScheme == RNBottomTabsDrawerColorScheme::Dark ? @"dark" : @"system";
+  }
+  if (next.progressEventsEnabled != previous.progressEventsEnabled)
+    _drawer.progressEventsEnabled = next.progressEventsEnabled;
+  [super updateProps:props oldProps:oldProps];
+}
+@end
+
+Class<RCTComponentViewProtocol> RNBottomTabsDrawerCls(void)
+{
+  return RCTBottomTabsDrawerComponentView.class;
+}

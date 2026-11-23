@@ -1,0 +1,1264 @@
+package com.onekey.jpush.fcm;
+
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import android.app.ActivityManager;
+import android.app.KeyguardManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationChannelGroup;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.ResolveInfo;
+import android.content.res.Resources;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Looper;
+import android.os.Process;
+import cn.jiguang.api.JCoreManager;
+import cn.jiguang.api.utils.JCollectionAuth;
+import cn.jiguang.core.JCoreCrypto;
+import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.core.JCoreTcpEngine;
+import cn.jiguang.core.JCoreWireCodec;
+import cn.jiguang.plugins.push.common.JLogger;
+import cn.jpush.android.api.CustomMessage;
+import cn.jpush.android.api.JPushInterface;
+import cn.jpush.android.api.JThirdPlatFormInterface;
+import cn.jpush.android.api.NotificationMessage;
+import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.data.JPushLocalNotification;
+import cn.jpush.android.service.JNotifyActivity;
+import cn.jpush.android.service.JPushMessageReceiver;
+import com.google.android.gms.common.GoogleApiAvailabilityLight;
+import com.google.android.gms.tasks.TaskCompletionSource;
+import com.google.android.gms.tasks.Tasks;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.FirebaseOptions;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FirebaseMessagingService;
+import com.google.firebase.messaging.RemoteMessage;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.LooperMode;
+import org.robolectric.util.ReflectionHelpers;
+
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 28, manifest = Config.NONE)
+@LooperMode(LooperMode.Mode.PAUSED)
+public class FcmAdapterTest {
+    private Context context;
+    private FcmMessagingService service;
+    private NotificationManager notifications;
+    private Object firebaseRpc;
+    private final List<NotificationMessage> arrived = new ArrayList<>();
+    private final List<NotificationMessage> opened = new ArrayList<>();
+    private final List<CustomMessage> custom = new ArrayList<>();
+
+    @Before
+    public void setUp() throws Exception {
+        context = RuntimeEnvironment.getApplication();
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", null);
+        ReflectionHelpers.<Map<String, Object>>getStaticField(JCoreStorage.class, "MEMORY_FALLBACK").clear();
+        JCoreStorage.setAppContext(context);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setPushStopped(context, false);
+        ReflectionHelpers.setStaticField(JThirdPlatFormInterface.class, "fcmPlugin", null);
+        ReflectionHelpers.setStaticField(JThirdPlatFormInterface.class, "fcmRegistered", false);
+        ReflectionHelpers.<java.util.Queue<String>>getStaticField(FirebaseMessagingService.class, "recentlyReceivedMessageIds").clear();
+        JLogger.setLoggerEnable(true);
+        JLogger.clearRecentLogs();
+        com.margelo.nitro.nativelogger.OneKeyLog.clearCapturedLogs();
+        notifications = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        notifications.cancelAll();
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
+        ActionHelper.getInstance().clearRegisteredReceivers();
+        ActionHelper.getInstance().registerReceiver(new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage message) { arrived.add(message); }
+            @Override public void onNotifyMessageOpened(Context c, NotificationMessage message) { opened.add(message); }
+            @Override public void onMessage(Context c, CustomMessage message) { custom.add(message); }
+        });
+        service = Robolectric.buildService(FcmMessagingService.class).create().get();
+        // Isolate only the SDK's transport acknowledgement; run its real receive/display code.
+        firebaseRpc = mock(Class.forName("com.google.android.gms.cloudmessaging.Rpc"));
+        ReflectionHelpers.setField(service, "rpc", firebaseRpc);
+    }
+
+    @After
+    public void tearDown() {
+        ActionHelper.getInstance().clearRegisteredReceivers();
+        notifications.cancelAll();
+    }
+
+    @Test
+    public void localSchedulingPostsAndDispatchesOnlyTheUncancelledNotification() throws Exception {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        CountDownLatch fired = new CountDownLatch(1), cancelled = new CountDownLatch(1);
+        AtomicReference<NotificationMessage> delivered = new AtomicReference<>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage message) {
+                if (message.notificationId == 77001) cancelled.countDown();
+                if (message.notificationId == 77002) { delivered.set(message); fired.countDown(); }
+            }
+        };
+        helper.registerReceiver(receiver);
+        try {
+            JPushLocalNotification removed = new JPushLocalNotification();
+            removed.setNotificationId(77001L);
+            removed.setTitle("Cancelled local");
+            removed.setContent("Must not be delivered");
+            removed.setBroadcastTime(300L);
+            JPushInterface.addLocalNotification(context, removed);
+            JPushInterface.removeLocalNotification(context, 77001L);
+
+            JPushLocalNotification scheduled = new JPushLocalNotification();
+            scheduled.setNotificationId(77002L);
+            scheduled.setTitle("Scheduled local");
+            scheduled.setContent("Synthetic local scheduling verification");
+            scheduled.setBroadcastTime(70L);
+            JPushInterface.addLocalNotification(context, scheduled);
+            assertTrue("Scheduled local notification must arrive", fired.await(1000L, TimeUnit.MILLISECONDS));
+            assertEquals(1, delivered.get().notificationType);
+            assertEquals("77002", delivered.get().msgId);
+            Notification posted = Shadows.shadowOf(notifications).getNotification(77002);
+            assertNotNull(posted);
+            assertEquals("Scheduled local", posted.extras.getString(Notification.EXTRA_TITLE));
+            assertNotNull(posted.contentIntent);
+            NotificationMessage clicked = (NotificationMessage) Shadows.shadowOf(posted.contentIntent).getSavedIntent()
+                .getSerializableExtra("multi_notification_msg");
+            assertEquals(77002, clicked.notificationId);
+            assertEquals(1, clicked.notificationType);
+            assertTrue(helper.getActiveNotificationIds().contains(77002));
+            assertFalse("Cancelled local notification must stay cancelled", cancelled.await(360L, TimeUnit.MILLISECONDS));
+            assertNull(Shadows.shadowOf(notifications).getNotification(77001));
+            assertFalse(helper.getActiveNotificationIds().contains(77001));
+            assertEquals(1, arrived.size());
+        } finally {
+            helper.unregisterReceiver(receiver);
+            helper.clearActiveNotificationIds();
+        }
+    }
+
+    @Test
+    public void coreDiscoversSourceAdapterOnceAndRebindsTheCurrentToken() {
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        when(provider.getToken()).thenReturn(Tasks.forResult("current_secret_token"));
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0);
+        ActionHelper dispatcher = mock(ActionHelper.class);
+        JCoreTcpEngine engine = synchronousEngine();
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<FirebaseApp> app = mockStatic(FirebaseApp.class);
+             MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class);
+             MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            JThirdPlatFormInterface.initializeFcm(context);
+            JThirdPlatFormInterface.initializeFcm(context);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            app.verify(() -> FirebaseApp.initializeApp(context), times(2));
+            verify(provider, times(2)).getToken();
+            ArgumentCaptor<Bundle> actions = ArgumentCaptor.forClass(Bundle.class);
+            verify(dispatcher, times(2)).doAction(eq(context), eq("third_action"), actions.capture());
+            for (Bundle action : actions.getAllValues()) {
+                assertEquals("current_secret_token", action.getString("token"));
+                assertEquals((byte) 8, action.getByte("platform"));
+            }
+            assertLogsExclude("current_secret_token");
+        }
+    }
+
+    @Test
+    public void missingFirebaseConfigurationDoesNotEscapeCoreInitialization() {
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0);
+        JCoreTcpEngine engine = synchronousEngine();
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<FirebaseApp> app = mockStatic(FirebaseApp.class);
+             MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenThrow(new IllegalStateException("private_configuration_details"));
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            JThirdPlatFormInterface.initializeFcm(context);
+            assertTrue(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("FCM registration unavailable"));
+            assertTrue(JLogger.getRecentLogs().isEmpty());
+            assertLogsExclude("private_configuration_details");
+        }
+    }
+
+    @Test
+    public void authorizationGrantedAfterSkippedInitRequestsTokenWithoutReconnect() {
+        JCoreStorage.setCollectionAuth(context, false);
+        JCoreStorage.setConnected(context, true);
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        when(provider.getToken()).thenReturn(Tasks.forResult("consented_secret_token"));
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0);
+        ActionHelper dispatcher = mock(ActionHelper.class);
+        JCoreTcpEngine engine = synchronousEngine();
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<FirebaseApp> app = mockStatic(FirebaseApp.class);
+             MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class);
+             MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class);
+             MockedStatic<JCoreManager> core = mockStatic(JCoreManager.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            JPushInterface.init(context);
+            verifyNoInteractions(provider);
+            JCollectionAuth.setAuth(context, true);
+            JCollectionAuth.setAuth(context, true);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            verify(provider).getToken();
+            assertEquals("consented_secret_token", tokenAction(dispatcher).getString("token"));
+            assertTrue(JCoreStorage.isConnected(context));
+            core.verify(() -> JCoreManager.init(context));
+            assertLogsExclude("consented_secret_token");
+        }
+    }
+
+    @Test
+    public void grantingAuthorizationWhileStoppedDoesNotRequestRegistration() {
+        JCoreStorage.setCollectionAuth(context, false);
+        JCoreStorage.setPushStopped(context, true);
+        try (MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class)) {
+            JCollectionAuth.setAuth(context, true);
+            assertTrue(JCollectionAuth.isAuth(context));
+            tcp.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    public void revokedAuthorizationCancelsQueuedFcmRegistration() {
+        JCoreStorage.setCollectionAuth(context, false);
+        JCoreTcpEngine engine = mock(JCoreTcpEngine.class);
+        try (MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class);
+             MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class)) {
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            JCollectionAuth.setAuth(context, true);
+            ArgumentCaptor<Runnable> work = ArgumentCaptor.forClass(Runnable.class);
+            verify(engine).executeAsync(work.capture());
+            JCollectionAuth.setAuth(context, false);
+            work.getValue().run();
+            firebase.verifyNoInteractions();
+            assertFalse(JCollectionAuth.isAuth(context));
+        }
+    }
+
+    @Test
+    public void tokenSuccessDispatchesPlatformEightWithoutPersistingBeforeAck() {
+        JCoreStorage.saveThirdToken(context, (byte) 8, "previous_acknowledged_token");
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        TaskCompletionSource<String> request = new TaskCompletionSource<>();
+        when(provider.getToken()).thenReturn(request.getTask());
+        ActionHelper dispatcher = mock(ActionHelper.class);
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+            assertEquals("previous_acknowledged_token", new FcmPushManager().getToken(context));
+            verifyNoInteractions(dispatcher);
+            request.setResult("rotated_secret_token");
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            Bundle token = tokenAction(dispatcher);
+            assertEquals("rotated_secret_token", token.getString("token"));
+            assertEquals((byte) 8, token.getByte("platform"));
+            assertEquals("previous_acknowledged_token", JCoreStorage.getThirdToken(context, (byte) 8));
+            assertLogsExclude("rotated_secret_token");
+        }
+    }
+
+    @Test
+    public void failedTokenRequestDoesNotBindOrLogRawError() {
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        when(provider.getToken()).thenReturn(Tasks.forException(new IOException("secret_provider_error")));
+        ActionHelper dispatcher = mock(ActionHelper.class);
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+            new FcmPushManager().getToken(context);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            verifyNoInteractions(dispatcher);
+            assertTrue(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("IOException"));
+            assertTrue(JLogger.getRecentLogs().isEmpty());
+            assertLogsExclude("secret_provider_error");
+        }
+    }
+
+    @Test
+    public void tokenCallbackRechecksStopAndAuthorizationAfterRequest() {
+        for (boolean stopped : new boolean[]{true, false}) {
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+            FirebaseMessaging provider = mock(FirebaseMessaging.class);
+            TaskCompletionSource<String> request = new TaskCompletionSource<>();
+            when(provider.getToken()).thenReturn(request.getTask());
+            ActionHelper dispatcher = mock(ActionHelper.class);
+            try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+                 MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class)) {
+                firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+                helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+                new FcmPushManager().getToken(context);
+                JCoreStorage.setPushStopped(context, stopped);
+                JCoreStorage.setCollectionAuth(context, stopped);
+                request.setResult("late_secret_token");
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                verifyNoInteractions(dispatcher);
+            }
+        }
+    }
+
+    @Test
+    public void newTokenInitializesCoreAndForwardsRotation() {
+        JCoreStorage.setConnected(context, true);
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        when(provider.getToken()).thenReturn(Tasks.forResult("new_secret_token"));
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0);
+        JCoreTcpEngine engine = synchronousEngine();
+        try (MockedStatic<JCoreManager> core = mockStatic(JCoreManager.class);
+             MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<FirebaseApp> app = mockStatic(FirebaseApp.class);
+             MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            service.handleIntent(new Intent("com.google.firebase.messaging.NEW_TOKEN").putExtra("token", "new_secret_token"));
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            core.verify(() -> JCoreManager.init(context));
+            ArgumentCaptor<byte[]> body = ArgumentCaptor.forClass(byte[].class);
+            verify(engine).enqueueOrSendRequest(eq(context), eq(JCoreWireCodec.CMD_THIRD_TOKEN),
+                eq(JCoreWireCodec.VER_THIRD_TOKEN), anyLong(), body.capture(), anyLong(), eq(3),
+                any(JCoreTcpEngine.RequestCallback.class));
+            assertArrayEquals(JCoreWireCodec.buildThirdTokenPayload("new_secret_token", (byte) 8, false), body.getValue());
+            verifyNoInteractions(provider);
+            assertLogsExclude("new_secret_token");
+        }
+    }
+
+    @Test
+    public void stoppedOrUnauthorizedNewTokenDoesNotInitializeCore() {
+        try (MockedStatic<JCoreManager> core = mockStatic(JCoreManager.class)) {
+            JCoreStorage.setPushStopped(context, true);
+            service.onNewToken("ignored");
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, false);
+            service.onNewToken("ignored");
+            core.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    public void emptyTokensAreIgnored() {
+        ActionHelper dispatcher = mock(ActionHelper.class);
+        try (MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class)) {
+            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+            FcmPushManager.acceptToken(context, null);
+            FcmPushManager.acceptToken(context, "");
+            verifyNoInteractions(dispatcher);
+        }
+    }
+
+    @Test
+    public void googlePlayAvailabilityAndNotificationDelegation() {
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0, 9);
+        try (MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<JPushInterface> core = mockStatic(JPushInterface.class)) {
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            FcmPushManager manager = new FcmPushManager();
+            assertTrue(manager.isSupport(context));
+            assertFalse(manager.isSupport(context));
+            assertFalse(manager.isSupport(null));
+            manager.clearNotification(context, 123);
+            manager.clearAllNotification(context);
+            core.verify(() -> JPushInterface.clearNotificationById(context, 123));
+            core.verify(() -> JPushInterface.clearAllNotifications(context));
+        }
+    }
+
+    @Test
+    public void firebaseInitializationAndApplicationMetadata() {
+        FirebaseApp app = mock(FirebaseApp.class);
+        FirebaseOptions options = new FirebaseOptions.Builder()
+            .setApplicationId("1:123456:android:synthetic").setApiKey("synthetic_api_key").build();
+        when(app.getOptions()).thenReturn(options);
+        try (MockedStatic<FirebaseApp> firebase = mockStatic(FirebaseApp.class)) {
+            firebase.when(FirebaseApp::getInstance).thenReturn(app);
+            FcmPushManager manager = new FcmPushManager();
+            manager.init(context);
+            manager.register(context, new Bundle());
+            firebase.verify(() -> FirebaseApp.initializeApp(context), times(2));
+            assertEquals(options.getApplicationId(), manager.getAppId(context));
+            assertEquals(options.getApiKey(), manager.getAppkey(context));
+            assertEquals((byte) 8, manager.getRomType(context));
+            assertFalse(manager.isNeedClearToken(context));
+        }
+    }
+
+    @Test
+    public void firebaseNotificationFieldsFillMetadataAndTapOpensOnce() {
+        Bundle payload = metadata("{\"_jmsgid_\":\"fcm_notification\",\"n_extras\":{\"route\":\"synthetic_route\"}}");
+        payload.putString("gcm.n.e", "1");
+        payload.putString("gcm.n.title", "private_title");
+        payload.putString("gcm.n.body", "private_body");
+        service.onMessageReceived(new RemoteMessage(payload));
+        assertEquals(1, arrived.size());
+        assertEquals("private_title", arrived.get(0).notificationTitle);
+        assertEquals("private_body", arrived.get(0).notificationContent);
+        assertEquals(8, arrived.get(0).platform);
+        List<Notification> posted = Shadows.shadowOf(notifications).getAllNotifications();
+        assertEquals(1, posted.size());
+        assertEquals("private_title", posted.get(0).extras.getString(Notification.EXTRA_TITLE));
+        Intent tap = Shadows.shadowOf(posted.get(0).contentIntent).getSavedIntent();
+        assertEquals(JNotifyActivity.class.getName(), tap.getComponent().getClassName());
+        Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+        assertEquals(1, opened.size());
+        assertEquals("fcm_notification", opened.get(0).msgId);
+        assertTrue(opened.get(0).notificationExtras.contains("synthetic_route"));
+        assertLogsExclude("private_title", "private_body", "synthetic_route");
+    }
+
+    @Test
+    public void postedDataOnlyTapIsIgnoredAfterStopOrAuthorizationWithdrawal() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        ActivityInfo host = new ActivityInfo();
+        host.packageName = context.getPackageName();
+        host.name = context.getPackageName() + ".MainActivity";
+        host.applicationInfo = new ApplicationInfo(context.getApplicationInfo());
+        ResolveInfo resolvedHost = new ResolveInfo();
+        resolvedHost.activityInfo = host;
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
+        Shadows.shadowOf(context.getPackageManager()).addResolveInfoForIntent(launcher, resolvedHost);
+        for (boolean stopped : new boolean[]{true, false}) {
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+            service.handleIntent(firebaseReceiveIntent("deferred_tap_" + stopped, false));
+            List<Notification> posted = Shadows.shadowOf(notifications).getAllNotifications();
+            assertEquals(1, posted.size());
+            Intent tap = Shadows.shadowOf(posted.get(0).contentIntent).getSavedIntent();
+            JCoreStorage.setPushStopped(context, stopped);
+            JCoreStorage.setCollectionAuth(context, stopped);
+            Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+            assertTrue(opened.isEmpty());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            notifications.cancelAll();
+        }
+    }
+
+    private void installHostLauncher() {
+        ActivityInfo host = new ActivityInfo();
+        host.packageName = context.getPackageName();
+        host.name = context.getPackageName() + ".MainActivity";
+        host.applicationInfo = new ApplicationInfo(context.getApplicationInfo());
+        ResolveInfo resolvedHost = new ResolveInfo();
+        resolvedHost.activityInfo = host;
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
+        Shadows.shadowOf(context.getPackageManager()).addResolveInfoForIntent(launcher, resolvedHost);
+    }
+
+    @Test
+    public void tcpReceiveAndSerializedTapsRespectStopAndAuthorization() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        for (boolean stopped : new boolean[]{true, false}) {
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7101, "{\"n_title\":\"TCP\",\"n_content\":\"body\"}");
+            helper.handleDownlinkPushMessage(context, (byte) 2, 7102, "{\"message\":\"custom\"}");
+            assertEquals(1, arrived.size());
+            assertEquals(1, custom.size());
+            Intent tap = Shadows.shadowOf(Shadows.shadowOf(notifications).getAllNotifications().get(0).contentIntent).getSavedIntent();
+            notifications.cancelAll();
+            JCoreStorage.setPushStopped(context, stopped);
+            JCoreStorage.setCollectionAuth(context, stopped);
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7103, "{\"n_title\":\"blocked\",\"n_content\":\"body\"}");
+            helper.handleDownlinkPushMessage(context, (byte) 2, 7104, "{\"message\":\"blocked\"}");
+            Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+            assertTrue(Shadows.shadowOf(notifications).getAllNotifications().isEmpty());
+            assertEquals(1, arrived.size());
+            assertEquals(1, custom.size());
+            assertTrue(opened.isEmpty());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            arrived.clear();
+            custom.clear();
+        }
+    }
+
+    @Test
+    public void bothTransportTapsLaunchTheHostOnceAndRejectForeignOrInvalidIntents() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        for (int platform : new int[]{0, 8}) {
+            NotificationMessage message = new NotificationMessage();
+            message.msgId = "tap_" + platform;
+            message.platform = platform;
+            Intent tap = new Intent(context, JNotifyActivity.class)
+                .setAction(JPushInterface.ACTION_NOTIFICATION_OPENED)
+                .putExtra("multi_notification_msg", message);
+            JNotifyActivity activity = Robolectric.buildActivity(JNotifyActivity.class, tap).create().get();
+            assertTrue(activity.isFinishing());
+            assertEquals(platform == 0 ? 1 : 2, opened.size());
+            Intent launched = Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity();
+            assertNotNull(launched);
+            assertEquals(context.getPackageName() + ".MainActivity", launched.getComponent().getClassName());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            helper.handleNotificationIntent(context, new Intent(tap).setAction("unrelated"));
+            helper.handleNotificationIntent(context, new Intent(tap).setPackage("foreign.package"));
+            helper.handleNotificationIntent(context, new Intent(tap).setComponent(new android.content.ComponentName("foreign.package", "Foreign")));
+            message.msgId = "";
+            helper.handleNotificationIntent(context, tap);
+            assertEquals(platform == 0 ? 1 : 2, opened.size());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        }
+    }
+
+    @Test
+    public void notificationConstructionCannotCrossAnAuthorizationGeneration() {
+        NotificationManager manager = mock(NotificationManager.class);
+        android.content.ContextWrapper wrapped = new android.content.ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        doAnswer(call -> {
+            JCoreStorage.setCollectionAuth(wrapped, false);
+            JCoreStorage.setCollectionAuth(wrapped, true);
+            return null;
+        }).when(manager).createNotificationChannel(any(android.app.NotificationChannel.class));
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7105, "{\"n_title\":\"TCP\",\"n_content\":\"body\"}");
+        Bundle payload = new Bundle();
+        payload.putString("data", "{\"msg_id\":\"fcm_generation\",\"n_title\":\"FCM\",\"n_content\":\"body\"}");
+        helper.doAction(wrapped, JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING, payload);
+        verify(manager, times(2)).createNotificationChannel(any(android.app.NotificationChannel.class));
+        verify(manager, never()).notify(anyInt(), any(Notification.class));
+        assertTrue(arrived.isEmpty());
+    }
+
+    @Test
+    public void legacyBlockedTcpChannelIsUsedWithoutRecreationOrFallback() {
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Legacy blocked channel", NotificationManager.IMPORTANCE_NONE
+        ));
+        NotificationManager manager = spy(notifications);
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        ActionHelper.getInstance().handleDownlinkPushMessage(wrapped, (byte) 0, 7301,
+            "package\nappKey\n{\"m_content\":{\"n_title\":\"TCP\",\"n_content\":\"body\"}}");
+
+        ArgumentCaptor<Notification> posted = ArgumentCaptor.forClass(Notification.class);
+        verify(manager).notify(eq(7301), posted.capture());
+        assertEquals("JPush_3_7", posted.getValue().getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_NONE, notifications.getNotificationChannel("JPush_3_7").getImportance());
+        verify(manager, never()).createNotificationChannel(any(NotificationChannel.class));
+    }
+
+    @Test
+    public void blockedChannelsAndGroupsCannotEvictVisibleNotifications() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        JCoreStorage.setLatestNotificationNumber(context, 1);
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Blocked channel", NotificationManager.IMPORTANCE_NONE
+        ));
+        notifications.createNotificationChannelGroup(new NotificationChannelGroup("blocked", "Blocked group"));
+        NotificationChannel grouped = new NotificationChannel("orders", "Orders", NotificationManager.IMPORTANCE_HIGH);
+        grouped.setGroup("blocked");
+        notifications.createNotificationChannel(grouped);
+
+        NotificationManager manager = spy(notifications);
+        NotificationChannelGroup group = spy(notifications.getNotificationChannelGroup("blocked"));
+        doReturn(true).when(group).isBlocked();
+        doReturn(group).when(manager).getNotificationChannelGroup("blocked");
+        useNotificationManager(manager);
+
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7310, "{\"n_title\":\"Visible\",\"n_priority\":2}");
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7311, "{\"n_title\":\"Channel blocked\"}");
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7312, "{\"n_title\":\"Group blocked\",\"n_channel_id\":\"orders\"}");
+
+        verify(manager).notify(eq(7311), any(Notification.class));
+        verify(manager).notify(eq(7312), any(Notification.class));
+        verify(manager, never()).cancel(7310);
+        assertEquals(Collections.singletonList(7310), helper.getActiveNotificationIds());
+        assertNotNull(Shadows.shadowOf(notifications).getNotification(7310));
+    }
+
+    @Test
+    public void rejectedReplacementCannotChangeTheVisibleNotificationTap() {
+        installHostLauncher();
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Blocked", NotificationManager.IMPORTANCE_NONE
+        ));
+        NotificationManager manager = spy(notifications);
+        int notificationId = 7331;
+        doAnswer(call -> {
+            Notification candidate = call.getArgument(1);
+            return "JPush_3_7".equals(candidate.getChannelId()) ? null : call.callRealMethod();
+        }).when(manager).notify(eq(notificationId), any(Notification.class));
+        useNotificationManager(manager);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7401,
+            "{\"notification_id\":7331,\"n_title\":\"Visible\",\"n_priority\":2,\"n_extras\":{\"route\":\"original\"}}");
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7402,
+            "{\"notification_id\":7331,\"n_title\":\"Blocked\",\"n_extras\":{\"route\":\"blocked\"}}");
+
+        Notification visible = Shadows.shadowOf(notifications).getNotification(notificationId);
+        assertEquals("Visible", visible.extras.getCharSequence(Notification.EXTRA_TITLE));
+        Robolectric.buildActivity(JNotifyActivity.class, Shadows.shadowOf(visible.contentIntent).getSavedIntent()).create();
+        assertEquals(1, opened.size());
+        assertEquals("7401", opened.get(0).msgId);
+        assertEquals("{\"route\":\"original\"}", opened.get(0).notificationExtras);
+
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7403,
+            "{\"notification_id\":7331,\"n_title\":\"Replacement\",\"n_priority\":2}");
+        Notification replacement = Shadows.shadowOf(notifications).getNotification(notificationId);
+        assertEquals("Replacement", replacement.extras.getCharSequence(Notification.EXTRA_TITLE));
+        Robolectric.buildActivity(JNotifyActivity.class,
+            Shadows.shadowOf(replacement.contentIntent).getSavedIntent()).create();
+        assertEquals(2, opened.size());
+        assertEquals("7403", opened.get(1).msgId);
+    }
+
+    @Test
+    public void nullChannelReusesTheBlockedDefaultForTcpAndFcm() {
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Blocked", NotificationManager.IMPORTANCE_NONE
+        ));
+        ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7332,
+            "{\"n_title\":\"TCP\",\"n_channel_id\":null}");
+        service.onMessageReceived(new RemoteMessage(metadata(
+            "{\"msg_id\":\"7333\",\"n_title\":\"FCM\",\"n_channel_id\":null}"
+        )));
+        int fcmId = JThirdPlatFormInterface.getNofiticationID("7333", 0);
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7332).getChannelId());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(fcmId).getChannelId());
+        assertNull(notifications.getNotificationChannel("null"));
+        assertEquals(NotificationManager.IMPORTANCE_NONE, notifications.getNotificationChannel("JPush_3_7").getImportance());
+    }
+
+    @Test
+    public void upgradesReuseSourceChannelsUntilTheMatchingBinaryChannelExists() {
+        notifications.createNotificationChannel(new NotificationChannel(
+            "jpush_default_channel", "Source blocked", NotificationManager.IMPORTANCE_NONE
+        ));
+        NotificationChannel sourceSilent = new NotificationChannel(
+            "jpush_silent_channel", "Source silent", NotificationManager.IMPORTANCE_LOW
+        );
+        sourceSilent.setSound(null, null);
+        notifications.createNotificationChannel(sourceSilent);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7313, "{\"n_title\":\"TCP\"}");
+        assertEquals("jpush_default_channel", Shadows.shadowOf(notifications).getNotification(7313).getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_NONE,
+            notifications.getNotificationChannel("jpush_default_channel").getImportance());
+        assertNull(notifications.getNotificationChannel("JPush_3_7"));
+
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7314, "{\"n_title\":\"TCP\",\"n_channel_id\":\"orders\"}");
+        assertEquals("orders", Shadows.shadowOf(notifications).getNotification(7314).getChannelId());
+
+        notifications.createNotificationChannel(new NotificationChannel(
+            "JPush_3_7", "Binary default", NotificationManager.IMPORTANCE_DEFAULT
+        ));
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7315, "{\"n_title\":\"TCP\"}");
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7315).getChannelId());
+
+        JCoreStorage.setSilenceTime(context, 0, 0, 23, 59);
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7316, "{\"n_title\":\"TCP\"}");
+        assertEquals("jpush_silent_channel", Shadows.shadowOf(notifications).getNotification(7316).getChannelId());
+        assertNull(notifications.getNotificationChannel("JPush_2_0"));
+    }
+
+    @Test
+    public void silenceHoursSuppressAlertsOnAnExistingAudibleChannel() {
+        NotificationChannel legacy = new NotificationChannel(
+            "JPush_2_0", "User changed alerts", NotificationManager.IMPORTANCE_HIGH
+        );
+        legacy.enableVibration(true);
+        notifications.createNotificationChannel(legacy);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7317, "{\"n_title\":\"Normal\",\"n_channel_id\":\"JPush_2_0\"}");
+        Notification normal = Shadows.shadowOf(notifications).getNotification(7317);
+        assertNull(normal.getGroup());
+        assertEquals(Notification.GROUP_ALERT_ALL, normal.getGroupAlertBehavior());
+
+        JCoreStorage.setSilenceTime(context, 0, 0, 23, 59);
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7318, "{\"n_title\":\"Silent\"}");
+
+        Notification quiet = Shadows.shadowOf(notifications).getNotification(7318);
+        assertEquals("JPush_2_0", quiet.getChannelId());
+        assertNotNull(quiet.getGroup());
+        assertFalse((quiet.flags & Notification.FLAG_GROUP_SUMMARY) != 0);
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, quiet.getGroupAlertBehavior());
+        NotificationChannel reused = notifications.getNotificationChannel("JPush_2_0");
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, reused.getImportance());
+        assertNotNull(reused.getSound());
+        assertTrue(reused.shouldVibrate());
+    }
+
+    @Test
+    public void anEmptyApplicationLabelUsesThePackageNameForTheChannelGroup() {
+        ApplicationInfo info = mock(ApplicationInfo.class);
+        doReturn("").when(info).loadLabel(any());
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public ApplicationInfo getApplicationInfo() {
+                return info;
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+
+        ActionHelper.getInstance().handleDownlinkPushMessage(wrapped, (byte) 0, 7319, "{\"n_title\":\"First push\"}");
+
+        assertEquals(context.getPackageName(), notifications.getNotificationChannelGroup("JIGUANG_CHANNEL_GROUP").getName());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7319).getChannelId());
+    }
+
+    @Test
+    public void anUnavailableGroupDoesNotPreventChannelCreationAndDelivery() {
+        NotificationManager manager = spy(notifications);
+        doThrow(new IllegalStateException()).when(manager).createNotificationChannelGroup(any());
+        useNotificationManager(manager);
+
+        ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7320, "{\"n_title\":\"First push\"}");
+
+        assertNull(notifications.getNotificationChannel("JPush_3_7").getGroup());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7320).getChannelId());
+    }
+
+    @Test
+    public void derivedChannelNamesUseDifferentHostResourcesByImportance() {
+        Resources resources = spy(context.getResources());
+        doReturn(1).when(resources).getIdentifier("jg_channel_name_p_default", "string", context.getPackageName());
+        doReturn(2).when(resources).getIdentifier("jg_channel_name_p_high", "string", context.getPackageName());
+        doReturn("Routine updates").when(resources).getText(1);
+        doReturn("Urgent updates").when(resources).getText(2);
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Resources getResources() {
+                return resources;
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7321, "{\"n_title\":\"Default\"}");
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7322, "{\"n_title\":\"High\",\"n_priority\":2}");
+
+        assertEquals("Routine updates", notifications.getNotificationChannel("JPush_3_7").getName());
+        assertEquals("Urgent updates", notifications.getNotificationChannel("JPush_4_7").getName());
+    }
+
+    @Test
+    public void framedMultilineTcpPreservesContentAndTheExplicitChannel() {
+        ActionHelper.getInstance().handleDownlinkPushMessage(context, (byte) 0, 7323,
+            "package\r\nappKey\r\n{\r\n  \"m_content\": {\r\n    \"n_title\": \"Title\",\r\n"
+                + "    \"n_content\": \"Body\",\r\n    \"n_channel_id\": \"orders\",\r\n"
+                + "    \"n_extras\": { \"message\": \"business payload\" }\r\n  }\r\n}\r\n");
+
+        Notification posted = Shadows.shadowOf(notifications).getNotification(7323);
+        assertEquals("orders", posted.getChannelId());
+        assertEquals("Title", posted.extras.getCharSequence(Notification.EXTRA_TITLE));
+        assertEquals("Body", posted.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertEquals(1, arrived.size());
+        assertEquals("{\"message\":\"business payload\"}", arrived.get(0).notificationExtras);
+        assertTrue(custom.isEmpty());
+    }
+
+    @Test
+    public void flatFcmImportanceMatchesMetadataAndMalformedImportanceKeepsTheMessage() {
+        String originalManufacturer = Build.MANUFACTURER;
+        try {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", "Google");
+            Bundle flat = new Bundle();
+            flat.putString("msg_id", "7324");
+            flat.putString("n_title", "Flat FCM");
+            flat.putString("n_priority", "2");
+            flat.putString("n_importance", "{\"fc\":1}");
+            service.onMessageReceived(new RemoteMessage(flat));
+            service.onMessageReceived(new RemoteMessage(metadata(
+                "{\"msg_id\":\"7325\",\"n_title\":\"FCM metadata\",\"n_priority\":2,\"n_importance\":{\"fc\":1}}"
+            )));
+            flat.putString("msg_id", "7326");
+            flat.putString("n_importance", "[1]");
+            service.onMessageReceived(new RemoteMessage(flat));
+        } finally {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", originalManufacturer);
+        }
+        assertEquals("JPush_1_0", Shadows.shadowOf(notifications).getNotification(
+            JThirdPlatFormInterface.getNofiticationID("7324", 0)).getChannelId());
+        assertEquals("JPush_1_0", Shadows.shadowOf(notifications).getNotification(
+            JThirdPlatFormInterface.getNofiticationID("7325", 0)).getChannelId());
+        assertEquals("JPush_4_7", Shadows.shadowOf(notifications).getNotification(
+            JThirdPlatFormInterface.getNofiticationID("7326", 0)).getChannelId());
+    }
+
+    private void useNotificationManager(NotificationManager manager) {
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+    }
+
+    @Test
+    public void fcmReusesMutedLegacyChannelAndItsUserSettings() {
+        NotificationChannel legacy = new NotificationChannel(
+            "JPush_3_7", "Legacy muted channel", NotificationManager.IMPORTANCE_LOW
+        );
+        legacy.setSound(null, null);
+        legacy.enableVibration(false);
+        notifications.createNotificationChannel(legacy);
+
+        service.onMessageReceived(new RemoteMessage(metadata(
+            "{\"msg_id\":\"7302\",\"n_title\":\"FCM\",\"n_content\":\"body\"}"
+        )));
+        int id = JThirdPlatFormInterface.getNofiticationID("7302", 0);
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(id).getChannelId());
+        NotificationChannel reused = notifications.getNotificationChannel("JPush_3_7");
+        assertEquals("Legacy muted channel", reused.getName());
+        assertEquals(NotificationManager.IMPORTANCE_LOW, reused.getImportance());
+        assertNull(reused.getSound());
+        assertFalse(reused.shouldVibrate());
+        assertEquals(1, notifications.getNotificationChannels().size());
+    }
+
+    @Test
+    public void localNotificationCreatesDefaultLegacyChannel() {
+        JPushLocalNotification local = new JPushLocalNotification();
+        local.setNotificationId(7303);
+        local.setTitle("Local notification");
+        ActionHelper.getInstance().dispatchLocalNotification(context, local);
+
+        NotificationChannel channel = notifications.getNotificationChannel("JPush_3_7");
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7303).getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_DEFAULT, channel.getImportance());
+        assertNotNull(channel.getSound());
+        assertTrue(channel.shouldVibrate());
+        assertTrue(channel.shouldShowLights());
+        assertEquals("JIGUANG_CHANNEL_GROUP", channel.getGroup());
+    }
+
+    @Test
+    public void explicitChannelAndLegacyPriorityAndAlertMaskSelectTheirOwnChannels() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7304,
+            "{\"m_content\":{\"n_title\":\"TCP\",\"n_priority\":2,\"n_alert_type\":13}}");
+        String originalManufacturer = Build.MANUFACTURER;
+        try {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", "Google");
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7305,
+                "{\"n_title\":\"TCP\",\"n_priority\":2,\"n_importance\":{\"fc\":1}}");
+        } finally {
+            ReflectionHelpers.setStaticField(Build.class, "MANUFACTURER", originalManufacturer);
+        }
+        helper.handleDownlinkPushMessage(context, (byte) 0, 7306,
+            "{\"n_title\":\"TCP\",\"n_channel_id\":\"orders\",\"n_alert_type\":0}");
+
+        assertEquals("JPush_4_5", Shadows.shadowOf(notifications).getNotification(7304).getChannelId());
+        assertEquals("JPush_1_0", Shadows.shadowOf(notifications).getNotification(7305).getChannelId());
+        assertEquals("orders", Shadows.shadowOf(notifications).getNotification(7306).getChannelId());
+        assertEquals(NotificationManager.IMPORTANCE_LOW, notifications.getNotificationChannel("orders").getImportance());
+    }
+
+    @Test
+    public void customRawSoundChangesLegacyIdentityUntilSdkSilenceHours() {
+        Resources resources = spy(context.getResources());
+        doReturn(1).when(resources).getIdentifier("chime", "raw", context.getPackageName());
+        ContextWrapper wrapped = new ContextWrapper(context) {
+            @Override public Resources getResources() {
+                return resources;
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7307,
+            "{\"n_title\":\"TCP\",\"n_sound\":\"chime\"}");
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7308,
+            "{\"n_title\":\"TCP\",\"n_sound\":\"missing\"}");
+        JCoreStorage.setSilenceTime(context, 0, 0, 23, 59);
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7309,
+            "{\"n_title\":\"TCP\",\"n_channel_id\":\"orders\",\"n_sound\":\"chime\"}");
+
+        assertEquals("JPush_3_6_chime", Shadows.shadowOf(notifications).getNotification(7307).getChannelId());
+        assertEquals(Uri.parse("android.resource://" + context.getPackageName() + "/raw/chime"),
+            notifications.getNotificationChannel("JPush_3_6_chime").getSound());
+        assertEquals("JPush_3_7", Shadows.shadowOf(notifications).getNotification(7308).getChannelId());
+        assertEquals("JPush_2_0", Shadows.shadowOf(notifications).getNotification(7309).getChannelId());
+        assertNull(notifications.getNotificationChannel("JPush_2_0").getSound());
+        assertNull(notifications.getNotificationChannel("orders"));
+    }
+
+    @Test
+    public void revokedConstructionCannotMutateAnExistingClickIntentOrNotificationTracking() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        JCoreStorage.setLatestNotificationNumber(context, 2);
+        for (int id : new int[]{7105, 7106}) {
+            NotificationMessage previous = new NotificationMessage();
+            previous.msgId = "existing_" + id;
+            previous.notificationId = id;
+            previous.notificationTitle = "Existing notification";
+            helper.postSystemNotification(context, previous);
+        }
+        assertEquals(java.util.Arrays.asList(7105, 7106), helper.getActiveNotificationIds());
+        Notification previous = Shadows.shadowOf(notifications).getNotification(7105);
+        android.app.PendingIntent previousClick = previous.contentIntent;
+        NotificationManager manager = spy(notifications);
+        android.content.ContextWrapper wrapped = new android.content.ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        doAnswer(call -> {
+            JCoreStorage.setCollectionAuth(wrapped, false);
+            return call.callRealMethod();
+        }).when(manager).getNotificationChannel("JPush_3_7");
+        for (int id : new int[]{7105, 7107}) {
+            JCoreStorage.setCollectionAuth(wrapped, true);
+            NotificationMessage rejected = new NotificationMessage();
+            rejected.msgId = "rejected_" + id;
+            rejected.notificationId = id;
+            rejected.notificationTitle = "Rejected replacement";
+            helper.postSystemNotification(wrapped, rejected);
+            assertEquals(java.util.Arrays.asList(7105, 7106), helper.getActiveNotificationIds());
+            assertEquals(2, Shadows.shadowOf(notifications).getAllNotifications().size());
+            NotificationMessage saved = (NotificationMessage) Shadows.shadowOf(previousClick).getSavedIntent()
+                .getSerializableExtra("multi_notification_msg");
+            assertEquals("existing_7105", saved.msgId);
+            assertEquals("Existing notification", Shadows.shadowOf(notifications).getNotification(7105)
+                .extras.getString(Notification.EXTRA_TITLE));
+        }
+        verify(manager, never()).notify(anyInt(), any(Notification.class));
+        verify(manager, never()).cancel(anyInt());
+    }
+
+    @Test
+    public void openedCallbackRevocationAndRegrantCannotContinueTheOldTapLaunch() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        JPushMessageReceiver revoke = new JPushMessageReceiver() {
+            @Override public void onNotifyMessageOpened(Context c, NotificationMessage message) {
+                JCoreStorage.setCollectionAuth(c, false);
+                JCoreStorage.setCollectionAuth(c, true);
+            }
+        };
+        helper.registerReceiver(revoke);
+        NotificationMessage message = new NotificationMessage();
+        message.msgId = "tap_generation";
+        Intent tap = new Intent(context, JNotifyActivity.class)
+            .setAction(JPushInterface.ACTION_NOTIFICATION_OPENED)
+            .putExtra("multi_notification_msg", message);
+        Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+        assertEquals(1, opened.size());
+        assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        helper.unregisterReceiver(revoke);
+    }
+
+    @Test
+    public void compressedMetadataRetainsItsOwnTitleAndExtras() {
+        Bundle payload = metadata(compress("{\"msg_id\":\"zipped\",\"override_msg_id\":\"\",\"n_title\":\"metadata_title\",\"n_content\":\"metadata_body\",\"n_extras\":{\"route\":\"private_route\"}}"));
+        payload.putString("gcm.n.e", "1");
+        payload.putString("gcm.n.title", "fallback_title");
+        payload.putString("gcm.n.body", "fallback_body");
+        service.onMessageReceived(new RemoteMessage(payload));
+        assertEquals(1, arrived.size());
+        assertEquals("zipped", arrived.get(0).msgId);
+        assertEquals("metadata_title", arrived.get(0).notificationTitle);
+        assertTrue(arrived.get(0).notificationExtras.contains("private_route"));
+    }
+
+    @Test
+    public void standardFirebaseDataUsesTransportIdAndPreservesExtras() {
+        Bundle payload = new Bundle();
+        payload.putString("google.message_id", "transport_id");
+        payload.putString("n_title", "Synthetic notification");
+        payload.putString("n_content", "Synthetic body");
+        payload.putString("route", "synthetic_route");
+        service.onMessageReceived(new RemoteMessage(payload));
+        assertEquals(1, arrived.size());
+        assertEquals("transport_id", arrived.get(0).msgId);
+        assertTrue(arrived.get(0).notificationExtras.contains("synthetic_route"));
+    }
+
+    @Test
+    public void customDataDoesNotDisplayANotification() {
+        service.onMessageReceived(new RemoteMessage(metadata("{\"msg_id\":\"custom_id\",\"message\":\"private_custom_body\",\"content_type\":\"text\",\"extras\":{\"route\":\"private_custom_route\"}}")));
+        assertEquals(1, custom.size());
+        assertEquals("custom_id", custom.get(0).messageId);
+        assertEquals("private_custom_body", custom.get(0).message);
+        assertEquals("text", custom.get(0).contentType);
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        assertLogsExclude("private_custom_body", "private_custom_route");
+    }
+
+    @Test
+    public void malformedAndOversizedPayloadsDoNotReachCallbacks() {
+        service.onMessageReceived(new RemoteMessage(metadata("{broken")));
+        service.onMessageReceived(new RemoteMessage(metadata("{\"jg_c\":\"not-gzip\"}")));
+        StringBuilder oversized = new StringBuilder();
+        for (int i = 0; i < 70000; i++) oversized.append('x');
+        service.onMessageReceived(new RemoteMessage(metadata(compress(oversized.toString()))));
+        assertTrue(arrived.isEmpty());
+        assertTrue(custom.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void stoppedAndUnauthorizedNotificationsAreIgnored() {
+        String body = "{\"msg_id\":\"blocked\",\"n_content\":\"synthetic\"}";
+        JCoreStorage.setPushStopped(context, true);
+        service.onMessageReceived(new RemoteMessage(metadata(body)));
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.setCollectionAuth(context, false);
+        service.onMessageReceived(new RemoteMessage(metadata(body)));
+        JCoreStorage.setCollectionAuth(context, true);
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void foregroundDisplayDisabledSuppressesNotificationAndArrival() {
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void backgroundDataOnlyMessageStillDisplaysAndDispatchesArrival() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        RemoteMessage message = foregroundSuppressedMessage();
+        assertNull(message.getNotification());
+        service.onMessageReceived(message);
+        assertEquals(1, arrived.size());
+        assertEquals("foreground_suppressed", arrived.get(0).msgId);
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void foregroundDisplayDecisionUsesCurrentProcessStateForEachMessage() {
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertTrue(arrived.isEmpty());
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertEquals(1, arrived.size());
+        notifications.cancelAll();
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertEquals(1, arrived.size());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void lockedScreenDoesNotSuppressDataOnlyNotification() {
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+        Shadows.shadowOf(keyguard).setKeyguardLocked(true);
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertEquals(1, arrived.size());
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void stoppedBackgroundCombinedIntentCannotUseFirebaseAutomaticDisplay() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        JCoreStorage.setPushStopped(context, true);
+        service.handleIntent(firebaseReceiveIntent("stopped_combined", true));
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        verifyNoInteractions(firebaseRpc);
+        assertLogsExclude("private_title", "private_body");
+    }
+
+    @Test
+    public void unauthorizedBackgroundNotificationIntentCannotUseFirebaseAutomaticDisplay() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        JCoreStorage.setCollectionAuth(context, false);
+        Intent notificationOnly = firebaseReceiveIntent("unauthorized_notification", true);
+        notificationOnly.removeExtra("JMessageExtra");
+        service.handleIntent(notificationOnly);
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        verifyNoInteractions(firebaseRpc);
+        assertLogsExclude("private_title", "private_body");
+    }
+
+    @Test
+    public void authorizedBackgroundCombinedIntentKeepsFirebaseDisplayAndDeduplication() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        Intent receive = firebaseReceiveIntent("allowed_combined", true);
+        service.handleIntent(receive);
+        service.handleIntent(new Intent(receive));
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+        assertTrue(arrived.isEmpty());
+        assertEquals(2, mockingDetails(firebaseRpc).getInvocations().size());
+    }
+
+    @Test
+    public void authorizedBackgroundDataOnlyIntentUsesNativeDisplayAndFirebaseDeduplication() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        Intent receive = firebaseReceiveIntent("allowed_data", false);
+        service.handleIntent(receive);
+        service.handleIntent(new Intent(receive));
+        assertEquals(1, arrived.size());
+        assertEquals("allowed_data", arrived.get(0).msgId);
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void receiveGateRechecksStateAfterStopWithdrawalAndRegrant() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        JCoreStorage.setPushStopped(context, true);
+        service.handleIntent(firebaseReceiveIntent("stopped", true));
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.setCollectionAuth(context, false);
+        service.handleIntent(firebaseReceiveIntent("withdrawn", true));
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        JCoreStorage.setCollectionAuth(context, true);
+        service.handleIntent(firebaseReceiveIntent("regranted", true));
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+        assertEquals(1, mockingDetails(firebaseRpc).getInvocations().size());
+    }
+
+    @Test
+    @Config(sdk = 34)
+    public void startupRevokesOldPlayServicesDelegateWithoutTokenOrConsent() {
+        JCoreStorage.setPushStopped(context, true);
+        JCoreStorage.setCollectionAuth(context, false);
+        notifications.setNotificationDelegate("com.google.android.gms");
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class)) {
+            Robolectric.buildContentProvider(FcmInitProvider.class).create();
+            assertNull(notifications.getNotificationDelegate());
+            assertFalse(JCollectionAuth.isAuth(context));
+            assertTrue(JCoreStorage.isPushStopped(context));
+            firebase.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    @Config(sdk = 34)
+    public void startupPreservesOtherNotificationDelegates() {
+        notifications.setNotificationDelegate("other.notification.delegate");
+        Robolectric.buildContentProvider(FcmInitProvider.class).create();
+        assertEquals("other.notification.delegate", notifications.getNotificationDelegate());
+    }
+
+    @Test
+    public void automaticFirebaseTapLaunchesHostAndKeepsCompressedMetadata() {
+        ActivityInfo activity = new ActivityInfo();
+        activity.packageName = context.getPackageName();
+        activity.name = context.getPackageName() + ".MainActivity";
+        activity.applicationInfo = new ApplicationInfo(context.getApplicationInfo());
+        ResolveInfo resolve = new ResolveInfo();
+        resolve.activityInfo = activity;
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
+        Shadows.shadowOf(context.getPackageManager()).addResolveInfoForIntent(launcher, resolve);
+        Intent tap = new Intent(JPushInterface.ACTION_NOTIFICATION_OPENED)
+            .putExtra("JMessageExtra", compress("{\"msg_id\":\"cold_tap\",\"n_extras\":{\"route\":\"synthetic_route\"}}"));
+        Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+        assertEquals(1, opened.size());
+        assertEquals("cold_tap", opened.get(0).msgId);
+        Intent launched = Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity();
+        assertNotNull(launched);
+        assertEquals(activity.name, launched.getComponent().getClassName());
+        assertTrue(opened.get(0).notificationExtras.contains("synthetic_route"));
+    }
+
+    private static Bundle metadata(String json) {
+        Bundle payload = new Bundle();
+        payload.putString("JMessageExtra", json);
+        return payload;
+    }
+
+    private static RemoteMessage foregroundSuppressedMessage() {
+        return new RemoteMessage(metadata("{\"msg_id\":\"foreground_suppressed\",\"n_content\":\"synthetic\",\"n_foreground\":\"0\"}"));
+    }
+
+    private static Intent firebaseReceiveIntent(String id, boolean notification) {
+        Intent receive = new Intent("com.google.android.c2dm.intent.RECEIVE")
+            .putExtra("google.message_id", id)
+            .putExtras(metadata("{\"msg_id\":\"" + id + "\",\"n_content\":\"private_body\",\"n_foreground\":\"0\"}"));
+        if (notification) {
+            receive.putExtra("gcm.n.e", "1");
+            receive.putExtra("gcm.n.title", "private_title");
+            receive.putExtra("gcm.n.body", "private_body");
+            receive.putExtra("gcm.n.icon", "android");
+        }
+        return receive;
+    }
+
+    private void setProcessImportance(int importance) {
+        ActivityManager.RunningAppProcessInfo process = new ActivityManager.RunningAppProcessInfo();
+        process.pid = Process.myPid();
+        process.importance = importance;
+        ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        Shadows.shadowOf(manager).setProcesses(Collections.singletonList(process));
+    }
+
+    private static String compress(String json) {
+        return "{\"jg_c\":\"" + JCoreCrypto.base64Encode(JCoreCrypto.gzipCompress(json.getBytes(StandardCharsets.UTF_8))) + "\"}";
+    }
+
+    private Bundle tokenAction(ActionHelper dispatcher) {
+        ArgumentCaptor<Bundle> action = ArgumentCaptor.forClass(Bundle.class);
+        verify(dispatcher).doAction(eq(context), eq("third_action"), action.capture());
+        assertEquals(JThirdPlatFormInterface.ACTION_REGISTER_TOKEN, action.getValue().getString("third_key_action"));
+        return action.getValue();
+    }
+
+    private static JCoreTcpEngine synchronousEngine() {
+        JCoreTcpEngine engine = mock(JCoreTcpEngine.class);
+        doAnswer(call -> {
+            call.<Runnable>getArgument(0).run();
+            return null;
+        }).when(engine).executeAsync(any(Runnable.class));
+        return engine;
+    }
+
+    private static void assertLogsExclude(String... values) {
+        String logs = com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString();
+        for (String value : values) assertFalse("Sensitive payload appeared in native logger", logs.contains(value));
+    }
+}

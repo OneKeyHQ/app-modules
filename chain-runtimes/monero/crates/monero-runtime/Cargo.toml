@@ -1,0 +1,52 @@
+[package]
+name = "onekey-monero-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OneKey Monero Runtime: wallet state over monero-oxide, persisted in SQLite"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+monero-wallet.workspace = true
+monero-address.workspace = true
+monero-daemon-rpc.workspace = true
+monero-interface.workspace = true
+monero-epee.workspace = true
+# Bounded concurrent block fetches (sync::fetch_scannable_blocks).
+futures-util.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+hex.workspace = true
+rand_core.workspace = true
+curve25519-dalek.workspace = true
+zeroize.workspace = true
+
+# Native targets (local debugging and tests).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native transport, to reproduce browser issues under a native debugger.
+reqwest.workspace = true
+# Native retry backoff (blocks_bin::backoff); reqwest already runs on Tokio.
+tokio.workspace = true
+
+[dev-dependencies]
+# Integration tests build addresses to extract public keys.
+monero-wallet.workspace = true
+futures-lite.workspace = true
+tokio.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs.workspace = true
+sqlite-wasm-vfs.workspace = true
+wasm-bindgen.workspace = true
+gloo-timers.workspace = true
+js-sys.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys.workspace = true
+# Not used directly: enables the legacy "js" feature that getrandom 0.2 (via
+# monero-oxide's rand_core 0.6) needs on wasm32-unknown-unknown.
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }

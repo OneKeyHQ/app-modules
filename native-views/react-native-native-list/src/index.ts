@@ -1,6 +1,8 @@
-export { NativeList } from './NativeList';
+export { NativeList, preloadNativeListAvatarImages } from './NativeList';
 export type {
   ActionAnchorState,
+  NativeListKeyboardDismissMode,
+  NativeListKeyboardShouldPersistTaps,
   NativeListProps,
   NativeListRef,
   ScrollAlignment,
@@ -12,10 +14,12 @@ export type {
   ScrollToKeyParams,
   ScrollToLocationParams,
   ScrollToOffsetParams,
+  StructuralTransitionSettledEvent,
 } from './NativeList';
 export type * from './models';
 export {
   applyRowPatches,
+  planNativeListPatches,
   serializePatches,
   serializeSnapshot,
   validatePatches,
@@ -33,3 +37,8 @@ export type {
   SelectionResult,
   SelectionState,
 } from './selection';
+
+export { configureNativeListFonts } from './fonts';
+export type { NativeListFontFamilies } from './fonts';
+
+export { ScrollEdgeEffect } from './ScrollEdgeEffect';

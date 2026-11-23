@@ -145,7 +145,8 @@ internal data class OneKeyImageDecodeDimensions(
 /**
  * Downsamples static bitmaps for the target while independently enforcing the
  * 16 MiB area cap. `override()` alone cannot enforce an area cap for very wide
- * or tall sources because Glide's default strategy follows target edges.
+ * or tall sources because Glide's default strategy follows target edges. Quality
+ * rounding keeps Glide's power-of-two sample from decoding below the target.
  */
 internal object OneKeyImageSafeDownsampleStrategy : DownsampleStrategy() {
   override fun getScaleFactor(
@@ -165,5 +166,5 @@ internal object OneKeyImageSafeDownsampleStrategy : DownsampleStrategy() {
     sourceHeight: Int,
     requestedWidth: Int,
     requestedHeight: Int,
-  ): SampleSizeRounding = SampleSizeRounding.MEMORY
+  ): SampleSizeRounding = SampleSizeRounding.QUALITY
 }

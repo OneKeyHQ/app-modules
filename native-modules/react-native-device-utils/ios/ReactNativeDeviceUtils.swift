@@ -1,3 +1,4 @@
+import AdServices
 import NitroModules
 import UIKit
 import ReactNativeNativeLogger
@@ -112,14 +113,14 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     public func isDualScreenDevice() throws -> Bool {
-        return false
+        return DualScreenDetector.shared.isDualScreenDevice
     }
 
     public func initEventListeners() throws -> Void {
     }
-    
+
     public func isSpanning() throws -> Bool {
-        return false
+        return DualScreenDetector.shared.isSpanning
     }
     
     public func getWindowRects() throws -> Promise<[DualScreenInfoRect]> {
@@ -132,10 +133,35 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
    
     func addSpanningChangedListener(callback: @escaping (Bool) -> Void) throws -> Double {
-        return 0
+        return DualScreenDetector.shared.addSpanningChangedListener(callback)
     }
 
     func removeSpanningChangedListener(id: Double) throws -> Void {
+        DualScreenDetector.shared.removeSpanningChangedListener(id)
+    }
+
+    func getWindowControlsInsets() throws -> WindowControlsInsets {
+        return WindowControlsInsetsObserver.shared.currentInsets
+    }
+
+    func addWindowControlsInsetsChangedListener(callback: @escaping (WindowControlsInsets) -> Void) throws -> Double {
+        return WindowControlsInsetsObserver.shared.addListener(callback)
+    }
+
+    func removeWindowControlsInsetsChangedListener(id: Double) throws -> Void {
+        WindowControlsInsetsObserver.shared.removeListener(id)
+    }
+
+    func setMainMenuConfig(config: MainMenuConfig) throws -> Void {
+        MainMenuController.shared.setConfig(config)
+    }
+
+    func addMainMenuCommandListener(callback: @escaping (MainMenuCommand) -> Void) throws -> Double {
+        return MainMenuController.shared.addListener(callback)
+    }
+
+    func removeMainMenuCommandListener(id: Double) throws -> Void {
+        MainMenuController.shared.removeListener(id)
     }
     
     
@@ -171,6 +197,24 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         useDarkIcons: Bool
     ) throws -> Void {
         // Android-only system UI.
+    }
+
+    // MARK: - In-memory store
+
+    func getInMemoryValue(key: String) throws -> InMemoryValue? {
+        return try InMemoryStore.shared.get(key)
+    }
+
+    func setInMemoryValue(key: String, value: InMemoryValue) throws {
+        try InMemoryStore.shared.set(key, value)
+    }
+
+    func removeInMemoryValue(key: String) throws -> Bool {
+        return try InMemoryStore.shared.remove(key)
+    }
+
+    func setInMemoryValueIfAbsent(key: String, value: InMemoryValue) throws -> Bool {
+        return try InMemoryStore.shared.setIfAbsent(key, value)
     }
 
     // MARK: - LaunchOptionsManager
@@ -320,5 +364,26 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         }
         return hasEmbeddedProvision ? .other : .unknown
         #endif
+    }
+
+    func getAppleAdsAttributionToken() throws -> Promise<String?> {
+        guard #available(iOS 14.3, *) else {
+            return .resolved(withResult: nil)
+        }
+        return Self.requestAppleAdsAttributionToken {
+            try AAAttribution.attributionToken()
+        }
+    }
+
+    static func requestAppleAdsAttributionToken(
+        using provider: @escaping @Sendable () throws -> String
+    ) -> Promise<String?> {
+        return Promise.parallel(.global(qos: .utility)) {
+            let token = try provider()
+            guard !token.isEmpty else {
+                throw RuntimeError.error(withMessage: "AdServices returned an empty attribution token")
+            }
+            return token
+        }
     }
 }

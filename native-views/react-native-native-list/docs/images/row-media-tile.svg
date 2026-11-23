@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" role="img" aria-labelledby="title desc">
+<title id="title">mediaTile · media over caption metadata</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">mediaTile · media over caption metadata</text>
+<rect x="24" y="66" width="456" height="262" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="40" y="82" width="424" height="148" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="52" y="161.0" font-size="15" fill="#294766" font-weight="400">image / imageState</text>
+<rect x="54" y="94" width="100" height="38" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="66" y="118.0" font-size="15" fill="#294766" font-weight="400">badge</text>
+<rect x="358" y="94" width="92" height="38" rx="8" fill="#e9f5ee" stroke="#72a38a" stroke-dasharray="5 4"/>
+<text x="370" y="118.0" font-size="15" fill="#2c6245" font-weight="400">close</text>
+<rect x="350" y="180" width="100" height="38" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="362" y="204.0" font-size="15" fill="#294766" font-weight="400">network</text>
+<rect x="40" y="244" width="424" height="32" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="52" y="265.0" font-size="15" fill="#294766" font-weight="400">title</text>
+<rect x="40" y="288" width="424" height="24" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="52" y="305.0" font-size="15" fill="#294766" font-weight="400">subtitle</text>
+<text x="516" y="112" font-size="19" fill="#243f55" font-weight="600">gallery / browserPreview</text>
+<text x="516" y="152" font-size="16" fill="#243f55" font-weight="400">The container owns grid spans.</text>
+<text x="516" y="184" font-size="16" fill="#243f55" font-weight="400">Overlay anchors stay fixed.</text>
+<text x="516" y="216" font-size="16" fill="#243f55" font-weight="400">Caption remains below the media.</text>
+<text x="24" y="360" font-size="13" fill="#64798b" font-weight="400">Schematic shows one tile; row style does not choose grid columns or change tile placement.</text>
+</g>
+</svg>

@@ -44,7 +44,7 @@
      return @{
        @"hasBackup":[NSNull null],
        @"pinRetryCount":@(_pinRTL),
-       @"isNewCard":@(_status == OKNFCLiteStatusNewCard),
+       @"isNewCard":@((BOOL)(_status == OKNFCLiteStatusNewCard)),
        @"serialNum":_SN
      };
    }
@@ -98,6 +98,7 @@
 
 - (BOOL)syncLiteInfo {
 
+  self.status = OKNFCLiteStatusError;
   OKNFCLiteStatus status = OKNFCLiteStatusError;
   self.pinRTL = 0;
   NSUInteger PinStatus = OKNFC_PIN_ERROR;
@@ -112,6 +113,11 @@
     return NO;
   }
   PinStatus = [self getPINStatus];
+  [LCLogger info:[NSString stringWithFormat:@"stage=pin_state_read readSucceeded=%d", PinStatus != OKNFC_PIN_ERROR]];
+  if (PinStatus == OKNFC_PIN_ERROR) {
+    self.status = OKNFCLiteStatusError;
+    return NO;
+  }
   status = PinStatus == OKNFC_PIN_UNSET ? OKNFCLiteStatusNewCard : OKNFCLiteStatusActivated;
   self.status = status;
   self.pinRTL = PinStatus == OKNFC_PIN_UNSET ? 10 : PinStatus;
@@ -415,10 +421,13 @@
     if (sw1 != OKNFC_SW1_OK) {
       if (sw1 == FailedVerificationCode) {
         self.pinRTL = sw2 & PinRTLBitMask;
+        result = OKNFCLitePINVerifyResultNotMatch;
       } else if (sw1 == AuthenticationLockCode) {
         self.pinRTL = 0;
+        result = OKNFCLitePINVerifyResultNotMatch;
+      } else {
+        result = OKNFCLitePINVerifyResultError;
       }
-      result = OKNFCLitePINVerifyResultNotMatch;
       dispatch_semaphore_signal(sema);
       return;
     }
@@ -486,7 +495,7 @@
   [self.commandTool sendCommandWithAPDU:[modal buildAPDU]
                                   modal:modal
                       completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
-    if (sw1 != OKNFC_SW1_OK) {
+    if (error != nil || sw1 != OKNFC_SW1_OK || responseData.length == 0) {
       [LCLogger error:@"获取 PIN 状态失败"];
       dispatch_semaphore_signal(sema);
       return;
@@ -498,12 +507,13 @@
       return;
     } else {
       OKLiteCommandModal *modal2 = [[OKLiteCommandModal alloc] initWithCommand:OKLiteCommandPinRTL version:self.version];
-      [self.commandTool sendCommandWithAPDU:[modal2 buildAPDU] modal:modal completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
-        if (sw1 == OKNFC_SW1_OK) {
-          unsigned int outVal;
+      [self.commandTool sendCommandWithAPDU:[modal2 buildAPDU] modal:modal2 completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
+        if (error == nil && sw1 == OKNFC_SW1_OK && responseData.length > 0) {
+          unsigned int outVal = 0;
           NSScanner* scanner = [NSScanner scannerWithString:responseData.toHexString];
-          [scanner scanHexInt:&outVal];
-          pinStatus = outVal;
+          if ([scanner scanHexInt:&outVal]) {
+            pinStatus = outVal;
+          }
         }
         dispatch_semaphore_signal(sema);
       }];
@@ -518,7 +528,7 @@
   __block BOOL success = NO;
   dispatch_semaphore_t sema = dispatch_semaphore_create(0);
   OKLiteCommandModal *modal = [[OKLiteCommandModal alloc] initWithCommand:OKLiteCommandImportMnemonic version:self.version];
-  modal.parseResp = true;
+  modal.parseResp = self.version == OKNFCLiteVersionV2;
   [self.commandTool sendCommandWithAPDU:[modal importMnemonic:mnc] modal:modal completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
     if (sw1 != OKNFC_SW1_OK) {
       dispatch_semaphore_signal(sema);
@@ -537,7 +547,7 @@
   __block NSString *mnc = nil;
   dispatch_semaphore_t sema = dispatch_semaphore_create(0);
   OKLiteCommandModal *modal = [[OKLiteCommandModal alloc] initWithCommand:OKLiteCommandExportMnemonic version:self.version];
-  modal.parseResp = true;
+  modal.parseResp = self.version == OKNFCLiteVersionV2;
   [self.commandTool sendCommandWithAPDU:[modal buildAPDU] modal:modal completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
     if (sw1 != OKNFC_SW1_OK) {
       dispatch_semaphore_signal(sema);

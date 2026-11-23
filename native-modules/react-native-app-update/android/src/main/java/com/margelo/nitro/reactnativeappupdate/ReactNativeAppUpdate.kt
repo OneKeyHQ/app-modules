@@ -10,6 +10,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
@@ -23,10 +24,12 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONObject
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
 // Shared 8-range concurrent downloader (segment-file model, no whole-file
 // pre-allocation). Previously app-update bundled its own private copy; it now
@@ -38,6 +41,49 @@ private data class Listener(
     val id: Double,
     val callback: (DownloadEvent) -> Unit
 )
+
+private class AppUpdateError(
+    val code: String,
+    val step: String,
+    val httpStatus: Int? = null,
+) : Exception(buildString {
+    append("ONEKEY_UPDATE_ERROR:")
+    append(JSONObject().put("code", code).put("step", step).apply {
+        if (code == "HTTP_ERROR" && httpStatus != null && httpStatus in 100..599) {
+            put("httpStatus", httpStatus)
+        }
+    }.toString())
+}) {
+    override fun printStackTrace(writer: java.io.PrintWriter) { writer.print(message.orEmpty()) }
+    override fun printStackTrace(stream: java.io.PrintStream) { stream.print(message.orEmpty()) }
+}
+
+private fun appUpdateError(error: Exception, step: String): AppUpdateError {
+    if (error is AppUpdateError) {
+        return if (error.step == step) error else AppUpdateError(error.code, step, error.httpStatus)
+    }
+    val code = when (error) {
+        is ConcurrentRangeDownloader.PermanentHttpException,
+        is ConcurrentRangeDownloader.TransientHttpException -> "HTTP_ERROR"
+        is java.net.SocketTimeoutException -> "TIMEOUT"
+        is java.net.UnknownHostException,
+        is java.net.ConnectException,
+        is java.net.ProtocolException,
+        is java.net.SocketException -> "NETWORK_ERROR"
+        is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
+        is java.io.FileNotFoundException,
+        is java.nio.file.AccessDeniedException -> "STORAGE_ERROR"
+        is IllegalArgumentException -> "INVALID_ARGUMENT"
+        is SecurityException -> "SECURITY_REJECTED"
+        else -> "UNKNOWN"
+    }
+    val status = when (error) {
+        is ConcurrentRangeDownloader.PermanentHttpException -> error.code
+        is ConcurrentRangeDownloader.TransientHttpException -> error.code
+        else -> null
+    }
+    return AppUpdateError(code, step, status)
+}
 
 @DoNotStrip
 class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
@@ -51,6 +97,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         // files "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below
         // scans this range to detect an in-flight concurrent download.
         private const val CONCURRENT_SEGMENT_COUNT = AppUpdateLogic.CONCURRENT_SEGMENT_COUNT
+        private const val MAX_APK_SIZE = 512L * 1024 * 1024
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -63,6 +110,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     // react-native-bundle-update's activeDownloads cancel wiring.
     private val activeDownload =
         java.util.concurrent.atomic.AtomicReference<ConcurrentRangeDownloader.CancelHandle?>(null)
+    // The handle stops range workers; this latch also covers ASC and single-stream I/O.
+    private var activeDownloadFinished: CountDownLatch? = null
+    // Guarded by activeDownload; cleanup owns the slot until its file wipe ends.
+    private var clearingDownload = false
     // downloadThread removed: downloads use coroutine-based Promise.async, not raw threads
 
     private fun sendEvent(type: String, progress: Int = 0, message: String = "") {
@@ -72,6 +123,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 listener.callback(event)
             } catch (e: Exception) {
                 OneKeyLog.error("AppUpdate", "Error sending event: ${e.message}")
+            }
+        }
+    }
+
+    private fun <T> updatePromise(step: String, work: suspend () -> T): Promise<T> {
+        return Promise.async {
+            try {
+                work()
+            } catch (e: Exception) {
+                OneKeyLog.error("AppUpdate", "$step failed: ${e.javaClass.simpleName}: ${e.message}")
+                throw if (e is ApkVerificationDeferredException) appUpdateError(e.reason, step) else appUpdateError(e, step)
             }
         }
     }
@@ -119,35 +181,43 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     private fun buildFile(path: String): File {
         val stripped = path.removePrefix("file:///")
-        val context = NitroModules.applicationContext
+        NitroModules.applicationContext
             ?: throw SecurityException("Application context unavailable, cannot validate file path")
 
-        // Resolve relative paths against cacheDir/apk/
+        val apkDirFile = getApkDownloadDir()
         val file = if (stripped.startsWith("/")) {
             File(stripped)
         } else {
-            File(getApkDownloadDir(), stripped)
+            File(apkDirFile, stripped)
         }
 
-        // Validate the resolved path is within the app's cache or files directory
+        // Validate the resolved path is strictly within the APK download directory (filesDir/apks)
         val canonicalPath = file.canonicalPath
-        val cacheDir = context.cacheDir.canonicalPath
-        val filesDir = context.filesDir.canonicalPath
-        val externalCacheDir = context.externalCacheDir?.canonicalPath
-        val externalFilesDir = context.getExternalFilesDir(null)?.canonicalPath
-        val allowed = canonicalPath.startsWith(cacheDir + File.separator) || canonicalPath == cacheDir ||
-                canonicalPath.startsWith(filesDir + File.separator) || canonicalPath == filesDir ||
-                (externalCacheDir != null && (canonicalPath.startsWith(externalCacheDir + File.separator) || canonicalPath == externalCacheDir)) ||
-                (externalFilesDir != null && (canonicalPath.startsWith(externalFilesDir + File.separator) || canonicalPath == externalFilesDir))
+        val apkDir = apkDirFile.canonicalPath
+        val allowed = canonicalPath.startsWith(apkDir + File.separator) || canonicalPath == apkDir
         if (!allowed) {
-            OneKeyLog.error("AppUpdate", "buildFile: path outside allowed directories, " +
-                "input=$path, resolved=$canonicalPath, " +
-                "cacheDir=$cacheDir, filesDir=$filesDir, " +
-                "externalCacheDir=$externalCacheDir, externalFilesDir=$externalFilesDir")
+            OneKeyLog.error("AppUpdate", "buildFile: path outside allowed apk directory, " +
+                "input=$path, resolved=$canonicalPath, apkDir=$apkDir")
             throw SecurityException("Path outside allowed directories: $canonicalPath")
         }
         OneKeyLog.debug("AppUpdate", "buildFile: input=$path, resolved=$canonicalPath")
         return file
+    }
+
+    private fun buildHttpsOnlyHttpClient(readTimeoutSeconds: Long): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(readTimeoutSeconds, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .addNetworkInterceptor { chain ->
+                val req = chain.request()
+                if (!req.url.isHttps) {
+                    throw SecurityException("Redirect to non-HTTPS URL is not allowed: ${req.url}")
+                }
+                chain.proceed(req)
+            }
+            .build()
     }
 
     /**
@@ -161,7 +231,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     private fun computeSha256(file: File): String {
         val result = BundleCryptoCore.sha256OfFile(file.absolutePath)
         return result.sha256
-            ?: throw java.io.IOException("SHA256 computation failed: ${result.failureReason}")
+            ?: throw AppUpdateError("STORAGE_ERROR", "verifyPackage")
     }
 
     /**
@@ -169,30 +239,38 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
      * Returns the saved file, or null on failure.
      */
     private fun downloadAscFile(ascUrl: String, ascFile: File): File? {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .build()
+        val client = buildHttpsOnlyHttpClient(30)
         val request = Request.Builder().url(ascUrl).build()
         val content = StringBuilder()
         val maxAscSize = 10 * 1024
+        try {
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val body = response.body ?: return null
-            BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    content.append(line).append("\n")
-                    if (content.length > maxAscSize) return null
+            if (!response.isSuccessful) throw AppUpdateError("HTTP_ERROR", "downloadASC", response.code)
+            val body = response.body ?: throw AppUpdateError("NETWORK_ERROR", "downloadASC")
+            InputStreamReader(body.byteStream(), Charsets.UTF_8).use { reader ->
+                val buf = CharArray(1024)
+                var n: Int
+                while (reader.read(buf).also { n = it } != -1) {
+                    if (content.length + n > maxAscSize) throw AppUpdateError("SECURITY_REJECTED", "downloadASC")
+                    content.append(buf, 0, n)
                 }
             }
         }
+        } catch (e: java.io.IOException) {
+            OneKeyLog.error("AppUpdate", "downloadAscFile: network read failed: ${e.javaClass.simpleName}: ${e.message}")
+            throw appUpdateError(e, "downloadASC").let {
+                if (it.code == "UNKNOWN") AppUpdateError("NETWORK_ERROR", "downloadASC") else it
+            }
+        }
         val ascContent = content.toString()
-        if (ascContent.isEmpty()) return null
+        if (ascContent.isEmpty()) throw AppUpdateError("INTEGRITY_FAILED", "downloadASC")
         ascFile.parentFile?.mkdirs()
-        FileOutputStream(ascFile).use { fos -> fos.write(ascContent.toByteArray()) }
+        try {
+            FileOutputStream(ascFile).use { fos -> fos.write(ascContent.toByteArray(Charsets.UTF_8)) }
+        } catch (e: java.io.IOException) {
+            OneKeyLog.error("AppUpdate", "downloadAscFile: disk write failed: ${e.javaClass.simpleName}: ${e.message}")
+            throw AppUpdateError("STORAGE_ERROR", "downloadASC")
+        }
         return ascFile
     }
 
@@ -209,10 +287,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
      * public key now live there as the single source of truth. Behavior is
      * preserved: any non-valid result (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT /
      * NO_SIGNATURE / PUBKEY_NOT_FOUND / SIGNATURE_INVALID / SHA256_TOKEN_INVALID
-     * / ERROR_*) maps to null.
+     * / FILENAME_MISMATCH / ERROR_*) maps to null.
      */
-    private fun verifyAscContentAndExtractSha256(ascContent: String): String? {
-        val result = BundleCryptoCore.verifyDetachedAsc(ascContent)
+    private fun verifyAscContentAndExtractSha256(
+        ascContent: String,
+        expectedFileName: String? = null,
+    ): String? {
+        val result = BundleCryptoCore.verifyDetachedAsc(ascContent, expectedFileName)
         if (!result.valid) {
             OneKeyLog.error("AppUpdate", "ASC verification failed: ${result.reason}")
             return null
@@ -220,8 +301,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return result.sha256
     }
 
-    private fun verifyAscAndExtractSha256(ascFile: File): String? {
-        return verifyAscContentAndExtractSha256(ascFile.readText())
+    private fun verifyAscAndExtractSha256(
+        ascFile: File,
+        expectedFileName: String? = null,
+    ): String? {
+        return verifyAscContentAndExtractSha256(ascFile.readText(), expectedFileName)
     }
 
     /**
@@ -244,7 +328,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     private sealed class ApkVerifyOutcome {
         object Valid : ApkVerifyOutcome()
         object HashMismatch : ApkVerifyOutcome()
-        object Indeterminate : ApkVerifyOutcome()
+        data class Indeterminate(val reason: AppUpdateError) : ApkVerifyOutcome()
     }
 
     /**
@@ -261,47 +345,40 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             if (!ascFile.exists()) {
                 val ascUrl = "$url.SHA256SUMS.asc"
                 OneKeyLog.info("AppUpdate", "verifyExistingApk: ASC not found, downloading from $ascUrl")
-                val downloaded = try {
-                    downloadAscFile(ascUrl, ascFile)
-                } catch (e: Exception) {
-                    // OkHttp throws IOException family on offline / DNS / connection-reset.
-                    // Treat as Indeterminate so caller preserves the partial.
-                    OneKeyLog.warn("AppUpdate", "verifyExistingApk: ASC download threw ${e.javaClass.simpleName}: ${e.message}")
-                    null
-                }
-                if (downloaded == null) {
-                    OneKeyLog.warn("AppUpdate", "verifyExistingApk: ASC unavailable, indeterminate")
-                    return ApkVerifyOutcome.Indeterminate
-                }
+                val downloaded = downloadAscFile(ascUrl, ascFile)
                 OneKeyLog.info("AppUpdate", "verifyExistingApk: ASC downloaded to ${ascFile.absolutePath}")
             }
 
-            val expectedSha256 = verifyAscAndExtractSha256(ascFile)
+            val expectedSha256 = verifyAscAndExtractSha256(ascFile, apkFile.name)
             if (expectedSha256 == null) {
                 // Local ASC failed parsing/GPG. Could be a corrupted cache from
                 // an earlier interrupted write — drop it so the next round
                 // re-downloads cleanly. Don't condemn the APK on this alone.
                 OneKeyLog.warn("AppUpdate", "verifyExistingApk: GPG verification or SHA256 extraction failed, discarding local ASC")
                 ascFile.delete()
-                return ApkVerifyOutcome.Indeterminate
+                throw AppUpdateError("INTEGRITY_FAILED", "verifyASC")
             }
 
             OneKeyLog.info("AppUpdate", "verifyExistingApk: computing SHA256 of existing APK (size=${apkFile.length()})...")
             val actualSha256 = computeSha256(apkFile)
 
             if (secureCompare(actualSha256, expectedSha256)) {
+                ascVerifiedFiles[apkFile.canonicalPath] = actualSha256.lowercase()
                 OneKeyLog.info("AppUpdate", "verifyExistingApk: SHA256 matches, APK is valid")
                 ApkVerifyOutcome.Valid
             } else {
                 OneKeyLog.warn("AppUpdate", "verifyExistingApk: SHA256 mismatch, expected=${expectedSha256.take(16)}..., got=${actualSha256.take(16)}...")
                 ApkVerifyOutcome.HashMismatch
             }
+        } catch (e: AppUpdateError) {
+            OneKeyLog.warn("AppUpdate", "verifyExistingApk: verification unavailable: ${e.code}")
+            ApkVerifyOutcome.Indeterminate(e)
         } catch (e: java.io.IOException) {
             // Offline / disk-I/O transient (ASC fetch or APK read): we genuinely
             // cannot decide validity right now, so preserve the bytes and defer to
             // the next online retry (Indeterminate → caller rolls back to .partial).
             OneKeyLog.warn("AppUpdate", "verifyExistingApk: transient I/O failure, indeterminate: ${e.javaClass.simpleName}: ${e.message}")
-            ApkVerifyOutcome.Indeterminate
+            ApkVerifyOutcome.Indeterminate(AppUpdateError("STORAGE_ERROR", "download"))
         } catch (e: Exception) {
             // A non-I/O failure (corrupt local state, path/security rejection,
             // runtime fault) is NOT a "can't tell because offline" case — it is a
@@ -323,7 +400,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
      * instead of substring-matching the message — which would silently
      * rot the moment we tweak the wording.
      */
-    private class ApkVerificationDeferredException :
+    private class ApkVerificationDeferredException(val reason: AppUpdateError) :
         java.io.IOException(DEFERRED_VERIFICATION_MESSAGE) {
         companion object {
             const val DEFERRED_VERIFICATION_MESSAGE = "APK verification deferred: ASC unavailable"
@@ -377,7 +454,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     private sealed class PromoteOutcome {
         object Valid : PromoteOutcome()
         object HashMismatch : PromoteOutcome()
-        object Deferred : PromoteOutcome()     // verifier Indeterminate; bytes restored to .partial
+        data class Deferred(val reason: AppUpdateError) : PromoteOutcome() // bytes restored to .partial
         object RenameFailed : PromoteOutcome() // promotion rename failed; bytes preserved at .partial
     }
 
@@ -408,17 +485,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             if (downloadedFile.exists()) downloadedFile.delete()
             return PromoteOutcome.RenameFailed
         }
-        return when (verifyExistingApk(url, filePath, downloadedFile)) {
+        val verification = verifyExistingApk(url, filePath, downloadedFile)
+        return when (verification) {
             ApkVerifyOutcome.Valid -> PromoteOutcome.Valid
             ApkVerifyOutcome.HashMismatch -> {
                 downloadedFile.delete()
                 PromoteOutcome.HashMismatch
             }
-            ApkVerifyOutcome.Indeterminate -> {
+            is ApkVerifyOutcome.Indeterminate -> {
                 if (!rollbackFinalToPartial(downloadedFile, partialFile)) {
                     OneKeyLog.error("AppUpdate", "tryPromoteAndVerify: rollback failed for both rename and byte copy; bytes lost")
                 }
-                PromoteOutcome.Deferred
+                PromoteOutcome.Deferred(verification.reason)
             }
         }
     }
@@ -454,15 +532,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     }
 
     override fun downloadAPK(params: AppUpdateDownloadParams): Promise<Unit> {
-        return Promise.async {
-            if (isDownloading.getAndSet(true)) {
-                OneKeyLog.warn("AppUpdate", "downloadAPK: rejected, already downloading")
-                throw Exception("Download already in progress")
+        return updatePromise("download") {
+            val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
+            val finished = CountDownLatch(1)
+            synchronized(activeDownload) {
+                if (isDownloading.get() || clearingDownload) {
+                    OneKeyLog.warn("AppUpdate", "downloadAPK: rejected, already downloading")
+                    throw AppUpdateError("INVALID_ARGUMENT", "download")
+                }
+                isDownloading.set(true)
+                activeDownload.set(cancelHandle)
+                activeDownloadFinished = finished
             }
-
-            // Hoisted so the catch can tell an intentional clearCache-cancel from a
-            // real failure (a cancel must NOT surface as an `update/error`).
-            var cancelHandle: ConcurrentRangeDownloader.CancelHandle? = null
+            fun ensureNotCancelled() {
+                if (cancelHandle.aborted.get()) throw AppUpdateError("CANCELLED", "download")
+            }
             try {
                 val url = params.downloadUrl
                 val filePath = filePathFromUrl(url)
@@ -472,7 +556,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.info("AppUpdate", "downloadAPK: url=$url, filePath=$filePath, fileSize=$fileSize")
 
                 val context = NitroModules.applicationContext
-                    ?: throw Exception("Application context unavailable")
+                    ?: throw AppUpdateError("UNKNOWN", "download")
 
                 val notifyManager = NotificationManagerCompat.from(context)
                 val builder = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -491,7 +575,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
                 if (!url.startsWith("https://")) {
                     OneKeyLog.error("AppUpdate", "downloadAPK: URL is not HTTPS: $url")
-                    throw Exception("Download URL must use HTTPS")
+                    throw AppUpdateError("SECURITY_REJECTED", "download")
                 }
 
                 // Resume model (mirrors react-native-bundle-update's downloadBundle):
@@ -552,11 +636,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             }
                         }
                         else -> {
-                            when (verifyExistingApk(url, filePath, downloadedFile)) {
+                            val verification = verifyExistingApk(url, filePath, downloadedFile)
+                            when (verification) {
                                 ApkVerifyOutcome.Valid -> {
+                                    ensureNotCancelled()
                                     OneKeyLog.info("AppUpdate", "downloadAPK: existing APK is valid, skipping download")
                                     sendEvent("update/downloaded")
-                                    return@async
+                                    return@updatePromise
                                 }
                                 ApkVerifyOutcome.HashMismatch -> {
                                     OneKeyLog.info("AppUpdate", "downloadAPK: existing APK hash mismatch, deleting and re-downloading")
@@ -567,7 +653,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                     // it can't be mistaken for trustworthy in-flight bytes.
                                     for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                                 }
-                                ApkVerifyOutcome.Indeterminate -> {
+                                is ApkVerifyOutcome.Indeterminate -> {
                                     // ASC could not be fetched (offline) or could
                                     // not be parsed. The on-disk APK might still
                                     // be the right one — surface a transient
@@ -575,7 +661,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                     // network and re-runs verify, instead of
                                     // wiping the bytes preemptively.
                                     OneKeyLog.warn("AppUpdate", "downloadAPK: cannot verify existing APK (ASC unavailable); preserving file and aborting this attempt")
-                                    throw ApkVerificationDeferredException()
+                                    throw ApkVerificationDeferredException(verification.reason)
                                 }
                             }
                         }
@@ -606,19 +692,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             // before promotion. Try promote + verify before
                             // re-downloading.
                             OneKeyLog.info("AppUpdate", "downloadAPK: partial matches expected size ($partialSize), trying promote+verify")
-                            when (tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)) {
+                            val promotion = tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)
+                            when (promotion) {
                                 PromoteOutcome.Valid -> {
+                                    ensureNotCancelled()
                                     OneKeyLog.info("AppUpdate", "downloadAPK: recovered crashed-before-rename APK, skipping download")
                                     sendEvent("update/downloaded")
-                                    return@async
+                                    return@updatePromise
                                 }
                                 PromoteOutcome.HashMismatch -> {
                                     OneKeyLog.warn("AppUpdate", "downloadAPK: promoted partial failed hash check, discarding")
                                     // Helper already deleted final; partial slot empty.
                                     // Fall through: Phase 3 fetches from byte zero.
                                 }
-                                PromoteOutcome.Deferred -> {
-                                    throw ApkVerificationDeferredException()
+                                is PromoteOutcome.Deferred -> {
+                                    throw ApkVerificationDeferredException(promotion.reason)
                                 }
                                 PromoteOutcome.RenameFailed -> {
                                     // Bytes preserved at .partial: Phase 3 will Range-resume.
@@ -642,6 +730,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
 
                 // === Concurrent multi-range download (P2) ===
+                ensureNotCancelled()
                 // Try the 8-range concurrent path first. On COMPLETED the
                 // .partial is fully on disk, so we promote + emit downloaded
                 // here (SHA/GPG verification still happens later via verifyAPK,
@@ -650,12 +739,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // outer catch (the downloader keeps its partial + manifest).
                 sendEvent("update/start")
                 run {
-                    val concurrentClient = OkHttpClient.Builder()
-                        .connectTimeout(10, TimeUnit.SECONDS)
-                        .readTimeout(60, TimeUnit.SECONDS)
-                        .followRedirects(false)
-                        .followSslRedirects(false)
-                        .build()
+                    val concurrentClient = buildHttpsOnlyHttpClient(60)
                     // onProgress is invoked concurrently from all 8 worker
                     // threads. concurrentProgress must be an AtomicInteger so the
                     // "did the percent advance?" check is race-free, and the
@@ -666,10 +750,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     // the thread that actually moved the percent forward proceeds.
                     val concurrentProgress = AtomicInteger(-1)
                     val notifyLock = Any()
-                    // Wire a cancel handle so clearCache can stop these workers
-                    // before deleting .segN (OCDS §5.8). Cleared in the finally below.
-                    cancelHandle = ConcurrentRangeDownloader.CancelHandle()
-                    activeDownload.set(cancelHandle)
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
                         log = { msg -> OneKeyLog.info("AppUpdate", msg) },
@@ -680,7 +760,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         // files to the read-only root fs → EROFS. Resolve it to
                         // the real apks dir (filesDir/apks) first, exactly like
                         // react-native-bundle-update passes an absolute path.
-                    ).download(url, partialFile.absolutePath, cancelHandle) { transferred, total ->
+                    ).download(
+                        url,
+                        partialFile.absolutePath,
+                        cancelHandle,
+                        maxTotalBytes = MAX_APK_SIZE,
+                    ) { transferred, total ->
+                        if (cancelHandle.aborted.get()) return@download
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
                             // Only the thread that advances the percent emits; a
@@ -700,13 +786,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             }
                         }
                     }
+                    ensureNotCancelled()
                     if (concurrentOutcome == ConcurrentRangeDownloader.Outcome.COMPLETED) {
                         if (downloadedFile.exists()) downloadedFile.delete()
                         if (!partialFile.renameTo(downloadedFile)) {
                             OneKeyLog.error("AppUpdate", "downloadAPK: concurrent rename .partial -> final failed")
-                            throw Exception("Failed to finalize download")
+                            throw AppUpdateError("STORAGE_ERROR", "download")
                         }
                         OneKeyLog.info("AppUpdate", "downloadAPK: concurrent download completed")
+                        ensureNotCancelled()
                         sendEvent("update/downloaded")
                         notifyManager.cancel(NOTIFICATION_ID)
                         builder.setContentText("")
@@ -719,18 +807,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         ) {
                             notifyManager.notify(NOTIFICATION_ID, builder.build())
                         }
-                        return@async
+                        return@updatePromise
                     }
                     OneKeyLog.info("AppUpdate", "downloadAPK: concurrent not used, falling back to single-stream")
                 }
 
                 // Phase 3 — fetch (with Range header iff resuming).
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(60, TimeUnit.SECONDS)
-                    .followRedirects(false)
-                    .followSslRedirects(false)
-                    .build()
+                val client = buildHttpsOnlyHttpClient(60)
                 val requestBuilder = Request.Builder().url(url)
                 if (partialBytes > 0) {
                     requestBuilder.addHeader("Range", "bytes=$partialBytes-")
@@ -739,6 +822,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.info("AppUpdate", "downloadAPK: starting single-stream download (resume=${partialBytes > 0})...")
 
                 val response = client.newCall(requestBuilder.build()).execute()
+                ensureNotCancelled()
 
                 // 416 Range Not Satisfiable: server says our offset is past the
                 // file length. Two sub-cases distinguishable from
@@ -754,11 +838,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     val totalFromHeader = AppUpdateLogic.parse416Total(contentRange)
                     if (AppUpdateLogic.is416Complete(totalFromHeader, partialBytes) && partialFile.exists()) {
                         OneKeyLog.info("AppUpdate", "downloadAPK: HTTP 416 with total=$totalFromHeader matches partial, attempting promote+verify")
-                        when (tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)) {
+                        val promotion = tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)
+                            when (promotion) {
                             PromoteOutcome.Valid -> {
+                                ensureNotCancelled()
                                 OneKeyLog.info("AppUpdate", "downloadAPK: 416 recovery succeeded, skipping download")
                                 sendEvent("update/downloaded")
-                                return@async
+                                return@updatePromise
                             }
                             PromoteOutcome.HashMismatch -> {
                                 // Server says "you have it all" AND sizes match,
@@ -770,17 +856,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                 if (partialFile.exists()) partialFile.delete()
                                 // Server build changed → these bytes are worthless; drop sibling .segN too.
                                 for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
-                                throw java.io.IOException("Server build changed mid-download (size matches but hash differs)")
+                                throw AppUpdateError("INTEGRITY_FAILED", "download")
                             }
-                            PromoteOutcome.Deferred -> {
-                                throw ApkVerificationDeferredException()
+                            is PromoteOutcome.Deferred -> {
+                                throw ApkVerificationDeferredException(promotion.reason)
                             }
                             PromoteOutcome.RenameFailed -> {
                                 // Bytes still at .partial; surface a transient
                                 // error so caller retries (and we'll try the
                                 // promotion again next pass).
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: 416 recovery rename failed, retry later")
-                                throw java.io.IOException("Failed to finalize 416 recovery (rename failed)")
+                                throw AppUpdateError("STORAGE_ERROR", "download")
                             }
                         }
                     }
@@ -788,14 +874,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     if (partialFile.exists()) partialFile.delete()
                     // Partial discarded as unusable → drop sibling .segN too so the next attempt starts clean.
                     for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
-                    throw Exception("HTTP 416 (range not satisfiable)")
+                    throw AppUpdateError("HTTP_ERROR", "download", 416)
                 }
 
                 if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                     OneKeyLog.error("AppUpdate", "downloadAPK: HTTP error, statusCode=${response.code}")
                     response.close()
-                    sendEvent("update/error", message = response.code.toString())
-                    throw Exception(response.code.toString())
+                    throw AppUpdateError("HTTP_ERROR", "download", response.code)
                 }
 
                 val expectsResume = partialBytes > 0
@@ -838,13 +923,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         if (partialFile.exists()) partialFile.delete()
                         for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         response.close()
-                        throw java.io.IOException("206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarded partial, retry from scratch")
+                        throw AppUpdateError("INTEGRITY_FAILED", "download")
                     }
                 }
 
                 val body = response.body ?: run {
                     response.close()
-                    throw Exception("Empty response body")
+                    throw AppUpdateError("NETWORK_ERROR", "download")
                 }
                 val contentLength = body.contentLength()
                 val totalSize: Long = if (serverWillResume) {
@@ -877,8 +962,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
                         while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            outputStream.write(buffer, 0, bytesRead)
+                            ensureNotCancelled()
                             totalBytesRead += bytesRead
+                            if (totalBytesRead > MAX_APK_SIZE) {
+                                throw AppUpdateError("SECURITY_REJECTED", "download")
+                            }
+                            outputStream.write(buffer, 0, bytesRead)
                             if (totalSize > 0) {
                                 val progress = ((totalBytesRead * 100) / totalSize).toInt().coerceIn(0, 100)
                                 if (progress != prevProgress) {
@@ -899,6 +988,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
 
                 OneKeyLog.info("AppUpdate", "downloadAPK: download finished, totalBytesRead=$totalBytesRead, finalizing...")
+                ensureNotCancelled()
 
                 // Promote .partial -> final ONLY after the full transfer. Doing
                 // it before would mean a SHA mismatch leaves a half-baked
@@ -907,10 +997,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (downloadedFile.exists()) downloadedFile.delete()
                 if (!partialFile.renameTo(downloadedFile)) {
                     OneKeyLog.error("AppUpdate", "downloadAPK: rename .partial -> final failed")
-                    throw Exception("Failed to finalize download")
+                    throw AppUpdateError("STORAGE_ERROR", "download")
                 }
 
                 OneKeyLog.info("AppUpdate", "Download completed")
+                ensureNotCancelled()
                 sendEvent("update/downloaded")
 
                 notifyManager.cancel(NOTIFICATION_ID)
@@ -943,26 +1034,40 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // attempt didn't complete); only the spurious `update/error` event is
                 // withheld. For the deferred case we also downgrade the log to info so
                 // logs don't read like a failure.
-                val intentionallyCancelled = cancelHandle?.aborted?.get() == true
+                val intentionallyCancelled = cancelHandle.aborted.get()
                 val verificationDeferred = e is ApkVerificationDeferredException
                 if (verificationDeferred) {
                     OneKeyLog.info("AppUpdate", "downloadAPK: verification deferred (ASC unavailable); bytes preserved for next online retry: ${e.message}")
                 } else {
                     OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
                 }
-                if (!intentionallyCancelled && !verificationDeferred) {
-                    sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                val updateError = if (intentionallyCancelled) {
+                    AppUpdateError("CANCELLED", "download")
+                } else if (e is ApkVerificationDeferredException) {
+                    appUpdateError(e.reason, "download")
+                } else {
+                    appUpdateError(e, "download")
                 }
-                throw e
+                val retryableDeferral = verificationDeferred && updateError.code in
+                    setOf("NETWORK_ERROR", "TIMEOUT", "HTTP_ERROR")
+                if (!intentionallyCancelled && !retryableDeferral) {
+                    sendEvent("update/error", message = updateError.message.orEmpty())
+                }
+                throw updateError
             } finally {
-                activeDownload.set(null)
-                isDownloading.set(false)
+                finished.countDown()
+                synchronized(activeDownload) {
+                    if (!clearingDownload && activeDownload.compareAndSet(cancelHandle, null)) {
+                        activeDownloadFinished = null
+                        isDownloading.set(false)
+                    }
+                }
             }
         }
     }
 
     override fun downloadASC(params: AppUpdateFileParams): Promise<Unit> {
-        return Promise.async {
+        return updatePromise("downloadASC") {
             val url = params.downloadUrl
             val filePath = filePathFromUrl(url)
 
@@ -970,19 +1075,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
             if (!url.startsWith("https://")) {
                 OneKeyLog.error("AppUpdate", "downloadASC: URL is not HTTPS: $url")
-                throw Exception("Download URL must use HTTPS")
+                throw AppUpdateError("SECURITY_REJECTED", "downloadASC")
             }
 
             val ascFileUrl = "$url.SHA256SUMS.asc"
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             OneKeyLog.info("AppUpdate", "downloadASC: ascFileUrl=$ascFileUrl")
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .followRedirects(false)
-                .followSslRedirects(false)
-                .build()
+            val client = buildHttpsOnlyHttpClient(30)
             val request = Request.Builder().url(ascFileUrl).build()
             // Wrap in .use so the Response (and its connection) is released on every
             // exit path — including the !isSuccessful / empty-body / oversize throws,
@@ -990,29 +1090,30 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val ascContent = client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     OneKeyLog.error("AppUpdate", "downloadASC: HTTP error, statusCode=${response.code}")
-                    throw Exception(response.code.toString())
+                    throw AppUpdateError("HTTP_ERROR", "downloadASC", response.code)
                 }
 
                 OneKeyLog.info("AppUpdate", "downloadASC: HTTP 200, reading ASC content...")
 
                 val content = StringBuilder()
                 val maxAscSize = 10 * 1024 // 10 KB max for ASC files
-                val body = response.body ?: throw Exception("Empty ASC response body")
-                BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        content.append(line).append("\n")
-                        if (content.length > maxAscSize) {
+                val body = response.body ?: throw AppUpdateError("NETWORK_ERROR", "downloadASC")
+                InputStreamReader(body.byteStream(), Charsets.UTF_8).use { reader ->
+                    val buf = CharArray(1024)
+                    var n: Int
+                    while (reader.read(buf).also { n = it } != -1) {
+                        if (content.length + n > maxAscSize) {
                             OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
-                            throw Exception("ASC file exceeds maximum allowed size")
+                            throw AppUpdateError("SECURITY_REJECTED", "downloadASC")
                         }
+                        content.append(buf, 0, n)
                     }
                 }
 
                 val parsed = content.toString()
                 if (parsed.isEmpty()) {
                     OneKeyLog.error("AppUpdate", "downloadASC: ASC content is empty")
-                    throw Exception("Empty ASC file")
+                    throw AppUpdateError("INTEGRITY_FAILED", "downloadASC")
                 }
                 parsed
             }
@@ -1025,16 +1126,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 ascFile.delete()
             }
             FileOutputStream(ascFile).use { fos ->
-                fos.write(ascContent.toByteArray())
+                fos.write(ascContent.toByteArray(Charsets.UTF_8))
             }
             OneKeyLog.info("AppUpdate", "downloadASC: saved ASC file to $ascFilePath")
         }
     }
 
     override fun verifyASC(params: AppUpdateFileParams): Promise<Unit> {
-        return Promise.async {
+        return updatePromise("verifyASC") {
             val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
+
+            val apkFile = buildFile(filePath)
 
             // Skip GPG verification only when BuildConfig allows it AND both DevSettings and skip-GPG toggle are enabled
             val devSettings = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isDevSettingsEnabled() else false
@@ -1042,7 +1145,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             OneKeyLog.info("AppUpdate", "verifyASC: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
             if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && devSettings && skipGPGToggle) {
                 OneKeyLog.warn("AppUpdate", "verifyASC: GPG verification skipped (DevSettings + skip-GPG enabled)")
-                return@async
+                if (apkFile.exists()) {
+                    ascVerifiedFiles[apkFile.canonicalPath] = computeSha256(apkFile).lowercase()
+                }
+                return@updatePromise
             }
 
             try {
@@ -1051,7 +1157,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val ascFile = buildFile(ascFilePath)
             if (!ascFile.exists()) {
                 OneKeyLog.error("AppUpdate", "verifyASC: ASC file not found at $ascFilePath")
-                throw Exception("ASC file not found")
+                throw AppUpdateError("PACKAGE_MISSING", "verifyASC")
             }
 
             val ascContent = ascFile.readText()
@@ -1065,24 +1171,23 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             // throw-on-failure contract; the reason taxonomy
             // (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT / NO_SIGNATURE /
             // PUBKEY_NOT_FOUND / SIGNATURE_INVALID / SHA256_TOKEN_INVALID /
-            // ERROR_*) is logged for diagnostics.
+            // FILENAME_MISMATCH / ERROR_*) is logged for diagnostics.
             OneKeyLog.info("AppUpdate", "verifyASC: verifying detached ASC signature via BundleCryptoCore...")
-            val ascResult = BundleCryptoCore.verifyDetachedAsc(ascContent)
+            val ascResult = BundleCryptoCore.verifyDetachedAsc(ascContent, apkFile.name)
             // Capture in a local val so Kotlin can smart-cast to non-null below
             // (sha256 is a cross-module data-class property, which is not
             // smart-castable directly).
             val sha256 = ascResult.sha256
             if (!ascResult.valid || sha256 == null) {
                 OneKeyLog.error("AppUpdate", "verifyASC: ASC verification FAILED: ${ascResult.reason}")
-                throw Exception("ASC signature verification failed: ${ascResult.reason}")
+                throw AppUpdateError("INTEGRITY_FAILED", "verifyASC")
             }
             OneKeyLog.info("AppUpdate", "verifyASC: ASC verified OK, extracted SHA256=${sha256.take(16)}...")
 
             // Verify APK file SHA256
-            val apkFile = buildFile(filePath)
             if (!apkFile.exists()) {
                 OneKeyLog.error("AppUpdate", "verifyASC: APK file not found at $filePath")
-                throw Exception("APK file not found: $filePath")
+                throw AppUpdateError("PACKAGE_MISSING", "verifyASC")
             }
 
             OneKeyLog.info("AppUpdate", "verifyASC: computing SHA256 of APK file (size=${apkFile.length()} bytes)...")
@@ -1091,9 +1196,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
             if (!secureCompare(fileSha256, sha256)) {
                 OneKeyLog.error("AppUpdate", "verifyASC: SHA256 MISMATCH — expected=${sha256.take(16)}..., got=${fileSha256.take(16)}...")
-                throw Exception("SHA256 mismatch for APK file")
+                throw AppUpdateError("INTEGRITY_FAILED", "verifyASC")
             }
 
+            ascVerifiedFiles[apkFile.canonicalPath] = fileSha256.lowercase()
             OneKeyLog.info("AppUpdate", "verifyASC: GPG signature + SHA256 verification passed")
 
             } catch (e: Exception) {
@@ -1105,22 +1211,23 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     // Track verified files with their SHA-256 hash to prevent TOCTOU attacks
     private data class VerifiedFile(val canonicalPath: String, val sha256: String)
+    private val ascVerifiedFiles = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val verifiedFiles = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
 
     override fun verifyAPK(params: AppUpdateFileParams): Promise<Unit> {
-        return Promise.async {
+        return updatePromise("verifyPackage") {
             val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyAPK: filePath=$filePath")
 
             val file = buildFile(filePath)
             if (!file.exists()) {
                 OneKeyLog.error("AppUpdate", "verifyAPK: APK file not found at $filePath")
-                throw Exception("NOT_FOUND_PACKAGE")
+                throw AppUpdateError("PACKAGE_MISSING", "verifyPackage")
             }
             OneKeyLog.info("AppUpdate", "verifyAPK: APK file found, size=${file.length()} bytes")
 
             val context = NitroModules.applicationContext
-                ?: throw Exception("Application context unavailable")
+                ?: throw AppUpdateError("UNKNOWN", "verifyPackage")
             val pm = context.packageManager
 
             // Check package name
@@ -1128,19 +1235,38 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val info = pm.getPackageArchiveInfo(file.absolutePath, 0)
             if (info?.packageName == null) {
                 OneKeyLog.error("AppUpdate", "verifyAPK: failed to parse APK package info (INVALID_PACKAGE)")
-                throw Exception("INVALID_PACKAGE")
+                throw AppUpdateError("INCOMPATIBLE", "verifyPackage")
             }
             OneKeyLog.info("AppUpdate", "verifyAPK: APK packageName=${info.packageName}, versionName=${info.versionName}, versionCode=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode}")
 
             val debugBuild = isDebuggable()
+            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+
+            // Compute SHA-256 hash of the file for TOCTOU and ASC-binding verification
+            OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
+            val fileHash = computeSha256(file).lowercase()
+            val ascVerified = ascVerifiedFiles[file.canonicalPath] == fileHash
+            if (!debugBuild && !skipGPG && !ascVerified) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: APK has not passed ASC verification for current hash")
+                throw AppUpdateError("INTEGRITY_FAILED", "verifyPackage")
+            }
 
             // Check package name
             if (info.packageName != context.packageName) {
                 OneKeyLog.error("AppUpdate", "verifyAPK: package name mismatch — APK=${info.packageName}, installed=${context.packageName}")
-                if (!debugBuild) throw Exception("PACKAGE_NAME_MISMATCH")
+                if (!debugBuild) throw AppUpdateError("INCOMPATIBLE", "verifyPackage")
                 OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring package name mismatch")
             } else {
                 OneKeyLog.info("AppUpdate", "verifyAPK: package name matches installed app")
+            }
+
+            // Anti-downgrade check: reject APKs with a lower versionCode than the installed app
+            val currentPackageInfo = pm.getPackageInfo(context.packageName, 0)
+            val apkVersionCode = PackageInfoCompat.getLongVersionCode(info)
+            val installedVersionCode = PackageInfoCompat.getLongVersionCode(currentPackageInfo)
+            if (!debugBuild && apkVersionCode < installedVersionCode) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: downgrade rejected — apkVersionCode=$apkVersionCode < installedVersionCode=$installedVersionCode")
+                throw AppUpdateError("INCOMPATIBLE", "verifyPackage")
             }
 
             // Verify APK signing certificate matches the installed app.
@@ -1162,12 +1288,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkSigners = apkInfo?.signingInfo?.apkContentsSigners
                 val installedSigners = installedInfo?.signingInfo?.apkContentsSigners
                 if (apkSigners == null || installedSigners == null) {
-                    OneKeyLog.info("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null}), skipping signing certificate check")
+                    if (!debugBuild && !skipGPG && !ascVerified) {
+                        throw AppUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                    }
+                    OneKeyLog.info("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null}), relying on verified ASC signature")
                 } else {
                     OneKeyLog.info("AppUpdate", "verifyAPK: APK signers count=${apkSigners.size}, installed signers count=${installedSigners.size}")
                     if (apkSigners.toSet() != installedSigners.toSet()) {
                         OneKeyLog.error("AppUpdate", "verifyAPK: signing certificate MISMATCH")
-                        if (!debugBuild) throw Exception("SIGNATURE_MISMATCH")
+                        if (!debugBuild) throw AppUpdateError("INTEGRITY_FAILED", "verifyPackage")
                         OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring certificate mismatch")
                     } else {
                         OneKeyLog.info("AppUpdate", "verifyAPK: signing certificate verified OK")
@@ -1181,12 +1310,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkSignatures = apkInfo?.signatures
                 val installedSignatures = installedInfo?.signatures
                 if (apkSignatures == null || installedSignatures == null) {
-                    OneKeyLog.info("AppUpdate", "verifyAPK: legacy signatures unavailable (apkSignatures=${apkSignatures != null}, installedSignatures=${installedSignatures != null}), skipping signing certificate check")
+                    if (!debugBuild && !skipGPG && !ascVerified) {
+                        throw AppUpdateError("INTEGRITY_FAILED", "verifyPackage")
+                    }
+                    OneKeyLog.info("AppUpdate", "verifyAPK: legacy signatures unavailable (apkSignatures=${apkSignatures != null}, installedSignatures=${installedSignatures != null}), relying on verified ASC signature")
                 } else {
                     OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkSignatures.size}, installed signatures count=${installedSignatures.size}")
                     if (apkSignatures.toSet() != installedSignatures.toSet()) {
                         OneKeyLog.error("AppUpdate", "verifyAPK: legacy signing certificate MISMATCH")
-                        if (!debugBuild) throw Exception("SIGNATURE_MISMATCH")
+                        if (!debugBuild) throw AppUpdateError("INTEGRITY_FAILED", "verifyPackage")
                         OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring certificate mismatch")
                     } else {
                         OneKeyLog.info("AppUpdate", "verifyAPK: signing certificate verified OK")
@@ -1194,44 +1326,45 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
             }
 
-            // Compute SHA-256 hash of the verified file for TOCTOU protection
-            OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
-            val fileHash = computeSha256(file)
             verifiedFiles[file.canonicalPath] = fileHash
             OneKeyLog.info("AppUpdate", "verifyAPK: APK verified successfully, hash=${fileHash.take(16)}..., stored for install verification")
         }
     }
 
     override fun installAPK(params: AppUpdateFileParams): Promise<Unit> {
-        return Promise.async {
+        return updatePromise("install") {
             val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "installAPK: filePath=$filePath")
 
             val context = NitroModules.applicationContext
-                ?: throw Exception("Application context unavailable")
+                ?: throw AppUpdateError("UNKNOWN", "install")
             val file = buildFile(filePath)
             if (!file.exists()) {
                 OneKeyLog.error("AppUpdate", "installAPK: APK file not found at $filePath")
-                throw Exception("NOT_FOUND_PACKAGE")
+                throw AppUpdateError("PACKAGE_MISSING", "install")
             }
             OneKeyLog.info("AppUpdate", "installAPK: APK file found, size=${file.length()} bytes")
 
-            // Ensure verifyAPK was called before installation
+            // Ensure verifyAPK was called before installation. Keep the entry in
+            // verifiedFiles so user-cancelled system installer prompts or
+            // "Install unknown apps" permission round-trips can retry installAPK.
             val debugBuild = isDebuggable()
-            val expectedHash = verifiedFiles.remove(file.canonicalPath)
+            val expectedHash = verifiedFiles[file.canonicalPath]
             if (expectedHash == null) {
                 OneKeyLog.error("AppUpdate", "installAPK: APK was not verified before installation (no hash in verifiedFiles)")
-                if (!debugBuild) throw Exception("APK must be verified before installation")
+                if (!debugBuild) throw AppUpdateError("INTEGRITY_FAILED", "install")
                 OneKeyLog.warn("AppUpdate", "installAPK: DEBUG build — ignoring missing verification")
             }
 
             // Re-verify file hash to prevent TOCTOU attacks (file swapped after verification)
             if (expectedHash != null) {
                 OneKeyLog.info("AppUpdate", "installAPK: expected hash=${expectedHash.take(16)}..., re-verifying TOCTOU...")
-                val currentHash = computeSha256(file)
+                val currentHash = computeSha256(file).lowercase()
                 if (currentHash != expectedHash) {
+                    verifiedFiles.remove(file.canonicalPath)
+                    ascVerifiedFiles.remove(file.canonicalPath)
                     OneKeyLog.error("AppUpdate", "installAPK: TOCTOU check FAILED — file was modified after verification (current=${currentHash.take(16)}..., expected=${expectedHash.take(16)}...)")
-                    if (!debugBuild) throw Exception("APK file was modified after verification")
+                    if (!debugBuild) throw AppUpdateError("INTEGRITY_FAILED", "install")
                     OneKeyLog.warn("AppUpdate", "installAPK: DEBUG build — ignoring TOCTOU mismatch")
                 } else {
                     OneKeyLog.info("AppUpdate", "installAPK: TOCTOU check passed, hash matches")
@@ -1262,7 +1395,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 intent.setDataAndType(Uri.fromFile(file), "application/vnd.android.package-archive")
                 OneKeyLog.info("AppUpdate", "installAPK: using file URI")
             }
-            context.startActivity(intent)
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                OneKeyLog.error("AppUpdate", "installAPK: installer launch failed: ${e.javaClass.simpleName}: ${e.message}")
+                throw AppUpdateError("INSTALL_FAILED", "install")
+            }
             OneKeyLog.info("AppUpdate", "installAPK: install intent launched, awaiting user confirmation")
         }
     }
@@ -1336,7 +1474,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         // cannot resurrect a just-deleted segment or write to a deleted FD. Only
         // the two external cleanup paths (clearCache / clearApkCache) call this;
         // it is never invoked mid-download.
-        activeDownload.getAndSet(null)?.let {
+        activeDownload.get()?.let {
             OneKeyLog.info("AppUpdate", "$tag: cancelling in-flight download before wipe")
             it.cancel()
         }
@@ -1378,20 +1516,58 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     }
 
     override fun clearCache(): Promise<Unit> {
-        return Promise.async {
+        return updatePromise("cleanup") {
             OneKeyLog.info("AppUpdate", "clearCache: starting cleanup...")
-            isDownloading.set(false)
-            val verifiedCount = verifiedFiles.size
-            verifiedFiles.clear()
-            OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
-
-            // Clean up downloaded APK and ASC files from cacheDir/apks/ directory
-            wipeApkCacheFiles("clearCache")
+            val (handle, finished) = synchronized(activeDownload) {
+                if (clearingDownload) throw AppUpdateError("UNKNOWN", "cleanup")
+                clearingDownload = true
+                val current = activeDownload.get()
+                current?.aborted?.set(true)
+                current to activeDownloadFinished
+            }
+            try {
+                handle?.cancel()
+                if (finished != null) {
+                    // Keep the running slot occupied until old disk writes have ended.
+                    val completed = try {
+                        finished.await(65, TimeUnit.SECONDS)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        false
+                    }
+                    if (!completed) throw AppUpdateError("UNKNOWN", "cleanup")
+                }
+                synchronized(activeDownload) {
+                    if (activeDownload.get() !== handle || activeDownloadFinished !== finished) {
+                        throw AppUpdateError("UNKNOWN", "cleanup")
+                    }
+                    val verifiedCount = verifiedFiles.size
+                    verifiedFiles.clear()
+                    ascVerifiedFiles.clear()
+                    OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
+                    wipeApkCacheFiles("clearCache")
+                    activeDownload.set(null)
+                    activeDownloadFinished = null
+                    isDownloading.set(false)
+                }
+            } finally {
+                synchronized(activeDownload) {
+                    clearingDownload = false
+                    // The writer may have completed while cleanup held its slot.
+                    if (finished != null && finished.count == 0L &&
+                        activeDownload.get() === handle && activeDownloadFinished === finished
+                    ) {
+                        activeDownload.set(null)
+                        activeDownloadFinished = null
+                        isDownloading.set(false)
+                    }
+                }
+            }
         }
     }
 
     override fun clearApkCache(): Promise<Unit> {
-        return Promise.async {
+        return updatePromise("cleanup") {
             // Wipe downloaded APK artifacts from cacheDir/apks/ only. The JS
             // layer gates on app-update status before calling, but that read is
             // not atomic with this delete, so guard natively too:
@@ -1401,16 +1577,18 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             //    verifiedFiles) so an open installer keeps a readable file.
             // Deliberately do NOT touch isDownloading / verifiedFiles state here
             // (that's clearCache's job). Missing dir/files are tolerated.
-            if (isDownloading.get()) {
-                OneKeyLog.info("AppUpdate", "clearApkCache: download in progress, skipping APK cache cleanup")
-                return@async
+            synchronized(activeDownload) {
+                if (isDownloading.get() || clearingDownload) {
+                    OneKeyLog.info("AppUpdate", "clearApkCache: download in progress, skipping APK cache cleanup")
+                    return@updatePromise
+                }
+                val protectedPaths = synchronized(verifiedFiles) { verifiedFiles.keys.toSet() }
+                OneKeyLog.info(
+                    "AppUpdate",
+                    "clearApkCache: starting stale APK cache cleanup (protecting ${protectedPaths.size} verified file(s))...",
+                )
+                wipeApkCacheFiles("clearApkCache", protectedPaths)
             }
-            val protectedPaths = synchronized(verifiedFiles) { verifiedFiles.keys.toSet() }
-            OneKeyLog.info(
-                "AppUpdate",
-                "clearApkCache: starting stale APK cache cleanup (protecting ${protectedPaths.size} verified file(s))...",
-            )
-            wipeApkCacheFiles("clearApkCache", protectedPaths)
         }
     }
 }

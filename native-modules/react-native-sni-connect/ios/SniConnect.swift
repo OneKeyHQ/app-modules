@@ -41,11 +41,49 @@ final class SniConnectImpl: NSObject {
     }
   }
 
-  private func handleRequest(
-    config: SniConnectClient.RequestConfig,
+  @objc
+  public func uploadFile(
+    _ config: NSDictionary,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
+    do {
+      let parsed = try Self.parseUploadFileDictionary(config)
+      handleRequest(config: parsed, resolve: resolve, reject: reject)
+    } catch {
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", "SNI_INVALID_CONFIG"),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("stage", "parse_upload_config"),
+      ]))
+      reject("SNI_INVALID_CONFIG", "\(error)", error)
+    }
+  }
+
+  @objc
+  public func getUploadProgress(
+    _ requestId: String,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    if let progress = client.getUploadProgress(requestId: requestId) {
+      resolve(progress)
+    } else {
+      resolve(NSNull())
+    }
+  }
+
+  private func handleRequest(
+    config originalConfig: SniConnectClient.RequestConfig,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    var configured = originalConfig
+    if configured.bodyFileURL != nil && configured.requestId != nil {
+      configured.uploadProgress = SniConnectUploadProgress()
+    }
+    let config = configured
     do {
       try Self.validate(config)
     } catch {
@@ -54,9 +92,9 @@ final class SniConnectImpl: NSObject {
         ("code", "SNI_INVALID_CONFIG"),
         ("nativeErrorClass", String(describing: type(of: error))),
         ("stage", "validate_config"),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", config.method.uppercased()),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -72,7 +110,11 @@ final class SniConnectImpl: NSObject {
       return try await client.performRequest(config: config)
     }
 
-    let registrationToken = client.registerTask(task, for: config.requestId)
+    let registrationToken = client.registerTask(
+      task,
+      for: config.requestId,
+      uploadProgress: config.uploadProgress
+    )
 
     // Handle the task result asynchronously
     Task {
@@ -82,6 +124,7 @@ final class SniConnectImpl: NSObject {
 
       do {
         let result = try await task.value
+        client.finishUploadProgress(token: registrationToken)
         resolve([
           "data": result.data,
           "status": result.status,
@@ -90,17 +133,20 @@ final class SniConnectImpl: NSObject {
           "multiValueHeaders": result.multiValueHeaders,
         ])
       } catch let error as SniConnectClient.SniConnectError {
+        client.finishUploadProgress(token: registrationToken)
         reject(error.code, error.message, error)
       } catch is CancellationError {
+        client.finishUploadProgress(token: registrationToken)
         reject("SNI_CANCELLED", "Request cancelled", nil)
       } catch {
+        client.finishUploadProgress(token: registrationToken)
         SniConnectLog.error(SniConnectLog.event("sni_request_result", [
           ("result", "error"),
           ("code", "SNI_UNKNOWN_ERROR"),
           ("nativeErrorClass", String(describing: type(of: error))),
-          ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+          ("requestId", config.requestId),
           ("hostname", config.hostname.lowercased()),
-          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ip", config.ip),
           ("ipFamily", SniConnectLog.ipFamily(config.ip)),
           ("method", config.method.uppercased()),
           ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -213,6 +259,45 @@ final class SniConnectImpl: NSObject {
     )
   }
 
+  /// Uploads may only read files from this app's own container.
+  private static var uploadFileAllowedRoots: [URL] {
+    [
+      URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
+      URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true),
+    ]
+  }
+
+  private static func parseUploadFileDictionary(
+    _ dictionary: NSDictionary
+  ) throws -> SniConnectClient.RequestConfig {
+    guard dictionary["body"] == nil || dictionary["body"] is NSNull else {
+      throw SniConnectError.invalidConfig("uploadFile does not accept body")
+    }
+    guard let filePath = dictionary["filePath"] as? String, !filePath.isEmpty else {
+      throw SniConnectError.invalidConfig("Missing filePath")
+    }
+    let base = try parseDictionary(dictionary)
+    let method = try SniConnectValidation.normalizeMethod(base.method)
+    try SniConnectValidation.validateUploadMethod(method)
+    let resolvedFile = try SniConnectValidation.resolveUploadFile(
+      filePath,
+      allowedRoots: uploadFileAllowedRoots
+    )
+    return SniConnectClient.RequestConfig(
+      requestId: base.requestId,
+      ip: base.ip,
+      hostname: base.hostname,
+      method: method,
+      path: base.path,
+      headers: base.headers,
+      body: nil,
+      timeout: base.timeout,
+      bodyFileURL: resolvedFile.url,
+      connectTimeout: base.connectTimeout,
+      totalTimeout: base.totalTimeout
+    )
+  }
+
   private static func validate(_ config: SniConnectClient.RequestConfig) throws {
     try SniConnectValidation.validatePublicIP(config.ip)
     try SniConnectValidation.validateHostname(config.hostname)
@@ -221,6 +306,10 @@ final class SniConnectImpl: NSObject {
     _ = try SniConnectValidation.normalizePath(config.path)
     try SniConnectValidation.validateRequestId(config.requestId)
     try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
+    if config.bodyFileURL != nil {
+      try SniConnectValidation.validateUploadMethod(method)
+      return
+    }
     try SniConnectValidation.validateBody(config.body)
     try SniConnectValidation.validateMethodBody(method: method, body: config.body)
   }

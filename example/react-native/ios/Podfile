@@ -1,6 +1,6 @@
 # Spec sources. The default CDN plus Aliyun's repo, which hosts EMASCurl
 # (a transitive native dependency of @onekeyfe/react-native-sni-connect).
-source 'https://github.com/CocoaPods/Specs.git'
+source 'https://cdn.cocoapods.org/'
 source 'https://github.com/aliyun/aliyun-specs.git'
 
 # Resolve react_native_pods.rb with node to allow for hoisting
@@ -11,9 +11,11 @@ require Pod::Executable.execute_command('node', ['-p',
     "react-native/scripts/react_native_pods.rb",
     {paths: [process.argv[1]]},
   )', __dir__]).strip
+require_relative 'pods-project-script-phase'
 
-# Match the OneKey app's minimum deployment target for the RN 0.86 upgrade.
-platform :ios, '16.4'
+# Match the OneKey app's minimum deployment target for the RN 0.88 upgrade.
+minimum_ios_version = '16.4'
+platform :ios, minimum_ios_version
 prepare_react_native_project!
 
 linkage = ENV['USE_FRAMEWORKS']
@@ -41,6 +43,24 @@ target 'example' do
   pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
   pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
 
+  # CocoaPods does not install test specs unless they are requested explicitly.
+  pod 'ReactNativeDeviceUtils', :path => '../../../node_modules/@onekeyfe/react-native-device-utils', :testspecs => ['Tests']
+  pod 'OneKeyImage', :path => '../../../node_modules/@onekeyfe/react-native-image', :testspecs => ['Tests']
+  pod 'react-native-pager-view', :path => '../../../node_modules/@onekeyfe/react-native-pager-view', :testspecs => ['Tests']
+  pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
+  pod 'react-native-native-list', :path => '../../../node_modules/@onekeyfe/react-native-native-list', :testspecs => ['Tests']
+  pod 'react-native-bottom-tabs', :path => '../../../node_modules/@onekeyfe/react-native-bottom-tabs', :testspecs => ['Tests']
+  pod 'PerpDepthBar', :path => '../../../node_modules/@onekeyfe/react-native-perp-depth-bar', :testspecs => ['Tests']
+  pod 'ReactNativeBundleCrypto', :path => '../../../node_modules/@onekeyfe/react-native-bundle-crypto', :testspecs => ['Tests']
+  pod 'ReactNativeCaptureProtection', :path => '../../../node_modules/@onekeyfe/react-native-capture-protection', :testspecs => ['Tests']
+  pod 'ReactNativePhotoLibrary', :path => '../../../node_modules/@onekeyfe/react-native-photo-library', :testspecs => ['Tests']
+  pod 'ReactNativeImageCropPicker', :path => '../../../node_modules/@onekeyfe/react-native-image-crop-picker', :testspecs => ['Tests']
+  pod 'ReactNativeJpush', :path => '../../../node_modules/@onekeyfe/react-native-jpush', :testspecs => ['Tests']
+
+  script_phase :name => 'Bundle SDK icon fixtures',
+    :execution_position => :after_compile,
+    :script => 'sh "${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle"'
+
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the
   # directory tree so react-native-chart-webview's WKURLSchemeHandler can serve it.
@@ -58,12 +78,29 @@ fi
 SH
 
   post_install do |installer|
+    fixture_targets = %w[OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests]
+    fixture_targets.each do |name|
+      target = installer.pods_project.targets.find { |candidate| candidate.name == name }
+      raise "Missing SDK icon fixture test target: #{name}" unless target
+      phase = ensure_pods_script_phase(target, 'Bundle SDK icon fixtures')
+      phase.shell_script = 'sh "${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle"'
+      phase.input_paths = ['${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh', '${PODS_ROOT}/../../icon-fixtures/native/icons/manifest.json']
+      phase.output_paths = ['${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle/manifest.json']
+      phase.always_out_of_date = '1'
+    end
+
     react_native_post_install(
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = minimum_ios_version
+      end
+    end
 
   end
 end

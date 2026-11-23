@@ -44,6 +44,7 @@ internal object OneKeyImageGlideRegistry {
   private var registered = false
 
   fun ensureRegistered(context: Context) {
+    OneKeyImageStartupTrigger.startIfNeeded(context)
     if (registered) return
     synchronized(this) {
       if (registered) return
@@ -79,6 +80,11 @@ internal object OneKeyImageGlideRegistry {
         OneKeyImageRemoteModel::class.java,
         InputStream::class.java,
         OneKeyImageRemoteModelLoaderFactory(imageHttpClient),
+      )
+      registry.append(
+        ByteBuffer::class.java,
+        SVG::class.java,
+        OneKeyByteBufferSvgDecoder(),
       )
       registry.append(
         InputStream::class.java,
@@ -255,6 +261,19 @@ private class OneKeyDataUriFetcher(private val dataUri: String) : DataFetcher<By
   }
 }
 
+private class OneKeyByteBufferSvgDecoder : ResourceDecoder<ByteBuffer, SVG> {
+  private val delegate = OneKeySvgDecoder()
+
+  override fun handles(source: ByteBuffer, options: Options): Boolean = true
+
+  override fun decode(source: ByteBuffer, width: Int, height: Int, options: Options): Resource<SVG> {
+    val copy = source.asReadOnlyBuffer()
+    copy.position(0)
+    OneKeyImageSafety.requireEncodedLength(copy.remaining().toLong(), OneKeyImageSafety.MAX_ENCODED_BYTES)
+    return delegate.decode(com.bumptech.glide.util.ByteBufferUtil.toStream(copy), width, height, options)
+  }
+}
+
 private class OneKeySvgDecoder : ResourceDecoder<InputStream, SVG> {
   override fun handles(source: InputStream, options: Options): Boolean = true
 
@@ -266,7 +285,7 @@ private class OneKeySvgDecoder : ResourceDecoder<InputStream, SVG> {
     options: Options,
   ): Resource<SVG> {
     val svg = try {
-      SVG.getFromInputStream(source)
+      OneKeySVG.parse(source)
     } catch (error: SVGParseException) {
       throw IOException("Cannot decode SVG", error)
     }

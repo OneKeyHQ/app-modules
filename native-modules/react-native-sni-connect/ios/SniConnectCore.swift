@@ -1,5 +1,29 @@
 import Foundation
 
+final class SniConnectUploadProgress {
+  private let lock = NSLock()
+  private var sent: Int64 = 0
+  private var total: Int64 = 0
+
+  func setTotal(_ bytes: Int) {
+    lock.lock()
+    total = Int64(bytes)
+    lock.unlock()
+  }
+
+  func record(_ bytes: Int64) {
+    lock.lock()
+    sent = max(sent, min(max(bytes, 0), total))
+    lock.unlock()
+  }
+
+  func snapshot() -> [String: Int64] {
+    lock.lock()
+    defer { lock.unlock() }
+    return ["bytesSent": sent, "totalBytes": total]
+  }
+}
+
 enum SniConnectSessionDelegatePolicy {
   static let responseDispositionWithoutForwardingDelegate: URLSession.ResponseDisposition = .allow
 }
@@ -114,7 +138,7 @@ final class SniConnectPinnedResolverRegistry {
     guard domain.caseInsensitiveCompare(config.hostname) == .orderedSame else {
       SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_pinned_dns_unexpected_host", [
         ("expectedHost", config.hostname),
-        ("requestedHostHash", SniConnectCoreDiagnostics.shortHash(domain.lowercased())),
+        ("requestedHost", domain.lowercased()),
         ("result", "fail_closed"),
       ]))
       return nil

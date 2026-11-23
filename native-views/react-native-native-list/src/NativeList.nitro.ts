@@ -11,13 +11,30 @@ import type {
  */
 export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
+  fontFamiliesJson: string;
+  containerSlotHeightsJson: string;
+  sidecarLayoutJson: string;
+  topScrollEdgeEffect: NativeListScrollEdgeEffect;
+  topOverlayHeight: number;
+  scrollPositionThresholdsJson: string;
+  onScrollPositionThresholdChange?: (isBeyondThreshold: boolean) => void;
+  keyboardDismissMode: NativeListKeyboardDismissMode;
+  keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps;
   onRowAction?: (payloadJson: string) => void;
   onActionAnchorInvalidated?: (payloadJson: string) => void;
   onSelectionDelta?: (payloadJson: string) => void;
   onReorder?: (payloadJson: string) => void;
   onEndReached?: (payloadJson: string) => void;
   onVisibleRangeChanged?: (payloadJson: string) => void;
+  onStructuralTransitionSettled?: (payloadJson: string) => void;
 }
+
+export type NativeListKeyboardDismissMode = 'none' | 'on-drag' | 'interactive';
+
+export type NativeListKeyboardShouldPersistTaps =
+  | 'never'
+  | 'always'
+  | 'handled';
 
 export type NativeListScrollAlignment = 'start' | 'center' | 'end' | 'nearest';
 
@@ -46,3 +63,5 @@ export interface NativeListMethods extends HybridViewMethods {
 }
 
 export type NativeList = HybridView<NativeListNativeProps, NativeListMethods>;
+
+export type NativeListScrollEdgeEffect = 'none' | 'hard' | 'soft';

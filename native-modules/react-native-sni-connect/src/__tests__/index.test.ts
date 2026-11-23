@@ -7,6 +7,8 @@ jest.mock('../NativeSniConnect', () => ({
     clearDNSCache: jest.fn(),
     getDebugSnapshot: jest.fn(),
     isProxyActiveForUrl: jest.fn(),
+    uploadFile: jest.fn(),
+    getUploadProgress: jest.fn(),
   },
 }));
 
@@ -15,10 +17,16 @@ import {
   cancelRequest,
   clearDNSCache,
   getDebugSnapshot,
+  getUploadProgress,
   isProxyActiveForUrl,
+  isUploadFileSupported,
   request,
+  uploadFile,
 } from '../index';
-import NativeSniConnect, { type SniConnectRequest } from '../NativeSniConnect';
+import NativeSniConnect, {
+  type SniConnectRequest,
+  type SniConnectUploadFileRequest,
+} from '../NativeSniConnect';
 
 const mockNativeModule = NativeSniConnect as unknown as {
   request: jest.Mock;
@@ -27,6 +35,8 @@ const mockNativeModule = NativeSniConnect as unknown as {
   clearDNSCache: jest.Mock;
   getDebugSnapshot: jest.Mock;
   isProxyActiveForUrl: jest.Mock;
+  uploadFile: jest.Mock;
+  getUploadProgress: jest.Mock;
 };
 
 describe('react-native-sni-connect public API', () => {
@@ -48,6 +58,56 @@ describe('react-native-sni-connect public API', () => {
 
     await expect(request(config)).resolves.toBe(response);
     expect(mockNativeModule.request).toHaveBeenCalledWith(config);
+  });
+
+  it('forwards uploadFile() to the native module and returns its result', async () => {
+    const config: SniConnectUploadFileRequest = {
+      requestId: 'upload-1',
+      ip: '93.184.216.34',
+      hostname: 'example.com',
+      method: 'POST',
+      path: '/upload',
+      headers: { 'content-type': 'application/zip' },
+      filePath: 'file:///data/user/0/app/cache/logs.zip',
+      timeout: 90_000,
+    };
+    const response = { data: '{}', status: 200, statusText: '', headers: {} };
+    mockNativeModule.uploadFile.mockResolvedValue(response);
+
+    await expect(uploadFile(config)).resolves.toBe(response);
+    expect(mockNativeModule.uploadFile).toHaveBeenCalledWith(config);
+  });
+
+  it('detects native upload capability and rejects asynchronously when absent', async () => {
+    const nativeUpload = mockNativeModule.uploadFile;
+    expect(isUploadFileSupported()).toBe(true);
+    try {
+      // Simulate updated JS running against an older native binary.
+      Reflect.deleteProperty(mockNativeModule, 'uploadFile');
+      expect(isUploadFileSupported()).toBe(false);
+      const result = uploadFile({} as SniConnectUploadFileRequest);
+      expect(result).toBeInstanceOf(Promise);
+      await expect(result).rejects.toMatchObject({ code: 'SNI_UNSUPPORTED' });
+    } finally {
+      mockNativeModule.uploadFile = nativeUpload;
+    }
+  });
+
+  it('returns a rejected Promise when a native upload call throws', async () => {
+    const error = new Error('native upload failed');
+    mockNativeModule.uploadFile.mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(uploadFile({} as SniConnectUploadFileRequest)).rejects.toBe(
+      error
+    );
+  });
+
+  it('returns upload progress from native when supported', async () => {
+    const snapshot = { bytesSent: 1024, totalBytes: 2048 };
+    mockNativeModule.getUploadProgress.mockResolvedValue(snapshot);
+    await expect(getUploadProgress('upload-1')).resolves.toBe(snapshot);
+    expect(mockNativeModule.getUploadProgress).toHaveBeenCalledWith('upload-1');
   });
 
   it('forwards cancelRequest() with the request id', async () => {
@@ -128,3 +188,15 @@ const invalidGetWithBody: SniConnectRequest = {
   timeout: 30_000,
 };
 void invalidGetWithBody;
+
+const invalidUploadWithGet: SniConnectUploadFileRequest = {
+  ip: '93.184.216.34',
+  hostname: 'example.com',
+  // @ts-expect-error uploads only support POST and PUT.
+  method: 'GET',
+  path: '/',
+  headers: {},
+  filePath: '/tmp/logs.zip',
+  timeout: 30_000,
+};
+void invalidUploadWithGet;

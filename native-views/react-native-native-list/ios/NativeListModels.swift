@@ -1,5 +1,14 @@
 import Foundation
+import CoreFoundation
 import UIKit
+
+// Template type alone partitions reuse; data keys and styles never select a renderer.
+enum NativeListRendererKey: String, CaseIterable {
+  case message, rail, mediaTile, action, buttonGroup, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
+  /// Not a template: legacy accepted any non-empty type and drew an empty row with the
+  /// shared chrome. Unknown types keep that placeholder instead of failing the snapshot.
+  case unsupported = "__nativeListUnsupported"
+}
 
 struct NativeListItem {
   let key: String
@@ -9,9 +18,27 @@ struct NativeListItem {
   let data: [String: Any]
   let content: String
 
+  let rendererKey: NativeListRendererKey
+
+  var styledHeight: CGFloat? {
+    (data.dictionary("style")?.dictionary("container")?["height"] as? Double).map { CGFloat($0) }
+  }
+
+  /// Selector presentations use their explicit-height geometry when either
+  /// `style.container.height` or `row.height` is set (Web `hasExplicitRowHeight`).
+  var hasExplicitHeight: Bool {
+    data.dictionary("style")?.dictionary("container")?["height"] != nil || data["height"] != nil
+  }
+
   var isSelectable: Bool {
     let disabled = data["disabled"] as? Bool ?? false
     return !disabled && Self.selectableTypes.contains(type)
+  }
+
+  var isRowPressEnabled: Bool {
+    type != "buttonGroup" && !data.bool("disabled") &&
+      !data.bool("pressDisabled") &&
+      (type != "system" || data.string("variant") == "retry")
   }
 
   var isReorderable: Bool {
@@ -27,13 +54,23 @@ struct NativeListItem {
           let type = data["type"] as? String, !type.isEmpty else {
       throw NativeListModelError.invalidRow
     }
+    let rendererKey = NativeListRendererKey(rawValue: type)
+      .flatMap { $0 == .unsupported ? nil : $0 } ?? .unsupported
+    if rendererKey == .unsupported { Self.logUnsupported(type) }
     self.key = key
     self.type = type
+    self.rendererKey = rendererKey
     self.sectionKey = data["sectionKey"] as? String
     self.revision = data["revision"] as? Int ?? 0
     self.data = data
     let jsonData = try JSONSerialization.data(withJSONObject: data, options: [.sortedKeys])
     self.content = String(data: jsonData, encoding: .utf8) ?? ""
+  }
+
+  private static var loggedUnsupportedTypes = Set<String>()
+  private static func logUnsupported(_ type: String) {
+    guard loggedUnsupportedTypes.insert(type).inserted else { return }
+    NSLog("[NativeList] Unsupported row type '%@' rendered as an empty placeholder row", type)
   }
 
   private static let selectableTypes: Set<String> = [
@@ -42,7 +79,18 @@ struct NativeListItem {
 }
 
 struct NativeListConfig {
+  struct StructuralTransition {
+    let id: String
+    let duration: TimeInterval
+    let anchorKey: String?
+  }
+  struct Disclosure {
+    let expanded: Bool
+    let expandedTrailingInset: CGFloat
+  }
   let generation: Int
+  let structuralTransition: StructuralTransition?
+  let disclosure: Disclosure?
   let layout: String
   let orientation: String
   let gridColumns: Int
@@ -56,7 +104,10 @@ struct NativeListConfig {
   let rowPressToggles: Bool
   var selectedKeys: Set<String>
   let reorderable: Bool
+  /// `handle` starts a reorder only from a long press on a trailing `drag` accessory.
+  let reorderFromHandleOnly: Bool
   let pullToRefresh: Bool
+  let refreshTriggerDistance: CGFloat?
   var refreshing: Bool
   let loadMore: Bool
   let endReachedThreshold: Double
@@ -64,6 +115,7 @@ struct NativeListConfig {
   let sectionIndexHapticsEnabled: Bool
   let sectionIndexCenteredInWindow: Bool
   let theme: [String: Any]?
+  let listStyle: [String: Any]?
   let fixedFooter: NativeListItem?
   var items: [NativeListItem]
 
@@ -89,8 +141,38 @@ struct NativeListConfig {
     let selectedKeys = Set(selection?["selectedKeys"] as? [String] ?? [])
     guard selectedKeys.isSubset(of: keys) else { throw NativeListModelError.unknownSelectionKey }
     let capabilities = root["capabilities"] as? [String: Any]
+    let reorderActivation = capabilities?["reorderActivation"]
+    if let reorderActivation, !["row", "handle"].contains(reorderActivation as? String ?? "") {
+      throw NativeListModelError.invalidSnapshot
+    }
     let sectionIndex = capabilities?["sectionIndex"] as? [String: Any]
     let footer = try (root["fixedFooter"] as? [String: Any]).map(NativeListItem.init)
+    let transition = root["structuralTransition"] as? [String: Any]
+    let structuralTransition = (transition?["id"] as? String).map { id in
+      StructuralTransition(
+        id: id,
+        duration: min(2, max(0, (transition?["durationMs"] as? Double ?? 220) / 1000)),
+        anchorKey: transition?["anchorKey"] as? String)
+    }
+    let disclosure: Disclosure?
+    if let value = root["disclosure"] {
+      guard let data = value as? [String: Any],
+            let expandedNumber = data["expanded"] as? NSNumber,
+            CFGetTypeID(expandedNumber) == CFBooleanGetTypeID() else {
+        throw NativeListModelError.invalidSnapshot
+      }
+      let insetNumber = data["expandedTrailingInset"] as? NSNumber
+      guard data["expandedTrailingInset"] == nil || insetNumber != nil,
+            insetNumber.map({ CFGetTypeID($0) != CFBooleanGetTypeID() }) ?? true else {
+        throw NativeListModelError.invalidSnapshot
+      }
+      let inset = insetNumber?.doubleValue ?? 0
+      guard inset.isFinite, inset >= 0 else { throw NativeListModelError.invalidSnapshot }
+      disclosure = Disclosure(expanded: expandedNumber.boolValue,
+        expandedTrailingInset: CGFloat(inset))
+    } else {
+      disclosure = nil
+    }
 
     let contentPadding = max(0, CGFloat(layoutData.double("contentPadding")))
     let contentPaddingHorizontal = layoutData["contentPaddingHorizontal"] == nil
@@ -105,9 +187,11 @@ struct NativeListConfig {
 
     return NativeListConfig(
       generation: generation,
+      structuralTransition: structuralTransition,
+      disclosure: disclosure,
       layout: layout,
       orientation: layoutData["orientation"] as? String ?? "vertical",
-      gridColumns: min(4, max(1, layoutData["gridColumns"] as? Int ?? 1)),
+      gridColumns: min(7, max(1, layoutData["gridColumns"] as? Int ?? 1)),
       stickyHeaders: layoutData["stickyHeaders"] as? Bool ?? false,
       contentPadding: contentPadding,
       contentPaddingHorizontal: contentPaddingHorizontal,
@@ -118,7 +202,10 @@ struct NativeListConfig {
       rowPressToggles: selection?["rowPressToggles"] as? Bool ?? false,
       selectedKeys: selectedKeys,
       reorderable: capabilities?["reorderable"] as? Bool ?? false,
+      reorderFromHandleOnly: reorderActivation as? String == "handle",
       pullToRefresh: capabilities?["pullToRefresh"] as? Bool ?? false,
+      refreshTriggerDistance: (capabilities?["refreshTriggerDistance"] as? Double)
+        .flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil },
       refreshing: capabilities?["refreshing"] as? Bool ?? false,
       loadMore: capabilities?["loadMore"] as? Bool ?? false,
       endReachedThreshold: capabilities?["endReachedThreshold"] as? Double ?? 0.2,
@@ -126,6 +213,7 @@ struct NativeListConfig {
       sectionIndexHapticsEnabled: sectionIndex?["hapticsEnabled"] as? Bool ?? true,
       sectionIndexCenteredInWindow: sectionIndex?["centeredInWindow"] as? Bool ?? false,
       theme: root["theme"] as? [String: Any],
+      listStyle: root["listStyle"] as? [String: Any],
       fixedFooter: footer,
       items: items
     )

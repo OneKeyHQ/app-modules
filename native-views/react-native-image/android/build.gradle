@@ -56,13 +56,16 @@ android {
   }
   buildFeatures { buildConfig true; prefab true }
   buildTypes { release { minifyEnabled false } }
+  testOptions { unitTests.returnDefaultValues = true }
   lintOptions { disable "GradleCompatible" }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_1_8
     targetCompatibility JavaVersion.VERSION_1_8
   }
   sourceSets {
-    main { java.srcDirs += ["generated/java", "generated/jni"] }
+    main {
+      java.srcDirs += ["generated/java", "generated/jni"]
+    }
   }
 }
 
@@ -82,4 +85,5 @@ dependencies {
   implementation project(":react-native-nitro-modules")
   implementation project(":onekeyfe_react-native-skeleton")
   testImplementation "junit:junit:4.13.2"
+  testImplementation "org.json:json:20231013"
 }

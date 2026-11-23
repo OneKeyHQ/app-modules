@@ -1,0 +1,5 @@
+# macOS /usr/bin/ar cannot read wasm object files and silently writes an empty
+# archive, which surfaces at link time as `undefined symbol: sqlite3_*`.
+# Use LLVM's ar; the cc crate reads AR_<target>.
+[env]
+AR_wasm32_unknown_unknown = "/opt/homebrew/opt/llvm/bin/llvm-ar"

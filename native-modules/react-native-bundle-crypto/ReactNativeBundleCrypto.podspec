@@ -1,6 +1,27 @@
 require "json"
+require "fileutils"
 
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
+
+# npm omits symlinks from versioned macOS frameworks. Restore the packaged
+# Catalyst slice layout before CocoaPods resolves its module and binary.
+catalyst_framework = File.join(__dir__, 'ios/Frameworks/Gopenpgp.xcframework/ios-arm64-maccatalyst/Gopenpgp.framework')
+if File.directory?(File.join(catalyst_framework, 'Versions/A'))
+  links = { 'Versions/Current' => 'A' }
+  %w[Gopenpgp Headers Modules Resources].each do |entry|
+    links[entry] = "Versions/Current/#{entry}"
+  end
+  links.each do |entry, target|
+    destination = File.join(catalyst_framework, entry)
+    if File.symlink?(destination)
+      next if File.readlink(destination) == target
+      File.unlink(destination)
+    elsif File.exist?(destination)
+      next
+    end
+    FileUtils.ln_s(target, destination)
+  end
+end
 
 Pod::Spec.new do |s|
   s.name         = "ReactNativeBundleCrypto"
@@ -18,6 +39,7 @@ Pod::Spec.new do |s|
     "ios/**/*.{m,mm}",
     "cpp/**/*.{hpp,cpp}",
   ]
+  s.exclude_files = "ios/tests/**/*"
 
   # Vendored Gopenpgp framework: GPG cleartext/detached signature verification.
   # This is the single in-tree copy used by bundle-crypto and by modules that
@@ -32,4 +54,8 @@ Pod::Spec.new do |s|
   add_nitrogen_files(s)
 
   install_modules_dependencies(s)
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+  end
 end

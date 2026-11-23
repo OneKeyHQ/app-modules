@@ -8,7 +8,8 @@
 
 #if !TARGET_OS_SIMULATOR
 
-#import <GPChannelSDKCore/GPChannelSDKCore.h>
+#import "GPChannelSDK.h"
+#import "GPChannelSDKCore.h"
 #import "OKNFCLiteDefine.h"
 #import "NFCConfig.h"
 
@@ -18,6 +19,22 @@
 
 #import "OKNFCBridge.h"
 #import "LCLogger.h"
+
+#if !TARGET_OS_SIMULATOR
+static NSString *sourceIdForLog() {
+    NSString *source = [NSString stringWithUTF8String:(const char *)GPChannelSDKCoreVersionString];
+    if (source.length != 74 || ![source hasPrefix:@"source-v1:"]) return @"unavailable";
+    for (NSUInteger index = 10; index < source.length; ++index) {
+        unichar digit = [source characterAtIndex:index];
+        if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f'))) return @"unavailable";
+    }
+    NSMutableArray<NSString *> *groups = [NSMutableArray array];
+    for (NSUInteger offset = 10; offset < source.length; offset += 8) {
+        [groups addObject:[source substringWithRange:NSMakeRange(offset, 8)]];
+    }
+    return [@"source-v1:" stringByAppendingString:[groups componentsJoinedByString:@"-"]];
+}
+#endif
 
 @implementation OKNFCBridge
 
@@ -38,6 +55,11 @@
         rv = JUB_GPC_BuildSafeAPDU(cla, ins, p1, p2, c_data, &c_apdu);
     } else {
         rv = JUB_GPC_BuildAPDU(cla, ins, p1, p2, c_data, &c_apdu);
+    }
+    @try {
+        [LCLogger info:[NSString stringWithFormat:@"stage=command_build nativeSourceId=%@ safe=%d sdkReturnCode=%lu outputPresent=%d", sourceIdForLog(), encrypt, (unsigned long)rv, c_apdu != nullptr]];
+    } @catch (NSException *exception) {
+        // Diagnostics must not replace the SDK result.
     }
 
     if (JUBR_OK != rv) {
@@ -64,6 +86,7 @@
     JUB_UINT16 wRet = 0;
     JUB_CHAR_PTR pDecResp = nullptr;
     rv = JUB_GPC_ParseSafeAPDUResponse(c_data ,&wRet, &pDecResp);
+    [LCLogger info:[NSString stringWithFormat:@"stage=parse_safe_response parseReturnCode=%lu parsedSW=%u parsePresent=%d", (unsigned long)rv, wRet, pDecResp != nullptr]];
     if (JUBR_OK != rv) {
         return nil;
     }

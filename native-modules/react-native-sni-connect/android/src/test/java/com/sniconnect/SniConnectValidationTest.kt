@@ -2,10 +2,24 @@ package com.sniconnect
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okio.Buffer
+import okio.ForwardingSink
+import okio.buffer
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
+import java.nio.file.Files
 import java.io.InterruptedIOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
@@ -13,6 +27,136 @@ import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
 
 class SniConnectValidationTest {
+
+  @get:Rule
+  val tempFolder = TemporaryFolder()
+
+  @Test
+  fun uploadMethodAllowsOnlyPostAndPut() {
+    SniConnectValidation.validateUploadMethod("POST")
+    SniConnectValidation.validateUploadMethod("PUT")
+    listOf("GET", "HEAD", "PATCH", "DELETE", "OPTIONS").forEach { method ->
+      assertValidationFails { SniConnectValidation.validateUploadMethod(method) }
+    }
+  }
+
+  @Test
+  fun resolveUploadFileAcceptsSandboxFileByPathAndFileUrl() {
+    val root = tempFolder.newFolder("sandbox")
+    val file = File(root, "logs.zip").apply { writeBytes(byteArrayOf(0x50, 0x4B, 3, 4, -1)) }
+
+    val byPath = SniConnectValidation.resolveUploadFile(file.path, listOf(root))
+    assertEquals(file.canonicalPath, byPath.path)
+    val byUrl = SniConnectValidation.resolveUploadFile(file.toURI().toString(), listOf(root))
+    assertEquals(file.canonicalPath, byUrl.path)
+    val byTripleSlashUrl = SniConnectValidation.resolveUploadFile("file://${file.path}", listOf(root))
+    assertEquals(file.canonicalPath, byTripleSlashUrl.path)
+  }
+
+  @Test
+  fun resolveUploadFileRejectsInvalidOrOutOfSandboxFiles() {
+    val root = tempFolder.newFolder("sandbox")
+    val outside = tempFolder.newFolder("outside")
+    val outsideFile = File(outside, "secret.bin").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+    val emptyFile = File(root, "empty.zip").apply { writeBytes(ByteArray(0)) }
+    val link = File(root, "link.zip")
+    Files.createSymbolicLink(link.toPath(), outsideFile.toPath())
+
+    listOf(
+      "",
+      "relative/logs.zip",
+      "https://example.com/logs.zip",
+      outsideFile.path,
+      "${root.path}/../outside/secret.bin",
+      link.path,
+      emptyFile.path,
+      root.path,
+      File(root, "missing.zip").path,
+      "${root.path}/logs\n.zip",
+    ).forEach { path ->
+      assertValidationFails { SniConnectValidation.resolveUploadFile(path, listOf(root)) }
+    }
+  }
+
+  @Test
+  fun resolveUploadFileRejectsFilesOverTheSizeLimit() {
+    val root = tempFolder.newFolder("sandbox")
+    val file = File(root, "big.zip")
+    RandomAccessFile(file, "rw").use { it.setLength(SniConnectValidation.MAX_UPLOAD_FILE_BYTES + 1) }
+
+    assertValidationFails { SniConnectValidation.resolveUploadFile(file.path, listOf(root)) }
+  }
+
+  @Test
+  fun uploadBodyStreamsExactLimitBinaryData() {
+    val file = tempFolder.newFile("exact.zip")
+    val expected = ByteArray(SniConnectValidation.MAX_UPLOAD_FILE_BYTES.toInt()) { 0xFF.toByte() }
+    file.writeBytes(expected)
+    val body = SniUploadFileRequestBody(file, null)
+    val sink = Buffer()
+    body.writeTo(sink)
+    assertEquals(expected.size.toLong(), body.contentLength())
+    assertTrue(expected.contentEquals(sink.readByteArray()))
+  }
+
+  @Test
+  fun uploadBodyReportsOnlyAcceptedPayloadBytesPerWrite() {
+    val file = tempFolder.newFile("progress.zip").apply { writeBytes(ByteArray(16 * 1024) { 1 }) }
+    val progress = mutableListOf<Pair<Long, Long>>()
+    val body = SniUploadFileRequestBody(file, null) { sent, total ->
+      progress.add(sent to total)
+    }
+    val sink = Buffer()
+    body.writeTo(sink)
+    assertEquals(0L to file.length(), progress.first())
+    assertEquals(file.length() to file.length(), progress.last())
+    assertTrue(progress.zipWithNext().all { (before, after) -> after.first >= before.first })
+    assertEquals(file.length(), sink.size)
+  }
+
+  @Test
+  fun uploadBodyRejectsGrowthAfterValidation() {
+    val root = tempFolder.newFolder("sandbox")
+    val file = File(root, "growing.zip").apply { writeBytes(byteArrayOf(1)) }
+    val validated = SniConnectValidation.resolveUploadFile(file.path, listOf(root))
+    val body = SniUploadFileRequestBody(validated, null)
+    RandomAccessFile(file, "rw").use { it.setLength(SniConnectValidation.MAX_UPLOAD_FILE_BYTES + 1) }
+    val sink = Buffer()
+    assertThrows(IOException::class.java) { body.writeTo(sink) }
+    assertTrue(sink.size <= body.contentLength())
+    assertThrows(IOException::class.java) { SniUploadFileRequestBody(validated, null) }
+  }
+
+  @Test
+  fun uploadBodyRejectsGrowthDuringTransmission() {
+    val file = tempFolder.newFile("growing-during-write.zip")
+    file.writeBytes(ByteArray(16 * 1024) { 1 })
+    val body = SniUploadFileRequestBody(file, null)
+    val output = Buffer()
+    var appended = false
+    val sink = object : ForwardingSink(output) {
+      override fun write(source: Buffer, byteCount: Long) {
+        super.write(source, byteCount)
+        if (!appended) {
+          file.appendBytes(byteArrayOf(2))
+          appended = true
+        }
+      }
+    }.buffer()
+    assertThrows(IOException::class.java) { body.writeTo(sink) }
+    assertTrue(appended)
+    assertTrue(output.size <= body.contentLength())
+  }
+
+  @Test
+  fun uploadBodyRejectsTruncationAfterValidation() {
+    val file = tempFolder.newFile("truncated.zip").apply { writeBytes(byteArrayOf(1, 2)) }
+    val body = SniUploadFileRequestBody(file, null)
+    file.writeBytes(byteArrayOf(1))
+    assertThrows(IOException::class.java) { body.writeTo(Buffer()) }
+    file.writeBytes(byteArrayOf())
+    assertThrows(IOException::class.java) { body.writeTo(Buffer()) }
+  }
 
   @Test
   fun acceptsValidRequestBoundaryValues() {
@@ -213,7 +357,15 @@ class SniConnectValidationTest {
     )
     assertEquals(
       "SNI_SECURITY_POLICY_FAILED",
-      classifySniFailureCode(UnknownHostException("Unexpected host for pinned SNI request")),
+      classifySniFailureCode(
+        SniPinnedDestinationViolationException("Unexpected host for pinned SNI request"),
+      ),
+    )
+    assertEquals(
+      "SNI_SECURITY_POLICY_FAILED",
+      classifySniFailureCode(IOException("wrapped").apply {
+        initCause(SniPinnedDestinationViolationException("Unexpected host for pinned SNI request"))
+      }),
     )
     assertEquals(
       "SNI_REQUEST_TIMEOUT",
@@ -240,6 +392,103 @@ class SniConnectValidationTest {
     assertEquals(
       "SNI_RESPONSE_FAILED",
       classifySniResponseFailureCode(IOException("bad body"), false),
+    )
+  }
+
+  @Test
+  fun classifiesDnsAndPreWriteConnectionFailuresForSafeFallback() {
+    assertEquals(
+      "SNI_DNS_FAILED",
+      classifySniFailureCode(UnknownHostException("api.example.com")),
+    )
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      classifySniFailureCode(ConnectException("Connection refused")),
+    )
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      classifySniFailureCode(IOException("connect failed").apply {
+        initCause(ConnectException("Connection refused"))
+      }),
+    )
+  }
+
+  @Test
+  fun gatesReplaySensitiveCodesOnRequestTransmissionEvidence() {
+    assertEquals(
+      "SNI_CONNECTION_REFUSED",
+      gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", false),
+    )
+    assertEquals(
+      "SNI_REQUEST_FAILED",
+      gateReplaySensitiveFailureCode("SNI_CONNECTION_REFUSED", true),
+    )
+    // Only the pre-write connection code is gated; other codes pass through.
+    assertEquals("SNI_TLS_FAILED", gateReplaySensitiveFailureCode("SNI_TLS_FAILED", true))
+    assertEquals(
+      "SNI_SECURITY_POLICY_FAILED",
+      gateReplaySensitiveFailureCode("SNI_SECURITY_POLICY_FAILED", true),
+    )
+  }
+
+  @Test
+  fun requestHeadersStartMarksTheLogicalRequestAsTransmitted() {
+    val state = SniRequestTransmissionState()
+    val call = newOkHttpCall(state)
+    assertFalse(state.hasRequestTransmissionStarted())
+
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    assertTrue(state.hasRequestTransmissionStarted())
+  }
+
+  @Test
+  fun untaggedCallDoesNotFailOnRequestHeadersStart() {
+    val call = OkHttpClient().newCall(
+      Request.Builder().url("https://example.com/").build(),
+    )
+
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    assertNull(call.request().tag(SniRequestTransmissionState::class.java))
+  }
+
+  @Test
+  fun processedBodylessRequestFollowedByRefusedRecoveryStaysAmbiguous() {
+    // A bodyless DELETE can be processed by the server without writing a body;
+    // only the request-headers event can prove that it was transmitted.
+    val state = SniRequestTransmissionState()
+    val call = newOkHttpCall(state, bodylessDelete = true)
+    SniRequestTransmissionEventListenerFactory.create(call).requestHeadersStart(call)
+
+    val code = gateReplaySensitiveFailureCode(
+      classifySniFailureCode(ConnectException("Connection refused")),
+      state.hasRequestTransmissionStarted(),
+    )
+
+    assertEquals("SNI_REQUEST_FAILED", code)
+  }
+
+  @Test
+  fun refusedConnectionBeforeAnyTransmissionKeepsPreWriteCode() {
+    val state = SniRequestTransmissionState()
+    val code = gateReplaySensitiveFailureCode(
+      classifySniFailureCode(ConnectException("Connection refused")),
+      state.hasRequestTransmissionStarted(),
+    )
+
+    assertEquals("SNI_CONNECTION_REFUSED", code)
+  }
+
+  private fun newOkHttpCall(
+    state: SniRequestTransmissionState,
+    bodylessDelete: Boolean = false,
+  ): Call {
+    val builder = Request.Builder()
+      .url("https://example.com/")
+      .tag(SniRequestTransmissionState::class.java, state)
+    return OkHttpClient().newCall(
+      (if (bodylessDelete) builder.delete() else builder.get()).build(),
     )
   }
 

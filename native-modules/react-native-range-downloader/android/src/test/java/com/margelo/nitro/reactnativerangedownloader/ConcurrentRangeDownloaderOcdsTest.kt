@@ -2,6 +2,9 @@ package com.margelo.nitro.reactnativerangedownloader
 
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,6 +83,52 @@ class ConcurrentRangeDownloaderOcdsTest {
     for (i in 0 until 8) {
       assertFalse(".seg$i must be wiped", segFile(partial, i).exists())
     }
+  }
+
+  @Test
+  fun oversizedProbedTotalRejectsBeforeRangeWorkers() {
+    val cap = content.size.toLong()
+    server = MockWebServer()
+    server.dispatcher = object : Dispatcher() {
+      override fun dispatch(request: RecordedRequest) = MockResponse()
+        .setResponseCode(206)
+        .addHeader("Content-Range", "bytes 0-0/${cap + 1}")
+        .setBody("x")
+    }
+    server.start()
+
+    val partial = partialPath()
+    val failure = runCatching {
+      newDownloader().download(
+        url = url(),
+        partialFilePath = partial,
+        maxTotalBytes = cap,
+        onProgress = { _, _ -> },
+      )
+    }.exceptionOrNull()
+
+    assertTrue("oversized total must reject", failure is SecurityException)
+    assertEquals("only the probe may reach the server", 1, server.requestCount)
+    assertEquals("bytes=0-0", server.takeRequest().getHeader("Range"))
+    assertNoArtifactsLeft(partial)
+  }
+
+  @Test
+  fun probedTotalAtLimitCanComplete() {
+    val fs = RangeFaultServer(content)
+    startServer(fs)
+
+    val partial = partialPath()
+    val outcome = newDownloader().download(
+      url = url(),
+      partialFilePath = partial,
+      maxTotalBytes = content.size.toLong(),
+      onProgress = { _, _ -> },
+    )
+
+    assertEquals(ConcurrentRangeDownloader.Outcome.COMPLETED, outcome)
+    assertEquals(content.size.toLong(), File(partial).length())
+    assertEquals(sha256(content), sha256(File(partial)))
   }
 
   // ------------------------------------------------------------------------
@@ -244,6 +293,67 @@ class ConcurrentRangeDownloaderOcdsTest {
     assertNoArtifactsLeft(partial)
   }
 
+  @Test
+  fun internalFallbackDoesNotMarkCallerCancelled() {
+    val target = parts[2]
+    startServer(RangeFaultServer(content).arm(
+      RangeFaultServer.FaultMode.STATUS_200, target.start, target.end, times = Int.MAX_VALUE,
+    ))
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+
+    val outcome = newDownloader().download(url(), partialPath(), handle) { _, _ -> }
+
+    assertEquals(ConcurrentRangeDownloader.Outcome.FALLBACK, outcome)
+    assertFalse(handle.aborted.get())
+    assertNoArtifactsLeft(partialPath())
+  }
+
+  @Test
+  fun segment403PreservesHttpStatusWithoutMarkingCallerCancelled() {
+    val target = parts[2]
+    val normal = RangeFaultServer(content)
+    server = MockWebServer()
+    server.dispatcher = object : Dispatcher() {
+      override fun dispatch(request: RecordedRequest): MockResponse =
+        if (request.getHeader("Range") == "bytes=${target.start}-${target.end}") {
+          MockResponse().setResponseCode(403)
+        } else {
+          normal.dispatcher.dispatch(request)
+        }
+    }
+    server.start()
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+
+    val failure = runCatching {
+      newDownloader().download(url(), partialPath(), handle) { _, _ -> }
+    }.exceptionOrNull()
+
+    assertTrue(failure is ConcurrentRangeDownloader.PermanentHttpException)
+    assertEquals(403, (failure as ConcurrentRangeDownloader.PermanentHttpException).code)
+    assertFalse(handle.aborted.get())
+  }
+
+  @Test
+  fun exhaustedSocketTimeoutDoesNotMarkCallerCancelled() {
+    val target = parts[2]
+    startServer(RangeFaultServer(content).arm(
+      RangeFaultServer.FaultMode.STALL, target.start, target.end, times = Int.MAX_VALUE,
+    ))
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+    val client = OkHttpClient.Builder().readTimeout(200, TimeUnit.MILLISECONDS).build()
+    val downloader = ConcurrentRangeDownloader(client, maxPartRetry = 0)
+
+    val failure = runCatching {
+      downloader.download(url(), partialPath(), handle) { _, _ -> }
+    }.exceptionOrNull()
+
+    assertTrue(
+      "expected a socket timeout, got ${failure?.javaClass?.name}: ${failure?.message}",
+      failure is java.net.SocketTimeoutException,
+    )
+    assertFalse(handle.aborted.get())
+  }
+
   // ------------------------------------------------------------------------
   // OCDS-T4: 429 (+Retry-After: 0) once on a segment → transient retry succeeds.
   //   SHA correct; the affected segment requested twice; no from-0 restart.
@@ -387,17 +497,17 @@ class ConcurrentRangeDownloaderOcdsTest {
     val partial = partialPath()
     // First invocation: the short body leaves segment 6 one byte short, so this
     // call throws "incomplete" and keeps the `.segN` for resume.
-    var firstThrew = false
-    try {
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+    val firstFailure = runCatching {
       newDownloader().download(
         url = url(),
         partialFilePath = partial,
+        cancelHandle = handle,
         onProgress = { _, _ -> },
       )
-    } catch (e: Exception) {
-      firstThrew = true
-    }
-    assertTrue("short body must leave the first invocation incomplete", firstThrew)
+    }.exceptionOrNull()
+    assertTrue("short body must preserve a typed network failure", firstFailure is java.net.ProtocolException)
+    assertFalse("internal short body must not mark explicit cancellation", handle.aborted.get())
     // The short segment is kept on disk, one byte under its planned length.
     val seg = segFile(partial, target.index)
     assertTrue("short `.segN` must be kept for resume", seg.exists())
@@ -483,6 +593,7 @@ class ConcurrentRangeDownloaderOcdsTest {
     worker.shutdownNow()
 
     assertTrue("cancel must abort promptly (took ${elapsed}ms)", elapsed < 12_000)
+    assertTrue("explicit cancellation must mark caller intent", handle.aborted.get())
 
     // cancel-then-delete: now that workers are terminated, deleting the artifacts
     // must STICK — no straggler worker resurrects a `.segN`.

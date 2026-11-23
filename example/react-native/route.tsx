@@ -29,11 +29,15 @@ import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelector
 import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccountSelectorData';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
+import { NativeListWalletSidebarReorderPage } from './pages/NativeListWalletSidebarReorderPage';
+import { NativeListRowStylePage } from './pages/NativeListRowStylePage';
+import type { MarketSearchParams } from './pages/MarketNativePagerExamplePage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
 } from './pages/NativeListExamplePage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
+import { ScrollEdgeTestPage } from './pages/ScrollEdgeTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
@@ -43,23 +47,28 @@ import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
 import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
 import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
+import { ImageCropPickerTestPage } from './pages/ImageCropPickerTestPage';
+import { JPushTestPage } from './pages/JPushTestPage';
 import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
 import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
 import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
 import { ChartSingletonTestPage } from './pages/ChartSingletonTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
-import { TabViewTestPage } from './pages/TabViewTestPage';
-import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
+import { BottomTabsTestPage } from './pages/BottomTabsTestPage';
+import { BottomTabsHomeDrawerExample } from './pages/BottomTabsHomeDrawerExample';
+import { BottomTabsSettingsPage } from './pages/BottomTabsSettingsPage';
 import { TextInputTestPage } from './pages/TextInputTestPage';
 import { TextTestPage } from './pages/TextTestPage';
 
-export type TabViewSettingsState = {
+export type BottomTabsSettingsState = {
   showBadge: boolean;
   labeled: boolean;
   translucent: boolean;
   tabBarHidden: boolean;
   sidebarAdaptable: boolean;
   hapticFeedback: boolean;
+  androidFloating: boolean;
+  androidBottomBlurEnabled: boolean;
 };
 
 export type RootStackParamList = {
@@ -84,22 +93,30 @@ export type RootStackParamList = {
   NativeListAccountSelector: AccountSelectorInitialTargetInput | undefined;
   NativeListNetworkSelector: undefined;
   NativeListTokenSelector: undefined;
+  NativeListWalletSidebarReorder: undefined;
+  NativeListRowStyle: undefined;
+  MarketNativePager: undefined;
+  MarketSearch: MarketSearchParams;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
   ChartSingleton: undefined;
   PagerView: undefined;
+  ScrollEdge: undefined;
   PerfMemory: undefined;
   PerpDepthBar: undefined;
   RangeDownloader: undefined;
   BundleCrypto: undefined;
   ZipArchive: undefined;
+  ImageCropPicker: undefined;
+  JPush: undefined;
   ScrollGuard: undefined;
   SegmentSlider: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
-  TabView: undefined;
-  TabViewSettings: undefined;
+  BottomTabs: undefined;
+  BottomTabsHomeDrawer: undefined;
+  BottomTabsSettings: undefined;
   TextInput: undefined;
   Text: undefined;
 };
@@ -201,6 +218,19 @@ const modules: {
     icon: '🗜️',
   },
   {
+    screen: 'ImageCropPicker',
+    name: 'Image Crop Picker',
+    description:
+      'Permission-free photo picker with cropping for avatars and wallpapers',
+    icon: '🖼️',
+  },
+  {
+    screen: 'JPush',
+    name: 'JPush / JCore SDK',
+    description: 'Clean-room JPush & JCore Nitro + Legacy Push SDK',
+    icon: '🔔',
+  },
+  {
     screen: 'CloudKit',
     name: 'CloudKit Module',
     description: 'Test iCloud storage operations and sync',
@@ -243,6 +273,13 @@ const modules: {
     icon: '🖼️',
   },
   {
+    screen: 'MarketNativePager',
+    name: 'Market Native Pager',
+    description:
+      'Production Market replay/live data with native collapsible pager and Market rows',
+    icon: '📉',
+  },
+  {
     screen: 'NativeList',
     name: 'Native List',
     description:
@@ -271,11 +308,31 @@ const modules: {
     icon: '🌐',
   },
   {
+    screen: 'NativeListWalletSidebarReorder',
+    name: 'Native List Wallet Sidebar Reorder',
+    description:
+      'OK-62492 recorded wallet sidebar for iOS wallet group drag reorder',
+    icon: '🗂️',
+  },
+  {
+    screen: 'NativeListRowStyle',
+    name: 'Native List Row Style',
+    description:
+      'Every template plain and styled, with a toggle for the unstyled regression check',
+    icon: '🎚️',
+  },
+  {
     screen: 'PagerView',
     name: 'Pager View',
     description:
       'Native page container with swipe navigation and imperative controls',
     icon: '📄',
+  },
+  {
+    screen: 'ScrollEdge',
+    name: 'iOS Scroll Edge',
+    description: 'Fixed toolbar over NativeList, NativeScroller, and CollapsiblePagerView',
+    icon: '⬆️',
   },
   {
     screen: 'PerfMemory',
@@ -317,11 +374,17 @@ const modules: {
     icon: '🚀',
   },
   {
-    screen: 'TabView',
-    name: 'Tab View',
+    screen: 'BottomTabs',
+    name: 'Bottom Tabs',
     description:
       'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
     icon: '📑',
+  },
+  {
+    screen: 'BottomTabsHomeDrawer',
+    name: 'Wallet Home Drawer',
+    description: 'Native drawer with the wallet shared header, five pages, and nested scrolling',
+    icon: '👛',
   },
   {
     screen: 'Text',
@@ -560,6 +623,16 @@ export function AppNavigator() {
         options={{ title: 'Zip Archive' }}
       />
       <Stack.Screen
+        name="ImageCropPicker"
+        component={ImageCropPickerTestPage}
+        options={{ title: 'Image Crop Picker' }}
+      />
+      <Stack.Screen
+        name="JPush"
+        component={JPushTestPage}
+        options={{ title: 'JPush / JCore SDK' }}
+      />
+      <Stack.Screen
         name="OtaPipeline"
         component={OtaPipelineTestPage}
         options={{ title: 'JS Bundle OTA Pipeline' }}
@@ -615,6 +688,21 @@ export function AppNavigator() {
         options={{ title: 'OneKey Image' }}
       />
       <Stack.Screen
+        name="MarketSearch"
+        getComponent={() =>
+          require('./pages/MarketNativePagerExamplePage').MarketNativeSearchPage
+        }
+        options={{ headerShown: false, presentation: 'fullScreenModal' }}
+      />
+      <Stack.Screen
+        name="MarketNativePager"
+        getComponent={() =>
+          require('./pages/MarketNativePagerExamplePage')
+            .MarketNativePagerExamplePage
+        }
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
         name="NativeList"
         component={NativeListTestPage}
         options={{ title: 'Native List' }}
@@ -647,9 +735,25 @@ export function AppNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="NativeListWalletSidebarReorder"
+        component={NativeListWalletSidebarReorderPage}
+        // The sidebar sits on the left edge; edge-swipe back would steal slow drags.
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen
+        name="NativeListRowStyle"
+        component={NativeListRowStylePage}
+        options={{ title: 'Native List Row Style' }}
+      />
+      <Stack.Screen
         name="PagerView"
         component={PagerViewTestPage}
         options={{ title: 'Pager View' }}
+      />
+      <Stack.Screen
+        name="ScrollEdge"
+        component={ScrollEdgeTestPage}
+        options={{ title: 'iOS Scroll Edge' }}
       />
       <Stack.Screen
         name="PerfMemory"
@@ -682,14 +786,19 @@ export function AppNavigator() {
         options={{ title: 'Splash Screen' }}
       />
       <Stack.Screen
-        name="TabView"
-        component={TabViewTestPage}
-        options={{ title: 'Tab View' }}
+        name="BottomTabs"
+        component={BottomTabsTestPage}
+        options={{ title: 'Bottom Tabs' }}
       />
       <Stack.Screen
-        name="TabViewSettings"
-        component={TabViewSettingsPage}
-        options={{ title: 'Tab View Settings' }}
+        name="BottomTabsSettings"
+        component={BottomTabsSettingsPage}
+        options={{ title: 'Bottom Tabs Settings' }}
+      />
+      <Stack.Screen
+        name="BottomTabsHomeDrawer"
+        component={BottomTabsHomeDrawerExample}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Text"

@@ -1,0 +1,88 @@
+import { codegenNativeComponent } from 'react-native';
+
+import type {
+  CodegenTypes,
+  ColorValue,
+  HostComponent,
+  ViewProps,
+} from 'react-native';
+type INativeOverlayDismissedEvent = Readonly<{
+  reason: string;
+}>;
+
+type INativeOverlayRequestDismissEvent = Readonly<{
+  reason: string;
+}>;
+
+type INativeOverlayHostWindowOriginEvent = Readonly<{
+  x: CodegenTypes.Double;
+  y: CodegenTypes.Double;
+}>;
+
+type INativeOverlaySheetLayoutEvent = Readonly<{
+  width: CodegenTypes.Double;
+}>;
+
+type INativeOverlayPresentedEvent = Readonly<{
+  stackOrder: CodegenTypes.Int32;
+}>;
+
+export interface INativeOverlayNativeProps extends ViewProps {
+  /** Present when true; play the exit animation and emit onDismissed when it turns false. */
+  visible: boolean;
+  level?: CodegenTypes.WithDefault<
+    'modal' | 'hardware' | 'secure' | 'toast' | 'lock' | 'debug',
+    'modal'
+  >;
+  presentation?: CodegenTypes.WithDefault<
+    'center' | 'toast' | 'fullscreen' | 'sheet' | 'anchored',
+    'center'
+  >;
+  scope?: CodegenTypes.WithDefault<'global' | 'page', 'global'>;
+  /** `page` scope: the `OverlayPageHost` to render in and the owning page. */
+  hostKey?: CodegenTypes.WithDefault<string, ''>;
+  ownerKey?: CodegenTypes.WithDefault<string, ''>;
+  /** Order inside the level; higher renders above. */
+  stackOrder?: CodegenTypes.WithDefault<CodegenTypes.Int32, 0>;
+  /** Swallow touches that miss the content instead of passing them through. */
+  blocking?: CodegenTypes.WithDefault<boolean, true>;
+  dismissOnBackPress?: CodegenTypes.WithDefault<boolean, true>;
+  dismissOnBackdropPress?: CodegenTypes.WithDefault<boolean, false>;
+  backdropColor?: ColorValue;
+  /** `sheet` presentation: resolved content height in points. */
+  sheetHeight?: CodegenTypes.WithDefault<CodegenTypes.Double, 0>;
+  sheetCornerRadius?: CodegenTypes.WithDefault<CodegenTypes.Double, 24>;
+  showHandle?: CodegenTypes.WithDefault<boolean, false>;
+  sheetBackgroundColor?: ColorValue;
+  /**
+   * `sheet` presentation: paints the platform sheet's bottom inset (the
+   * navigation-bar strip padded below the fitted content) with the drawn
+   * surface color. Android hosts the sheet inside the activity content view,
+   * so a JS view below the content root is not composited there; iOS uses the
+   * JS safe-area tail instead.
+   */
+  sheetBottomInsetColor?: ColorValue;
+  /**
+   * `sheet` presentation: horizontal inset of the drawn surface inside the
+   * platform sheet, in points, so the bottom inset paint stops with it.
+   */
+  sheetBottomInsetHorizontal?: CodegenTypes.WithDefault<CodegenTypes.Double, 0>;
+  dismissOnPanDown?: CodegenTypes.WithDefault<boolean, true>;
+  /** JSON of the resolved animation (`IResolvedOverlayAnimation`). */
+  animationConfig?: CodegenTypes.WithDefault<string, ''>;
+  onPresented?: CodegenTypes.DirectEventHandler<INativeOverlayPresentedEvent>;
+  onDismissed?: CodegenTypes.DirectEventHandler<INativeOverlayDismissedEvent>;
+  onRequestDismiss?: CodegenTypes.DirectEventHandler<INativeOverlayRequestDismissEvent>;
+  /** `sheet` presentation: the width the platform gave the sheet. */
+  onSheetLayout?: CodegenTypes.DirectEventHandler<INativeOverlaySheetLayoutEvent>;
+  /** Bump to have native report this host's on-screen origin once. */
+  hostOriginRequest?: CodegenTypes.WithDefault<CodegenTypes.Int32, 0>;
+  onHostWindowOrigin?: CodegenTypes.DirectEventHandler<INativeOverlayHostWindowOriginEvent>;
+}
+
+// The shadow node is hand-written (common/cpp): it carries the on-screen
+// content offset so `measure` reports where native presented the content.
+export default codegenNativeComponent<INativeOverlayNativeProps>(
+  'RNCNativeOverlay',
+  { interfaceOnly: true }
+) as HostComponent<INativeOverlayNativeProps>;

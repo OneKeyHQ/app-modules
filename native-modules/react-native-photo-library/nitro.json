@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativephotolibrary"],
+  "ios": {
+    "iosModuleName": "ReactNativePhotoLibrary"
+  },
+  "android": {
+    "androidNamespace": ["reactnativephotolibrary"],
+    "androidCxxLibName": "reactnativephotolibrary"
+  },
+  "autolinking": {
+    "ReactNativePhotoLibrary": {
+      "swift": "ReactNativePhotoLibrary",
+      "kotlin": "ReactNativePhotoLibrary"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

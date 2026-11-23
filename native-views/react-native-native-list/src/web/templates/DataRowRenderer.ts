@@ -1,0 +1,360 @@
+import type { DataRow, TextTone } from '../../models';
+import {
+  createElement,
+  markActionAnchorSource,
+  setData,
+  tagSlot,
+} from './RowElements';
+import { applyValueSegments, fontWeight } from './RowText';
+import { RowVisualStyle, type RowPrimitives } from './RowVisual';
+type ColumnViews = {
+  body: HTMLElement;
+  primaryLine: HTMLElement;
+  primary: HTMLElement;
+  leadingBadge: HTMLElement;
+  titleIcons: HTMLElement;
+  badges: HTMLElement;
+  secondaryLine: HTMLElement;
+  secondary: HTMLElement[];
+};
+type Views = {
+  favorite: HTMLElement;
+  index: HTMLElement;
+  controls: HTMLElement;
+  trailing: HTMLElement;
+  columns: ColumnViews[];
+  visual?: HTMLElement;
+  visualStyle?: RowVisualStyle;
+  visualKey: string;
+  primitives: RowPrimitives;
+};
+const views = new WeakMap<HTMLElement, Views>();
+const tone = (value: TextTone | undefined, fallback: string) =>
+  value === 'positive'
+    ? 'var(--nl-positive)'
+    : value === 'negative'
+    ? 'var(--nl-negative)'
+    : value === 'secondary'
+    ? 'var(--nl-secondary)'
+    : `var(--nl-${fallback})`;
+function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
+  const v = views.get(body)!;
+  v.primitives = primitives;
+  body.style.cssText = '';
+  body.removeAttribute('data-nl-container-background');
+  body.removeAttribute('data-nl-container-border');
+  const style = row.style;
+  const isTokenTable =
+    row.index === undefined &&
+    !row.favorite &&
+    !row.checkbox &&
+    row.columns.length === 4 &&
+    row.columns[0]?.key === 'asset' &&
+    row.columns[1]?.key === 'balance' &&
+    row.columns[2]?.key === 'price' &&
+    row.columns[3]?.key === 'swapSpacer';
+  if (isTokenTable) {
+    // Match the legacy four equal columns, including the icon in the first.
+    body.style.display = 'grid';
+    body.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+    body.style.gap = '0';
+  }
+
+  if (style?.horizontalPadding !== undefined)
+    body.style.paddingInline = `${style.horizontalPadding}px`;
+  if (style?.verticalPadding !== undefined)
+    body.style.paddingBlock = `${style.verticalPadding}px`;
+  v.controls.replaceChildren();
+  if (row.checkbox)
+    v.controls.appendChild(primitives.accessory(row.key, row.checkbox, 0));
+  v.controls.style.display = 'contents';
+  v.trailing.replaceChildren();
+  row.trailing?.forEach((accessory, index) =>
+    v.trailing.appendChild(primitives.accessory(row.key, accessory, index))
+  );
+  v.trailing.hidden = !row.trailing?.length;
+  v.index.style.cssText = '';
+  v.index.hidden = row.index === undefined;
+  v.index.textContent = String(row.index ?? '');
+  if (style?.index) primitives.textStyle(v.index, style.index);
+  v.favorite.hidden = !row.favorite;
+  v.favorite.textContent = row.favoriteActive ? '★' : '☆';
+  v.favorite.dataset.active = String(!!row.favoriteActive);
+  const visualKey = JSON.stringify([row.key, row.leading]);
+  if (visualKey !== v.visualKey) {
+    if (v.visual) {
+      primitives.dispose(v.visual);
+      v.visual.remove();
+    }
+    v.visual = primitives.visual(row.leading);
+    v.visualStyle = v.visual ? new RowVisualStyle(v.visual) : undefined;
+    if (v.visual) body.insertBefore(v.visual, v.columns[0]!.body);
+    v.visualKey = visualKey;
+  }
+  v.visualStyle?.apply(
+    style?.image,
+    style?.image?.width ?? 40,
+    style?.image?.height ?? 40,
+    (style?.leadingGap ?? 12) - 12
+  );
+  if (v.visual) v.visual.style.gridArea = isTokenTable ? '1 / 1' : '';
+  v.trailing.style.gridArea = isTokenTable ? '1 / 4' : '';
+  v.trailing.style.justifySelf = isTokenTable ? 'end' : '';
+  v.columns.forEach((cell, index) => {
+    const column = row.columns[index];
+    cell.body.hidden = !column;
+    if (!column) {
+      cell.body.remove();
+      return;
+    }
+    body.appendChild(cell.body);
+    cell.body.style.cssText = '';
+    cell.body.hidden = false;
+    cell.body.style.flex = String(column.weight ?? 1);
+    cell.body.style.display = 'flex';
+    if (isTokenTable) {
+      cell.body.style.gridArea = `1 / ${index + 1}`;
+      if (index === 0 && v.visual) {
+        cell.body.style.marginInlineStart = `${
+          (style?.image?.width ?? 40) + (style?.leadingGap ?? 12)
+        }px`;
+      }
+    }
+
+    cell.body.dataset.align = column.alignment ?? 'start';
+    if (style?.lineGap !== undefined)
+      cell.body.style.rowGap = `${style.lineGap}px`;
+    cell.primaryLine.style.cssText = '';
+    cell.primaryLine.style.color = tone(column.tone, 'primary');
+    if (style?.titleBadgeGap !== undefined)
+      cell.primaryLine.style.gap = `${style.titleBadgeGap}px`;
+    cell.primary.style.cssText = '';
+    cell.primary.textContent = column.text;
+    applyValueSegments(
+      cell.primary,
+      column.textSegments,
+      style?.columns?.fontSize ?? 14,
+      style?.columns?.lineHeight ?? 20,
+      fontWeight(style?.columns?.fontWeight, 500)
+    );
+    if (style?.columns) primitives.textStyle(cell.primary, style.columns);
+    const leadingBadge = column.webLeadingBadge;
+    cell.leadingBadge.hidden = !leadingBadge;
+    cell.leadingBadge.style.cssText = '';
+    cell.leadingBadge.textContent = leadingBadge?.text ?? '';
+    if (leadingBadge) {
+      // The line spans the column so the badge cap is a share of the column
+      // rather than of the line's own content; justifyContent then carries
+      // the column alignment the shrink-to-fit line got from its cell.
+      cell.primaryLine.style.alignSelf = 'stretch';
+      cell.primaryLine.style.justifyContent =
+        column.alignment === 'end'
+          ? 'flex-end'
+          : column.alignment === 'center'
+          ? 'center'
+          : 'flex-start';
+      cell.primaryLine.style.gap = '8px';
+      // A long label truncates at half the column; the primary text keeps the
+      // rest and truncates after it, so neither can leave the column.
+      cell.leadingBadge.style.display = 'block';
+      cell.leadingBadge.style.boxSizing = 'border-box';
+      cell.leadingBadge.style.flexShrink = '0';
+      cell.leadingBadge.style.maxWidth = '50%';
+      cell.leadingBadge.style.overflow = 'hidden';
+      cell.leadingBadge.style.textOverflow = 'ellipsis';
+      cell.leadingBadge.style.whiteSpace = 'nowrap';
+      cell.leadingBadge.style.padding = '2px 6px';
+      cell.leadingBadge.style.borderRadius = '4px';
+      cell.leadingBadge.style.fontSize = '12px';
+      cell.leadingBadge.style.lineHeight = '16px';
+      cell.leadingBadge.style.fontWeight = '400';
+      cell.leadingBadge.style.fontFamily = 'var(--nl-font-regular)';
+      cell.leadingBadge.style.color = leadingBadge.textColor;
+      cell.leadingBadge.style.backgroundColor = leadingBadge.backgroundColor;
+      cell.leadingBadge.style.pointerEvents = 'none';
+      cell.primary.style.minWidth = '0';
+      cell.primary.style.overflow = 'hidden';
+      cell.primary.style.textOverflow = 'ellipsis';
+      cell.primary.style.whiteSpace = 'nowrap';
+    }
+    cell.titleIcons.replaceChildren();
+    if (column.titleIcon || column.secondaryTitleIcon) {
+      cell.primary.style.minWidth = '0';
+      cell.primary.style.overflow = 'hidden';
+      cell.primary.style.textOverflow = 'ellipsis';
+      cell.primary.style.whiteSpace = 'nowrap';
+      [column.titleIcon, column.secondaryTitleIcon]
+        .filter((icon): icon is NonNullable<typeof icon> => icon !== undefined)
+        .forEach((descriptor) => {
+          const icon = primitives.iconAction(
+            descriptor.name,
+            undefined,
+            undefined,
+            descriptor.tintColor
+          );
+          icon.className = 'ok-native-list-identity-title-icon';
+          if (descriptor.hoverActionKey) {
+            setData(icon, 'nativeListHoverAction', descriptor.hoverActionKey);
+            setData(icon, 'nativeListIconHelp', true);
+            markActionAnchorSource(icon, 'leadingAction');
+          }
+          if (descriptor.accessibilityLabel)
+            icon.setAttribute('aria-label', descriptor.accessibilityLabel);
+          else icon.setAttribute('aria-hidden', 'true');
+          cell.titleIcons.appendChild(icon);
+        });
+    }
+    cell.badges.replaceChildren();
+    cell.badges.style.display = 'contents';
+    if (column.key === 'asset')
+      row.badges?.forEach((badge) => {
+        const label = tagSlot(
+          createElement(
+            body.ownerDocument,
+            'span',
+            'ok-native-list-badge',
+            badge.text
+          ),
+          'badge'
+        );
+        label.dataset.tone = badge.tone ?? '';
+        cell.badges.appendChild(label);
+      });
+    // Legacy Web layout: secondary leading text sits inline before the primary
+    // text; secondary text is a direct line below it, toned by secondaryTone.
+    const secondaryText = column.secondaryTextSegments?.length
+      ? column.secondaryTextSegments.map((segment) => segment.text).join('')
+      : column.secondaryText;
+    cell.secondaryLine.style.display = secondaryText ? 'contents' : 'none';
+    [column.secondaryLeadingText, secondaryText].forEach((text, slot) => {
+      const label = cell.secondary[slot]!;
+      label.hidden = !text;
+      if (!text) label.remove();
+      else if (slot === 0) cell.primaryLine.insertBefore(label, cell.primary);
+      else cell.secondaryLine.appendChild(label);
+      label.style.cssText = '';
+      label.textContent = text ?? '';
+      if (slot === 1) {
+        applyValueSegments(
+          label,
+          column.secondaryTextSegments,
+          style?.columnSecondary?.fontSize ?? 12,
+          style?.columnSecondary?.lineHeight ?? 16,
+          fontWeight(style?.columnSecondary?.fontWeight, 400)
+        );
+      }
+      if (slot === 1)
+        label.style.color = tone(column.secondaryTone, 'secondary');
+      if (style?.columnSecondary)
+        primitives.textStyle(label, style.columnSecondary);
+    });
+  });
+  body.appendChild(v.trailing);
+}
+function create(document: Document, row: DataRow, primitives: RowPrimitives) {
+  const body = createElement(
+    document,
+    'div',
+    'ok-native-list-row ok-native-list-data'
+  );
+  body.dataset.nlRenderer = 'dataRow';
+  const index = tagSlot(
+    createElement(document, 'span', 'ok-native-list-index'),
+    'index'
+  );
+  const favorite = createElement(document, 'span', 'ok-native-list-favorite');
+  const controls = createElement(document, 'span');
+  const trailing = createElement(
+    document,
+    'span',
+    'ok-native-list-accessories'
+  );
+  body.append(controls, index, favorite);
+  const columns = Array.from({ length: 4 }, () => {
+    const cell = createElement(document, 'span', 'ok-native-list-data-cell');
+    const primaryLine = createElement(
+      document,
+      'span',
+      'ok-native-list-data-primary'
+    );
+    const primary = tagSlot(createElement(document, 'span'), 'columns');
+    const leadingBadge = createElement(
+      document,
+      'span',
+      'ok-native-list-data-leading-badge'
+    );
+    leadingBadge.hidden = true;
+    const titleIcons = createElement(document, 'span');
+    titleIcons.style.display = 'contents';
+    const badges = createElement(document, 'span');
+    primaryLine.append(leadingBadge, primary, titleIcons, badges);
+    const secondaryLine = createElement(
+      document,
+      'span',
+      'ok-native-list-data-secondary-line'
+    );
+    const secondary = Array.from({ length: 2 }, () =>
+      tagSlot(
+        createElement(document, 'span', 'ok-native-list-secondary'),
+        'columnSecondary'
+      )
+    );
+    secondaryLine.append(...secondary);
+    cell.append(primaryLine, secondaryLine);
+    body.appendChild(cell);
+    return {
+      body: cell,
+      primaryLine,
+      primary,
+      leadingBadge,
+      titleIcons,
+      badges,
+      secondaryLine,
+      secondary,
+    };
+  });
+  body.appendChild(trailing);
+  views.set(body, {
+    favorite,
+    index,
+    controls,
+    trailing,
+    columns,
+    visualKey: '',
+    primitives,
+  });
+  bind(body, row, primitives);
+  return body;
+}
+function recycle(body: HTMLElement) {
+  const v = views.get(body);
+  if (!v) return;
+  if (v.visual) {
+    v.primitives.dispose(v.visual);
+    v.visual.remove();
+  }
+  v.visual = undefined;
+  v.visualStyle = undefined;
+  v.visualKey = '';
+  v.controls.replaceChildren();
+  v.trailing.replaceChildren();
+}
+export const dataRowRenderer = {
+  key: 'dataRow' as const,
+  create,
+  bind,
+  recycle,
+  // Legacy presets: table rows without secondary text are 8 units shorter.
+  measure: (row: DataRow, _width: number, layout?: string) => {
+    const secondary = row.columns.some((column) =>
+      column.secondaryTextSegments?.length
+        ? column.secondaryTextSegments.some(
+            (segment) => segment.text.length > 0
+          )
+        : !!column.secondaryText
+    );
+    return (secondary ? 60 : 56) + (layout === 'table' && !secondary ? -8 : 0);
+  },
+  measureRendered: (_body: HTMLElement, _row: DataRow): number | undefined =>
+    undefined,
+};

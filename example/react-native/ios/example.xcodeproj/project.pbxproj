@@ -130,6 +130,7 @@
 				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
 				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
 				29BB6ACFF3EC3627CA614864 /* [CP-User] Bundle TradingView offline chart assets */,
+				1DB816C3DC674D4E589B59E2 /* [CP-User] Bundle SDK icon fixtures */,
 			);
 			buildRules = (
 			);
@@ -217,6 +218,16 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-example/Pods-example-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		1DB816C3DC674D4E589B59E2 /* [CP-User] Bundle SDK icon fixtures */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "[CP-User] Bundle SDK icon fixtures";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "sh \"${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle\"";
 		};
 		29BB6ACFF3EC3627CA614864 /* [CP-User] Bundle TradingView offline chart assets */ = {
 			isa = PBXShellScriptBuildPhase;

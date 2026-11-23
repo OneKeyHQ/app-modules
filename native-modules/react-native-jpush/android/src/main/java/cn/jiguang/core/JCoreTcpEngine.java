@@ -1,0 +1,1650 @@
+package cn.jiguang.core;
+
+import android.content.Context;
+import android.os.Bundle;
+import cn.jiguang.core.JCoreStorage.PushResumeClaim;
+import cn.jiguang.plugins.push.common.JLogger;
+import cn.jpush.android.api.JPushInterface;
+import cn.jpush.android.local.ActionHelper;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public final class JCoreTcpEngine {
+    public interface RequestCallback {
+        void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode);
+    }
+
+    private static final class QueuedRequest {
+        final int command;
+        final int version;
+        final long rid;
+        final byte[] body;
+        final long timeoutMs;
+        final int maxRetries;
+        final RequestCallback callback;
+        volatile Attempt owner;
+        final long policyGeneration;
+        final String configuration;
+        final PushResumeClaim resumeClaim;
+        final java.util.concurrent.atomic.AtomicBoolean completed = new java.util.concurrent.atomic.AtomicBoolean();
+
+        QueuedRequest(
+            int command,
+            int version,
+            long rid,
+            byte[] body,
+            long timeoutMs,
+            int maxRetries,
+            RequestCallback callback,
+            long policyGeneration,
+            String configuration,
+            PushResumeClaim resumeClaim
+        ) {
+            this.command = command;
+            this.version = version;
+            this.rid = rid;
+            this.body = body != null ? body.clone() : new byte[0];
+            this.timeoutMs = timeoutMs > 0L ? timeoutMs : 5000L;
+            this.maxRetries = Math.max(0, maxRetries);
+            this.callback = callback;
+            this.policyGeneration = policyGeneration;
+            this.configuration = configuration;
+            this.resumeClaim = resumeClaim;
+        }
+        void complete(JCoreWireCodec.DecodedFrame frame, int code) {
+            if (code == 0 && (owner == null || !configuration.equals(owner.configuration) || !INSTANCE.owns(owner, null)
+                || policyGeneration != JCoreStorage.getContentGeneration() || !JCoreStorage.isCollectionAuth(null))) {
+                frame = null;
+                code = JPushInterface.ErrorCode.TIMEOUT;
+            }
+            if (completed.compareAndSet(false, true) && callback != null) callback.onResult(frame, code);
+        }
+    }
+
+    private static final class Attempt {
+        final long generation;
+        final CountDownLatch latch;
+        final String configuration;
+        volatile Socket socket;
+        volatile OutputStream output;
+        final Object writerLock = new Object();
+        final AtomicBoolean heartbeatProbePending = new AtomicBoolean();
+        boolean stopScheduled;
+        boolean requestsReady;
+        QueuedRequest pendingResume;
+        Attempt(long generation, CountDownLatch latch, String configuration) {
+            this.generation = generation; this.latch = latch; this.configuration = configuration;
+        }
+    }
+
+    private static final class ResponseSlot {
+        final CountDownLatch latch = new CountDownLatch(1);
+        volatile JCoreWireCodec.DecodedFrame response;
+        final int command;
+        final Attempt owner;
+        final Socket socket;
+        private boolean completed;
+        ResponseSlot(Attempt owner, Socket socket, int command) { this.owner = owner; this.socket = socket; this.command = command; }
+
+        synchronized void complete(JCoreWireCodec.DecodedFrame frame) {
+            if (completed) return;
+            completed = true;
+            this.response = frame;
+            this.latch.countDown();
+        }
+    }
+
+    private static final JCoreTcpEngine INSTANCE = new JCoreTcpEngine();
+    private static final int MAX_QUEUED_ORDINARY_REQUESTS = 128;
+    private static final long STOP_CONTROL_GRACE_MS = 200L;
+    // Only the captured final stop control may send after local ownership is disabled.
+    private static final long STOP_CONTROL_POLICY = Long.MIN_VALUE;
+    private static final String DEFAULT_HOST = "im64.jpush.cn";
+    private static final int DEFAULT_PORT = 7000;
+    private static final String SIS_URL = "https://tsis.jpush.cn/v3/srv";
+    private static final String DEFAULT_REPORT_URL = "https://stats.jpush.cn/v3/report";
+    private static final String SIS_RSA_PUBLIC_KEY =
+        "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCi0v4VEUhOdfIEfFCrPC72pcDsQF/"
+        + "luTmr4q34NY0EZYGKzfQuTrUAm916P52HCgF+342gjZ/Nvijts5543qYNyoLvgtu4NRcHJmuGI/"
+        + "w7qifhfsivYeoEj9wYphXOyB9HUjzwn1BtAih+1RyUrcErCi249yabUOIKQygPZ9OXXQIDAQAB";
+    private static final String SIS_AES_IV = "0102030405060708";
+
+    private final ExecutorService ioExecutor = Executors.newCachedThreadPool(new ThreadFactory() {
+        private int count = 0;
+
+        @Override
+        public synchronized Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "jcore-clean-net-" + (++count));
+            t.setDaemon(true);
+            return t;
+        }
+    });
+
+    private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
+        new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "jcore-clean-heartbeat");
+                t.setDaemon(true);
+                return t;
+            }
+        }
+    );
+
+    private final ConcurrentHashMap<Long, ResponseSlot> pendingRequests = new ConcurrentHashMap<Long, ResponseSlot>();
+    private final Queue<QueuedRequest> preLoginQueue = new ConcurrentLinkedQueue<QueuedRequest>();
+    private final List<String> candidateEndpoints = new CopyOnWriteArrayList<String>();
+    private final List<JCoreWireCodec.CtrlCommand> receivedCtrlCommands =
+        new CopyOnWriteArrayList<JCoreWireCodec.CtrlCommand>();
+    private final Object socketLock = new Object();
+
+    private volatile Attempt activeAttempt;
+    private volatile String terminalConfiguration = "";
+    private Object drainingToken;
+    private volatile boolean started = false;
+    private volatile boolean loggedIn = false;
+    private volatile boolean autoReconnectEnabled = true;
+    private volatile long reconnectBaseDelayMs = 3000L;
+    private volatile long heartbeatIntervalMs = 290000L;
+    private volatile ScheduledFuture<?> activeHeartbeatFuture;
+    private volatile int reconnectAttempt = 0;
+    private volatile long connectionGeneration = 0L;
+    private volatile int sessionId = 1;
+    private volatile String customHost = "";
+    private volatile int customPort = 0;
+    private volatile String customReportUrl = "";
+    private volatile String customSisUrl = "";
+    private volatile String defaultSisUdpHost = "s.jpush.cn";
+    private volatile int defaultSisUdpPort = 19000;
+    private volatile long defaultRequestTimeoutMs = 5000L;
+    private volatile boolean requireServerAckForOperations = false;
+    private volatile boolean testConnectionEnabled = false;
+    private volatile Socket activeSocket;
+    private volatile OutputStream activeOutput;
+    private volatile CountDownLatch handshakeLatch = new CountDownLatch(1);
+
+    private JCoreTcpEngine() {
+    }
+
+    public static JCoreTcpEngine getInstance() {
+        return INSTANCE;
+    }
+
+    public void setTestConnectionEnabled(boolean enabled) {
+        this.testConnectionEnabled = enabled;
+    }
+
+    public void setAutoReconnectEnabled(boolean enabled) {
+        this.autoReconnectEnabled = enabled;
+    }
+
+    public boolean isAutoReconnectEnabled() {
+        return autoReconnectEnabled;
+    }
+
+    public void setReconnectBaseDelayMs(long baseDelayMs) {
+        if (baseDelayMs > 0L) {
+            this.reconnectBaseDelayMs = baseDelayMs;
+        }
+    }
+
+    public long getReconnectBaseDelayMs() {
+        return reconnectBaseDelayMs;
+    }
+
+    public void setHeartbeatIntervalMs(long intervalMs) {
+        if (intervalMs > 0L) {
+            this.heartbeatIntervalMs = intervalMs;
+        }
+    }
+
+    public long getHeartbeatIntervalMs() {
+        return heartbeatIntervalMs;
+    }
+
+    private void cancelHeartbeatTimer() {
+        ScheduledFuture<?> future = this.activeHeartbeatFuture;
+        this.activeHeartbeatFuture = null;
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
+
+    private synchronized void startHeartbeatTimer(final Context context, final Socket targetSocket, final Attempt owner) {
+        if (!owns(owner, context) || activeSocket != targetSocket) return;
+        cancelHeartbeatTimer();
+        long interval = this.heartbeatIntervalMs > 0L ? this.heartbeatIntervalMs : 290000L;
+        this.activeHeartbeatFuture = heartbeatExecutor.scheduleWithFixedDelay(
+            new Runnable() {
+                @Override
+                public void run() {
+                    if (!loggedIn || activeSocket != targetSocket || targetSocket == null || targetSocket.isClosed()) {
+                        return;
+                    }
+                    if (!owner.heartbeatProbePending.compareAndSet(false, true)) return;
+                    ioExecutor.execute(() -> {
+                        try {
+                            if (!owns(owner, context)) return;
+                            long currentUid = JCoreStorage.getUid(context);
+                            byte[] hbPayload = JCoreWireCodec.buildHeartbeatPayload(JCoreStorage.isPushStopped(context));
+                            JCoreWireCodec.DecodedFrame ack = sendRequestOnSocket(
+                                owner,
+                                JCoreWireCodec.CMD_HEARTBEAT,
+                                JCoreWireCodec.VER_HEARTBEAT,
+                                sessionId,
+                                currentUid,
+                                hbPayload,
+                                defaultRequestTimeoutMs
+                            );
+                            if (ack == null) {
+                                boolean shouldReconnect = false;
+                                synchronized (JCoreTcpEngine.this) {
+                                    if (owns(owner, context) && activeSocket == targetSocket && loggedIn) {
+                                        closeOwnedSocket(owner);
+                                        JCoreStorage.setConnected(context, false);
+                                        shouldReconnect = true;
+                                    }
+                                }
+                                if (shouldReconnect) {
+                                    JLogger.w("TCP heartbeat timed out, scheduling reconnect");
+                                    scheduleReconnect(context, owner);
+                                }
+                            }
+                        } catch (Throwable ignored) {
+                        } finally {
+                            owner.heartbeatProbePending.set(false);
+                        }
+                    });
+                }
+            },
+            interval,
+            interval,
+            TimeUnit.MILLISECONDS
+        );
+    }
+
+    public int getReconnectAttempt() {
+        return reconnectAttempt;
+    }
+
+    public static long computeReconnectDelayMs(int attempt) {
+        return computeReconnectDelayMs(attempt, 3000L);
+    }
+
+    public static long computeReconnectDelayMs(int attempt, long baseDelayMs) {
+        int cappedShift = Math.max(0, Math.min(attempt, 6));
+        long effectiveBase = baseDelayMs > 0L ? baseDelayMs : 3000L;
+        long delay = effectiveBase * (1L << cappedShift);
+        return Math.min(delay, 120000L);
+    }
+
+    public void setDefaultRequestTimeoutMs(long timeoutMs) {
+        if (timeoutMs > 0L) {
+            this.defaultRequestTimeoutMs = timeoutMs;
+        }
+    }
+
+    public long getDefaultRequestTimeoutMs() {
+        return defaultRequestTimeoutMs;
+    }
+
+    public void setRequireServerAckForOperations(boolean require) {
+        this.requireServerAckForOperations = require;
+    }
+
+    public boolean isRequireServerAckForOperations() {
+        return requireServerAckForOperations;
+    }
+
+    public void setCustomReportUrl(String url) {
+        this.customReportUrl = url != null ? url.trim() : "";
+    }
+
+    public String getCustomReportUrl() {
+        return customReportUrl;
+    }
+
+    public void setCustomSisUrl(String url) {
+        this.customSisUrl = url != null ? url.trim() : "";
+    }
+
+    public String getCustomSisUrl() {
+        return customSisUrl;
+    }
+
+    public void setDefaultSisUdpEndpoint(String host, int port) {
+        this.defaultSisUdpHost = (host != null && !host.trim().isEmpty()) ? host.trim() : "s.jpush.cn";
+        this.defaultSisUdpPort = port > 0 ? port : 19000;
+    }
+
+    public List<JCoreWireCodec.CtrlCommand> getReceivedCtrlCommands() {
+        return new ArrayList<JCoreWireCodec.CtrlCommand>(receivedCtrlCommands);
+    }
+
+    public void clearReceivedCtrlCommands() {
+        receivedCtrlCommands.clear();
+    }
+
+    public synchronized void setCandidateEndpoints(List<String> ipPorts) {
+        this.candidateEndpoints.clear();
+        if (ipPorts != null) {
+            for (String item : ipPorts) {
+                if (item != null && !item.trim().isEmpty()) {
+                    this.candidateEndpoints.add(item.trim());
+                }
+            }
+        }
+        if (!this.candidateEndpoints.isEmpty()) {
+            this.testConnectionEnabled = true;
+            String first = this.candidateEndpoints.get(0);
+            String[] hp = splitHostPort(first);
+            if (hp != null) {
+                this.customHost = hp[0];
+                this.customPort = Integer.parseInt(hp[1]);
+            }
+        }
+        closeSocket();
+        this.started = false;
+        this.loggedIn = false;
+        this.handshakeLatch = new CountDownLatch(1);
+    }
+
+    public synchronized void setCustomEndpoint(String host, int port) {
+        this.customHost = host != null ? host.trim() : "";
+        this.customPort = port;
+        this.candidateEndpoints.clear();
+        if (!this.customHost.isEmpty() && port > 0) {
+            this.testConnectionEnabled = true;
+            this.candidateEndpoints.add(this.customHost + ":" + port);
+        }
+        closeSocket();
+        this.started = false;
+        this.loggedIn = false;
+        this.handshakeLatch = new CountDownLatch(1);
+    }
+
+    public String getCustomHost() {
+        return customHost;
+    }
+
+    public int getCustomPort() {
+        return customPort;
+    }
+
+    public int getSessionId() {
+        return sessionId;
+    }
+
+    public boolean isLoggedIn() {
+        return loggedIn;
+    }
+
+    public int getPreLoginQueueSize() {
+        return preLoginQueue.size();
+    }
+
+    public boolean awaitHandshake(long timeoutMs) {
+        try {
+            return handshakeLatch.await(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    public synchronized void closeSocket() {
+        closeSocket(null, false);
+    }
+
+    private synchronized void closeSocket(Context context, boolean preserveUnboundRequests) {
+        this.connectionGeneration++;
+        drainingToken = null;
+        releasePendingPushResumeLocked(context, activeAttempt);
+        activeAttempt = null;
+        cancelHeartbeatTimer();
+        synchronized (socketLock) {
+            if (activeSocket != null) {
+                try {
+                    activeSocket.close();
+                } catch (Throwable ignored) {
+                }
+                activeSocket = null;
+                activeOutput = null;
+            }
+        }
+        for (ResponseSlot slot : pendingRequests.values()) {
+            slot.complete(null);
+        }
+        pendingRequests.clear();
+        loggedIn = false;
+        JCoreStorage.setConnected(null, false);
+        String configuration = preserveUnboundRequests ? configurationIdentity(context) : "";
+        long policyGeneration = JCoreStorage.getContentGeneration();
+        boolean mayPreserve = preserveUnboundRequests && JCoreStorage.isCollectionAuth(context)
+            && !JCoreStorage.isPushStopped(context) && !terminalConfiguration.equals(configuration);
+        List<QueuedRequest> retained = new ArrayList<QueuedRequest>();
+        QueuedRequest queued;
+        while ((queued = preLoginQueue.poll()) != null) {
+            if (mayPreserve && queued.owner == null && !queued.completed.get()
+                && queued.policyGeneration == policyGeneration && queued.configuration.equals(configuration)) {
+                retained.add(queued);
+            } else {
+                final QueuedRequest canceled = queued;
+                ioExecutor.execute(() -> canceled.complete(null, JPushInterface.ErrorCode.TIMEOUT));
+            }
+        }
+        preLoginQueue.addAll(retained);
+    }
+
+    public void stop(Context context) {
+        stop(context, false);
+    }
+
+    public void stopPush(Context context) {
+        stop(context, true);
+    }
+
+    private void stop(Context context, boolean disablePush) {
+        final Attempt owner;
+        final Socket socket;
+        final long uid;
+        final int sid;
+        List<QueuedRequest> canceled;
+        synchronized (this) {
+            if (disablePush) JCoreStorage.setPushStopped(context, true);
+            owner = activeAttempt;
+            if (owner != null && owner.stopScheduled && JCoreStorage.isPushStopped(context)) return;
+            if (owner == null || !loggedIn || activeSocket == null || !JCoreStorage.isPushStopped(context)) {
+                closeSocket();
+                started = false;
+                return;
+            }
+            owner.stopScheduled = true;
+            drainingToken = null;
+            releasePendingPushResumeLocked(context, owner);
+            socket = activeSocket;
+            uid = JCoreStorage.getUid(context);
+            sid = sessionId;
+            started = false;
+            loggedIn = false;
+            cancelHeartbeatTimer();
+            JCoreStorage.setConnected(context, false);
+            for (java.util.Map.Entry<Long, ResponseSlot> entry : pendingRequests.entrySet()) {
+                ResponseSlot slot = entry.getValue();
+                if (slot.owner == owner && pendingRequests.remove(entry.getKey(), slot)) slot.complete(null);
+            }
+            canceled = new ArrayList<QueuedRequest>(preLoginQueue);
+            preLoginQueue.clear();
+        }
+        final ScheduledFuture<?> deadline = heartbeatExecutor.schedule(() -> closeOwnedSocket(owner),
+            STOP_CONTROL_GRACE_MS, TimeUnit.MILLISECONDS);
+        ioExecutor.execute(() -> {
+            try {
+                sendFrameOwned(owner, socket, JCoreWireCodec.CMD_PUSH_CTRL, JCoreWireCodec.VER_PUSH_CTRL,
+                    JCoreStorage.nextRid(), sid, uid, JCoreWireCodec.buildPushControlPayload(true), STOP_CONTROL_POLICY);
+            } finally {
+                closeOwnedSocket(owner);
+                deadline.cancel(false);
+            }
+        });
+        for (QueuedRequest req : canceled) ioExecutor.execute(() -> req.complete(null, JPushInterface.ErrorCode.TIMEOUT));
+    }
+
+    private String configurationIdentity(Context context) {
+        Context app = JCoreStorage.getAppContext(context);
+        return JCoreStorage.getAppKey(context) + ":" + (app != null ? app.getPackageName() : "");
+    }
+
+    private boolean owns(Attempt owner, Context context) {
+        return owner != null && activeAttempt == owner && owner.generation == connectionGeneration
+            && started && !JCoreStorage.isPushStopped(context) && owner.configuration.equals(configurationIdentity(context));
+    }
+
+    private synchronized Attempt beginAttempt(Context context) {
+        if (JCoreStorage.isPushStopped(context) || terminalConfiguration.equals(configurationIdentity(context))) return null;
+        if (!terminalConfiguration.isEmpty()) terminalConfiguration = "";
+        drainingToken = null;
+        if (activeAttempt != null) closeOwnedSocket(activeAttempt);
+        started = true;
+        handshakeLatch = new CountDownLatch(1);
+        Attempt owner = new Attempt(++connectionGeneration, handshakeLatch, configurationIdentity(context));
+        activeAttempt = owner;
+        return owner;
+    }
+
+    public void start(final Context context) {
+        JCoreStorage.setAppContext(context);
+        final Attempt owner;
+        synchronized (this) {
+            if (started && owns(activeAttempt, context)) return;
+            owner = beginAttempt(context);
+        }
+        if (owner != null) ioExecutor.execute(() -> connectAndHandshake(context, owner));
+    }
+
+    public void triggerReconnectNow(final Context context) {
+        final Attempt owner;
+        synchronized (this) {
+            closeSocket();
+            owner = beginAttempt(context);
+        }
+        if (owner != null) ioExecutor.execute(() -> connectAndHandshake(context, owner));
+    }
+
+    public void onNetworkConnected(final Context context) {
+        final Attempt owner;
+        synchronized (this) {
+            reconnectAttempt = 0;
+            if (loggedIn) return;
+            closeSocket(context, true);
+            owner = beginAttempt(context);
+        }
+        if (owner != null) ioExecutor.execute(() -> connectAndHandshake(context, owner));
+    }
+
+    public void executeAsync(Runnable task) {
+        if (task != null) {
+            ioExecutor.execute(task);
+        }
+    }
+
+    private boolean isPlainSocketEndpoint(String host, int port) {
+        if (testConnectionEnabled) {
+            return true;
+        }
+        if (port != 443) {
+            // Jiguang TCP long-connection ports (7000-7009 / 8000-8009) speak 24B/20B AES/SM4 frames directly over TCP.
+            return true;
+        }
+        if (host == null) {
+            return false;
+        }
+        return "127.0.0.1".equals(host) || "localhost".equalsIgnoreCase(host) || "::1".equals(host);
+    }
+
+    private static String[] splitHostPort(String ipPort) {
+        if (ipPort == null) {
+            return null;
+        }
+        String trimmed = ipPort.trim();
+        int colon = trimmed.lastIndexOf(':');
+        if (colon <= 0 || colon + 1 >= trimmed.length()) {
+            return null;
+        }
+        String host = trimmed.substring(0, colon).trim();
+        String portStr = trimmed.substring(colon + 1).trim();
+        try {
+            int port = Integer.parseInt(portStr);
+            if (port > 0 && port <= 65535) {
+                return new String[] { host, String.valueOf(port) };
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return null;
+    }
+
+    private List<String> buildOrderedCandidateList(Context context) {
+        Set<String> ordered = new LinkedHashSet<String>();
+        for (String ep : candidateEndpoints) {
+            if (ep != null && !ep.isEmpty()) {
+                ordered.add(ep);
+            }
+        }
+        if (customHost != null && !customHost.isEmpty() && customPort > 0) {
+            ordered.add(customHost + ":" + customPort);
+        }
+        String lastGood = JCoreStorage.getLastGoodIp(context);
+        if (lastGood != null && !lastGood.isEmpty() && ordered.isEmpty()) {
+            ordered.add(lastGood);
+        }
+        for (String s : JCoreStorage.getSisIps(context)) {
+            ordered.add(s);
+        }
+        for (String s : JCoreStorage.getSisSslIps(context)) {
+            ordered.add(s);
+        }
+        List<String> failedIps = JCoreStorage.getFailedIps(context);
+        if (failedIps == null || failedIps.isEmpty()) {
+            return new ArrayList<String>(ordered);
+        }
+        List<String> healthy = new ArrayList<String>();
+        List<String> failed = new ArrayList<String>();
+        for (String ep : ordered) {
+            if (failedIps.contains(ep)) {
+                failed.add(ep);
+            } else {
+                healthy.add(ep);
+            }
+        }
+        healthy.addAll(failed);
+        return healthy;
+    }
+
+    private boolean hasHealthyCandidate(Context context, List<String> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return false;
+        }
+        List<String> failedIps = JCoreStorage.getFailedIps(context);
+        if (failedIps == null || failedIps.isEmpty()) {
+            return true;
+        }
+        for (String ep : candidates) {
+            if (ep != null && !ep.isEmpty() && !failedIps.contains(ep)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void connectAndHandshake(final Context context) {
+        Attempt owner;
+        synchronized (this) { owner = beginAttempt(context); }
+        if (owner != null) connectAndHandshake(context, owner);
+    }
+
+    private void scheduleReconnect(final Context context, final Attempt previous) {
+        final long delay;
+        synchronized (this) {
+            if (!owns(previous, context) || !terminalConfiguration.isEmpty()) return;
+            if (!autoReconnectEnabled) { reconnectAttempt++; return; }
+            delay = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
+        }
+        heartbeatExecutor.schedule(() -> {
+            final Attempt next;
+            synchronized (JCoreTcpEngine.this) {
+                if (!owns(previous, context) || loggedIn) return;
+                next = beginAttempt(context);
+            }
+            if (next != null) ioExecutor.execute(() -> connectAndHandshake(context, next));
+        }, delay, TimeUnit.MILLISECONDS);
+    }
+
+    private void closeOwnedSocket(Attempt owner) {
+        synchronized (this) {
+            if (activeAttempt != owner) {
+                if (owner.socket != null) try { owner.socket.close(); } catch (Exception ignored) {}
+                return;
+            }
+            drainingToken = null;
+            owner.requestsReady = false;
+            releasePendingPushResumeLocked(null, owner);
+            synchronized (socketLock) {
+                if (activeSocket == owner.socket) {
+                    if (activeSocket != null) try { activeSocket.close(); } catch (Exception ignored) {}
+                    activeSocket = null;
+                    activeOutput = null;
+                    loggedIn = false;
+                    JCoreStorage.setConnected(null, false);
+                    cancelHeartbeatTimer();
+                }
+            }
+            for (java.util.Map.Entry<Long, ResponseSlot> entry : pendingRequests.entrySet()) {
+                ResponseSlot slot = entry.getValue();
+                if (slot.owner == owner && pendingRequests.remove(entry.getKey(), slot)) slot.complete(null);
+            }
+        }
+    }
+
+    private void connectAndHandshake(final Context context, final Attempt owner) {
+        try {
+            synchronized (this) { if (!owns(owner, context)) return; }
+            List<String> candidates = buildOrderedCandidateList(context);
+            if (customPort <= 0 && candidateEndpoints.isEmpty()) {
+                if (!hasHealthyCandidate(context, candidates)) {
+                    String[] resolved = resolveSisEndpoint(context, owner);
+                    if (!owns(owner, context)) return;
+                    candidates = buildOrderedCandidateList(context);
+                    if (resolved != null && resolved.length == 2) {
+                        String endpoint = resolved[0] + ":" + resolved[1];
+                        if (!candidates.contains(endpoint)) candidates.add(0, endpoint);
+                    }
+                }
+                if (!hasHealthyCandidate(context, candidates)) candidates.add(DEFAULT_HOST + ":" + DEFAULT_PORT);
+            }
+            for (String endpoint : candidates) {
+                if (!owns(owner, context)) return;
+                String[] hp = splitHostPort(endpoint);
+                if (hp == null) continue;
+                if (tryConnectAndHandshakeEndpoint(context, hp[0], Integer.parseInt(hp[1]), owner)) {
+                    synchronized (this) { if (owns(owner, context)) JCoreStorage.setLastGoodIp(context, endpoint); }
+                    return;
+                }
+                if (!owns(owner, context) || !terminalConfiguration.isEmpty()) return;
+                synchronized (this) { if (owns(owner, context)) JCoreStorage.recordFailedIp(context, endpoint); }
+            }
+            if (owns(owner, context)) {
+                synchronized (this) { if (owns(owner, context)) JCoreStorage.setConnected(context, false); }
+                scheduleReconnect(context, owner);
+            }
+        } finally { owner.latch.countDown(); }
+    }
+
+    private boolean tryConnectAndHandshakeEndpoint(final Context context, String host, int port, final Attempt owner) {
+        Socket socket = null;
+        try {
+            if (isPlainSocketEndpoint(host, port)) {
+                socket = new Socket();
+                socket.connect(new InetSocketAddress(host, port), 3000);
+                socket.setSoTimeout(10000);
+            } else {
+                socket = createVerifiedTlsSocket(host, port);
+            }
+
+            final Socket connectedSocket = socket;
+            final InputStream in = connectedSocket.getInputStream();
+            final OutputStream out = connectedSocket.getOutputStream();
+            synchronized (this) {
+                if (!owns(owner, context)) { connectedSocket.close(); return false; }
+                owner.socket = connectedSocket;
+                owner.output = out;
+                synchronized (socketLock) { activeSocket = connectedSocket; activeOutput = out; }
+            }
+
+            Thread readerThread = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    readLoop(context, connectedSocket, in, owner);
+                }
+            }, "jcore-tcp-reader");
+            readerThread.setDaemon(true);
+            readerThread.start();
+
+            String appKey = JCoreStorage.getAppKey(context);
+            if (appKey.isEmpty()) {
+                appKey = "onekey_default_appkey";
+            }
+            String channel = JCoreStorage.getChannel(context);
+            String pkgName = "so.onekey.app.wallet";
+            if (context != null) {
+                try {
+                    String p = context.getPackageName();
+                    if (p != null && !p.isEmpty()) {
+                        pkgName = p;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            String deviceId = JCoreStorage.getDeviceId(context);
+            String countryCode = JCoreStorage.getCountryCode(context);
+
+            // Registered Device Fast-Login check: skip Register (cmd=0) if already server-registered
+            boolean fastLogin = JCoreStorage.isServerRegistered(context)
+                && JCoreStorage.getUid(context) > 0L
+                && !JCoreStorage.getPassword(context).isEmpty()
+                && !JCoreStorage.getRegistrationId(context).isEmpty();
+
+            if (!fastLogin) {
+                if (!performRegisterHandshake(context, appKey, channel, pkgName, deviceId, owner)) {
+                    closeOwnedSocket(owner);
+                    return false;
+                }
+            }
+
+            long uid = JCoreStorage.getUid(context);
+            String password = JCoreStorage.getPassword(context);
+            byte[] loginBody = JCoreWireCodec.buildLoginPayload(password, appKey, deviceId, countryCode);
+            JCoreWireCodec.DecodedFrame loginFrame = sendRequestOnSocket(owner,
+                JCoreWireCodec.CMD_LOGIN,
+                JCoreWireCodec.VER_LOGIN,
+                0,
+                uid,
+                loginBody,
+                defaultRequestTimeoutMs
+            );
+            if (loginFrame == null) {
+                closeOwnedSocket(owner);
+                return false;
+            }
+            JCoreWireCodec.LoginResponse loginResp = JCoreWireCodec.parseLoginResponse(loginFrame);
+            if (loginResp == null) {
+                closeOwnedSocket(owner);
+                return false;
+            }
+
+            // Handle Login statusCode == 108 (clear registration and immediately re-register + login)
+            if (loginResp.statusCode == 108) {
+                synchronized (this) {
+                    if (!owns(owner, context)) return false;
+                    JCoreStorage.clearRegistration(context);
+                }
+                if (!performRegisterHandshake(context, appKey, channel, pkgName, deviceId, owner)) {
+                    closeOwnedSocket(owner);
+                    return false;
+                }
+                uid = JCoreStorage.getUid(context);
+                password = JCoreStorage.getPassword(context);
+                loginBody = JCoreWireCodec.buildLoginPayload(password, appKey, deviceId, countryCode);
+                loginFrame = sendRequestOnSocket(owner,
+                    JCoreWireCodec.CMD_LOGIN,
+                    JCoreWireCodec.VER_LOGIN,
+                    0,
+                    uid,
+                    loginBody,
+                    defaultRequestTimeoutMs
+                );
+                if (loginFrame == null) {
+                    closeOwnedSocket(owner);
+                    return false;
+                }
+                loginResp = JCoreWireCodec.parseLoginResponse(loginFrame);
+            } else if (loginResp.statusCode == 1012) {
+                synchronized (this) {
+                    if (!owns(owner, context)) return false;
+                    JCoreStorage.resetSisCache(context);
+                }
+                closeOwnedSocket(owner);
+                return false;
+            }
+
+            synchronized (this) {
+                if (loginResp != null && (loginResp.statusCode == 1005 || loginResp.statusCode == 1008 || loginResp.statusCode == 1009) && owns(owner, context)) {
+                    terminalConfiguration = owner.configuration;
+                    closeSocket();
+                    started = false;
+                }
+            }
+            if (loginResp == null || loginResp.statusCode != 0) {
+                JLogger.w("TCP login failed code=" + (loginResp != null ? loginResp.statusCode : -1));
+                closeOwnedSocket(owner);
+                return false;
+            }
+
+            synchronized (this) {
+                if (!owns(owner, context)) return false;
+                if (loginResp.sessionId != 0) {
+                    this.sessionId = loginResp.sessionId;
+                } else if (loginFrame.sessionId != 0) {
+                    this.sessionId = loginFrame.sessionId;
+                }
+
+                this.loggedIn = true;
+                this.reconnectAttempt = 0;
+                JCoreStorage.setConnected(context, true);
+            }
+            int idleReadTimeoutMs = (int) Math.min(
+                (long) Integer.MAX_VALUE,
+                Math.max(320000L, this.heartbeatIntervalMs + 30000L)
+            );
+            try {
+                if (!connectedSocket.isClosed()) {
+                    connectedSocket.setSoTimeout(idleReadTimeoutMs);
+                }
+            } catch (Throwable ignored) {
+            }
+            JLogger.i(
+                "TCP login success uid="
+                    + uid
+                    + " sid="
+                    + this.sessionId
+                    + " registrationId="
+                    + JCoreStorage.getRegistrationId(context)
+            );
+            if (!owns(owner, context)) return false;
+            ActionHelper.getInstance().dispatchConnectedEvent(context, true);
+
+            byte[] hbBody = JCoreWireCodec.buildHeartbeatPayload(JCoreStorage.isPushStopped(context));
+            sendRequestOnSocket(owner,
+                JCoreWireCodec.CMD_HEARTBEAT,
+                JCoreWireCodec.VER_HEARTBEAT,
+                this.sessionId,
+                uid,
+                hbBody,
+                defaultRequestTimeoutMs
+            );
+
+            synchronized (this) {
+                if (!owns(owner, context) || !loggedIn) return false;
+                owner.requestsReady = true;
+            }
+            startHeartbeatTimer(context, connectedSocket, owner);
+            sendPendingPushResume(context);
+            flushPreLoginQueue(context, owner);
+            if (owns(owner, context)) cn.jpush.android.api.JThirdPlatFormInterface.initializeFcm(context);
+            return true;
+        } catch (Throwable ignored) {
+            if (socket != null && socket != owner.socket) try { socket.close(); } catch (Exception closeError) {}
+            closeOwnedSocket(owner);
+            return false;
+        }
+    }
+
+    private boolean performRegisterHandshake(
+        Context context,
+        String appKey,
+        String channel,
+        String pkgName,
+        String deviceId,
+        Attempt owner
+    ) {
+        final int registerSeed;
+        synchronized (this) {
+            if (!owns(owner, context)) return false;
+            registerSeed = JCoreCrypto.nextRegisterSeed();
+            JCoreWireCodec.setLastRegisterSeed(registerSeed);
+        }
+        byte[] regBody = JCoreWireCodec.buildRegisterPayload(appKey, channel, pkgName, deviceId);
+        JCoreWireCodec.DecodedFrame regFrame = sendRequestOnSocket(owner,
+            JCoreWireCodec.CMD_REGISTER,
+            JCoreWireCodec.VER_REGISTER,
+            registerSeed,
+            0L,
+            regBody,
+            defaultRequestTimeoutMs
+        );
+        if (regFrame == null) {
+            return false;
+        }
+        JCoreWireCodec.RegisterResponse regResp = JCoreWireCodec.parseRegisterResponse(regFrame);
+        if (regResp == null || regResp.statusCode != 0 || regResp.uid <= 0L) {
+            synchronized (this) {
+                if (regResp != null && owns(owner, context) && (regResp.statusCode == 1005 || regResp.statusCode == 1008 || regResp.statusCode == 1009)) {
+                    terminalConfiguration = owner.configuration;
+                    closeSocket();
+                    started = false;
+                }
+            }
+            return false;
+        }
+        synchronized (this) {
+            if (!owns(owner, context)) return false;
+            JCoreStorage.updateRegistration(
+                context,
+                regResp.uid,
+                regResp.password,
+                regResp.registrationId,
+                regResp.deviceId
+            );
+            JCoreStorage.setServerRegistered(context, true);
+        }
+        if (!owns(owner, context)) return false;
+        JLogger.i("TCP register success uid=" + regResp.uid + " registrationId=" + regResp.registrationId);
+        ActionHelper.getInstance().dispatchRegisterEvent(context, regResp.registrationId);
+        return true;
+    }
+
+    private void flushPreLoginQueue(final Context context, final Attempt expectedOwner) {
+        final Object token;
+        synchronized (this) {
+            if (!owns(expectedOwner, context) || !expectedOwner.requestsReady
+                || drainingToken != null || preLoginQueue.isEmpty()) return;
+            token = new Object();
+            drainingToken = token;
+        }
+        ioExecutor.execute(() -> {
+            try {
+                while (true) {
+                    final QueuedRequest req;
+                    synchronized (JCoreTcpEngine.this) {
+                        if (drainingToken != token) return;
+                        if (!owns(expectedOwner, context) || !expectedOwner.requestsReady
+                            || (req = preLoginQueue.poll()) == null) {
+                            drainingToken = null;
+                            return;
+                        }
+                        if (req.owner == null) req.owner = expectedOwner;
+                    }
+                    try { executeQueuedRequestWithRetry(context, req, req.owner); }
+                    catch (Throwable callbackFailure) {
+                        try { req.complete(null, JPushInterface.ErrorCode.TIMEOUT); } catch (Throwable ignored) {}
+                    }
+                }
+            } finally {
+                boolean restart = false;
+                synchronized (JCoreTcpEngine.this) {
+                    if (drainingToken == token) {
+                        drainingToken = null;
+                        restart = owns(expectedOwner, context) && loggedIn && !preLoginQueue.isEmpty();
+                    }
+                }
+                if (restart) flushPreLoginQueue(context, expectedOwner);
+            }
+        });
+    }
+
+    public void enqueueOrSendRequest(final Context context, int command, int version, long rid, byte[] body,
+        long timeoutMs, int maxRetries, RequestCallback callback) {
+        final QueuedRequest req;
+        final Attempt owner;
+        boolean rejected;
+        final boolean queueFull;
+        final boolean terminal;
+        synchronized (this) {
+            req = new QueuedRequest(command, version, rid > 0L ? rid : JCoreStorage.nextRid(), body,
+                timeoutMs > 0L ? timeoutMs : defaultRequestTimeoutMs, maxRetries, callback,
+                JCoreStorage.getContentGeneration(), configurationIdentity(context), null);
+            int queueCapacity = MAX_QUEUED_ORDINARY_REQUESTS;
+            if (activeAttempt != null && activeAttempt.pendingResume != null
+                && preLoginQueue.contains(activeAttempt.pendingResume)) {
+                queueCapacity++; // The connection-owned resume has its own FIFO slot.
+            }
+            queueFull = preLoginQueue.size() >= queueCapacity;
+            terminal = terminalConfiguration.equals(configurationIdentity(context));
+            rejected = queueFull || terminal || !JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context);
+            if (!rejected) {
+                if (owns(activeAttempt, context) && activeAttempt.requestsReady) req.owner = activeAttempt;
+                preLoginQueue.offer(req);
+            }
+            owner = activeAttempt;
+        }
+        if (rejected) {
+            JLogger.w(queueFull ? "Request rejected reason=queue_full" : terminal
+                ? "Request rejected reason=configuration_terminal" : "Request rejected reason=policy_disabled");
+            req.complete(null, JPushInterface.ErrorCode.TIMEOUT);
+        } else flushPreLoginQueue(context, owner);
+    }
+
+    public void sendPendingPushResume(Context context) {
+        final Attempt owner;
+        synchronized (this) {
+            owner = activeAttempt;
+            synchronized (JCoreStorage.class) {
+                if (!owns(owner, context) || !owner.requestsReady) return;
+                if (owner.pendingResume != null) {
+                    if (JCoreStorage.isPushResumeClaimCurrent(context, owner.pendingResume.resumeClaim)) return;
+                    releasePendingPushResumeLocked(context, owner);
+                }
+                PushResumeClaim claim = JCoreStorage.claimPendingPushResume(context);
+                if (claim == null) return;
+                QueuedRequest request = new QueuedRequest(
+                    JCoreWireCodec.CMD_PUSH_CTRL, JCoreWireCodec.VER_PUSH_CTRL, JCoreStorage.nextRid(),
+                    JCoreWireCodec.buildPushControlPayload(false), defaultRequestTimeoutMs, 0,
+                    (frame, code) -> completePendingPushResume(context, owner, claim, frame, code),
+                    claim.policyGeneration, owner.configuration, claim
+                );
+                request.owner = owner;
+                owner.pendingResume = request;
+                preLoginQueue.offer(request);
+            }
+        }
+        JLogger.i("Push resume requested");
+        flushPreLoginQueue(context, owner);
+    }
+
+    private void completePendingPushResume(Context context, Attempt owner, PushResumeClaim claim,
+        JCoreWireCodec.DecodedFrame frame, int code) {
+        boolean acknowledged = frame != null && code == 0;
+        synchronized (this) {
+            if (owner.pendingResume == null || owner.pendingResume.resumeClaim != claim) return;
+            owner.pendingResume = null;
+            JCoreStorage.completePushResume(context, claim, acknowledged && owns(owner, context));
+        }
+        if (!acknowledged) JLogger.w("Push resume not acknowledged code=" + code);
+    }
+
+    private void releasePendingPushResumeLocked(Context context, Attempt owner) {
+        if (owner == null || owner.pendingResume == null) return;
+        QueuedRequest request = owner.pendingResume;
+        owner.pendingResume = null;
+        preLoginQueue.remove(request);
+        JCoreStorage.completePushResume(context, request.resumeClaim, false);
+    }
+
+    private void executeQueuedRequestWithRetry(Context context, QueuedRequest req, Attempt owner) {
+        final long uid = JCoreStorage.getUid(context);
+        final int sid = sessionId;
+        for (int attempt = 0; attempt <= req.maxRetries; attempt++) {
+            if (!owns(owner, context) || !req.configuration.equals(owner.configuration)
+                || req.policyGeneration != JCoreStorage.getContentGeneration()
+                || !JCoreStorage.isCollectionAuth(context)) break;
+            long rid = attempt == 0 ? req.rid : JCoreStorage.nextRid();
+            JCoreWireCodec.DecodedFrame response = sendRequestWithRidOnSocket(owner, req.command, req.version, rid,
+                sid, uid, req.body, req.timeoutMs, req.policyGeneration, req.resumeClaim);
+            if (response != null && owns(owner, context) && req.configuration.equals(owner.configuration)
+                && req.policyGeneration == JCoreStorage.getContentGeneration()) {
+                int code = response.statusCode;
+                if ((req.command == JCoreWireCodec.CMD_TAG_OP || req.command == JCoreWireCodec.CMD_ALIAS_OP
+                    || req.command == JCoreWireCodec.CMD_PROPERTY_OP) && response.body != null && response.body.length > 0) {
+                    code = JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(response.body), "code", code);
+                }
+                req.complete(response, code);
+                return;
+            }
+        }
+        req.complete(null, JPushInterface.ErrorCode.TIMEOUT);
+    }
+
+    private void readLoop(final Context context, Socket socket, InputStream in, Attempt owner) {
+        try {
+            while (!socket.isClosed() && owns(owner, context) && activeSocket == socket) {
+                JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readFrameFromStream(in, JCoreStorage.getUid(context));
+                if (frame == null) break;
+                if (owns(owner, context) && activeSocket == socket) handleIncomingFrame(context, frame, owner, socket);
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            boolean reconnect;
+            synchronized (this) {
+                reconnect = owns(owner, context) && activeSocket == socket && loggedIn && !socket.isClosed();
+                if (activeAttempt == owner && activeSocket == socket) {
+                    closeOwnedSocket(owner);
+                    JCoreStorage.setConnected(context, false);
+                }
+            }
+            if (reconnect) {
+                JLogger.w("TCP connection closed, scheduling reconnect");
+                scheduleReconnect(context, owner);
+            }
+        }
+    }
+
+    private void handleIncomingFrame(Context context, JCoreWireCodec.DecodedFrame frame, Attempt owner, Socket socket) {
+        if (frame.command == JCoreWireCodec.CMD_PUSH_MESSAGE) {
+            JCoreWireCodec.PushEnvelope envelope = JCoreWireCodec.parsePushMessage(frame);
+            if (envelope != null) {
+                JLogger.i(
+                    "TCP push message received msgType="
+                        + envelope.messageType
+                        + " msgId="
+                        + envelope.messageId
+                );
+                long ackRid = frame.requestId != 0L ? frame.requestId : JCoreStorage.nextRid();
+                long uid = frame.uid != 0L ? frame.uid : JCoreStorage.getUid(context);
+                byte[] ackBody = JCoreWireCodec.buildMessageAckPayload(envelope.messageType, envelope.messageId);
+                sendFrameOwned(owner, socket,
+                    JCoreWireCodec.CMD_MESSAGE_ACK,
+                    JCoreWireCodec.VER_MESSAGE_ACK,
+                    ackRid,
+                    this.sessionId,
+                    uid,
+                    ackBody
+                );
+                ActionHelper.getInstance().handleDownlinkPushMessage(
+                    context,
+                    envelope.messageType,
+                    envelope.messageId,
+                    envelope.content
+                );
+            }
+            return;
+        }
+
+        if (frame.command == JCoreWireCodec.CMD_CTRL) {
+            JCoreWireCodec.CtrlCommand ctrl = JCoreWireCodec.parseCtrlCommand(frame.body);
+            if (ctrl != null) {
+                receivedCtrlCommands.add(ctrl);
+                long ackRid = frame.requestId != 0L ? frame.requestId : JCoreStorage.nextRid();
+                long uid = frame.uid != 0L ? frame.uid : JCoreStorage.getUid(context);
+                byte[] ackBody = JCoreWireCodec.buildCtrlAckPayload(0, ctrl.requestId);
+                sendFrameOwned(owner, socket,
+                    JCoreWireCodec.CMD_CTRL,
+                    JCoreWireCodec.VER_CTRL,
+                    ackRid,
+                    this.sessionId,
+                    uid,
+                    ackBody
+                );
+            }
+            return;
+        }
+
+        ResponseSlot slot = pendingRequests.get(frame.requestId);
+        boolean genericHeartbeatAck = (frame.command == 0 && frame.version == 0) || frame.command == 19;
+        if (slot != null && slot.owner == owner && slot.socket == socket
+            && (slot.command == frame.command || (genericHeartbeatAck && slot.command == JCoreWireCodec.CMD_HEARTBEAT))
+            && pendingRequests.remove(frame.requestId, slot)) {
+            slot.complete(frame);
+            return;
+        }
+        if (frame.requestId != 0 || (!genericHeartbeatAck && frame.command != JCoreWireCodec.CMD_HEARTBEAT)) {
+            return;
+        }
+        Map.Entry<Long, ResponseSlot> heartbeat = null;
+        for (Map.Entry<Long, ResponseSlot> entry : pendingRequests.entrySet()) {
+            ResponseSlot candidate = entry.getValue();
+            if (candidate.owner != owner || candidate.socket != socket || candidate.command != JCoreWireCodec.CMD_HEARTBEAT) {
+                continue;
+            }
+            if (heartbeat != null) return;
+            heartbeat = entry;
+        }
+        if (heartbeat != null && pendingRequests.remove(heartbeat.getKey(), heartbeat.getValue())) {
+            heartbeat.getValue().complete(frame);
+        }
+    }
+
+    private boolean isBusinessCommand(int command) {
+        return command != JCoreWireCodec.CMD_REGISTER && command != JCoreWireCodec.CMD_LOGIN
+            && command != JCoreWireCodec.CMD_HEARTBEAT && command != JCoreWireCodec.CMD_MESSAGE_ACK
+            && command != JCoreWireCodec.CMD_CTRL && command != JCoreWireCodec.CMD_PUSH_CTRL;
+    }
+
+    public boolean sendFrameRaw(int command, int version, long requestId, int sid, long uid, byte[] body) {
+        Attempt owner = activeAttempt;
+        return owner != null && owner.socket != null && sendFrameOwned(owner, owner.socket, command, version, requestId, sid, uid, body);
+    }
+
+    public JCoreWireCodec.DecodedFrame sendRequest(int command, int version, byte[] body, long timeoutMs) {
+        long uid = JCoreStorage.getUid(null);
+        return sendRequestOnSocket(command, version, this.sessionId, uid, body, timeoutMs);
+    }
+
+    private JCoreWireCodec.DecodedFrame sendRequestOnSocket(int command, int version, int sid, long uid, byte[] body, long timeoutMs) {
+        return sendRequestOnSocket(activeAttempt, command, version, sid, uid, body, timeoutMs);
+    }
+
+    private JCoreWireCodec.DecodedFrame sendRequestOnSocket(Attempt owner, int command, int version, int sid, long uid, byte[] body, long timeoutMs) {
+        return sendRequestWithRidOnSocket(owner, command, version, JCoreStorage.nextRid(), sid, uid, body, timeoutMs,
+            isBusinessCommand(command) ? JCoreStorage.getContentGeneration() : -1L, null);
+    }
+
+    private JCoreWireCodec.DecodedFrame sendRequestWithRidOnSocket(Attempt owner, int command, int version, long rid,
+        int sid, long uid, byte[] body, long timeoutMs, long policyGeneration, PushResumeClaim resumeClaim) {
+        if (!owns(owner, null) || owner.socket == null) return null;
+        ResponseSlot slot = new ResponseSlot(owner, owner.socket, command);
+        pendingRequests.put(rid, slot);
+        if (!sendFrameOwned(owner, slot.socket, command, version, rid, sid, uid, body, policyGeneration, resumeClaim)) {
+            pendingRequests.remove(rid, slot);
+            return null;
+        }
+        try { slot.latch.await(timeoutMs, TimeUnit.MILLISECONDS); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        finally { pendingRequests.remove(rid, slot); }
+        return owns(owner, null) ? slot.response : null;
+    }
+
+    private boolean sendFrameOwned(Attempt owner, Socket socket, int command, int version, long rid,
+        int sid, long uid, byte[] body) {
+        return sendFrameOwned(owner, socket, command, version, rid, sid, uid, body,
+            isBusinessCommand(command) ? JCoreStorage.getContentGeneration() : -1L);
+    }
+
+    private boolean sendFrameOwned(Attempt owner, Socket socket, int command, int version, long rid,
+        int sid, long uid, byte[] body, long policyGeneration) {
+        return sendFrameOwned(owner, socket, command, version, rid, sid, uid, body, policyGeneration, null);
+    }
+
+    private boolean sendFrameOwned(Attempt owner, Socket socket, int command, int version, long rid,
+        int sid, long uid, byte[] body, long policyGeneration, PushResumeClaim resumeClaim) {
+        byte[] packet = JCoreWireCodec.encodeFrame(command, version, rid, sid, uid, body);
+        synchronized (owner.writerLock) {
+            if (resumeClaim != null && !JCoreStorage.isPushResumeClaimCurrent(null, resumeClaim)) return false;
+            final OutputStream output;
+            synchronized (socketLock) {
+                boolean stopControl = command == JCoreWireCodec.CMD_PUSH_CTRL
+                    && policyGeneration == STOP_CONTROL_POLICY && owner.stopScheduled;
+                if (activeAttempt != owner || activeSocket != socket || owner.output == null || packet.length == 0
+                    || (!stopControl && (!owns(owner, null)
+                        || (policyGeneration >= 0L && policyGeneration != JCoreStorage.getContentGeneration())))
+                    || (isBusinessCommand(command) && (!JCoreStorage.isCollectionAuth(null)
+                        || JCoreStorage.isPushStopped(null)))) return false;
+                output = owner.output;
+            }
+            try { output.write(packet); output.flush(); return true; }
+            catch (Exception ignored) { return false; }
+        }
+    }
+
+    public String[] resolveUdpSisEndpoint(Context context, String sisHost, int sisPort) {
+        return resolveUdpSisEndpoint(context, sisHost, sisPort, null);
+    }
+
+    private String[] resolveUdpSisEndpoint(Context context, String sisHost, int sisPort, Attempt owner) {
+        DatagramSocket udpSocket = null;
+        try {
+            String requestJson = JCoreWireCodec.buildSisRequestJson(
+                1,
+                JCoreStorage.getAppKey(context),
+                JCoreStorage.getUid(context),
+                "",
+                JCoreStorage.getFailedIps(context),
+                JCoreStorage.getSisCertVer(context)
+            );
+            int seed24 = JCoreCrypto.nextPositiveSeed24();
+            byte[] packetBytes = JCoreWireCodec.encodeUdpSisPacket(requestJson, seed24);
+
+            udpSocket = new DatagramSocket();
+            udpSocket.setSoTimeout(3000);
+            InetAddress address = InetAddress.getByName(sisHost);
+            DatagramPacket reqPacket = new DatagramPacket(packetBytes, packetBytes.length, address, sisPort);
+            udpSocket.send(reqPacket);
+
+            byte[] recvBuf = new byte[4096];
+            DatagramPacket respPacket = new DatagramPacket(recvBuf, recvBuf.length);
+            udpSocket.receive(respPacket);
+
+            byte[] respBytes = new byte[respPacket.getLength()];
+            System.arraycopy(recvBuf, 0, respBytes, 0, respBytes.length);
+            String decodedJson = JCoreWireCodec.decodeUdpSisPacket(respBytes);
+            if (!decodedJson.isEmpty()) {
+                synchronized (this) {
+                    if (owner != null && !owns(owner, context)) return null;
+                    JCoreStorage.saveSisConfig(context, decodedJson);
+                }
+            }
+            Set<String> ips = JCoreWireCodec.extractJsonStringArray(decodedJson, "ips");
+            if (ips.isEmpty()) {
+                ips = JCoreWireCodec.extractJsonStringArray(decodedJson, "ssl_ips");
+            }
+            if (!ips.isEmpty()) {
+                String first = ips.iterator().next();
+                String[] hp = splitHostPort(first);
+                if (hp != null) {
+                    return hp;
+                }
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            if (udpSocket != null) {
+                udpSocket.close();
+            }
+        }
+        return new String[] { DEFAULT_HOST, String.valueOf(DEFAULT_PORT) };
+    }
+
+    public String[] resolveSisEndpoint(Context context) {
+        return resolveSisEndpoint(context, null);
+    }
+
+    private String[] resolveSisEndpoint(Context context, Attempt owner) {
+        if (customHost != null && !customHost.isEmpty() && customPort > 0) {
+            return new String[] { customHost, String.valueOf(customPort) };
+        }
+        if (!"udp-only".equalsIgnoreCase(customSisUrl)) {
+            OutputStream out = null;
+            InputStream in = null;
+            try {
+                String aesKey = JCoreCrypto.generateHttpSeedKey();
+                JSONObject body = new JSONObject();
+                body.put("type", 1);
+                body.put("opera", "");
+                body.put("uid", JCoreStorage.getUid(context));
+                body.put("appkey", JCoreStorage.getAppKey(context));
+                body.put("sdkver", "5.1.1");
+                body.put("platform", 0);
+
+                byte[] compressed = JCoreCrypto.gzipCompress(body.toString().getBytes(StandardCharsets.UTF_8));
+                byte[] encrypted = JCoreCrypto.aesCbcEncrypt(compressed, aesKey, SIS_AES_IV, 32);
+                String auth = JCoreCrypto.rsaEncryptBase64(aesKey, SIS_RSA_PUBLIC_KEY);
+
+                String targetSisUrl = (customSisUrl != null && !customSisUrl.isEmpty()) ? customSisUrl : SIS_URL;
+                URL url = new URL(targetSisUrl);
+                HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+                conn.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("Authorization", auth);
+
+                out = conn.getOutputStream();
+                out.write(encrypted);
+                out.flush();
+
+                if (conn.getResponseCode() == 200) {
+                    in = conn.getInputStream();
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[2048];
+                    int read;
+                    while ((read = in.read(chunk)) != -1) {
+                        buffer.write(chunk, 0, read);
+                    }
+                    byte[] decrypted = JCoreCrypto.aesCbcDecrypt(buffer.toByteArray(), aesKey, SIS_AES_IV, 32);
+                    byte[] plain = JCoreCrypto.gzipDecompress(decrypted);
+                    String plainStr = new String(plain, StandardCharsets.UTF_8);
+                    synchronized (this) {
+                        if (owner != null && !owns(owner, context)) return null;
+                        JCoreStorage.saveSisConfig(context, plainStr);
+                    }
+                    Set<String> ips = JCoreWireCodec.extractJsonStringArray(plainStr, "ips");
+                    if (ips.isEmpty()) {
+                        ips = JCoreWireCodec.extractJsonStringArray(plainStr, "ssl_ips");
+                    }
+                    if (!ips.isEmpty()) {
+                        String first = ips.iterator().next();
+                        String[] hp = splitHostPort(first);
+                        if (hp != null) {
+                            return hp;
+                        }
+                    }
+                    JSONObject json = new JSONObject(plainStr);
+                    JSONArray sslIps = json.optJSONArray("ssl_ips");
+                    if (sslIps != null && sslIps.length() > 0) {
+                        String first = sslIps.optString(0, "");
+                        String[] hp = splitHostPort(first);
+                        if (hp != null) {
+                            return hp;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                    if (in != null) {
+                        in.close();
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return resolveUdpSisEndpoint(context, defaultSisUdpHost, defaultSisUdpPort, owner);
+    }
+
+    /**
+     * HTTP Report Channel (/v3/report):
+     * Builds envelope {"platform":"a","uid":uid,"app_key":appKey,"channel":channel,"app_version":"1.0.0",
+     * "sdk_ver":{"push":"5.9.0","core":"5.1.1"},"content":[reportItem]}, GZIP-compresses, encrypts with
+     * aes256CbcHttpEncrypt (IV = "iop203040506aPk!"), sets Authorization: Basic base64(uid:sha1(uid + md5(password) + sha1(body)):aesKey)
+     * and X-App-Key: appKey.
+     */
+    public boolean sendHttpReport(Context context, String reportItemJson) {
+        final long policyGeneration = JCoreStorage.getContentGeneration();
+        if (!JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context)) return false;
+        OutputStream out = null;
+        InputStream in = null;
+        try {
+            long uid = JCoreStorage.getUid(context);
+            String appKey = JCoreStorage.getAppKey(context);
+            String channel = JCoreStorage.getChannel(context);
+            String password = JCoreStorage.getPassword(context);
+
+            String item = (reportItemJson != null && !reportItemJson.isEmpty()) ? reportItemJson : "{}";
+            String envelopeJson = "{\"platform\":\"a\",\"uid\":" + uid
+                + ",\"app_key\":\"" + JCoreWireCodec.escapeJson(appKey) + "\""
+                + ",\"channel\":\"" + JCoreWireCodec.escapeJson(channel) + "\""
+                + ",\"app_version\":\"1.0.0\""
+                + ",\"sdk_ver\":{\"push\":\"5.9.0\",\"core\":\"5.1.1\"}"
+                + ",\"content\":[" + item + "]}";
+
+            byte[] compressed = JCoreCrypto.gzipCompress(envelopeJson.getBytes(StandardCharsets.UTF_8));
+            String aesKey = JCoreCrypto.generateHttpSeedKey();
+            byte[] encryptedBody = JCoreCrypto.aes256CbcHttpEncrypt(compressed, aesKey);
+            if (encryptedBody.length == 0) {
+                return false;
+            }
+
+            String bodySha1 = JCoreCrypto.sha1Hex(encryptedBody);
+            String pwdMd5 = JCoreCrypto.md5Hex(password);
+            String signSha1 = JCoreCrypto.sha1Hex(uid + pwdMd5 + bodySha1);
+            String authRaw = uid + ":" + signSha1 + ":" + aesKey;
+            String authHeader = "Basic " + JCoreCrypto.base64Encode(authRaw.getBytes(StandardCharsets.UTF_8));
+
+            String targetUrl = customReportUrl;
+            if (targetUrl == null || targetUrl.isEmpty()) {
+                List<String> httpsReports = JCoreStorage.getSisHttpsReportIps(context);
+                if (!httpsReports.isEmpty()) {
+                    String hostPort = httpsReports.get(0);
+                    targetUrl = hostPort.startsWith("http") ? hostPort : ("https://" + hostPort + "/v3/report");
+                } else {
+                    List<String> httpReports = JCoreStorage.getSisHttpReportIps(context);
+                    if (!httpReports.isEmpty()) {
+                        String hostPort = httpReports.get(0);
+                        targetUrl = hostPort.startsWith("http") ? hostPort : ("http://" + hostPort + "/v3/report");
+                    } else {
+                        targetUrl = DEFAULT_REPORT_URL;
+                    }
+                }
+            }
+
+            URL url = new URL(targetUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            if (conn instanceof HttpsURLConnection) {
+                ((HttpsURLConnection) conn).setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+            }
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/octet-stream");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("X-App-Key", appKey);
+            conn.setRequestProperty("Authorization", authHeader);
+
+            if (policyGeneration != JCoreStorage.getContentGeneration() || !JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context)) return false;
+            out = conn.getOutputStream();
+            out.write(encryptedBody);
+            out.flush();
+
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                in = conn.getInputStream();
+                while (in.read() != -1) {
+                    // Drain response
+                }
+                return true;
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            try {
+                if (out != null) {
+                    out.close();
+                }
+                if (in != null) {
+                    in.close();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
+    }
+
+    public boolean verifyTlsSession(SSLSocket socket, String host) {
+        if (socket == null || host == null) {
+            return false;
+        }
+        SSLSession session = socket.getSession();
+        return session != null && HttpsURLConnection.getDefaultHostnameVerifier().verify(host, session);
+    }
+
+    public SSLSocket createVerifiedTlsSocket(String host, int port) throws Exception {
+        SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+        SSLSocket socket = (SSLSocket) factory.createSocket(host, port);
+        socket.setSoTimeout(8000);
+        socket.startHandshake();
+        if (!verifyTlsSession(socket, host)) {
+            socket.close();
+            throw new SecurityException("TLS hostname verification failed for " + host);
+        }
+        return socket;
+    }
+
+    private void broadcastConnectAndRegister(Context context) {
+        String regId = JCoreStorage.getRegistrationId(context);
+        ActionHelper.getInstance().dispatchRegisterEvent(context, regId);
+        ActionHelper.getInstance().dispatchConnectedEvent(context, true);
+        cn.jpush.android.api.JThirdPlatFormInterface.initializeFcm(context);
+    }
+
+    public Bundle handleEvent(Context context, String sdkType, int cmd, String action, Bundle bundle, Object... extras) {
+        Context app = JCoreStorage.getAppContext(context);
+        switch (cmd) {
+            case 4: // getRegistrationID
+                return stringResult(JCoreStorage.getRegistrationId(app));
+            case 6: // getChannel
+                return stringResult(JCoreStorage.getChannel(app));
+            case 7: // getAppKey
+                return stringResult(JCoreStorage.getAppKey(app));
+            case 8: // getDeviceId
+                return stringResult(JCoreStorage.getDeviceId(app));
+            case 11:
+            case 12:
+                if (extras != null) {
+                    for (Object extra : extras) {
+                        if (extra instanceof Runnable) {
+                            executeAsync((Runnable) extra);
+                        }
+                    }
+                }
+                return null;
+            case 17:
+            case 50:
+                if (extras != null && extras.length > 0 && extras[0] instanceof byte[]) {
+                    byte[] rawData = (byte[]) extras[0];
+                    sendFrameRaw(
+                        JCoreWireCodec.CMD_PUSH_CTRL,
+                        1,
+                        JCoreStorage.nextRid(),
+                        this.sessionId,
+                        JCoreStorage.getUid(app),
+                        rawData
+                    );
+                }
+                return null;
+            case 19: // getReportTime
+                Bundle timeBundle = new Bundle();
+                timeBundle.putLong("result", System.currentTimeMillis() / 1000L);
+                return timeBundle;
+            case 20: // getUid
+                Bundle uidBundle = new Bundle();
+                uidBundle.putLong("result", JCoreStorage.getUid(app));
+                return uidBundle;
+            case 21: // isValidRegistered
+                Bundle regBundle = new Bundle();
+                regBundle.putBoolean("result", !JCoreStorage.getRegistrationId(app).isEmpty());
+                return regBundle;
+            case 67: // getConnectionState
+                Bundle connBundle = new Bundle();
+                connBundle.putBoolean("result", JCoreStorage.isConnected(app));
+                return connBundle;
+            case 96: // setAuth
+                if (extras != null && extras.length > 0 && extras[0] instanceof Boolean) {
+                    JCoreStorage.setCollectionAuth(app, (Boolean) extras[0]);
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    private static Bundle stringResult(String value) {
+        Bundle b = new Bundle();
+        b.putString("result", value != null ? value : "");
+        return b;
+    }
+}

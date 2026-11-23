@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFFAF',
     fontSize: 16,
     lineHeight: 24,
-    fontFamily: 'Roobert-Medium',
+    fontWeight: '500',
   },
   segmentTextActive: { color: '#0F0F0F' },
   pressed: { opacity: 0.65 },
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFFED',
     fontSize: 16,
     lineHeight: 24,
-    fontFamily: 'Roobert-Regular',
+    fontWeight: '400',
   },
   clearSearch: {
     position: 'absolute',
@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF64',
     fontSize: 22,
     lineHeight: 24,
-    fontFamily: 'Roobert-Regular',
+    fontWeight: '400',
   },
   list: { flex: 1 },
 });

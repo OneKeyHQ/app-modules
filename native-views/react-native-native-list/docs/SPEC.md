@@ -1,0 +1,2663 @@
+# NativeList contract
+
+## Shared image SVG integration — Implemented
+
+Static icons use the image package's named resources and SVG implementation:
+the main registry, Activity's ten private glyphs, Market stars/recognized badge,
+Media fallback and Android checkbox. The closed per-platform coverage, including
+the main-line asset-list additions, is recorded under Built-in icon metadata
+generation; unknown-name text fallbacks remain. The NativeList-only legacy name
+`BadgeVerifiedSolid` resolves to canonical `BadgeRecognizedSolid`. Circle and
+dynamic charts/spinners/dotted decoration remain local primitives.
+
+Each iOS glyph slot owns a request owner and revision, including overlays and
+UIButton states. Final graphical identity (name, raster geometry/scale and render
+strategy) controls requests. A private synchronous bind transaction preserves
+both an identical pending request and a ready raster across reset/rebind calls;
+changed or empty identities cancel and clear. Only the current attached revision
+may apply a completion. Detach, reuse and raster geometry changes invalidate
+ownership. UIKit template tint changes reuse the immutable mask. UIButton states
+share one decode, retaining template/original and disabled tint/alpha/action
+behavior. Name validity and descriptor geometry control visibility, layout and
+touch bounds; image availability does not control them.
+Detached binds and auto-height measurement use only known intrinsic metadata;
+they MUST NOT submit named requests or read/decode SVG resources. Initial attach
+starts loading without changing the measured glyph or button dimensions.
+
+iOS original brand/opacity modes and the size overload's always-template behavior
+remain. Android named glyphs preserve their source aspect ratio, fit both source
+dimensions within the view and optional glyph-size limit, and center the result
+on both axes. This includes the non-square 16 × 20 Apple artwork; it MUST NOT
+extend beyond the view. Checkboxes retain their 16 dp glyph plus 2 dp border
+offset in selector geometry, otherwise 80 percent centered geometry. Shared images are immutable; no cross-view mutable
+Drawable bounds or pixel changes are allowed. Named work uses image's existing
+two-worker and bounded cache service. Web consumers use its pure DOM external-icon
+helper while keeping inherited color, action labels, anchors and exact sizes.
+
+Acceptance must cover actual slots, first bind and repeated row reuse, unknown
+and empty inputs, detach/reattach, resize/tint changes, both UIButton states,
+checkboxes, Apple, original brands, legacy badge, and Web/desktop menus. All
+static path readers must be removed from migrated routes; procedural drawings
+and unrelated URI image loading retain their existing ownership.
+
+`NativeListRiskAccessoryTest` checks fractional and integral glyph bounds,
+portrait/landscape sources, rectangular slots and both glyph-size scaling modes.
+Its raw-SVG alpha comparison uses integral destination edges to isolate color
+semantics from fractional bitmap interpolation.
+
+This is the entry point for the package's behavioral contract. The linked
+documents are part of this spec; implementation status is separate from target
+architecture and runtime evidence.
+
+## Purpose and non-goals
+
+NativeList renders bounded data with fixed row templates on iOS, Android and
+Web. Data rows do not render arbitrary React children. Named container slots
+may render React chrome outside the data-row stream. Integrators own overflow
+prevention; there is no automatic fitting or shrinking pass.
+
+## Definitions and ownership
+
+- `rowTemplate` defines structure, semantic fields and supported variants.
+  [ROW_TEMPLATES.md](ROW_TEMPLATES.md) defines and illustrates every template.
+- `rowStyle` adjusts the template's named text, image, spacing and container
+  properties. It can set row height but cannot replace the template structure.
+  [STYLE_SPEC.md](STYLE_SPEC.md) defines the common property vocabulary.
+- The list owns placement, sections, scrolling, indexed bar, selection and
+  reorder. These capabilities do not belong to individual row templates.
+- The renderer owns template views, defaults, binding and measurement. A shared
+  host owns row appearance, events and binding invalidation. This ownership is a
+  migration target, not a claim that the current native hosts are already split.
+
+## Public API and defaults
+
+### Media loading and failure placeholders — Implemented
+
+Gallery media tiles draw one placeholder layer over the media slot on iOS
+(`NativeListMediaPlaceholderView.swift`), Android
+(`NativeListMediaPlaceholderView.kt`) and Web (`MediaTileRowRenderer.ts`). All
+three share one geometry so the states read the same everywhere:
+
+- **Loading** — from bind until the first candidate loads or every candidate
+  fails. Fill: `strongBackground`. A sheen band 60% of the tile wide, skewed
+  -12°, sweeps left to right over 1.6s (70% travel with `cubic-bezier(0.4, 0,
+  0.2, 1)`, 30% rest). Every tile derives its phase from one shared clock
+  (`CACurrentMediaTime` / `SystemClock.uptimeMillis` / `performance.now`), so a
+  grid sweeps in step, recycled cells included. The sheen is white at 75% on a
+  light `rowBackground` (Web: `background`) and 7% on a dark one. Reduced
+  motion (iOS Reduce Motion, Android animator scale 0, Web
+  `prefers-reduced-motion`) holds the band still at 60% strength.
+- **Failed** — explicit `imageState: 'error'` or exhausted probes. Fill:
+  `strongBackground`, plus 1pt `primaryText` lines at 4.5% alpha along 135°,
+  7pt apart, masked by a radial gradient that is clear inside 22% of the
+  half-diagonal and opaque from 70%. No text is shown, so there is no copy to
+  localize.
+- **Loaded / empty** — the placeholder is hidden; `imageState: 'empty'`
+  without a source keeps the slot transparent as before.
+
+Both visible states draw a 24-unit glyph at 28% of the tile width, capped at
+44pt, stroked 1.5 units in `disabledText` at 70% of its alpha: a rounded frame
+(3,3,18,18, r4), a sun (9,9 r1.6) and a ridge (5,20.5 → 14.5,11 → 21,17.5).
+The failed glyph adds a slash (3,3 → 21,21) and cuts a 1.6-unit gap into the
+frame on both sides of it. A 1px `separator` hairline at 60% of its alpha
+outlines the slot in both states.
+
+The placeholder owns the slot fill while visible. On Android the media view
+is made invisible in the failed state, because OneKeyImage may paint its own
+terminal state symbol after a probe advances. Image content and SVG decoding
+remain owned by OneKeyImage; no per-cell WebView or fallback network source is
+added. A theme rebind updates every color. Runtime acceptance (2026-11-10):
+iOS dark and Android light on a watch-only wallet NFT grid, Web light/dark in
+the standalone engine harness.
+
+### Recipient identity and inline warning rows
+
+Status: implemented in local source for the Select Address and Swap selectors;
+native device and broader Web runtime verification remain pending. These fields travel in snapshot/patch JSON
+and do not change the Nitro ABI.
+
+Snapshot and patch validation requires a boolean for `collapseEmptyTrailing`;
+a patch with `null` restores the default. Automatic height uses the same
+trailing geometry, font features and tracking as the rendered text.
+
+An `identity` row may set `collapseEmptyTrailing: true`: when it has no trailing
+accessories, iOS drops the (empty) trailing column and its 12-point gap so the
+text column reaches the row's trailing padding, as a React Native `ListItem`
+without children does. Omission keeps the legacy iOS reservation. Android and
+Web already give an empty trailing column no width or gap, so the flag does not
+change them.
+
+An `identity` row may opt into `subtitleLines: 0`, meaning the complete subtitle
+wraps at its measured text-column width without a line cap. Existing omitted,
+one-line and two-line behavior stays unchanged. An identity row with
+`contentHeight: 'auto'` measures its actual title, subtitle, leading visual,
+badges and trailing accessories and grows to fit; this is opt-in and does not
+alter selector or wallet-sidebar presets. An explicit `style.container.height`
+or `row.height` still wins over content measurement, in that order. Content
+height changes with row width, text, style or configured font and may not retain
+a stale prior width's measurement. The existing 4096 UTF-16-code-unit bound per
+text field still applies; zero is not an unlimited data-size allowance.
+
+On Web, opt-in auto-height identity rows without an explicit height use the
+intrinsic body height in CSS layout pixels, before ancestor transforms. A hidden
+body with zero layout height supplies no rendered measurement; zero MUST NOT
+replace a valid layout height. Rebinding between automatic and explicit height
+restores the corresponding body sizing. Multiline subtitles, including
+`subtitleLines: 0`, break unspaced words within the text-column width; single-line
+behavior remains unchanged.
+
+Auto-height recipient rows are production-consumer verified with isolated wallet
+fixtures, including modal scaling, width changes and row reuse. This scoped
+acceptance does not establish Electron or browser-extension runtime acceptance.
+
+An `identity` row may set `longPressActionKey` to a nonempty action key. A valid
+touch long press on an enabled row emits one `onRowAction` with its current row key,
+action key, `row` anchor source and window press point. An accessibility long-click
+without a physical touch retains the row anchor without a press point. It suppresses the
+ordinary press for that gesture. Motion cancellation, row rebind/recycle,
+disabled state and disposal cancel pending recognition. Trailing accessory
+actions remain independent. Omission preserves existing tap behavior.
+
+### Native Swap token menu backport
+
+Status: implemented in local native source, unreleased. Native build and runtime
+acceptance are separate checks. Web and Desktop layout and actions stay unchanged;
+their generated icon artwork is covered in the following section.
+
+iOS and Android render `DotVerSolid` with the app's existing 24-unit solid icon
+geometry. On Android, exactly two identity trailing accessories consisting of
+`valuePair` followed by an `icon` named `DotVerSolid` with `actionKey: 'menu'`
+lay out horizontally, matching iOS. Other icon names or action keys retain the
+existing axis rules. This backport does not change row padding, accessory spacing,
+button dimensions, actions, disabled state, or the public snapshot contract.
+
+`NativeListAccessoryStackTests` checks the iOS image lookup and bound button image.
+`NativeListRiskAccessoryTest` checks Android's actual icon drawing and the target
+horizontal pair, including vertical controls on rebind.
+
+### Built-in icon metadata generation
+
+The closed `scripts/native-list-icons.json` manifest retains platform coverage,
+canonical App source paths and iOS rendering strategy. `Circle` is a local
+primitive. The NativeList-only legacy `BadgeVerifiedSolid` name maps to
+`solid/badge-recognized.svg` / canonical `BadgeRecognizedSolid`, preserving its
+thumbs-up artwork without adding a general alias.
+
+`scripts/generate-icons.mjs --app-root <app-root>` matches each source uniquely
+against image's generated catalog, validates source digests and manifest
+metadata, then emits exactly three small Swift/Kotlin/Web name/geometry tables.
+It writes no SVG, path data or xcassets; image owns the single resource pipeline.
+All validation precedes writes. `--check` is read-only and detects missing or
+ambiguous sources, invalid metadata and stale output. Stable sorting emits no
+machine paths or timestamps. Frozen tests compare exact registry key sets;
+this does not prove that every application-computed name is registered.
+
+The closed manifest contains 43 names with iOS 42, Android 41 and Web 26
+registry entries (including DotVerSolid). Document2Outline, WalletOutline and
+PlusLargeOutline are registered on all three platforms; TicketOutline also
+retains Web and adds native coverage. InfoCircleOutline is registered on Web as
+well as native, so a Web data-column `titleIcon` draws the host artwork rather
+than the text glyph. These main-line names use image-owned
+canonical SVGs, not duplicate NativeList paths or asset catalogs.
+Existing Activity ten-name and Market/Media private call sites resolve canonical
+names through the same DOM helper; their previous coverage does not expand.
+Image preserves raw path order, fill rules, fixed colors, opacity and viewBoxes.
+NativeList retains its layout, button bounds, actions and snapshot interfaces.
+
+The registries are aliases and native geometry, not a whitelist. iOS and Android
+already resolve any other name through image's `OneKeyNamedSVG` catalog. Web now
+does the same: a name missing from the Web registry is passed to
+`createNamedIcon` unchanged, so every host-catalog icon (for example
+`DeleteOutline`, `MinusCircleSolid`) renders as artwork on all three platforms.
+Only a name the host catalog also lacks keeps the legacy text glyph. The
+trailing `drag` accessory renders the `DragOutline` artwork on Web instead of
+`≡` when the host provides it.
+
+Focused SDK fixture acceptance covers native attached lifecycle/rebinding,
+legacy iOS asset comparisons, shared alpha semantics and real Web/Electron
+source/lib consumers. This is not full App, balance, transaction or signed
+release acceptance.
+
+Identity trailing accessories stack vertically, except for the pairs every
+platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
+`valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
+`valuePair` + `chevron`, a `RefreshCcwOutline` icon without an action key +
+`chevron`, and a `PencilOutline` icon followed by a `DragOutline` icon or a
+`drag` accessory. iOS decides this in
+`configureTrailingStack`; Android in `nativeListIdentityTrailingIsHorizontal`
+(JVM test `NativeListIdentityTrailingAxisTest`). The `valuePair` + menu-icon
+pair is the Swap token selector's balance column and row menu; stacking it
+clipped both inside the fixed 60dp row on Android.
+
+
+A `message` row may opt into `bodyLines: 0`; its complete body wraps within its
+existing text area and determines natural height unless an explicit row or
+container height overrides it. Existing omitted and one-to-three-line behavior
+stays unchanged. `style.body.lines`, when supplied, retains its existing
+one-to-three-line precedence. `presentation: 'inlineWarning'` changes only the
+message container border: requested `style.container.borderWidth` and
+`borderColor` draw top and bottom edges at full row width, with no side edges or
+corner radius. Omitted border width draws no border; omitted presentation keeps
+the existing all-edge container style. The caller supplies warning text, icon,
+font, padding, colors and list-width layout; the SDK does not infer risk status.
+All optional fields must clear on rebind/recycle and patch replacement. The
+existing 4096-code-unit body limit applies.
+
+An image-backed `LeadingVisual` may set `fallbackTextColor` to a hex
+`#RRGGBB` or `#RRGGBBAA` color. It colors only the visible initials/fallback
+text, including a failed image's fallback state; omission retains the existing
+platform default. It does not alter the visual background, bitmap, icon, or
+overlay colors. Validation rejects malformed colors. Rebind and recycle must
+clear the previous text color so dark/light theme updates cannot leak between
+rows. Consumers own the semantic theme choice (for example inverse text over
+inverse background).
+
+iOS measures opt-in identity and unlimited message content before collection
+placement. Android binds text with unlimited native lines and allows its row
+view to measure that content. Web uses wrapping DOM text and measured row
+height. All platforms retain existing explicit-height precedence and existing
+default rows. Focused source tests must cover validation, patching, old-to-new
+reuse, action isolation and height changing with width/text; real iOS, Android
+and Web acceptance must cover narrow addresses, dynamic type/fonts, long press
+versus tap, keyboard interaction, and the horizontal warning border. Source or
+build success alone is not runtime evidence.
+
+### DeFi position row controls
+
+Status: implemented in local source, unreleased. Focused validation and Web
+DOM tests pass; native source compilation passes, while target-app compilation
+and device acceptance remain separate gates.
+`buttonGroup` is a vertical data row with `RowBase` identity and a nonempty
+`buttons` array. Each button has a unique nonempty `key`, localized nonempty
+`label`, nonempty `actionKey`, and optional `disabled`, `loading`, `testID` and
+`accessibilityLabel`. It renders the existing DeFi medium block info-outline
+controls: equal-width buttons, 10-point gap, 12-point vertical padding and
+12-point radius. Every declared action remains visible; the renderer must not
+truncate the array. Loading retains the button's width, disables that button,
+and displays an activity indicator. A disabled row disables every button.
+Activation emits one existing row action with the button's `actionKey` and
+its own source/slot, without activating the row. A full rebind or recycle
+removes prior buttons, loading indicators, labels, test IDs and handlers.
+The SDK does not infer which DeFi actions are allowed or perform transactions.
+
+`sectionHeader` may include `leadingBadge` (the existing badge shape),
+with an optional `NativeListTheme.successBackground` used only for its
+`success` tone. Omitting that theme color keeps the old badge default.
+`style.valuePlacement: 'afterTitle'`, and
+`style.titleDecoration: 'none' | 'dashed'`. Missing fields retain the current
+heading layout and decoration. `valueHelp` and a `valuePair` trailing
+accessory's `primaryHelp` share
+`{ actionKey, presentation: 'tooltip' | 'popover', underline?: 'dashed' }`.
+Presentation and underline are independent: the former selects trigger
+semantics, the latter only draws a dashed underline. `tooltip` on Web opens on
+mouse/pen entry and eligible focus, closes on departure/blur, and mouse/pen
+press closes it until departure; touch toggles. It has no native touch target
+or event. `popover` on all platforms toggles only on click/press and does not
+open from hover. These help targets do not activate their row. Presentation
+change, departure, scroll, rebind, replacement by another anchor and disposal
+invalidate the old anchor.
+On Web, the value-pair primary help target is keyboard focusable; focus opens
+tooltip help and Enter/Space activates popover help without pressing the row.
+The consuming app owns Tooltip/Popover content. Missing help fields keep
+the original noninteractive text. All additions use snapshot JSON and do not
+change the Nitro ABI.
+
+`valuePair.primaryFontWeight?: 'medium'` applies only to the primary text
+line. The secondary line keeps its existing regular weight. Omitting the field
+preserves each platform's existing value-pair typography; full rebind and
+recycle remove any previous primary-only override. The field travels in the
+existing snapshot JSON and does not change the Nitro ABI.
+
+Validation rejects empty or duplicate button keys, empty labels/action keys,
+invalid booleans and help descriptors, and unknown style fields. The list's
+existing row, text and snapshot bounds apply; no
+silent action truncation is permitted. Conformance includes Web DOM events,
+iOS/Android renderer bind/reuse, TypeScript validation, native builds, and
+later real UI checks for help anchors, loading, disabled actions and geometry.
+
+### Segmented value-pair accessory
+
+Status: implemented in local source, unreleased. Focused validation and Web DOM
+tests pass; production iOS target compilation passes. Native instrumentation,
+full App builds and device acceptance remain separate gates. A `valuePair`
+trailing accessory retains its required `primary` and `secondary` fallback
+strings. It may also supply optional readonly `primaryTextSegments` and
+`secondaryTextSegments` arrays of existing `ValueTextSegment` objects. Missing
+or empty arrays display the corresponding fallback; nonempty arrays display
+their text runs. Callers provide matching fallback text, but validation does
+not enforce that match.
+
+Each array has at most 64 segments, each with string `text` of at most 4096
+characters and optional `style: 'subscript'`. Total text per array is at most
+4096 characters. Full snapshots and explicit patch replacements reject null,
+malformed arrays, unknown segment keys and other styles. An omitted patch field
+leaves the existing accessory unchanged; replacement without segments clears
+old runs. Subscript retains the existing 60-percent smaller-font convention
+after semantic text styling. Both lines retain their default size, tone, line
+height, right alignment and accessibility text. These fields add no action or
+hit target and travel in existing snapshot JSON without a Nitro ABI change.
+
+### Identity title image
+
+Status: implemented in local source, unreleased. Type checks, JS/Web tests,
+Web runtime checks, package build, iOS XCTest-target compilation, Android
+production/instrumentation-test compilation and JVM tests pass. Focused iOS
+Simulator XCTest and Android emulator instrumentation verify image lifecycle,
+null removal and wallet-sidebar layout. Complete wallet App acceptance remains
+pending.
+An `identity` row may supply `titleImage: { image, accessibilityLabel?,
+hoverActionKey? }`. `image` uses the existing `ImageSource` contract and must
+declare equal finite width and height within 1...40 logical units. The image
+is circular, follows the title and any title icons with a 4-point gap, and
+precedes title suffixes and inline badges. It reserves its declared square
+while loading or after failure, so neither state moves the text. Existing
+rows without this field keep their current layout. The image does not change
+row identity or infer a stock, issuer, or other product meaning.
+
+iOS and Android use the existing OneKeyImage-backed slot, request options and
+retry limits. Slots belong to the mounted row renderer; OneKeyImage owns image
+caches. Text-only rebinds retain an unchanged row/source request. Source or row
+changes, removal, recycling and disposal cancel prior work and prevent stale
+completion from painting the next binding. Failure leaves the reserved square
+empty; the SDK adds no title-image fallback request or separate cache.
+
+On Web, optional `hoverActionKey` uses the title icon's existing help semantics
+and `leadingAction` anchor source: mouse/pen entry opens an anchored help event,
+departure invalidates it, mouse/pen press closes it until departure, and touch
+press toggles it. Pressing this help target does not activate the row. Without
+help, the image participates in the ordinary row press. It adds no tab stop.
+Native renderers ignore this Web-only help field and preserve ordinary row
+presses. The consumer owns the tooltip text and presentation. Omitted
+`accessibilityLabel` makes the image decorative; a supplied label describes it.
+
+Android wallet-sidebar rows with a title image reserve image width and pack the
+wallet name with the image as one centered group. Long names ellipsize within
+the remaining space; removing the image restores the full-width centered name.
+
+Full snapshots without `titleImage` remove the image and old help anchor.
+Explicit patch replacement updates the descriptor; an omitted patch field
+leaves it unchanged. Null patches and empty image URIs remove the image. Development guards
+reject malformed descriptors and invalid display geometry; production sanitizes
+optional decoration as described in the validation contract. A production patch
+that supplies a malformed title-image replacement explicitly clears the old
+image and help target instead of retaining stale decoration. The field travels in existing JSON and does not change the Nitro ABI;
+consumers must use a native SDK that implements the field before enabling it.
+
+Acceptance covers protocol validation, image/source replacement and removal,
+text-only request retention, Web help-action isolation and anchor cleanup,
+native bind/recycle geometry, and native compilation. Device and complete App
+acceptance must be reported separately from source and DOM tests.
+
+### Identity row risk-management controls
+
+Status: implemented in source for local consumers, unreleased. Focused validation,
+Web DOM tests, native builds and device acceptance are tracked separately below.
+The optional `identity.titleIcon` is a static, non-actionable icon after the
+title: a 20-point glyph with a 4-point gap, optional tint and accessibility
+label. "After the title" means directly after the title text: the title row
+packs at its start on every platform (Android `PackedTitleLineLayout`, Web flex
+`0 1 auto`, iOS a slack-absorbing filler at the end of the title row), so the
+glyph and any badge follow the text and never drift toward the trailing column
+(OK-66041). The glyph is vertically centered on the title line; on Web the
+`title` text style (including its line clamp) applies to the title text span,
+never to the flex row that carries the glyph (OK-66402). Its optional Web-only `hoverActionKey` emits an anchored help action
+from the icon alone on mouse/pen hover or touch press; the consumer owns the
+tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
+toggles the icon anchor. The icon adds no tab stop or separate click action;
+row activation remains unchanged. Departure, scroll, full rebind and destroy
+invalidate the anchor. Omission removes the icon in a full snapshot; omission
+in a patch leaves the existing value unchanged. An explicit replacement icon
+without `hoverActionKey` clears the old hover action. Removing the icon
+requires a full snapshot.
+
+On Web, `identity.secondaryTitleIcon` accepts the same descriptor and appears
+after `titleIcon`. Both icons retain independent hover/touch anchors at their
+own glyph rectangles; entering the other invalidates the previous anchor.
+Native renderers ignore this optional Web-only field. Full rebinding to one
+or no icons clears the removed glyph and anchor; explicit icon replacement
+without `hoverActionKey` clears that icon's old hover action. Neither icon
+creates a tab stop or separate click action.
+On Web, clicking either help icon (including its SVG) does not activate the row;
+clicking elsewhere on the row keeps the normal row action.
+
+`identity.style.leadingContentMaxWidthRatio`, when given,
+must be finite and within `(0, 1]`; it caps the combined leading visual, gap
+and title content relative to the row's available inner width. Omission keeps
+the existing unrestricted layout. Long titles truncate inside the cap, and
+unused width remains available to trailing controls. The ratio is layout-only,
+never a reuse identity or row-height input.
+
+`trailing` accepts an optional `button` accessory with required nonempty
+`label` and `actionKey`, optional `disabled`, `testID`,
+`accessibilityLabel`, and optional hex colors `textColor`,
+`backgroundColor`, `pressedBackgroundColor`, `hoverBackgroundColor`, and
+`focusRingColor`. This single variant has the existing small secondary button
+geometry: medium 14/20 text, 10-point horizontal and 4-point vertical
+padding, a one-point transparent border and a pill radius. Omitted colors use
+the theme's corresponding text and strong-background colors. The button does
+not carry arbitrary React content, a size or variant parameter, or loading
+state. Row or accessory disabled state prevents its action and dims the control
+to 0.4 opacity.
+
+Activation emits one existing row-action event with the current row key,
+`trailingAccessory` source and zero-based descriptor slot, without also activating the row.
+The host's existing binding epoch guards recycled controls. Full rebinding
+clears omitted title icons and old button text, visual states, test IDs,
+accessibility values and callbacks, including button-to-icon-to-absent reuse.
+Patches replace fields they explicitly change and leave omitted fields intact.
+iOS and Android use native controls; Web uses a semantic `button` with native
+keyboard activation and disabled semantics. The new fields travel inside the
+existing snapshot JSON and do not alter the Nitro bridge ABI. Consumers own
+localized labels, state updates and any tooltip outside the data row.
+
+Acceptance requires snapshot and patch validation, Web action/isolation and
+reuse checks, native renderer tests on production classes, native builds and
+device checks for title placement, cap/truncation, colors, press and recycle.
+No source-only check counts as native runtime evidence.
+
+`theme.rowHoverBackground` is an optional Web-only hex color for an enabled
+row's hover background. Omission keeps the existing pressed-background hover
+color. Pressed/active rows continue to use `rowPressedBackground`; native
+renderers ignore the new field. The existing `loadingStrategy: 'skeleton'`
+on a Web leading image displays an animated skeleton while loading, then
+clears it on success, failure, rebind or recycle; other strategies keep their
+existing appearance.
+
+Identity leading visuals consume the existing `borderColor` as a one-point/dp
+solid bitmap border when supplied without `borderStyle: 'dashed'`; omission or
+a dashed style clears the solid border on every bind. An optional `borderWidth`
+(`0 < width <= 4` logical units, default 1) sets that solid border's width; a
+host hairline (`StyleSheet.hairlineWidth`) draws one physical pixel on iOS and
+Android (rounded up to at least one pixel) and a fractional CSS border on Web.
+Web insets the main image into the bordered frame's content box, as iOS and
+Android do, and a sized `fallbackIcon` keeps its requested size there instead
+of shrinking to the content box.
+The image is inset by that border width. An overlay may optionally set
+`fontWeight` to one of the existing text weight names
+(`regular | medium | semibold | bold`). This changes only overlay text;
+omission retains the current platform default. Setting and clearing the field
+must survive patching and recycled-view rebinding on all three platforms.
+The existing `leading.fallbackIcon` may optionally set a positive `size` for
+its glyph and a hex `backgroundColor` for the visual's no-image and image-load-
+failure states. A successfully loaded bitmap continues to use
+`leading.backgroundColor`. Omitted fallback fields preserve current rendering.
+Image success, failure and full rebinding must restore the matching background
+and glyph size without carrying values from the previous visual.
+An image overlay may optionally declare `fallbackIcon` with a required glyph
+name and optional tint. It shows only after that overlay image fails, while
+loading retains the overlay's empty background and success shows the bitmap.
+The existing icon accessory accepts only one optional `buttonStyle` value,
+`tertiary`, for the source icon button's 38-point press frame, 24-point glyph,
+six-point padding, one-point border, seven-point visual overhang and pressed
+background. Omission preserves every existing icon accessory layout and action.
+The non-action `RefreshCcwOutline` accessory keeps the source's 16-point glyph
+and frame, with no independent press target. Rebinding it to an actionable
+icon restores the existing icon size and event behavior.
+
+### iOS 26 fixed top scroll-edge overlay
+
+Standalone `NativeList` accepts optional
+`topScrollEdgeEffect={ScrollEdgeEffect.Hard}` or `ScrollEdgeEffect.Soft` and
+`topOverlay` React content. Both are disabled by default. On iOS 26 or newer,
+the fixed overlay is a fourth native container slot, outside the row stream and
+outside the existing scrolling `listHeader`/`listEmpty`/`listFooter` slots.
+Fabric measures its height; the list owns an equal top inset on its collection
+view and binds UIKit's `UIScrollEdgeElementContainerInteraction` to that view,
+using the requested top edge style. The list restores its original inset and effect
+on removal, disposal and reuse. The UI thread owns all view and UIKit state;
+there is no persistence, background-runtime state or per-frame JS callback.
+An invisible, noninteractive native label fills the overlay host so UIKit
+recognizes React-drawn content as a scroll-edge element.
+Inside a CollapsiblePagerView, the pager owns this effect and inset, and child
+lists do not opt in separately. iOS before 26, Android and Web retain their
+existing layout and scrolling. Missing overlay or style changes nothing.
+Acceptance requires actual iOS 26 initial layout, long/short/empty scrolling,
+refresh and overlay replacement/removal, including dark mode.
+
+`ScrollEdgeEffect` is an exported string enum (`Hard = 'hard'`, `Soft = 'soft'`);
+the corresponding string literals remain valid prop values. Hard includes
+UIKit's dividing line; Soft uses the gradual blurred transition. Nitro receives
+an enum (`none | hard | soft`, default `none`) rather than a hard-effect boolean.
+Changing Hard ↔ Soft preserves the overlay, inset, logical scroll offset and
+saved original effect. Clearing the prop, removing the overlay, detaching or
+disposing restores the original effect. This bridge change requires rebuilding
+the matching native host. Soft selection is implemented in the wrapper and
+native host. Focused JS tests cover enum forwarding and disabling; UIKit tests
+cover style switching, overlay geometry and restoring the previous style.
+Visual runtime acceptance remains separate from source, type and build checks.
+
+[README.md](../README.md) documents the snapshot, patch, selection, events and
+imperative API; [STYLE_SPEC.md](STYLE_SPEC.md) defines normalization, omitted
+style defaults and platform differences. Height precedence is
+`style.container.height` → `row.height` → template measurement/default.
+Removing a style restores the current template's defaults, not the previous
+row's appearance. Selector presentations (`accountSelector`, `networkSelector`,
+`walletSidebar`) use their explicit-height geometry whenever either
+`style.container.height` or `row.height` is set.
+
+The row style surface (`row.style`, including `style.container`) and
+`snapshot.listStyle` are **new public TypeScript/JSON protocol in this change**;
+they travel inside the existing `snapshotJson` string, so the Nitro schema is
+unchanged. Validation of that surface is strict: undeclared or unknown nested
+keys are rejected (see Failures below and STYLE_SPEC.md §2). The renderer
+migration itself does not change any other protocol field.
+
+## Lifecycle and concurrency
+
+### Android account-selector subtitle updates
+
+An already bound `identity` row with `presentation: 'accountSelector'` updates
+its existing subtitle labels in place when only their text, formatted text
+segments, tone, or the row's accessibility label changes. The same avatar
+view and its active or completed request stay in place. Selection and
+accessibility reflect the accepted row. A different key, subtitle slot
+structure, other row content, or binding inputs (such as theme or layout)
+uses the normal binding path. Recycling still releases the row's image work.
+
+### Updates before native host binding
+
+Status: implemented in local source, unreleased. The delayed-host regression fails
+on the previous wrapper and passes with this change; 438 package JS/Web tests and
+the package type check pass. This local JavaScript revision is verified with real
+iOS Fabric/UICollectionView rendering on an iPad simulator: delayed-ref,
+parent-layout-before-ref without an artificial delay, and host-ready control
+scenarios all retain the three complete rows after a later single-row update.
+The actual Home list also recovered all six rows after the task-specific Metro
+reload. Earlier natural re-entry evidence included development Metro bundle
+re-requests, so it does not establish a menu-only trigger or a Sui-specific natural
+reproduction. Android device acceptance remains unverified.
+
+Valid snapshots and row patches accepted before the native host is available MUST
+retain the latest owned logical state. When that host binds, its rows MUST reflect
+all accepted updates that are eligible for presentation, including updates to rows
+that do not change again afterward. Later single-row updates MUST NOT leave other
+rows at their initial placeholders. Existing disclosure measurement gates and
+snapshot replacement semantics still apply. Once the host is ready, ordinary row
+patches MUST remain incremental rather than requiring a complete snapshot for each
+patch. This contract does not add a public prop, method, or Nitro ABI field.
+
+Conformance covers multiple pre-bind patch batches, newer complete prop and
+imperative snapshots, rejected updates, equivalent prop clones after slot layout,
+selection state, repeated callbacks, distinct replacement hosts, and incremental
+single-row updates after binding.
+
+Full binding must work without a preceding recycle callback, including
+style set/change/clear and content A → B. A binding epoch invalidates stale
+image callbacks and action anchors. Recycling/disposal releases pending work
+through the existing image/host lifecycle. Image loading visibility belongs to
+the image lifecycle: restoring template defaults on rebind must never hide an
+image that already loaded. Common container styling clears what it wrote on the
+next bind, including properties it set on template children. UI mutation remains on the platform
+UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
+
+### iOS cell requests during snapshot replacement
+
+Status: implemented, unreleased. On iOS 17.5 and 26.0, a focused UIKit fixture
+reproduced the assertion on version 6.7.0-62 and completed the same layout
+with the fix. Three focused UIKit tests passed on both runtimes, including
+fixed-footer action routing. Consuming-app acceptance of the fix remains
+pending.
+
+When a snapshot removes rows, UIKit may request cells from its outgoing
+snapshot while the new logical rows are already active. The iOS host MUST
+provide a valid reusable cell for such requests. Until UIKit completes the
+removal, the host retains only the removed row descriptors needed for pending
+snapshot applications. These descriptors are presentation-only and cannot
+emit actions, expose accessibility elements, or become selectable. Repeated
+updates must preserve the descriptors still needed by in-flight applications
+and must release them on completion or host disposal. A request with no
+available descriptor receives an inert empty cell. The accepted snapshot,
+patch validation, row identity, and structural-transition behavior retain
+their existing contracts.
+
+The action and interaction restrictions apply to the presenting collection
+row. Its top-level key determines whether its actions can be delivered,
+including actions whose payload comes from a child renderer. The fixed footer
+is a separate host and retains its normal interaction, even when it shares a
+key with a retiring row.
+
+Conformance scrolls an unmaterialized outgoing row into UIKit's viewport
+during removal and checks its renderer, inert state, and the binding of the
+first filtered row. It also covers fixed-footer actions with a shared key
+during a structural transition. A separate consuming-app check covers address
+input in the Send recipient picker.
+
+### Android vertical-drag React touch cancellation
+
+Status: implemented; four real Android MotionEvent/JSTouchDispatcher regressions
+passed on a dedicated API 34 emulator on 2026-10-30. The focused regression is
+in `native-tests/android/NativeListTouchDeliveryTest.kt`; build and run
+instructions are in that directory's README. Physical-device press/scroll
+acceptance remains separate.
+
+This behavior applies to every vertical NativeList, including standalone lists
+outside a CollapsiblePager and touches beginning on React container slots.
+On the UI thread, movement exceeding Android touch slop with vertical
+displacement at least equal to horizontal displacement confirms a vertical
+drag. An initially horizontal movement may become vertical while the list still
+receives the stream; once vertical, ownership stays vertical until release or
+cancellation. Horizontal lists retain their existing touch behavior.
+
+The list notifies its React root of native gesture ownership once per confirmed
+drag, cancelling the active React touch before finger-up. Later MOVE events MUST
+NOT repeat that notification. The listener does not consume the stream: native
+RecyclerView scrolling continues. A stationary tap or movement below touch slop
+MUST retain ordinary React touch-end delivery without native-gesture start/end
+notifications. The existing `keyboardDismissMode: 'on-drag'` behavior shares the
+confirmed-drag boundary.
+
+ACTION_UP and ACTION_CANCEL finish a started native gesture exactly once and
+release the parent's interception restriction, even after RecyclerView has
+intercepted its child and stops invoking the item-touch interception listener.
+They clear vertical ownership; the next ACTION_DOWN resets direction and
+gesture tracking. Android's touch-target removal cancellation must finish the
+old stream before a retained list is reattached or its slots are reused, so the
+next tap is not suppressed by the previous drag. Disposal releases the listener
+through the existing detached-resource cleanup. This change adds no prop or
+callback and changes neither iOS nor Web touch handling.
+
+Conformance uses real MotionEvent dispatch through NativeListView/RecyclerView
+and React Native's JSTouchDispatcher: vertical drag produces one touch-cancel
+and one native end, a tap produces touch-end, and cancellation/removal followed
+by reuse leaves the next tap functional. This proves native touch delivery, not
+execution of a JavaScript press handler or physical-device gesture feel.
+
+### Handle-only reorder activation
+
+`capabilities.reorderActivation` selects where a reorder may start. `row`
+(default, also when omitted) keeps the existing behavior: a long press anywhere
+on a reorderable row. `handle` restricts the start to the row's trailing `drag`
+accessory; a long press elsewhere on the row is an ordinary press or long press
+and never begins a reorder. Development and production reject any other value
+and retain the currently accepted snapshot.
+
+- **Gesture:** iOS and Android keep their reorder long-press duration (200 ms)
+  and movement tolerance. Web keeps its touch long press and mouse drag
+  threshold; only the pointer-down target is narrowed.
+- **Hit area:** the visible `drag` accessory. Android accepts its 24dp glyph
+  slot plus 7dp on each side (its actual 38dp button frame). Android maps
+  the screen press into the handle's local coordinates at press and at
+  recognition, accounting for transforms and scrolling between ancestors.
+  iOS also uses the button frame. Recognition remains tied to the row and handle that
+  received the initial touch, even if the finger moves across a row boundary.
+  A removed handle or a recycled binding cancels a pending start and keeps
+  accepted data updates. An iOS or Android selection echo that retains the row
+  binding and its handle preserves the pending press.
+- **Eligibility:** row reorder eligibility (`draggable`, a `drag` accessory,
+  `disabled`) is unchanged. A row without a `drag` accessory cannot start a
+  reorder in `handle` mode.
+- **Accessory:** a `drag` without an action swallows a short tap on iOS and
+  passes it to the row on Android and Web. In Web handle mode a `drag` with
+  an `actionKey` can start a reorder and still emits its action on a short
+  tap. A recognized reorder suppresses the click generated by that press,
+  including release after cancellation. Overlapping pointer sequences retain
+  their own suppression until a matching click or new press with that pointer
+  ID, native cancellation, or 500 ms after release. A click without a pointer ID
+  matches the most recent release at the same action or row and client position
+  (within one CSS pixel), using the input type when the browser supplies it.
+  For a press and release on different elements, the match uses their nearest
+  shared ancestor as the click target. Releases outside the list cannot replace
+  that match. A new short tap or
+  keyboard activation can still emit the action. Icons beside the handle keep
+  their own actions.
+  Callers can use `pressDisabled` to disable row opening.
+- **Web cursor:** in `handle` mode the row keeps the default cursor and the
+  handle shows `grab`.
+- **Handle appearance:** every platform tints the `DragOutline` glyph
+  `iconSubdued`, matching `ListItem.IconButton`; Web centers it in a 24-point
+  box so it lines up with neighbouring icon buttons instead of the text line.
+  iOS and Android draw the handle as a medium tertiary button (38-point frame,
+  glyph inset 7), like the source `IconButton`, so a `PencilOutline` + `drag`
+  pair keeps 24 points between glyph slots (Android gives the second frame a
+  17dp start margin after its m=-7); Web applies the same 24-point gap.
+- **Tertiary text gap:** when the first trailing accessory is a tertiary icon,
+  the text column ends 12 points before its glyph slot, as `ListItem` lays it
+  out. iOS absorbs the button's m=-7 on the text side (it clipped 9 points
+  early), Android adds the 12dp end margin the -7 had eaten (text ran into the
+  button), and Web already does this through CSS margins.
+- **Leading action geometry:** an identity `leadingAction` reproduces
+  `ListItem.IconButton` (medium tertiary: 6-point padding plus a 1-point
+  border, m=-7) on all three platforms, so its glyph sits on a 24-point slot at
+  the 12-point row padding and the leading visual starts at 48. iOS and Android
+  use a 36-point frame with a 6-point inset and 6-point following gap; Web
+  applies the tertiary icon frame and reports the inner glyph slot's window
+  rect, including any ancestor transform. Web icon buttons use an explicit
+  accessibility label where supplied and otherwise retain their fallback
+  glyph as a name even when host SVG artwork is present.
+
+- **Enclosing pans (iOS):** once a reorder has started, the list disables the
+  enabled `UIPanGestureRecognizer`s of its ancestors (for example a sheet's
+  dismiss pan or a pager) and restores them when the reorder finishes, is
+  cancelled by a structural update, or the list is torn down. Before the long
+  press is recognized those pans behave as before, so a quick pull still drags
+  the sheet. This applies to both activation modes. The NativeOverlay page
+  sheet combines temporary suppression with the current `dismissOnPanDown`
+  setting, including prop changes during the drag.
+
+Toggling `reorderActivation` or `reorderable` cancels pending and active
+pointer reorder without emitting a reorder event. An accepted full Web
+snapshot supersedes a provisional reorder; accepted row patches retain their
+content even if a gesture is cancelled. Web keyboard sorting remains available
+from the focused row if it has a rendered handle in `handle` mode. The
+capability travels in snapshot JSON; the Nitro ABI is unchanged.
+
+Leading visual `borderWidth` supports values in (0, 4]. Development rejects
+out-of-range widths; production discards the invalid width in full snapshots
+and patches so the border uses its existing default of 1. Production also
+discards invalid tracking and digit-spacing overrides so template defaults apply.
+
+### Android reorder cancellation
+
+Status: implemented; three real Android View/callback regressions verified on
+the task's API 34 emulator. Full MotionEvent long-press/edge-scroll gestures and
+physical-device acceptance remain pending.
+Replacing the reorder helper for a structural snapshot or changed font mapping
+MUST invalidate pending drag indices and transaction state before detaching the old
+helper, and restore the adapter's latest committed/submitted snapshot order
+during cancellation. An active helper's selection and auto-scroll ownership must
+end before detach, including disposal; ordinary non-reorder touch input is not
+force-cancelled.
+Cancellation emits no reorder event. It restores the active row's normal
+appearance, including wallet-group expansion and its declared opacity, removes
+the placeholder, and clears drag/displacement translation and temporary elevation.
+Callbacks and deferred displacement/drop animations owned by the detached helper
+MUST NOT change rows or commit a later gesture. A subsequent unmoved gesture
+emits no reorder event; a subsequent valid move retains the normal single commit
+with its own source/destination indices. This does not change the font API or
+ordinary successful-drop animation contract.
+In a repository source checkout, the opt-in platform-runner test and exact
+build/run commands are in `native-tests/android/README.md`; these tests
+drive the shipping NativeListView and ItemTouchHelper callbacks, not a copy of
+the cancellation implementation.
+
+### Native section title loading indicator
+
+Status: implemented source; simulator rendering acceptance pending.
+On iOS and Android, `sectionHeader.titleLoading` defaults to `false`. When
+`true`, a 20-point native indeterminate indicator precedes the section heading
+with an 8-point gap and inherits the resolved title color. It emits no action
+and does not create a separate accessibility target. Clearing the field, full
+rebind, recycling and disposal stop and hide the indicator; detached native views do
+not keep a visible animation. The History template's minimum content height
+increases from 16 to 20 points while loading. Explicit caller row/container
+heights still take precedence and must fit their padding. Web History also
+consumes titleLoading, using its existing section-slot geometry and the Web
+History presentation described below.
+
+Acceptance requires loading → idle → loading reuse, title color updates and
+detachment on each native platform. A title's localized confirming text remains
+caller-owned; the renderer does not infer transaction status.
+
+
+### First-fill position and imperative command ownership
+
+Status: implemented in source and verified in the consuming app's local native
+builds; acceptance of the newly published package remains pending.
+
+On Android, empty-to-populated data MUST preserve the actual body-start anchor
+through the first committed layout. This applies only when the old body was
+empty and the view was actually at its start; it MUST NOT reset a non-empty
+refresh, pagination, deep reading position, or a newer accepted command.
+Continuous snapshots retain this intent until the first populated layout.
+A real drag or valid command invalidates the intent. Container-slot positions
+and scrollbar estimates MUST NOT be mistaken for data-row reading anchors.
+
+An accepted imperative command owns its request, execution, pending-layout and
+posted-alignment work. Invalid commands MUST NOT cancel a valid request.
+On iOS, known-configuration validation MUST precede changing accepted, pending
+or animated-command state; invalid input MUST preserve the existing terminal
+notification, while configuration-unavailable requests retain deferred validation.
+Completion on Android requires the current request to have finished dispatch,
+its own pending layout/alignment barriers to have completed, and native scrolling
+to be idle without an active layout-manager animation. A true animated top
+no-op completes without starting redundant native motion. Non-animated key and
+end alignment complete after their requested layout/alignment, not beforehand.
+An unrelated layout request MUST NOT indefinitely postpone command completion.
+Replacement, actual drag, detach and disposal invalidate old callbacks; a stale
+callback MUST NOT move the view or clear a newer command's barriers.
+
+On iOS, the existing `scrollToOffset` implementation is also exposed to native
+callers as `onekeyScrollToOffset:animated:`. BottomTabs discovers this selector
+on the collection view's direct NativeList owner and requests offset zero for
+standalone-list double-press scrolling. The call uses `requestScroll`, including
+its explicit-scroll revision, structural-tail interruption, command notifications
+and pending-layout ownership; external callers MUST NOT bypass it by writing
+the internal collection view's offset. This adds no JavaScript/Nitro API.
+BottomTabs and NativeList native sources must ship together. The native handoff
+is source implemented; structural-transition runtime acceptance remains pending.
+
+A valid command can privately notify the owning Pager before execution, including
+a same-position no-op; this does not add a public NativeList API. A Pager-owned
+page-top or sticky-top command can privately cancel only its owned list's old
+pending command and native animation before acquiring its own target. On iOS
+the notification identifies the collection view; on Android the listener belongs
+to the actual owned RecyclerView. No notification may take over another owner.
+
+On Web, the owned viewport's private cancellation event clears pending list
+commands and stops old browser smooth motion. A newly accepted valid list
+command invalidates a queued Pager target; invalid commands do not. Destroy
+removes the exact listeners and clears pending work. Other list viewports and
+rendering work remain independent.
+
+Conformance: NativeListView.kt, RNCNativeListView.swift, NativeListWebEngine.ts,
+and the related Pager owner coordination. Runtime acceptance must exercise
+first populated layout, command replacement, animated/non-animated completion,
+true top no-op, and short pending content followed by usable geometry on the
+actual installed package; source or helper-only checks are not runtime evidence.
+
+## Data, cache and identity
+
+`row.key` identifies data; renderer reuse identity describes compatible view
+structure. Content, styles, height and placement must not enter reuse identity.
+All twelve templates have their own renderer family: Message, Rail, MediaTile,
+Action, System, Activity, DataRow, MetricCard, Market, Identity, SectionHeader and
+WalletGroup. Same-key family changes must replace the incompatible host. OneKeyImage owns image caches; NativeList owns row/slot binding identity.
+
+Keys are opaque strings and MUST contain at least one non-whitespace character.
+Leading and trailing whitespace is valid and MUST be preserved in snapshots,
+patches, selection and emitted events on
+iOS, Android and Web. The SDK MUST NOT trim or otherwise normalize keys;
+`token` and `token ` identify different rows. Duplicate checks use the exact
+string. This rule applies to all key fields validated by the shared protocol;
+section index titles retain their separate development-only
+no-surrounding-whitespace assertion.
+The 256-code-unit key limit is a development assertion, not a production limit.
+
+Each iOS and Android host retains an index from accepted logical row keys to
+row positions. An accepted complete snapshot reuses that index only when its
+generation and ordered `(key, type)` sequence match the prior accepted
+snapshot; otherwise it replaces the index. Reorder commits rebuild it and
+disposal clears it. Patch batches reuse the index and never include retiring
+presentation rows in it. Native hosts validate each received canonical batch before changing config or
+presentation; invalid native batches leave both unchanged. The shared production
+JS boundary first isolates rejected row/group units, so a native batch contains
+only accepted canonical updates. iOS updates only changed accepted entries in its
+presentation lookup after a valid patch, preserving any retiring rows.
+
+### Validation environments and rejected input
+
+Status: implemented in source; acceptance and remaining runtime gaps are recorded below.
+
+Development runs strict contract assertions after shared null/empty-image
+normalization. Production sanitizes optional decorations without rejecting
+valid business content: invalid colors/styles are omitted, invalid images use
+existing placeholders, and positive title-image dimensions are clamped to a
+square of 1...40 logical units. Image headers are string dictionaries, never
+interpreted as geometry. Unsafe object graphs are rejected before normalization.
+
+Shared image URI validation accepts the entire `onekey-avatar:` scheme,
+case-insensitively, in snapshots and row patches on iOS, Android and Web. It does
+not restrict the host, version, path, query string or fragment, and preserves the
+URI without decoding. Existing image URI schemes retain their acceptance rules.
+Unsupported image URIs fail development assertions and are sanitized out in
+production. This is validation acceptance only; avatar decoding and loading
+remain owned by the platform image loader or Web avatar worker.
+
+Common mobile image URI schemes are accepted case-insensitively in snapshots
+and row patches: `http:`, `https:`, `file:`, `content:`, `android.resource:`,
+`asset:`, `res:`, `ph:`, `assets-library:` and image `data:` URIs. Relative paths
+and bare resource names remain accepted. In particular, production MUST NOT
+strip bundled Android Release resource URIs such as
+`android.resource://<package>/drawable/<name>`. This only permits the URI through
+shared validation; resource lookup, permissions and decoding remain the
+platform loader's responsibility. No new loader is registered by this policy.
+Android Release App rendering acceptance remains pending.
+
+A complete snapshot remains atomic after decoration sanitization: invalid
+schema, duplicate/missing identities, required business fields or wallet-group
+parent/children relationships reject the snapshot. No row is silently removed.
+Production normalizes contiguous group positions and filters selection to
+selectable keys, respecting none/single modes.
+
+Patches use omitted/undefined fields as no-ops. Null explicitly removes an
+optional field on JS, Web, iOS and Android; required fields cannot be cleared.
+Empty optional images and empty top-level segment arrays normalize to null in
+patches and absence in snapshots. Empty images remove their outer titleImage
+or media wrapper. This protocol requires native binaries with null-removal
+support; callers must not enable it against older native SDK implementations.
+
+Market price remains required and nonblank. Updating nonempty priceSegments
+requires a price in the same canonical patch; callers own matching formatted
+text (the validator does not reconstruct subscript prices). Updating price
+without segments clears an existing overlay. For identity/market subtitles,
+updating one representation clears the old other representation unless both
+are supplied; clearing segments alone retains the base text. Activity has no
+subtitle pair. Market quote changes with an existing/new webTable must include
+matching table data or explicitly remove webTable.
+
+Development rejects invalid patch batches atomically. Production isolates
+failures to each target key and its coupled groupId: all updates to a key are
+merged in order before validation, and a failure rejects that unit while other
+valid units commit. Financial-value and interactive accessories with missing
+required data fail their row; malformed purely decorative accessories are
+removed. Diagnostics contain locations, never row values or image URLs.
+
+All targets share the canonical accepted patches. The accepted JS rows and
+serialized native changes derive from the same result. Native owned snapshots
+and accepted Web engine snapshots validate only changed rows during patches;
+unchanged rows are not rescanned. Direct helpers receiving an unowned baseline
+validate that baseline once before incremental merging. Native owned snapshots
+are immutable and indexed by key. Initial invalid snapshots render empty;
+rejected later snapshots retain the last accepted snapshot. Rejected patch
+units retain their previous complete rows. Direct validators still throw on
+unrecoverable input. Image loading failures remain the loader's responsibility.
+
+`planNativeListPatches(previous, next)` is an explicit, pure public helper for
+callers that own two valid, immutable snapshots. It returns a readonly empty
+batch for equal snapshots, value-only `identity` or `dataRow` row patches when
+only eligible values change, and `undefined` when the caller must deliver a
+complete snapshot. It never dispatches, accepts or validates an update, and
+does not deep-copy, freeze or cache caller input. Returned patches may refer
+to `next`'s immutable values; the caller retains baseline and commit ownership.
+The component does not automatically invoke this planner for prop snapshots. Any
+change outside `rows`, including generation, selection, layout, list style, empty state or
+footer, requires a complete snapshot. Row keys, order and types must match.
+`identity` may patch `subtitle`, `subtitleSegments` and `trailing`; `dataRow`
+may patch non-asset columns and `trailing` while preserving the first asset
+column. Changes to other row fields or to the presence of optional patch
+fields require a complete snapshot. Comparison is by JSON value, ignores
+object property order and properties whose value is `undefined`, and keeps
+array order significant.
+
+Rejection emits a diagnostic without including row keys, text or image URLs.
+Explicit calls to the exported validation functions still throw on rejected
+input, so development tooling can inspect the full contract failure. Rejection
+does not imply that the requested update succeeded. No row identity is trimmed,
+truncated or regenerated, and no row is silently dropped from a snapshot.
+
+Acceptance for this revision: 429 JS/Web tests pass, including native React
+wrapper containment, canonical null/undefined semantics, price/segment pairing,
+production row/group isolation and unchanged-row access checks. Package type
+checks, lint (zero errors; existing warnings) and test-integrity checks pass.
+iOS production/XCTest targets and Android production/instrumentation targets
+compile; 29 Android JVM tests pass. Four focused iOS 26.5 XCTest cases verify
+title-icon packing, title-image reuse and null removal. Android 15/API 35
+instrumentation verifies wallet-sidebar image bounds, long-title ellipsis,
+and full-width title restoration after removal. Shared JS/Web regressions also
+verify that malformed production title-image replacements clear the previous
+image and help anchor. Full App acceptance remains pending.
+
+Wallet groups use the actual embedded parent/children model, not memberKeys
+references. groupId/groupPosition remain snapshot-owned fields; production
+patch failures also reject other patched rows in the same existing groupId.
+Unknown extension fields (including unsupported sparkline/changeHighlight
+models) are ignored in production rather than introducing a new renderer API.
+
+## Platform contract
+
+All platforms expose the same bounded style properties and public semantics.
+Existing geometry/typography differences are recorded in
+[STYLE_SPEC.md](STYLE_SPEC.md); structural extraction must not silently change
+them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
+engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
+
+### iOS account-selector trailing width (OK-65638)
+
+Status: implemented. Manual consuming-app verification on an iOS Simulator
+reported normal balance rendering after a local native rebuild. Automated
+XCTest execution and broader device acceptance are tracked separately.
+
+For an `identity` row with `presentation: 'accountSelector'`, an empty trailing
+collection or a spinner-only accessory MUST leave the remaining horizontal
+space available to the title and subtitle column. A short title MUST NOT cause
+the balance subtitle to collapse while unused row width remains. The existing
+gap before the trailing column and the shortened address's compression priority
+remain unchanged; content may still truncate when the row is actually too narrow.
+Visible controls keep their intrinsic width without introducing required-width
+conflicts. Rebinding between empty, spinner and single-icon states MUST release
+the previous row's width constraint.
+
+`NativeListAccountSelectorLayoutTests` covers balance/address geometry and
+control widths on production UIKit cells, including rebinds. Android and Web
+keep their existing layout and public interfaces.
+
+### Android section-index attachment
+
+The index rail and its letter preview MUST remain outside the view hierarchy
+until the accepted configuration contains usable index entries. Disabling the
+index or removing its last usable entry MUST detach both views, cancel the
+preview interaction, and prevent a pending attachment callback from restoring
+them. Restoring usable entries MUST reattach the same view instances without
+duplicate parents. This attachment lifecycle is Android-specific; iOS and Web
+keep their existing behavior.
+
+The section-index letter preview is decorative. It MUST NOT participate in
+React Native touch targeting while visible, fading, or invisible. Controls in
+React container slots beneath its bounds MUST remain pressable; the index rail
+continues to own index selection and scrubbing.
+
+When `sectionIndex.centeredInWindow` is enabled, the Android index rail moves
+between the list container and the window host as list visibility and attachment
+change. Before adding that same rail to its new parent, the previous parent MUST
+finish any pending view transition for it. Hiding the list returns the rail to
+the list container; detaching still uses the existing posted return so that a
+window traversal is not interrupted. Re-showing or reattaching MUST retain one
+rail instance with one current parent.
+
+### Font resource ownership and runtime configuration
+
+Status: implemented; JavaScript regression tests, Android compilation/JVM tests
+and iOS test-target compilation verified. Device rendering acceptance pending.
+NativeList distributes no font files and registers no fonts. Hosts own font
+licensing, provisioning and registration. `configureNativeListFonts(families)`
+sets four optional face names (`regular`, `medium`, `semibold`, `bold`) for the
+current JavaScript runtime. The initial mapping is empty; `{}` resets every face
+to system fallback. Each call replaces the entire mapping. Names are trimmed,
+nonempty strings of at most 128 UTF-16 code units without control characters; unknown
+keys or invalid values throw before changing any state. Omitted/undefined faces
+use system fallback. Identical normalized mappings are idempotent.
+
+Hosts configure once during UI-runtime startup, after provisioning fonts and
+before rendering lists. Independent UI/background JavaScript runtimes have
+independent stores; configuring one MUST NOT change another. There is no public
+instance override and no mutable native-global font mapping. An internal Nitro
+`fontFamiliesJson` prop delivers each list's current mapping to its own resolver.
+Mounted lists subscribe to their runtime store. A changed mapping rebinds text,
+invalidates measured geometry and requests layout without replacing row keys,
+selection or snapshots. An active reorder is cancelled through the existing
+structural-update cleanup before changed font geometry is applied. The same mapping MUST NOT invalidate layout. Changing
+which font bytes an already configured name resolves to is outside this API;
+hosts load/register fonts before configuration, and no late-font-loading event or
+automatic font-file registration is added.
+
+iOS resolves each configured PostScript face with `UIFont(name:size:)`, then
+falls back to the requested system weight. Tabular-number features remain enabled
+where requested. Android delegates configured family names to ReactFontManager
+with `Typeface.NORMAL` and host assets, including Expo's `setTypeface` path;
+missing configured families use React Native's system fallback, whose weight
+need not match the requested semantic weight. An omitted face
+uses the requested system weight on Android API 28+, with the nearest
+regular/medium/bold system face on API 24–27. Web treats each configured name as a literal
+CSS font-family name with the existing semantic weight and platform font stack;
+the same resolver covers row text, sticky headers, fixed footers, section indexes
+and reorder previews. Native measurement and binding MUST use the same instance
+mapping. `fontFamily` remains absent from the public row-style surface.
+
+System/custom fallback changes text metrics. Consumers must check fixed-height
+rows, truncation and numeric alignment on each platform; source/unit checks do
+not establish visual acceptance. Acceptance includes two independent runtimes,
+two list instances, changed/reset mappings, invalid configuration without partial
+state, all templates and container text, and retained selection/scroll behavior.
+
+### Web row and trailing button cursor
+
+Pressable rows and trailing buttons keep the default cursor on Web and signal
+interactivity through their hover background, like the host app's rows and
+buttons. Reorderable rows keep their grab cursor. Icon buttons, checkboxes and
+action buttons keep the pointer because some of them have no hover background.
+
+### Trailing text accessory hit area (OK-65494)
+
+Status: implemented on iOS and Android. iOS XCTest
+(`NativeListAccessoryStackTests`) checks the control state and hit test, Android
+a JVM policy test (`NativeListPressPolicyTest`); iOS Simulator acceptance on the
+app's network selector is recorded in the changelog entry (2026-10-26). Android
+device acceptance pending.
+
+A trailing text accessory (`value`, `valuePair`, `progress`, and a `radio` or
+`switch` without an action key) is display only. It MUST NOT own touches: a tap
+on it is a row press, so the whole row, including its value column, is the hit
+area on iOS, Android and Web. Only a text accessory that carries an action key
+(`radio`, `switch`) handles its own tap and emits that action instead of the row
+press. Icon, chevron, menu, drag and checkbox accessories keep their existing
+ownership. iOS implements this by disabling user interaction on the shared
+accessory button when it has no action and restoring it on reset; Android keeps
+the trailing `TextView` non-clickable unless `showTrailing` binds an action
+(`setOnClickListener(null)` alone leaves a view clickable). Web already renders
+an action-less accessory as a `span`, so its click reaches the row.
+
+### Leading badge overhang (OK-65694)
+
+Status: implemented on Android, the only platform that clipped. Android JVM
+policy tests (`NativeListLeadingVisualClipPolicyTest`,
+`NativeListActivityHostClipPolicyTest`); Android emulator
+acceptance on the example account selector (API 36, 2026-10-27) is recorded in
+the changelog entry. iOS and Web are unchanged.
+
+A leading visual lays these badges past its own frame: a token `networkImage`
+with its backdrop, a `cornerIcon`, and every `overlays` entry, whose default
+`offset` of 2 already overhangs (the app's account selector hangs its
+single-network badge 4 units past the 32-unit avatar). Such a badge MUST render
+in full on every platform. iOS stops clipping the visual (`clipsToBounds`) once
+one of those descriptors is bound, and Web keeps the visual `overflow: visible`.
+Android clips a child to its own bounds whenever its parent clips children, so a
+host row that keeps the default `clipChildren` cuts the overhang flat even
+though the visual itself never clips. The Identity renderer therefore stops
+clipping children and padding exactly when the bound leading visual reports an
+overhanging badge (`requestsUnclippedHost`, decided by
+`nativeListLeadingVisualOverhangsFrame`), as the Market and Message renderers
+already do for their network badges; a visual without such a badge keeps the
+row's default clipping.
+
+Host clipping is per-bind state. A row view that serves several row shapes
+(the Android Activity view serves the legacy row and the rich `amounts` row) is
+reused across binds, so each bind MUST derive clipping from the item it binds
+(`nativeListActivityHostClips`): a view that last showed an overhanging badge
+clips again when it is rebound to a row without one. The rule follows the
+visual, not the row shape: the rich row renders its leading visual on the
+details view, so that view and every column between the visual and the host
+stop clipping too, and the host derives its own clipping from the details
+view's visual (`leadingOverhangs`, OK-66275). Before this rule the rich branch
+forced the host's clipping back on and left the details view at Android's
+defaults, so the app's history rows (which always carry `amounts`) still showed
+the badge cut at the bottom-right after the legacy branch had been fixed.
+
+The row's own shape still clips on every platform: iOS masks the cell to its
+corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
+Android keeps `clipToOutline` for a `style.container.cornerRadius` row (its
+parent also clips each row to its bounds). A badge is therefore whole only while
+it stays inside the row's rounded outline, which every app descriptor does: the
+account badge hangs 4 units towards the row's centre and the wallet top-left
+badge (`offsetY` 4) starts inside a 12-unit corner radius with the default
+padding. The example `NativeListRowStylePage` row `identity-badge-rounded`
+combines both badges with `container.cornerRadius` as the rendering check for
+that combination.
+
+### Activity leading pair (OK-66071)
+
+Status: implemented on iOS and Android; Web already drew the pair. Android JVM
+geometry test (`NativeListLeadingSlotFrameTest`); Android emulator acceptance on
+the example row-style page is recorded in the changelog entry.
+
+An Activity row whose `leading` and `secondaryLeading` are both tokens with an
+image (the app's swap and multi-asset history rows) draws them as a pair inside
+the 40-unit visual box, as the legacy avatar and the Web renderer do: the
+primary token at the top-left at 0.6 of the box (24 units), the secondary at the
+same size at the bottom-right inside a 2-unit ring in the row background, above
+the primary. The ring is shown only while the secondary image is displayed:
+while that image loads, after a failed load and after recycling it stays hidden,
+so it never covers the primary's corner with a blank disc. The token `networkImage` badge, when present, keeps its single-token
+geometry at the box's bottom-right corner above the secondary; a pair shows one
+badge, never one per member. A secondary token without an image leaves the
+primary alone at full size, and a primary without an image lets the secondary
+take its place. Before this rule Android laid the secondary over the whole box
+(hiding the primary and the badge) and iOS drew it in the badge's corner slot
+over the badge. The per-source geometry is one pure function on Android
+(`nativeListLeadingSlotFrame`) and the same arithmetic in
+`NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
+order by role on every bind because slots are reused across roles.
+
+The Android Activity renderer also applies the badge-overhang rule above on
+both of its branches (`requestsUnclippedHost` stops the legacy content row, the
+rich details view with its columns, and the row padding clipping), so the
+history rows' network badges render whole instead of cut flat.
+
+## Failures, fallback and limits
+
+Snapshot validation rejects malformed/duplicate-key input without partial
+application, through the contained failure behavior above. Development-only
+template field/array bounds and image fallback behavior are defined
+in [ROW_TEMPLATES.md](ROW_TEMPLATES.md), [README.md](../README.md) and
+[DESIGN.md](DESIGN.md). This change adds the style surface's limits, defined in
+[STYLE_SPEC.md](STYLE_SPEC.md) §3.3/§4/§5: numeric bounds, `#RRGGBB`/`#RRGGBBAA`
+colors (including `listStyle.separator.color`), `groupCornerRadius` `0…40`, and
+development-time rejection of undeclared or unknown nested style keys by
+`validateSnapshot` and `validatePatches`. Production renderers ignore unsupported
+style properties while minimum protocol guards remain active. It adds no retry
+policy or automatic layout correction.
+
+## Performance and resources
+
+Snapshots and patches cross the bridge in batches. Visible rows use platform
+recycling/windowing; shared primitives own image cancellation. All twelve templates use dedicated lightweight native hosts and persistent Web
+bodies. WalletGroup composes the migrated Identity member hosts.
+None allocates the legacy native tree. This structural change is
+not a measured scrolling-performance result; performance claims still need a
+separate workload and measurements.
+
+## Conformance and six-stage migration
+
+| Stage | Current status | Exit condition |
+| --- | --- | --- |
+| 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
+| 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
+| 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
+| 4. Complex templates | Complete (3/3): Market, Identity and SectionHeader migrated on all three platforms | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
+| 5. WalletGroup | Complete: registered composites and independent keyed Identity members on all three platforms | Independent member renderers; verify member events/styles, compact dragging and height restoration |
+| 6. Cleanup | Complete: obsolete hosts/maps/fallback pools and audited key styling removed | Remove migrated key inference and global style maps; container no longer manipulates template internals |
+
+The closed internal registry selects all twelve renderers by template type.
+No supported template dispatches to the legacy native tree. WalletGroup owns
+composition and compact appearance; its members use independent Identity
+renderers. Legacy native classes, global style maps and fallback registry entries
+are removed, including footer initialization. Web preserves compatible bodies and
+unchanged member image elements across rebinding.
+
+Message resolves text/spacing/image inputs from data/theme/styles, classifies
+updates as unchanged, content/style, assets or replacement, and binds/measures
+using those resolved values. Image slots retain an unchanged effective request;
+source/row/slot or image-request-option changes invalidate old callbacks and
+retries. Image request epochs are independent of row action-anchor epochs, so
+text-only updates preserve in-flight images. Legacy Message binding, slot-map
+and measurement branches have been removed. Stage 6 also removes the audited Android separator-key
+compatibility policy; the explicit separator field controls visibility.
+
+Message intrinsic measurement now uses its actual resolved view metrics rather
+than the historical estimator-only defaults listed in MIGRATION_BASELINE.md.
+This can change **automatic** Message heights; explicit row/container heights
+and unstyled drawing defaults remain unchanged. Native measurement accounts
+for the allocated column width, line limits, gaps and optional images. Web uses
+the same resolved geometry with a conservative text estimate, then corrects the
+visible intrinsic height from its rendered DOM; it does not auto-fit content.
+
+Source boundaries and dated runtime evidence are in the incremental migration
+section of [DESIGN.md](DESIGN.md). Acceptance covers style set/change/clear,
+binding without recycle, same-key template changes, image add/remove, scrolling
+away/back, explicit height restoration and fixed-footer placement. Unit/type
+checks are not native runtime verification, and Message acceptance does not
+complete the remaining stages.
+
+Stage 3 extends the closed registry one template at a time. Migrated templates
+own their view trees and semantic styles; native templates share the Message
+host's appearance/event lifecycle and bounded image primitives, not a legacy
+view tree. Preserve existing default geometry, variant behavior, actions,
+selection echo and platform differences. Horizontal sizing belongs to each
+renderer and must use its resolved text/image/spacing inputs. A style change
+must invalidate horizontal placement when its measured width changes. Fixed
+template height defaults remain defaults, not automatic content fitting.
+DataRow keeps the inventoried `asset`-column Web badge behavior until a separate
+caller migration; this extraction does not change which column owns badges.
+
+Rail owns its title/badge/status views and leading visual. Shared native hosts
+own appearance, action-anchor epochs, selection routing and reuse invalidation;
+Web uses the same primitive interface for Message and Rail. Legacy Rail bind,
+style-slot, reset and width branches have been removed. Horizontal measurement
+now responds to explicit fonts, image dimensions, padding and gaps while
+retaining the existing default width allowances and platform limits. Text-only
+rebinding preserves unchanged image requests; clearing styles restores defaults.
+All seven stage 3 templates are now migrated; dated acceptance for each is recorded in DESIGN.md.
+
+MediaTile owns its picture, network indicator, title/subtitle, badge and close
+control. Its legacy bind/style/reset allocation paths are removed. Images retain
+unchanged requests across content/style updates; close events use the shared
+host epoch with `mediaClose` source. Grid and horizontal allocation remain
+container-owned. Default iOS grid height stays width + 48, including existing
+compression when a close control is present; explicit container heights let the
+caller allocate more room. No overflow fitting is added.
+
+Action owns its title, optional icon and bounded accessory controls. Native
+checkbox presentation can update without rebinding the title/icon; all actions
+carry the shared host epoch and preserve the original account-control anchor
+inset. Fixed footers now also resolve their host through the closed registry
+and replace it when their renderer family changes. Placement and gesture
+routing remain list-owned.
+
+MetricCard owns standard, activity and performance variants. Its existing
+per-platform measurement, badge colors, composite spacing and progress layout
+remain template defaults. Standard-card styles address title/value/subtitle/trend;
+composite cards expose the heading slot and keep metric internals fixed as
+defined in STYLE_SPEC.md. Image slots retain unchanged requests across rebinding
+and reset when a source disappears or its slot identity changes.
+
+All six stages are complete. Stages 4–6 and their acceptance scopes are recorded
+below; the baseline inventory explicitly identifies two retained compatibility
+policies outside renderer selection/style mapping.
+No migrated simple template dispatches through a legacy binder.
+
+### Stage 4 acceptance scope
+
+Market, Identity and SectionHeader move to dedicated registered renderers on all
+three platforms. This stage preserves existing defaults and implicit-key
+compatibility recorded in MIGRATION_BASELINE.md. It adds no style fields beyond
+the style surface this change introduces.
+Market owns quote-only binding and its platform row interactions; Identity owns
+selection presentation; SectionHeader owns stable summary updates and measurement.
+Sticky placement and header/footer routing stay in the list container.
+Acceptance includes variant changes on the same key, styled → unstyled rebinding,
+unchanged image requests, partial updates with current action context, selection,
+scroll/recycle, and shared footer/sticky-header behavior.
+
+Each complex renderer now owns its view tree, defaults, semantic style slots and
+measurement. Native hosts share bounded leading/image/accessory primitives. Web
+retains the compatible body and unchanged image elements; loaded image state is
+not reset when geometry is restored. Quote and summary updates keep the latest
+row model for subsequent action/selection dispatch. Stage 4 introduces no public
+API or Nitro schema beyond the style surface described above. Stage 5 below also replaces the native WalletGroup composite tree. Stage 6 below removes the
+obsolete native classes and maps.
+
+Stage 4 validation: package typecheck and all 161 tests in five suites pass;
+focused lint has zero errors and two existing shadowing warnings. iOS Debug
+build/link and Android Debug APK plus seven unit tests pass. Both dedicated
+native simulators and headed Chrome exercised the acceptance cases above.
+The section fixture additionally verified imperative scroll pinning and active
+index updates after the container fixes. Stages 5 and 6 acceptance follow below. This is not a performance signoff.
+
+### Stage 5 ownership and acceptance
+
+WalletGroup owns only member composition, measurement and compact presentation.
+Each member uses the registered Identity renderer and retains its own key, style,
+selection, action origin and binding lifetime. Group styles never cascade into
+members. Rebinding reconciles by member key; removed members are recycled
+immediately, so retention is bounded by the current member count (plus one
+compact parent on native). Recycling releases every member and compact parent.
+
+Acceptance covers member press/accessory routing, disabled and pressDisabled
+members, selection-only changes, style set/change/clear, member reorder/removal,
+family replacement and reuse. The compact drag allocation is 68 on iOS and Web;
+Android keeps its legacy `max(68, parent member height + 2 × group vertical
+inset)` (for example 94 for a badged parent with an explicit height).
+`+N` counts children whose draggable is not false. Only `draggable: false`
+prevents a member from initiating group drag; a disabled member can still start
+it (legacy behavior on all three platforms). Drop/cancel restore the
+resolved group height and all configured member/container styles. Reorder
+orchestration stays in the list container. Existing platform defaults stay
+unchanged. Verify on the dedicated external-drive simulators and headed Web.
+
+Stage 5 runtime verification: iOS and Android member press/menu actions carry
+the member key and current action origin, including after content updates.
+Both platforms verified selected/disabled members, style set/clear, member
+removal/reordering, same-key family replacement, empty/repopulation, scrolling
+and the shared fixed footer. Real member/parent drags move the group atomically;
+excluded members do not start dragging. Default 274-point and styled 340-point
+fixture heights restore after drop. iOS also verified a no-op long press;
+Android verified touch cancellation; Web verified Escape cancellation.
+
+All 163 package tests and typecheck pass; focused lint has zero errors (two
+existing warnings). iOS Debug build/link, Android Debug APK and seven Android
+unit tests pass. Headed Chrome includes a 390px viewport and in-drag captures.
+Native simulator captures, action payloads and iOS recordings are stored with
+the stage 5 harness in the external validation runtime. These are standalone
+NativeList checks, not a consumer-app release or scrolling-performance signoff.
+
+### Stage 6 cleanup and acceptance
+
+The native monoliths and global style-slot maps are deleted. Their still-used
+fonts, icons, layout helpers, action origins and controls remain shared primitives.
+All twelve registry families are explicit. JavaScript validation rejects an
+unknown row type before serialization. If one still reaches native code, iOS
+keeps its legacy behavior: an empty 56-point placeholder row with shared chrome
+and a single log message. Android rejects the snapshot while parsing it. Footer initialization uses a registered Action host.
+Web has no legacy pool or warning-specific container measurement path; template
+renderers own selector typography, System warning DOM measurement and
+WalletGroup compact-preview lookup.
+
+The consumer audit in MIGRATION_BASELINE.md allows removal of history-key header
+inference, Android token-section typography inference, and separator-key exceptions.
+Callers choose `variant`, `style` and `separator` explicitly. Market pagination-tail
+recognition and the existing Web DataRow `asset` badge column are deliberately
+retained under the separately documented migration boundaries.
+
+Validation covers same-key cycling through twelve templates, style set/clear,
+ordinary/history-named/explicit-history headers, explicit 30-unit token headers,
+Action/System footer replacement and callbacks, scrolling/reuse and WalletGroup
+member actions and compact dragging. Source/type checks and runtime evidence
+are recorded separately in DESIGN.md. This completes the architecture migration;
+it does not add automatic overflow fitting or claim a performance benchmark.
+
+### Web legacy-default audit (2026-09-24)
+
+The renderer structure is retained; these legacy Web defaults are restored
+inside it. MetricCard/System default restoration keeps image loading visibility
+(a loaded image stays visible after content or style rebinding). WalletGroup
+measurement keeps the legacy member sum, 12-unit gaps and the 1px border pair
+(budgeted only when the parent member carries `height`, like native's 1-unit
+inset); `style.verticalPadding` replaces that inset instead of adding to it, and
+the rendered padding matches the measurement (the border supplies the first
+unit). walletSidebar members keep their legacy 68/92 presets, which never
+applied the `size` adjustment. The shared container pass records its own inline
+writes and the engine (and WalletGroup, per member) undoes them before the
+renderer rebinds, so alignment set on template children does not leak into a
+reused, unstyled row and a renderer value equal to the previous container value
+is never reverted. DataRow measurement is layout-aware again (table rows
+without secondary text are 48) and linear columns keep the legacy structure:
+secondary leading text inline before the primary text, secondary text directly
+below. Selector geometry follows either explicit height field. A disabled
+WalletGroup member can start the group drag and emit its own actions again
+while its member press stays blocked; title-help hover checks only the resolved
+member. Every System retry (Market or not) is message-only with a row-press
+action, as in the legacy engine. Text styling no longer reads computed style, so
+attached and detached rows style identically.
+
+Review round 3 (2026-09-24). Web: a Market subscript run keeps the legacy
+`ceil(0.6 × fontSize)` size on a `fontSize` line box when the field has an
+explicit `fontSize`, and iOS/Android again draw it at `ceil(0.6 × fontSize)` on the
+field's own line height (legacy on each platform);
+an automatic-height System warning is laid out at its rendered border-box
+height again; System and MetricCard rebuild their text when a text style
+changes, so clearing `lines`/`offsetY` restores the original text and removes
+the layout wrapper; a reused visual restores `margin-bottom`, so a cleared
+walletSidebar `leadingGap` leaves no residue. iOS and Android gate every
+selector explicit-height geometry on `style.container.height ?? row.height`
+(Android's list-wide source scale stays keyed on `row.height` only); Android
+rebinds the fixed footer on a `listStyle`-only snapshot.
+Validation: package typecheck and 180 tests pass (jsdom/unit level); this is
+not new rendered browser or native device evidence.
+
+### Platform interaction and appearance differences (legacy, retained)
+
+These are pre-existing platform behaviors recorded after the 2026-09-24 native
+audit; they are not new in this change.
+
+- **Disabled rows and actions.** iOS blocks every action on a disabled row
+  (cell interaction off plus an action-emission guard). Android blocks text
+  accessories (radio, switch, `⋮` menu), checkboxes, Activity footer buttons and
+  System Retry, but still emits trailing/leading icon actions, Market badges,
+  media close, title help and WalletGroup member actions; a disabled group does
+  not block its members' actions on Android. Web (legacy) blocks row press and
+  click actions on a disabled row or disabled WalletGroup. A disabled member
+  inside an enabled group still emits its own actions, but its member press is
+  blocked.
+- **Web hover actions.** Web only: a title marked `titleActionOnHover` or an icon
+  accessory with `hoverActionKey` emits that action with an anchor on
+  `pointerover` (not on moves inside the element) and invalidates the anchor
+  with reason `pointerLeave` on `pointerout`. The check is the resolved source's
+  `disabled` only: a WalletGroup member's own flag, never the group's, so a
+  member of a disabled group still emits its hover action (legacy). Native has
+  no hover; the same keys fire on tap.
+- **System retry.** Android and iOS show a literal "Retry" button on non-Market
+  retry rows and read `actionText` only for the Market retry. Web keeps its
+  legacy rendering for every presentation: a retry row shows only its message
+  and the row press (click, Enter or Space) emits `actionKey` with a `row`
+  anchor; no retry button is drawn. `actionText` and `style.actionText` are
+  accepted by validation and have no Web target (native only).
+- **Pressed corners.** Native pressed feedback ignores `groupPosition` and uses
+  12 on all corners; templates with their own resting radius keep it (Rail 8,
+  MediaTile 16). iOS walletSidebar identity rows use 20; Android has no
+  wallet-sidebar exception (12). Web changes only the pressed background and
+  keeps the resting (group or template) radius.
+- **WalletGroup row appearance.** The group's row-level `backgroundColor` is
+  ignored on iOS and Android (legacy), in both the resting and the
+  `backgroundFullWidth` fill: the group fill is
+  `style.container.backgroundColor` or the theme `subduedBackground`. Web
+  (legacy) applies it inline over the group fill. Use
+  `style.container.backgroundColor` for a cross-platform group fill.
+- **WalletGroup height.** iOS and Android (legacy) ignore the group's
+  `row.height`: `style.container.height` wins, otherwise the height comes from
+  the members. Web (legacy) honors `row.height` for a WalletGroup like any other
+  row.
+- **Text direction.** `start`/`end` text alignment follows the layout direction
+  on all platforms. On iOS a runtime layout-direction change re-resolves it:
+  visible rows and the fixed footer rebind immediately, offscreen rows on reuse.
+- **Separator inset.** Identity rows default to a 60-unit inset and other
+  templates to 12 on native; Web defaults to 0 (STYLE_SPEC §6.2).
+- **DataRow linear layout.** See ROW_TEMPLATES.md: native unstyled linear rows
+  keep the legacy single-label column.
+
+## Native scroll-position thresholds and tablet grids
+
+Status: Source implemented; native runtime acceptance pending. These additions are native
+only. Existing Web rendering and caller behavior are unchanged.
+
+- `scrollPositionThresholds?: { start: number; end: number; enabled?: boolean }`
+  observes the list's logical distance from its content start, in logical pixels.
+  `start` and `end` must be finite, nonnegative, and `start < end`. Omitted or
+  `enabled: false` disables observation.
+- `onScrollPositionThresholdChange({ isBeyondThreshold })` reports initial state
+  after enabling/configuration changes, then only hysteresis transitions: enter
+  when distance >= end, leave when distance <= start. No per-frame JS events.
+  Replacing the JS callback takes effect on the next event; disabling emits no event.
+  Configuration updates reset hysteresis before recomputing current position.
+- iOS uses contentOffset + contentInset, excluding overscroll below zero. Android
+  accumulates consumed child scroll distance and, after every layout pass or
+  zero-delta scroll, re-derives it from the measured extents above the first laid-out
+  item (see Android ancestor scroll distance). Parent-pager header contributions are
+  tracked separately.
+- `layout.gridColumns` accepts integers 2 through 7 on native. Native parsers
+  clamp malformed external JSON to 1 through 7 as before; public JS validation
+  rejects invalid requested counts. Grid geometry remains container-owned.
+
+Required acceptance: disabled/enable lifecycle, both equality boundaries,
+oscillation inside the band, programmatic scroll, page/identity replacement,
+refresh and header insets, grid 6/7 layout/rotation, and no stale callbacks after
+disposal. Unit checks prove transition semantics, not rendered behavior.
+
+## Native media preview probing
+
+### Persistent first-frame revision — Source implemented; scoped iOS validation
+
+This revision supersedes the cell-only frame retention, unbounded visible-player
+count and copy-failure retained-player behavior described in the baseline below.
+Image owns the native-only preview cache and extraction coordinator defined in
+its SPEC §6.3; NativeList retains the paused/muted player and view lifecycle.
+No public descriptor, JavaScript API or Web renderer behavior changes.
+
+On reaching the video candidate, a visible slot queries permitted decoded memory
+and then disk before requesting extraction. A hit displays the still frame and
+creates no AVPlayer/ExoPlayer. Normal image candidates retain their original
+precedence and image cache; a video-cache hit MUST NOT bypass an earlier image
+candidate. Cache identity excludes row key and includes URI, canonical headers,
+bounded pixel tier, schema and capture fit. Recycle drops cell state, not the
+shared cached frame. Fit, orientation, black/transparent platform letterbox and
+row-owned tap behavior match a newly captured frame.
+
+The media descriptor exposes URI, explicit headers, dimensions, fit and cache
+policy, with no cookie/session management API. Preview identity does not track
+ambient cookie sessions or automatically invalidate on cookie changes; media
+that requires that behavior is outside the supported preview-cache contract.
+Existing AVPlayer/Media3 networking and cookie handling remain unchanged. The
+cache does not promise that underlying network requests are cookie-free.
+Detaching an iOS view with no window MUST preserve its last pixel tier and captured
+still; only a real attached-window scale/layout change can invalidate that tier.
+
+Slots subscribe only while visible, attached and foreground eligible. They
+cancel on invisibility, detach, background, recycle or identity/size change and
+release any owned player immediately. A same-key visible peer may take over;
+old owner, binding, candidate and player generations cannot attach a frame or
+complete a newer request. At most two flights extract concurrently, bounded by
+Image's queue and 10-second grant deadline. The existing six short copy attempts
+may run, but exhaustion now releases the player and advances/fails the candidate
+instead of retaining a paused player indefinitely. Success is emitted after a
+valid still exists, not solely when the player reports its first rendered frame.
+No failed extraction is cached. Disk-write failure still permits a successful
+still to display. A cached or newly copied still releases player and viewport
+observers, and ordinary text-only rebinding retains the current presentation.
+
+The cache dimensions use actual view pixel size, capped to a 1024-pixel long edge
+and 1,048,576 pixels with source aspect ratio preserved. Empty layout defers work.
+iOS retains the CVPixelBuffer for bounded background CI conversion rather than
+building a full-resolution UIImage on the UI thread. Android performs a bounded
+TextureView copy on the UI thread and background encoding; its cached presentation
+must restore the aspect-ratio container after reuse. Source headers and URL/query
+text are not written into cache filenames, metadata or logs.
+
+The production iOS video slot passed 14 simulator checks with a real H.264 MP4,
+including cold capture/player release, cross-cell/recycled memory reuse, disk
+reuse after memory clear and a layout-tier resize. Its harness substitutes only
+the unused image-candidate host; image-to-video fallback and full-app integration
+were not exercised. Android runtime and physical-device performance remain
+pending. The complete acceptance matrix adds warm cross-cell/recycled hits with
+zero new players, disk hits after memory clear and process restart, same-source
+deduplication, owner cancellation/transfer, concurrency and timeout bounds,
+clear-generation races, corrupt entry repair and all existing probing/lifecycle
+cases. Native tests and simulator evidence cannot establish device FPS or memory
+improvement; those require workload-specific measurements on target devices.
+
+The final Android slot, including deferred Media3 error release, compiled in the
+consumer's normal native build and final incremental APK. Matching SDK/consumer
+source hashes and APK provenance were checked, and the App visibly started on
+the isolated emulator. This is build/startup acceptance, not Android video-frame
+or complete Home NFT route acceptance. A temporary Home probe lacked account
+context; a later diagnostic Dialog had an unexplained black capture. Neither is
+recorded as a passing NFT visual case. Further scrolling, frame-cache and
+memory/performance measurements are outside this PR's recorded acceptance scope.
+
+### Baseline before the persistent first-frame revision
+
+Status: Source implemented; native runtime acceptance pending. `mediaTile.media`
+is an opt-in native-only preview descriptor: `{ source: ImageSource, probeOrder:
+('image' | 'video')[] }`. The order contains one or two distinct candidates.
+The caller supplies the order; the renderer never guesses asset semantics.
+When provided, media takes precedence over `image`, unless `imageState` is
+explicitly empty/error. Web gallery media probing follows the separate Web migration contract below;
+legacy Web image-only tiles retain their existing behavior.
+
+Image uses the shared OneKeyImage lifecycle. Video uses a paused, muted AVPlayer
+on iOS and Media3 ExoPlayer on Android, preserving the native Video source
+families including streaming media instead of approximating them with a frame
+extractor. Video defaults to contain; an explicit image fit may select cover.
+There are no controls or video touch targets; the row owns press interaction.
+Android preserves a black letterbox and iOS a transparent one, matching the
+existing native Video views. No code calls play or requests audio focus.
+
+A failed candidate advances once; exhaustion displays the failed media
+placeholder (see Media loading and failure placeholders). New source/row identity resets probing; binding, candidate and
+player generations reject stale callbacks, including A→B→A. Text-only updates
+preserve the current request. On Android, terminal image/player completion is
+posted to the next UI queue turn before advancing probes or notifying the row;
+it MUST NOT clear or rebind a Glide request inside its terminal listener.
+Posted work rechecks binding/candidate generations, and player callbacks also
+recheck the player generation. Recycling removes queued completion work before
+releasing resources. This repairs the image-to-video fallback crash without
+changing probe order or the terminal result contract; native runtime regression
+acceptance is still required. A tile owns at most one native player. On iOS,
+eligibility requires intersection with the window and every clipping/scroll
+ancestor viewport; native scroll, bounds, layer transform/position and visibility
+observations release retained offscreen pager pages. A player lives only until
+its first rendered frame is copied (Android TextureView bitmap, iOS
+AVPlayerItemVideoOutput pixel buffer); the tile then shows that still frame with the
+same fit and letterbox and releases the player and its viewport observers. If no frame
+can be copied after a few frames, the paused player stays attached. Detach,
+background, invisibility and recycle release a player still awaiting its first frame;
+reattachment rebuilds its retained source while remaining paused. The still frame is
+kept across detach and same-identity rebinding and dropped on recycle or identity
+change. Android observes native global scroll/layout and
+pre-draw geometry (including property animations), checking ancestor alpha and
+getGlobalVisibleRect before allocating a player. These observers do not schedule
+frames or emit JavaScript events.
+Live player count is bounded by intersecting native video tiles that have not yet
+captured a frame, including partially visible tiles; there is no numeric cap that
+blanks visible iPad cells. Per-draw (Android) and ancestor-layer KVO (iOS) viewport
+observation exists only while a tile awaits its first frame. iOS requests
+one second of forward buffer; AVFoundation treats this as an advisory preference,
+not a hard byte limit. Android uses a 250–1000 ms forward buffer, zero back buffer
+and a 2 MiB target allocator; Media3 may exceed a target by allocation granularity.
+These are per-player buffer targets, not hard total-process memory limits.
+Platform decoder/surface overhead is additional. No
+process-wide player cache or NativeList media disk cache is introduced. Source headers are never
+logged. Android uses Media3 1.4.1 (matching native Video's default), including
+HLS/DASH, UI and OkHttp data source; the existing root media3Version override is
+honored. Cookie handling uses the React Native cookie store without replacing
+the global HTTP client's cookie jar.
+
+Required runtime cases: image→video, video→image, exhaustion, file/HTTP/HLS,
+non-square fit, silent paused initial frame, same-source text update, quick
+A→B→A reuse, detach/background and return, row tap, grid resize, and absence of
+leaked audio/player resources. Static API checks do not prove these cases.
+
+## Native container slots (source implementation, runtime verification pending)
+
+### Optional scrolling sidecar (source implemented; native runtime verification pending)
+
+`listSidecar` and `sidecarLayout: { width, gap, maxContentWidth }` are an
+optional pair for a vertical linear list. Omission preserves the existing
+single-column layout. All three values are finite non-negative logical pixels;
+`width` and `maxContentWidth` must be positive and `width + gap` must be less
+than `maxContentWidth`. The list remains the sole scroll owner. At viewport
+width `V`, the content band is centered with width `min(V, maxContentWidth)`;
+the sidecar occupies the logical end `width`, separated from the logical start
+data/slot column by `gap`. In RTL the sidecar is physically left and the list
+is physically right. Header, rows, empty slot and footer use the start column. The sidecar
+starts at the content top, scrolls on the same native frame as rows, and may
+contain interactive React content. Its root is retained until Fabric unmount;
+it does not become a row, affect row keys, indices, selection or prefetch. The
+left RecyclerView/UICollectionView still lays out only viewport-near rows.
+
+The scrolling extent is at least the greater of the left column including its
+footer and the sidecar's measured bottom. A taller sidecar extends the tail
+after the left footer; it must not push that footer below its normal position.
+`scrollToEnd`, refresh and structural transition offset clamping use this
+combined extent. A sidecar height or breakpoint change preserves an in-range
+offset; an out-of-range offset is clamped by the existing shrink correction.
+Rapid row transitions retain their existing one-shot id and anchor semantics.
+Native sidecar position follows the native scroll offset directly, without a
+per-frame JS bridge. A drag beginning over interactive sidecar content must
+still scroll the same list; taps retain the content's own actions.
+On iOS, React container slots are clipped below the enclosing Pager's fixed overlay and sticky region using its existing owner-scoped native viewport callback. Scrolling, rotation, owner removal, and recycling update or release those masks without JS frames. On iOS the sidecar host is a narrow UICollectionView subview in content
+coordinates. On Android the narrow overlay follows the RecyclerView's measured
+logical offset; after a vertical touch slop it cancels the React press and
+forwards the original touch stream to the list's SwipeRefreshLayout. The
+Android tail spacer derives from explicit/measured row and slot extents, not
+RecyclerView's variable-height scrollbar estimate.
+
+Web uses the same measured two-column geometry inside its current owned or
+explicit external scroll host, with DOM virtualization limited to the left
+rows; the sidecar is a single React slot. Callers already placing a Web sidebar
+as a sibling may omit the new pair there. Horizontal/grid configurations with
+a sidecar are rejected. Acceptance requires iOS and Android wide Home scrolling,
+right-column drag and action, short/empty assets, collapse animation while
+scrolled, refresh, resize across the breakpoint without list remount, and
+thousands of rows remaining bounded to the native recycler viewport. Source,
+type and unit checks alone do not establish device acceptance.
+
+`listHeader`, `listEmpty` and `listFooter` accept React nodes on iOS and Android
+vertical lists only. They are optional and default to absent. They are common
+container capabilities, not row templates, and MUST NOT be used for per-item
+rendering. Horizontal orientation with any supplied slot is rejected. Web container slots follow the separate Web parent-scrolling contract below;
+the native placement and lifecycle described in this section remain unchanged.
+
+The order is header, data rows (or empty slot when there are no data rows), footer.
+On iOS, after the laid-out vertical content shrinks, an offset beyond the new
+bottom is corrected to the current adjusted-inset-aware maximum. In-range offsets
+and negative pull overscroll remain unchanged. Correction waits until active
+dragging, deceleration and refresh finish; it is not an unconditional layout or
+snapshot reset to the top. The native content-offset change remains observable to
+ancestor pager coordinators so their saved logical offsets stay synchronized.
+Recycling/disposal cancels deferred correction. Runtime acceptance includes a
+scrolled retained-page round trip followed by empty content with scrolling slots.
+
+Slots scroll with the native list. `fixedFooter` remains a separate fixed native
+row descriptor. `scrollToEnd` aligns the final scrolling slot bottom with the
+viewport end, including footer/empty/header-only slots taller than the viewport. Callers using `listEmpty` MUST omit `snapshot.emptyState`, whose
+existing native descriptor becomes a data item. Horizontal content padding applies
+to slots as well as data rows: every platform places a slot root exactly
+`contentPaddingHorizontal ?? contentPadding` logical units from each edge, the same
+width React lays it out at. Android's narrow-screen row scale and section-index gutter
+apply to data rows only. Slot React trees own their internal layout and
+business actions; NativeList owns their scroll placement and lifecycle.
+
+The wrapper mounts six non-collapsible slot roots and reports measured heights
+through `containerSlotHeightsJson` in header/empty/footer/sidecar/expanded/toggle
+order. The sidecar root has zero reserved height when absent. Native validates
+six finite, non-negative heights and still accepts legacy four-number arrays,
+except for the iOS pending-header state described below. Slot updates MUST NOT
+alter data-row keys or public row indices. No per-scroll-frame JS position updates are used.
+iOS mounts each slot root inside a list-owned host view in UICollectionView and
+reserves native layout space. The host owns the slot's vertical position and clips to
+the reported height, so React frame updates cannot move a slot out of place and a slot
+whose height has not been reported yet (or has just grown) never draws over rows.
+
+iOS header first-frame measurement: when `listHeader` is present but
+its first layout has not arrived, the matching wrapper sends `null` for slot 0
+instead of an authoritative zero. The other five slot values remain finite,
+non-negative numbers; Android serialization stays unchanged. On iOS, an absent
+header always reports numeric zero. Each absent/present boundary replaces only
+the header slot root and starts a new measurement epoch; a layout callback from
+an earlier epoch MUST NOT make the current header ready. Replacing header content
+while it remains present does not start another epoch. A newly present header stays pending
+until its own layout reports a number, including zero.
+Before that measurement, the iOS host may reserve the current mounted header
+root's finite, non-negative `ceil(bounds.height)` when its bounds width is finite
+and positive. It applies that height to both clipping and row placement in the
+same native update, regardless of whether the root or pending heights arrive
+first. Without a valid current root, pending height is zero. Unmounting or
+recycling the root discards its provisional height; another root cannot inherit
+it. The first numeric measurement, including a genuine zero, is authoritative
+and retains ordinary dynamic growth and shrink behavior. Legacy four- and
+six-number arrays remain accepted. Only header slot 0 may be null, and the
+wrapper and native binary must match for this pending-header protocol.
+When the vertical iOS collection view first obtains positive bounds in
+`layoutSubviews`, it emits `OneKeyNativeScrollViewDidBecomeReady` before
+executing pending scroll requests or laying out container slots so an enclosing
+`CollapsiblePagerView` can synchronously attach and apply top insets, offset
+alignment, and sticky heights during the same layout pass.
+
+Android uses ConcatAdapter with three single-item slot adapters around the existing
+data adapter; adapter binding indices stay local while layout-manager positions
+are explicitly translated. Slots span all grid columns, do not select/reorder,
+and do not emit row actions, visible-row indices, or image-prefetch work.
+
+### Disclosure slots and settlement (source implemented; limited runtime verification)
+
+Native callers may opt in with `snapshot.disclosure: { expanded: boolean,
+expandedTrailingInset?: number }`, `listExpandedContent`, and
+`listStructureToggle`. `expanded` is the accepted target state independent of
+row count, the expanded slot's measured height, and the one-shot structural
+transition command. `expandedTrailingInset` defaults to zero and must be a
+finite, non-negative number of logical pixels. Without `disclosure`, the
+existing four-slot and structural-transition behavior is unchanged. On Web,
+`C` and `T` occupy the existing single React footer band after the list rows,
+followed by the expanded trailing inset and the caller's footer `F`. `C` is
+mounted on first expansion and may remain mounted for that scope after collapse.
+Without an accepted `disclosure`, supplied `C` and `T` are hidden and inert.
+At the collapsed endpoint `C` has zero layout height and is hidden from pointer,
+keyboard, and accessibility interaction; `T` remains mounted and interactive
+through rapid reversals. Web does not use the native settlement callback to
+release `C`. The Web engine continues to measure that one footer band and to
+own its existing structural-tail animation and external scroll-host correction;
+its per-frame presentation need not match the native clip geometry. Desktop
+and extension retain their existing structural presentation.
+
+The native slot order is 0 header, 1 empty, 2 existing footer `F`, 3 sidecar,
+4 expanded content `C`, and 5 stable structure toggle `T`; the optional iOS
+top overlay follows at index 6. The native wrapper reports six measured slot
+heights in that order. This slot-index ABI requires the package's JavaScript
+wrapper and native binary to be integrated from the same version; the new
+native host does not reinterpret an old four-slot wrapper's index 4 as an
+overlay. The disclosure layout in the left list column is data
+rows `R`, then `C`, then `T`, then a native trailing inset `I`, then the one
+existing `F`. `F` is never duplicated as retiring presentation. `T` retains
+one React instance and a stable measured height while its text changes, and
+remains interactive during a transition so a tap can reverse it. `C` is
+measured after mounting for expansion. On collapse the caller retains that
+same React instance until the newest collapsed settlement callback, after
+which it may unmount it. Its measured root keeps its natural height; native
+clipping, not a React height animation, controls the visible portion. `I` is
+`expandedTrailingInset` at the expanded endpoint and zero at the collapsed
+endpoint. The native display-link/animator updates the visible `R` suffix,
+`C`, `T` position, `I`, `F` position, scroll offset, and sidecar-aware extent
+on one UI-thread timeline. No per-frame JavaScript command is required.
+The wrapper may mount `C` and `T` before delivering a new structural snapshot;
+the previous accepted snapshot continues to own the list during this short
+preparation. For that new command only, the wrapper waits for the current
+instances of both slot roots to report their first layout, including a genuine
+zero-height layout, then delivers the complete snapshot once. A numeric zero
+height without a layout event is not proof that a newly mounted `C` is ready.
+A newer pending id replaces an older one; no stale prepared command may be
+delivered later. Initial snapshots and same-id content updates do not wait.
+Native applies the measured slot heights and the complete pending snapshot in
+one ordered main-thread update, with heights first, regardless of which Nitro
+property setter ran first in that React commit. It must not reveal `C` or emit
+a settlement callback between those two values.
+
+All retiring or newly revealed row suffix is inert and excluded from
+accessibility, selection, row actions, visible-range, and end-reached events.
+The whole `C` slot is inert and accessibility-hidden while preparing,
+animating, or settled collapsed; it becomes interactive and accessible only
+after the expanded endpoint settles. The visible part of `T` remains
+hit-testable throughout so a tap can reverse the transition. Native
+must not infer the target from product-specific row counts or toggle text.
+An initially expanded snapshot and a same-transition-id content or price
+update use `disclosure.expanded` without starting or re-acknowledging a
+structural transition. An initial collapsed snapshot may omit or mount an
+empty `C` root; later collapse keeps its mounted instance through settlement.
+
+For each newly consumed `structuralTransition.id` with `disclosure`, native
+emits `onStructuralTransitionSettled` once for the latest non-superseded id
+when a listener is registered. Without a listener, native still settles the
+command and releases its pending transition state, but does not serialize or
+cross the callback boundary. Adding or replacing a listener does not replay a
+settled id; removing it stops delivery for subsequent settlements. The caller
+may keep `C` mounted after settlement; native still controls its visibility,
+interaction, and accessibility. The callback carries JSON
+`{ transitionId: string, status: 'completed' | 'interrupted',
+settledExpanded: boolean }`. `settledExpanded` describes the accepted target
+after native geometry and scroll ownership have reached that state, never a
+guess from measured `C` height. Natural animation completion, reduced motion,
+zero duration, and a new id with unchanged or empty row keys that settles
+directly report `completed`. Drag, explicit scrolling, resize, or unsupported
+geometry atomically commit the accepted target and report `interrupted` after
+temporary presentation and scroll ownership have been released. A newer id
+replaces the previous command from current presentation geometry: the older
+id must not complete late or force its former target before the newer one.
+The caller guards the callback by its latest id and current list/account/network
+owner; a matching numeric id from a prior owner must not unmount current `C`.
+An accepted row patch while a direct disclosure commit is pending MUST preserve
+that command's settlement ownership. If the patch supersedes the pending list
+submission, its committed callback settles the current non-superseded id after
+layout and any pending collapsed-toggle positioning, exactly once. It MUST NOT
+leave callers waiting for a discarded list callback.
+An already settled id
+does not re-emit on a same-id patch. Disposal drops the callback with its
+owner. An unsupported or immediately settled new id must still acknowledge
+when a listener is registered; otherwise a caller could retain `C`
+indefinitely after collapse.
+
+On Android, mounting/unmounting a slot or changing its actual rounded native
+height MUST request one coalesced RecyclerView measurement/layout repair. The
+repair runs after the current layout completes and only with a positive viewport
+size. A zero-sized or currently computing viewport retains the pending repair
+for the next layout/attachment opportunity rather than posting an unbounded
+retry loop. Disposal cancels the pending work. Equal height reports MUST NOT
+request another repair. This leaves Fabric-owned slot content and row indices
+unchanged; source checks alone do not establish first-layout visibility.
+
+Fabric mount/unmount ownership remains explicit even when RecyclerView detaches a
+slot holder. The new native wrapper retains six scrolling roots until Fabric unmount
+(plus the independent optional fixed top overlay);
+recycling detaches slot content without disposing its React tree. Unmount removes
+that exact view. Native list disposal MUST NOT dispatch pending row/slot events.
+The generated Nitro 0.37 leaf managers require deterministic child-forwarding
+customization: `scripts/enable-container-slots.mjs` runs after nitrogen and rejects
+unexpected generator output. Generated files are never maintained by hand.
+
+Acceptance requires both platforms: dynamic header height, empty/nonempty changes,
+scrolling footer with pagination, grid full-span slots, scrolling from interactive
+slot content, refresh from header/empty, row-index scroll APIs, reuse/unmount, and
+rapid account changes. Source/type checks do not establish this runtime acceptance.
+
+
+## Refresh trigger distance
+
+Optional `snapshot.capabilities.refreshTriggerDistance` is a positive finite
+logical-pixel distance. Omission preserves the platform control's default.
+iOS adds a release-trigger fallback based on the deepest normalized overscroll
+(contentOffset plus contentInset.top); the fallback and UIRefreshControl emit
+at most one refresh action per drag. Android passes the distance to
+SwipeRefreshLayout's native trigger setting. These native controls differ in
+rubber-band/drag scaling, so equal values do not promise equal finger travel.
+The caller continues to own refreshing state, completion, and optional haptic feedback.
+On native, the row-less `nativeList.refresh` bridge envelope is container-owned:
+the JS wrapper consumes it and invokes only `onRefresh`, when supplied. It MUST
+NOT also invoke the public `onRowAction`, even when `onRefresh` is absent.
+An actual row action carrying a `rowKey` remains a row action, including one
+whose caller-defined action key matches this internal name. Web retains its
+legacy dual notification behavior; this native correction does not change Web.
+The container does not emit a second haptic for the release fallback. The fallback is
+inactive unless pull-to-refresh is enabled; no product-specific threshold is
+hardcoded into the module.
+
+## Android refresh foreground geometry
+
+Status: implemented; NFT/History Home placement verified on Android on 2026-09-28.
+The refresh container publishes its actual coordinator-added indicator inset in
+physical pixels under the native View tag
+`onekey_native_scroll_coordinator_refresh_inset`. Zero means no added inset;
+the value MUST match the offset actually applied by the existing controller,
+including all ancestor padding contributions. A coordinating outer Pager can
+subtract this metadata once when drawing the native indicator above shared
+headers. This metadata does not change refresh trigger distance, callback,
+refreshing state, ordinary-list placement or row templates. It introduces no
+JavaScript API or dependency on Pager classes. The value follows changes to the
+applied inset and remains valid while that inset is retained across detach.
+
+## Native rich activity presentation
+
+Status: Source implemented for `ActivityRow.hideLeading`. Web DOM tests cover
+both Activity paths, Android production renderer instrumentation covers
+same-view rebinds, and the iOS NativeListModule arm64 Simulator target builds.
+iOS runtime acceptance remains pending. Optional `hideLeading: true` suppresses
+the activity row's main leading visual, its accessibility content, and the entire visual width and
+following gap. The title, description, status, amounts, fee, and footer actions
+retain their normal semantics; footer actions align with the title region rather
+than a reserved visual slot. `leading` remains required in the row model and is
+still validated. Omitted or `false` preserves the existing layout and image
+behavior. The field must be a boolean in snapshots and patches; an omitted patch
+field preserves the current value. A full snapshot or patch changing
+`hideLeading` rebinds the visual and layout in both legacy and rich Activity
+presentations, including key reuse. Hidden visuals do not start image requests;
+rebinding to `false` may load the current image. Recycling and late image
+callbacks must not restore a hidden visual or leave hidden layout/accessibility
+state on a later visible row. This contract applies on iOS, Android, and Web.
+The Android instrumentation uses icon visuals to verify layout, action alignment
+and amount preservation. Late image completion is guarded by the existing
+image-slot recycle epoch; a hide-during-image-load device case remains unverified.
+
+Status: Source implemented; native runtime acceptance pending. Optional `amounts`
+supersedes legacy `primaryAmount`/`secondaryAmount` in rich Activity rows. It accepts at
+most 32 keyed lines, each with formatted text, optional leading visual, tone,
+secondary text and subscript text segments. Segments are caller-formatted and
+never interpreted as numbers by NativeList. Omission preserves the legacy tree.
+
+`presentation: stacked` places the amount lines after the identity column and
+right-aligns them. In `table`, the identity column includes its leading visual
+and gap; identity, amounts and an optional fee use stable widths in the ratio
+`1:1:0.6` after inter-column gaps. Without fee, identity and amounts split the
+remaining width equally. Amount content stays start-aligned within its column;
+native fee content stays end-aligned; Web retains its existing start alignment.
+Fee text length and leading visibility cannot move the amount column. These
+native widths match the existing Web table layout. Fee supports label, primary
+and secondary text with their own segments; `hidden` preserves its column width
+while hiding its contents. Up to four uniquely keyed title badges use declared
+tones. `descriptionActionKey` makes only the description emit that action with
+source `description`; footer actions retain their existing source/keys and
+disabled behavior. All actions use the current host binding epoch.
+
+Description action text. The action is hit on text only, never on the unused
+width of the description line, which belongs to the row press. Which text is
+stated by the caller in `descriptionActionStart`, a UTF-16 offset into
+`description` as supplied (JavaScript string index): the text from the offset on
+opens the action, the text before it is plain and belongs to the row press.
+NativeList never derives the offset from the displayed string, its separators or
+its wording; a caller that composes `prefix + label` records `prefix.length`.
+
+- Absent means `0`: the whole description text is the action.
+  `description.length` leaves no action text; the row then has no description
+  action, and no button semantics, on any platform.
+- The field is ignored without `descriptionActionKey`.
+- Development validation rejects a value that is not a non-negative safe
+  integer, and on a complete row (a snapshot row, or a row after a patch is
+  merged) a value past `description.length`. Production drops a malformed value,
+  which restores the default, and renderers clamp a value past the text to its
+  end.
+- A patch that changes `description` without `descriptionActionStart` clears the
+  stored offset, because it pointed into the previous string. Callers that keep
+  a prefix restate the offset in the same patch.
+- iOS and Android map the offset onto the displayed text: a one-line description
+  folds each line break into one space, so offsets after a CRLF move by one.
+- The hit area follows the laid-out text. iOS and Android build it from the
+  layout engine's own rects for the action's character range (TextKit enclosing
+  rects, the Android layout's selection), one per line and per visual run. A
+  line that ends before the offset takes no touches, the line that holds it
+  takes them from the offset on, later lines take them on their text. In
+  mixed-direction text the action can be several runs on one line with plain
+  text between them, and each run is its own region.
+- Touch slop reaches into blank space only. iOS and Android widen each run of
+  action text by 8 units, and the widening stops at plain description text on
+  the same line: text before the offset never opens the action, however narrow
+  it is. iOS also extends the first and the last line of the whole layout by 6
+  points away from the text, never a line in between, so the slop cannot reach
+  into a line that holds only plain text. Android extends the first and last
+  line of the layout to the view's top and bottom edge.
+- An ellipsis belongs to the action while action text is visible before it.
+  Once truncation hides the action text altogether the ellipsis also stands for
+  plain text, and the row has no hit area for the action.
+- Truncation. The description stays on its declared lines as `prefix + action`.
+  On Web the prefix keeps its natural width and the action text truncates
+  first, which matches the tail truncation of the native label. While action
+  text follows, the Web prefix is capped at the row width less `3em` and
+  truncates itself, so a prefix wider than the row cannot squeeze the action to
+  nothing and leave it without a pointer target. iOS and Android draw one label
+  and truncate its tail; they do not reserve room, so there a long prefix can
+  push the action text out of view. The Web prefix and action are two elements
+  side by side and each resolves its own text direction, so an offset inside a
+  directional run draws that run in two parts; the action element is still
+  exactly the action text.
+- Internally the native text view holds one optional start: none keeps the
+  view's own hit testing (rows without the action), `0` limits touches to all of
+  the text, a positive value to the text from there on. Binding, rebinding
+  without the action and recycling set or clear that one value.
+
+Rich rows measure the declared line/visual metrics; there is no six-line native
+truncation. iOS automatic height mirrors the rendered stacks: `lineGap` between the
+visible title/description/status lines, the description measured at the identity
+column's actual width (stacked or table, including the fee column), fee height and the
+footer-action button height. Android sizes the row to its content. The existing height override contract still applies. RTL follows
+semantic leading/trailing anchors. Clearing rich fields returns to the legacy
+renderer, and removing amount lines recycles their visual slots. Web rich presentation follows the separate Web migration contract below;
+legacy Activity rows without rich fields retain their existing behavior.
+
+Acceptance: 1/2/6/32 lines, changed keys/order, paired icons and network overlays,
+small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchanged
+baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
+actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
+
+
+Table regression acceptance additionally measures amount-column start, width and
+center across short/long/hidden fee, leading visibility, 1/2/6/32 amount lines and
+table/stacked reuse. Android DataRow primary and secondary groups honor their
+resolved text-role alignment (role style first, then column alignment), including
+start/center/end and styled/unstyled reuse. The secondary-prefix gap is present
+only when that prefix is visible; legacy linear rendering is unchanged. The UIKit
+regression explicitly forces each renderer view's direction; React Native/Fabric
+host direction propagation and real App RTL remain unverified.
+
+### Android ancestor scroll distance
+
+Threshold hysteresis combines the primary RecyclerView's actual consumed scroll
+with all native ancestor header contributions. CollapsiblePagerView publishes
+weak-owner contributions through the namespaced View-tag protocol documented in
+its SPEC.md; no pager dependency or product semantics are required. Absence is
+zero. NativeList owns one native listener, registers it on attach, and removes
+only its own listener on detach. Header-only scrolling therefore crosses the
+same logical Home threshold as iOS normalized content scrolling, without a JS
+scroll-frame event. Changes to the listener or public callbacks do not replace
+native resource ownership.
+
+Child distance uses actual onScrolled dy while scrolling continuously. Programmatic
+jumps (scrollToIndex/Key/End/Offset), anchor restores and inserts or height changes
+above the viewport report no dy, so every layout pass and zero-delta scroll re-derives
+the distance as the extent of all grid lines before the first laid-out item plus its
+offset from the padded top. Extents are those actually laid out (recorded per row key,
+including rows a jump lays out and leaves offscreen, pruned to the current rows); a row
+that was never laid out uses its explicit height, else the mean laid-out row extent.
+Slots use their reported heights. The result is exact once every item above the
+viewport has been laid out and an estimate only across never-laid-out rows; it does not
+use RecyclerView's average-height scrollbar estimate. Runtime acceptance for distant
+jumps remains pending.
+
+
+### Container follow-up verification
+
+The pure Android end-alignment policy has four focused JVM tests: tall footer,
+tall empty slot with viewport padding, animated decorated-bottom correction,
+and short footer. These validate geometry, not actual RecyclerView animation or
+Fabric lifecycle. Native simulator acceptance remains required. The iOS fallback
+retains one refresh action per drag and leaves haptic feedback to its caller.
+
+
+## Explicit scroll alignment (OK-64041)
+
+Status: implemented on Web, Android and iOS. This change ports the 3.0.154
+maintenance fix to the current main protocol and layout. The maintenance
+application recordings below do not establish runtime acceptance of this port.
+
+Keys identify outer rows; a wallet group member is not a separate scroll key.
+Explicit `viewPosition`/start/center/end alignment MUST use the signed difference
+`viewportLength - itemLength`, then apply `viewOffset` and the existing content
+bounds. This applies to both axes. Positive `viewOffset` leaves space before the
+aligned target. An oversized row cannot be fully visible; center aligns its
+center and end aligns its trailing edge. `nearest` MUST retain its existing
+oversized-row behavior, defaults and request normalization.
+
+Android MUST pass the alignment mode through visible, deferred and smooth
+scrolling. For an unmounted explicit nonanimated target, the provisional leading
+edge stays inside the viewport until the existing deferred pass measures the
+real item. Existing container-slot row-position translation remains in force;
+this change adds no retries or bridge API. iOS uses UICollectionView layout
+attributes for mounted and unmounted targets and keeps its adjusted-inset-aware
+content clamp. Web uses the TypeScript calculation. Imperative requests run once
+at the current geometry; consumers own repositioning after layout changes and
+cancellation when the user takes control.
+
+Focused TypeScript, Kotlin/JUnit and SwiftPM/XCTest regressions exercise the
+shipping calculations: oversized, short and equal rows, signed offsets, nearest,
+content bounds and Android provisional boundaries. SwiftPM runs the Foundation
+helper on macOS; it does not instantiate UIKit. Geometry tests do not prove
+RecyclerView mounting, deferred callback timing or consumer cancellation.
+
+Historical maintenance-base acceptance recorded in PR #138 includes full-app
+Electron/Web 36/36 cases each, Android 27/27 visible-target cases and iOS 15/15
+primary cases. Parent/middle/last targets changed from 0/3 visible to 3/3 on both
+native platforms. Those results use NativeList 3.0.154 plus the patch. Current
+main combined-package runtime acceptance and native horizontal runtime remain
+pending; pixel-perfect wallet-member centering is not claimed.
+
+Port verification (2026-10-08): all 236 tests in seven NativeList suites,
+package typecheck, focused TypeScript lint and repository test-integrity pass.
+The consumer Gradle project compiles the actual NativeListView and passes all
+seven Kotlin alignment tests; SwiftPM compiles the shipping helper and passes
+all seven geometry tests. These are local unit/build checks, not a new
+combined-package application or physical-device acceptance run.
+
+
+## Web parent scrolling and React container slots
+
+Status: implemented. Focused DOM/wrapper tests and controlled consuming
+Home/Market Web and Electron checks cover parent ownership, slots, host
+replacement, hidden tabs, and the migrated touch/reorder interactions. These
+checks do not establish native runtime or complete performance acceptance.
+
+`webScrollHost` is Web-only: omitted preserves the existing owned viewport;
+`null` defers initialization until the parent host is ready; an element opts
+into that explicit parent as the sole vertical scroll owner. `webStickyInset`
+is a non-negative finite CSS-pixel inset, default zero. Native ignores both.
+External horizontal list orientation is rejected. The host is never inferred
+from class names. Its replacement disposes the old engine and exact observers,
+listeners, pending commands and anchors before the next host is attached.
+
+On Web, listHeader/listEmpty/listFooter are React-owned siblings around the
+engine-owned row host. They remain normal scrolling content, never row models;
+empty replaces the body only when there are no rows. listEmpty takes precedence
+over snapshot.emptyState. Grid slots span the list's complete width and reserve
+their actual intrinsic height. The wrapper owns an internal scroll viewport when
+slots are used without an external parent; the slot-free internal path retains
+its existing structure. No ReactDOM dependency or arbitrary row children exist.
+
+The engine reads list-local width, row-host origin, host viewport intersection,
+sticky inset and complete wrapper bounds together. Row-index/key scrolling is
+relative to the data body; scrollToOffset starts at the complete container,
+including its header, and scrollToEnd includes the final footer. End reached
+is based on visible data-row indices, before footer content, as existing lists.
+Hidden/zero-sized or fully offscreen lists emit no end-reached event. Resize,
+slot and ancestor layout changes remeasure origin. Increasing content before a
+visible row preserves that row's screen position while the parent is scrolled.
+No React state updates run on scroll frames. External refresh gestures remain
+owned by the parent control; only internal mode handles its own pull gesture.
+
+The explicit external host captures scroll events from itself and descendant
+scroll containers that are ancestors of the list root. Horizontal pager movement
+therefore invalidates cached viewport intersection and restores visible rows on
+the next scheduled frame. Scrolls within unrelated slots or list descendants do
+not invalidate this list. Destroy removes the same capture listener; no second
+vertical owner or scroll-position correction is introduced.
+
+Required acceptance: unchanged slot-free internal behavior; parent content on
+both sides and sticky inset; dynamic header/footer; empty to populated; grid
+last row; all imperative alignments; null/ready/replaced host; hidden/visible;
+unmount cleanup, mouse/touch scroll and drag autoscroll. Type/helper results do
+not establish rendered product, native or performance acceptance.
+
+
+## Web Market table presentation
+
+Status: implemented on the 6.7.0-1 source baseline. Package unit/type/build
+checks and controlled Web/shared consumer backfill checks passed; consuming
+Home/Market Web and Electron checks cover the migrated presentation. No native
+runtime or completed performance acceptance is claimed.
+
+MarketRow.webTable is an optional Web-only serializable presentation. It does
+not change DataRow's 2..4-column contract or add a row type/native renderer.
+Native parsers retain row dictionaries/JSON and read known fields; they ignore
+webTable. Mobile callers continue emitting their existing Market snapshots
+without this field, preserving their serialized shape. Shared validation checks
+the complete declared extension on both platforms. No arbitrary React cells,
+HTML, scripts or product formatting runs inside NativeList.
+
+The presentation declares 1..12 unique keyed columns and one matching keyed
+cell per column. Width/minWidth (0..4096 CSS px), flex (0..16), semantic alignment
+and leading/trailing padding (0..64) are explicit. Presentation cell kinds are
+favorite, asset, text and sparkline. Favorite has its own action/accessible
+label/pressed state; asset uses existing leading image primitives, title/badges
+and a secondary line optionally replaced on row hover/focus; text accepts at
+most eight caller-formatted primary/secondary text parts with existing small
+number segments and typography; sparkline accepts at most256 finite numeric
+samples, explicit size and colors. Unknown fields are rejected. Table rows use
+an explicit row/container height. Text is single-line with ellipsis; no automatic
+multiline geometry or business numeric interpretation exists.
+
+The consumer derives mobile fields and table cells from the same domain row.
+A quote transaction changes its formatted scalar fields and table cells together.
+A legacy scalar-only price/change patch on a table row is rejected unless it
+also supplies its corresponding table presentation, preventing hidden/visible
+values from diverging. Stable-column/same-image patches update only changed
+cells, preserving body/avatar identity and avoiding geometry reads/layout.
+Changes to column structure, image/badge/action identity invalidate anchors and
+use normal rebind/layout. Header and body take widths from the same consumer
+column calculation; React retains sorting/header/filter portals.
+
+The Web registry separately pools market and marketTable presentations while
+both retain type:market. Row keys, revisions, anchor epochs and event dispatch
+remain common. Cell actions use data-native-list-action; favorite/copy/badge
+buttons do not activate the row. Recycling clears actions, title/aria, hover
+and styles and disposes image leases. The SDK emits copy action data; application
+copyText/logging remains consumer-owned. Sparklines use bounded numeric drawing,
+not arbitrary SVG/HTML input.
+
+Acceptance: every cell kind, dynamic formatting, hover/focus/keyboard actions,
+row/presentation recycling, strict validation, native dictionary safe-ignore,
+header/body geometry, 100 quote ticks preserving nodes with zero geometry reads,
+then a real complex Market table before expanding to all five families.
+
+### Native Market metric columns
+
+Status: implemented in local source, unreleased; native runtime verification
+pending. A `market` row may supply two or three ordered, uniquely
+keyed text columns through `metrics`, typed as a `Pick<DataColumn, ...>` of
+the supported text fields. Each column uses
+the text subset of `DataColumn`: key, primary text and segments, optional
+secondary text and segments, weight, alignment, and primary/secondary tone.
+Icon and secondary-leading fields are rejected in development and stripped by
+the existing production decoration sanitizer.
+Keys are nonempty and callers format all text. The row keeps its required
+`price` and `change` fields as compact fallbacks. When `metrics` is present,
+iOS and Android display the existing leading action, visual, title, subtitle,
+and Market badges, then the metric columns in place of the compact price and
+change block. The metrics are authoritative for this native presentation; the
+SDK does not infer their values from the fallback fields or product data.
+The default native accessibility label includes the title and subtitle followed
+by the displayed metric text, primary then secondary, in column order. It
+updates with each quote. An explicit row accessibility label takes precedence.
+The metrics use their own text tones and alignment, with both lines aligned
+the same way; omitted alignment defaults to `end`. Existing change block
+width, height, and corner radius do not
+apply to metric columns. The title content receives a relative weight of two;
+metric columns receive their declared `weight` (1...3, default one) after the
+row's existing action, visual, padding, and gaps take their space. The SDK
+does not choose a mode from screen width. Without `metrics`, all platforms
+retain their existing compact Market presentation. Web ignores `metrics` and
+continues using `webTable` when supplied.
+
+Metric values travel in the existing row snapshot JSON and do not change the
+Nitro ABI, row key, action keys, badge anchors, or scroll ownership. Full
+snapshots may add, replace, or omit `metrics`; omission restores compact mode.
+An explicit patch with a valid two- or three-column array replaces metrics,
+while an omitted patch field leaves them unchanged. A full snapshot is used
+to remove metrics from a wide row; this contract adds no null patch meaning.
+Binding and recycling clear inactive metric and compact views in both
+directions, including changes between two and three columns, so reused rows
+cannot show stale text or targets. Metric fields contain no new action target;
+Market badge, leading action, press, press-in, and long-press behavior remains
+owned by the existing Market row. Conformance requires validation and patch
+tests, native bind/reuse and action-anchor checks, then consuming App device
+checks at narrow and wide list widths. Source and unit tests alone do not
+establish native layout acceptance.
+
+
+
+### Web grid fractional column geometry
+
+Status: implemented; fractional geometry verified in focused DOM/browser and
+controlled consuming NFT backfill checks.
+Web grid columns divide
+available CSS width without flooring each cell. With non-integral division,
+all column edges and width-derived tile heights retain the fractional value;
+the final column reaches the content edge without accumulating discarded
+pixels. Item spacing, horizontal padding and structural full-span rows retain
+their existing meanings. Native rounding is unchanged. Known app Web consumers
+are the migrated NFT grid and developer gallery; external SDK consumers are not
+claimed audited. Required geometry coverage: 2/3/4/6/7 columns, divisible and
+fractional widths, spacing, padding, row height and structural/footer boundaries.
+
+Table column width is the CSS base width. When flex is supplied, it grows with
+`flex-basis:auto`, matching the consumer's existing fixed-base React column;
+without flex, width remains fixed. Pausing a Web parent-host list retains only
+its last row-host height in normal flow while releasing row DOM/avatar leases.
+The wrapper preserves the engine's successfully patched snapshot for host
+reconstruction; inactive patches merge into one latest snapshot, with no
+retained batch queue. A rejected imperative snapshot never replaces that state.
+
+Stock asset cells additionally declare lineGap (0...8, default4), up to three
+secondaryBadges limited to the existing Market badge key/text/style subset, and up to four hoverImages
+using ImageSource. Secondary badges precede the company name. Hover logos follow
+the variant-count text at16 CSS px with a1px page-background ring and4px overlap,
+matching the consumer's existing finite logo group. Geometry/badge/image changes
+use normal rebind and release replaced image leases; price-only updates retain
+these nodes. No native caller emits these Web-only fields.
+
+Web gallery media follows the shared input precedence: media wins over image,
+unless an explicit empty/error imageState suppresses media probing. An empty/error
+gallery without either source retains the gallery fallback surface when
+imageState explicitly selects that state.
+
+Web gallery media preserves the consuming NFT card presentation: healthy image
+and exhausted fallback surfaces have a10px radius, while a healthy video surface
+has square corners. The image/video frame uses the list page background; the
+loading and exhausted fallback surfaces use the strong background and the
+shared media placeholders. Rebinding the same
+video key retains square corners, and failed-video fallback to an image restores
+the image radius. This is Web renderer behavior; native media presentation and
+probe-order contracts are unchanged.
+
+Gallery pointer activation follows the actual media-card body; extra grid row
+height reserved between cards does not enlarge its pointer hit area. Keyboard
+row activation remains supported through the normal row keyboard handler.
+
+When React listEmpty owns an empty list, content bottom padding follows that
+empty slot instead of advancing its origin. Header/top padding retain their
+positions, and populated row/footer padding semantics remain unchanged.
+
+Text cells may declare partGap (0...8 CSS px, default2) for their caller-formatted
+inline parts. Favorite cells may declare hoverActionKey; hover/focus emits this
+anchored help action, while click/Enter/Space emits actionKey. No browser title
+bubble is added. Pointer leave/focus departure invalidate help anchors. Existing
+Market badge styles apply to table title pills and their title gap is4px.
+
+Web table title badges accept only declared key/text/iconName/icon/colors/action/
+accessibility/style fields. The unused native tone field is not accepted in this
+presentation. Inline icon sources use image primitives and release on recycling.
+
+
+### Web Market watchlist actions and reorder
+
+Only a market row with `webTable.draggable:true` and list capability
+`reorderable:true` joins existing Web reorder. Other Market rows and native
+reorder semantics are unchanged. `webTable.contextMenuActionKey` declares a
+bounded row context-menu action; right click is prevented only for such rows,
+and nested cell actions retain ownership. Context menu and Market long press
+may emit `RowActionEvent.windowPoint`, finite client/window CSS pixel coordinates.
+Keyboard-triggered context menus use the row anchor rectangle when pointer
+coordinates are unavailable. Anchors retain binding epoch validation and are
+invalidated on scroll/rebind/layout/destroy; consumers close their menu on that
+invalidation. Compact Market mouse/pen long press cancels after 3px of pointer
+movement; touch follows actual touchmove as specified below. Table rows retain
+the 10px pointer threshold.
+Gallery, wallet and other row reorder eligibility stays unchanged. A gesture
+that activates row reorder cancels pending Market long press and suppresses its
+subsequent row navigation.
+
+Compact Web Market network corners honor the declared ImageSource dimensions
+(default 16px), with the existing corner padding outside the image. Native image
+rendering is unchanged. Consumer Web presentation permits its original SVG image
+sources without changing default native mapper output.
+
+
+### Web ordered image fallback sources
+
+ImageSource.fallbackUris is an optional Web-only ordered continuation after uri.
+It retains the complete caller-provided sequence (no truncation or deduplication).
+Empty or unusable continuation entries are skipped in order until a usable URI
+is found or the complete sequence is exhausted. Exhaustion reaches the declared
+visual fallback. Skipped entries consume no retry budget; each usable URI
+uses its declared retryTimes before proceeding; Market Web callers pass the
+existing ImageV2 default of one retry per source. This array path does not change
+legacy fallbackUri switching/retry order when fallbackUris is absent. Native
+callers do not emit this field. Validation requires an array of serializable
+strings. Rebind identity includes the complete array; quote-only changes retain
+the image node, while a changed chain rebinds and cancels previous retries.
+Recycling/destroy disposes listeners, retry timers and avatar subscriptions.
+Required coverage: one/two/three+ sources, first two fail/third succeeds, terminal
+failure, empty continuation, chain replacement/cancel and legacy fallbackUri.
+
+Enhanced Web History section titles retain the consumer headingXs 0.8px letter
+spacing; hover uses rowPressedBackground and pointer-active enhanced History
+uses rowSelectedBackground. Other Activity presentations are unchanged.
+
+Parent-scroll compact Market rows retain the consumer's pointer states: ordinary
+token/perp cards use active opacity0.8, stock cards active selected background.
+Consumers supply the page background as hover color. New table image fallbacks
+use a28px icon in the40px image frame; compact32px frames retain24px icons.
+These styles do not change legacy internally scrolling Market rows.
+
+The optional theme.imageFallbackBackground is consumed by Web only when a
+declared visual fallback is displayed; unset leaves the existing transparent
+fallback over its original frame. It never changes healthy image backgrounds,
+Stock tags or hover logo slots. Native callers do not emit it. HoverImages may
+contain explicit null entries to preserve the original16px empty round logo
+slots, including their ring/overlap/order; non-null entries remain ImageSource
+and the existing four-slot limit stays unchanged.
+
+Compact Market subtitlePrefix preserves intrinsic text width with flex-shrink
+and its existing maxWidth cap; it does not grow short names to that cap.
+Its optional Web-only hoverActionKey requests anchored help only when the
+actual prefix text is truncated (scrollWidth > clientWidth + 1). The consumer
+owns the existing tooltip content/presentation. Pointer/focus departure, scroll,
+rebind and destroy invalidate its existing anchor. Text, cap or action identity
+changes use normal rebind; unchanged quote updates preserve that node/focus.
+Native callers do not emit this field and native renderers ignore it.
+
+
+### Host-provided Web fonts
+
+configureNativeListFonts and NativeListFontFamilies retain the source baseline
+public API and validation. In the historical controlled 3.0.177 consumer
+backfill, only Web was backported:
+empty configuration uses system families; each supplied regular/medium/semibold/
+bold name belongs to fonts already loaded by the UI host. Hosts load fonts
+before configuring the mapping; the historical consumer supplied Roobert for
+all four weights. The SDK registers no fonts. That controlled backfill retained
+the 3.0.177 native wrapper and native platform font behavior.
+Web roots, section rails, reorder previews and all finite row text presentations
+select the family matching their existing numeric weight; layout and numeric
+weights are unchanged. A live configuration change invalidates active anchors,
+cancels reorder, clears measurement caches and remeasures; the same configuration
+is a no-op. A paused/null host initializes with the latest configuration.
+The 6.7.0-1 source integration preserves its existing native font policy/API.
+
+Market Web badge text uses tabular numeric glyphs, matching the consuming
+Market text style for leverage/provider labels. This rule is limited to the
+Market badge renderer class; generic Activity/time badge typography is unchanged.
+
+React prop snapshots commit in the layout phase alongside React-owned slots.
+For an external host with cached viewport dimensions, recomputation calculates
+and expands the normal-flow row extent before geometry reads, avoiding an append
+plus footer-removal intermediate clamp. The calculated layout is reused when
+viewport dimensions are unchanged; changed dimensions receive a fresh layout.
+Final measured layout owns legitimate shrinking; no scroll restoration offset
+or retained minimum-height state is added. First creation without cached geometry
+and imperative snapshot acceptance retain their existing contracts.
+
+Web gallery media fit consumes the existing ImageSource.contentFit values:
+cover/contain/fill map directly to CSS object-fit and center maps to none.
+When omitted, a video uses contain and an image uses cover, preserving the
+consuming Web NFT defaults. Failed-video transitions resolve the image default
+again rather than retaining video fit. Native fit/probe contracts are unchanged.
+
+
+### Source integration status (2026-10-16)
+
+The Web migration was integrated onto source 655789b01 (6.7.0-1), preserving
+its native font resolver, iOS 26 overlay, package metadata and native implementation.
+The PR rebases that source onto main dd0d77af3, whose independent desktop Windows
+release changes do not overlap this package. The consuming PR targets 3.0.180;
+its reproducible patch and dependency verification are separate from the
+historical 3.0.177 backfill evidence below.
+The prior 3.0.178 source integration was an intermediate validated checkpoint.
+Controlled Web/shared consumer backfill was verified against 3.0.177 while
+retaining that version's native wrapper, binary boundary and native type
+declarations. This historical backfill is separate from consumer dependency
+updates.
+Merged package tests/typecheck/build and controlled consumer backfill smoke
+passed. The final Web-focused suite passed 89 checks; broader package checks
+and consuming Web/Electron presentation checks are recorded separately. Pending
+remote-row display and the real business hook/controller navigation contract
+were verified with explicit auxiliary fixtures/stub boundaries; no real eligible
+account SendReplaceTx confirmation page, signing, or broadcast was exercised.
+The consumer backfill does not establish native runtime acceptance of this
+merged package. Final performance sampling was stopped at the user's request
+and is partial evidence, not a completed performance signoff.
+
+### Desktop/Web Market asset parity
+
+The Web table asset renderer consumes the existing leading visual backgroundColor
+and borderColor descriptors without changing the schema or native primitives.
+Its token frame remains40 CSS px including an optional1px solid border; the main
+bitmap fills the content box (38px with border,40px without). Overlay visuals
+remain outside that frame and fallback surfaces retain their existing color/icon
+contract. Theme/leading changes rebind the visual and clear old border styles.
+The address-copy revealed line uses a2px text-to-action gap, while Stock hover
+logo groups retain their4px gap and overlap geometry. No other text-part gaps
+change. Regression acceptance includes Dark/Light recycled visuals, preserved
+network overlays, independent copy actions and Stock hover group spacing.
+
+For token visuals in Web/Electron Market tables, changing only `overlays` MUST
+retain the main image frame, its loaded/error visibility and pending image
+callbacks. Removed overlay images release their pending work. Changes to the
+main image descriptor or other leading-visual fields keep the existing full
+rebind behavior. This is a Web renderer lifecycle rule; it changes neither the
+snapshot schema nor the iOS/Android implementations. Acceptance covers adding,
+replacing and removing overlays before and after image load/failure, including
+consumer row-key changes, and replacing the main image source. Overlay-only
+updates MUST retain the existing circular bitmap clipping of padded square
+badges and their caller-provided geometry.
+Status: implemented on the 6.7.0-alpha.402 publication source. Package DOM
+regressions, the built-module Chromium lifecycle fixture and consuming Electron
+refresh/navigation badge rendering are verified. Consuming Electron acceptance
+also covers a manually locked refresh, user password unlock, first Market entry
+and a complete quote polling cycle. No native implementation or public API
+changes are included.
+
+Gallery collection subtitles retain an 8px trailing text inset whether or not
+a network thumbnail is present. The subtitle uses border-box sizing and its row
+has no extra gap, preserving the same 8px separation with a thumbnail and the
+legacy truncation width without one. Legacy MediaTile/native rendering is
+unchanged.
+
+Compact Market touch long-press cancellation follows actual `touchmove`
+events and valid touch coordinates beyond the existing 3px stationary limit.
+Pointer-only micro-movement within browser tap tolerance does not prematurely
+cancel a touch long-press. Pointer cancellation and real ancestor scrolling
+still cancel it; mouse, pen and table pointer thresholds remain unchanged.
+The passive touch listener is removed when the engine is destroyed.
+
+Table secondary-line pointer hover is enabled only when the primary input
+reports `(hover: hover)`, matching the consuming Web row's hover media rule.
+Touch capability alone does not disable hover. Existing focus-within reveal
+remains available to keyboard navigation; no input-modality configuration or
+native behavior is introduced.
+
+The declared table asset background remains on its outer token frame during
+source loading, matching the consumer's Token wrapper. The existing image
+placeholder/retry path and fallback span are unchanged; only the fallback span
+uses the fallback background. A solid frame border does not move external
+overlays: their primitive-generated edge positions are shifted outward by the
+1px border once per new visual, preserving the caller's unbordered outer-anchor
+geometry. No shift is accumulated during same-visual quote patches.
+
+Table secondary-line clipping uses `overflow: clip` so keyboard focus cannot
+scroll the two-line reveal viewport in addition to its existing transform.
+Focus-within and primary-hover reveal behavior remain unchanged; no scroll
+position writes or global overflow policy are introduced.
+
+Web history section headers consume the existing titleLoading flag with the
+original20px spinner,8px title gap and heading casing. The declared32/52px
+section slots remain unchanged; the pending title content retains its original
+4px intrinsic overflow. Explicit60px stacked history content fills its stated
+row height; ordinary history rows retain their existing trailing spacing.
+
+Web enhanced History badges preserve the existing small Badge geometry (8px horizontal padding, 4px radius, medium text). Warning backgrounds consume the declared cautionBackground theme value with the prior fallback when absent. Native rendering is unchanged.
+
+
+### Web external parent-scroll commands
+
+When a caller supplies webScrollHost, scroll commands use the DOM scrollTo method from that element's document realm. React Native Web may decorate a NativeScroller node with a differently shaped React Native scrollTo method; the DOM host contract must not invoke that method with DOM options. The native/ref APIs and internally owned NativeList viewport keep their existing behavior.
+
+Existing Pager command-accepted/cancel notifications use the actual external scroll owner when supplied, otherwise the internally owned viewport. A list command cancels queued Pager restoration/top work; a Pager top command cancels a pending list command and stops motion on that same owner. Listener target guards and destruction removal must match. No new public method, event name or native behavior is introduced.
+
+
+### Web Pager inset notifications
+
+An externally hosted list listens for the existing Pager inset notification on
+its actual scroll owner, matching the notification target and removing the same
+listener on destroy. It measures the new content origin before Pager restores
+its C+B offset; a later ResizeObserver must not add that inset a second time.
+Ordinary subsequent slot-height changes retain the existing content-anchor
+compensation. Standalone lists continue listening on their own viewport.
+
+### Web History retained visual binding
+
+Implemented contract: same-source History visuals retain their image, placeholder
+and corner nodes while image styles or table/stacked presentation change. Every
+bind restores the factory geometry and applies the current image style and
+presentation, including clearing omitted radius/contentFit/shape overrides.
+Presentation wrapper changes move the existing nodes and preserve asynchronous
+loading/error visibility; they do not recreate or reload an unchanged source.
+Changing the source set retains the existing rebuild/disposal behavior.
+
+## Opt-in structural snapshot transition (Home assets)
+
+`NativeListSnapshot.structuralTransition?: { id: string; durationMs?: number; anchorKey?: string }` is an update command carried by a validated complete snapshot. It applies only after the initial mount, when `id` differs from the last consumed transition id and the row-key sequence changes while both the previous and next layouts are vertical, single-column `linear` or `table`. Grid, sectioned, and horizontal source or target layouts apply the snapshot without this animation. The default duration is 220 ms; explicit values must be finite and in the 0–2000 ms range. Reusing an id on price, balance, selection, or theme snapshots is inert. `applyPatches` never starts a structural transition. A newer id supersedes an in-flight transition from its current visual geometry; host disposal cancels it. Reduced-motion settings disable animation while preserving final rows and scroll position.
+
+The host captures the first visible row whose key survives the update and keeps its viewport offset where feasible. If none survives, an off-screen `anchorKey` supplies a fallback target. The host never teleports the fallback into view before animation. A collapse that makes the prior absolute offset unreachable must ease the final clamp over the same transition instead of jumping. The React footer slot's old/new height difference is compensated inside that same transition so its button and following content remain continuous while the slot changes. The header/footer slots remain in the one list scroll owner. Web external-scroll-host mode must suppress conflicting browser scroll anchoring during the transition. A failed or unsupported animation still applies the final snapshot and anchor atomically. Row geometry, footer position, and scroll offset share one platform timeline; Pager observes native offset changes as list-owned scroll commands. iOS and Android hosts drive interpolation on the native UI thread without JavaScript bridge frames; Web uses one animation frame timeline for height and offset.
+
+Native prefix-tail refinement status: Android source and its production-class native regressions are implemented. The prior iOS presentation-layer implementation exercised Home row, footer, sidecar, and scroll geometry, but manual testing found long display-link gaps. The iOS single-tree replacement below is source implemented with limited iOS simulator consuming-app verification; actual presented FPS remains unverified. Only a vertical, single-column `linear` or `table` update whose old and new keys share a nonempty unchanged ordered prefix with unchanged retained-row geometry may use this path. The accepted snapshot becomes current immediately. On iOS the one collection view presents full-natural-height row cells: expansion installs the final row snapshot once before the first animation frame, while collapse retains the old suffix only as presentation until completion. Its flow layout clips the suffix at one animated boundary and reports the animated left extent, combined with the right sidecar maximum, as the scrollable content height. A partially visible boundary cell is masked without changing its measured height. Every suffix row is inert and hidden from accessibility throughout the transition, including newly accepted expansion rows and retiring collapse rows; none dispatch actions, receive selection, or enter visible-range and end-reached events until final commit. No second row-host tree is created, and expansion completion does not reinstall the same row snapshot. If UIKit cannot safely maintain the clipped row window, the host commits the final layout atomically rather than exposing blank or interactive retired content. Android continues to use its bounded inert native presentation layer, with at most 128 row hosts covering the viewport and one viewport of overscan on either side.
+
+The same native display-link/animator tick changes suffix extent, footer position, clipping, and owner offset. A footer height change during the transition remains on that clock: both native hosts may temporarily use a signed tail extent to offset the footer's new naturally measured height, while the native root keeps its normal measurement; the current extent and owner offset become the start of the remaining segment, which still ends at the original deadline. On iOS a negative extent clips only the footer's overlapped top and excludes that region from hit testing, while the visible footer button remains interactive; cancellation or completion restores the unadjusted extent and full hit region. Expansion preserves the starting offset. Collapse chooses the nearest final offset that fully exposes the collapsed footer below sticky chrome when it fits; a footer taller than the viewport starts below sticky chrome. The final scroll extent is the maximum of the left content and the right sidecar. A newer transition id starts from the current presentation extent and offset and invalidates the old completion when the retained prefix boundary is unchanged. If that boundary changes, the host commits the latest snapshot atomically instead of carrying the old spacer into a different row position. User drag, an explicit scroll command, owner change, resize, reduced motion, or disposal releases temporary presentation state without a stale completion taking scroll ownership. Price patches update the accepted snapshot and any still presented matching rows without restarting the clock. Unsupported shapes retain the existing structural behavior. This refinement introduces no public field or command.
+
+Web/Desktop/extension prefix-preserving tail refinement status: source implemented; Web and Desktop consuming-app preview routes exercised with the local candidate Web overlay. Browser extension was outside that preview scope, and no FPS or paint-duration claim has been verified. The complete accepted snapshot becomes current immediately, while removed suffix rows may remain only in an inert, accessibility-hidden presentation window until the existing 220 ms transition completes. That window follows the same scroll owner and mounts only viewport-near old rows as the owner moves; each row keeps its natural height while the tail is clipped by the interpolated list extent. Inserted suffix rows use their final layout immediately and are revealed by the growing extent. The shared animation frame updates list height, React footer compensation, and programmatic scroll together. Its final scroll range uses the actual parent page extent, including a taller sidecar. For an off-screen fallback, Web uses the footer's complete visible interval where it fits, including the sticky inset, and otherwise aligns the footer start below the sticky region; the retained row is preferred only when the footer is absent. Price patches update the accepted snapshot and visible retained rows without restarting the transition. A newer structure command, unsupported shape, user scroll takeover, reduced motion, resize, or disposal releases presentation nodes and animation ownership without a stale completion writing an older offset. Other structural changes retain the existing behavior. This refinement adds no public field or native behavior; focused Web DOM tests passed, while browser extension and broader runtime performance remain unverified.
+
+### Web token table geometry
+
+Status: implemented with focused SDK regression coverage and consuming-App
+measurements from a local runtime overlay; formal SDK release integration is
+separate.
+
+A Web `DataRow` with exactly the ordered column keys `asset`, `balance`, `price`,
+and `swapSpacer`, without an ordinal index, favorite control, or checkbox,
+preserves the legacy four equal columns. Rows with any of those controls retain
+their existing weighted layout so the controls keep their linear positions.
+The leading visual and its declared gap share the first column with the asset
+text; an absent visual reserves no icon inset. Balance and price occupy the
+second and third columns; the trailing accessories align to the end of the
+fourth. This closed migration shape uses equal columns instead of the
+previous weight approximation and removes the row's inherited 12px gap so
+each track occupies exactly one quarter of the padded content width. Other
+column shapes retain their existing weighted layout. Rebinding a retained row
+between these shapes clears the old grid placement, gap override, and asset
+inset, including when the leading visual is reused.
+Text, icon size, row height, actions, and iOS/Android layouts retain their
+existing contracts.
+
+The Web `listStructureToggle` slot cancels the enclosing footer band's
+horizontal content inset while disclosure is present, since toggle content owns
+its page padding. The footer and expanded-content slots keep their existing
+insets. Changing the accepted content padding updates the compensation;
+removing disclosure still hides and disables the retained toggle subtree.
+
+Conformance covers token-to-generic and generic-to-token row reuse, rows with an
+index/favorite/checkbox, leading visual and disabled action preservation,
+accepted padding changes, and absent disclosure. The consuming App comparison
+covers six visible rows and the toggle
+at 1024, 1280, and 1600 CSS-pixel viewports; it does not establish native runtime
+acceptance or a performance improvement.
+
+`DataRow.trailing?: readonly TrailingAccessory[]` reuses the existing accessory action contract, including `rowKey`, `actionKey`, disabled state, and accessibility/test labels. At most two accessories are accepted. Desktop Home can render its independent price/balance columns with `DataRow.columns` and a Swap button in `trailing`. Existing rows without `trailing` retain their current layout. On iOS, trailing controls reserve their intrinsic width and the weighted columns fill the remaining row width. Changing between linear and table layout rebinds retained cells even when their row payload is unchanged.
+
+`DataColumn.textSegments` and `secondaryTextSegments` reuse `ValueTextSegment` (`text`, optional `style: 'subscript'`) for formatted prices, balances, and values in each independent table column. Plain `text` and `secondaryText` remain the spoken/fallback strings. Missing segments preserve existing rendering.
+
+`DataColumn.titleIcon` and `secondaryTitleIcon` reuse `IdentityRow.titleIcon` after the primary column text. They preserve native-asset and receipt-token symbols in the desktop asset column. Web `hoverActionKey` uses the same anchored help action as Identity rows; absent icons leave the existing column layout unchanged.
+
+`DataColumn.webLeadingBadge?: { text: string; textColor: string; backgroundColor: string }` is an optional Web-only passive label on the primary line, placed before `secondaryLeadingText` and the primary text. The caller supplies the visible text and both colors: `text` is non-blank and within the 4096-character text limit, both colors are required `#RRGGBB` or `#RRGGBBAA` values, and no other key is accepted. The label is a 12/16 regular pill (2 by 6 padding, radius 4) that receives no pointer events and has no action, hover target, tone or style slot. While it is present the primary line spans its column, keeps the column's start, center or end alignment and uses an 8-unit gap in place of `titleBadgeGap`. The label is capped at half of the column width, padding included, and truncates with an ellipsis at that cap; the primary text keeps the remaining width and truncates after it, so neither leaves the column. A label that fits is drawn at its intrinsic width. Row height and measurement do not change. Development validation rejects a malformed badge in a snapshot and in a row patch that replaces `columns`; production drops the badge, strips undeclared keys and keeps the row. iOS and Android ignore the field, so a caller that needs the same signal there uses `titleIcon`. A column without the field renders as before. `validation.test.ts` covers the validation rules and `DataRowWebParity.test.ts` the element order, declared layout styles and row reuse in jsdom, which performs no layout. A scoped Chrome 157 measurement of the compiled renderer with `WEB_LIST_CSS` used four-column table rows 1000, 560 and 420 CSS pixels wide, all three alignments and labels of 10, 15 and 63 characters: the label stayed inside its column at no more than half of its width and the primary value kept a visible width in every case, and a label that fits kept the geometry it had without the cap. This is not app-host runtime acceptance.
+
+`IdentityRow.titleSuffixes?: readonly { text: string; tone: 'secondary' | 'disabled'; maxWidth?: number }[]` supports up to three plain 12/16 labels on the title line. Each suffix truncates independently at its optional maximum width. This preserves Recent recipient EVM, network, and relative-time metadata without using background badges; rows without suffixes keep their present title layout.
+
+### Web slot-list scroll ownership
+
+When container slots create an owned Web scroll host without `webScrollHost`,
+that actual host exposes the existing `data-collapsible-pager-scroll` marker.
+A containing Web pager therefore applies insets, collapse/top commands and route
+restoration to the owned host, with slot content as its padding target. The
+ordinary no-slot viewport and explicit external-host paths keep their existing
+ownership; no Pager dependency or new API is required.
+
+### Shared icon recoloring revision — Implemented; scoped runtime acceptance
+
+Android named glyph slots consume image's typed immutable shape-cache results:
+compatible fixed/single/same-alpha multiple colors update per-view tint without a
+request; new alpha or mixed-color raster requests preserve the last successful
+same-source/geometry bitmap until completion. Name/geometry changes, invalid,
+hidden/detach/recycle clear immediately and revisions reject old callbacks.
+Circle remains local; checkbox rectangles and icon coverage are unchanged.
+Android non-square named glyphs use the aspect-fit geometry defined above.
+iOS retains its existing black template/original request and synchronous retint.
+Web React and DOM use the image package's demand-loaded external per-icon symbol
+URLs, with existing coverage/aliases/action labels and CSS color inheritance.
+
+## Host-owned named resources — Implemented; SDK fixture runtime verified
+
+Image provides decoding and the static Web `#onekey-icon-assets` provider boundary;
+the application owns complete named SVG resources. NativeList keeps its existing
+43-name platform coverage and three generated metadata tables, including its
+legacy `BadgeVerifiedSolid` to canonical `BadgeRecognizedSolid` mapping. No list
+props, naming coverage or rendering strategy changes. Android non-square glyph
+geometry follows the aspect-fit contract above.
+
+The SDK metadata generator validates against the shared 63-sample example/test
+catalog without an App checkout, including raw source digests and viewBox sizes.
+It emits metadata only. Production consumers must supply the complete host icon
+bundle/assets and Web provider; SDK-only fixture tests prove their closed sample
+coverage, while the App's independent generator verifies all 1,909 resources.
+
+## Public host-ref types
+
+`webSectionIndexContainerRef` continues to derive its host instance from
+`React.ElementRef<typeof View>` with the existing nullable `RefObject` shape.
+The main integration preserves this existing declaration boundary without a
+private type import, extra compatibility layer or consumer declaration patch.
+Fresh normal package prepare/typecheck passed with RN 0.88/React 19.3; an isolated
+copy of the current sources passed a normal RN 0.86.2 declaration build.
+Actual View-ref positive/negative fixtures passed on both versions, with RN 0.88
+bidirectional compatibility against public `ViewInstance`. This is type-only:
+emitted JavaScript, native schemas, props and list behavior are unchanged by
+this ref declaration. Independent main-branch Web renderer changes and consumer
+runtime acceptance remain separately scoped.
+
+
+## Registry consumer integration (2026-11-05)
+
+Preview alpha.449 from source `76834daf9` was normally installed together with
+Pager; all 330 installed NativeList files match its verified registry tarball.
+The published runtime includes main's Web identity-row layout and iOS empty
+accessory constraint changes; the earlier types-only overlay is historical.
+New iOS source/object/built/installed binary hashes bind this Swift renderer.
+The existing App account-selector rows were opened and closed without importing
+accounts or editing the independent consumer WIP. This is row integration
+coverage; ellipsis accessory rows do not prove the empty-accessory branch.
+SDK iOS CI independently passed the empty-trailing, rebind and spinner layout
+cases. Actual Web Recipient auto-height rows and the installed public fixture's
+scale/width/long-word/same-DOM reuse checks were separately exercised. External
+notification/image/postinstall warnings and other prior limits remain recorded.
+
+Internal Pod edges use unversioned CocoaPods dependencies, matching the npm
+internal `*` policy while retaining external constraints. Real specification
+readback is `>= 0`; normal SDK example and consumer Pod installs passed. This
+does not retroactively make alpha.445's invalid `*` Pod requirement usable.

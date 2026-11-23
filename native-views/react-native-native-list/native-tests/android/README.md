@@ -1,0 +1,76 @@
+# Android reorder cancellation regression
+
+This source-checkout-only test uses Android's built-in instrumentation runner;
+it adds no third-party test dependency and is excluded from the npm artifact.
+It runs actual NativeListView/RecyclerView instances with callback-driven moves
+and ItemTouchHelper's real release lifecycle. It does not simulate a complete
+finger long-press/edge-scroll gesture or establish physical-device acceptance.
+
+From `example/react-native/android`, with the repository dependencies, JDK 17
+and Android SDK configured:
+
+```sh
+./gradlew --no-daemon --max-workers=2 \
+  -I ../../../native-views/react-native-native-list/native-tests/android/reorder-test.init.gradle \
+  -PreactNativeArchitectures=arm64-v8a \
+  :onekeyfe_react-native-native-list:assembleDebugAndroidTest \
+  :onekeyfe_react-native-native-list:testDebugUnitTest
+```
+
+Use only a task-owned arm64 emulator. Set its explicit serial, then run from
+the repository root:
+
+```sh
+REORDER_TEST_SERIAL=emulator-5586
+adb -s "$REORDER_TEST_SERIAL" install -r \
+  native-views/react-native-native-list/android/build/outputs/apk/androidTest/debug/onekeyfe_react-native-native-list-debug-androidTest.apk
+adb -s "$REORDER_TEST_SERIAL" shell am instrument -w -r \
+  -e class com.margelo.nitro.nativelist.NativeListReorderCancellationTest \
+  com.margelo.nitro.nativelist.test/android.test.InstrumentationTestRunner
+```
+
+Require `OK (3 tests)` in the instrumentation output; adb's shell exit status
+alone does not establish test success. Coverage includes structural/font
+cancellation, wallet expansion and declared opacity, translation/elevation,
+detached helper auto-scroll and stale callbacks, and the next valid/unmoved drop.
+
+## Section-index parent transitions
+
+The same build command also includes `NativeListSectionIndexReparentingTest`.
+Run it on a task-owned emulator by replacing the `-e class` value above with
+`com.margelo.nitro.nativelist.NativeListSectionIndexReparentingTest` and require
+`OK (6 tests)`. It exercises the production `NativeListView` with real Android
+view transitions in both attachment directions, then checks delayed transition
+completion, visibility/configuration changes, RTL, and detach/reattach ownership.
+It also checks that absent or disabled indexes leave both views detached, empty
+entries can restore the same instances, pending returns cannot restore a disabled
+index, and the preview never masks RN touch targets across its visibility states.
+It does not establish physical-device interaction acceptance.
+
+## Vertical-drag React touch cancellation
+
+The same build command includes `NativeListTouchDeliveryTest`. Run it with
+`-e class com.margelo.nitro.nativelist.NativeListTouchDeliveryTest` and require
+`OK (4 tests)`. It dispatches actual MotionEvents through a standalone
+NativeListView, its RecyclerView and a clickable container slot, using React
+Native's JSTouchDispatcher at the root. It checks one React touch-cancel per
+vertical drag, continued native scrolling, ordinary tap touch-end/click,
+ACTION_CANCEL cleanup, and removal/reattachment with the retained list and slot.
+It uses the existing platform runner without additional dependencies. It does
+not run JavaScript press handlers or establish physical-device gesture feel.
+
+## Activity description action hit area
+
+The same build command includes `NativeListDescriptionActionTouchTest`. Run it
+with `-e class com.margelo.nitro.nativelist.NativeListDescriptionActionTouchTest`
+and require `OK (7 tests)`. It binds rich Activity rows in a standalone
+NativeListView and taps the description line with `sendPointerSync`, so the
+events go through the window, the RecyclerView and the row. It checks that the
+text from `descriptionActionStart` on emits the description action, that the
+text before it and the blank width of the line emit the row press, also for a
+one-character prefix narrower than the touch slop and for the plain text
+between the two runs of a mixed-direction suffix. It covers UTF-16 offsets
+behind an emoji prefix, a start at, past and far past the end (beyond Int
+range), and that rebinding without a start, removing the action and recycling
+leave no stale start. It does not run JavaScript validation or present the
+caller's sheet.

@@ -1,0 +1,14 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": ["lib/**"],
+      "inputs": [
+        "src/**",
+        "android/src/**",
+        "ios/**",
+        "*.podspec"
+      ]
+    }
+  }
+}

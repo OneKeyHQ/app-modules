@@ -18,7 +18,7 @@ internal fun canUpdateIdentitySubtitle(previous: NativeListItem, next: NativeLis
       segment.remove("tone")
     }
     data.remove("accessibilityLabel")
-    return data.toString()
+    return nativeListCanonical(data)
   }
 
   val previousStructure = structure(previous) ?: return false

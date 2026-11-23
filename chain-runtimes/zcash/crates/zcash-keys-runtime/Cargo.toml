@@ -1,0 +1,52 @@
+[package]
+name = "onekey-zcash-keys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OneKey Zcash keys: derivation and signing only, no storage, scanning or network"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Minimal deps for mobile bundles: no client_backend, sqlite, or tonic.
+[dependencies]
+onekey-zcash-send-policy.workspace = true
+zcash_keys.workspace = true
+zcash_protocol.workspace = true
+zcash_address.workspace = true
+zcash_primitives = { workspace = true, features = ["transparent-inputs", "non-standard-fees"] }
+zip32 = "0.2"
+bs58 = { version = "0.5", features = ["check"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+zcash_note_encryption = "0.4"
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+secp256k1 = { version = "0.29", features = ["alloc"], default-features = false }
+# Pinned to match zcash_transparent; parses the xprv without upstream `AccountPrivKey::from_bytes` (unwiped heap string).
+bip32 = { version = "=0.6.0-pre.1", default-features = false, features = ["secp256k1-ffi"] }
+zcash_script = { version = "0.4.3", default-features = false }
+# transparent: shielding signs transparent inputs; zcash_script is pure Rust since 0.4.
+pczt = { workspace = true, features = ["signer", "orchard", "transparent", "zcp-builder", "spend-finalizer", "io-finalizer"] }
+transparent = { workspace = true, features = ["transparent-inputs"] }
+orchard = { version = "0.15", default-features = false }
+sapling.workspace = true
+thiserror.workspace = true
+
+# Test-only: seed-based derivation for parity tests.
+[dev-dependencies]
+bip0039 = { version = "0.12", features = ["all-languages"] }
+blake2b_simd.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+getrandom = { workspace = true, features = ["wasm_js"] }
+# Older crates pull in getrandom 0.2, which needs "js" on wasm32-unknown-unknown.
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+
+# -Oz: smaller output at negligible runtime cost.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]

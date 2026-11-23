@@ -7,7 +7,7 @@ import {
 export type CallbackError = { code: number; message: string | null } | null;
 
 export type CardInfo = {
-  hasBackup: boolean;
+  hasBackup: boolean | null;
   isNewCard: boolean;
   serialNum: string;
   pinRetryCount: number;
@@ -49,7 +49,7 @@ export enum CardErrors {
 }
 
 type KeyValuePair = {
-  code: string;
+  code: number;
   message: string;
 };
 
@@ -72,6 +72,7 @@ export interface Spec extends TurboModule {
     mnemonic: string,
     pwd: string,
     overwrite: boolean,
+    expectedSerial: string | null,
     callback: (
       error: CallbackError | null,
       data: boolean | null,
@@ -89,6 +90,7 @@ export interface Spec extends TurboModule {
   changePin(
     oldPin: string,
     newPin: string,
+    expectedSerial: string | null,
     callback: (
       error: CallbackError | null,
       data: boolean | null,

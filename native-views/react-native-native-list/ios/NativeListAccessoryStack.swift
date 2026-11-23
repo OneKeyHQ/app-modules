@@ -1,0 +1,914 @@
+import UIKit
+
+// OneKey patch: explicit summary actions use the source text's physical-pixel line box.
+final class NativeListAccessoryButton: NativeListIconButton {
+  var pressedBackgroundColor: UIColor?
+  var normalBackgroundColor: UIColor = .clear
+  var fixedTextLineHeight: CGFloat?
+  var rowTextOffsetY: CGFloat = 0
+  var helpBindingGeneration = 0
+  /// Marks the trailing `drag` accessory that can start a handle-only reorder.
+  var isReorderHandle = false
+  private var helpTrackingGeneration = 0
+  override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    helpTrackingGeneration = helpBindingGeneration
+    return super.beginTracking(touch, with: event)
+  }
+  override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+    guard helpTrackingGeneration == helpBindingGeneration else {
+      cancelTracking(with: event)
+      return
+    }
+    super.endTracking(touch, with: event)
+  }
+  var helpPrimaryLineOnly = false
+  var showsHelpUnderline = false
+  let helpAnchor = UIView()
+  private let helpUnderline = CAShapeLayer()
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    if helpPrimaryLineOnly { return helpAnchor.frame.contains(point) }
+    return super.point(inside: point, with: event)
+  }
+
+  private func layoutHelp() {
+    guard helpPrimaryLineOnly || showsHelpUnderline else {
+      helpUnderline.isHidden = true
+      return
+    }
+    guard let titleLabel else { return }
+    if helpAnchor.superview == nil {
+      helpAnchor.isUserInteractionEnabled = false
+      helpAnchor.isAccessibilityElement = false
+      addSubview(helpAnchor)
+      helpUnderline.fillColor = UIColor.clear.cgColor
+      helpUnderline.lineWidth = 1
+      helpUnderline.lineDashPattern = [3, 2]
+      helpAnchor.layer.addSublayer(helpUnderline)
+    }
+    var frame = titleLabel.frame
+    if helpPrimaryLineOnly, let text = attributedTitle(for: .normal) {
+      let range = (text.string as NSString).range(of: "\n")
+      let primary = text.attributedSubstring(from: NSRange(location: 0, length: range.location == NSNotFound ? text.length : range.location))
+      let width = min(frame.width, ceil(primary.size().width))
+      frame.origin.x += frame.width - width
+      frame.size.width = width
+      let paragraph = primary.length > 0 ? primary.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
+      frame.size.height = paragraph?.minimumLineHeight ?? 20
+    }
+    helpAnchor.frame = frame
+    let text = attributedTitle(for: .normal)
+    let color = text.flatMap { $0.length > 0 ? $0.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor : nil }
+    helpUnderline.strokeColor = (color ?? titleColor(for: .normal))?.cgColor
+    helpUnderline.isHidden = !showsHelpUnderline
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: 0, y: frame.height - 1))
+    path.addLine(to: CGPoint(x: frame.width, y: frame.height - 1))
+    helpUnderline.path = path.cgPath
+  }
+
+  override var isHighlighted: Bool {
+    didSet {
+      guard let pressedBackgroundColor else { return }
+      backgroundColor = isHighlighted ? pressedBackgroundColor : normalBackgroundColor
+    }
+  }
+
+  // A `.system` button cross-fades its title on every change. Rebinding a row
+  // or section header sets the title again, so a selector header value such as
+  // "$15.60" faded out and back in on each checkbox toggle (OK-64148). Data
+  // binding is not an animation: commit title changes immediately. UIKit
+  // applies a changed title in a later layout pass of the button, so
+  // layoutSubviews below runs without animation as well.
+  override func setTitle(_ title: String?, for state: UIControl.State) {
+    UIView.performWithoutAnimation {
+      super.setTitle(title, for: state)
+      layoutIfNeeded()
+    }
+  }
+
+  override func setAttributedTitle(_ title: NSAttributedString?, for state: UIControl.State) {
+    UIView.performWithoutAnimation {
+      super.setAttributedTitle(title, for: state)
+      layoutIfNeeded()
+    }
+  }
+
+  func clearTitlesForReuse() {
+    UIView.performWithoutAnimation {
+      super.setAttributedTitle(nil, for: .normal)
+      super.setTitle(nil, for: .normal)
+    }
+  }
+
+  var selectorSummaryLineHeight: CGFloat? {
+    didSet {
+      invalidateIntrinsicContentSize()
+      setNeedsLayout()
+    }
+  }
+
+  var marketLineHeight: CGFloat? {
+    didSet {
+      invalidateIntrinsicContentSize()
+      setNeedsLayout()
+    }
+  }
+
+  private var sourcePixelScale: CGFloat {
+    max(1, window?.screen.scale ?? traitCollection.displayScale)
+  }
+
+  override var intrinsicContentSize: CGSize {
+    var size = super.intrinsicContentSize
+    if let fixedTextLineHeight {
+      size.width += 2
+      size.height = fixedTextLineHeight + contentEdgeInsets.top + contentEdgeInsets.bottom + 2
+      return size
+    }
+    guard selectorSummaryLineHeight != nil || marketLineHeight != nil,
+      let title = attributedTitle(for: .normal)
+    else { return size }
+    let width = title.boundingRect(
+      with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading],
+      context: nil
+    ).width
+    size.width = ceil(width * sourcePixelScale) / sourcePixelScale
+    return size
+  }
+
+  override func layoutSubviews() {
+    UIView.performWithoutAnimation {
+      super.layoutSubviews()
+    }
+    defer {
+      if let titleLabel {
+        var frame = titleLabel.frame
+        if let fixedTextLineHeight {
+          frame.size.height = fixedTextLineHeight
+          frame.origin.y = (bounds.height - fixedTextLineHeight) / 2
+        }
+        if contentVerticalAlignment == .top {
+          frame.origin.y = contentEdgeInsets.top
+        } else if contentVerticalAlignment == .bottom {
+          frame.origin.y = bounds.height - contentEdgeInsets.bottom - frame.height
+        }
+        frame.origin.y += rowTextOffsetY
+        titleLabel.frame = frame
+      }
+      layoutHelp()
+    }
+    if let lineHeight = marketLineHeight, let titleLabel, let title = attributedTitle(for: .normal)
+    {
+      let measured = title.boundingRect(
+        with: CGSize(
+          width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
+      ).width
+      let width = min(bounds.width, ceil(measured * sourcePixelScale) / sourcePixelScale)
+      let x =
+        contentHorizontalAlignment == .trailing
+        ? bounds.width - width
+        : contentHorizontalAlignment == .leading ? 0 : (bounds.width - width) / 2
+      let textHeight =
+        titleLabel.numberOfLines > 1
+        ? min(
+          CGFloat(titleLabel.numberOfLines) * lineHeight,
+          titleLabel.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
+            .height)
+        : lineHeight
+      titleLabel.frame = CGRect(
+        x: floor(x * sourcePixelScale) / sourcePixelScale,
+        y: (bounds.height - textHeight) / 2,
+        width: width, height: textHeight
+      )
+      return
+    }
+    guard let lineHeight = selectorSummaryLineHeight, let titleLabel else { return }
+    // OneKey patch: position the final source line box after UIKit has measured the button.
+    let top = ceil((bounds.height - lineHeight) / 2 * sourcePixelScale) / sourcePixelScale
+    var frame = titleLabel.frame
+    frame.origin.y = top
+    titleLabel.frame = frame
+  }
+}
+
+// Bounded trailing controls shared by migrated templates. The owning host supplies
+// action epochs; selection-only updates touch only the existing checkbox.
+final class NativeListAccessoryStack: UIStackView {
+  var fonts = NativeListFontFamilies()
+  private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
+  private let checkboxButton = NativeListIconButton(type: .system)
+  private let spinner = UIActivityIndicatorView(style: .medium)
+  private var accessoryActions: [(String, NativeSelectionTarget?)] = []
+  private var checkboxAction: (String, NativeSelectionTarget?)?
+  private var boundCheckboxData: [String: Any]?
+  private var boundCheckboxTarget: NativeSelectionTarget?
+  private var semanticValueButtons: [UIButton] = []
+  private var valuePairSubscriptRanges: [ObjectIdentifier: [(NSRange, Bool)]] = [:]
+  private var tertiaryIconButtons: Set<ObjectIdentifier> = []
+  private var accessorySizeConstraints: [NSLayoutConstraint] = []
+  private var currentItem: NativeListItem?
+  private var currentTheme: [String: Any]?
+  private var checkboxCheckedColor = UIColor.black
+  private var checkboxUncheckedColor = UIColor.white
+  private var checkboxIconColor = UIColor.white
+  private var checkboxBorderColor = UIColor.lightGray
+  var firstVisibleControl: UIView? { accessoryButtons.first { !$0.isHidden } }
+  var endInset: CGFloat?
+  var contentGap: CGFloat?
+  var onAction: ((String, UIView, Int?, NativeSelectionTarget?) -> Void)?
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    axis = .vertical
+    alignment = .trailing
+    setContentHuggingPriority(.required, for: .horizontal)
+    setContentCompressionResistancePriority(.required, for: .horizontal)
+    for (index, button) in accessoryButtons.enumerated() {
+      button.tag = index
+      button.adjustsImageWhenDisabled = false
+      button.tintAdjustmentMode = .normal
+      button.addTarget(self, action: #selector(pressed(_:)), for: .touchUpInside)
+      addArrangedSubview(button)
+    }
+    checkboxButton.layer.borderWidth = 2
+    checkboxButton.layer.cornerRadius = 4
+    checkboxButton.imageView?.contentMode = .center
+    checkboxButton.addTarget(self, action: #selector(checkboxPressed), for: .touchUpInside)
+    NSLayoutConstraint.activate([
+      checkboxButton.widthAnchor.constraint(equalToConstant: 20),
+      checkboxButton.heightAnchor.constraint(equalToConstant: 20),
+    ])
+    addArrangedSubview(checkboxButton)
+    addArrangedSubview(spinner)
+  }
+  required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func bind(
+    _ item: NativeListItem, descriptors: [[String: Any]], theme: [String: Any]?,
+    style: [String: Any], defaultSpacing: CGFloat = 2,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+    fonts: NativeListFontFamilies
+  ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+    self.fonts = fonts
+    reset()
+    currentItem = item
+    currentTheme = theme
+    spacing = CGFloat(style.double("trailingGap", default: Double(defaultSpacing)))
+    checkboxCheckedColor = nativeListColor(theme, "primaryText", "#202020")
+    checkboxUncheckedColor = nativeListColor(theme, "inverseText", "#FCFCFC")
+    checkboxIconColor = checkboxUncheckedColor
+    checkboxBorderColor = UIColor(nativeListHex: "#00000031", fallback: .lightGray)
+    if item.data.string("presentation") == "networkSelector" {
+      checkboxCheckedColor = nativeListColor(theme, "checkboxBackground", "#202020")
+      checkboxBorderColor = nativeListColor(theme, "checkboxBorder", "#00000031")
+      checkboxIconColor = nativeListColor(theme, "checkboxIcon", "#FFFFFF")
+      checkboxUncheckedColor = checkboxIconColor
+    }
+    accessoryButtons.forEach {
+      $0.setTitleColor(nativeListColor(theme, "primaryText", "#202020"), for: .normal)
+    }
+    bindAccessories(item, descriptors, theme, checkboxState)
+    for (index, key) in ["value", "valueSecondary"].enumerated() {
+      if let value = style.dictionary(key), semanticValueButtons.indices.contains(index) {
+        applyStyledButton(semanticValueButtons[index], value)
+      }
+    }
+    isHidden = arrangedSubviews.allSatisfy { $0.isHidden }
+  }
+  func explicitTextStyle(for view: UIView, style: [String: Any]) -> [String: Any]? {
+    switch semanticValueButtons.firstIndex(where: { $0 === view }) {
+    case 0: return style.dictionary("value")
+    case 1: return style.dictionary("valueSecondary")
+    default: return nil
+    }
+  }
+
+  func updateSelection(
+    _ item: NativeListItem,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    currentItem = item
+    if boundCheckboxData != nil,
+      let data = item.data.dictionaries("trailing").last(where: { $0.string("kind") == "checkbox" })
+        ?? item.data.dictionary("checkbox")
+    {
+      bindCheckbox(item, data, checkboxState)
+    }
+  }
+  func anchorInset(for view: UIView) -> CGFloat {
+    guard accessoryButtons.contains(where: { $0 === view }), view.bounds.width == 38 else {
+      return 0
+    }
+    if tertiaryIconButtons.contains(ObjectIdentifier(view)) { return 7 }
+    return currentItem?.data.string("presentation") == "accountSelector" ? 7 : 0
+  }
+  func reset() {
+    NSLayoutConstraint.deactivate(accessorySizeConstraints)
+    accessorySizeConstraints.removeAll()
+    accessoryActions.removeAll()
+    semanticValueButtons.removeAll()
+    valuePairSubscriptRanges.removeAll()
+    tertiaryIconButtons.removeAll()
+    checkboxAction = nil
+    boundCheckboxData = nil
+    boundCheckboxTarget = nil
+    endInset = nil
+    contentGap = nil
+    currentItem = nil
+    for (index, button) in accessoryButtons.enumerated() {
+      button.tag = index
+      button.clearTitlesForReuse()
+      button.setImage(nil, for: .normal)
+      button.setImage(nil, for: .disabled)
+      button.titleLabel?.font = nativeListFont(
+        ofSize: index == 0 ? 16 : 14, weight: index == 0 ? .medium : .regular, fonts: fonts)
+      button.titleLabel?.numberOfLines = 1
+      button.titleLabel?.lineBreakMode = .byTruncatingTail
+      button.contentHorizontalAlignment = .center
+      button.contentVerticalAlignment = .center
+      button.rowTextOffsetY = 0
+      button.helpBindingGeneration += 1
+      button.helpPrimaryLineOnly = false
+      button.showsHelpUnderline = false
+      button.transform = .identity
+      button.marketLineHeight = nil
+      button.selectorSummaryLineHeight = nil
+      button.backgroundColor = .clear
+      button.pressedBackgroundColor = nil
+      button.normalBackgroundColor = .clear
+      button.fixedTextLineHeight = nil
+      button.contentEdgeInsets = .zero
+      button.layer.borderWidth = 0
+      button.layer.borderColor = nil
+      button.layer.cornerRadius = 0
+      button.isHidden = true
+      button.isEnabled = true
+      button.isUserInteractionEnabled = true
+      button.isReorderHandle = false
+      button.alpha = 1
+      button.accessibilityIdentifier = nil
+      button.accessibilityLabel = nil
+    }
+    checkboxButton.isHidden = true
+    spinner.stopAnimating()
+    spinner.alpha = 1
+  }
+  @objc private func pressed(_ button: UIButton) {
+    guard let controlIndex = accessoryButtons.firstIndex(where: { $0 === button }),
+      accessoryActions.indices.contains(controlIndex) else { return }
+    let action = accessoryActions[controlIndex]
+    if !action.0.isEmpty {
+      let anchor = accessoryButtons[controlIndex]
+      onAction?(action.0, anchor.helpPrimaryLineOnly ? anchor.helpAnchor : button, button.tag, action.1)
+    }
+  }
+  @objc private func checkboxPressed() {
+    if let action = checkboxAction { onAction?(action.0, checkboxButton, nil, action.1) }
+  }
+  private func bindAccessories(
+    _ item: NativeListItem,
+    _ accessories: [[String: Any]],
+    _ theme: [String: Any]?,
+    _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    var textIndex = 0
+    for (slot, accessory) in accessories.prefix(2).enumerated() {
+      let controlIndex = textIndex
+      switch accessory.string("kind") {
+      case "button":
+        showAccessory(
+          textIndex, accessory.string("label"),
+          action: accessory.bool("disabled") || item.data.bool("disabled")
+            ? nil : (accessory.string("actionKey"), nil))
+        let button = accessoryButtons[textIndex]
+        button.titleLabel?.font = nativeListFont(ofSize: 14, weight: .medium, fonts: fonts)
+        button.fixedTextLineHeight = 20
+        button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.clear.cgColor
+        button.layer.cornerRadius = 15
+        button.backgroundColor = UIColor(
+          nativeListHex: accessory.string("backgroundColor",
+            default: theme?["strongBackground"] as? String ?? "#F0F0F0"),
+          fallback: .clear)
+        button.normalBackgroundColor = button.backgroundColor ?? .clear
+        button.pressedBackgroundColor = UIColor(
+          nativeListHex: accessory.string("pressedBackgroundColor",
+            default: theme?["rowPressedBackground"] as? String ?? "#E4E4E4"),
+          fallback: .clear)
+        button.setTitleColor(
+          UIColor(
+            nativeListHex: accessory.string("textColor",
+              default: theme?["primaryText"] as? String ?? "#202020"),
+            fallback: .darkGray),
+          for: .normal)
+        button.accessibilityIdentifier = accessory.string("testID")
+        button.accessibilityLabel =
+          accessory.string("accessibilityLabel", default: accessory.string("label"))
+        button.isEnabled = !item.data.bool("disabled") && !accessory.bool("disabled")
+        button.alpha = button.isEnabled ? 1 : 0.4
+        textIndex += 1
+      case "value":
+        showAccessory(textIndex, accessory.string("text"))
+        semanticValueButtons.append(accessoryButtons[textIndex])
+        if item.data.string("presentation") == "networkSelector" && item.hasExplicitHeight {
+          accessoryButtons[textIndex].contentHorizontalAlignment = .trailing
+          accessoryButtons[textIndex].titleLabel?.textAlignment = .right
+        }
+        applyValueSegments(
+          accessory.dictionaries("textSegments"), to: accessoryButtons[textIndex], theme: theme)
+        textIndex += 1
+      case "valuePair":
+        showValuePairAccessory(textIndex, accessory, theme: theme)
+        semanticValueButtons.append(accessoryButtons[textIndex])
+        textIndex += 1
+      case "checkbox": bindCheckbox(item, accessory, checkboxState)
+      case "radio":
+        showAccessory(
+          textIndex, accessory.bool("checked") ? "●" : "○", action: accessoryAction(accessory))
+        textIndex += 1
+      case "switch":
+        showAccessory(
+          textIndex, accessory.bool("value") ? "ON" : "OFF", action: accessoryAction(accessory))
+        textIndex += 1
+      case "chevron":
+        var icon = accessory
+        icon["name"] = "ChevronRightSmallOutline"
+        if icon["tintColor"] == nil {
+          icon["tintColor"] = theme?["iconSubdued"] as? String ?? "#8D8D8D"
+        }
+        if icon.string("actionKey").isEmpty { icon["actionKey"] = "press" }
+        showAccessoryIcon(textIndex, icon)
+        textIndex += 1
+      case "menu":
+        showMenuAccessory(textIndex, action: accessoryAction(accessory))
+        textIndex += 1
+      case "drag":
+        var icon = accessory
+        icon["name"] = "DragOutline"
+        // ListItem draws the handle as a medium tertiary IconButton (38-point frame).
+        icon["buttonStyle"] = "tertiary"
+        if icon["tintColor"] == nil {
+          icon["tintColor"] = theme?["iconSubdued"] as? String ?? "#8D8D8D"
+        }
+        showAccessoryIcon(textIndex, icon)
+        if accessoryButtons.indices.contains(textIndex) {
+          accessoryButtons[textIndex].isReorderHandle = true
+        }
+        textIndex += 1
+      case "icon":
+        var icon = accessory
+        if icon["tintColor"] == nil {
+          icon["tintColor"] = theme?["iconSubdued"] as? String ?? "#8D8D8D"
+        }
+        showAccessoryIcon(textIndex, icon)
+        textIndex += 1
+      case "spinner": spinner.startAnimating()
+      case "progress":
+        showAccessory(textIndex, "\(Int(accessory.double("value") * 100))%")
+        textIndex += 1
+      default: break
+      }
+      if textIndex > controlIndex { accessoryButtons[controlIndex].tag = slot }
+    }
+  }
+
+  private func bindCheckbox(
+    _ item: NativeListItem,
+    _ data: [String: Any],
+    _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    let targetData = data.dictionary("target")
+    let scope = targetData?.string("scope", default: "row") ?? "row"
+    let key =
+      scope == "section" ? targetData?.string("sectionKey") : scope == "row" ? item.key : nil
+    let target = NativeSelectionTarget(scope: scope, key: key)
+    let state = checkboxState(item, target, data.string("state", default: "unchecked"))
+    boundCheckboxData = data
+    boundCheckboxTarget = target
+    updateCheckboxPresentation(item, data, target: target, state: state)
+  }
+
+  private func updateCheckboxPresentation(
+    _ item: NativeListItem,
+    _ data: [String: Any],
+    target: NativeSelectionTarget,
+    state: String
+  ) {
+    let accessoryDisabled = data.bool("disabled")
+    if data.bool("loading") {
+      checkboxButton.isHidden = true
+      spinner.startAnimating()
+      spinner.alpha = item.data.bool("disabled") ? 1 : accessoryDisabled ? 0.5 : 1
+      checkboxAction = nil
+      return
+    }
+    checkboxButton.isHidden = false
+    checkboxButton.backgroundColor =
+      state == "unchecked" ? checkboxUncheckedColor : checkboxCheckedColor
+    checkboxButton.layer.borderColor =
+      state == "unchecked"
+      ? checkboxBorderColor.cgColor
+      : UIColor.clear.cgColor
+    let glyphName =
+      state == "indeterminate"
+      ? "CheckboxIndeterminateCustom"
+      : "CheckboxCheckedCustom"
+    checkboxButton.bindIcon(state == "unchecked" ? nil : glyphName)
+    checkboxButton.tintColor = checkboxIconColor
+    // A disabled ListItem already applies 0.5 to its complete content. Avoid
+    // multiplying that opacity on the nested control a second time.
+    checkboxButton.alpha = item.data.bool("disabled") ? 1 : accessoryDisabled ? 0.5 : 1
+    checkboxButton.isEnabled =
+      !item.data.bool("disabled") && !accessoryDisabled && !data.bool("loading")
+    checkboxAction = (data.string("actionKey", default: "selection"), target)
+  }
+
+  private func showAccessory(
+    _ index: Int,
+    _ value: String,
+    action: (String, NativeSelectionTarget?)? = nil,
+    color: UIColor? = nil
+  ) {
+    guard accessoryButtons.indices.contains(index), !value.isEmpty else { return }
+    let button = accessoryButtons[index]
+    button.isHidden = false
+    // A text accessory without an action is display only. As an enabled
+    // UIControl it still claimed the touch, so a tap on a row value such as
+    // a network balance never reached the cell and the row did not select
+    // (OK-65494). Let those touches fall through to the row press.
+    button.isUserInteractionEnabled = action != nil
+    button.setTitle(value, for: .normal)
+    button.setContentHuggingPriority(.required, for: .horizontal)
+    button.setContentCompressionResistancePriority(.required, for: .horizontal)
+    if let color { button.setTitleColor(color, for: .normal) }
+    while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
+    accessoryActions[index] = action ?? ("", nil)
+  }
+
+  private func showValuePairAccessory(
+    _ index: Int,
+    _ accessory: [String: Any],
+    theme: [String: Any]?
+  ) {
+    guard accessoryButtons.indices.contains(index) else { return }
+    let primarySegments = accessory.dictionaries("primaryTextSegments")
+    let secondarySegments = accessory.dictionaries("secondaryTextSegments")
+    let primary = primarySegments.isEmpty
+      ? accessory.string("primary") : primarySegments.map { $0.string("text") }.joined()
+    let secondary = secondarySegments.isEmpty
+      ? accessory.string("secondary") : secondarySegments.map { $0.string("text") }.joined()
+    guard !primary.isEmpty || !secondary.isEmpty else { return }
+    let button = accessoryButtons[index]
+    // Value pairs never carry an action; the row owns their touches.
+    button.isUserInteractionEnabled = false
+    let text = NSMutableAttributedString()
+    let primaryParagraph = NSMutableParagraphStyle()
+    primaryParagraph.alignment = .right
+    primaryParagraph.minimumLineHeight = 20
+    primaryParagraph.maximumLineHeight = 20
+    var subscriptRanges: [(NSRange, Bool)] = []
+    appendValuePairLine(
+      to: text, fallback: primary, segments: primarySegments, fontSize: 16,
+      weight: .medium,
+      color: accessoryTextColor(accessory.string("primaryTone"), defaultTone: "primary", theme: theme),
+      paragraph: primaryParagraph, isPrimary: true, subscriptRanges: &subscriptRanges)
+    if !primary.isEmpty, !secondary.isEmpty { text.append(NSAttributedString(string: "\n")) }
+    let secondaryParagraph = NSMutableParagraphStyle()
+    secondaryParagraph.alignment = .right
+    secondaryParagraph.minimumLineHeight = 20
+    secondaryParagraph.maximumLineHeight = 20
+    appendValuePairLine(
+      to: text, fallback: secondary, segments: secondarySegments, fontSize: 14,
+      weight: .regular,
+      color: accessoryTextColor(accessory.string("secondaryTone"), defaultTone: "secondary", theme: theme),
+      paragraph: secondaryParagraph, isPrimary: false, subscriptRanges: &subscriptRanges)
+    button.isHidden = false
+    button.titleLabel?.numberOfLines = 2
+    button.contentHorizontalAlignment = .trailing
+    button.setAttributedTitle(text, for: .normal)
+    valuePairSubscriptRanges[ObjectIdentifier(button)] = subscriptRanges
+    button.setContentHuggingPriority(.required, for: .horizontal)
+    button.setContentCompressionResistancePriority(.required, for: .horizontal)
+    while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
+    accessoryActions[index] = ("", nil)
+    if let help = accessory.dictionary("primaryHelp") {
+      button.helpPrimaryLineOnly = true
+      button.showsHelpUnderline = help.string("underline") == "dashed"
+      button.isUserInteractionEnabled = help.string("presentation") == "popover"
+      accessoryActions[index] = (help.string("presentation") == "popover" ? help.string("actionKey") : "", nil)
+      button.setNeedsLayout()
+    }
+  }
+
+  private func appendValuePairLine(
+    to text: NSMutableAttributedString,
+    fallback: String,
+    segments: [[String: Any]],
+    fontSize: CGFloat,
+    weight: NativeListFontWeight,
+    color: UIColor,
+    paragraph: NSParagraphStyle,
+    isPrimary: Bool,
+    subscriptRanges: inout [(NSRange, Bool)]
+  ) {
+    let runs = segments.isEmpty ? [["text": fallback]] : segments
+    for run in runs {
+      let content = run.string("text")
+      let isSubscript = run.string("style") == "subscript"
+      let start = text.length
+      text.append(NSAttributedString(string: content, attributes: [
+        .font: nativeListFont(
+          ofSize: isSubscript ? ceil(fontSize * 0.6) : fontSize, weight: weight, fonts: fonts),
+        .foregroundColor: color,
+        .paragraphStyle: paragraph,
+      ]))
+      if isSubscript && text.length > start {
+        subscriptRanges.append((NSRange(location: start, length: text.length - start), isPrimary))
+      }
+    }
+  }
+
+  private func showMenuAccessory(
+    _ index: Int,
+    action: (String, NativeSelectionTarget?)?
+  ) {
+    showAccessory(index, "⋮", action: action)
+    guard accessoryButtons.indices.contains(index) else { return }
+    let button = accessoryButtons[index]
+    button.titleLabel?.font = nativeListFont(ofSize: 20, weight: .medium, fonts: fonts)
+    accessorySizeConstraints.append(contentsOf: [
+      button.widthAnchor.constraint(equalToConstant: 24),
+      button.heightAnchor.constraint(equalToConstant: 24),
+    ])
+    NSLayoutConstraint.activate(Array(accessorySizeConstraints.suffix(2)))
+  }
+
+  private func accessoryTextColor(
+    _ tone: String,
+    defaultTone: String,
+    theme: [String: Any]?
+  ) -> UIColor {
+    switch tone.isEmpty ? defaultTone : tone {
+    case "positive": return nativeListColor(theme, "positive", "#218358")
+    case "negative": return nativeListColor(theme, "negative", "#CE2C31")
+    // OneKey patch: account warnings and hidden balances use existing theme tokens.
+    case "disabled": return nativeListColor(theme, "disabledText", "#8D8D8D")
+    case "caution": return nativeListColor(theme, "caution", "#AB6400")
+    case "secondary": return nativeListColor(theme, "secondaryText", "#646464")
+    default: return nativeListColor(theme, "primaryText", "#202020")
+    }
+  }
+
+  private func showAccessoryIcon(_ index: Int, _ data: [String: Any]) {
+    guard accessoryButtons.indices.contains(index) else { return }
+    let button = accessoryButtons[index]
+    button.isHidden = false
+    button.isEnabled = !data.bool("disabled")
+    button.alpha = button.isEnabled ? 1 : 0.4
+    let isAccountCreate =
+      currentItem?.data.string("presentation") == "accountSelector"
+      && currentItem?.hasExplicitHeight == true && data.string("name") == "PlusSmallOutline"
+    let tintColor =
+      data["tintColor"] == nil && isAccountCreate
+      ? nativeListColor(currentTheme, "iconSubdued", "#8D8D8D")
+      : UIColor(nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
+    button.tintColor = tintColor
+    let isDecorativeRefresh =
+      data.string("name") == "RefreshCcwOutline" && data.string("actionKey").isEmpty
+    button.bindIcon(data.string("name"), size: isDecorativeRefresh ? CGSize(width: 16, height: 16) : nil)
+    let isDrillIn = data.string("kind") == "chevron"
+    let isTertiary = data.string("buttonStyle") == "tertiary"
+    if data.string("kind") == "icon" && isTertiary {
+      tertiaryIconButtons.insert(ObjectIdentifier(button))
+    }
+    let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector" && !isDrillIn
+    button.isUserInteractionEnabled = !isDecorativeRefresh
+    let size: CGFloat =
+      isDecorativeRefresh ? 16 : isDrillIn ? 24 : isTertiary || isAccountIcon && !isAccountCreate ? 38 : 36
+    if isTertiary {
+      button.pressedBackgroundColor = nativeListColor(
+        currentTheme, "rowPressedBackground", "#E8E8E8")
+      button.layer.borderWidth = 1
+      button.layer.borderColor = UIColor.clear.cgColor
+      button.layer.cornerRadius = 19
+      button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
+    }
+    if isAccountCreate { button.layer.cornerRadius = 8 }
+    if isAccountIcon && !isAccountCreate && !data.string("actionKey").isEmpty {
+      button.pressedBackgroundColor = nativeListColor(
+        currentTheme, "rowPressedBackground", "#E8E8E8")
+      button.layer.cornerRadius = size / 2
+    }
+    if isAccountIcon { contentGap = 5 }
+    // A leading tertiary button's m=-7 also pulls the text column 7 points closer.
+    if isTertiary && index == 0 && contentGap == nil { contentGap = 5 }
+    button.accessibilityIdentifier = data["testID"] as? String
+    button.accessibilityLabel = data["accessibilityLabel"] as? String
+    if !isDrillIn, !data.string("actionKey").isEmpty {
+      // Reproduce the trailing edge of IconButton's m=-7 while keeping its
+      // full 36-point frame for padding/highlight behavior.
+      endInset = 5
+    }
+    accessorySizeConstraints.append(contentsOf: [
+      button.widthAnchor.constraint(equalToConstant: size),
+      button.heightAnchor.constraint(equalToConstant: size),
+    ])
+    NSLayoutConstraint.activate(Array(accessorySizeConstraints.suffix(2)))
+    while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
+    accessoryActions[index] =
+      data.bool("disabled")
+      ? ("", nil)
+      : (data.string("actionKey"), nil)
+  }
+
+  private func accessoryAction(
+    _ accessory: [String: Any],
+    defaultKey: String = ""
+  ) -> (String, NativeSelectionTarget?)? {
+    if accessory.bool("disabled") { return nil }
+    let key = accessory.string("actionKey", default: defaultKey)
+    return key.isEmpty ? nil : (key, nil)
+  }
+
+  private func applyValueSegments(
+    _ segments: [[String: Any]], to button: UIButton, theme: [String: Any]?
+  ) {
+    guard !segments.isEmpty else { return }
+    let value = NSMutableAttributedString(string: "")
+    let color = nativeListColor(theme, "primaryText", "#202020")
+    // OneKey patch: rich currency changes font runs without dropping the established line baseline.
+    let current = button.attributedTitle(for: .normal)
+    var attributes =
+      current.flatMap { $0.length > 0 ? $0.attributes(at: 0, effectiveRange: nil) : nil } ?? [:]
+    attributes[.foregroundColor] = color
+    if currentItem?.data.string("presentation") == "networkSelector"
+      && currentItem?.hasExplicitHeight == true
+    {
+      let paragraph =
+        (attributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy()
+        as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+      paragraph.alignment = .right
+      attributes[.paragraphStyle] = paragraph
+    }
+    for segment in segments {
+      attributes[.font] = nativeListTabularFont(
+        ofSize: segment.string("style") == "subscript" ? 10 : 16, weight: .medium, fonts: fonts)
+      value.append(NSAttributedString(string: segment.string("text"), attributes: attributes))
+    }
+    button.setAttributedTitle(value, for: .normal)
+  }
+
+  private func applyStyledButton(_ button: UIButton, _ style: [String: Any]) {
+    let text =
+      button.attributedTitle(for: .normal)?.string
+      ?? button.title(for: .normal)
+      ?? ""
+    guard !text.isEmpty, !style.isEmpty else { return }
+    let originalText = button.attributedTitle(for: .normal)
+    let accessory = button as? NativeListAccessoryButton
+    let baseFont =
+      (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? button.titleLabel?
+      .font ?? nativeListFont(ofSize: 14, fonts: fonts)
+    let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
+    let font: UIFont
+    if let weightName = style["fontWeight"] as? String {
+      font = nativeListFont(
+        ofSize: size,
+        weight: marketFontWeight(weightName, fallback: .regular),
+        fonts: fonts)
+    } else {
+      font = baseFont.withSize(size)
+    }
+    let fallbackColor = button.titleColor(for: .normal) ?? .black
+    let color =
+      (style["color"] as? String)
+      .map { UIColor(nativeListHex: $0, fallback: fallbackColor) }
+      ?? fallbackColor
+    let attributed =
+      button.attributedTitle(for: .normal)
+      .map { NSMutableAttributedString(attributedString: $0) }
+      ?? NSMutableAttributedString(string: text)
+    let paragraph =
+      (attributed.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+      as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+    if let alignmentName = style["alignment"] as? String {
+      paragraph.alignment = marketTextAlignment(alignmentName)
+      button.contentHorizontalAlignment =
+        alignmentName == "start"
+        ? .leading
+        : alignmentName == "end" ? .trailing : .center
+    }
+    var attributes: [NSAttributedString.Key: Any] = [:]
+    applyStyledFont(attributed, style, fallback: baseFont)
+    if style["color"] != nil { attributes[.foregroundColor] = color }
+    if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
+    if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
+      || style["truncate"] != nil
+    {
+      attributes[.paragraphStyle] = paragraph
+    }
+    if style["lineHeight"] != nil {
+      let box = CGFloat(style.double("lineHeight"))
+      paragraph.minimumLineHeight = box
+      paragraph.maximumLineHeight = box
+      attributes[.baselineOffset] = max(0, (box - font.lineHeight) / 2)
+      if accessory?.marketLineHeight != nil { accessory?.marketLineHeight = box }
+      if accessory?.selectorSummaryLineHeight != nil { accessory?.selectorSummaryLineHeight = box }
+    }
+    if style["lines"] != nil {
+      button.titleLabel?.numberOfLines = min(3, max(1, style.int("lines", default: 1)))
+    }
+    if style["lines"] != nil || style["truncate"] != nil {
+      let mode = styledLineBreakMode(style, lines: button.titleLabel?.numberOfLines ?? 1)
+      button.titleLabel?.lineBreakMode = mode
+      paragraph.lineBreakMode = mode
+      if button.titleLabel?.numberOfLines == 1 { normalizeSingleLine(attributed) }
+    }
+    if let alignment = style["verticalAlignment"] as? String {
+      button.contentVerticalAlignment =
+        alignment == "top" ? .top : alignment == "bottom" ? .bottom : .center
+    }
+    if style["offsetY"] != nil {
+      (button as? NativeListAccessoryButton)?.rowTextOffsetY = CGFloat(style.double("offsetY"))
+    }
+    button.titleLabel?.font = font
+    attributed.addAttributes(attributes, range: NSRange(location: 0, length: attributed.length))
+    if style["fontSize"] != nil,
+      let ranges = valuePairSubscriptRanges[ObjectIdentifier(button)]
+    {
+      for (range, isPrimary) in ranges {
+        let weight = style["fontWeight"] == nil
+          ? (isPrimary ? NativeListFontWeight.medium : NativeListFontWeight.regular)
+          : marketFontWeight(style.string("fontWeight"), fallback: .regular)
+        attributed.addAttribute(
+          .font,
+          value: nativeListFont(ofSize: ceil(size * 0.6), weight: weight, fonts: fonts),
+          range: range)
+      }
+    }
+    if let tabular = style["tabularNumbers"] as? Bool {
+      NativeListTextStyles.applyDigitSpacing(attributed, tabular: tabular, fallback: font)
+    }
+    button.setAttributedTitle(attributed, for: .normal)
+  }
+
+  private func applyStyledFont(
+    _ text: NSMutableAttributedString, _ style: [String: Any], fallback: UIFont
+  ) {
+    guard style["fontSize"] != nil || style["fontWeight"] != nil else { return }
+    text.enumerateAttribute(.font, in: NSRange(location: 0, length: text.length)) {
+      value, range, _ in
+      let original = (value as? UIFont) ?? fallback
+      let size = CGFloat(style.double("fontSize", default: Double(original.pointSize)))
+      let font =
+        style["fontWeight"] == nil
+        ? original.withSize(size)
+        : nativeListFont(
+          ofSize: size, weight: marketFontWeight(style.string("fontWeight"), fallback: .regular),
+          fonts: fonts)
+      text.addAttribute(.font, value: font, range: range)
+    }
+  }
+
+  private func normalizeSingleLine(_ text: NSMutableAttributedString) {
+    let pattern = try! NSRegularExpression(pattern: "\\r\\n|[\\r\\n]")
+    for match in pattern.matches(in: text.string, range: NSRange(location: 0, length: text.length))
+      .reversed()
+    {
+      text.replaceCharacters(in: match.range, with: " ")
+    }
+  }
+
+  private func styledLineBreakMode(_ style: [String: Any], lines: Int) -> NSLineBreakMode {
+    if style.string("truncate", default: "tail") != "clip" { return .byTruncatingTail }
+    // Clipping disables wrapping; multi-line clip must wrap without adding an ellipsis.
+    return lines == 1 ? .byClipping : .byWordWrapping
+  }
+
+  private func marketFontWeight(_ value: String, fallback: NativeListFontWeight)
+    -> NativeListFontWeight
+  {
+    switch value {
+    case "regular": return .regular
+    case "semibold": return .semibold
+    case "bold": return .bold
+    case "medium": return .medium
+    default: return fallback
+    }
+  }
+
+  private func marketTextAlignment(_ value: String) -> NSTextAlignment {
+    switch value {
+    case "center": return .center
+    case "start": return effectiveUserInterfaceLayoutDirection == .rightToLeft ? .right : .left
+    case "end": return effectiveUserInterfaceLayoutDirection == .rightToLeft ? .left : .right
+    default: return .natural
+    }
+  }
+}

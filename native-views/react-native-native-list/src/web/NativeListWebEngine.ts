@@ -1,3 +1,28 @@
+import { createNamedIcon } from '@onekeyfe/react-native-image/icon/dom';
+import { nativeListGeneratedIcons as selectorIcons } from './NativeListGeneratedIcons';
+import { applyTextWeight } from './templates/RowText';
+import {
+  applyRowContainerStyle,
+  resetRowContainerStyle,
+} from './templates/RowContainerStyle';
+import { hasExplicitRowHeight, rowSizeModifier } from './templates/RowElements';
+import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
+import { setMarketQuoteContent } from './templates/MarketRowRenderer';
+import {
+  canPatchMarketTableValues,
+  updateMarketTableValues,
+} from './templates/MarketTableRowRenderer';
+export {
+  resolveWebMarketLayoutStyle,
+  type WebMarketLayoutStyle,
+} from './templates/MarketRowRenderer';
+import { measureRailWidth } from './templates/RailRowRenderer';
+import {
+  rowRenderer,
+  rowRendererKey,
+  recycleRowBody,
+  type RowRendererKey,
+} from './templates/RowRendererRegistry';
 import type {
   ActionAnchorInvalidatedEvent,
   CheckboxState,
@@ -25,6 +50,7 @@ import type {
 import {
   checkboxStateForKeys,
   checkboxStateForSection,
+  isRowPressEnabled,
   isSelectableRow,
   reduceSelection,
   selectionStateFromSnapshot,
@@ -36,7 +62,12 @@ import {
   validateOffset,
   type NormalizedPositionScroll,
 } from '../scrolling';
-import { applyRowPatches, validateSnapshot } from '../validation';
+import {
+  applyValidatedRowPatches,
+  containNativeListInput,
+  emptyNativeListSnapshot,
+  validateSnapshot,
+} from '../validation';
 import { avatarPrefetchWindow } from '../avatarPrefetch';
 import {
   acquireNativeListAvatar,
@@ -47,8 +78,14 @@ import {
 const SECTION_INDEX_CONTENT_INSET = 16;
 const SECTION_INDEX_RAIL_WIDTH = 32;
 const SECTION_INDEX_EDGE_PADDING = 8;
-const SECTION_INDEX_MIN_LABEL_SPACING = 14;
+const SECTION_INDEX_MIN_LABEL_SPACING = 16;
+const SECTION_INDEX_CONTAINER_LABEL_SPACING = 22;
 const SECTION_INDEX_MIN_HEIGHT = 120;
+const SECTION_INDEX_WINDOW_Z_INDEX = 100_000;
+const SECTION_INDEX_TRANSFORM_MIN_TRACKING_FRAMES = 12;
+const SECTION_INDEX_TRANSFORM_MAX_TRACKING_FRAMES = 90;
+const SECTION_INDEX_TRANSFORM_SETTLED_FRAMES = 4;
+const SECTION_INDEX_TRANSFORM_SETTLED_EPSILON = 0.0001;
 const DEFAULT_VIEWPORT_WIDTH = 320;
 const DEFAULT_VIEWPORT_HEIGHT = 640;
 const OVERSCAN_VIEWPORTS = 1;
@@ -60,6 +97,9 @@ export const WEB_REORDER_ANIMATION = {
 } as const;
 
 const REORDER_TOUCH_LONG_PRESS_MS = 120;
+const REORDER_CLICK_GRACE_MS = 500;
+const MARKET_LONG_PRESS_MS = 800;
+const MARKET_MOVE_CANCEL_PX = 10;
 const REORDER_MOUSE_MOVE_THRESHOLD_PX = 5;
 const REORDER_EDGE_RATIO = 0.25;
 const REORDER_MAX_SPEED_ZONE_RATIO = 0.05;
@@ -107,6 +147,76 @@ export type WebListLayout = Readonly<{
   contentHeight: number;
   horizontal: boolean;
 }>;
+
+export function webSectionIndexMetrics(
+  entryCount: number,
+  viewportHeight: number,
+  alignStart = false
+) {
+  const availableHeight = Math.max(
+    0,
+    viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
+  );
+  const labelSpacing = alignStart
+    ? SECTION_INDEX_CONTAINER_LABEL_SPACING
+    : SECTION_INDEX_MIN_LABEL_SPACING;
+  const trackHeight = Math.min(availableHeight, labelSpacing * entryCount);
+  return {
+    originY: alignStart
+      ? SECTION_INDEX_EDGE_PADDING
+      : (viewportHeight - trackHeight) / 2,
+    trackHeight,
+  };
+}
+
+export function webSectionIndexContainerLayout(
+  entryCount: number,
+  containerHeight: number
+) {
+  const height = Math.min(
+    Math.max(0, containerHeight),
+    SECTION_INDEX_EDGE_PADDING * 2 +
+      SECTION_INDEX_CONTAINER_LABEL_SPACING * entryCount
+  );
+  return {
+    top: Math.max(0, (containerHeight - height) / 2),
+    height,
+  };
+}
+
+export function webSectionIndexInverseScale(
+  layoutHeight: number,
+  renderedHeight: number
+) {
+  if (layoutHeight <= 0 || renderedHeight <= 0) return 1;
+  return layoutHeight / renderedHeight;
+}
+
+export function webSectionIndexActiveKey(
+  rows: readonly RowModel[],
+  layout: WebListLayout,
+  offset: number,
+  viewportLength: number
+): string | undefined {
+  const indexedRows = rows.flatMap((row, index) =>
+    row.type === 'sectionHeader' && row.sticky !== false && row.indexTitle
+      ? [{ key: row.key, index }]
+      : []
+  );
+  const maxOffset = Math.max(0, layout.contentHeight - viewportLength);
+  if (maxOffset > 0 && offset >= maxOffset - 1) {
+    return indexedRows.at(-1)?.key;
+  }
+  let activeKey: string | undefined;
+  indexedRows.forEach(({ key, index }) => {
+    if (itemStart(layout.items[index], layout.horizontal) <= offset) {
+      activeKey = key;
+    }
+  });
+  return activeKey;
+}
+
+/** Resolves every reusable Market geometry field, including legacy defaults. */
 
 export type NativeListWebCallbacks = Readonly<{
   onRowAction?: (event: RowActionEvent) => void;
@@ -176,6 +286,8 @@ type PointerReorderState = {
   pointerId: number;
   pointerType: string;
   sourceKey: string;
+  memberKey?: string;
+  handle?: HTMLElement;
   currentIndex: number;
   startX: number;
   startY: number;
@@ -198,6 +310,18 @@ type PointerReorderState = {
   active: boolean;
 };
 
+type ReorderClickPointer = Readonly<{
+  suppress: boolean;
+  pressTarget?: Element;
+  release?: Readonly<{
+    target: Element | undefined;
+    clientX: number;
+    clientY: number;
+    pointerType: string;
+    timer: number;
+  }>;
+}>;
+
 type KeyboardReorderState = {
   sourceKey: string;
   originalRows: readonly RowModel[];
@@ -211,9 +335,19 @@ export function isWebRowReorderable(
   if (row.type === 'rail' && row.draggable) return true;
   if (row.type === 'identity' && row.draggable) return true;
   if (row.type === 'walletGroup' && row.draggable) return true;
+  if (row.type === 'market' && row.webTable?.draggable) return true;
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
+  );
+}
+
+function hasWebReorderHandle(row: RowModel): boolean {
+  if (row.type === 'walletGroup')
+    return [row.parent, ...row.children].some(hasWebReorderHandle);
+  return (
+    'trailing' in row &&
+    row.trailing?.some((accessory) => accessory.kind === 'drag') === true
   );
 }
 
@@ -308,6 +442,15 @@ function effectiveRows(snapshot: NativeListSnapshot): readonly RowModel[] {
   return snapshot.emptyState ? [snapshot.emptyState] : [];
 }
 
+function isDarkBackground(color: string | undefined) {
+  const rgb = color ? /^#([0-9a-f]{6})/i.exec(color)?.[1] : undefined;
+  if (!rgb) return false;
+  const red = Number.parseInt(rgb.slice(0, 2), 16);
+  const green = Number.parseInt(rgb.slice(2, 4), 16);
+  const blue = Number.parseInt(rgb.slice(4, 6), 16);
+  return red * 299 + green * 587 + blue * 114 < 128_000;
+}
+
 function resolvedTheme(snapshot: NativeListSnapshot): NativeListTheme {
   return { ...defaultTheme, ...snapshot.theme };
 }
@@ -335,28 +478,7 @@ function sizeModifier(row: RowModel): number {
     (row.variant === 'summary' || row.variant === 'gallery')
   )
     return 0;
-  if (row.size === 'small') return -8;
-  if (row.size === 'large') return 12;
-  return 0;
-}
-
-function approximateMessageHeight(row: RowModel, availableWidth: number) {
-  if (row.type !== 'message') return 0;
-  const leadingWidth = row.leading ? 52 : 0;
-  const thumbnailWidth = row.thumbnail ? 88 : 0;
-  const charactersPerLine = Math.max(
-    18,
-    Math.floor((availableWidth - leadingWidth - thumbnailWidth - 40) / 7)
-  );
-  const titleLines = Math.min(
-    2,
-    Math.max(1, Math.ceil(row.title.length / charactersPerLine))
-  );
-  const bodyLines = Math.min(
-    row.bodyLines ?? 3,
-    Math.max(1, Math.ceil(row.body.length / charactersPerLine))
-  );
-  return 32 + titleLines * 20 + bodyLines * 20 + 22;
+  return rowSizeModifier(row.size);
 }
 
 export function estimateWebRowHeight(
@@ -364,129 +486,21 @@ export function estimateWebRowHeight(
   snapshot: NativeListSnapshot,
   availableWidth: number
 ): number {
-  // OneKey patch: explicit selector height takes precedence over presets.
-  // if (row.type === 'system' && row.variant === 'spacer') return row.height;
-  if (row.height !== undefined) return row.height;
-  if (row.type === 'system' && row.variant === 'warning') {
-    const width = Math.max(1, availableWidth - 24);
-    const lines = (text: string) =>
-      Math.max(
-        1,
-        Math.ceil(
-          Array.from(text).reduce(
-            (length, char) => length + (char.charCodeAt(0) > 255 ? 14 : 7),
-            0
-          ) / width
-        )
-      );
-    return 32 + 20 * (lines(row.title) + lines(row.message));
-  }
-  if (row.type === 'walletGroup')
-    // OneKey patch: wallet badges participate in the outer group height.
-    // return (row.children.length + 1) * 68 + row.children.length * 12;
-    return (
-      [row.parent, ...row.children].reduce(
-        (height, member) =>
-          height + estimateWebRowHeight(member, snapshot, availableWidth),
-        0
-      ) +
-      row.children.length * 12 +
-      (row.parent.height !== undefined ? 2 : 0)
-    );
-  // OneKey patch: reserve the source badge line below wallet names.
-  // if (row.type === 'identity' && row.presentation === 'walletSidebar')
-  // return 68;
-  if (row.type === 'identity' && row.presentation === 'walletSidebar')
-    return 68 + (row.badges?.length ? 24 : 0);
-  if (row.type === 'identity' && row.presentation === 'networkSelector')
-    return 47;
-  if (row.type === 'identity' && row.presentation === 'accountSelector')
-    return 58;
-
-  let base: number;
-  switch (row.type) {
-    case 'rail':
-      base = 40;
-      break;
-    case 'activity':
-      base = row.footerActions?.length ? 100 : 60;
-      break;
-    case 'message':
-      base = approximateMessageHeight(row, availableWidth);
-      break;
-    case 'mediaTile':
-      base = 244;
-      break;
-    case 'metricCard':
-      base =
-        row.variant === 'activity'
-          ? 161
-          : row.variant === 'performance'
-          ? 178
-          : 132;
-      break;
-    case 'sectionHeader': {
-      const isHistory =
-        row.variant === 'history' ||
-        row.key.startsWith('history-') ||
-        row.sectionKey.startsWith('history-');
-      base =
-        snapshot.layout.kind === 'table'
-          ? 28
-          : row.presentation === 'networkSelector'
-          ? 47
-          : isHistory
-          ? 16
-          : row.variant === 'summary'
-          ? 68
-          : row.variant === 'gallery'
-          ? 32
-          : row.checkbox
-          ? 56
-          : snapshot.layout.kind === 'linear'
-          ? 30
-          : 36;
-      break;
-    }
-    case 'system':
-      base =
-        row.variant === 'noMatch' || row.variant === 'end'
-          ? 36
-          : row.variant === 'retry'
-          ? 44
-          : 56;
-      break;
-    case 'action':
-      base = row.presentation === 'accountSelector' ? 48 : row.icon ? 60 : 44;
-      break;
-    case 'dataRow':
-      base = row.columns.some((column) => column.secondaryText) ? 60 : 56;
-      break;
-    case 'identity':
-      base = row.tertiary ? 72 : row.subtitle ? 60 : 56;
-      break;
-    default:
-      base = 56;
-  }
-  const tableAdjustment =
-    snapshot.layout.kind === 'table' &&
-    row.type === 'dataRow' &&
-    !row.columns.some((column) => column.secondaryText)
-      ? -8
-      : 0;
-  return Math.max(0, base + sizeModifier(row) + tableAdjustment);
+  // Explicit container/model height takes precedence over template presets.
+  const explicitHeight = row.style?.container?.height ?? row.height;
+  if (explicitHeight !== undefined) return explicitHeight;
+  const registered = rowRenderer(row);
+  return Math.max(
+    0,
+    registered.measure(availableWidth, snapshot.layout.kind) +
+      (registered.appliesSizePreset ? sizeModifier(row) : 0)
+  );
 }
 
 function estimateHorizontalWidth(row: RowModel): number {
   if (row.type === 'mediaTile') return 200;
   if (row.type !== 'rail') return 280;
-  const badgeLength = row.badge?.text.length ?? 0;
-  const statusLength =
-    row.status && row.status !== 'none' ? row.status.length : 0;
-  return Math.min(
-    288,
-    Math.max(72, 50 + (row.title.length + badgeLength + statusLength) * 7)
-  );
+  return measureRailWidth(row);
 }
 
 function sectionIndexEnabled(snapshot: NativeListSnapshot): boolean {
@@ -539,9 +553,14 @@ export function computeWebListLayout(
         y: padding.top,
         width: itemWidth,
         height:
-          row.type === 'rail'
+          (row.type === 'walletGroup' && row.key === compactRowKey
+            ? WALLET_REORDER_COMPACT_HEIGHT
+            : undefined) ??
+          row.style?.container?.height ??
+          row.height ??
+          (row.type === 'rail'
             ? Math.min(rowHeight, availableHeight)
-            : availableHeight,
+            : availableHeight),
       });
       x += itemWidth + spacing;
     });
@@ -587,9 +606,7 @@ export function computeWebListLayout(
   }
 
   const columns = snapshot.layout.gridColumns ?? 2;
-  const itemWidth = Math.floor(
-    (availableWidth - spacing * (columns - 1)) / columns
-  );
+  const itemWidth = (availableWidth - spacing * (columns - 1)) / columns;
   let y = padding.top;
   let column = 0;
   let bandStart = y;
@@ -619,9 +636,11 @@ export function computeWebListLayout(
       return;
     }
     const itemHeight =
-      row.type === 'mediaTile'
+      row.style?.container?.height ??
+      row.height ??
+      (row.type === 'mediaTile'
         ? itemWidth + 48
-        : estimateWebRowHeight(row, snapshot, itemWidth);
+        : estimateWebRowHeight(row, snapshot, itemWidth));
     items.push({
       index,
       key: row.key,
@@ -648,9 +667,26 @@ export function computeWebListLayout(
 }
 
 export function webWalletGroupReorderBadge(row: RowModel): string | undefined {
-  return row.type === 'walletGroup' && row.children.length > 0
-    ? '+' + String(row.children.length)
+  const draggableChildCount =
+    row.type === 'walletGroup'
+      ? row.children.filter((child) => child.draggable !== false).length
+      : 0;
+  return draggableChildCount > 0
+    ? '+' + String(draggableChildCount)
     : undefined;
+}
+
+export function canStartWebWalletGroupReorder(
+  row: RowModel,
+  memberKey: string | undefined
+): boolean {
+  if (row.type !== 'walletGroup' || !memberKey) return true;
+  const member = [row.parent, ...row.children].find(
+    (candidate) => candidate.key === memberKey
+  );
+  // Legacy: only `draggable: false` excludes a member; disabled members may
+  // still start the atomic group drag.
+  return member?.draggable !== false;
 }
 
 function itemStart(item: WebLayoutItem, horizontal: boolean): number {
@@ -706,6 +742,32 @@ export function visibleWebLayoutItems(
   return visible;
 }
 
+export type WebCollapsiblePagerScrollMetrics = Readonly<{
+  offset: number;
+  viewportLength: number;
+}>;
+
+export function resolveWebCollapsiblePagerScrollMetrics(
+  rawOffset: number,
+  rawViewportLength: number,
+  headerInset: number,
+  stickyInset: number
+): WebCollapsiblePagerScrollMetrics {
+  const header = Math.max(0, headerInset);
+  const sticky = Math.max(0, stickyInset);
+  return {
+    offset: Math.max(0, rawOffset - header),
+    viewportLength: Math.max(0, rawViewportLength - sticky),
+  };
+}
+
+export function resolveWebCollapsiblePagerRawOffset(
+  logicalOffset: number,
+  headerInset: number
+): number {
+  return Math.max(0, logicalOffset) + Math.max(0, headerInset);
+}
+
 export function webLayoutItemsForMount(
   layout: WebListLayout,
   offset: number,
@@ -742,22 +804,48 @@ export function webRowRenderSignature(row: RowModel): string {
   return JSON.stringify(rowWithoutSelectionState(row));
 }
 
+const MARKET_QUOTE_PATCH_FIELDS = new Set([
+  'revision',
+  'price',
+  'priceSegments',
+  'change',
+  'accessibilityLabel',
+]);
+
+export function isWebMarketQuotePatch(patch: RowPatch): boolean {
+  return (
+    patch.type === 'market' &&
+    Object.keys(patch.changes).every((key) =>
+      MARKET_QUOTE_PATCH_FIELDS.has(key)
+    )
+  );
+}
+
+/** Number of Market image-binding passes caused by one Web patch transaction. */
+export function webMarketImageBindDeltaForPatches(
+  patches: readonly RowPatch[]
+): 0 | 1 {
+  return patches.length > 0 && patches.every(isWebMarketQuotePatch) ? 0 : 1;
+}
+
 // OneKey patch: selector names must shrink before the sidebar clips their contents.
 export const WEB_LIST_CSS = `
+.ok-native-list-table-secondary{display:block;min-width:0;overflow:clip}.ok-native-list-table-secondary-track{display:flex;flex-direction:column;transition:transform 100ms ease}.ok-native-list-market-table:focus-within .ok-native-list-table-secondary[data-has-hover="true"]>.ok-native-list-table-secondary-track{transform:translateY(calc(-1 * var(--nl-table-secondary-height)))}@media(hover:hover){.ok-native-list-market-table:hover .ok-native-list-table-secondary[data-has-hover="true"]>.ok-native-list-table-secondary-track{transform:translateY(calc(-1 * var(--nl-table-secondary-height)))}}.ok-native-list-market-table button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-market-table button:hover{opacity:.75}.ok-native-list-market-table button:active{opacity:.5}
+
 [data-native-list-selector="walletSidebar"] .ok-native-list-title{max-width:100%;min-width:0}
-.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
+.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-hover:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-synthesis:none;font-family:var(--nl-font-regular)}
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
 .ok-native-list-content{position:relative;min-width:100%;min-height:100%}
-.ok-native-list-item{position:absolute;box-sizing:border-box;contain:layout paint style;outline:none}
-.ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:pointer;user-select:none;-webkit-user-select:none}
+.ok-native-list-item{position:absolute;left:0;top:0;box-sizing:border-box;contain:layout paint style;outline:none}
+.ok-native-list-item[data-native-list-media-gallery="true"]{pointer-events:none}.ok-native-list-item[data-native-list-media-gallery="true"]>.ok-native-list-media{pointer-events:auto}
+.ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:default;user-select:none;-webkit-user-select:none}
 .ok-native-list-item[data-table-alternate="true"]>.ok-native-list-row{background:var(--nl-bg)}
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
-.ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{opacity:.5;cursor:default}
-.ok-native-list-item:not([data-native-list-disabled="true"]):hover>.ok-native-list-row{background:var(--nl-pressed)}
-.ok-native-list-item:not([data-native-list-disabled="true"]):active>.ok-native-list-row{background:var(--nl-pressed)}
-.ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
-.ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>.ok-native-list-row{background:var(--nl-hover)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-selected="true"]:hover>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-wallet-group{display:flex;width:100%;height:100%;box-sizing:border-box;flex-direction:column;gap:12px;overflow:hidden;border:1px solid var(--nl-separator);border-radius:12px;background:var(--nl-subdued);user-select:none;-webkit-user-select:none}
 .ok-native-list-wallet-member{flex:0 0 68px;height:68px;overflow:hidden;border-radius:12px;background:transparent;cursor:pointer}
@@ -765,45 +853,65 @@ export const WEB_LIST_CSS = `
 .ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
-.ok-native-list-item:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
+:where(.ok-native-list-root[data-native-list-reorder-activation="handle"]) .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:default}
+.ok-native-list-item[data-native-list-reorderable="true"] [data-native-list-reorder-handle]{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
 .ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
-.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-row)}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row>*{visibility:hidden}
-.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-row)}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group>*{visibility:hidden}
-.ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-row);cursor:grabbing}
+.ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:var(--nl-font-regular);font-synthesis:none}
+.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}
 .ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
-.ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600}
-.ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator)}
-.ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:12px 12px 0 0}
-.ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 12px 12px}
-.ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:12px}
+.ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600;font-family:var(--nl-font-semibold)}
+.ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator-color,var(--nl-separator))}
+/* An inset separator keeps the transparent border so the row's height is unchanged, and paints the visible line with a logical-inset overlay so it follows RTL. */
+.ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row{position:relative;border-bottom-color:transparent}
+.ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row::after{content:"";position:absolute;inset-inline-start:var(--nl-separator-inset,0);inset-inline-end:0;bottom:-1px;height:1px;background:var(--nl-separator-color,var(--nl-separator))}
+.ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px) var(--nl-group-radius,12px) 0 0}
+.ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 var(--nl-group-radius,12px) var(--nl-group-radius,12px)}
+.ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px)}
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
-.ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400}
-.ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
+.ok-native-list-trailing-button{appearance:none;box-sizing:border-box;flex:0 0 auto;padding:4px 10px;border:1px solid transparent;border-radius:9999px;background:var(--nl-button-bg,var(--nl-strong));color:var(--nl-button-text,var(--nl-primary));font:500 14px/20px var(--nl-font-medium);white-space:nowrap;cursor:default}.ok-native-list-trailing-button:hover:not(:disabled){background:var(--nl-button-hover,var(--nl-strong))}.ok-native-list-trailing-button:active:not(:disabled){background:var(--nl-button-pressed,var(--nl-pressed))}.ok-native-list-trailing-button:focus-visible{outline:2px solid var(--nl-button-focus,var(--nl-accent))}.ok-native-list-trailing-button:disabled{opacity:.4;cursor:default}
+.ok-native-list-icon-button.ok-native-list-tertiary-icon{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:6px;border:1px solid transparent;border-radius:9999px;color:var(--nl-icon-subdued);background:transparent}.ok-native-list-icon-button.ok-native-list-tertiary-icon:hover:not(:disabled){background:var(--nl-hover)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:active:not(:disabled){background:var(--nl-pressed)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:disabled{opacity:.4;cursor:default}
+.ok-native-list-action-glyph{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center}
+.ok-native-list-icon-button.ok-native-list-tertiary-icon:focus-visible:not(:disabled){outline:2px solid var(--nl-accent)}
+.ok-native-list-identity-title-icon{flex:0 0 20px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;color:var(--nl-icon);font-size:20px}.ok-native-list-identity-title-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}
+.ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-semibold)}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
 .ok-native-list-identity-row .ok-native-list-title,.ok-native-list-identity-row .ok-native-list-amounts>span:first-child{font-size:16px;line-height:20px}.ok-native-list-identity-row .ok-native-list-secondary{font-size:14px;line-height:20px}
-.ok-native-list-value{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap}.ok-native-list-time{font-size:11px;line-height:16px;color:var(--nl-secondary);align-self:flex-start}.ok-native-list-amounts{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.ok-native-list-actions{display:flex;gap:16px;margin-top:6px}
-.ok-native-list-action-button{appearance:none;border:0;background:transparent;padding:2px;color:var(--nl-accent);font:600 12px/16px inherit;cursor:pointer}.ok-native-list-action-button[data-tone="danger"]{color:var(--nl-negative)}.ok-native-list-action-button:disabled{opacity:.5;cursor:default}
-.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
-.ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;font-family:inherit;cursor:pointer}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
-.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
-.ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px}.ok-native-list-section-value{margin-left:auto}
-.ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
-.ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400}
+.ok-native-list-value{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-time{font-size:11px;line-height:16px;color:var(--nl-secondary);align-self:flex-start}.ok-native-list-amounts{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.ok-native-list-actions{display:flex;gap:16px;margin-top:6px}
+.ok-native-list-action-button{appearance:none;border:0;background:transparent;padding:2px;color:var(--nl-accent);cursor:pointer;font:600 12px/16px var(--nl-font-semibold)}.ok-native-list-action-button[data-tone="danger"]{color:var(--nl-negative)}.ok-native-list-action-button:disabled{opacity:.5;cursor:default}
+.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-image-skeleton{position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:ok-native-list-skeleton-light 1.5s linear infinite alternate}.ok-native-list-image-skeleton[data-dark="true"]{animation-name:ok-native-list-skeleton-dark}@keyframes ok-native-list-skeleton-light{0%{background-color:#fafafa}100%{background-color:#cdcdcd}}@keyframes ok-native-list-skeleton-dark{0%{background-color:#111111}100%{background-color:#333333}}@media(prefers-reduced-motion:reduce){.ok-native-list-image-skeleton{animation:none;background-color:var(--nl-strong)}}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
+.ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;cursor:pointer;font-family:var(--nl-font-medium)}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
+.ok-native-list-icon-button.ok-native-list-decorative-refresh{min-width:16px;width:16px;height:16px}
+.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium);font-variant-numeric:inherit}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ok-native-list-identity-row .ok-native-list-badge[data-tone="neutral"]{height:20px;box-sizing:border-box;padding:2px 8px;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:500;font-family:var(--nl-font-medium)}
+.ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-bold)}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px;letter-spacing:0.8px}.ok-native-list-section-value{margin-left:auto}
+.ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent);font-family:var(--nl-font-semibold)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
+.ok-native-list-button-group{padding:0;gap:10px;overflow:visible}.ok-native-list-block-button{position:relative;display:flex;flex:1 1 0;min-width:0;min-height:48px;align-items:center;justify-content:center;gap:8px;padding:12px 8px;border:1px solid color-mix(in srgb,var(--nl-info) 35%,transparent);border-radius:12px;background:transparent;color:var(--nl-info);font:500 14px/20px var(--nl-font-medium);cursor:pointer}.ok-native-list-block-button>span:not(.ok-native-list-spinner){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ok-native-list-block-button>.ok-native-list-spinner{position:static;flex:0 0 20px;width:20px;height:20px;border-top-color:var(--nl-info)}.ok-native-list-block-button:hover:not(:disabled){background:color-mix(in srgb,var(--nl-info) 10%,transparent);border-color:var(--nl-info)}.ok-native-list-block-button:active:not(:disabled){background:color-mix(in srgb,var(--nl-info) 17%,transparent)}.ok-native-list-block-button:focus-visible{outline:2px solid var(--nl-info);outline-offset:1px}.ok-native-list-block-button:disabled{opacity:.4;cursor:default}
+.ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}
 .ok-native-list-system{justify-content:center;padding:8px 12px;background:var(--nl-bg);color:var(--nl-secondary);cursor:default}.ok-native-list-system[data-variant="retry"],.ok-native-list-system[data-variant="noMatch"],.ok-native-list-system[data-variant="end"]{justify-content:flex-start}.ok-native-list-system[data-variant="retry"]{cursor:pointer}
-.ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap}
-.ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;font:18px/20px inherit;cursor:pointer}
-.ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
-.ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:6px;display:flex;width:20px;height:16px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:8px;background:transparent;color:var(--nl-secondary);font:600 10px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-accent);color:var(--nl-inverse-text)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
+.ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}
+.ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-medium)}.ok-native-list-media-fallback{position:absolute;inset:0;overflow:hidden;border-radius:10px;background:var(--nl-strong);color:color-mix(in srgb,var(--nl-disabled) 70%,transparent)}.ok-native-list-media-fallback::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--nl-separator) 60%,transparent);pointer-events:none}.ok-native-list-media-sheen,.ok-native-list-media-hatch,.ok-native-list-media-glyph{position:absolute;inset:0;pointer-events:none}.ok-native-list-media-glyph{display:none;align-items:center;justify-content:center}.ok-native-list-media-glyph svg{width:28%;max-width:44px;height:auto}.ok-native-list-media-fallback[data-state="loading"] .ok-native-list-media-glyph[data-glyph="loading"],.ok-native-list-media-fallback[data-state="failed"] .ok-native-list-media-glyph[data-glyph="failed"]{display:flex}.ok-native-list-media-sheen{display:none;overflow:hidden}.ok-native-list-media-fallback[data-state="loading"] .ok-native-list-media-sheen{display:block}.ok-native-list-media-sheen::before{content:"";position:absolute;top:-50%;bottom:-50%;left:0;width:60%;background:linear-gradient(100deg,transparent 0%,var(--nl-media-shine,rgba(255,255,255,.75)) 50%,transparent 100%);transform:translateX(-135%) skewX(-12deg);animation:ok-native-list-media-sweep 1.6s cubic-bezier(.4,0,.2,1) infinite;animation-delay:var(--nl-media-sweep-delay,0s)}@keyframes ok-native-list-media-sweep{0%{transform:translateX(-135%) skewX(-12deg)}70%,100%{transform:translateX(220%) skewX(-12deg)}}.ok-native-list-media-hatch{display:none;background-image:repeating-linear-gradient(135deg,color-mix(in srgb,var(--nl-primary) 4.5%,transparent) 0 1px,transparent 1px 7px);-webkit-mask-image:radial-gradient(circle at 50% 50%,transparent 0 22%,#000 70%);mask-image:radial-gradient(circle at 50% 50%,transparent 0 22%,#000 70%)}.ok-native-list-media-fallback[data-state="failed"] .ok-native-list-media-hatch{display:block}@media(prefers-reduced-motion:reduce){.ok-native-list-media-sheen::before{animation:none;transform:translateX(60%) skewX(-12deg);opacity:.6}}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;cursor:pointer;font:18px/20px var(--nl-font-regular)}
+.ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700;font-family:var(--nl-font-bold)}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600;font-family:var(--nl-font-semibold)}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
+.ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-history{background:var(--nl-selected)}
+.ok-native-list-root[data-native-list-parent-scroll="true"] .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-market:not([data-variant="stock"]){opacity:.8}
+.ok-native-list-root[data-native-list-parent-scroll="true"] .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-market[data-variant="stock"]{background:var(--nl-selected)}
+.ok-native-list-market-table .ok-native-list-visual-fallback>svg{width:28px;height:28px}
+.ok-native-list-market{padding:12px 20px;gap:14px}.ok-native-list-market>.ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-market[data-variant="stock"]>.ok-native-list-visual{width:40px;height:40px;flex-basis:40px}.ok-native-list-market>.ok-native-list-visual>.ok-native-list-visual-main{width:100%;height:100%}.ok-native-list-market-main{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-market-title-line{display:flex;align-items:center;min-width:0;gap:4px}.ok-native-list-market-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-family:var(--nl-font-medium)}.ok-native-list-market-subtitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-secondary);font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-market-badge{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;box-sizing:border-box;max-width:72px;height:18px;padding:0 5px;border:0;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);overflow:hidden;white-space:nowrap;font:500 11px/18px var(--nl-font-medium);font-variant-numeric:tabular-nums}.ok-native-list-market-badge img{width:14px;height:14px;object-fit:contain}.ok-native-list-market-trailing{display:flex;flex:0 0 auto;align-items:center;gap:8px}.ok-native-list-market-price{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-variant-numeric:tabular-nums;font-family:var(--nl-font-medium)}.ok-native-list-market-change{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:80px;height:32px;border-radius:8px;color:#fff;background:#8d8d8d;font-size:14px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-market-change[data-tone="positive"]{background:var(--nl-positive)}.ok-native-list-market-change[data-tone="negative"]{background:var(--nl-negative)}
+.ok-native-list-market-badge>svg,.ok-native-list-market-badge>.ok-native-list-market-badge-icon>svg{display:block;width:16px;height:16px;flex:0 0 16px}.ok-native-list-system[data-native-list-presentation="market"]{box-sizing:border-box;padding:12px 20px}.ok-native-list-system[data-native-list-presentation="market"]>.ok-native-list-spinner{width:32px;height:32px}
+.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease;font-family:var(--nl-font-semibold)}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
+.ok-native-list-row.ok-native-list-market-skeleton{padding:12px 20px;gap:0}.ok-native-list-skeleton-left{display:flex;align-items:center;gap:12px;flex:1}.ok-native-list-skeleton-text{display:flex;flex-direction:column;gap:4px}.ok-native-list-skeleton-right{display:flex;align-items:center;gap:8px}.ok-native-list-skeleton-mark{display:block;flex-shrink:0;border-radius:8px;animation:ok-native-list-skeleton 1.5s linear infinite alternate}@keyframes ok-native-list-skeleton{from{background-color:var(--nl-skeleton-base)}to{background-color:var(--nl-skeleton-highlight)}}.ok-native-list-market-spinner{display:block;width:20px;height:20px;flex-shrink:0;color:var(--nl-icon);animation:ok-native-list-spin .75s linear infinite}
+@media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner,.ok-native-list-market-spinner{animation:none}.ok-native-list-skeleton-mark{animation:none;background:var(--nl-skeleton-base)}}
+.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer;font-family:var(--nl-font-regular);font-synthesis:none}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-size:10px;font-weight:400;line-height:1;cursor:pointer;opacity:.5;transition:opacity .15s ease;font-family:var(--nl-font-regular)}.ok-native-list-index-rail:hover .ok-native-list-index-button,.ok-native-list-index-rail:focus-within .ok-native-list-index-button,.ok-native-list-index-button[data-active="true"]{opacity:1}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500;font-family:var(--nl-font-medium)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
-.ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
-.ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
-@media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
-/* OneKey patch: selector controls follow their original semantic colors and geometry. */
+.ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary);font-family:var(--nl-font-regular)}
+.ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}/* OneKey patch: selector controls follow their original semantic colors and geometry. */
 .ok-native-list-checkbox[data-selector="networkSelector"]{padding:0;border-radius:4px;border-color:var(--nl-checkbox-border,var(--nl-separator));background:var(--nl-checkbox-icon,var(--nl-inverse-text))}
 .ok-native-list-checkbox[data-selector="networkSelector"]::after{display:none}
 .ok-native-list-checkbox[data-selector="networkSelector"]>svg{display:none;width:16px;height:16px;color:var(--nl-checkbox-icon,var(--nl-inverse-text));flex-shrink:0}
@@ -814,13 +922,27 @@ export const WEB_LIST_CSS = `
 /* OneKey patch: selected group members use the same primary title color as standalone wallets. */
 .ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-title{color:var(--nl-primary)}
 .ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges{height:18px}
-.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge{font-size:11px;line-height:14px;font-weight:400;height:18px;padding:2px 6px;border-radius:4px;background:var(--nl-subdued);color:var(--nl-secondary)}
+.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge{font-size:11px;line-height:14px;font-weight:400;height:18px;padding:2px 6px;border-radius:4px;background:var(--nl-subdued);color:var(--nl-secondary);font-family:var(--nl-font-regular)}
 .ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge[data-tone="warning"]{background:var(--nl-caution-background);color:var(--nl-caution)}
 .ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>.ok-native-list-icon-button{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:7px}
+.ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>.ok-native-list-icon-button[data-native-list-action]:not([data-native-list-account-control="createAddress"]):hover{background:var(--nl-strong);border-radius:50%}
+.ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>.ok-native-list-icon-button[data-native-list-action]:not([data-native-list-account-control="createAddress"]):active{background:var(--nl-pressed);border-radius:50%}
 /* OneKey patch: AccountSelectorAccountListItem fixes the borderless Plus slot at top18/right20. */
 .ok-native-list-account-row[data-native-list-selector="accountSelector"]>.ok-native-list-accessories[data-native-list-account-control="createAddress"]{position:absolute;top:18px;right:12px}
 .ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>[data-native-list-account-control="createAddress"]{flex-basis:36px;width:36px;height:36px;padding:6px;border-radius:8px}
-.ok-native-list-account-action-row{padding-left:12px;padding-right:12px}.ok-native-list-account-action-row .ok-native-list-action-title{font-size:16px;line-height:24px;font-weight:400}.ok-native-list-account-action-row .ok-native-list-action-title[data-tone="primary"]{color:var(--nl-primary)}
+.ok-native-list-account-action-row{padding-left:12px;padding-right:12px}.ok-native-list-account-action-row .ok-native-list-action-title{font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-action-row .ok-native-list-action-title[data-tone="primary"]{color:var(--nl-primary)}
+/* OneKey patch: account selector wallets and accounts keep the default cursor instead of pointer or grab affordances.
+   Only the row surface is matched: cursor inherits, so plain children follow the row, while icon buttons,
+   checkboxes, and action buttons keep advertising themselves with their own pointer cursor. */
+.ok-native-list-root .ok-native-list-item>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-wallet-member>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-action-row,.ok-native-list-wallet-member{cursor:default}
+/* OneKey patch: Add account hover and pressed backgrounds keep the account row corner radius. */
+.ok-native-list-account-action-row{border-radius:12px}
+
+.ok-native-list-root .ok-native-list-item>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member>[data-nl-container-background="true"]{background:var(--nl-container-background)}
+.ok-native-list-root [data-nl-container-border="true"]{position:relative}
+.ok-native-list-root [data-nl-container-border="true"]::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 var(--nl-container-border-width) var(--nl-container-border-color);z-index:2;pointer-events:none}
+.ok-native-list-root [data-nl-inline-warning="true"][data-nl-container-border="true"]::before{box-shadow:none;border-block:var(--nl-container-border-width) solid var(--nl-container-border-color);border-inline:0;border-radius:0}
+.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:active>[data-nl-container-background="true"]{background:var(--nl-pressed)}
 `;
 
 function createElement(
@@ -891,10 +1013,13 @@ function configureWebImageRetry(
   const retryLimit = Number.isFinite(source.retryTimes)
     ? Math.max(0, Math.floor(source.retryTimes ?? 0))
     : 0;
-  if (!fallbackUri && retryLimit === 0) return;
+  const orderedFallbacks = source.fallbackUris;
+  if (!fallbackUri && retryLimit === 0 && orderedFallbacks === undefined)
+    return;
   const view = image.ownerDocument.defaultView;
   let currentUri = initialUri;
   let usedFallback = false;
+  let fallbackIndex = 0;
   let retryCount = 0;
   let retryTimer: number | undefined;
   let disposed = false;
@@ -907,7 +1032,25 @@ function configureWebImageRetry(
       event.stopImmediatePropagation();
       return;
     }
-    if (fallbackUri && !usedFallback && fallbackUri !== currentUri) {
+    if (orderedFallbacks !== undefined && retryCount >= retryLimit) {
+      if (fallbackIndex >= orderedFallbacks.length) return;
+      let nextUri: string | undefined;
+      while (!nextUri && fallbackIndex < orderedFallbacks.length) {
+        nextUri = safeImageUri(orderedFallbacks[fallbackIndex++]);
+      }
+      if (!nextUri) return;
+      event.stopImmediatePropagation();
+      retryCount = 0;
+      currentUri = nextUri;
+      image.src = currentUri;
+      return;
+    }
+    if (
+      orderedFallbacks === undefined &&
+      fallbackUri &&
+      !usedFallback &&
+      fallbackUri !== currentUri
+    ) {
       event.stopImmediatePropagation();
       usedFallback = true;
       currentUri = fallbackUri;
@@ -947,6 +1090,12 @@ function configureWebAvatar(
       image.src = resolvedUri;
     },
     () => {
+      if (source.fallbackUris !== undefined) {
+        configureWebImageRetry(image, source, uri);
+        const ImageEvent = image.ownerDocument.defaultView?.Event;
+        if (ImageEvent) image.dispatchEvent(new ImageEvent('error'));
+        return;
+      }
       const fallbackUri = source.fallbackUri
         ? safeImageUri(source.fallbackUri)
         : undefined;
@@ -963,6 +1112,30 @@ function configureWebAvatar(
   webAvatarCleanup.set(image, dispose);
 }
 
+const WEB_IMAGE_FADE_DELAY_MS = 100;
+const WEB_IMAGE_FADE_DURATION_MS = 140;
+
+function webImageNow(image: HTMLImageElement): number {
+  return image.ownerDocument.defaultView?.performance.now() ?? Date.now();
+}
+
+function revealWebImage(element: HTMLElement, startedAt: number) {
+  element.getAnimations?.().forEach((animation) => animation.cancel());
+  element.style.opacity = '1';
+  const view = element.ownerDocument.defaultView;
+  if (
+    webImageNow(element as HTMLImageElement) - startedAt <
+      WEB_IMAGE_FADE_DELAY_MS ||
+    view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ||
+    typeof element.animate !== 'function'
+  )
+    return;
+  element.animate([{ opacity: 0 }, { opacity: 1 }], {
+    duration: WEB_IMAGE_FADE_DURATION_MS,
+    easing: 'ease-out',
+  });
+}
+
 function createImage(
   context: RenderContext,
   source: ImageSource,
@@ -972,6 +1145,8 @@ function createImage(
   const uri = avatarUri ?? safeImageUri(source.uri);
   if (!uri) return undefined;
   const image = context.document.createElement('img');
+  const startedAt = webImageNow(image);
+  image.style.opacity = '0';
   if (className) image.className = className;
   // OneKey patch: consume recoverable errors before the visual's final fallback listener.
   if (avatarUri) {
@@ -986,6 +1161,14 @@ function createImage(
   image.decoding = 'async';
   image.style.objectFit =
     source.contentFit === 'fill' ? 'fill' : source.contentFit ?? 'cover';
+  image.addEventListener('load', () => {
+    if (image.dataset.nativeListSelectorPaint !== 'true')
+      revealWebImage(image, startedAt);
+  });
+  image.addEventListener('error', () => {
+    image.style.opacity = '0';
+  });
+  image.dataset.nativeListImageStartedAt = String(startedAt);
   return image;
 }
 
@@ -1004,307 +1187,64 @@ function paintSelectorImageBackground(
   paint.style.cssText =
     'position:absolute;pointer-events:none;border-radius:inherit;background-position:center;background-repeat:no-repeat';
   paint.style.inset = String(inset) + 'px';
+  paint.style.opacity = '0';
   paint.style.backgroundSize =
     image.style.objectFit === 'fill'
       ? '100% 100%'
       : image.style.objectFit === 'center'
       ? 'auto'
       : image.style.objectFit;
+  image.dataset.nativeListSelectorPaint = 'true';
   image.style.opacity = '0';
   const update = () => {
     paint.style.backgroundImage =
       'url(' + JSON.stringify(image.currentSrc || image.src) + ')';
+    revealWebImage(
+      paint,
+      Number(image.dataset.nativeListImageStartedAt) || webImageNow(image)
+    );
   };
   image.addEventListener('load', update);
   image.addEventListener('error', () => {
     paint.style.backgroundImage = 'none';
+    paint.style.opacity = '0';
   });
   frame.insertBefore(paint, image);
   if (image.complete && image.naturalWidth > 0) update();
 }
 
-// OneKey patch: use source SVG paths for selector actions and wallet provider marks.
-const selectorIcons: Readonly<
-  Record<
-    string,
-    Readonly<{
-      viewBox: string;
-      paths: readonly Readonly<{
-        d: string;
-        fill: string;
-        fillRule: string;
-        opacity: number;
-      }>[];
-    }>
-  >
-> = {
-  GlobusOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M12 2c5.185 0 9.448 3.947 9.95 9H22v2h-.05c-.502 5.053-4.765 9-9.95 9s-9.448-3.947-9.95-9H2v-2h.05C2.552 5.947 6.815 2 12 2M9.523 13c.09 1.982.438 3.726.934 5.002.29.746.612 1.282.917 1.614.304.331.517.384.626.384s.322-.053.626-.384c.305-.332.627-.868.917-1.614.496-1.276.845-3.02.934-5.002zm-5.459 0a8 8 0 0 0 4.8 6.36 10 10 0 0 1-.271-.633C7.994 17.187 7.61 15.189 7.52 13zm12.416 0c-.09 2.189-.474 4.187-1.073 5.727a10 10 0 0 1-.271.633 8 8 0 0 0 4.8-6.36zM8.863 4.639A8 8 0 0 0 4.064 11h3.457c.09-2.189.473-4.187 1.072-5.727q.127-.327.27-.634M12 4c-.109 0-.322.053-.626.384-.305.332-.627.868-.917 1.614-.496 1.276-.844 3.02-.934 5.002h4.954c-.09-1.982-.438-3.726-.934-5.002-.29-.746-.612-1.282-.917-1.614C12.322 4.053 12.109 4 12 4m3.136.639q.144.307.271.634c.599 1.54.982 3.538 1.073 5.727h3.456a8 8 0 0 0-4.8-6.361',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  LockSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M12 2a5 5 0 0 1 5 5v2h3v13H4V9h3V7a5 5 0 0 1 5-5m-1 11v5h2v-5zm1-9a3 3 0 0 0-3 3v2h6V7a3 3 0 0 0-3-3',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  GoogleIllus: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09',
-        fill: '#4285F4',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23',
-        fill: '#34A853',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z',
-        fill: '#FBBC05',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53',
-        fill: '#EA4335',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  AppleBrand: {
-    viewBox: '0 0 16 20',
-    paths: [
-      {
-        d: 'M11.67.834c.117 1.074-.315 2.153-.955 2.928-.64.773-1.692 1.378-2.718 1.298-.14-1.054.38-2.151.971-2.836C9.63 1.45 10.746.872 11.67.834M14.994 7.093c-.176.108-1.992 1.224-1.972 3.482.025 2.769 2.428 3.693 2.46 3.705l-.004.015a10.1 10.1 0 0 1-1.264 2.593c-.764 1.116-1.556 2.229-2.806 2.254-.598.011-1-.162-1.416-.343-.437-.19-.891-.386-1.609-.386-.751 0-1.226.203-1.683.398-.397.169-.78.333-1.32.354-1.208.047-2.124-1.207-2.895-2.32C.909 14.57-.294 10.414 1.322 7.612c.803-1.395 2.237-2.275 3.794-2.298.671-.014 1.32.244 1.89.47.434.172.821.326 1.135.326.282 0 .659-.149 1.099-.323.692-.273 1.539-.607 2.41-.518.599.026 2.276.24 3.354 1.818z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  BotIllus: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M11 2a1 1 0 1 1 2 0v1.8l1.6 1.6a1 1 0 1 1-1.4 1.4L12 5.6l-1.2 1.2a1 1 0 0 1-1.4-1.4L11 3.8z',
-        fill: '#8897A5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M8.0 6.0h8.0a5.0 5.0 0 0 1 5.0 5.0v4.0a5.0 5.0 0 0 1 -5.0 5.0h-8.0a5.0 5.0 0 0 1 -5.0 -5.0v-4.0a5.0 5.0 0 0 1 5.0 -5.0z',
-        fill: '#3FA9F5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M3.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z',
-        fill: '#8897A5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M21.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z',
-        fill: '#8897A5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M7.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0',
-        fill: '#10243E',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M13.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0',
-        fill: '#10243E',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M8.5 15.4c.9.8 2.08 1.2 3.5 1.2s2.6-.4 3.5-1.2c.24-.2.6-.18.8.06.2.23.17.6-.06.8-1.14.98-2.58 1.46-4.24 1.46s-3.1-.48-4.24-1.46a.58.58 0 0 1-.06-.8c.2-.24.56-.26.8-.06',
-        fill: '#10243E',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  AllNetworksSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M15.333 13.998a1.335 1.335 0 1 1 0 2.67 1.335 1.335 0 0 1 0-2.67',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0M8 12.668A2 2 0 0 0 6 14.666V16c0 1.103.895 1.997 1.998 1.998h1.334A2 2 0 0 0 11.33 16v-1.334a2 2 0 0 0-1.998-1.998zm7.333 0a2.665 2.665 0 1 0 0 5.33 2.665 2.665 0 0 0 0-5.33M7.999 6.001A2 2 0 0 0 6.001 8v1.334c0 1.103.895 1.998 1.998 1.998h1.334a2 2 0 0 0 1.998-1.998V7.999a2 2 0 0 0-1.998-1.998zm6.667 0A2 2 0 0 0 12.668 8v1.334c0 1.103.895 1.998 1.998 1.998H16a2 2 0 0 0 1.998-1.998V7.999A2 2 0 0 0 16 6.001z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  CrossedSmallSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M17.87 8.25 14.12 12l3.75 3.75-2.12 2.121-3.75-3.75-3.75 3.75-2.121-2.121L9.879 12l-3.75-3.75 2.12-2.121L12 9.879l3.75-3.75 2.122 2.121Z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  AccountErrorCustom: {
-    viewBox: '0 0 18 18',
-    paths: [
-      {
-        d: 'M12.5 12.75a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5',
-        fill: '#000',
-        fillRule: 'nonzero',
-        opacity: 0.447,
-      },
-      {
-        d: 'M0 3.5A3.5 3.5 0 0 1 3.5 0h8.088A2.41 2.41 0 0 1 14 2.412V5h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H4a4 4 0 0 1-4-4zm2 3.163V14a2 2 0 0 0 2 2h11a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H3.5c-.537 0-1.045-.12-1.5-.337M2 3.5A1.5 1.5 0 0 0 3.5 5H12V2.412A.41.41 0 0 0 11.588 2H3.5A1.5 1.5 0 0 0 2 3.5',
-        fill: '#000',
-        fillRule: 'evenodd',
-        opacity: 0.447,
-      },
-    ],
-  },
-  PlusSmallOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M13 11h5v2h-5v5h-2v-5H6v-2h5V6h2z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  DotHorOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M6 14H2v-4h4zm8 0h-4v-4h4zm8 0h-4v-4h4z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  ChevronRightSmallOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M15.414 12 10 17.414 8.586 16l4-4-4-4L10 6.586z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  DragOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M11 21H7v-4h4zm6 0h-4v-4h4zm-6-7H7v-4h4zm6 0h-4v-4h4zm-6-7H7V3h4zm6 0h-4V3h4z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  PencilOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M22.414 7.5 7.914 22H2v-5.914l14.5-14.5zM4 16.914V20h3.086l9.5-9.5L13.5 7.414zM14.914 6 18 9.086 19.586 7.5 16.5 4.414z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  CheckboxCheckedCustom: {
-    viewBox: '0 0 16 16',
-    paths: [
-      {
-        d: 'M12.204 5.043a1 1 0 0 1 0 1.414l-4.5 4.5a1 1 0 0 1-1.414 0l-2-2a1 1 0 1 1 1.414-1.414l1.293 1.293 3.793-3.793a1 1 0 0 1 1.414 0',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  CheckboxIndeterminateCustom: {
-    viewBox: '0 0 16 16',
-    paths: [
-      {
-        d: 'M4 8a1 1 0 0 1 1-1h6a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  Circle: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M0 12a12 12 0 1 0 24 0a12 12 0 1 0 -24 0',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-    ],
-  },
-};
 function applySelectorIcon(element: HTMLElement, name: string) {
-  const icon = selectorIcons[name];
-  if (!icon) return;
-  element.textContent = '';
-  const svg = element.ownerDocument.createElementNS(
-    'http://www.w3.org/2000/svg',
-    'svg'
-  );
-  svg.setAttribute('viewBox', icon.viewBox);
-  svg.setAttribute('width', '24');
-  svg.setAttribute('height', '24');
-  svg.setAttribute('aria-hidden', 'true');
-  icon.paths.forEach((path) => {
-    const child = element.ownerDocument.createElementNS(
+  // Registered names keep their legacy aliases; any other name resolves
+  // through the host icon catalog, matching the iOS/Android fallback.
+  const canonical = Object.prototype.hasOwnProperty.call(selectorIcons, name)
+    ? selectorIcons[name]
+    : name;
+  if (!canonical) return;
+  if (canonical === 'Circle') {
+    const svg = element.ownerDocument.createElementNS(
       'http://www.w3.org/2000/svg',
-      'path'
+      'svg'
     );
-    child.setAttribute('d', path.d);
-    child.setAttribute('fill', path.fill);
-    child.setAttribute('fill-rule', path.fillRule);
-    child.setAttribute('fill-opacity', String(path.opacity));
-    svg.appendChild(child);
-  });
-  element.appendChild(svg);
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
+    svg.setAttribute('aria-hidden', 'true');
+    const circle = element.ownerDocument.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'circle'
+    );
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '12');
+    circle.setAttribute('fill', 'currentColor');
+    svg.append(circle);
+    element.replaceChildren(svg);
+    return;
+  }
+  const svg = createNamedIcon(element.ownerDocument, canonical);
+  // Without host artwork the element keeps its text glyph.
+  if (!svg.firstChild) return;
+  element.replaceChildren(svg);
 }
 
 function iconGlyph(name: string): string {
@@ -1327,16 +1267,6 @@ function iconGlyph(name: string): string {
   if (normalized.includes('swap')) return '⇄';
   if (normalized.includes('trend') || normalized.includes('arrow')) return '↗';
   return name.slice(0, 1).toLocaleUpperCase();
-}
-
-function visualFromRow(row: RowModel): LeadingVisual | undefined {
-  if (row.type === 'identity') return row.leading;
-  if (row.type === 'rail') return row.visual;
-  if (row.type === 'activity') return row.leading;
-  if (row.type === 'message') return row.leading;
-  if (row.type === 'dataRow') return row.leading;
-  if (row.type === 'metricCard') return row.visual;
-  return undefined;
 }
 
 function createVisual(
@@ -1380,15 +1310,57 @@ function createVisual(
     return frame;
   }
 
-  if ('backgroundColor' in visual && visual.backgroundColor)
-    frame.style.background = visual.backgroundColor;
+  // OneKey patch: NativeList images are usually local and should not flash a
+  // placeholder. Callers can opt in with image.loadingStrategy.
+  const visualBackground =
+    'backgroundColor' in visual && visual.backgroundColor
+      ? visual.backgroundColor
+      : 'transparent';
   const source = visual.kind === 'image' ? visual.image : visual.image;
+  const showsSourcePlaceholder =
+    !!source &&
+    source.loadingStrategy !== undefined &&
+    source.loadingStrategy !== 'none';
+  frame.style.background = showsSourcePlaceholder
+    ? 'var(--nl-strong)'
+    : visualBackground;
+  const fallbackIcon =
+    'fallbackIcon' in visual ? visual.fallbackIcon : undefined;
+  const fallbackBackground =
+    fallbackIcon?.backgroundColor ?? 'var(--nl-strong)';
+  if (!source && fallbackIcon?.backgroundColor)
+    frame.style.background = fallbackBackground;
+  const handlesSourceFallback =
+    showsSourcePlaceholder &&
+    (fallbackIcon !== undefined || 'fallbackText' in visual);
   const image = source ? createImage(context, source) : undefined;
   if (image) {
     image.className = 'ok-native-list-visual-main';
     frame.appendChild(image);
+    if (showsSourcePlaceholder) {
+      const restoreBackground = () => {
+        frame.style.background = visualBackground;
+      };
+      image.addEventListener('load', restoreBackground);
+      if (image.complete && image.naturalWidth > 0) restoreBackground();
+    }
     if (selectorPresentation) paintSelectorImageBackground(image, frame);
-  } else {
+    if (
+      source?.loadingStrategy === 'skeleton' &&
+      !(image.complete && image.naturalWidth > 0)
+    ) {
+      const skeleton = createElement(
+        context.document,
+        'span',
+        'ok-native-list-image-skeleton'
+      );
+      if (isDarkBackground(resolvedTheme(context.snapshot).background))
+        skeleton.dataset.dark = 'true';
+      frame.appendChild(skeleton);
+      image.addEventListener('load', () => skeleton.remove(), { once: true });
+      image.addEventListener('error', () => skeleton.remove(), { once: true });
+    }
+  } else if (!source || showsSourcePlaceholder) {
     frame.appendChild(
       createElement(
         context.document,
@@ -1420,8 +1392,8 @@ function createVisual(
     frame.appendChild(corner);
   }
   // OneKey patch: image failure uses the same source-derived fallback as v1.
-  if ('fallbackIcon' in visual && visual.fallbackIcon) {
-    const icon = visual.fallbackIcon;
+  const hasFallbackText = 'fallbackText' in visual;
+  if ((fallbackIcon || hasFallbackText) && (!source || handlesSourceFallback)) {
     const showFallback = () => {
       if (image) {
         disposeWebImageRetries(image);
@@ -1435,10 +1407,38 @@ function createVisual(
       const fallback = createElement(
         context.document,
         'span',
-        'ok-native-list-visual-fallback'
+        'ok-native-list-visual-fallback',
+        fallbackIcon
+          ? undefined
+          : 'fallbackText' in visual
+          ? visual.fallbackText ?? ''
+          : ''
       );
-      applySelectorIcon(fallback, icon.name);
-      if (icon.tintColor) fallback.style.color = icon.tintColor;
+      if (
+        'fallbackTextColor' in visual &&
+        visual.fallbackTextColor &&
+        !fallbackIcon
+      )
+        fallback.style.color = visual.fallbackTextColor;
+      if (fallbackIcon) {
+        applySelectorIcon(fallback, fallbackIcon.name);
+        if (fallbackIcon.tintColor)
+          fallback.style.color = fallbackIcon.tintColor;
+        if (fallbackIcon.size) {
+          const svg = fallback.querySelector<SVGElement>('svg');
+          if (svg) {
+            svg.style.width = `${fallbackIcon.size}px`;
+            svg.style.height = `${fallbackIcon.size}px`;
+            // Keep the requested size inside a bordered frame, as Icon w/h does.
+            svg.style.flexShrink = '0';
+          }
+        }
+      }
+      if (fallbackIcon?.backgroundColor)
+        frame.style.background = fallbackBackground;
+      else
+        fallback.style.backgroundColor =
+          'var(--nl-image-fallback-background, transparent)';
       frame.prepend(fallback);
     };
     if (image) image.addEventListener('error', showFallback, { once: true });
@@ -1448,6 +1448,22 @@ function createVisual(
     frame.style.border =
       '2px dashed ' + (visual.borderColor ?? 'var(--nl-disabled)');
     frame.style.boxSizing = 'border-box';
+  } else if ('borderColor' in visual && visual.borderColor) {
+    frame.style.border =
+      String(
+        'borderWidth' in visual && visual.borderWidth ? visual.borderWidth : 1
+      ) +
+      'px solid ' +
+      visual.borderColor;
+    frame.style.boxSizing = 'border-box';
+    // iOS and Android inset the image by the border, as React Native's Image does.
+    const main = frame.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-visual-main'
+    );
+    if (main) {
+      main.style.width = '100%';
+      main.style.height = '100%';
+    }
   }
   if ('overlays' in visual)
     visual.overlays?.forEach((overlay) => {
@@ -1475,8 +1491,18 @@ function createVisual(
       if (isWalletText) {
         corner.style.fontSize = '12px';
         corner.style.lineHeight = '16px';
-        corner.style.fontWeight = '400';
+        applyTextWeight(corner, '400');
       }
+      if (overlay.fontWeight)
+        applyTextWeight(
+          corner,
+          {
+            regular: 400,
+            medium: 500,
+            semibold: 600,
+            bold: 700,
+          }[overlay.fontWeight]
+        );
       if (
         isWalletText ||
         overlay.width !== undefined ||
@@ -1497,7 +1523,31 @@ function createVisual(
       if (overlay.image) {
         const overlayImage = createImage(context, overlay.image);
         if (overlayImage) {
+          if (
+            (overlay.padding ?? 0) > 0 &&
+            (overlay.width ?? size) === (overlay.height ?? size)
+          )
+            overlayImage.style.borderRadius = '50%';
           corner.appendChild(overlayImage);
+          if (overlay.fallbackIcon) {
+            overlayImage.addEventListener(
+              'error',
+              () => {
+                disposeWebImageRetries(overlayImage);
+                overlayImage.remove();
+                const glyph = createElement(
+                  context.document,
+                  'span',
+                  'ok-native-list-overlay-fallback'
+                );
+                applySelectorIcon(glyph, overlay.fallbackIcon!.name);
+                if (overlay.fallbackIcon?.tintColor)
+                  glyph.style.color = overlay.fallbackIcon.tintColor;
+                corner.appendChild(glyph);
+              },
+              { once: true }
+            );
+          }
           if (selectorPresentation)
             paintSelectorImageBackground(
               overlayImage,
@@ -1519,20 +1569,6 @@ function toneColor(
   if (tone === 'negative') return 'var(--nl-negative)';
   if (tone === 'secondary') return 'var(--nl-secondary)';
   return fallback === 'secondary' ? 'var(--nl-secondary)' : 'var(--nl-primary)';
-}
-
-function createBadge(
-  context: RenderContext,
-  badge: Readonly<{ text: string; tone?: string }>
-): HTMLElement {
-  const element = createElement(
-    context.document,
-    'span',
-    'ok-native-list-badge',
-    badge.text
-  );
-  setData(element, 'tone', badge.tone);
-  return element;
 }
 
 function selectionKeysForTarget(
@@ -1643,7 +1679,8 @@ function createIconAction(
   name: string,
   actionKey: string | undefined,
   disabled?: boolean,
-  tintColor?: string
+  tintColor?: string,
+  accessibilityLabel?: string
 ): HTMLElement {
   const element = createElement(
     context.document,
@@ -1654,6 +1691,13 @@ function createIconAction(
   if (element.tagName === 'BUTTON') {
     element.setAttribute('type', 'button');
     element.toggleAttribute('disabled', Boolean(disabled));
+    element.setAttribute(
+      'aria-label',
+      accessibilityLabel || (name === 'DotVerSolid' ? '⋮' : iconGlyph(name))
+    );
+  } else if (accessibilityLabel) {
+    element.setAttribute('aria-label', accessibilityLabel);
+    element.setAttribute('role', 'img');
   }
   applySelectorIcon(element, name);
   if (actionKey) setData(element, 'nativeListAction', actionKey);
@@ -1671,41 +1715,49 @@ function markActionAnchorSource(
 }
 
 // OneKey patch: the compact zero-count digits share the amount baseline.
-function applyValueSegments(
-  element: HTMLElement,
-  segments:
-    | readonly Readonly<{ text: string; style?: 'subscript' }>[]
-    | undefined,
-  fontSize = 16,
-  lineHeight = 24,
-  weight = 500
-) {
-  if (!segments?.length) return;
-  element.textContent = '';
-  element.style.fontSize = String(fontSize) + 'px';
-  element.style.lineHeight = String(lineHeight) + 'px';
-  element.style.fontWeight = String(weight);
-  segments.forEach((segment) => {
-    const span = createElement(
-      element.ownerDocument,
-      'span',
-      undefined,
-      segment.text
-    );
-    if (segment.style === 'subscript') {
-      span.style.fontSize = String(Math.ceil(fontSize * 0.6)) + 'px';
-      span.style.lineHeight = String(fontSize) + 'px';
-    }
-    element.appendChild(span);
-  });
-}
 
 function createAccessory(
   context: RenderContext,
   rowKey: string,
   accessory: TrailingAccessory,
-  slot: number
+  slot: number,
+  rowDisabled: boolean
 ): HTMLElement {
+  if (accessory.kind === 'button') {
+    const element = createElement(
+      context.document,
+      'button',
+      'ok-native-list-trailing-button',
+      accessory.label
+    ) as HTMLButtonElement;
+    element.type = 'button';
+    element.disabled = Boolean(rowDisabled || accessory.disabled);
+    element.setAttribute('aria-disabled', String(element.disabled));
+    element.setAttribute(
+      'aria-label',
+      accessory.accessibilityLabel ?? accessory.label
+    );
+    setData(element, 'testid', accessory.testID);
+    setData(element, 'nativeListAction', accessory.actionKey);
+    markActionAnchorSource(element, 'trailingAccessory', slot);
+    if (accessory.textColor)
+      element.style.setProperty('--nl-button-text', accessory.textColor);
+    if (accessory.backgroundColor)
+      element.style.setProperty('--nl-button-bg', accessory.backgroundColor);
+    if (accessory.pressedBackgroundColor)
+      element.style.setProperty(
+        '--nl-button-pressed',
+        accessory.pressedBackgroundColor
+      );
+    if (accessory.hoverBackgroundColor)
+      element.style.setProperty(
+        '--nl-button-hover',
+        accessory.hoverBackgroundColor
+      );
+    if (accessory.focusRingColor)
+      element.style.setProperty('--nl-button-focus', accessory.focusRingColor);
+    return element;
+  }
   if (accessory.kind === 'checkbox') {
     const element = createCheckbox(context, rowKey, accessory);
     markActionAnchorSource(element, 'trailingAccessory', slot);
@@ -1716,15 +1768,26 @@ function createAccessory(
       context,
       accessory.name,
       accessory.actionKey,
-      accessory.disabled,
-      accessory.tintColor
+      rowDisabled || accessory.disabled,
+      accessory.tintColor,
+      accessory.accessibilityLabel
     );
     markActionAnchorSource(element, 'trailingAccessory', slot);
+    if (accessory.name === 'RefreshCcwOutline' && !accessory.actionKey) {
+      element.classList.add('ok-native-list-decorative-refresh');
+      const glyph = element.querySelector('svg');
+      glyph?.setAttribute('width', '16');
+      glyph?.setAttribute('height', '16');
+    }
+    if (accessory.buttonStyle === 'tertiary') {
+      element.classList.add('ok-native-list-tertiary-icon');
+      setData(element, 'nativeListAnchorInset', 7);
+    }
     setData(element, 'testid', accessory.testID);
     if (accessory.hoverActionKey)
       setData(element, 'nativeListHoverAction', accessory.hoverActionKey);
-    if (accessory.accessibilityLabel)
-      element.setAttribute('aria-label', accessory.accessibilityLabel);
+    if (accessory.hoverActionKey && accessory.buttonStyle === 'tertiary')
+      setData(element, 'nativeListIconHelp', true);
     const row = context.snapshot.rows[context.itemIndex];
     if (
       row &&
@@ -1733,7 +1796,7 @@ function createAccessory(
     ) {
       setData(element, 'nativeListAnchorInset', 7);
       // OneKey patch: the create-address button omits IconButton's one-point border.
-      if (row.height !== undefined && accessory.name === 'PlusSmallOutline') {
+      if (hasExplicitRowHeight(row) && accessory.name === 'PlusSmallOutline') {
         setData(element, 'nativeListAccountControl', 'createAddress');
         if (!accessory.tintColor)
           element.style.color = 'var(--nl-icon-subdued)';
@@ -1770,6 +1833,25 @@ function createAccessory(
         accessory.primary
       );
       primary.style.color = toneColor(accessory.primaryTone, 'primary');
+      applyValueSegments(primary, accessory.primaryTextSegments, 16, 20, 500);
+      if (accessory.primaryFontWeight === 'medium')
+        applyTextWeight(primary, 500);
+      if (accessory.primaryHelp) {
+        const help = accessory.primaryHelp;
+        primary.tabIndex = 0;
+        primary.setAttribute('role', 'button');
+        if (help.presentation === 'tooltip') {
+          setData(primary, 'nativeListHoverAction', help.actionKey);
+          setData(primary, 'nativeListIconHelp', true);
+        } else {
+          setData(primary, 'nativeListAction', help.actionKey);
+        }
+        if (help.underline === 'dashed') {
+          primary.style.textDecoration = 'underline dashed';
+          primary.style.textUnderlineOffset = '4px';
+        }
+        markActionAnchorSource(primary, 'trailingAccessory', slot);
+      }
       const secondary = createElement(
         context.document,
         'span',
@@ -1777,7 +1859,14 @@ function createAccessory(
         accessory.secondary
       );
       secondary.style.color = toneColor(accessory.secondaryTone, 'secondary');
-      element.replaceChildren(primary, secondary);
+      applyValueSegments(
+        secondary,
+        accessory.secondaryTextSegments,
+        14,
+        20,
+        400
+      );
+      element.replaceChildren(primary, '\n', secondary);
       element.classList.add('ok-native-list-amounts');
       break;
     }
@@ -1796,6 +1885,23 @@ function createAccessory(
       break;
     case 'drag':
       element.textContent = '≡';
+      applySelectorIcon(element, 'DragOutline');
+      // iOS and Android tint the handle iconSubdued, like ListItem.IconButton.
+      element.style.color = 'var(--nl-icon-subdued)';
+      // A 24-point centered box, so the glyph does not follow the text line box.
+      Object.assign(element.style, {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '24px',
+        height: '24px',
+      });
+      if (actionKey) {
+        element.toggleAttribute('disabled', rowDisabled);
+        element.setAttribute('aria-label', '≡');
+      }
+      setData(element, 'nativeListReorderHandle', true);
+      setData(element, 'nativeListAnchorSlot', slot);
       break;
     case 'progress':
       element.textContent = String(Math.round(accessory.value * 100)) + '%';
@@ -1805,1011 +1911,63 @@ function createAccessory(
   return element;
 }
 
-function appendAccessories(
-  parent: HTMLElement,
-  context: RenderContext,
-  rowKey: string,
-  accessories: readonly TrailingAccessory[] | undefined
-) {
-  if (!accessories?.length) return;
-  const container = createElement(
-    context.document,
-    'span',
-    'ok-native-list-accessories'
-  );
-  const row = context.snapshot.rows[context.itemIndex];
-  if (
-    row &&
-    row.height !== undefined &&
-    'presentation' in row &&
-    row.presentation === 'networkSelector'
-  ) {
-    container.style.gap = accessories.some(
-      (accessory) => accessory.kind === 'checkbox'
-    )
-      ? '12px'
-      : '20px';
-  }
-  if (
-    row &&
-    row.height !== undefined &&
-    'presentation' in row &&
-    row.presentation === 'accountSelector' &&
-    accessories.length === 1 &&
-    accessories[0]?.kind === 'icon' &&
-    accessories[0].name === 'PlusSmallOutline'
-  ) {
-    setData(container, 'nativeListAccountControl', 'createAddress');
-  }
-  accessories.forEach((accessory, slot) =>
-    container.appendChild(createAccessory(context, rowKey, accessory, slot))
-  );
-  parent.appendChild(container);
-}
-
-function createTextColumn(
-  context: RenderContext,
-  title: string,
-  subtitle?: string,
-  tertiary?: string,
-  tertiaryTone?: 'secondary' | 'info',
-  badges?: readonly Readonly<{ text: string; tone?: string }>[]
-): HTMLElement {
-  const column = createElement(context.document, 'span', 'ok-native-list-flex');
-  const titleLine = createElement(
-    context.document,
-    'span',
-    'ok-native-list-title',
-    title
-  );
-  if (badges?.length) {
-    const badgeLine = createElement(
-      context.document,
-      'span',
-      'ok-native-list-badges'
-    );
-    badges.forEach((badge) =>
-      badgeLine.appendChild(createBadge(context, badge))
-    );
-    titleLine.appendChild(badgeLine);
-  }
-  column.appendChild(titleLine);
-  if (subtitle)
-    column.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        subtitle
-      )
-    );
-  if (tertiary) {
-    const element = createElement(
-      context.document,
-      'span',
-      tertiaryTone === 'info'
-        ? 'ok-native-list-secondary ok-native-list-info'
-        : 'ok-native-list-secondary ok-native-list-tertiary',
-      tertiary
-    );
-    column.appendChild(element);
-  }
-  return column;
-}
-
-function createSectionHeader(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'sectionHeader' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-section'
-  );
-  setData(body, 'variant', row.variant);
-  if (row.titleIcon) {
-    const titleIcon = createIconAction(
-      context,
-      row.titleIcon.name,
-      row.titleIcon.actionKey,
-      row.titleIcon.disabled,
-      row.titleIcon.tintColor
-    );
-    markActionAnchorSource(titleIcon, 'leadingAction');
-    body.appendChild(titleIcon);
-  }
-  // OneKey patch: section title help has its own measurable action target.
-  // body.appendChild(createTextColumn(context, row.title, row.subtitle));
-  const column = createTextColumn(context, row.title, row.subtitle);
-  const title = column.firstElementChild as HTMLElement;
-  title.classList.add('ok-native-list-section-title');
-  if (row.titleActionKey) {
-    setData(title, 'nativeListAction', row.titleActionKey);
-    markActionAnchorSource(title, 'leadingAction');
-    title.setAttribute('role', 'button');
-    title.tabIndex = 0;
-    title.style.alignSelf = 'flex-start';
-    title.style.maxWidth = '100%';
-    // OneKey patch: explicit network headers reserve a separate 3-point underline area.
-    if (row.presentation !== 'networkSelector' || row.height === undefined) {
-      title.style.textDecoration = 'underline dotted';
-      title.style.textUnderlineOffset = '6px';
-    }
-    if (row.titleActionOnHover) setData(title, 'nativeListHoverAction', true);
-  }
-  if (row.presentation === 'networkSelector' && row.height !== undefined) {
-    body.style.padding =
-      row.variant === 'summary' ? '24px 12px 20px' : '0 12px';
-    body.style.backgroundColor = 'var(--nl-bg)';
-    body.style.gap = row.checkbox ? '12px' : '8px';
-    title.style.fontSize = row.variant === 'summary' ? '16px' : '14px';
-    title.style.lineHeight = row.variant === 'summary' ? '24px' : '20px';
-    title.style.fontWeight =
-      row.variant === 'summary' || (row.titleActionKey && !row.checkbox)
-        ? '500'
-        : '600';
-    if (row.titleActionKey) {
-      const text = createElement(
-        context.document,
-        'span',
-        'ok-native-list-section-title-text',
-        row.title
-      );
-      text.style.overflow = 'hidden';
-      text.style.textOverflow = 'ellipsis';
-      text.style.maxWidth = '100%';
-      const dotted = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'svg'
-      );
-      dotted.setAttribute('height', '2');
-      dotted.style.cssText =
-        'display:block;position:absolute;left:0;bottom:0;width:100%;height:2px;color:var(--nl-secondary)';
-      const line = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'line'
-      );
-      for (const [key, value] of Object.entries({
-        x1: '1',
-        y1: '1',
-        x2: '100%',
-        y2: '1',
-        stroke: 'currentColor',
-        'stroke-width': '1.5',
-        'stroke-dasharray': '0,4',
-        'stroke-linecap': 'round',
-      }))
-        line.setAttribute(key, value);
-      // OneKey patch: keep both round caps inside the original full-width viewport.
-      const lineViewport = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'svg'
-      );
-      lineViewport.setAttribute('width', 'calc(100% - 1px)');
-      lineViewport.setAttribute('height', '2');
-      lineViewport.setAttribute('overflow', 'visible');
-      lineViewport.appendChild(line);
-      dotted.appendChild(lineViewport);
-      // OneKey patch: SVG intrinsic width must not expand the title action beyond its text.
-      title.style.display = 'block';
-      title.style.position = 'relative';
-      title.style.width = 'fit-content';
-      title.style.paddingBottom = '3px';
-      text.style.display = 'block';
-      title.replaceChildren(text, dotted);
-    }
-  }
-  body.appendChild(column);
-  if (row.value) {
-    const value = createElement(
-      context.document,
-      row.valueActionKey ? 'button' : 'span',
-      row.valueActionKey
-        ? 'ok-native-list-action-button ok-native-list-section-value'
-        : 'ok-native-list-value ok-native-list-section-value',
-      row.value
-    );
-    applyValueSegments(value, row.valueSegments);
-    if (row.presentation === 'networkSelector' && row.height !== undefined) {
-      value.style.fontFamily = 'inherit';
-      value.style.fontSize = '16px';
-      value.style.lineHeight = '24px';
-      value.style.fontWeight = '500';
-      if (row.valueActionKey) {
-        value.style.color = 'var(--nl-secondary)';
-        value.style.padding = '0';
-        value.style.flexShrink = '0';
-      }
-    }
-    if (row.valueActionTestID) setData(value, 'testid', row.valueActionTestID);
-    if (row.valueActionKey) {
-      value.setAttribute('type', 'button');
-      setData(value, 'nativeListAction', row.valueActionKey);
-      markActionAnchorSource(value, 'trailingAccessory', 0);
-    }
-    body.appendChild(value);
-  }
-  if (row.valueIcon) {
-    const valueIcon = createIconAction(
-      context,
-      row.valueIcon.name,
-      row.valueIcon.actionKey,
-      row.valueIcon.disabled,
-      row.valueIcon.tintColor
-    );
-    markActionAnchorSource(valueIcon, 'trailingAccessory', 1);
-    body.appendChild(valueIcon);
-  }
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  return body;
-}
-
-function createActionRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'action' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    [
-      'ok-native-list-row',
-      'ok-native-list-action-row',
-      row.presentation === 'accountSelector'
-        ? 'ok-native-list-account-action-row'
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
-  if (row.icon) body.appendChild(createVisual(context, row.icon)!);
-  const title = createElement(
-    context.document,
-    'span',
-    'ok-native-list-action-title',
-    row.title
-  );
-  setData(title, 'tone', row.tone);
-  if (row.presentation === 'accountSelector' && row.icon)
-    title.style.fontWeight = '500';
-  body.appendChild(title);
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  appendAccessories(body, context, row.key, row.trailing);
-  return body;
-}
-
-function createSystemRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'system' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-system'
-  );
-  setData(body, 'variant', row.variant);
-  if (row.variant === 'warning') {
-    body.classList.add('ok-native-list-warning');
-    body.style.borderColor = row.borderColor ?? 'var(--nl-separator)';
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-warning-title',
-        row.title
-      )
-    );
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-warning-message',
-        row.message
-      )
-    );
-    return body;
-  }
-  if (row.variant === 'loading')
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-spinner')
-    );
-  const message =
-    row.variant === 'spacer'
-      ? ''
-      : row.message ?? (row.variant === 'end' ? 'End' : '');
-  if (message)
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        message
-      )
-    );
-  return body;
-}
-
-function createRailRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'rail' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-rail'
-  );
-  const visual = createVisual(context, row.visual);
-  if (visual) body.appendChild(visual);
-  body.appendChild(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-rail-title',
-      row.title
-    )
-  );
-  if (row.status && row.status !== 'none')
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        row.status
-      )
-    );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
-  return body;
-}
-
-function createMediaRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'mediaTile' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-media'
-  );
-  if (row.image && !row.imageState) {
-    const image = createImage(context, row.image, 'ok-native-list-media-image');
-    if (image) body.appendChild(image);
-  } else {
-    const placeholder = createElement(
-      context.document,
-      'span',
-      'ok-native-list-media-image',
-      row.imageState === 'error' ? '▧' : ''
-    );
-    setData(placeholder, 'state', row.imageState ?? 'empty');
-    body.appendChild(placeholder);
-  }
-  const metadata = createElement(
-    context.document,
-    'div',
-    'ok-native-list-media-meta'
-  );
-  const subtitleLine = createElement(
-    context.document,
-    'div',
-    'ok-native-list-media-subtitle-row'
-  );
-  subtitleLine.appendChild(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-media-subtitle',
-      row.subtitle || '-'
-    )
-  );
-  if (row.networkImage) {
-    const network = createImage(
-      context,
-      row.networkImage,
-      'ok-native-list-media-network'
-    );
-    if (network) subtitleLine.appendChild(network);
-  }
-  metadata.appendChild(subtitleLine);
-  metadata.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-media-title',
-      row.title
-    )
-  );
-  if (row.badge) metadata.appendChild(createBadge(context, row.badge));
-  body.appendChild(metadata);
-  if (row.closeActionKey) {
-    const close = createElement(
-      context.document,
-      'button',
-      'ok-native-list-media-close',
-      '×'
-    );
-    close.setAttribute('type', 'button');
-    close.setAttribute('aria-label', 'Close');
-    setData(close, 'nativeListAction', row.closeActionKey);
-    markActionAnchorSource(close, 'mediaClose');
-    body.appendChild(close);
-  }
-  return body;
-}
-
-function createMetricCell(
-  context: RenderContext,
-  metric: NonNullable<
-    Extract<RowModel, { type: 'metricCard' }>['metrics']
-  >[number],
-  shaded: boolean
-): HTMLElement {
-  const cell = createElement(
-    context.document,
-    'div',
-    'ok-native-list-composite-cell'
-  );
-  setData(cell, 'shaded', shaded);
-  cell.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      metric.label
-    )
-  );
-  const valueLine = createElement(context.document, 'div');
-  valueLine.style.display = 'flex';
-  valueLine.style.alignItems = 'center';
-  valueLine.style.gap = '6px';
-  if (metric.visual) {
-    const visual = createVisual(context, metric.visual);
-    if (visual) {
-      visual.style.width = '16px';
-      visual.style.height = '16px';
-      visual.style.flexBasis = '16px';
-      const image = visual.querySelector('img');
-      if (image) {
-        image.style.width = '16px';
-        image.style.height = '16px';
-      }
-      valueLine.appendChild(visual);
-    }
-  }
-  const value = createElement(
-    context.document,
-    'span',
-    'ok-native-list-composite-value',
-    metric.value
-  );
-  value.style.color = toneColor(metric.tone, 'primary');
-  valueLine.appendChild(value);
-  cell.appendChild(valueLine);
-  return cell;
-}
-
-function createMetricRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'metricCard' }>
-): HTMLElement {
-  if (row.variant === 'activity' || row.variant === 'performance') {
-    const body = createElement(
-      context.document,
-      'div',
-      'ok-native-list-row ok-native-list-composite'
-    );
-    body.appendChild(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-composite-heading',
-        row.title
-      )
-    );
-    const metrics = row.metrics ?? [];
-    const firstLine = createElement(
-      context.document,
-      'div',
-      'ok-native-list-composite-row'
-    );
-    metrics
-      .slice(0, 2)
-      .forEach((metric) =>
-        firstLine.appendChild(createMetricCell(context, metric, false))
-      );
-    body.appendChild(firstLine);
-    if (row.variant === 'activity') {
-      body.appendChild(
-        createElement(context.document, 'div', 'ok-native-list-divider')
-      );
-    } else {
-      const progress = createElement(
-        context.document,
-        'div',
-        'ok-native-list-progress'
-      );
-      const fill = createElement(context.document, 'span');
-      fill.style.width = String(Math.round((row.progress ?? 0) * 100)) + '%';
-      progress.appendChild(fill);
-      body.appendChild(progress);
-    }
-    const secondLine = createElement(
-      context.document,
-      'div',
-      'ok-native-list-composite-row'
-    );
-    metrics
-      .slice(2)
-      .forEach((metric) =>
-        secondLine.appendChild(
-          createMetricCell(context, metric, row.variant === 'performance')
-        )
-      );
-    body.appendChild(secondLine);
-    return body;
-  }
-
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-metric'
-  );
-  if (row.visual) {
-    const visual = createVisual(context, row.visual);
-    if (visual) body.appendChild(visual);
-  }
-  body.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      row.title
-    )
-  );
-  body.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-metric-value',
-      row.value
-    )
-  );
-  if (row.trend) {
-    const trend = createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      row.trend
-    );
-    trend.style.color =
-      row.trendTone === 'positive'
-        ? 'var(--nl-positive)'
-        : row.trendTone === 'negative'
-        ? 'var(--nl-negative)'
-        : 'var(--nl-secondary)';
-    body.appendChild(trend);
-  }
-  if (row.subtitle)
-    body.appendChild(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-secondary',
-        row.subtitle
-      )
-    );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
-  return body;
-}
-
-function createDataRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'dataRow' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-data'
-  );
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  if (row.index !== undefined)
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-index',
-        String(row.index)
-      )
-    );
-  if (row.favorite) {
-    const favorite = createElement(
-      context.document,
-      'span',
-      'ok-native-list-favorite',
-      row.favoriteActive ? '★' : '☆'
-    );
-    setData(favorite, 'active', row.favoriteActive);
-    body.appendChild(favorite);
-  }
-  if (row.leading) {
-    const visual = createVisual(context, row.leading);
-    if (visual) body.appendChild(visual);
-  }
-  row.columns.forEach((column) => {
-    const cell = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-cell'
-    );
-    cell.style.flex = String(column.weight ?? 1);
-    setData(cell, 'align', column.alignment ?? 'start');
-    const primary = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-primary'
-    );
-    primary.style.color = toneColor(column.tone, 'primary');
-    if (column.secondaryLeadingText)
-      primary.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          column.secondaryLeadingText
-        )
-      );
-    primary.appendChild(
-      createElement(context.document, 'span', undefined, column.text)
-    );
-    if (column.key === 'asset' && row.badges?.length) {
-      row.badges.forEach((badge) =>
-        primary.appendChild(createBadge(context, badge))
-      );
-    }
-    cell.appendChild(primary);
-    if (column.secondaryText) {
-      const secondary = createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        column.secondaryText
-      );
-      secondary.style.color = toneColor(column.secondaryTone, 'secondary');
-      cell.appendChild(secondary);
-    }
-    body.appendChild(cell);
-  });
-  return body;
-}
-
-function createIdentityActivityOrMessageRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'identity' | 'activity' | 'message' }>
-): HTMLElement {
-  const presentation = row.type === 'identity' ? row.presentation : undefined;
-  const body = createElement(
-    context.document,
-    'div',
-    [
-      'ok-native-list-row',
-      'ok-native-list-standard',
-      row.type === 'identity' && !presentation
-        ? 'ok-native-list-identity-row'
-        : '',
-      presentation === 'networkSelector' ? 'ok-native-list-network-row' : '',
-      presentation === 'walletSidebar' ? 'ok-native-list-wallet-row' : '',
-      presentation === 'accountSelector' ? 'ok-native-list-account-row' : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
-  setData(
-    body,
-    'nativeListSelector',
-    row.height !== undefined ? presentation : undefined
-  );
-  if (row.type === 'identity' && row.titleActionKey && row.titleActionOnHover) {
-    setData(body, 'nativeListHoverAction', row.titleActionKey);
-    markActionAnchorSource(body, 'leadingAction');
-  }
-  if (row.type === 'identity' && row.leadingAction) {
-    const action = createIconAction(
-      context,
-      row.leadingAction.name,
-      row.leadingAction.actionKey,
-      row.leadingAction.disabled,
-      row.leadingAction.tintColor
-    );
-    markActionAnchorSource(action, 'leadingAction');
-    body.appendChild(action);
-  }
-  const visual = createVisual(
-    context,
-    visualFromRow(row),
-    row.height !== undefined ? presentation : undefined
-  );
-  if (
-    visual &&
-    row.type === 'identity' &&
-    row.height !== undefined &&
-    row.presentation === 'walletSidebar' &&
-    'fallbackIcon' in row.leading &&
-    row.leading.fallbackIcon?.name === 'LockSolid'
-  ) {
-    // OneKey patch: hidden-wallet locks use WalletAvatar's full 40-point icon.
-    const icon = visual.querySelector<SVGElement>(
-      '.ok-native-list-visual-fallback svg'
-    );
-    if (icon) {
-      icon.style.width = '40px';
-      icon.style.height = '40px';
-    }
-    const fallback = visual.querySelector<HTMLElement>(
-      '.ok-native-list-visual-fallback'
-    );
-    if (fallback) {
-      fallback.style.borderRadius = '0';
-      fallback.style.overflow = 'visible';
-    }
-  }
-  if (
-    visual &&
-    row.type === 'identity' &&
-    row.height !== undefined &&
-    row.presentation === 'walletSidebar' &&
-    'borderStyle' in row.leading &&
-    row.leading.borderStyle === 'dashed'
-  )
-    visual.style.borderWidth = '1px';
-  if (visual) body.appendChild(visual);
-  if (row.type === 'activity' && row.secondaryLeading) {
-    const secondVisual = createVisual(context, row.secondaryLeading);
-    if (secondVisual) body.appendChild(secondVisual);
-  }
-  if (row.type === 'message' && row.unread)
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-unread')
-    );
-  const title = row.title;
-  const subtitle =
-    row.type === 'identity'
-      ? row.subtitle
-      : row.type === 'activity'
-      ? row.description
-      : row.body;
-  const column = createTextColumn(
-    context,
-    title,
-    subtitle,
-    row.type === 'identity' ? row.tertiary : undefined,
-    row.type === 'identity' ? row.tertiaryTone : undefined,
-    row.type === 'identity' && presentation !== 'walletSidebar'
-      ? row.badges
-      : undefined
-  );
-  // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
-  if (row.type === 'identity') {
-    const titleElement = column.firstElementChild as HTMLElement;
-    if (row.titleMatch?.length) {
-      const firstText = titleElement.firstChild;
-      if (firstText) firstText.remove();
-      const fragment = context.document.createDocumentFragment();
-      let offset = 0;
-      row.titleMatch.forEach(({ start, end }) => {
-        fragment.appendChild(
-          context.document.createTextNode(row.title.slice(offset, start))
-        );
-        const match = createElement(
-          context.document,
-          'span',
-          'ok-native-list-info',
-          row.title.slice(start, end)
-        );
-        fragment.appendChild(match);
-        offset = end;
-      });
-      fragment.appendChild(
-        context.document.createTextNode(row.title.slice(offset))
-      );
-      titleElement.prepend(fragment);
-    }
-    if (row.subtitleSegments?.length) {
-      column.querySelector('.ok-native-list-secondary')?.remove();
-      const segments = createElement(
-        context.document,
-        'span',
-        'ok-native-list-subtitle-segments'
-      );
-      row.subtitleSegments.forEach((segment) => {
-        if (segment.separatorBefore)
-          segments.appendChild(
-            createElement(
-              context.document,
-              'span',
-              'ok-native-list-subtitle-dot'
-            )
-          );
-        const text = createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          segment.text
-        );
-        applyValueSegments(text, segment.textSegments, 14, 20, 400);
-        setData(text, 'tone', segment.tone);
-        text.style.color =
-          segment.tone === 'disabled'
-            ? 'var(--nl-disabled)'
-            : segment.tone === 'caution'
-            ? 'var(--nl-caution)'
-            : toneColor(segment.tone, 'secondary');
-        segments.appendChild(text);
-      });
-      column.insertBefore(segments, titleElement.nextSibling);
-    }
-    if (presentation === 'walletSidebar' && row.badges?.length) {
-      const badges = createElement(
-        context.document,
-        'span',
-        'ok-native-list-wallet-badges'
-      );
-      row.badges.forEach((badge) =>
-        badges.appendChild(createBadge(context, badge))
-      );
-      column.appendChild(badges);
-    }
-  }
-  if (row.type === 'activity' && row.status)
-    column.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        row.status
-      )
-    );
-  if (row.type === 'activity' && row.footerActions?.length) {
-    const actions = createElement(
-      context.document,
-      'span',
-      'ok-native-list-actions'
-    );
-    row.footerActions.forEach((action, slot) => {
-      const button = createElement(
-        context.document,
-        'button',
-        'ok-native-list-action-button',
-        action.label
-      );
-      button.setAttribute('type', 'button');
-      button.toggleAttribute('disabled', Boolean(action.disabled));
-      setData(button, 'tone', action.tone);
-      setData(button, 'nativeListAction', action.key);
-      markActionAnchorSource(button, 'footerAction', slot);
-      actions.appendChild(button);
-    });
-    column.appendChild(actions);
-  }
-  body.appendChild(column);
-  if (row.type === 'activity') {
-    const amounts = createElement(
-      context.document,
-      'span',
-      'ok-native-list-amounts'
-    );
-    if (row.primaryAmount)
-      amounts.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-value',
-          row.primaryAmount
-        )
-      );
-    if (row.secondaryAmount)
-      amounts.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          row.secondaryAmount
-        )
-      );
-    body.appendChild(amounts);
-  } else if (row.type === 'message') {
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-time', row.time)
-    );
-    if (row.thumbnail) {
-      const thumbnail = createImage(
+function rendererPrimitives(context: RenderContext, rowDisabled: boolean) {
+  return {
+    background: resolvedTheme(context.snapshot).background,
+    accessory: (key: string, descriptor: TrailingAccessory, slot: number) =>
+      createAccessory(context, key, descriptor, slot, rowDisabled),
+    visual: (source: LeadingVisual | undefined, presentation?: string) =>
+      createVisual(context, source, presentation),
+    thumbnail: (source: ImageSource) =>
+      createImage(context, source, 'ok-native-list-thumbnail'),
+    textStyle: applyTextStyleToSlot,
+    icon: applySelectorIcon,
+    iconAction: (
+      name: string,
+      actionKey: string | undefined,
+      disabled?: boolean,
+      tintColor?: string,
+      accessibilityLabel?: string
+    ) =>
+      createIconAction(
         context,
-        row.thumbnail,
-        'ok-native-list-thumbnail'
-      );
-      if (thumbnail) body.appendChild(thumbnail);
-    }
-  } else {
-    appendAccessories(body, context, row.key, row.trailing);
-  }
-  return body;
+        name,
+        actionKey,
+        rowDisabled || disabled,
+        tintColor,
+        accessibilityLabel
+      ),
+    dispose: disposeWebImageRetries,
+  };
 }
 
-// OneKey patch: SizableText enables tabular digits without replacing its font family.
-function applySelectorTabularNumbers(body: HTMLElement, row: RowModel) {
-  if (
-    !('presentation' in row) ||
-    !['accountSelector', 'networkSelector', 'walletSidebar'].includes(
-      row.presentation ?? ''
-    )
-  )
-    return;
-  body.style.fontVariantNumeric = 'tabular-nums';
-  body.querySelectorAll<HTMLElement>('span,button').forEach((text) => {
-    text.style.fontVariantNumeric = 'tabular-nums';
-  });
-}
-
-function createWalletGroupRow(
+export function createRowBody(
   context: RenderContext,
-  row: Extract<RowModel, { type: 'walletGroup' }>
+  row: RowModel
 ): HTMLElement {
-  const body = createElement(
+  return rowRenderer(row).create(
     context.document,
-    'div',
-    'ok-native-list-wallet-group'
+    rendererPrimitives(context, Boolean(row.disabled))
   );
-  [row.parent, ...row.children].forEach((member, memberIndex) => {
-    const memberElement = createElement(
-      context.document,
-      'div',
-      'ok-native-list-wallet-member'
-    );
-    setData(memberElement, 'nativeListGroupMemberKey', member.key);
-    setData(memberElement, 'testid', member.testID);
-    setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
-    setData(memberElement, 'nativeListSelected', member.selected);
-    // OneKey patch: grouped members have the same selector typography as standalone wallets.
-    // memberElement.appendChild(createIdentityActivityOrMessageRow(context, member));
-    const memberBody = createIdentityActivityOrMessageRow(context, member);
-    applySelectorTabularNumbers(memberBody, member);
-    memberElement.appendChild(memberBody);
-    // OneKey patch: group children use their own measured badge height.
-    memberElement.style.flexBasis =
-      String(member.height ?? 68 + (member.badges?.length ? 24 : 0)) + 'px';
-    memberElement.style.height = memberElement.style.flexBasis;
-    memberElement.style.opacity = String(member.opacity ?? 1);
-    body.appendChild(memberElement);
-  });
-  return body;
 }
 
-function createRowBody(context: RenderContext, row: RowModel): HTMLElement {
-  switch (row.type) {
-    case 'walletGroup':
-      return createWalletGroupRow(context, row);
-    case 'sectionHeader':
-      return createSectionHeader(context, row);
-    case 'action':
-      return createActionRow(context, row);
-    case 'system':
-      return createSystemRow(context, row);
-    case 'rail':
-      return createRailRow(context, row);
-    case 'mediaTile':
-      return createMediaRow(context, row);
-    case 'metricCard':
-      return createMetricRow(context, row);
-    case 'dataRow':
-      return createDataRow(context, row);
-    case 'identity':
-    case 'activity':
-    case 'message':
-      return createIdentityActivityOrMessageRow(context, row);
-  }
-}
+export type NativeListWebScrollOptions = Readonly<{
+  scrollHost?: HTMLElement;
+  contentBounds?: HTMLElement;
+  stickyInset?: number;
+  ownsRefresh?: boolean;
+}>;
 
 export class NativeListWebEngine {
+  private readonly externalScrollHost: HTMLElement | undefined;
+  private readonly ownsRefresh: boolean;
+  private readonly pullTarget: HTMLElement;
+  private readonly contentBounds: HTMLElement | undefined;
+  private externalStickyInset: number;
+  private externalOrigin: number | undefined;
+  private externalGeometryCache:
+    | ReturnType<NativeListWebEngine['readExternalGeometry']>
+    | undefined;
   private readonly document: Document;
   private readonly root: HTMLElement;
   private readonly viewportFrame: HTMLElement;
@@ -2818,10 +1976,10 @@ export class NativeListWebEngine {
   private readonly footer: HTMLElement;
   private readonly sticky: HTMLElement;
   private readonly indexRail: HTMLElement;
-  private readonly indexPreview: HTMLElement;
   private readonly refreshIndicator: HTMLElement;
   private readonly reorderPreview: HTMLElement;
   private readonly previousHostPosition: string;
+  private readonly sectionIndexContainer: HTMLElement | undefined;
   private snapshot: NativeListSnapshot;
   private rows: readonly RowModel[] = [];
   private selectedKeys: ReadonlySet<string> = new Set();
@@ -2833,9 +1991,29 @@ export class NativeListWebEngine {
     horizontal: false,
   };
   private readonly mounted = new Map<number, HTMLElement>();
-  private readonly pool: HTMLElement[] = [];
+  private readonly pool: Record<RowRendererKey, HTMLElement[]> = {
+    walletGroup: [],
+    message: [],
+    rail: [],
+    mediaTile: [],
+    action: [],
+    buttonGroup: [],
+    system: [],
+    activity: [],
+    dataRow: [],
+    metricCard: [],
+    market: [],
+    marketTable: [],
+    identity: [],
+    sectionHeader: [],
+  };
+  private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;
   private resizeObserver: ResizeObserver | undefined;
+  private sectionIndexTransformObserver: MutationObserver | undefined;
+  private sectionIndexTransformFrame: number | undefined;
+  private sectionIndexTransformTrackingFrames = 0;
+  private sectionIndexTransformSettledFrames = 0;
   private pendingScroll: PendingScroll | undefined;
   private lastVisibleSignature: string | undefined;
   // OneKey patch: URI leases outlive DOM overscan only inside this bounded window.
@@ -2844,7 +2022,6 @@ export class NativeListWebEngine {
   private avatarDirection = 1;
   private reachedGeneration: number | undefined;
   private stickyKey: string | undefined;
-  private previewTimer: number | undefined;
   private sectionIndexEntries: readonly Readonly<{
     key: string;
     title: string;
@@ -2859,36 +2036,145 @@ export class NativeListWebEngine {
   private reorderSettlingKey: string | undefined;
   private reorderCompactKey: string | undefined;
   private reorderExpandingKey: string | undefined;
-  private suppressClickUntil = 0;
+  private readonly reorderClickPointers = new Map<
+    number,
+    ReorderClickPointer
+  >();
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
   private actionAnchor: WebActionAnchorRecord | undefined;
+  private pressedHelpElement: HTMLElement | undefined;
   private readonly actionAnchorInstanceId = String(
     ++webNativeListInstanceCounter
   );
   private actionAnchorCounter = 0;
   private bindingEpochCounter = 0;
+  private marketPointer:
+    | Readonly<{
+        pointerId: number;
+        pointerType: string;
+        compact: boolean;
+        rowKey: string;
+        startX: number;
+        startY: number;
+        timer: number;
+      }>
+    | undefined;
+  private marketLongPressFired = false;
   private lastViewportWidth = -1;
   private lastViewportHeight = -1;
   private destroyed = false;
-  // OneKey patch: warning banners are measured after normal browser text wrapping.
-  private measuredWarningHeights = new Map<string, number>();
+  private hasAppliedSnapshot = false;
+  private lastStructuralTransitionId: string | undefined;
+  private structuralFrame: number | undefined;
+  private structuralFinish: number | undefined;
+  private structuralRevision = 0;
+  private structuralAnimations: Animation[] = [];
+  private structuralScrollInterrupted = false;
+  private structuralRenderedHeight: number | undefined;
+  private structuralTargetHeight: number | undefined;
+  private reactFooterHeight = 0;
+  private structuralFooterCompensation = 0;
+  private structuralFooterExpansion = 0;
+  private structuralFooterFromHeight = 0;
+  private structuralFooterElement: HTMLElement | undefined;
+  private structuralFooterStyles:
+    | { marginBottom: string; transform: string; clipPath: string }
+    | undefined;
+  private structuralProgress = 0;
+  private structuralAnchorStyles:
+    | { owner: string; content: string }
+    | undefined;
+  private structuralContentOverflow: string | undefined;
+  private structuralPrefixTransition = false;
+  private structuralTail:
+    | {
+        snapshot: NativeListSnapshot;
+        rows: readonly RowModel[];
+        layout: WebListLayout;
+        firstIndex: number;
+        layer: HTMLElement;
+        mounted: Map<number, HTMLElement>;
+      }
+    | undefined;
+  private sectionIndexAlignStart = false;
+  // Renderers report intrinsic height after browser text wrapping.
+  private measuredRendererHeights = new Map<
+    string,
+    { signature: string; height: number }
+  >();
+
+  private notifyScrollCommandAccepted() {
+    if (this.destroyed) return;
+    const owner = this.externalScrollHost ?? this.viewport;
+    const EventConstructor = owner.ownerDocument.defaultView?.Event;
+    if (EventConstructor)
+      owner.dispatchEvent(
+        new EventConstructor('ok-native-list-scroll-command-accepted')
+      );
+  }
+
+  private readonly handlePagerScrollCommandCancel = (event: Event) => {
+    const owner = this.externalScrollHost ?? this.viewport;
+    if (this.destroyed || event.target !== owner) return;
+    this.pendingScroll = undefined;
+    const options: ScrollToOptions = {
+      left: owner.scrollLeft,
+      top: owner.scrollTop,
+      behavior: 'instant',
+    };
+    if (this.externalScrollHost) {
+      const scrollTo: (options: ScrollToOptions) => void =
+        owner.ownerDocument.defaultView?.Element.prototype.scrollTo ??
+        owner.scrollTo;
+      scrollTo.call(owner, options);
+    } else this.viewport.scrollTo(options);
+  };
 
   constructor(
     host: HTMLElement,
     snapshot: NativeListSnapshot,
     callbacks: NativeListWebCallbacks,
-    virtualizationEnabled = true
+    virtualizationEnabled = true,
+    sectionIndexContainer?: HTMLElement | null,
+    fontFamiliesJson = '{}',
+    scrollOptions: NativeListWebScrollOptions = {}
   ) {
+    if (
+      scrollOptions.scrollHost &&
+      (!(
+        scrollOptions.scrollHost instanceof
+        host.ownerDocument.defaultView!.HTMLElement
+      ) ||
+        !scrollOptions.scrollHost.contains(host))
+    )
+      throw new Error(
+        'webScrollHost must be an ancestor HTMLElement in the same document'
+      );
+    this.ownsRefresh = scrollOptions.ownsRefresh === true;
+    if (
+      scrollOptions.scrollHost &&
+      snapshot.layout.orientation === 'horizontal'
+    )
+      throw new Error('External scrolling supports vertical lists only');
+    this.externalScrollHost = scrollOptions.scrollHost;
+    this.contentBounds = scrollOptions.contentBounds;
+    this.externalStickyInset = this.validateStickyInset(
+      scrollOptions.stickyInset
+    );
     this.document = host.ownerDocument;
-    this.snapshot = validateSnapshot(snapshot);
+    this.snapshot =
+      containNativeListInput(() => validateSnapshot(snapshot)) ??
+      emptyNativeListSnapshot();
     this.callbacks = callbacks;
     this.virtualizationEnabled = virtualizationEnabled;
+    this.sectionIndexContainer = sectionIndexContainer ?? undefined;
     this.previousHostPosition = host.style.position;
     if (!host.style.position) host.style.position = 'relative';
 
     this.root = createElement(this.document, 'div', 'ok-native-list-root');
+    setData(this.root, 'nativeListParentScroll', !!this.externalScrollHost);
     const style = this.document.createElement('style');
     style.textContent = WEB_LIST_CSS;
     this.viewportFrame = createElement(
@@ -2901,6 +2187,10 @@ export class NativeListWebEngine {
       'div',
       'ok-native-list-viewport'
     );
+    this.pullTarget =
+      this.externalScrollHost && this.ownsRefresh
+        ? this.externalScrollHost
+        : this.viewport;
     this.viewport.setAttribute('role', 'list');
     this.content = createElement(
       this.document,
@@ -2923,12 +2213,6 @@ export class NativeListWebEngine {
     this.indexRail.setAttribute('role', 'navigation');
     this.indexRail.setAttribute('aria-label', 'Section index');
     this.indexRail.hidden = true;
-    this.indexPreview = createElement(
-      this.document,
-      'div',
-      'ok-native-list-index-preview'
-    );
-    this.indexPreview.setAttribute('aria-live', 'polite');
     this.refreshIndicator = createElement(
       this.document,
       'div',
@@ -2949,18 +2233,76 @@ export class NativeListWebEngine {
       this.viewport,
       this.sticky,
       this.indexRail,
-      this.indexPreview,
       this.refreshIndicator
     );
     this.root.append(style, this.viewportFrame, this.footer);
     host.appendChild(this.root);
+    if (this.externalScrollHost) {
+      Object.assign(this.root.style, {
+        position: 'relative',
+        inset: 'auto',
+        overflow: 'visible',
+        flex: 'none',
+      });
+      Object.assign(this.viewportFrame.style, {
+        overflow: 'visible',
+        flex: 'none',
+      });
+      Object.assign(this.viewport.style, {
+        position: 'relative',
+        inset: 'auto',
+        overflow: 'visible',
+        scrollbarGutter: 'auto',
+      });
+      this.content.style.minHeight = '0';
+      this.externalScrollHost.addEventListener(
+        'scroll',
+        this.handleExternalScroll,
+        {
+          passive: true,
+          capture: true,
+        }
+      );
+    }
 
+    (this.externalScrollHost ?? this.viewport).addEventListener(
+      'ok-collapsible-pager-cancel-scroll-command',
+      this.handlePagerScrollCommandCancel
+    );
+    for (const event of ['wheel', 'pointerdown', 'touchstart'])
+      (this.externalScrollHost ?? this.viewport).addEventListener(
+        event,
+        this.handleStructuralUserScroll,
+        { passive: true }
+      );
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
+    (this.externalScrollHost ?? this.viewport).addEventListener(
+      'ok-collapsible-pager-insets-changed',
+      this.handleCollapsiblePagerInsetsChanged
+    );
     this.root.addEventListener('click', this.handleClick);
+    this.document.addEventListener('pointerdown', this.trackReorderPress, true);
+    this.document.addEventListener('pointerup', this.trackReorderRelease, true);
+    this.document.addEventListener(
+      'pointercancel',
+      this.trackReorderRelease,
+      true
+    );
+    this.root.addEventListener('contextmenu', this.handleMarketContextMenu);
+    this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
+    this.root.addEventListener('pointermove', this.handleMarketPointerMove);
+    this.root.addEventListener('touchmove', this.handleMarketTouchMove, {
+      passive: true,
+    });
+    this.root.addEventListener('pointerup', this.handleMarketPointerEnd);
+    this.root.addEventListener('pointercancel', this.handleMarketPointerEnd);
     // OneKey patch: preserve web tooltip hover for section titles.
     this.root.addEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.addEventListener('pointerdown', this.handleIconHelpPointerDown);
+    this.root.addEventListener('focusin', this.handleTitlePointerOver);
+    this.root.addEventListener('focusout', this.handleTitlePointerOut);
     this.root.addEventListener('pointerout', this.handleTitlePointerOut);
     this.root.addEventListener('keydown', this.handleKeyDown);
     this.viewport.addEventListener(
@@ -2990,15 +2332,20 @@ export class NativeListWebEngine {
     );
     this.indexRail.addEventListener('pointerdown', this.handleIndexPointer);
     this.indexRail.addEventListener('pointermove', this.handleIndexPointer);
+    this.indexRail.addEventListener('pointerup', this.handleIndexPointerEnd);
+    this.indexRail.addEventListener(
+      'pointercancel',
+      this.handleIndexPointerEnd
+    );
     this.indexRail.addEventListener('click', this.handleIndexClick);
-    this.viewport.addEventListener('pointerdown', this.handlePullStart, {
+    this.pullTarget.addEventListener('pointerdown', this.handlePullStart, {
       passive: true,
     });
-    this.viewport.addEventListener('pointermove', this.handlePullMove, {
+    this.pullTarget.addEventListener('pointermove', this.handlePullMove, {
       passive: false,
     });
-    this.viewport.addEventListener('pointerup', this.handlePullEnd);
-    this.viewport.addEventListener('pointercancel', this.handlePullEnd);
+    this.pullTarget.addEventListener('pointerup', this.handlePullEnd);
+    this.pullTarget.addEventListener('pointercancel', this.handlePullEnd);
 
     const ResizeObserverConstructor = this.document.defaultView?.ResizeObserver;
     if (ResizeObserverConstructor) {
@@ -3006,13 +2353,102 @@ export class NativeListWebEngine {
         this.recomputeLayout()
       );
       this.resizeObserver.observe(this.viewport);
+      if (this.externalScrollHost) {
+        this.resizeObserver.observe(this.externalScrollHost);
+        let ancestor: HTMLElement | null = host;
+        while (ancestor && ancestor !== this.externalScrollHost) {
+          this.resizeObserver.observe(ancestor);
+          for (const sibling of ancestor.parentElement?.children ?? []) {
+            if (sibling instanceof this.document.defaultView!.HTMLElement)
+              this.resizeObserver.observe(sibling);
+          }
+          ancestor = ancestor.parentElement;
+        }
+      }
     } else {
       this.document.defaultView?.addEventListener(
         'resize',
         this.handleWindowResize
       );
     }
-    this.applySnapshot(this.snapshot);
+    this.document.fonts?.addEventListener(
+      'loadingdone',
+      this.handleWindowResize
+    );
+    this.observeSectionIndexTransforms();
+    this.applyFontFamilies(fontFamiliesJson);
+    this.applyValidatedSnapshot(this.snapshot);
+  }
+
+  private validateStickyInset(value = 0): number {
+    if (!Number.isFinite(value) || value < 0)
+      throw new Error('webStickyInset must be finite and non-negative');
+    return value;
+  }
+
+  setStickyInset(value = 0) {
+    const next = this.validateStickyInset(value);
+    if (next === this.externalStickyInset) return;
+    this.externalStickyInset = next;
+    this.recomputeLayout();
+  }
+
+  private externalGeometry() {
+    return (this.externalGeometryCache ??= this.readExternalGeometry());
+  }
+
+  private readExternalGeometry() {
+    const host = this.externalScrollHost!;
+    const hostRect = host.getBoundingClientRect();
+    const bodyRect = this.viewport.getBoundingClientRect();
+    const boundsRect = (
+      this.contentBounds ?? this.root
+    ).getBoundingClientRect();
+    const top = hostRect.top + host.clientTop + this.externalStickyInset;
+    const bottom = hostRect.top + host.clientTop + host.clientHeight;
+    return {
+      origin: bodyRect.top - hostRect.top - host.clientTop + host.scrollTop,
+      containerOrigin:
+        boundsRect.top - hostRect.top - host.clientTop + host.scrollTop,
+      end: boundsRect.bottom - hostRect.top - host.clientTop + host.scrollTop,
+      top,
+      bottom,
+      offset: top - bodyRect.top,
+      viewportLength: Math.max(0, bottom - top),
+      visible:
+        bodyRect.width > 0 &&
+        bodyRect.right > hostRect.left &&
+        bodyRect.left < hostRect.right &&
+        host.clientHeight > 0 &&
+        boundsRect.bottom > top &&
+        boundsRect.top < bottom,
+    };
+  }
+
+  private fontFamiliesJson = '{}';
+
+  private applyFontFamilies(json: string) {
+    const families = JSON.parse(json) as Record<string, string | undefined>;
+    const fallback = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+    for (const face of ['regular', 'medium', 'semibold', 'bold']) {
+      const name = families[face];
+      const family =
+        name === undefined ? fallback : `${JSON.stringify(name)},${fallback}`;
+      for (const element of [this.root, this.indexRail, this.reorderPreview]) {
+        element.style.setProperty(`--nl-font-${face}`, family);
+      }
+    }
+    this.fontFamiliesJson = json;
+  }
+
+  setFontFamiliesJson(json: string) {
+    if (json === this.fontFamiliesJson || this.destroyed) return;
+    this.invalidateActionAnchor('layout');
+    this.cancelPointerReorder(true);
+    this.cancelKeyboardReorder();
+    this.applyFontFamilies(json);
+    this.measuredRendererHeights.clear();
+    this.recomputeLayout();
   }
 
   updateCallbacks(callbacks: NativeListWebCallbacks) {
@@ -3026,22 +2462,565 @@ export class NativeListWebEngine {
   }
 
   applySnapshot(snapshot: NativeListSnapshot) {
-    const validated = validateSnapshot(snapshot);
+    const validated = containNativeListInput(() => {
+      const next = validateSnapshot(snapshot);
+      if (this.externalScrollHost && next.layout.orientation === 'horizontal')
+        throw new Error('External scrolling supports vertical lists only');
+      return next;
+    });
+    if (!validated) return;
+    this.applyValidatedSnapshot(validated);
+  }
+
+  private applyValidatedSnapshot(validated: NativeListSnapshot) {
+    this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('snapshot');
-    this.setSnapshot(validated);
+    const capabilities = this.snapshot.capabilities;
+    const nextCapabilities = validated.capabilities;
+    if (
+      this.pointerReorder?.active ||
+      capabilities?.reorderable !== nextCapabilities?.reorderable ||
+      (capabilities?.reorderActivation ?? 'row') !==
+        (nextCapabilities?.reorderActivation ?? 'row')
+    ) {
+      this.cancelPointerReorder(false);
+    }
+    const keyboardSource = this.keyboardReorder?.sourceKey;
+    const preserveKeyboardFocus =
+      keyboardSource &&
+      this.document.activeElement?.getAttribute('data-native-list-row-key') ===
+        keyboardSource;
+    if (this.keyboardReorder) {
+      this.keyboardReorder = undefined;
+      this.updateReorderVisualState();
+    }
+    const transition = validated.structuralTransition;
+    const isNewTransition =
+      transition !== undefined &&
+      transition.id !== this.lastStructuralTransitionId;
+    if (transition) this.lastStructuralTransitionId = transition.id;
+    const nextRows = effectiveRows(validated);
+    const changedKeys =
+      this.rows.length !== nextRows.length ||
+      this.rows.some((row, index) => row.key !== nextRows[index]?.key);
+    const incompatibleActivePrefix =
+      this.structuralPrefixTransition &&
+      (validated.layout.kind !== this.snapshot.layout.kind ||
+        validated.layout.orientation !== this.snapshot.layout.orientation ||
+        nextRows.some(
+          (row, index) =>
+            row.height !== this.rows[index]?.height ||
+            row.style?.container?.height !==
+              this.rows[index]?.style?.container?.height
+        ));
+    const shouldAnimate =
+      this.hasAppliedSnapshot &&
+      isNewTransition &&
+      changedKeys &&
+      (this.snapshot.layout.kind === 'linear' ||
+        this.snapshot.layout.kind === 'table') &&
+      this.snapshot.layout.orientation !== 'horizontal' &&
+      (validated.layout.kind === 'linear' ||
+        validated.layout.kind === 'table') &&
+      validated.layout.orientation !== 'horizontal' &&
+      (transition?.durationMs ?? 220) > 0 &&
+      !this.document.defaultView?.matchMedia?.(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+    if (shouldAnimate && transition)
+      this.applyStructuralSnapshot(validated, transition);
+    else {
+      if (isNewTransition || changedKeys || incompatibleActivePrefix)
+        this.cancelStructuralAnimation();
+      this.setSnapshot(validated);
+    }
+    if (preserveKeyboardFocus) this.focusMountedRow(keyboardSource);
+    this.hasAppliedSnapshot = true;
+  }
+
+  private cancelStructuralAnimation() {
+    this.structuralRevision += 1;
+    if (this.structuralFrame !== undefined)
+      this.document.defaultView?.cancelAnimationFrame(this.structuralFrame);
+    if (this.structuralFinish !== undefined)
+      this.document.defaultView?.clearTimeout(this.structuralFinish);
+    this.structuralFrame = undefined;
+    this.structuralFinish = undefined;
+    this.structuralAnimations.forEach((animation) => animation.cancel());
+    this.structuralAnimations = [];
+    if (this.structuralTail) {
+      disposeWebImageRetries(this.structuralTail.layer);
+      this.structuralTail.layer.remove();
+      this.structuralTail = undefined;
+    }
+    if (this.structuralContentOverflow !== undefined) {
+      this.content.style.overflow = this.structuralContentOverflow;
+      this.structuralContentOverflow = undefined;
+    }
+    this.structuralPrefixTransition = false;
+    if (this.structuralFooterElement && this.structuralFooterStyles) {
+      this.structuralFooterElement.style.marginBottom =
+        this.structuralFooterStyles.marginBottom;
+      this.structuralFooterElement.style.transform =
+        this.structuralFooterStyles.transform;
+      this.structuralFooterElement.style.clipPath =
+        this.structuralFooterStyles.clipPath;
+    }
+    this.structuralFooterElement = undefined;
+    this.structuralFooterStyles = undefined;
+    this.structuralScrollInterrupted = false;
+    this.structuralRenderedHeight = undefined;
+    this.structuralTargetHeight = undefined;
+    this.structuralFooterCompensation = 0;
+    this.structuralFooterExpansion = 0;
+    this.structuralProgress = 0;
+    const owner = this.externalScrollHost ?? this.viewport;
+    if (this.structuralAnchorStyles) {
+      owner.style.overflowAnchor = this.structuralAnchorStyles.owner;
+      this.content.style.overflowAnchor = this.structuralAnchorStyles.content;
+      this.structuralAnchorStyles = undefined;
+    }
+  }
+
+  private handleStructuralUserScroll = (event: Event) => {
+    if (
+      event.type === 'pointerdown' &&
+      event.target !== (this.externalScrollHost ?? this.viewport) &&
+      (event as PointerEvent).pointerType !== 'touch'
+    )
+      return;
+    this.structuralScrollInterrupted = true;
+    if (this.structuralPrefixTransition) {
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+    }
+  };
+
+  private updateStructuralTailWindow() {
+    const tail = this.structuralTail;
+    if (!tail) return;
+    const visible = visibleWebLayoutItems(
+      tail.layout,
+      this.currentOffset(),
+      this.viewportLength(),
+      this.viewportLength() * OVERSCAN_VIEWPORTS
+    ).filter((item) => item.index >= tail.firstIndex);
+    const desired = new Set(visible.map((item) => item.index));
+    tail.mounted.forEach((element, index) => {
+      if (desired.has(index)) return;
+      disposeWebImageRetries(element);
+      element.remove();
+      tail.mounted.delete(index);
+    });
+    visible.forEach((item) => {
+      if (tail.mounted.has(item.index)) return;
+      const row = tail.rows[item.index];
+      if (!row) return;
+      const element = createElement(
+        this.document,
+        'div',
+        'ok-native-list-item'
+      );
+      element.setAttribute('aria-hidden', 'true');
+      element.style.pointerEvents = 'none';
+      element.style.opacity = String(
+        (row.style?.container?.opacity ?? row.opacity ?? 1) *
+          (row.disabled ? 0.5 : 1)
+      );
+      const body = createRowBody(
+        {
+          document: this.document,
+          snapshot: tail.snapshot,
+          selectedKeys: selectionStateFromSnapshot(tail.snapshot).selectedKeys,
+          itemIndex: item.index,
+        },
+        row
+      );
+      applyRowStyle(body, row);
+      element.append(body);
+      this.positionElement(element, item);
+      tail.layer.append(element);
+      tail.mounted.set(item.index, element);
+    });
+  }
+
+  private writeStructuralHeight(height: number) {
+    if (this.externalScrollHost) this.writeExternalHeight(height);
+    else this.content.style.height = `${height}px`;
+  }
+
+  private reactFooterElement() {
+    return this.contentBounds?.querySelector<HTMLElement>(
+      '[data-testid="native-list-footer-slot"]'
+    );
+  }
+
+  private readReactFooterHeight() {
+    return this.reactFooterElement()?.getBoundingClientRect().height ?? 0;
+  }
+
+  private applyStructuralFooterVisual(progress: number) {
+    const footer = this.structuralFooterElement;
+    if (!footer || this.structuralFooterExpansion <= 0) return;
+    const hidden = this.structuralFooterExpansion * (1 - progress);
+    footer.style.marginBottom = `${-hidden}px`;
+    footer.style.transform = `translateY(${-hidden}px)`;
+    footer.style.clipPath = `inset(${hidden}px 0 0 0)`;
+  }
+
+  private applyStructuralSnapshot(
+    next: NativeListSnapshot,
+    transition: NonNullable<NativeListSnapshot['structuralTransition']>
+  ) {
+    const owner = this.externalScrollHost ?? this.viewport;
+    const oldOffset = owner.scrollTop;
+    const oldScrollHeight = owner.scrollHeight;
+    const oldHeight =
+      this.structuralRenderedHeight ??
+      (this.content.getBoundingClientRect().height ||
+        this.layout.contentHeight);
+    const nextFooterHeight = this.readReactFooterHeight();
+    const oldFooterHeight =
+      this.structuralRenderedHeight === undefined
+        ? this.reactFooterHeight
+        : this.structuralFooterFromHeight +
+          (this.reactFooterHeight - this.structuralFooterFromHeight) *
+            this.structuralProgress;
+    const footerDifference = oldFooterHeight - nextFooterHeight;
+    const startHeight = oldHeight + Math.max(0, footerDifference);
+    const oldSnapshot = this.snapshot;
+    const oldRows = this.rows;
+    const oldLayout = this.layout;
+    const oldItems = oldLayout.items;
+    const nextRows = effectiveRows(next);
+    const prefixCount = Math.min(oldRows.length, nextRows.length);
+    const prefixTailChange =
+      oldSnapshot.layout.kind === next.layout.kind &&
+      oldSnapshot.layout.orientation === next.layout.orientation &&
+      oldRows.length !== nextRows.length &&
+      oldRows
+        .slice(0, prefixCount)
+        .every((row, index) => row.key === nextRows[index]?.key);
+    const oldPositions = new Map<string, number>();
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      if (row) oldPositions.set(row.key, element.getBoundingClientRect().top);
+    });
+    const nextKeys = new Set(effectiveRows(next).map((row) => row.key));
+    const visibleOffset = this.currentOffset();
+    const visibleSurvivor = oldItems.find(
+      (item) => item.y + item.height > visibleOffset && nextKeys.has(item.key)
+    );
+    const anchor = visibleSurvivor;
+    this.cancelStructuralAnimation();
+    this.structuralScrollInterrupted = false;
+    this.structuralAnchorStyles = {
+      owner: owner.style.overflowAnchor,
+      content: this.content.style.overflowAnchor,
+    };
+    owner.style.overflowAnchor = 'none';
+    this.content.style.overflowAnchor = 'none';
+    this.structuralContentOverflow = this.content.style.overflow;
+    if (prefixTailChange) this.content.style.overflow = 'clip';
+    this.structuralRenderedHeight = startHeight;
+    this.structuralFooterFromHeight = oldFooterHeight;
+    this.structuralFooterCompensation = Math.max(0, footerDifference);
+    this.structuralFooterExpansion = Math.max(0, -footerDifference);
+    this.structuralProgress = 0;
+    this.reactFooterHeight = nextFooterHeight;
+    this.structuralFooterElement = this.reactFooterElement() ?? undefined;
+    if (this.structuralFooterElement) {
+      const style = this.structuralFooterElement.style;
+      this.structuralFooterStyles = {
+        marginBottom: style.marginBottom,
+        transform: style.transform,
+        clipPath: style.clipPath,
+      };
+      this.applyStructuralFooterVisual(0);
+    }
+    this.setSnapshot(next);
+    const newHeight = this.layout.contentHeight;
+    this.structuralTargetHeight = newHeight;
+    const stablePrefixGeometry =
+      prefixTailChange &&
+      oldItems.length === oldRows.length &&
+      this.layout.items.length === nextRows.length &&
+      oldItems.slice(0, prefixCount).every((item, index) => {
+        const nextItem = this.layout.items[index];
+        return (
+          nextItem?.y === item.y &&
+          nextItem?.height === item.height &&
+          nextItem?.width === item.width
+        );
+      });
+    if (!stablePrefixGeometry) {
+      this.content.style.overflow = this.structuralContentOverflow;
+      this.structuralContentOverflow = undefined;
+    } else {
+      this.structuralPrefixTransition = true;
+    }
+    if (stablePrefixGeometry && nextRows.length < oldRows.length) {
+      const layer = createElement(
+        this.document,
+        'div',
+        'ok-native-list-structural-tail'
+      );
+      layer.setAttribute('aria-hidden', 'true');
+      layer.setAttribute('inert', '');
+      Object.assign(layer.style, {
+        position: 'absolute',
+        inset: '0',
+        pointerEvents: 'none',
+      });
+      this.content.append(layer);
+      this.structuralTail = {
+        snapshot: oldSnapshot,
+        rows: oldRows,
+        layout: oldLayout,
+        firstIndex: prefixCount,
+        layer,
+        mounted: new Map(),
+      };
+      this.updateStructuralTailWindow();
+    }
+    const nextAnchor =
+      anchor && this.layout.items.find((item) => item.key === anchor.key);
+    const delta = nextAnchor && anchor ? nextAnchor.y - anchor.y : 0;
+    let finalScrollHeight = oldScrollHeight + newHeight - oldHeight;
+    if (stablePrefixGeometry && this.externalScrollHost) {
+      const beforeMeasure = owner.scrollTop;
+      const tailLayer = this.structuralTail?.layer;
+      if (tailLayer) tailLayer.style.display = 'none';
+      this.writeStructuralHeight(newHeight);
+      this.applyStructuralFooterVisual(1);
+      finalScrollHeight = owner.scrollHeight;
+      this.writeStructuralHeight(startHeight);
+      this.applyStructuralFooterVisual(0);
+      if (tailLayer) tailLayer.style.display = '';
+      owner.scrollTop = beforeMeasure;
+    }
+    const finalMaxOffset = Math.max(0, finalScrollHeight - owner.clientHeight);
+    let targetOffset = Math.max(0, Math.min(oldOffset + delta, finalMaxOffset));
+    if (
+      !visibleSurvivor &&
+      transition.anchorKey &&
+      !(stablePrefixGeometry && nextRows.length > oldRows.length)
+    ) {
+      const fallback = this.layout.items.find(
+        (item) => item.key === transition.anchorKey
+      );
+      if (fallback) {
+        const pagerStickyInset = Number.parseFloat(
+          this.externalScrollHost?.style.getPropertyValue(
+            '--ok-collapsible-pager-sticky-inset'
+          ) ?? ''
+        );
+        const effectiveStickyInset = Math.max(
+          this.externalStickyInset,
+          Number.isFinite(pagerStickyInset) ? pagerStickyInset : 0
+        );
+        const fallbackTop = this.externalScrollHost
+          ? this.externalGeometry().origin + fallback.y - effectiveStickyInset
+          : resolveWebCollapsiblePagerRawOffset(
+              Math.max(0, fallback.y - this.collapsiblePagerInsets().sticky),
+              this.collapsiblePagerInsets().header
+            );
+        if (
+          stablePrefixGeometry &&
+          this.externalScrollHost &&
+          this.reactFooterHeight > 0
+        ) {
+          const footerTop = this.externalGeometry().origin + newHeight;
+          const footerStart = Math.max(
+            0,
+            footerTop + this.reactFooterHeight - owner.clientHeight
+          );
+          const footerEnd = Math.max(0, footerTop - effectiveStickyInset);
+          const nearestVisibleOffset =
+            footerStart <= footerEnd
+              ? Math.max(footerStart, Math.min(oldOffset, footerEnd))
+              : footerEnd;
+          targetOffset = Math.max(
+            0,
+            Math.min(nearestVisibleOffset, finalMaxOffset)
+          );
+        } else {
+          targetOffset = Math.min(targetOffset, Math.max(0, fallbackTop));
+        }
+      }
+    }
+    const duration = transition.durationMs ?? 220;
+    const easing = 'cubic-bezier(0.42, 0, 0.58, 1)';
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      const previousTop = row && oldPositions.get(row.key);
+      if (previousTop === undefined || typeof element.animate !== 'function')
+        return;
+      const offset = previousTop - element.getBoundingClientRect().top;
+      if (Math.abs(offset) < 0.5) return;
+      this.structuralAnimations.push(
+        element.animate(
+          [
+            { transform: `translateY(${offset}px)` },
+            { transform: 'translateY(0)' },
+          ],
+          { duration, easing }
+        )
+      );
+    });
+    const startedAt =
+      this.document.defaultView?.performance.now() ?? Date.now();
+    const revision = this.structuralRevision;
+    const finish = () => {
+      if (this.destroyed || revision !== this.structuralRevision) return;
+      const ownsScroll = !this.structuralScrollInterrupted;
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+      if (stablePrefixGeometry && ownsScroll) {
+        owner.scrollTop = Math.max(
+          0,
+          Math.min(targetOffset, owner.scrollHeight - owner.clientHeight)
+        );
+      }
+    };
+    const step = (time: number) => {
+      if (this.destroyed || revision !== this.structuralRevision) return;
+      if (
+        this.structuralPrefixTransition &&
+        this.document.defaultView?.matchMedia?.(
+          '(prefers-reduced-motion: reduce)'
+        ).matches
+      ) {
+        finish();
+        return;
+      }
+      const progress = Math.min(1, (time - startedAt) / duration);
+      const eased = progress * progress * (3 - 2 * progress);
+      this.structuralProgress = eased;
+      const renderedHeight =
+        oldHeight +
+        ((this.structuralTargetHeight ?? newHeight) - oldHeight) * eased +
+        this.structuralFooterCompensation * (1 - eased);
+      this.structuralRenderedHeight = renderedHeight;
+      this.writeStructuralHeight(renderedHeight);
+      this.applyStructuralFooterVisual(eased);
+      if (!this.structuralScrollInterrupted)
+        owner.scrollTop = oldOffset + (targetOffset - oldOffset) * eased;
+      this.externalGeometryCache = undefined;
+      this.updateStructuralTailWindow();
+      if (progress < 1)
+        this.structuralFrame =
+          this.document.defaultView?.requestAnimationFrame(step);
+    };
+    this.structuralFrame =
+      this.document.defaultView?.requestAnimationFrame(step);
+    this.structuralFinish = this.document.defaultView?.setTimeout(
+      finish,
+      duration + 40
+    );
+  }
+
+  currentContentHeight(): number {
+    return this.layout.contentHeight;
+  }
+
+  currentSnapshot(): NativeListSnapshot {
+    const originalRows = this.pointerReorder?.active
+      ? this.pointerReorder.originalRows
+      : this.keyboardReorder?.originalRows;
+    return originalRows
+      ? { ...this.snapshot, rows: originalRows }
+      : this.snapshot;
   }
 
   applyPatches(patches: readonly RowPatch[]) {
-    if (patches.length === 0) return;
-    const next = applyRowPatches(this.snapshot, patches);
-    this.invalidateActionAnchor('snapshot');
+    const accepted = containNativeListInput(() =>
+      applyValidatedRowPatches(this.snapshot, patches)
+    );
+    if (!accepted || accepted.patches.length === 0) return;
+    patches = accepted.patches;
+    let next = accepted.snapshot;
+    let restoredReorder = false;
+    const pointer = this.pointerReorder?.active
+      ? this.pointerReorder
+      : undefined;
+    const keyboard = this.keyboardReorder;
+    const reorder = pointer ?? keyboard;
+    if (reorder) {
+      const byKey = new Map(next.rows.map((row) => [row.key, row]));
+      reorder.originalRows = reorder.originalRows.map(
+        (row) => byKey.get(row.key) ?? row
+      );
+      const source = byKey.get(reorder.sourceKey);
+      const canContinue = pointer
+        ? this.canStartPointerReorder(pointer, next)
+        : source &&
+          isWebRowReorderable(next, source) &&
+          (next.capabilities?.reorderActivation !== 'handle' ||
+            hasWebReorderHandle(source));
+      if (!canContinue) {
+        if (pointer) this.cancelPointerReorder(false);
+        if (keyboard) {
+          this.keyboardReorder = undefined;
+          this.updateReorderVisualState();
+        }
+        this.remapMountedRows(reorder.originalRows);
+        next = { ...next, rows: reorder.originalRows };
+        restoredReorder = true;
+      } else if (pointer) {
+        pointer.workingRows = [...next.rows];
+      }
+    }
     const selection = new Set(this.selectedKeys);
     patches.forEach((patch) => {
       const selected =
         'selected' in patch.changes ? patch.changes.selected : undefined;
       if (selected === true) selection.add(patch.key);
-      else if (selected === false) selection.delete(patch.key);
+      else if (selected === false || selected === null)
+        selection.delete(patch.key);
     });
+    const tableValuesOnly = patches.every((patch) => {
+      const index = this.rows.findIndex((row) => row.key === patch.key);
+      const before = this.rows[index],
+        after = next.rows[index];
+      return (
+        patch.type === 'market' &&
+        before?.type === 'market' &&
+        after?.type === 'market' &&
+        Object.keys(patch.changes).every(
+          (key) => MARKET_QUOTE_PATCH_FIELDS.has(key) || key === 'webTable'
+        ) &&
+        canPatchMarketTableValues(before, after)
+      );
+    });
+    if (
+      !restoredReorder &&
+      (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly)
+    ) {
+      this.snapshot = next;
+      this.rows = effectiveRows(next);
+      this.selectedKeys = selection;
+      patches.forEach((patch) => {
+        const index = this.rows.findIndex((row) => row.key === patch.key);
+        const row = this.rows[index];
+        const element = this.mounted.get(index);
+        if (row?.type === 'market' && element) {
+          if (row.webTable) updateMarketTableValues(element, row);
+          else setMarketQuoteContent(element, row);
+          element.dataset.renderSignature = webRowRenderSignature(row);
+        }
+        if (
+          row?.type === 'market' &&
+          this.sticky.dataset.nativeListRowKey === row.key
+        ) {
+          if (row.webTable) updateMarketTableValues(this.sticky, row);
+          else setMarketQuoteContent(this.sticky, row);
+          this.sticky.dataset.renderSignature = webRowRenderSignature(row);
+        }
+      });
+      return;
+    }
+    this.invalidateActionAnchor('snapshot');
     this.setSnapshot(next, selection);
   }
 
@@ -3061,6 +3040,7 @@ export class NativeListWebEngine {
       this.emitScrollFailure(index, 'index-out-of-range');
       return;
     }
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'index', index, scroll };
       return;
@@ -3093,22 +3073,34 @@ export class NativeListWebEngine {
 
   scrollToOffset(offset: number, animated: boolean) {
     validateOffset(offset);
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'offset', offset, animated };
       return;
     }
-    this.scrollToAbsoluteOffset(offset, animated);
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      this.writeExternalOffset(geometry.containerOrigin + offset, animated);
+    } else this.scrollToAbsoluteOffset(offset, animated);
   }
 
   scrollToEnd(animated: boolean) {
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'end', animated };
       return;
     }
-    this.scrollToAbsoluteOffset(
-      Math.max(0, this.contentLength() - this.viewportLength()),
-      animated
-    );
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      this.writeExternalOffset(
+        geometry.end - this.externalScrollHost.clientHeight,
+        animated
+      );
+    } else
+      this.scrollToAbsoluteOffset(
+        Math.max(0, this.contentLength() - this.viewportLength()),
+        animated
+      );
   }
 
   scrollToLocation(
@@ -3166,21 +3158,77 @@ export class NativeListWebEngine {
 
   destroy() {
     if (this.destroyed) return;
+    this.cancelStructuralAnimation();
+    this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('destroy');
     this.destroyed = true;
     if (this.frameHandle !== undefined) this.cancelFrame(this.frameHandle);
-    if (this.previewTimer !== undefined)
-      this.document.defaultView?.clearTimeout(this.previewTimer);
+    if (this.sectionIndexTransformFrame !== undefined)
+      this.cancelFrame(this.sectionIndexTransformFrame);
     if (this.reorderMovementTimer !== undefined)
       this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
     this.resizeObserver?.disconnect();
+    this.externalScrollHost?.removeEventListener(
+      'scroll',
+      this.handleExternalScroll,
+      true
+    );
+    this.document.fonts?.removeEventListener(
+      'loadingdone',
+      this.handleWindowResize
+    );
+    this.sectionIndexTransformObserver?.disconnect();
     this.document.defaultView?.removeEventListener(
       'resize',
       this.handleWindowResize
     );
+    this.pendingScroll = undefined;
+    (this.externalScrollHost ?? this.viewport).removeEventListener(
+      'ok-collapsible-pager-cancel-scroll-command',
+      this.handlePagerScrollCommandCancel
+    );
+    for (const event of ['wheel', 'pointerdown', 'touchstart'])
+      (this.externalScrollHost ?? this.viewport).removeEventListener(
+        event,
+        this.handleStructuralUserScroll
+      );
     this.viewport.removeEventListener('scroll', this.handleScroll);
+    (this.externalScrollHost ?? this.viewport).removeEventListener(
+      'ok-collapsible-pager-insets-changed',
+      this.handleCollapsiblePagerInsetsChanged
+    );
     this.root.removeEventListener('click', this.handleClick);
+    this.document.removeEventListener(
+      'pointerdown',
+      this.trackReorderPress,
+      true
+    );
+    this.document.removeEventListener(
+      'pointerup',
+      this.trackReorderRelease,
+      true
+    );
+    this.document.removeEventListener(
+      'pointercancel',
+      this.trackReorderRelease,
+      true
+    );
+    for (const id of this.reorderClickPointers.keys())
+      this.clearReorderClick(id);
+    this.root.removeEventListener('contextmenu', this.handleMarketContextMenu);
+    this.cancelMarketPointer();
+    this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
+    this.root.removeEventListener('pointermove', this.handleMarketPointerMove);
+    this.root.removeEventListener('touchmove', this.handleMarketTouchMove);
+    this.root.removeEventListener('pointerup', this.handleMarketPointerEnd);
+    this.root.removeEventListener('pointercancel', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.removeEventListener(
+      'pointerdown',
+      this.handleIconHelpPointerDown
+    );
+    this.root.removeEventListener('focusin', this.handleTitlePointerOver);
+    this.root.removeEventListener('focusout', this.handleTitlePointerOut);
     this.root.removeEventListener('pointerout', this.handleTitlePointerOut);
     this.root.removeEventListener('keydown', this.handleKeyDown);
     this.cancelPointerReorder(true);
@@ -3208,20 +3256,30 @@ export class NativeListWebEngine {
     );
     this.indexRail.removeEventListener('pointerdown', this.handleIndexPointer);
     this.indexRail.removeEventListener('pointermove', this.handleIndexPointer);
+    this.indexRail.removeEventListener('pointerup', this.handleIndexPointerEnd);
+    this.indexRail.removeEventListener(
+      'pointercancel',
+      this.handleIndexPointerEnd
+    );
     this.indexRail.removeEventListener('click', this.handleIndexClick);
-    this.viewport.removeEventListener('pointerdown', this.handlePullStart);
-    this.viewport.removeEventListener('pointermove', this.handlePullMove);
-    this.viewport.removeEventListener('pointerup', this.handlePullEnd);
-    this.viewport.removeEventListener('pointercancel', this.handlePullEnd);
+    this.pullTarget.removeEventListener('pointerdown', this.handlePullStart);
+    this.pullTarget.removeEventListener('pointermove', this.handlePullMove);
+    this.pullTarget.removeEventListener('pointerup', this.handlePullEnd);
+    this.pullTarget.removeEventListener('pointercancel', this.handlePullEnd);
     const host = this.root.parentElement;
     disposeWebImageRetries(this.root);
-    this.pool.forEach(disposeWebImageRetries);
+    Object.values(this.pool).forEach((elements) =>
+      elements.forEach(disposeWebImageRetries)
+    );
     this.root.remove();
+    this.indexRail.remove();
     this.hideReorderPreview();
     this.reorderPreview.remove();
     if (host) host.style.position = this.previousHostPosition;
     this.mounted.clear();
-    this.pool.length = 0;
+    Object.values(this.pool).forEach((elements) => {
+      elements.length = 0;
+    });
     this.avatarLeases.forEach((release) => release());
     this.avatarLeases.clear();
   }
@@ -3230,8 +3288,15 @@ export class NativeListWebEngine {
     snapshot: NativeListSnapshot,
     selectedKeys?: ReadonlySet<string>
   ) {
-    this.measuredWarningHeights.clear();
+    this.cancelMarketPointer();
+    this.pressedHelpElement = undefined;
+    this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
+    setData(
+      this.root,
+      'nativeListReorderActivation',
+      snapshot.capabilities?.reorderActivation
+    );
     this.rows = effectiveRows(snapshot);
     this.selectedKeys =
       selectedKeys ?? selectionStateFromSnapshot(snapshot).selectedKeys;
@@ -3250,8 +3315,11 @@ export class NativeListWebEngine {
       '--nl-row': theme.rowBackground,
       '--nl-selected': theme.rowSelectedBackground,
       '--nl-pressed': theme.rowPressedBackground,
+      '--nl-hover': theme.rowHoverBackground ?? theme.rowPressedBackground,
       '--nl-subdued': theme.subduedBackground,
       '--nl-strong': theme.strongBackground,
+      '--nl-image-fallback-background':
+        theme.imageFallbackBackground ?? 'transparent',
       '--nl-primary': theme.primaryText,
       '--nl-secondary': theme.secondaryText,
       '--nl-disabled': theme.disabledText,
@@ -3265,54 +3333,195 @@ export class NativeListWebEngine {
       '--nl-separator': theme.separator,
       '--nl-accent': theme.accent,
       '--nl-positive': theme.positive,
+      '--nl-success-background': theme.successBackground,
       '--nl-negative': theme.negative,
       '--nl-critical': theme.criticalBackground,
       '--nl-inverse': theme.inverseBackground,
       '--nl-inverse-text': theme.inverseText,
       '--nl-info': theme.info,
+      '--nl-media-shine': isDarkBackground(theme.background)
+        ? 'rgba(255,255,255,0.07)'
+        : 'rgba(255,255,255,0.75)',
     };
     Object.entries(values).forEach(([name, value]) => {
       if (!value) return;
       this.root.style.setProperty(name, value);
+      this.indexRail.style.setProperty(name, value);
       this.reorderPreview.style.setProperty(name, value);
     });
+    this.applyListStyle();
+  }
+
+  /**
+   * List chrome from `snapshot.listStyle`. Every value is absent by default and
+   * the stylesheet carries today's number as the fallback, so an untouched list
+   * renders exactly as before. See docs/STYLE_SPEC.md §5.
+   */
+  private applyListStyle() {
+    const listStyle = this.snapshot.listStyle;
+    const inset = listStyle?.separator?.inset;
+    setData(this.root, 'separatorInset', inset !== undefined && inset > 0);
+    const chrome: Readonly<Record<string, string | undefined>> = {
+      '--nl-separator-inset':
+        inset === undefined ? undefined : String(inset) + 'px',
+      '--nl-separator-color': listStyle?.separator?.color,
+      '--nl-group-radius':
+        listStyle?.groupCornerRadius === undefined
+          ? undefined
+          : String(listStyle.groupCornerRadius) + 'px',
+    };
+    Object.entries(chrome).forEach(([name, value]) => {
+      if (value === undefined) this.root.style.removeProperty(name);
+      else this.root.style.setProperty(name, value);
+    });
+  }
+
+  private computeLayout(
+    viewportWidth: number,
+    viewportHeight: number
+  ): WebListLayout {
+    const measuredSnapshot: NativeListSnapshot = {
+      ...this.snapshot,
+      rows: this.snapshot.rows.map((row) =>
+        row.style?.container?.height === undefined &&
+        row.height === undefined &&
+        this.measuredRendererHeights.get(row.key)?.signature ===
+          webRowRenderSignature(row)
+          ? {
+              ...row,
+              height: this.measuredRendererHeights.get(row.key)!.height,
+            }
+          : row
+      ),
+    };
+    let layout = computeWebListLayout(
+      measuredSnapshot,
+      viewportWidth,
+      viewportHeight,
+      this.reorderCompactKey
+    );
+    if (this.externalScrollHost) {
+      const padding = paddingValues(this.snapshot);
+      layout = {
+        ...layout,
+        contentHeight:
+          Math.max(
+            padding.top,
+            ...layout.items.map((item) => item.y + item.height)
+          ) + padding.bottom,
+      };
+    }
+    return layout;
+  }
+
+  private writeExternalHeight(height: number) {
+    const value = String(height) + 'px';
+    this.content.style.height = value;
+    this.viewport.style.height = value;
+    this.viewportFrame.style.height = value;
+    this.root.style.height = value;
   }
 
   private recomputeLayout = () => {
     if (this.destroyed) return;
+    if (
+      this.structuralPrefixTransition &&
+      this.lastViewportWidth > 0 &&
+      this.viewport.clientWidth > 0 &&
+      this.viewport.clientWidth !== this.lastViewportWidth
+    )
+      this.cancelStructuralAnimation();
+    if (this.structuralRenderedHeight === undefined)
+      this.reactFooterHeight = this.readReactFooterHeight();
+    else {
+      const nextFooterHeight = this.readReactFooterHeight();
+      const footerDelta = this.reactFooterHeight - nextFooterHeight;
+      if (footerDelta !== 0) {
+        this.reactFooterHeight = nextFooterHeight;
+        const priorCompensation = this.structuralFooterCompensation;
+        const difference = this.structuralFooterFromHeight - nextFooterHeight;
+        this.structuralFooterCompensation = Math.max(0, difference);
+        this.structuralFooterExpansion = Math.max(0, -difference);
+        this.structuralRenderedHeight +=
+          (this.structuralFooterCompensation - priorCompensation) *
+          (1 - this.structuralProgress);
+        this.applyStructuralFooterVisual(this.structuralProgress);
+      }
+    }
+    const cachedWidth = this.lastViewportWidth;
+    const cachedHeight = this.lastViewportHeight;
+    const precomputedLayout =
+      this.externalScrollHost && cachedWidth > 0 && cachedHeight > 0
+        ? this.computeLayout(cachedWidth, cachedHeight)
+        : undefined;
+    if (precomputedLayout && this.structuralRenderedHeight === undefined) {
+      // Commit appended row extent before measuring React-owned slot changes.
+      this.writeExternalHeight(
+        Math.max(this.layout.contentHeight, precomputedLayout.contentHeight)
+      );
+    }
+    this.externalGeometryCache = undefined;
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      const previousOrigin = this.externalOrigin;
+      this.externalOrigin = geometry.origin;
+      if (
+        previousOrigin !== undefined &&
+        geometry.origin !== previousOrigin &&
+        this.externalScrollHost.scrollTop > previousOrigin &&
+        geometry.visible
+      )
+        this.externalScrollHost.scrollTop += geometry.origin - previousOrigin;
+    }
     const viewportWidth = this.viewport.clientWidth;
-    const viewportHeight = this.viewport.clientHeight;
+    const viewportHeight =
+      this.snapshot.layout.orientation === 'horizontal'
+        ? this.viewport.clientHeight
+        : this.verticalScrollMetrics().viewportLength;
+    const stickyInset =
+      this.snapshot.layout.orientation === 'horizontal'
+        ? 0
+        : this.collapsiblePagerInsets().sticky;
+    if (this.snapshot.layout.orientation !== 'horizontal') {
+      this.sticky.style.top = String(stickyInset) + 'px';
+      this.refreshIndicator.style.top = String(stickyInset + 8) + 'px';
+    } else {
+      this.sticky.style.top = '0px';
+      this.refreshIndicator.style.top = '8px';
+    }
     if (
       this.lastViewportWidth >= 0 &&
       (viewportWidth !== this.lastViewportWidth ||
         viewportHeight !== this.lastViewportHeight)
     ) {
       this.invalidateActionAnchor('layout');
-      this.measuredWarningHeights.clear();
+      this.measuredRendererHeights.clear();
     }
     this.lastViewportWidth = viewportWidth;
     this.lastViewportHeight = viewportHeight;
     const previousHorizontal = this.layout.horizontal;
-    const measuredSnapshot: NativeListSnapshot = {
-      ...this.snapshot,
-      rows: this.snapshot.rows.map((row) =>
-        row.type === 'system' &&
-        row.variant === 'warning' &&
-        row.height === undefined &&
-        this.measuredWarningHeights.has(row.key)
-          ? { ...row, height: this.measuredWarningHeights.get(row.key) }
-          : row
-      ),
-    };
-    this.layout = computeWebListLayout(
-      measuredSnapshot,
-      viewportWidth,
-      viewportHeight,
-      this.reorderCompactKey
-    );
+    this.layout =
+      precomputedLayout &&
+      viewportWidth === cachedWidth &&
+      viewportHeight === cachedHeight
+        ? precomputedLayout
+        : this.computeLayout(viewportWidth, viewportHeight);
     this.content.style.width = String(this.layout.contentWidth) + 'px';
-    this.content.style.height = String(this.layout.contentHeight) + 'px';
-    this.renderSectionIndex(viewportHeight || DEFAULT_VIEWPORT_HEIGHT);
+    const renderedHeight =
+      this.structuralRenderedHeight ?? this.layout.contentHeight;
+    this.content.style.height = String(renderedHeight) + 'px';
+    if (this.externalScrollHost) {
+      this.writeExternalHeight(renderedHeight);
+      this.externalGeometryCache = undefined;
+    }
+    if (this.structuralRenderedHeight !== undefined)
+      this.structuralTargetHeight = this.layout.contentHeight;
+    this.renderSectionIndex(
+      this.viewport.clientHeight <= 0
+        ? DEFAULT_VIEWPORT_HEIGHT
+        : Math.max(1, viewportHeight),
+      stickyInset
+    );
     if (previousHorizontal !== this.layout.horizontal) {
       this.viewport.scrollLeft = 0;
       this.viewport.scrollTop = 0;
@@ -3322,6 +3531,11 @@ export class NativeListWebEngine {
   };
 
   private updateAvatarWindow() {
+    if (this.externalScrollHost && !this.externalGeometry().visible) {
+      this.avatarLeases.forEach((lease) => lease());
+      this.avatarLeases.clear();
+      return;
+    }
     const offset = this.currentOffset();
     if (offset !== this.avatarOffset)
       this.avatarDirection = Math.sign(offset - this.avatarOffset);
@@ -3378,22 +3592,34 @@ export class NativeListWebEngine {
   private renderWindow() {
     this.updateAvatarWindow();
     const viewportLength = this.viewportLength();
-    const visible = webLayoutItemsForMount(
-      this.layout,
-      this.currentOffset(),
-      viewportLength,
-      this.virtualizationEnabled,
-      viewportLength * OVERSCAN_VIEWPORTS
-    );
+    const visible =
+      this.externalScrollHost && !this.externalGeometry().visible
+        ? []
+        : webLayoutItemsForMount(
+            this.layout,
+            this.currentOffset(),
+            viewportLength,
+            this.virtualizationEnabled,
+            viewportLength * OVERSCAN_VIEWPORTS
+          );
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
-      if (!desired.has(index)) {
+      const nextRow = this.rows[index];
+      const rendererKey = this.rendererKeys.get(element);
+      if (
+        !desired.has(index) ||
+        !nextRow ||
+        rendererKey !== rowRendererKey(nextRow)
+      ) {
         this.invalidateActionAnchorForElement(element);
         this.mounted.delete(index);
-        if (disposeWebImageRetries(element))
+        const recycled = element.firstElementChild
+          ? recycleRowBody(element.firstElementChild as HTMLElement)
+          : false;
+        if (disposeWebImageRetries(element) || recycled)
           element.removeAttribute('data-render-signature');
         element.remove();
-        this.pool.push(element);
+        if (rendererKey) this.pool[rendererKey].push(element);
       }
     });
 
@@ -3402,14 +3628,17 @@ export class NativeListWebEngine {
       if (!row) return;
       let element = this.mounted.get(layoutItem.index);
       if (!element) {
+        const rendererKey = rowRendererKey(row);
         element =
-          this.pool.pop() ??
+          this.pool[rendererKey].pop() ??
           createElement(this.document, 'div', 'ok-native-list-item');
+        this.rendererKeys.set(element, rendererKey);
         setData(element, 'nativeListAnimateReorder', false);
         this.mounted.set(layoutItem.index, element);
         this.content.appendChild(element);
       }
       this.positionElement(element, layoutItem);
+      setData(element, 'nativeListReorderable', this.isReorderable(row));
       const signature = webRowRenderSignature(row);
       if (
         element.dataset.nativeListRowKey !== row.key ||
@@ -3419,29 +3648,36 @@ export class NativeListWebEngine {
         element.dataset.renderSignature = signature;
       }
     });
-    let measuredWarningChanged = false;
+    let measuredHeightChanged = false;
     this.mounted.forEach((element, index) => {
       const row = this.rows[index];
-      if (
-        row?.type !== 'system' ||
-        row.variant !== 'warning' ||
-        row.height !== undefined
-      )
+      const registered = row && rowRenderer(row);
+      if (registered && element.firstElementChild) {
+        const height = registered.measureRendered(
+          element.firstElementChild as HTMLElement
+        );
+        if (
+          height !== undefined &&
+          (height !== this.measuredRendererHeights.get(row.key)?.height ||
+            webRowRenderSignature(row) !==
+              this.measuredRendererHeights.get(row.key)?.signature)
+        ) {
+          this.measuredRendererHeights.set(row.key, {
+            signature: webRowRenderSignature(row),
+            height,
+          });
+          measuredHeightChanged = true;
+        }
         return;
-      const height =
-        element.querySelector<HTMLElement>('.ok-native-list-warning')
-          ?.offsetHeight ?? 0;
-      if (height > 0 && height !== this.measuredWarningHeights.get(row.key)) {
-        this.measuredWarningHeights.set(row.key, height);
-        measuredWarningChanged = true;
       }
     });
-    if (measuredWarningChanged) {
+    if (measuredHeightChanged) {
       this.recomputeLayout();
       return;
     }
     this.updateVisibleSelection();
     this.updateVisibleState();
+    this.updateStructuralTailWindow();
   }
 
   private positionElement(element: HTMLElement, item: WebLayoutItem) {
@@ -3458,18 +3694,33 @@ export class NativeListWebEngine {
     overlay = false
   ) {
     this.invalidateActionAnchorForElement(element);
-    disposeWebImageRetries(element);
+    const registered = rowRenderer(row);
+    const existingBody = element.firstElementChild as HTMLElement | null;
+    const reusableBody =
+      existingBody?.dataset.nlRenderer === registered.key
+        ? existingBody
+        : undefined;
+    if (!reusableBody) disposeWebImageRetries(element);
     const bindingEpoch = String(++this.bindingEpochCounter);
     element.className = overlay
       ? 'ok-native-list-item ok-native-list-sticky'
       : 'ok-native-list-item';
     setData(element, 'nativeListRowKey', row.key);
+    setData(
+      element,
+      'nativeListMediaGallery',
+      row.type === 'mediaTile' && row.variant === 'gallery' ? 'true' : undefined
+    );
     setData(element, 'nativeListBindingEpoch', bindingEpoch);
     setData(element, 'nativeListRowIndex', index);
     setData(element, 'nativeListDisabled', Boolean(row.disabled));
+    setData(element, 'nativeListRowPressEnabled', isRowPressEnabled(row));
     setData(element, 'testid', row.testID);
     // OneKey patch: deprecation dims a row without disabling its actions.
-    element.style.opacity = String(row.opacity ?? 1);
+    element.style.opacity = String(
+      (row.style?.container?.opacity ?? row.opacity ?? 1) *
+        (row.disabled ? 0.5 : 1)
+    );
     setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
@@ -3490,7 +3741,7 @@ export class NativeListWebEngine {
       'aria-label',
       row.accessibilityLabel ?? this.rowLabel(row)
     );
-    if (!row.disabled && !(row.type === 'system' && row.variant === 'spacer')) {
+    if (isRowPressEnabled(row)) {
       element.tabIndex = 0;
     } else {
       element.removeAttribute('tabindex');
@@ -3502,84 +3753,43 @@ export class NativeListWebEngine {
       selectedKeys: this.selectedKeys,
       itemIndex: index,
     };
-    const body = createRowBody(context, row);
-    applySelectorTabularNumbers(body, row);
+    const body = reusableBody ?? createRowBody(context, row);
+    if (reusableBody) {
+      resetRowContainerStyle(body);
+      registered.bind(body, rendererPrimitives(context, Boolean(row.disabled)));
+    }
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
-    if (row.backgroundFullWidth && row.backgroundColor) {
+    const restingBackground =
+      row.style?.container?.backgroundColor ?? row.backgroundColor;
+    if (row.backgroundFullWidth && restingBackground) {
       const bleed = paddingValues(this.snapshot).horizontal;
       body.style.position = 'relative';
       body.style.overflow = 'visible';
       body.style.boxShadow =
         String(-bleed) +
         'px 0 ' +
-        row.backgroundColor +
+        restingBackground +
         ',' +
         String(bleed) +
         'px 0 ' +
-        row.backgroundColor;
+        restingBackground;
     }
-    if (row.type === 'identity' && row.height !== undefined) {
-      const title = body.querySelector<HTMLElement>('.ok-native-list-title');
-      if (row.presentation === 'accountSelector') {
-        body.style.gap = '12px';
-        body.style.borderRadius = '12px';
-        if ('shape' in row.leading && row.leading.shape === 'rounded') {
-          const visual = body.querySelector<HTMLElement>(
-            '.ok-native-list-visual'
-          );
-          if (visual) visual.style.borderRadius = '8px';
-        }
-        if (title) title.style.lineHeight = '24px';
-      }
-      if (row.presentation === 'networkSelector') {
-        body.style.borderRadius = '12px';
-        const visual = body.querySelector<HTMLElement>(
-          '.ok-native-list-visual'
-        );
-        if (visual) {
-          visual.style.width = '32px';
-          visual.style.height = '32px';
-          visual.style.flexBasis = '32px';
-        }
-        if (
-          row.leading.kind === 'network' &&
-          !row.leading.image &&
-          !row.leading.fallbackIcon &&
-          row.leading.fallbackText
-        ) {
-          const fallback = visual?.querySelector<HTMLElement>(
-            '.ok-native-list-visual-fallback'
-          );
-          if (fallback) {
-            fallback.style.fontSize = '19px';
-            fallback.style.lineHeight = '27px';
-            fallback.style.fontWeight = '600';
-            fallback.style.color = 'var(--nl-inverse-text)';
-          }
-        }
-        visual
-          ?.querySelectorAll<HTMLElement>('.ok-native-list-visual-main')
-          .forEach((image) => {
-            image.style.width = '32px';
-            image.style.height = '32px';
-          });
-        if (title) {
-          title.style.fontSize = '16px';
-          title.style.lineHeight = '24px';
-          title.style.fontWeight = '500';
-        }
-        body
-          .querySelectorAll<HTMLElement>('.ok-native-list-accessory')
-          .forEach((value) => {
-            value.style.fontSize = '16px';
-            value.style.lineHeight = '24px';
-            value.style.fontWeight = '500';
-          });
-      }
+    // Template and presentation defaults must precede caller overrides.
+    applyRowStyle(body, row);
+    if (body.parentElement !== element) element.replaceChildren(body);
+    if (
+      row.type === 'market' &&
+      row.diagnostics?.imageBindActionKey &&
+      body.querySelector('img')
+    ) {
+      this.callbacks.onRowAction?.({
+        rowKey: row.key,
+        actionKey: row.diagnostics.imageBindActionKey,
+        sectionKey: row.sectionKey,
+      });
     }
-    element.replaceChildren(body);
   }
 
   private renderFooter() {
@@ -3609,17 +3819,15 @@ export class NativeListWebEngine {
   ): readonly number[] {
     const entryCount = this.sectionIndexEntries.length;
     if (entryCount <= 1) return entryCount ? [0] : [];
-    const availableHeight = Math.max(
-      0,
-      viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
-    );
+    const { trackHeight } = this.sectionIndexMetrics(viewportHeight);
     const maxVisible = Math.max(
-      2,
-      Math.floor(availableHeight / SECTION_INDEX_MIN_LABEL_SPACING) + 1
+      1,
+      Math.floor(trackHeight / SECTION_INDEX_MIN_LABEL_SPACING)
     );
     if (entryCount <= maxVisible) {
       return Array.from({ length: entryCount }, (_, index) => index);
     }
+    if (maxVisible === 1) return [0];
     const result = new Set<number>();
     for (let slot = 0; slot < maxVisible; slot += 1) {
       result.add(Math.round((slot * (entryCount - 1)) / (maxVisible - 1)));
@@ -3627,10 +3835,194 @@ export class NativeListWebEngine {
     return [...result].sort((left, right) => left - right);
   }
 
-  private renderSectionIndex(viewportHeight: number) {
+  private sectionIndexMetrics(viewportHeight: number) {
+    return webSectionIndexMetrics(
+      this.sectionIndexEntries.length,
+      viewportHeight,
+      this.sectionIndexAlignStart
+    );
+  }
+
+  private configureSectionIndexRail(
+    viewportHeight: number,
+    stickyInset: number,
+    windowCentered: boolean
+  ): number {
+    const view = this.document.defaultView;
+    const direction =
+      view?.getComputedStyle(this.viewportFrame).direction === 'rtl'
+        ? 'rtl'
+        : 'ltr';
+    this.indexRail.style.direction = direction;
+    if (!windowCentered) {
+      this.sectionIndexAlignStart = false;
+      this.resetSectionIndexTransformCompensation();
+      if (this.indexRail.parentElement !== this.viewportFrame) {
+        this.viewportFrame.appendChild(this.indexRail);
+      }
+      this.indexRail.style.removeProperty('position');
+      this.indexRail.style.removeProperty('left');
+      this.indexRail.style.removeProperty('right');
+      this.indexRail.style.removeProperty('height');
+      this.indexRail.style.removeProperty('z-index');
+      this.indexRail.style.insetInlineEnd = '0px';
+      this.indexRail.style.top = String(stickyInset) + 'px';
+      this.indexRail.style.bottom = '0px';
+      return viewportHeight;
+    }
+
+    if (!view) return viewportHeight;
+    const sectionIndexContainer = this.sectionIndexContainer?.isConnected
+      ? this.sectionIndexContainer
+      : undefined;
+    const frame = this.viewportFrame.getBoundingClientRect();
+    if (sectionIndexContainer) {
+      const container = sectionIndexContainer.getBoundingClientRect();
+      const railLayout = webSectionIndexContainerLayout(
+        this.sectionIndexEntries.length,
+        sectionIndexContainer.clientHeight || container.height
+      );
+      if (this.indexRail.parentElement !== sectionIndexContainer) {
+        sectionIndexContainer.appendChild(this.indexRail);
+      }
+      this.sectionIndexAlignStart = true;
+      this.indexRail.style.position = 'absolute';
+      this.indexRail.style.removeProperty('left');
+      this.indexRail.style.removeProperty('right');
+      this.indexRail.style.insetInlineEnd =
+        String(
+          Math.max(
+            0,
+            direction === 'rtl'
+              ? frame.left - container.left
+              : container.right - frame.right
+          )
+        ) + 'px';
+      this.indexRail.style.top = String(railLayout.top) + 'px';
+      this.indexRail.style.bottom = 'auto';
+      this.indexRail.style.height = String(railLayout.height) + 'px';
+      this.indexRail.style.zIndex = String(SECTION_INDEX_WINDOW_Z_INDEX);
+      this.startSectionIndexTransformCompensation();
+      return railLayout.height;
+    }
+
+    this.sectionIndexAlignStart = false;
+    this.resetSectionIndexTransformCompensation();
+    const visualViewport = view.visualViewport;
+    const windowTop = visualViewport?.offsetTop ?? 0;
+    const windowHeight = visualViewport?.height ?? view.innerHeight;
+    const railHeight = Math.min(
+      windowHeight,
+      SECTION_INDEX_EDGE_PADDING * 2 +
+        SECTION_INDEX_MIN_LABEL_SPACING * this.sectionIndexEntries.length
+    );
+    if (this.indexRail.parentElement !== this.document.body) {
+      this.document.body.appendChild(this.indexRail);
+    }
+    this.indexRail.style.position = 'fixed';
+    this.indexRail.style.removeProperty('left');
+    this.indexRail.style.removeProperty('right');
+    this.indexRail.style.insetInlineEnd =
+      String(
+        Math.max(
+          0,
+          direction === 'rtl' ? frame.left : view.innerWidth - frame.right
+        )
+      ) + 'px';
+    this.indexRail.style.top =
+      String(windowTop + (windowHeight - railHeight) / 2) + 'px';
+    this.indexRail.style.bottom = 'auto';
+    this.indexRail.style.height = String(railHeight) + 'px';
+    this.indexRail.style.zIndex = String(SECTION_INDEX_WINDOW_Z_INDEX);
+    return railHeight;
+  }
+
+  private observeSectionIndexTransforms() {
+    const container = this.sectionIndexContainer;
+    const MutationObserverConstructor =
+      this.document.defaultView?.MutationObserver;
+    if (!container || !MutationObserverConstructor) return;
+    this.sectionIndexTransformObserver = new MutationObserverConstructor(() =>
+      this.startSectionIndexTransformCompensation()
+    );
+    let element: HTMLElement | null = container;
+    while (element) {
+      this.sectionIndexTransformObserver.observe(element, {
+        attributes: true,
+        attributeFilter: ['style'],
+      });
+      if (element === this.document.body) break;
+      element = element.parentElement;
+    }
+  }
+
+  private startSectionIndexTransformCompensation() {
+    this.sectionIndexTransformTrackingFrames = 0;
+    this.sectionIndexTransformSettledFrames = 0;
+    this.updateSectionIndexTransformCompensation();
+    this.scheduleSectionIndexTransformCompensation();
+  }
+
+  private scheduleSectionIndexTransformCompensation() {
+    if (
+      this.destroyed ||
+      this.sectionIndexTransformFrame !== undefined ||
+      this.indexRail.parentElement !== this.sectionIndexContainer
+    ) {
+      return;
+    }
+    this.sectionIndexTransformFrame = this.requestFrame(() => {
+      this.sectionIndexTransformFrame = undefined;
+      const settled = this.updateSectionIndexTransformCompensation();
+      this.sectionIndexTransformTrackingFrames += 1;
+      this.sectionIndexTransformSettledFrames = settled
+        ? this.sectionIndexTransformSettledFrames + 1
+        : 0;
+      if (
+        this.sectionIndexTransformTrackingFrames <
+          SECTION_INDEX_TRANSFORM_MAX_TRACKING_FRAMES &&
+        (this.sectionIndexTransformTrackingFrames <
+          SECTION_INDEX_TRANSFORM_MIN_TRACKING_FRAMES ||
+          this.sectionIndexTransformSettledFrames <
+            SECTION_INDEX_TRANSFORM_SETTLED_FRAMES)
+      ) {
+        this.scheduleSectionIndexTransformCompensation();
+      }
+    });
+  }
+
+  private updateSectionIndexTransformCompensation() {
+    const container = this.sectionIndexContainer;
+    if (!container || this.indexRail.parentElement !== container) return true;
+    const inverseScale = webSectionIndexInverseScale(
+      container.clientHeight,
+      container.getBoundingClientRect().height
+    );
+    this.indexRail.style.transformOrigin = 'center center';
+    this.indexRail.style.transform =
+      Math.abs(inverseScale - 1) < SECTION_INDEX_TRANSFORM_SETTLED_EPSILON
+        ? 'none'
+        : `scale(${String(inverseScale)})`;
+    return Math.abs(inverseScale - 1) < SECTION_INDEX_TRANSFORM_SETTLED_EPSILON;
+  }
+
+  private resetSectionIndexTransformCompensation() {
+    if (this.sectionIndexTransformFrame !== undefined) {
+      this.cancelFrame(this.sectionIndexTransformFrame);
+      this.sectionIndexTransformFrame = undefined;
+    }
+    this.sectionIndexTransformTrackingFrames = 0;
+    this.sectionIndexTransformSettledFrames = 0;
+    this.indexRail.style.removeProperty('transform');
+    this.indexRail.style.removeProperty('transform-origin');
+  }
+
+  private renderSectionIndex(viewportHeight: number, stickyInset: number) {
     this.indexRail.replaceChildren();
     if (!sectionIndexEnabled(this.snapshot)) {
       this.sectionIndexEntries = [];
+      this.configureSectionIndexRail(viewportHeight, stickyInset, false);
+      setData(this.viewportFrame, 'sectionIndexVisible', false);
       this.indexRail.hidden = true;
       return;
     }
@@ -3643,18 +4035,40 @@ export class NativeListWebEngine {
       this.sectionIndexEntries.length === 0 ||
       viewportHeight < SECTION_INDEX_MIN_HEIGHT
     ) {
+      this.configureSectionIndexRail(viewportHeight, stickyInset, false);
+      setData(this.viewportFrame, 'sectionIndexVisible', false);
       this.indexRail.hidden = true;
       return;
     }
+    const windowCentered =
+      this.snapshot.capabilities?.sectionIndex?.centeredInWindow === true &&
+      this.viewport.clientHeight > 0;
+    const indexLayoutHeight = this.configureSectionIndexRail(
+      viewportHeight,
+      stickyInset,
+      windowCentered
+    );
     const visibleEntryIndices =
-      this.sectionIndexVisibleEntryIndices(viewportHeight);
+      this.sectionIndexVisibleEntryIndices(indexLayoutHeight);
     setData(
       this.indexRail,
       'compact',
       visibleEntryIndices.length < this.sectionIndexEntries.length
     );
+    const metrics = this.sectionIndexMetrics(indexLayoutHeight);
+    const visibleTrackHeight = Math.min(
+      metrics.trackHeight,
+      SECTION_INDEX_MIN_LABEL_SPACING * visibleEntryIndices.length
+    );
+    const allEntriesVisible =
+      visibleEntryIndices.length === this.sectionIndexEntries.length;
+    const resolvedVisibleTrackHeight = allEntriesVisible
+      ? metrics.trackHeight
+      : visibleTrackHeight;
+    const visibleOriginY =
+      metrics.originY + (metrics.trackHeight - resolvedVisibleTrackHeight) / 2;
     const fragment = this.document.createDocumentFragment();
-    visibleEntryIndices.forEach((entryIndex) => {
+    visibleEntryIndices.forEach((entryIndex, visibleIndex) => {
       const entry = this.sectionIndexEntries[entryIndex];
       if (!entry) return;
       const button = createElement(
@@ -3668,19 +4082,17 @@ export class NativeListWebEngine {
       setData(button, 'sectionEntryIndex', entryIndex);
       setData(button, 'sectionPosition', entry.position);
       setData(button, 'sectionKey', entry.key);
-      const progress =
-        this.sectionIndexEntries.length === 1
-          ? 0.5
-          : entryIndex / (this.sectionIndexEntries.length - 1);
       button.style.top =
         String(
-          SECTION_INDEX_EDGE_PADDING +
-            progress * (viewportHeight - SECTION_INDEX_EDGE_PADDING * 2)
+          visibleOriginY +
+            (resolvedVisibleTrackHeight * (visibleIndex + 0.5)) /
+              visibleEntryIndices.length
         ) + 'px';
       fragment.appendChild(button);
     });
     this.indexRail.appendChild(fragment);
     this.indexRail.hidden = this.indexRail.childElementCount === 0;
+    setData(this.viewportFrame, 'sectionIndexVisible', !this.indexRail.hidden);
   }
 
   private updateVisibleSelection() {
@@ -3723,11 +4135,14 @@ export class NativeListWebEngine {
   }
 
   private updateVisibleState() {
-    const visible = visibleWebLayoutItems(
-      this.layout,
-      this.currentOffset(),
-      this.viewportLength()
-    );
+    const visible =
+      this.externalScrollHost && !this.externalGeometry().visible
+        ? []
+        : visibleWebLayoutItems(
+            this.layout,
+            this.currentOffset(),
+            this.viewportLength()
+          );
     const first = visible[0];
     const last = visible.at(-1);
     const signature =
@@ -3797,6 +4212,8 @@ export class NativeListWebEngine {
     this.sticky.style.right = 'auto';
     this.sticky.style.width = String(item.width) + 'px';
     this.sticky.style.height = String(item.height) + 'px';
+    if (this.externalScrollHost)
+      this.sticky.style.top = String(Math.max(0, this.currentOffset())) + 'px';
     let nextIndex = -1;
     for (let cursor = index + 1; cursor < this.rows.length; cursor += 1) {
       const candidate = this.rows[cursor];
@@ -3811,7 +4228,7 @@ export class NativeListWebEngine {
     }
     const next = this.layout.items[nextIndex];
     const translate = next
-      ? Math.min(0, next.y - this.viewport.scrollTop - item.height)
+      ? Math.min(0, next.y - this.currentOffset() - item.height)
       : 0;
     this.sticky.style.transform =
       'translate3d(0,' + String(translate) + 'px,0)';
@@ -3820,19 +4237,12 @@ export class NativeListWebEngine {
 
   // private updateSectionIndex(firstVisibleIndex: number) {
   private updateSectionIndex() {
-    let activeKey: string | undefined;
-    this.snapshot.rows.forEach((row, index) => {
-      if (
-        // OneKey patch: a spacer ending exactly at the viewport is not the active section.
-        // index <= firstVisibleIndex &&
-        itemStart(this.layout.items[index], this.layout.horizontal) <=
-          this.currentOffset() &&
-        row.type === 'sectionHeader' &&
-        row.sticky !== false &&
-        row.indexTitle
-      )
-        activeKey = row.key;
-    });
+    const activeKey = webSectionIndexActiveKey(
+      this.snapshot.rows,
+      this.layout,
+      this.currentOffset(),
+      this.viewportLength()
+    );
     this.indexRail
       .querySelectorAll<HTMLElement>('[data-section-key]')
       .forEach((button) =>
@@ -3842,6 +4252,7 @@ export class NativeListWebEngine {
 
   private checkEndReached(lastVisibleIndex: number) {
     if (
+      (this.externalScrollHost && !this.externalGeometry().visible) ||
       !this.snapshot.capabilities?.loadMore ||
       this.reachedGeneration === this.snapshot.generation ||
       this.rows.length === 0
@@ -3880,6 +4291,11 @@ export class NativeListWebEngine {
   }
 
   private canScroll(): boolean {
+    if (this.externalScrollHost)
+      return (
+        this.viewport.clientWidth > 0 &&
+        this.externalScrollHost.clientHeight > 0
+      );
     const viewportLength = this.layout.horizontal
       ? this.viewport.clientWidth
       : this.viewport.clientHeight;
@@ -3887,12 +4303,22 @@ export class NativeListWebEngine {
   }
 
   private viewportLength(): number {
-    return this.layout.horizontal
-      ? this.viewport.clientWidth || DEFAULT_VIEWPORT_WIDTH
-      : this.viewport.clientHeight || DEFAULT_VIEWPORT_HEIGHT;
+    if (this.layout.horizontal) {
+      return this.viewport.clientWidth || DEFAULT_VIEWPORT_WIDTH;
+    }
+    if (this.externalScrollHost) return this.externalGeometry().viewportLength;
+    if (this.viewport.clientHeight <= 0) return DEFAULT_VIEWPORT_HEIGHT;
+    return Math.max(1, this.verticalScrollMetrics().viewportLength);
   }
 
   private contentLength(): number {
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      return Math.max(
+        this.layout.contentHeight,
+        geometry.end - geometry.origin
+      );
+    }
     return this.layout.horizontal
       ? this.layout.contentWidth
       : this.layout.contentHeight;
@@ -3901,18 +4327,81 @@ export class NativeListWebEngine {
   private currentOffset(): number {
     return this.layout.horizontal
       ? this.viewport.scrollLeft
-      : this.viewport.scrollTop;
+      : this.verticalScrollMetrics().offset;
+  }
+
+  private collapsiblePagerInsets(): Readonly<{
+    header: number;
+    sticky: number;
+  }> {
+    if (this.externalScrollHost)
+      return { header: 0, sticky: this.externalStickyInset };
+    const readInset = (name: string) => {
+      const parsed = Number.parseFloat(
+        this.viewport.style.getPropertyValue(name)
+      );
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    };
+    return {
+      header: readInset('--ok-collapsible-pager-header-inset'),
+      sticky: readInset('--ok-collapsible-pager-sticky-inset'),
+    };
+  }
+
+  private verticalScrollMetrics(): WebCollapsiblePagerScrollMetrics {
+    if (this.externalScrollHost) return this.externalGeometry();
+    const insets = this.collapsiblePagerInsets();
+    return resolveWebCollapsiblePagerScrollMetrics(
+      this.viewport.scrollTop,
+      this.viewport.clientHeight,
+      insets.header,
+      insets.sticky
+    );
+  }
+
+  private handleCollapsiblePagerInsetsChanged = () => {
+    this.recomputeLayout();
+  };
+
+  private writeExternalOffset(rawOffset: number, animated: boolean) {
+    this.externalGeometryCache = undefined;
+    const host = this.externalScrollHost!;
+    const scrollTo: (options: ScrollToOptions) => void =
+      host.ownerDocument.defaultView?.Element.prototype.scrollTo ??
+      host.scrollTo;
+    scrollTo.call(host, {
+      top: Math.max(
+        0,
+        Math.min(host.scrollHeight - host.clientHeight, rawOffset)
+      ),
+      behavior: animated ? 'smooth' : 'auto',
+    });
+    this.scheduleFrame();
   }
 
   private scrollToAbsoluteOffset(offset: number, animated: boolean) {
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      this.writeExternalOffset(
+        geometry.origin + offset - this.externalStickyInset,
+        animated
+      );
+      return;
+    }
     const resolved = Math.min(
       Math.max(0, offset),
       Math.max(0, this.contentLength() - this.viewportLength())
     );
+    const rawOffset = this.layout.horizontal
+      ? resolved
+      : resolveWebCollapsiblePagerRawOffset(
+          resolved,
+          this.collapsiblePagerInsets().header
+        );
     this.viewport.scrollTo(
       this.layout.horizontal
-        ? { left: resolved, top: 0, behavior: animated ? 'smooth' : 'auto' }
-        : { left: 0, top: resolved, behavior: animated ? 'smooth' : 'auto' }
+        ? { left: rawOffset, top: 0, behavior: animated ? 'smooth' : 'auto' }
+        : { left: 0, top: rawOffset, behavior: animated ? 'smooth' : 'auto' }
     );
     this.scheduleFrame();
   }
@@ -3978,7 +4467,8 @@ export class NativeListWebEngine {
     row: RowModel,
     actionKey: string,
     actionElement?: HTMLElement,
-    rowElement?: HTMLElement
+    rowElement?: HTMLElement,
+    windowPoint?: RowActionEvent['windowPoint']
   ) {
     const anchor =
       actionElement && rowElement
@@ -3989,6 +4479,11 @@ export class NativeListWebEngine {
       actionKey,
       sectionKey: row.sectionKey,
       anchor,
+      ...(windowPoint &&
+      Number.isFinite(windowPoint.x) &&
+      Number.isFinite(windowPoint.y)
+        ? { windowPoint }
+        : {}),
     });
   }
 
@@ -4006,7 +4501,10 @@ export class NativeListWebEngine {
     if (!source || !bindingEpoch || !rowElement.contains(actionElement))
       return undefined;
     this.invalidateActionAnchor('rebind');
-    const actualRect = actionElement.getBoundingClientRect();
+    const glyph = actionElement.querySelector(
+      ':scope > [data-native-list-anchor-glyph]'
+    );
+    const actualRect = (glyph ?? actionElement).getBoundingClientRect();
     const inset = Number(actionElement.dataset.nativeListAnchorInset ?? 0);
     const rect = {
       left: actualRect.left + inset,
@@ -4053,6 +4551,8 @@ export class NativeListWebEngine {
   }
 
   private invalidateActionAnchorForElement(element: HTMLElement) {
+    if (this.pressedHelpElement && element.contains(this.pressedHelpElement))
+      this.pressedHelpElement = undefined;
     const anchor = this.actionAnchor;
     if (
       anchor &&
@@ -4088,7 +4588,7 @@ export class NativeListWebEngine {
   ) {
     // OneKey patch: missing-address rows keep their create-address accessory interactive.
     // if (row.disabled) return;
-    if (row.disabled || row.pressDisabled) return;
+    if (!isRowPressEnabled(row)) return;
     if (
       this.snapshot.selection?.rowPressToggles &&
       this.snapshot.selection.mode !== 'none' &&
@@ -4102,6 +4602,8 @@ export class NativeListWebEngine {
         ? row.actionKey
         : row.type === 'system' && row.variant === 'retry'
         ? row.actionKey
+        : row.type === 'market' && row.pressActionKey
+        ? row.pressActionKey
         : 'press';
     if (rowElement && sourceElement) {
       const anchor = this.createActionAnchor(sourceElement, rowElement, 'row');
@@ -4116,8 +4618,153 @@ export class NativeListWebEngine {
     }
   }
 
+  private cancelMarketPointer() {
+    const state = this.marketPointer;
+    if (!state) return;
+    this.document.defaultView?.clearTimeout(state.timer);
+    this.marketPointer = undefined;
+  }
+
+  private handleMarketContextMenu = (event: MouseEvent) => {
+    if (
+      !(event.target instanceof Element) ||
+      event.target.closest('[data-native-list-action]')
+    )
+      return;
+    const element = event.target.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    const row = this.rowAtElement(element);
+    if (
+      row?.type !== 'market' ||
+      !row.webTable?.contextMenuActionKey ||
+      !element ||
+      !isRowPressEnabled(row)
+    )
+      return;
+    event.preventDefault();
+    this.cancelMarketPointer();
+    markActionAnchorSource(element, 'row');
+    const rect = element.getBoundingClientRect();
+    this.emitRowAction(
+      row,
+      row.webTable.contextMenuActionKey,
+      element,
+      element,
+      event.clientX || event.clientY
+        ? { x: event.clientX, y: event.clientY }
+        : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    );
+  };
+
+  private handleMarketPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return;
+    this.marketLongPressFired = false;
+    if (event.target.closest('[data-native-list-action]')) return;
+    const rowElement = event.target.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    const row = this.rowAtElement(rowElement);
+    if (
+      (row?.type !== 'market' && row?.type !== 'identity') ||
+      !isRowPressEnabled(row)
+    )
+      return;
+    this.cancelMarketPointer();
+    if (row.type === 'market' && row.pressInActionKey)
+      this.emitRowAction(
+        row,
+        row.pressInActionKey,
+        rowElement ?? undefined,
+        rowElement ?? undefined
+      );
+    if (!row.longPressActionKey || !rowElement) return;
+    markActionAnchorSource(rowElement, 'row');
+    const bindingEpoch = rowElement.dataset.nativeListBindingEpoch;
+    const timer = this.document.defaultView?.setTimeout(() => {
+      const current = this.marketPointer;
+      if (!current || current.pointerId !== event.pointerId) return;
+      const currentRow = this.rowAtElement(rowElement);
+      this.marketPointer = undefined;
+      if (
+        !rowElement.isConnected ||
+        rowElement.dataset.nativeListBindingEpoch !== bindingEpoch ||
+        currentRow?.key !== row.key ||
+        (currentRow.type !== 'market' && currentRow.type !== 'identity') ||
+        !isRowPressEnabled(currentRow) ||
+        !currentRow.longPressActionKey
+      )
+        return;
+      this.marketLongPressFired = true;
+      this.emitRowAction(
+        currentRow,
+        currentRow.longPressActionKey,
+        rowElement,
+        rowElement,
+        { x: event.clientX, y: event.clientY }
+      );
+    }, MARKET_LONG_PRESS_MS);
+    if (timer === undefined) return;
+    this.marketPointer = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      compact: row.type === 'identity' || !row.webTable,
+      rowKey: row.key,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer,
+    };
+  };
+
+  private handleMarketPointerMove = (event: PointerEvent) => {
+    const state = this.marketPointer;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (state.compact && state.pointerType === 'touch') return;
+    const row = this.rows.find((item) => item.key === state.rowKey);
+    const threshold =
+      row?.type === 'market' && !row.webTable ? 3 : MARKET_MOVE_CANCEL_PX;
+    if (
+      Math.abs(event.clientX - state.startX) > threshold ||
+      Math.abs(event.clientY - state.startY) > threshold
+    )
+      this.cancelMarketPointer();
+  };
+
+  private handleMarketTouchMove = (event: TouchEvent) => {
+    const state = this.marketPointer;
+    if (
+      !state?.compact ||
+      state.pointerType !== 'touch' ||
+      !(event.target instanceof Element) ||
+      event.target.closest<HTMLElement>('[data-native-list-row-key]')?.dataset
+        .nativeListRowKey !== state.rowKey
+    )
+      return;
+    if (event.touches.length > 1) {
+      this.cancelMarketPointer();
+      return;
+    }
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (
+      !touch ||
+      !Number.isFinite(touch.clientX) ||
+      !Number.isFinite(touch.clientY)
+    )
+      return;
+    if (
+      Math.abs(touch.clientX - state.startX) > 3 ||
+      Math.abs(touch.clientY - state.startY) > 3
+    )
+      this.cancelMarketPointer();
+  };
+
+  private handleMarketPointerEnd = (event: PointerEvent) => {
+    if (this.marketPointer?.pointerId === event.pointerId)
+      this.cancelMarketPointer();
+  };
+
   // OneKey patch: hover opens the same anchored help action as native taps.
-  private handleTitlePointerOver = (event: PointerEvent) => {
+  private handleTitlePointerOver = (event: PointerEvent | FocusEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const action = target.closest<HTMLElement>(
@@ -4129,6 +4776,23 @@ export class NativeListWebEngine {
         action.contains(event.relatedTarget))
     )
       return;
+    if (action.dataset.nativeListIconHelp === 'true') {
+      if (
+        event.type === 'pointerover' &&
+        (event as PointerEvent).pointerType === 'touch'
+      )
+        return;
+      if (this.pressedHelpElement === action) return;
+    }
+    if (
+      action.classList.contains('ok-native-list-market-subtitle-prefix') &&
+      action.scrollWidth <= action.clientWidth + 1
+    )
+      return;
+    this.emitHoverAction(action);
+  };
+
+  private emitHoverAction(action: HTMLElement) {
     const rowElement = action.closest<HTMLElement>(
       '[data-native-list-row-key]'
     );
@@ -4146,11 +4810,31 @@ export class NativeListWebEngine {
       action.dataset.nativeListHoverAction === 'true'
         ? action.dataset.nativeListAction
         : action.dataset.nativeListHoverAction;
+    // Legacy Web: hover checks only the resolved source (the member for a
+    // WalletGroup), not the enclosing row's `disabled`.
     if (sourceRow && !sourceRow.disabled && actionKey)
       this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
+  }
+
+  private handleIconHelpPointerDown = (event: PointerEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const action = target.closest<HTMLElement>(
+      '[data-native-list-icon-help="true"]'
+    );
+    if (!action) return;
+    if (event.pointerType === 'touch') {
+      if (this.actionAnchor?.actionElement === action && this.actionAnchor.open)
+        this.invalidateActionAnchor('pointerLeave');
+      else this.emitHoverAction(action);
+    } else {
+      this.pressedHelpElement = action;
+      if (this.actionAnchor?.actionElement === action)
+        this.invalidateActionAnchor('pointerLeave');
+    }
   };
 
-  private handleTitlePointerOut = (event: PointerEvent) => {
+  private handleTitlePointerOut = (event: PointerEvent | FocusEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const action = target.closest<HTMLElement>(
@@ -4162,18 +4846,146 @@ export class NativeListWebEngine {
         action.contains(event.relatedTarget))
     )
       return;
+    if (
+      action.dataset.nativeListIconHelp === 'true' &&
+      event.type === 'pointerout' &&
+      (event as PointerEvent).pointerType === 'touch'
+    )
+      return;
+    if (event.type === 'pointerout' && this.pressedHelpElement === action)
+      this.pressedHelpElement = undefined;
     if (this.actionAnchor?.actionElement === action)
       this.invalidateActionAnchor('pointerLeave');
   };
 
-  private handleClick = (event: Event) => {
-    if (Date.now() < this.suppressClickUntil) {
+  private clearReorderClick(
+    pointerId: number
+  ): ReorderClickPointer | undefined {
+    const pointer = this.reorderClickPointers.get(pointerId);
+    if (pointer?.release)
+      this.document.defaultView?.clearTimeout(pointer.release.timer);
+    this.reorderClickPointers.delete(pointerId);
+    return pointer;
+  }
+
+  private reorderClickTarget(
+    target: EventTarget | null,
+    pressTarget?: Element
+  ): Element | undefined {
+    if (!(target instanceof Element) || !this.root.contains(target))
+      return undefined;
+    let clickTarget: Element | null = target;
+    if (pressTarget && this.root.contains(pressTarget)) {
+      // An uncaptured click can target the common ancestor of two controls.
+      while (clickTarget && !clickTarget.contains(pressTarget))
+        clickTarget = clickTarget.parentElement;
+    }
+    return (
+      clickTarget?.closest(
+        '[data-native-list-action],[data-native-list-group-member-key],[data-native-list-row-key]'
+      ) ??
+      clickTarget ??
+      undefined
+    );
+  }
+
+  private trackReorderPress = (event: PointerEvent) => {
+    this.clearReorderClick(event.pointerId);
+    if (
+      event.isPrimary === false ||
+      event.button !== 0 ||
+      !(event.target instanceof Element) ||
+      !this.root.contains(event.target)
+    )
+      return;
+
+    this.reorderClickPointers.set(event.pointerId, {
+      suppress: false,
+      pressTarget: event.target,
+    });
+  };
+
+  private trackReorderRelease = (event: PointerEvent) => {
+    if (this.reorderClickPointers.size === 0) return;
+    const {
+      type,
+      pointerId,
+      clientX,
+      clientY,
+      pointerType,
+      isPrimary,
+      button,
+    } = event;
+    const pending = this.clearReorderClick(pointerId);
+    if (!pending || type !== 'pointerup' || isPrimary === false || button !== 0)
+      return;
+    const releaseTarget =
+      event.target === this.viewport &&
+      this.viewport.hasPointerCapture?.(pointerId)
+        ? this.document.elementFromPoint?.(clientX, clientY) ?? event.target
+        : event.target;
+    const target = this.reorderClickTarget(releaseTarget, pending.pressTarget);
+    if (!pending.suppress && !target) return;
+
+    // Start expiry at release so a cancelled reorder stays suppressed while held.
+    const view = this.document.defaultView;
+    if (!view) return;
+    const timer = view.setTimeout(
+      () => this.reorderClickPointers.delete(pointerId),
+      REORDER_CLICK_GRACE_MS
+    );
+    this.reorderClickPointers.set(pointerId, {
+      suppress: pending.suppress,
+      release: { target, clientX, clientY, pointerType, timer },
+    });
+  };
+
+  private legacyClickPointerId(event: MouseEvent): number | undefined {
+    // Keyboard and programmatic activations have detail 0.
+    if (!(event.detail > 0)) return undefined;
+    const target = this.reorderClickTarget(event.target);
+    if (!target) return undefined;
+    const fromTouch = (
+      event as MouseEvent & {
+        sourceCapabilities?: { firesTouchEvents: boolean } | null;
+      }
+    ).sourceCapabilities?.firesTouchEvents;
+    let match: number | undefined;
+    // A release inserts at the end of the map. Keep the latest matching release.
+    for (const [pointerId, { release }] of this.reorderClickPointers) {
+      if (
+        release?.target === target &&
+        (fromTouch === undefined ||
+          fromTouch === (release.pointerType === 'touch')) &&
+        Math.abs(release.clientX - event.clientX) <= 1 &&
+        Math.abs(release.clientY - event.clientY) <= 1
+      )
+        match = pointerId;
+    }
+    return match;
+  }
+
+  private handleClick = (event: MouseEvent) => {
+    const pointerId =
+      (event as PointerEvent).pointerId ??
+      (this.reorderClickPointers.size > 0
+        ? this.legacyClickPointerId(event)
+        : undefined);
+    const clickFromReorder =
+      pointerId !== undefined && this.clearReorderClick(pointerId)?.suppress;
+    if (this.marketLongPressFired || clickFromReorder) {
+      this.marketLongPressFired = false;
       event.preventDefault();
       event.stopPropagation();
       return;
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.closest('[data-native-list-icon-help="true"]')) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-key]'
     );
@@ -4189,8 +5001,15 @@ export class NativeListWebEngine {
             (member) => member.key === memberKey
           ) ?? row
         : row;
+    // Legacy Web: a disabled row (or whole WalletGroup) blocks everything
+    // above. A disabled WalletGroup member still emits its own actions, but its
+    // member press is blocked by `isRowPressEnabled` in `handleRowPress`.
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
+      if (action.tagName === 'BUTTON' && action.hasAttribute('disabled'))
+        return;
+      if (action.classList.contains('ok-native-list-trailing-button'))
+        event.stopPropagation();
       const scope = action.dataset.selectionScope;
       if (scope === 'row') this.activateSelection({ scope: 'row' }, row);
       else if (scope === 'section' && action.dataset.selectionKey)
@@ -4216,6 +5035,19 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      event.target instanceof HTMLElement &&
+      event.target.matches('[role="button"][data-native-list-hover-action]')
+    ) {
+      event.preventDefault();
+      if (
+        this.actionAnchor?.actionElement !== event.target ||
+        !this.actionAnchor.open
+      )
+        this.emitHoverAction(event.target);
+      return;
+    }
     // OneKey patch: non-button title help supports keyboard activation.
     if (
       (event.key === 'Enter' || event.key === ' ') &&
@@ -4261,7 +5093,16 @@ export class NativeListWebEngine {
     const row = this.rowAtElement(target.closest('[data-native-list-row-key]'));
     if (!row) return;
     event.preventDefault();
-    if (event.key === ' ' && this.isReorderable(row)) {
+    const hasHandle = target
+      .closest('[data-native-list-row-key]')
+      ?.querySelector('[data-native-list-reorder-handle]');
+    if (
+      event.key === ' ' &&
+      this.isReorderable(row) &&
+      (this.keyboardReorder ||
+        this.snapshot.capabilities?.reorderActivation !== 'handle' ||
+        hasHandle)
+    ) {
       if (this.keyboardReorder) this.finishKeyboardReorder();
       else this.startKeyboardReorder(row);
       return;
@@ -4306,9 +5147,7 @@ export class NativeListWebEngine {
       viewPosition: 0,
       viewOffset: 0,
     });
-    [...this.mounted.values()]
-      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
-      ?.focus({ preventScroll: true });
+    this.focusMountedRow(state.sourceKey);
   }
 
   private finishKeyboardReorder() {
@@ -4334,12 +5173,31 @@ export class NativeListWebEngine {
       this.selectedKeys
     );
     this.updateReorderVisualState();
+    this.focusMountedRow(state.sourceKey);
+  }
+
+  private focusMountedRow(key: string) {
     [...this.mounted.values()]
-      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
+      .find((element) => element.dataset.nativeListRowKey === key)
       ?.focus({ preventScroll: true });
   }
 
+  private handleExternalScroll = (event: Event) => {
+    const target = event.target;
+    if (
+      target === this.externalScrollHost ||
+      (target instanceof Element &&
+        target !== this.root &&
+        this.externalScrollHost?.contains(target) &&
+        target.contains(this.root))
+    )
+      this.handleScroll();
+  };
+
   private handleScroll = () => {
+    this.externalGeometryCache = undefined;
+    this.pressedHelpElement = undefined;
+    this.cancelMarketPointer();
     this.invalidateActionAnchor('scroll');
     this.scheduleFrame();
   };
@@ -4354,6 +5212,9 @@ export class NativeListWebEngine {
     if (this.frameHandle !== undefined || this.destroyed) return;
     this.frameHandle = this.requestFrame(() => {
       this.frameHandle = undefined;
+      this.externalGeometryCache = undefined;
+      if (this.externalScrollHost)
+        this.externalOrigin = this.externalGeometry().origin;
       if (this.virtualizationEnabled) this.renderWindow();
       else {
         this.updateAvatarWindow();
@@ -4375,78 +5236,62 @@ export class NativeListWebEngine {
     else view?.clearTimeout(handle);
   }
 
-  private selectIndexPosition(
-    position: number,
-    title: string,
-    previewClientY?: number
-  ) {
+  private selectIndexPosition(position: number) {
+    const activeKey = this.sectionIndexEntries.find(
+      (entry) => entry.position === position
+    )?.key;
+    this.indexRail
+      .querySelectorAll<HTMLElement>('[data-section-key]')
+      .forEach((button) =>
+        setData(button, 'active', button.dataset.sectionKey === activeKey)
+      );
     this.scrollToIndex(position, {
       animated: false,
       alignment: 'start',
       viewPosition: 0,
       viewOffset: 0,
     });
-    const frame = this.viewportFrame.getBoundingClientRect();
-    if (previewClientY !== undefined && frame.height > 0) {
-      const previewY = Math.min(
-        frame.height - 24,
-        Math.max(24, previewClientY - frame.top)
-      );
-      this.indexPreview.style.top = String(previewY) + 'px';
-    } else {
-      this.indexPreview.style.top = '50%';
-    }
-    this.indexPreview.textContent = title;
-    setData(this.indexPreview, 'visible', true);
-    if (this.previewTimer !== undefined)
-      this.document.defaultView?.clearTimeout(this.previewTimer);
-    this.previewTimer = this.document.defaultView?.setTimeout(() => {
-      setData(this.indexPreview, 'visible', false);
-    }, 180);
   }
 
-  private sectionIndexEntryAtEvent(event: PointerEvent):
-    | Readonly<{
-        entry: NativeListWebEngine['sectionIndexEntries'][number];
-        previewClientY: number;
-      }>
-    | undefined {
+  private sectionIndexEntryAtEvent(
+    event: PointerEvent
+  ): NativeListWebEngine['sectionIndexEntries'][number] | undefined {
     const rail = this.indexRail.getBoundingClientRect();
     if (this.sectionIndexEntries.length === 0 || rail.height <= 0) {
       return undefined;
     }
-    const availableHeight = Math.max(
-      1,
-      rail.height - SECTION_INDEX_EDGE_PADDING * 2
-    );
+    const metrics = this.sectionIndexMetrics(rail.height);
+    if (metrics.trackHeight <= 0) return undefined;
     const progress = Math.min(
       1,
       Math.max(
         0,
-        (event.clientY - rail.top - SECTION_INDEX_EDGE_PADDING) /
-          availableHeight
+        (event.clientY - rail.top - metrics.originY) / metrics.trackHeight
       )
     );
-    const entryIndex = Math.round(
-      progress * (this.sectionIndexEntries.length - 1)
+    const entryIndex = Math.min(
+      this.sectionIndexEntries.length - 1,
+      Math.floor(progress * this.sectionIndexEntries.length)
     );
-    const entry = this.sectionIndexEntries[entryIndex];
-    return entry ? { entry, previewClientY: event.clientY } : undefined;
+    return this.sectionIndexEntries[entryIndex];
   }
 
   private handleIndexPointer = (event: PointerEvent) => {
     if (event.type === 'pointermove' && event.buttons === 0) return;
-    const selection = this.sectionIndexEntryAtEvent(event);
-    if (!selection) return;
+    const entry = this.sectionIndexEntryAtEvent(event);
+    if (!entry) return;
     event.preventDefault();
     if (event.type === 'pointerdown') {
       this.indexRail.setPointerCapture?.(event.pointerId);
     }
-    this.selectIndexPosition(
-      selection.entry.position,
-      selection.entry.title,
-      selection.previewClientY
-    );
+    this.selectIndexPosition(entry.position);
+  };
+
+  private handleIndexPointerEnd = (event: PointerEvent) => {
+    if (event.type === 'pointerup') {
+      const entry = this.sectionIndexEntryAtEvent(event);
+      if (entry) this.selectIndexPosition(entry.position);
+    }
   };
 
   private handleIndexClick = (event: Event) => {
@@ -4463,19 +5308,15 @@ export class NativeListWebEngine {
     const entry =
       this.sectionIndexEntries[Number(button.dataset.sectionEntryIndex)];
     if (!entry) return;
-    const rect = button.getBoundingClientRect();
-    this.selectIndexPosition(
-      entry.position,
-      entry.title,
-      rect.top + rect.height / 2
-    );
+    this.selectIndexPosition(entry.position);
   };
 
   private handlePullStart = (event: PointerEvent) => {
     if (
       this.pointerReorder?.pointerId === event.pointerId ||
       !this.snapshot.capabilities?.pullToRefresh ||
-      this.viewport.scrollTop > 0 ||
+      (!!this.externalScrollHost && !this.ownsRefresh) ||
+      this.pullTarget.scrollTop > 0 ||
       (event.pointerType !== 'touch' && event.pointerType !== 'pen')
     )
       return;
@@ -4527,13 +5368,24 @@ export class NativeListWebEngine {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (target.closest('button,input,textarea,select,a')) return;
+    const handleMode =
+      this.snapshot.capabilities?.reorderActivation === 'handle';
+    const handle = handleMode
+      ? target.closest<HTMLElement>('[data-native-list-reorder-handle]')
+      : undefined;
+    const control = target.closest('button,input,textarea,select,a');
+    if (handleMode && !handle) return;
+    if (control && (control !== handle || control.matches(':disabled'))) return;
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-index]'
     );
     const index = Number(rowElement?.dataset.nativeListRowIndex);
     const row = this.rows[index];
     if (!row || !this.isReorderable(row)) return;
+    const memberKey = target.closest<HTMLElement>(
+      '[data-native-list-group-member-key]'
+    )?.dataset.nativeListGroupMemberKey;
+    if (!canStartWebWalletGroupReorder(row, memberKey)) return;
     // OneKey patch: a child drag reorders its parent wallet group as one item.
     // if (
     // row.type === 'walletGroup' &&
@@ -4547,6 +5399,8 @@ export class NativeListWebEngine {
       pointerId: event.pointerId,
       pointerType: event.pointerType || 'mouse',
       sourceKey: row.key,
+      memberKey,
+      handle: handle ?? undefined,
       currentIndex: index,
       startX: event.clientX,
       startY: event.clientY,
@@ -4566,10 +5420,58 @@ export class NativeListWebEngine {
     }
   };
 
+  private canStartPointerReorder(
+    state: PointerReorderState,
+    snapshot: NativeListSnapshot
+  ): boolean {
+    const row = snapshot.rows.find(
+      (candidate) => candidate.key === state.sourceKey
+    );
+    if (
+      !row ||
+      !isWebRowReorderable(snapshot, row) ||
+      !canStartWebWalletGroupReorder(row, state.memberKey)
+    )
+      return false;
+    if (!state.handle) return true;
+    const handleRow =
+      row.type === 'walletGroup'
+        ? [row.parent, ...row.children].find(
+            (member) => member.key === state.memberKey
+          )
+        : row;
+    const slot = Number(state.handle.dataset.nativeListAnchorSlot);
+    return Boolean(
+      handleRow &&
+        'trailing' in handleRow &&
+        handleRow.trailing?.[slot]?.kind === 'drag'
+    );
+  }
+
   private activatePointerReorder(state: PointerReorderState) {
     if (this.pointerReorder !== state) return;
+    const rowIndex = this.snapshot.rows.findIndex(
+      (row) => row.key === state.sourceKey
+    );
+    const source = this.mounted.get(rowIndex);
+    if (
+      !source ||
+      !this.canStartPointerReorder(state, this.snapshot) ||
+      (state.handle && !source.contains(state.handle))
+    ) {
+      this.cancelPointerReorder(false);
+      return;
+    }
     this.clearReorderLongPress(state);
+    state.currentIndex = rowIndex;
+    state.originalRows = this.snapshot.rows;
+    state.workingRows = [...this.snapshot.rows];
     state.active = true;
+    this.reorderClickPointers.set(state.pointerId, {
+      suppress: true,
+      pressTarget: this.reorderClickPointers.get(state.pointerId)?.pressTarget,
+    });
+    this.cancelMarketPointer();
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
@@ -4668,10 +5570,19 @@ export class NativeListWebEngine {
   };
 
   private setCurrentOffset(offset: number) {
+    if (this.externalScrollHost) {
+      this.scrollToAbsoluteOffset(offset, false);
+      return;
+    }
     const maximum = Math.max(0, this.contentLength() - this.viewportLength());
     const next = Math.max(0, Math.min(maximum, offset));
     if (this.layout.horizontal) this.viewport.scrollLeft = next;
-    else this.viewport.scrollTop = next;
+    else {
+      this.viewport.scrollTop = resolveWebCollapsiblePagerRawOffset(
+        next,
+        this.collapsiblePagerInsets().header
+      );
+    }
     this.scheduleFrame();
   }
 
@@ -4683,11 +5594,11 @@ export class NativeListWebEngine {
     const row = source?.firstElementChild;
     if (!source || !row) return;
     const rect = source.getBoundingClientRect();
-    const groupParent = row.querySelector<HTMLElement>(
-      '[data-native-list-group-parent="true"]>.ok-native-list-wallet-row'
-    );
-    const previewRow = groupParent ?? row;
-    const previewHeight = groupParent ? 68 : rect.height;
+    const sourceRow = state.workingRows[state.currentIndex];
+    const preview =
+      sourceRow && rowRenderer(sourceRow).reorderPreview(row as HTMLElement);
+    const previewRow = preview?.element ?? row;
+    const previewHeight = preview?.height ?? rect.height;
     state.previewOffsetX = state.startX - rect.left;
     state.previewOffsetY = Math.min(
       previewHeight,
@@ -4711,7 +5622,6 @@ export class NativeListWebEngine {
       }
       configureWebAvatar(image, avatar.source, avatar.uri);
     });
-    const sourceRow = state.workingRows[state.currentIndex];
     const badgeText = sourceRow
       ? webWalletGroupReorderBadge(sourceRow)
       : undefined;
@@ -4753,10 +5663,16 @@ export class NativeListWebEngine {
     }
     this.reorderSettlingKey = state.sourceKey;
     const viewportRect = this.viewport.getBoundingClientRect();
+    const insets = this.collapsiblePagerInsets();
     const left =
       viewportRect.left + destinationLayout.x - this.viewport.scrollLeft;
-    const top =
-      viewportRect.top + destinationLayout.y - this.viewport.scrollTop;
+    const top = this.externalScrollHost
+      ? viewportRect.top + destinationLayout.y
+      : viewportRect.top +
+        destinationLayout.y +
+        insets.header +
+        insets.sticky -
+        this.viewport.scrollTop;
     this.reorderPreview.getBoundingClientRect();
     this.reorderPreview.style.transition =
       'transform ' +
@@ -4828,6 +5744,18 @@ export class NativeListWebEngine {
   }
 
   private reorderViewportRect() {
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      const body = this.viewport.getBoundingClientRect();
+      return {
+        left: body.left,
+        right: body.right,
+        width: body.width,
+        top: geometry.top,
+        bottom: geometry.bottom,
+        height: geometry.viewportLength,
+      };
+    }
     const { left, top, right, bottom, width, height } =
       this.viewport.getBoundingClientRect();
     return { left, top, right, bottom, width, height };
@@ -5023,7 +5951,6 @@ export class NativeListWebEngine {
     this.pointerReorder = undefined;
     this.stopReorderMove();
     this.stopReorderAutoScroll();
-    this.suppressClickUntil = Date.now() + 300;
     this.updateReorderVisualState();
     if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
   }
@@ -5058,7 +5985,6 @@ export class NativeListWebEngine {
         { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
         this.selectedKeys
       );
-      this.suppressClickUntil = Date.now() + 300;
     }
     if (state.active && restore) this.animateReorderPreviewToCurrent(state);
     else this.hideReorderPreview();
@@ -5113,4 +6039,8 @@ export class NativeListWebEngine {
       else element.removeAttribute('aria-grabbed');
     });
   }
+}
+
+export function applyRowStyle(body: HTMLElement, row: RowModel): void {
+  applyRowContainerStyle(body, row);
 }

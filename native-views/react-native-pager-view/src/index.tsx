@@ -2,6 +2,12 @@ import type * as ReactNative from 'react-native';
 import { PagerView } from './PagerView';
 export default PagerView;
 export * from './usePagerView';
+export * from './CollapsiblePagerView';
+export * from './NativeScroller';
+export { CollapsiblePagerView as WebCollapsiblePagerView } from './CollapsiblePagerView.web';
+export type { CollapsiblePagerViewProps as WebCollapsiblePagerViewProps } from './CollapsiblePagerView.web';
+export { useWebCollapsiblePagerPage } from './WebCollapsiblePagerPage';
+export type { WebCollapsiblePagerPageState } from './WebCollapsiblePagerPage';
 
 import type {
   OnPageScrollEventData as PagerViewOnPageScrollEventData,
@@ -25,3 +31,5 @@ export type PagerViewOnPageSelectedEvent =
 
 export type PageScrollStateChangedNativeEvent =
   ReactNative.NativeSyntheticEvent<PageScrollStateChangedNativeEventData>;
+
+export { ScrollEdgeEffect } from './ScrollEdgeEffect';

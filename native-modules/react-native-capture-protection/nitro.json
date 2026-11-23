@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativecaptureprotection"],
+  "ios": {
+    "iosModuleName": "ReactNativeCaptureProtection"
+  },
+  "android": {
+    "androidNamespace": ["reactnativecaptureprotection"],
+    "androidCxxLibName": "reactnativecaptureprotection"
+  },
+  "autolinking": {
+    "ReactNativeCaptureProtection": {
+      "swift": "ReactNativeCaptureProtection",
+      "kotlin": "ReactNativeCaptureProtection"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

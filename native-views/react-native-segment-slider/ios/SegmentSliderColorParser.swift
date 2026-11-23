@@ -102,6 +102,22 @@ final class SegmentSliderUIView: UIControl {
   var onTouchMoved: ((CGFloat) -> Void)?
   /// Touch ended or was cancelled.
   var onTouchEnded: (() -> Void)?
+  var onAccessibilityStep: ((Bool) -> Void)?
+  var accessibilityValueProvider: (() -> String?)?
+
+  override var accessibilityValue: String? {
+    // Read the current value on demand so drag frames never format a string.
+    get { accessibilityValueProvider?() ?? super.accessibilityValue }
+    set { super.accessibilityValue = newValue }
+  }
+
+  override func accessibilityIncrement() {
+    onAccessibilityStep?(true)
+  }
+
+  override func accessibilityDecrement() {
+    onAccessibilityStep?(false)
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()
@@ -133,7 +149,9 @@ final class SegmentSliderUIView: UIControl {
     }
   }
 
-  private func unlockAncestorGestures() {
+  /// Re-enables the ancestor pan recognizers; also called when the slider
+  /// cancels its own interaction (for example on `disabled`).
+  func unlockAncestorGestures() {
     for gr in disabledRecognizers {
       gr.isEnabled = true
     }

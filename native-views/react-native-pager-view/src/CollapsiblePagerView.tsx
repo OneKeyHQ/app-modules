@@ -1,0 +1,881 @@
+import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
+import React from "react";
+import { I18nManager, Platform, StyleSheet, View, processColor } from "react-native";
+import type * as ReactNative from "react-native";
+
+import CollapsiblePagerViewNativeComponent, {
+  Commands as CollapsiblePagerViewNativeCommands,
+  type NativeProps,
+  type OnCollapsibleStateChangedEventData,
+  type OnNativeTabPressEventData,
+} from "./CollapsiblePagerViewNativeComponent";
+import type {
+  OnPageScrollEventData,
+  OnPageScrollStateChangedEventData,
+  OnPageSelectedEventData,
+} from "./PagerViewNativeComponent";
+
+export type CollapsiblePagerDiagnostics =
+  ReactNative.NativeSyntheticEvent<OnCollapsibleStateChangedEventData>;
+
+export type CollapsiblePagerMountState = Readonly<{
+  position: number;
+  mountedPages: readonly number[];
+  pageKeys: readonly string[];
+}>;
+
+export type CollapsiblePagerNativeTabBarItem = Readonly<{
+  key: string;
+  title: string;
+  accessibilityLabel?: string;
+  testID?: string;
+}>;
+
+export type CollapsiblePagerNativeTabBarStyle = Readonly<{
+  /**
+   * `pill` draws a rounded background behind the selected item that follows
+   * pager progress, with active / inactive label colors.
+   */
+  variant?: "underline" | "segmented" | "text" | "pill";
+  height?: number;
+  trailingReservedWidth?: number;
+  contentPaddingHorizontal?: number;
+  contentPaddingVertical?: number;
+  itemSpacing?: number;
+  fontSize?: number;
+  fontFamily?: string;
+  activeFontFamily?: string;
+  backgroundColor?: ReactNative.ColorValue;
+  activeTextColor?: ReactNative.ColorValue;
+  inactiveTextColor?: ReactNative.ColorValue;
+  indicatorColor?: ReactNative.ColorValue;
+  indicatorHeight?: number;
+  indicatorBottom?: number;
+  /** Horizontal padding inside each item. Defaults: text 10, pill 14, others 8. */
+  itemPaddingHorizontal?: number;
+  /** Pill variant: background of an unselected item under the pointer. */
+  itemHoverBackgroundColor?: ReactNative.ColorValue;
+  /** Pill variant: background of an unselected item while pressed. */
+  itemPressedBackgroundColor?: ReactNative.ColorValue;
+  /**
+   * Caps the width of the tab row and toolbar and centers them; the bar
+   * background still spans the full width.
+   */
+  contentMaxWidth?: number;
+  /**
+   * Pill variant: when false, the pill and label colors jump to the selected
+   * item instead of following pager progress or animating. Defaults to true.
+   */
+  indicatorAnimationEnabled?: boolean;
+}>;
+
+export type CollapsiblePagerToolbarItem = Readonly<{
+  iconName: string;
+  selected?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
+  iconColor?: string;
+  selectedBackgroundColor?: string;
+  hoverBackgroundColor?: string;
+  pressedBackgroundColor?: string;
+  size?: number;
+  iconSize?: number;
+  contentWidth?: number;
+  trailingInset?: number;
+}>;
+
+export type CollapsiblePagerToolbarPress = Readonly<{
+  key: string;
+  anchorRect: Readonly<{ x: number; y: number; width: number; height: number }>;
+}>;
+
+export type CollapsiblePagerNativeTabBarConfig = Readonly<{
+  controlled?: boolean;
+  selectedKey?: string;
+  toolbar?: Readonly<Record<string, CollapsiblePagerToolbarItem>>;
+  items: readonly CollapsiblePagerNativeTabBarItem[];
+  style?: CollapsiblePagerNativeTabBarStyle;
+}>;
+
+export type CollapsiblePagerNativeSubHeaderColumns = Readonly<{
+  leading: string;
+  middle: string;
+  trailing: string;
+}>;
+
+export type CollapsiblePagerNativeSubHeaderStyle = Readonly<{
+  height?: number;
+  tabsHeight?: number;
+  contentPaddingHorizontal?: number;
+  itemSpacing?: number;
+  fontSize?: number;
+  columnFontSize?: number;
+  trailingColumnWidth?: number;
+  columnGap?: number;
+  selectedBackgroundColor?: ReactNative.ColorValue;
+}>;
+
+export type CollapsiblePagerNativeSubHeaderConfig = Readonly<{
+  items: readonly CollapsiblePagerNativeTabBarItem[];
+  selectedKey: string;
+  columns: CollapsiblePagerNativeSubHeaderColumns;
+  style?: CollapsiblePagerNativeSubHeaderStyle;
+}>;
+
+export type CollapsiblePagerViewOnNativeTabPressEvent =
+  ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>;
+
+export type CollapsiblePagerViewOnNativeSubHeaderPressEvent =
+  ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>;
+
+export interface CollapsiblePagerViewProps
+  extends Omit<
+    NativeProps,
+    | "children"
+    | "headerHeight"
+    | "stickyHeaderHeight"
+    | "stickyHeaderHeights"
+    | "topScrollEdgeEffect"
+    | "topOverlayHeight"
+    | "externalTopOverlayTag"
+    | "pageKeys"
+    | "retainedPages"
+    | "nativeTabBarConfig"
+    | "onNativeToolbarPress"
+    | "nativeTabBarItems"
+    | "nativeTabBarHeight"
+    | "nativeTabBarVariant"
+    | "nativeTabBarTrailingReservedWidth"
+    | "nativeTabBarContentPaddingHorizontal"
+    | "nativeTabBarContentPaddingVertical"
+    | "nativeTabBarItemSpacing"
+    | "nativeTabBarFontSize"
+    | "nativeTabBarFontFamily"
+    | "nativeTabBarBackgroundColor"
+    | "nativeTabBarActiveTextColor"
+    | "nativeTabBarInactiveTextColor"
+    | "nativeTabBarIndicatorColor"
+    | "nativeTabBarIndicatorHeight"
+    | "nativeTabBarIndicatorBottom"
+    | "nativeSubHeaderConfig"
+    | "nativeSubHeaderSelectedBackgroundColor"
+    | "onNativeTabPress"
+    | "onNativeSubHeaderPress"
+    | "layoutDirection"
+  > {
+  /** Collapsible content rendered above the sticky bar. */
+  header: React.ReactNode;
+  /** Bar which remains pinned after the header has collapsed. */
+  stickyHeader: React.ReactNode;
+  /** Measured header height. It may be updated after an onLayout measurement. */
+  headerHeight: number;
+  /** Measured sticky bar height. */
+  stickyHeaderHeight: number;
+  /** iOS only. Sticky heights in child order, applied before each page is displayed. */
+  stickyHeaderHeights?: readonly number[];
+  /** Fixed content above the collapsible header on iOS 26 and newer. */
+  topOverlay?: React.ReactNode;
+  /** Known overlay height to reserve until its first layout measurement. */
+  topOverlayHeightHint?: number;
+  /** Existing fixed header shared with a parent pager on iOS 26 and newer. */
+  externalTopOverlayTag?: number;
+  /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+  topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
+  /** Effective appearance of the fixed overlay or pinned sticky bar. */
+  topOverlayColorScheme?: "light" | "dark";
+  /**
+   * Lets the active native list own vertical gestures that begin on pager headers.
+   * Defaults to false and has no effect on Web.
+   */
+  nativeSmoothHeaderScrollEnabled?: boolean;
+  /**
+   * Number of pages retained on either side of the selected page. Page slots
+   * remain stable, while distant React/native list subtrees are really
+   * unmounted. Defaults to one adjacent page.
+   */
+  pageRetentionDistance?: number;
+  layoutDirection?: "ltr" | "rtl" | "locale";
+  /** Optional native tab bar for iOS and Android. */
+  nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
+  onNativeToolbarPress?: (event: ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>) => void;
+  onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
+  /**
+   * Defaults to animating adjacent native tab presses and jumping directly to
+   * non-adjacent pages. Set true to always animate, or false to always jump.
+   */
+  nativeTabPressAnimationEnabled?: boolean;
+  /** Optional native secondary sticky header for iOS and Android. */
+  nativeSubHeader?: CollapsiblePagerNativeSubHeaderConfig;
+  onNativeSubHeaderPress?: (
+    event: CollapsiblePagerViewOnNativeSubHeaderPressEvent
+  ) => void;
+  children?: React.ReactNode;
+  onMountedPagesChanged?: (state: CollapsiblePagerMountState) => void;
+}
+
+type State = {
+  selectedPage: number;
+  transientRetainedPages: readonly number[];
+  topOverlayHeight: number | null;
+};
+
+const nativeToolbar = (toolbar: CollapsiblePagerNativeTabBarConfig["toolbar"]) => {
+  if (!toolbar) return undefined;
+  return Object.fromEntries(Object.entries(toolbar).map(([key, item]) => {
+    const color = processColor(item.iconColor ?? "#000000");
+    const argb = typeof color === "number" ? color >>> 0 : 0xff000000;
+    return [key, { ...item,
+      iconColor: `rgba(${(argb >>> 16) & 255},${(argb >>> 8) & 255},${argb & 255},${Math.round(((argb >>> 24) / 255) * 1000000) / 1000000})`,
+      selectedBackgroundColor: processColor(item.selectedBackgroundColor ?? "transparent"),
+      hoverBackgroundColor: processColor(item.hoverBackgroundColor ?? "transparent"),
+      pressedBackgroundColor: processColor(item.pressedBackgroundColor ?? "transparent"),
+    }];
+  }));
+};
+
+const pageIndex = (value: number) => {
+  const index = Math.trunc(value);
+  return Number.isFinite(index) ? index : null;
+};
+
+const clampedPageIndex = (value: number, pageCount: number) =>
+  Math.min(Math.max(0, pageIndex(value) ?? 0), Math.max(0, pageCount - 1));
+
+const pageKey = (child: React.ReactNode, index: number) => {
+  if (React.isValidElement(child) && child.key != null) {
+    return String(child.key);
+  }
+  return `page-${index}`;
+};
+
+/**
+ * Pager variant whose vertical header coordination is performed by the native
+ * scrolling containers. React participates only at settled page boundaries to
+ * retain the selected/adjacent heavy page subtrees.
+ */
+export class CollapsiblePagerView extends React.PureComponent<
+  CollapsiblePagerViewProps,
+  State
+> {
+  state: State = {
+    topOverlayHeight: null,
+    selectedPage: clampedPageIndex(
+      this.props.initialPage ?? 0,
+      React.Children.toArray(this.props.children).length
+    ),
+    transientRetainedPages: [],
+  };
+
+  private nativeRef: React.ElementRef<
+    typeof CollapsiblePagerViewNativeComponent
+  > | null = null;
+
+  private lastMountSignature: string | null = null;
+
+  private nativeTabCommandId = 0;
+
+  private latestNativeTabTarget: number | null = null;
+
+  // Target of the last tab command native has received and not yet reported
+  // as selected. Commands superseded before their frame never reach native.
+  private dispatchedNativeTabTarget: number | null = null;
+
+  private latestNativeSelectedPage = this.state.selectedPage;
+
+  private nativePagerScrollState: OnPageScrollStateChangedEventData["pageScrollState"] =
+    "idle";
+
+  private nativeTabCommandQueuedDuringScroll = false;
+
+  componentDidMount() {
+    this.notifyMountedPagesChanged();
+  }
+
+  componentDidUpdate(previousProps: CollapsiblePagerViewProps) {
+    const previousOverlayEnabled =
+      previousProps.topOverlay != null &&
+      (previousProps.topScrollEdgeEffect === "hard" ||
+        previousProps.topScrollEdgeEffect === "soft");
+    const overlayEnabled =
+      this.props.topOverlay != null &&
+      (this.props.topScrollEdgeEffect === "hard" ||
+        this.props.topScrollEdgeEffect === "soft");
+    if (
+      previousOverlayEnabled &&
+      !overlayEnabled &&
+      this.state.topOverlayHeight !== null
+    ) {
+      this.setState({ topOverlayHeight: null });
+    }
+    const pageCount = this.pages().length;
+    const selectedPage = clampedPageIndex(this.state.selectedPage, pageCount);
+    if (selectedPage !== this.state.selectedPage) {
+      this.setState({ selectedPage });
+      return;
+    }
+    this.notifyMountedPagesChanged();
+  }
+
+  public setPage = (selectedPage: number) => {
+    const position = pageIndex(selectedPage);
+    if (
+      this.nativeRef &&
+      position !== null &&
+      position >= 0 &&
+      position < this.pages().length
+    ) {
+      if (this.nativeTabBarEnabled() && !this.props.nativeTabBar?.controlled) {
+        this.dispatchNativeTabPageCommand(position, true);
+      } else {
+        CollapsiblePagerViewNativeCommands.setPage(this.nativeRef, position);
+      }
+    }
+  };
+
+  public setPageWithoutAnimation = (selectedPage: number) => {
+    const position = pageIndex(selectedPage);
+    if (
+      this.nativeRef &&
+      position !== null &&
+      position >= 0 &&
+      position < this.pages().length
+    ) {
+      if (this.nativeTabBarEnabled() && !this.props.nativeTabBar?.controlled) {
+        this.dispatchNativeTabPageCommand(position, false);
+      } else {
+        CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
+          this.nativeRef,
+          position
+        );
+      }
+    }
+  };
+
+  public scrollToPageTop = (options?: Readonly<{ animated?: boolean }>) => {
+    if (this.nativeRef)
+      CollapsiblePagerViewNativeCommands.scrollToTop(
+        this.nativeRef,
+        0,
+        options?.animated ?? true
+      );
+  };
+
+  public scrollHeaderBy = (delta: number) => {
+    if (this.nativeRef && Number.isFinite(delta))
+      CollapsiblePagerViewNativeCommands.scrollHeaderBy(
+        this.nativeRef,
+        delta
+      );
+  };
+
+  public scrollHeaderToOffset = (offset: number) => {
+    if (this.nativeRef && Number.isFinite(offset))
+      CollapsiblePagerViewNativeCommands.scrollHeaderToOffset(
+        this.nativeRef,
+        offset
+      );
+  };
+
+  public scrollToStickyTop = (options?: Readonly<{ animated?: boolean }>) => {
+    if (this.nativeRef)
+      CollapsiblePagerViewNativeCommands.scrollToTop(
+        this.nativeRef,
+        1,
+        options?.animated ?? true
+      );
+  };
+
+  public setScrollEnabled = (scrollEnabled: boolean) => {
+    if (this.nativeRef) {
+      CollapsiblePagerViewNativeCommands.setScrollEnabledImperatively(
+        this.nativeRef,
+        scrollEnabled
+      );
+    }
+  };
+
+  private pages() {
+    return React.Children.toArray(this.props.children);
+  }
+
+  private nativeTabBarEnabled() {
+    return (
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      !!this.props.nativeTabBar?.items.length
+    );
+  }
+
+  private dispatchNativeTabPageCommand(
+    position: number,
+    animated: boolean,
+    expectedKey?: string
+  ) {
+    const commandId = ++this.nativeTabCommandId;
+    this.nativeTabCommandQueuedDuringScroll =
+      this.nativePagerScrollState !== "idle";
+    this.latestNativeTabTarget = position;
+    this.setState(
+      (state) => ({
+        transientRetainedPages: state.transientRetainedPages.includes(position)
+          ? state.transientRetainedPages
+          : [...state.transientRetainedPages, position],
+      }),
+      () => {
+        requestAnimationFrame(() => {
+          if (
+            commandId !== this.nativeTabCommandId ||
+            !this.nativeRef ||
+            (expectedKey !== undefined &&
+              (!this.nativeTabBarEnabled() ||
+                this.props.nativeTabBar?.items[position]?.key !== expectedKey))
+          ) {
+            return;
+          }
+          this.dispatchedNativeTabTarget = position;
+          if (animated) {
+            CollapsiblePagerViewNativeCommands.setPage(
+              this.nativeRef,
+              position
+            );
+          } else {
+            CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
+              this.nativeRef,
+              position
+            );
+          }
+        });
+      }
+    );
+  }
+
+  private retentionDistance() {
+    return Math.max(0, Math.floor(this.props.pageRetentionDistance ?? 1));
+  }
+
+  private mountedPages(pageCount = this.pages().length) {
+    const distance = this.retentionDistance();
+    const selected = Math.min(
+      Math.max(0, this.state.selectedPage),
+      Math.max(0, pageCount - 1)
+    );
+    const mounted: number[] = [];
+    for (let index = 0; index < pageCount; index += 1) {
+      if (
+        Math.abs(index - selected) <= distance ||
+        this.state.transientRetainedPages.includes(index)
+      ) {
+        mounted.push(index);
+      }
+    }
+    return mounted;
+  }
+
+  private notifyMountedPagesChanged = () => {
+    if (!this.props.onMountedPagesChanged) {
+      return;
+    }
+    const pages = this.pages();
+    const state = {
+      position: this.state.selectedPage,
+      mountedPages: this.mountedPages(pages.length),
+      pageKeys: pages.map(pageKey),
+    };
+    const signature = JSON.stringify(state);
+    if (signature === this.lastMountSignature) {
+      return;
+    }
+    this.lastMountSignature = signature;
+    this.props.onMountedPagesChanged(state);
+  };
+
+  private onPageSelected = (
+    event: ReactNative.NativeSyntheticEvent<OnPageSelectedEventData>
+  ) => {
+    const position = clampedPageIndex(
+      event.nativeEvent.position,
+      this.pages().length
+    );
+    this.latestNativeSelectedPage = position;
+    if (
+      position !== this.state.selectedPage ||
+      this.state.transientRetainedPages.length > 0
+    ) {
+      const pendingTarget = this.latestNativeTabTarget;
+      const transitionComplete = pendingTarget === position;
+      if (transitionComplete) {
+        this.latestNativeTabTarget = null;
+        this.dispatchedNativeTabTarget = null;
+        this.nativeTabCommandQueuedDuringScroll = false;
+      }
+      this.setState(
+        {
+          selectedPage: position,
+          transientRetainedPages:
+            !transitionComplete && pendingTarget !== null
+              ? [pendingTarget]
+              : [],
+        },
+        this.notifyMountedPagesChanged
+      );
+    }
+    this.props.onPageSelected?.(event);
+  };
+
+  private onPageScrollStateChanged = (
+    event: ReactNative.NativeSyntheticEvent<OnPageScrollStateChangedEventData>
+  ) => {
+    const scrollState = event.nativeEvent.pageScrollState;
+    const queuedDuringPreviousScroll = this.nativeTabCommandQueuedDuringScroll;
+    this.nativePagerScrollState = scrollState;
+    // Native drains tab commands queued during an active drag after reporting
+    // that drag as idle. Preserve the newer target through that first idle.
+    if (
+      scrollState === "idle" &&
+      this.latestNativeTabTarget !== null &&
+      this.latestNativeTabTarget !== this.latestNativeSelectedPage &&
+      !queuedDuringPreviousScroll
+    ) {
+      ++this.nativeTabCommandId;
+      this.latestNativeTabTarget = null;
+      this.dispatchedNativeTabTarget = null;
+      this.setState(
+        { transientRetainedPages: [] },
+        this.notifyMountedPagesChanged
+      );
+    }
+    if (scrollState === "idle") {
+      this.nativeTabCommandQueuedDuringScroll = false;
+    }
+    this.props.onPageScrollStateChanged?.(event);
+  };
+
+  private onNativeTabPress = (
+    event: ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>
+  ) => {
+    const position = pageIndex(event.nativeEvent.position);
+    if (
+      !this.nativeTabBarEnabled() ||
+      position === null ||
+      this.props.nativeTabBar?.items[position]?.key !== event.nativeEvent.key
+    ) {
+      return;
+    }
+    if (
+      !this.props.nativeTabBar?.controlled &&
+      position >= 0 &&
+      position < this.pages().length &&
+      (position !== this.state.selectedPage ||
+        this.latestNativeTabTarget !== null)
+    ) {
+      // Selection state lags an in-flight transition until native reports it.
+      const currentPage =
+        this.dispatchedNativeTabTarget ?? this.state.selectedPage;
+      this.dispatchNativeTabPageCommand(
+        position,
+        this.props.nativeTabPressAnimationEnabled ??
+          Math.abs(position - currentPage) <= 1,
+        event.nativeEvent.key
+      );
+    }
+    this.props.onNativeTabPress?.(event);
+  };
+
+  private onNativeToolbarPress = (
+    event: ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>
+  ) => {
+    if (!this.props.nativeTabBar?.toolbar?.[event.nativeEvent.key]?.iconName) return;
+    this.props.onNativeToolbarPress?.(event);
+  };
+
+  private onNativeSubHeaderPress = (
+    event: ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>
+  ) => {
+    this.props.onNativeSubHeaderPress?.(event);
+  };
+
+  render() {
+    const {
+      children: _children,
+      header,
+      stickyHeader,
+      headerHeight,
+      stickyHeaderHeight,
+      stickyHeaderHeights,
+      topOverlay,
+      topOverlayHeightHint,
+      externalTopOverlayTag,
+      topScrollEdgeEffect,
+      topOverlayColorScheme,
+      nativeSmoothHeaderScrollEnabled,
+      pageRetentionDistance: _pageRetentionDistance,
+      onMountedPagesChanged: _onMountedPagesChanged,
+      onPageSelected: _onPageSelected,
+      onPageScrollStateChanged: _onPageScrollStateChanged,
+      nativeTabBar,
+      onNativeTabPress: _onNativeTabPress,
+      nativeTabPressAnimationEnabled: _nativeTabPressAnimationEnabled,
+      nativeSubHeader,
+      onNativeSubHeaderPress: _onNativeSubHeaderPress,
+      layoutDirection,
+      initialPage: _initialPage,
+      offscreenPageLimit,
+      ...nativeProps
+    } = this.props;
+    const pages = this.pages();
+    const supportsTopScrollEdge =
+      Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
+    const scrollEdgeEnabled =
+      supportsTopScrollEdge &&
+      (topScrollEdgeEffect === "hard" || topScrollEdgeEffect === "soft");
+    const hasTopOverlay = scrollEdgeEnabled && topOverlay != null;
+    const initialTopOverlayHeight =
+      typeof topOverlayHeightHint === "number" &&
+      Number.isFinite(topOverlayHeightHint)
+        ? Math.max(0, Math.ceil(topOverlayHeightHint))
+        : 0;
+    const pageKeys = pages.map(pageKey);
+    const retained = new Set(this.mountedPages(pages.length));
+    const deducedLayoutDirection =
+      !layoutDirection || layoutDirection === "locale"
+        ? I18nManager.isRTL
+          ? "rtl"
+          : "ltr"
+        : layoutDirection;
+    const nativeTabBarEnabled =
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      !!nativeTabBar?.items.length;
+    const nativeTabBarStyle = nativeTabBar?.style;
+    const requestedContentPaddingVertical =
+      nativeTabBarStyle?.contentPaddingVertical;
+    const nativeTabBarContentPaddingVertical =
+      typeof requestedContentPaddingVertical === "number" &&
+      Number.isFinite(requestedContentPaddingVertical) &&
+      requestedContentPaddingVertical >= 0
+        ? requestedContentPaddingVertical
+        : 0;
+    const requestedTrailingReservedWidth =
+      nativeTabBarStyle?.trailingReservedWidth;
+    const nativeTabBarTrailingReservedWidth =
+      typeof requestedTrailingReservedWidth === "number" &&
+      Number.isFinite(requestedTrailingReservedWidth) &&
+      requestedTrailingReservedWidth >= 0
+        ? requestedTrailingReservedWidth
+        : 0;
+    const nativeSubHeaderEnabled =
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      !!nativeSubHeader?.items.length;
+    const nativeSubHeaderStyle = nativeSubHeader?.style;
+    const nativeSubHeaderConfig = nativeSubHeaderEnabled
+      ? JSON.stringify({
+          ...nativeSubHeader,
+          style: {
+            ...nativeSubHeaderStyle,
+            selectedBackgroundColor: undefined,
+          },
+        })
+      : undefined;
+
+    return (
+      <CollapsiblePagerViewNativeComponent
+        {...nativeProps}
+        ref={(ref) => {
+          this.nativeRef = ref;
+        }}
+        layoutDirection={deducedLayoutDirection}
+        initialPage={clampedPageIndex(
+          this.props.initialPage ?? 0,
+          pages.length
+        )}
+        offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
+        headerHeight={Math.max(0, Math.round(headerHeight))}
+        stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
+        stickyHeaderHeights={
+          Platform.OS === "ios" && stickyHeaderHeights
+            ? JSON.stringify(
+                stickyHeaderHeights.slice(0, pages.length).map((height) =>
+                  Number.isFinite(height) && height >= 0 ? Math.round(height) : null
+                )
+              )
+            : undefined
+        }
+        topScrollEdgeEffect={scrollEdgeEnabled ? topScrollEdgeEffect : "none"}
+        topOverlayColorScheme={
+          scrollEdgeEnabled ? topOverlayColorScheme : undefined
+        }
+        topOverlayHeight={
+          hasTopOverlay
+            ? this.state.topOverlayHeight ?? initialTopOverlayHeight
+            : 0
+        }
+        externalTopOverlayTag={
+          supportsTopScrollEdge && !hasTopOverlay
+            ? externalTopOverlayTag ?? 0
+            : 0
+        }
+        nativeSmoothHeaderScrollEnabled={nativeSmoothHeaderScrollEnabled}
+        pageKeys={JSON.stringify(pageKeys)}
+        retainedPages={JSON.stringify([...retained])}
+        onPageSelected={this.onPageSelected}
+        onPageScrollStateChanged={this.onPageScrollStateChanged}
+        nativeTabBarConfig={nativeTabBarEnabled ? JSON.stringify({
+          controlled: nativeTabBar.controlled,
+          selectedKey: nativeTabBar.selectedKey,
+          pageKeys: (() => {
+            const keys: string[] = [];
+            React.Children.forEach(this.props.children, (child) => {
+              if (child !== null && child !== undefined && typeof child !== "boolean") keys.push(pageKey(child, keys.length));
+            });
+            return keys;
+          })(),
+          toolbar: nativeToolbar(nativeTabBar.toolbar),
+          activeFontFamily: nativeTabBar.style?.activeFontFamily,
+          itemPaddingHorizontal: nativeTabBar.style?.itemPaddingHorizontal,
+          itemHoverBackgroundColor: nativeTabBar.style?.itemHoverBackgroundColor === undefined
+            ? undefined
+            : processColor(nativeTabBar.style.itemHoverBackgroundColor),
+          itemPressedBackgroundColor: nativeTabBar.style?.itemPressedBackgroundColor === undefined
+            ? undefined
+            : processColor(nativeTabBar.style.itemPressedBackgroundColor),
+          contentMaxWidth: nativeTabBar.style?.contentMaxWidth,
+          indicatorAnimationEnabled: nativeTabBar.style?.indicatorAnimationEnabled,
+        }) : undefined}
+        onNativeToolbarPress={this.onNativeToolbarPress}
+        nativeTabBarItems={
+          nativeTabBarEnabled ? JSON.stringify(nativeTabBar.items) : undefined
+        }
+        nativeTabBarHeight={
+          nativeTabBarEnabled ? nativeTabBarStyle?.height ?? 44 : undefined
+        }
+        nativeTabBarVariant={
+          nativeTabBarEnabled ? nativeTabBarStyle?.variant ?? "underline" : undefined
+        }
+        nativeTabBarTrailingReservedWidth={
+          nativeTabBarEnabled ? nativeTabBarTrailingReservedWidth : 0
+        }
+        nativeTabBarContentPaddingHorizontal={
+          nativeTabBarEnabled
+            ? nativeTabBarStyle?.contentPaddingHorizontal ?? 20
+            : undefined
+        }
+        nativeTabBarContentPaddingVertical={
+          nativeTabBarEnabled ? nativeTabBarContentPaddingVertical : undefined
+        }
+        nativeTabBarItemSpacing={
+          nativeTabBarEnabled ? nativeTabBarStyle?.itemSpacing ?? 8 : undefined
+        }
+        nativeTabBarFontSize={
+          nativeTabBarEnabled ? nativeTabBarStyle?.fontSize ?? (nativeTabBarStyle?.variant === "text" ? 18 : 16) : undefined
+        }
+        nativeTabBarFontFamily={
+          nativeTabBarEnabled ? nativeTabBarStyle?.fontFamily : undefined
+        }
+        nativeTabBarBackgroundColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.backgroundColor : undefined
+        }
+        nativeTabBarActiveTextColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.activeTextColor : undefined
+        }
+        nativeTabBarInactiveTextColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.inactiveTextColor : undefined
+        }
+        nativeTabBarIndicatorColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.indicatorColor : undefined
+        }
+        nativeTabBarIndicatorHeight={
+          nativeTabBarEnabled
+            ? nativeTabBarStyle?.indicatorHeight ?? 2
+            : undefined
+        }
+        nativeTabBarIndicatorBottom={
+          nativeTabBarEnabled
+            ? nativeTabBarStyle?.indicatorBottom ?? 0
+            : undefined
+        }
+        nativeSubHeaderConfig={nativeSubHeaderConfig}
+        nativeSubHeaderSelectedBackgroundColor={
+          nativeSubHeaderEnabled
+            ? nativeSubHeaderStyle?.selectedBackgroundColor
+            : undefined
+        }
+        onNativeTabPress={
+          nativeTabBarEnabled ? this.onNativeTabPress : undefined
+        }
+        onNativeSubHeaderPress={
+          nativeSubHeaderEnabled ? this.onNativeSubHeaderPress : undefined
+        }
+      >
+        <View
+          key="collapsible-header"
+          collapsable={false}
+          pointerEvents="box-none"
+          style={[
+            styles.slot,
+            {
+              bottom: undefined,
+              height: Math.max(0, Math.round(headerHeight)),
+            },
+          ]}
+        >
+          {header}
+        </View>
+        <View
+          key="sticky-header"
+          collapsable={false}
+          pointerEvents="box-none"
+          style={[
+            styles.slot,
+            {
+              top: Math.max(0, Math.round(headerHeight)),
+              bottom: undefined,
+              height: Math.max(0, Math.round(stickyHeaderHeight)),
+            },
+          ]}
+        >
+          {stickyHeader}
+        </View>
+        {hasTopOverlay ? (
+          <View
+            key="top-overlay"
+            collapsable={false}
+            style={[styles.slot, { bottom: undefined }]}
+            onLayout={(event) => {
+              const height = Math.ceil(event.nativeEvent.layout.height);
+              if (this.state.topOverlayHeight !== height) {
+                this.setState({ topOverlayHeight: height });
+              }
+            }}
+          >
+            {topOverlay}
+          </View>
+        ) : null}
+        {pages.map((page, index) => (
+          <View
+            key={pageKeys[index]}
+            collapsable={false}
+            style={[
+              styles.slot,
+              // Android translates the expanded pager while consuming header scroll.
+              // Keep Yoga's page bounds aligned with that native viewport.
+              Platform.OS === "android"
+                ? { bottom: -Math.max(0, Math.round(headerHeight)) }
+                : null,
+            ]}
+          >
+            {retained.has(index) ? page : null}
+          </View>
+        ))}
+      </CollapsiblePagerViewNativeComponent>
+    );
+  }
+}
+
+const styles = {
+  slot: StyleSheet.absoluteFill,
+};
+
+export type CollapsiblePagerViewOnPageScrollEvent =
+  ReactNative.NativeSyntheticEvent<OnPageScrollEventData>;
+export type CollapsiblePagerViewOnPageSelectedEvent =
+  ReactNative.NativeSyntheticEvent<OnPageSelectedEventData>;
+export type CollapsiblePagerViewOnPageScrollStateChangedEvent =
+  ReactNative.NativeSyntheticEvent<OnPageScrollStateChangedEventData>;

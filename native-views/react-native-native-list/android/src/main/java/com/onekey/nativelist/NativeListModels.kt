@@ -2,6 +2,236 @@ package com.margelo.nitro.nativelist
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import kotlin.math.roundToInt
+import java.util.Locale
+
+internal data class NativeSelectionTarget(val scope: String, val key: String?)
+
+internal fun isNativeListRowPressEnabled(
+  type: String,
+  variant: String,
+  disabled: Boolean,
+  pressDisabled: Boolean,
+): Boolean = !disabled && !pressDisabled && type != "buttonGroup" && (type != "system" || variant == "retry")
+
+internal fun isNativeListWholeRowInteractive(
+  type: String,
+  variant: String,
+  disabled: Boolean,
+  pressDisabled: Boolean,
+): Boolean = type != "walletGroup" && isNativeListRowPressEnabled(
+  type = type,
+  variant = variant,
+  disabled = disabled,
+  pressDisabled = pressDisabled,
+)
+
+/**
+ * A trailing text accessory (value, value pair, progress, radio, switch) owns its
+ * tap only when it carries an action key; otherwise the touch belongs to the row
+ * press, so a value such as a network balance is part of the row's hit area.
+ */
+internal fun isNativeListTrailingTextClickable(actionKey: String?): Boolean = !actionKey.isNullOrEmpty()
+
+/**
+ * A leading visual lays these badges past its own frame: the token network image
+ * with its backdrop, a `cornerIcon`, and every overlay (their default offset
+ * already overhangs; iOS stops clipping for the same descriptors). Android clips
+ * a child to its own bounds whenever its parent clips children, so the host row
+ * must stop clipping, or the badge is cut flat (OK-65694).
+ */
+internal fun nativeListLeadingVisualOverhangsFrame(
+  kind: String,
+  sourceCount: Int,
+  hasCornerIcon: Boolean,
+  overlayCount: Int,
+): Boolean = kind == "token" && sourceCount > 1 || hasCornerIcon || overlayCount > 0
+
+/**
+ * Whether an Activity row host (and, for a rich `amounts` row, the details view
+ * with its nested columns) clips its children and padding for this bind. One
+ * row view serves both the legacy row and the rich row and is reused across
+ * binds, so clipping is derived from the bound item alone and applied on every
+ * bind: a row whose bound leading visual lays a badge past its frame
+ * ([nativeListLeadingVisualOverhangsFrame]) opts out, whether that visual sits
+ * on the host (legacy row, OK-66071) or on the details view (rich row,
+ * OK-66275); a row without such a badge clips again even when the view it
+ * reuses last showed one.
+ */
+internal fun nativeListActivityHostClips(leadingOverhangs: Boolean): Boolean = !leadingOverhangs
+
+/** A one-line text view shows each line break of its text as one space. */
+internal fun nativeListFoldLineBreaks(text: String): String = text.replace(Regex("\\r\\n|[\\r\\n]"), " ")
+
+/**
+ * Offset into the displayed text for [sourceOffset], a UTF-16 offset into the
+ * caller's [source], kept within the text. Folding line breaks
+ * ([nativeListFoldLineBreaks]) moves every offset after a CRLF. The offset is a
+ * Long because JSON carries any safe integer; narrowing it first would wrap a
+ * value past Int range instead of clamping it to the end.
+ */
+internal fun nativeListDisplayOffset(source: String, sourceOffset: Long, foldsLineBreaks: Boolean): Int {
+  val clamped = sourceOffset.coerceIn(0L, source.length.toLong()).toInt()
+  return if (foldsLineBreaks) nativeListFoldLineBreaks(source.substring(0, clamped)).length else clamped
+}
+
+/** A horizontal run of laid-out text on one line, in view coordinates. */
+internal data class NativeListTextRun(val left: Float, val right: Float)
+
+/**
+ * One laid-out line of a text view, in view coordinates: its vertical extent,
+ * the runs of [touchable] text and the runs of [plain] text before it. A line
+ * holds one run of each, or several where mixed-direction text puts plain text
+ * between touchable text.
+ */
+internal data class NativeListTextLine(
+  val top: Float,
+  val bottom: Float,
+  val touchable: List<NativeListTextRun>,
+  val plain: List<NativeListTextRun> = emptyList(),
+)
+
+internal data class NativeListTouchRegion(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+  fun contains(x: Float, y: Float): Boolean = x in left..right && y in top..bottom
+}
+
+/** Runs are read back from pixel regions, so neighbours can be a pixel apart. */
+private const val TEXT_RUN_EDGE = 1f
+
+/**
+ * Parts of a stretched text view that take touches: every run of touchable
+ * text, widened by [slop] into blank space only. The widening stops at plain
+ * text on the same line, so text before the touchable text never takes the
+ * touch, however narrow it is. Touches outside the regions fall through to the
+ * row behind the view (OK-67219).
+ */
+internal fun nativeListTouchableTextRegions(
+  lines: List<NativeListTextLine>,
+  slop: Float,
+): List<NativeListTouchRegion> = lines.flatMap { line ->
+  line.touchable.map { run ->
+    var left = run.left - slop
+    var right = run.right + slop
+    for (other in line.plain) {
+      if (other.right <= run.left + TEXT_RUN_EDGE) left = maxOf(left, other.right)
+      if (other.left >= run.right - TEXT_RUN_EDGE) right = minOf(right, other.left)
+    }
+    NativeListTouchRegion(left, line.top, right, line.bottom)
+  }
+}
+
+internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
+
+/** Side of one member of an Activity token pair inside a [frame]-unit box (24 in 40). */
+internal fun nativeListLeadingPairMemberSize(frame: Int): Int = (frame * 0.6f).roundToInt()
+
+/**
+ * Frame of image source [index] of a leading visual inside its [width]×[height]
+ * box (SPEC "Activity leading pair", OK-66071). [networkIndex] is the token
+ * `networkImage` badge and [pairIndex] the Activity `secondaryLeading` token;
+ * either is null when absent. A pair draws the primary at the top-left and the
+ * secondary at the bottom-right, both [nativeListLeadingPairMemberSize] wide and
+ * the secondary inset by its [pairRing]; the badge keeps its corner geometry
+ * above them. A lone token, or a token with only a badge, fills the box. Any
+ * other multi-source visual (stackedImages) steps 0.72-sized images diagonally.
+ */
+internal fun nativeListLeadingSlotFrame(
+  index: Int,
+  sourceCount: Int,
+  networkIndex: Int?,
+  pairIndex: Int?,
+  width: Int,
+  height: Int,
+  badgeSize: Int,
+  badgeOverhang: Int,
+  pairRing: Int,
+): NativeListSlotFrame {
+  if (index == networkIndex)
+    return NativeListSlotFrame(
+      width - badgeSize + badgeOverhang,
+      height - badgeSize + badgeOverhang,
+      badgeSize,
+      badgeSize,
+    )
+  if (pairIndex != null) {
+    val member = nativeListLeadingPairMemberSize(height)
+    return if (index == pairIndex)
+      NativeListSlotFrame(width - member - pairRing, height - member - pairRing, member, member)
+    else NativeListSlotFrame(0, 0, member, member)
+  }
+  if (sourceCount == 1 || networkIndex != null) return NativeListSlotFrame(0, 0, width, height)
+  val side = (height * 0.72f).roundToInt()
+  val x = (index * (width - side).toFloat() / maxOf(1, sourceCount - 1)).roundToInt()
+  return NativeListSlotFrame(x, (height - side) / 2, side, side)
+}
+
+internal data class NativeListTrailingDescriptor(
+  val kind: String,
+  val name: String = "",
+  val actionKey: String = "",
+)
+
+/**
+ * Identity trailing accessories stack vertically unless they form one of the
+ * pairs every platform lays out side by side. The `valuePair` + `DotVerSolid`
+ * menu icon pair (the Swap token selector's balance and row menu) matches
+ * iOS `configureTrailingStack`; stacking it put the menu under the balance and
+ * clipped both inside the fixed row height on Android only.
+ */
+internal fun nativeListIdentityTrailingIsHorizontal(
+  accessories: List<NativeListTrailingDescriptor>,
+): Boolean {
+  val kinds = accessories.map { it.kind }
+  if (kinds.containsAll(listOf("value", "checkbox"))) return true
+  if (accessories.size != 2) return false
+  val (first, second) = accessories
+  return kinds == listOf("valuePair", "menu") ||
+    kinds == listOf("valuePair", "chevron") ||
+    (kinds == listOf("valuePair", "icon") &&
+      second.name == "DotVerSolid" &&
+      second.actionKey == "menu") ||
+    (kinds == listOf("icon", "chevron") &&
+      first.name == "RefreshCcwOutline" &&
+      first.actionKey.isEmpty()) ||
+    (kinds == listOf("icon", "icon") &&
+      first.name == "PencilOutline" &&
+      second.name == "DragOutline") ||
+    (kinds == listOf("icon", "drag") && first.name == "PencilOutline")
+}
+
+internal fun resolveNativeListSelectorBackgroundColor(
+  rowType: String,
+  styleBackgroundColor: String?,
+  rowBackgroundColor: String?,
+): String? = styleBackgroundColor?.takeIf(String::isNotEmpty)
+  ?: rowBackgroundColor?.takeIf { rowType != "walletGroup" && it.isNotEmpty() }
+
+// The image fallback-state cache is process-wide, so it is keyed by a digest of the request
+// identity instead of the raw headers, which can carry credentials such as Authorization.
+internal fun nativeListSourceFallbackStateKey(uri: String, headers: Map<String, String>): String? {
+  val trimmedUri = uri.trim().takeIf(String::isNotEmpty) ?: return null
+  val digest = MessageDigest.getInstance("SHA-256")
+  updateLengthPrefixed(digest, trimmedUri)
+  headers.entries
+    .map { it.key.lowercase(Locale.ROOT) to it.value }
+    .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+    .forEach { (name, value) ->
+      updateLengthPrefixed(digest, name)
+      updateLengthPrefixed(digest, value)
+    }
+  return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+}
+
+private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
+  val bytes = value.toByteArray(Charsets.UTF_8)
+  digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+  digest.update(bytes)
+}
+
+// Template type alone partitions reuse; data keys and styles never select a renderer.
+internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP, BUTTON_GROUP }
 
 internal data class NativeListItem(
   val key: String,
@@ -11,6 +241,15 @@ internal data class NativeListItem(
   val json: JSONObject,
 ) {
   val content: String = json.toString()
+  val rendererKey: NativeListRendererKey
+    get() = NativeListRendererRegistry.key(type)
+  val styledHeight: Double?
+    get() = json.optJSONObject("style")?.optJSONObject("container")
+      ?.takeIf { it.has("height") }?.optDouble("height")
+  // Selector presentations use their explicit-height geometry when either explicit height field
+  // is set (Web `hasExplicitRowHeight`). Row-local only; list-wide source scale stays row.height.
+  val hasExplicitHeight: Boolean
+    get() = styledHeight != null || json.has("height")
   // OneKey patch: only a host-validated stable snapshot can request a lightweight diff payload.
   var selectionUpdateFromContent: String? = null
 
@@ -20,6 +259,22 @@ internal data class NativeListItem(
 
   val isSelectable: Boolean
     get() = !json.optBoolean("disabled", false) && type in SELECTABLE_TYPES
+
+  val isRowPressEnabled: Boolean
+    get() = isNativeListRowPressEnabled(
+      type = type,
+      variant = json.optString("variant"),
+      disabled = json.optBoolean("disabled", false),
+      pressDisabled = json.optBoolean("pressDisabled", false),
+    )
+
+  val isWholeRowInteractive: Boolean
+    get() = isNativeListWholeRowInteractive(
+      type = type,
+      variant = json.optString("variant"),
+      disabled = json.optBoolean("disabled", false),
+      pressDisabled = json.optBoolean("pressDisabled", false),
+    )
 
   val isReorderable: Boolean
     get() {
@@ -47,6 +302,7 @@ internal data class NativeListItem(
     fun parse(json: JSONObject): NativeListItem {
       val key = json.getString("key")
       val type = json.getString("type")
+      NativeListRendererRegistry.key(type) // Reject unsupported templates at the model boundary.
       return NativeListItem(
         key = key,
         type = type,
@@ -60,6 +316,8 @@ internal data class NativeListItem(
 
 internal data class NativeListConfig(
   val generation: Int,
+  val structuralTransition: StructuralTransition?,
+  val disclosure: Disclosure?,
   val layout: String,
   val orientation: String,
   val gridColumns: Int,
@@ -73,7 +331,10 @@ internal data class NativeListConfig(
   val rowPressToggles: Boolean,
   val selectedKeys: LinkedHashSet<String>,
   val reorderable: Boolean,
+  /** `handle` starts a reorder only from a long press on a trailing `drag` accessory. */
+  val reorderFromHandleOnly: Boolean = false,
   val pullToRefresh: Boolean,
+  val refreshTriggerDistance: Double? = null,
   val refreshing: Boolean,
   val loadMore: Boolean,
   val endReachedThreshold: Double,
@@ -81,16 +342,47 @@ internal data class NativeListConfig(
   val sectionIndexHapticsEnabled: Boolean,
   val sectionIndexCenteredInWindow: Boolean,
   val theme: JSONObject?,
+  val listStyle: JSONObject?,
   val fixedFooter: NativeListItem?,
   val items: List<NativeListItem>,
 ) {
+  internal data class StructuralTransition(
+    val id: String,
+    val durationMs: Long,
+    val anchorKey: String?,
+  )
+  internal data class Disclosure(
+    val expanded: Boolean,
+    val expandedTrailingInset: Double,
+  )
   companion object {
     fun parse(snapshotJson: String): NativeListConfig {
       val root = JSONObject(snapshotJson)
+      val transition = root.optJSONObject("structuralTransition")
+      val structuralTransition = transition?.optString("id")?.takeIf(String::isNotEmpty)?.let { id ->
+        StructuralTransition(
+          id = id,
+          durationMs = transition.optDouble("durationMs", 220.0).coerceIn(0.0, 2000.0).toLong(),
+          anchorKey = transition.optString("anchorKey").takeIf(String::isNotEmpty),
+        )
+      }
+      val disclosureJson = root.optJSONObject("disclosure")
+      require(!root.has("disclosure") || disclosureJson != null) { "Invalid disclosure" }
+      val disclosure = disclosureJson?.let { value ->
+        require(value.opt("expanded") is Boolean) { "Invalid disclosure.expanded" }
+        require(!value.has("expandedTrailingInset") ||
+          value.opt("expandedTrailingInset") is Number) { "Invalid disclosure.expandedTrailingInset" }
+        val inset = value.optDouble("expandedTrailingInset", 0.0)
+        require(inset.isFinite() && inset >= 0.0) { "Invalid disclosure.expandedTrailingInset" }
+        Disclosure(value.getBoolean("expanded"), inset)
+      }
       require(root.getInt("schemaVersion") == 1) { "Unsupported schemaVersion" }
       val layout = root.getJSONObject("layout")
       val selection = root.optJSONObject("selection")
       val capabilities = root.optJSONObject("capabilities")
+      val reorderActivation = capabilities?.opt("reorderActivation")
+      require(reorderActivation == null || reorderActivation == "row" ||
+        reorderActivation == "handle") { "Invalid reorderActivation" }
       val sectionIndex = capabilities?.optJSONObject("sectionIndex")
       val rowArray = root.getJSONArray("rows")
       val items = ArrayList<NativeListItem>(rowArray.length())
@@ -109,9 +401,11 @@ internal data class NativeListConfig(
       val fixedFooter = root.optJSONObject("fixedFooter")?.let(NativeListItem::parse)
       return NativeListConfig(
         generation = root.getInt("generation"),
+        structuralTransition = structuralTransition,
+        disclosure = disclosure,
         layout = layout.getString("kind"),
         orientation = layout.optString("orientation", "vertical"),
-        gridColumns = layout.optInt("gridColumns", 1).coerceIn(1, 4),
+        gridColumns = layout.optInt("gridColumns", 1).coerceIn(1, 7),
         stickyHeaders = layout.optBoolean("stickyHeaders", false),
         contentPadding = layout.optInt("contentPadding", 0).coerceAtLeast(0),
         contentPaddingHorizontal = layout.optionalNonNegativeInt("contentPaddingHorizontal"),
@@ -122,7 +416,9 @@ internal data class NativeListConfig(
         rowPressToggles = selection?.optBoolean("rowPressToggles", false) ?: false,
         selectedKeys = selectedKeys,
         reorderable = capabilities?.optBoolean("reorderable", false) ?: false,
+        reorderFromHandleOnly = reorderActivation == "handle",
         pullToRefresh = capabilities?.optBoolean("pullToRefresh", false) ?: false,
+        refreshTriggerDistance = capabilities?.optDouble("refreshTriggerDistance")?.takeIf { it.isFinite() && it > 0 },
         refreshing = capabilities?.optBoolean("refreshing", false) ?: false,
         loadMore = capabilities?.optBoolean("loadMore", false) ?: false,
         endReachedThreshold = capabilities?.optDouble("endReachedThreshold", 0.2) ?: 0.2,
@@ -130,6 +426,7 @@ internal data class NativeListConfig(
         sectionIndexHapticsEnabled = sectionIndex?.optBoolean("hapticsEnabled", true) ?: true,
         sectionIndexCenteredInWindow = sectionIndex?.optBoolean("centeredInWindow", false) ?: false,
         theme = root.optJSONObject("theme"),
+        listStyle = root.optJSONObject("listStyle"),
         fixedFooter = fixedFooter,
         items = items,
       )
@@ -149,7 +446,9 @@ internal fun mergeRow(original: JSONObject, changes: JSONObject): JSONObject {
   val keys = changes.keys()
   while (keys.hasNext()) {
     val key = keys.next()
-    if (key != "key" && key != "type") result.put(key, changes.get(key))
+    if (key != "key" && key != "type") {
+      if (changes.isNull(key)) result.remove(key) else result.put(key, changes.get(key))
+    }
   }
   return result
 }

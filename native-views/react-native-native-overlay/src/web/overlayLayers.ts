@@ -1,0 +1,334 @@
+import {
+  OVERLAY_LEVELS,
+  OVERLAY_LEVEL_ORDER,
+  OVERLAY_WEB_Z_INDEX_BASE,
+} from '../OverlayLevels';
+import { overlayStore } from '../OverlayStore';
+
+import type { IOverlayRequestDismissReason } from '../OverlayViewTypes';
+import type { IOverlayEntry, IOverlayLevel } from '../types';
+
+const LAYER_ATTRIBUTE = 'data-onekey-overlay-layer';
+export const ENTRY_ATTRIBUTE = 'data-onekey-overlay-entry';
+
+const APP_ROOT_ID = 'root';
+
+const layerRoots = new Map<IOverlayLevel, HTMLDivElement>();
+const pageHosts = new Map<string, HTMLDivElement>();
+const pageHostListeners = new Map<string, Set<() => void>>();
+const dismissRequesters = new Map<
+  string,
+  (reason: IOverlayRequestDismissReason) => void
+>();
+let installed = false;
+
+function createLayerRoot(level: IOverlayLevel): HTMLDivElement {
+  const root = document.createElement('div');
+  root.setAttribute(LAYER_ATTRIBUTE, level);
+  Object.assign(root.style, {
+    position: 'fixed',
+    inset: '0',
+    pointerEvents: 'none',
+    zIndex: String(OVERLAY_WEB_Z_INDEX_BASE[level]),
+    isolation: 'isolate',
+  });
+  // Keep DOM order equal to level order so equal z-index ties stay correct.
+  const next = OVERLAY_LEVELS.slice(OVERLAY_LEVELS.indexOf(level) + 1)
+    .map((l) => layerRoots.get(l))
+    .find(Boolean);
+  document.body.insertBefore(root, next ?? null);
+  return root;
+}
+
+function setInert(element: HTMLElement | null | undefined, inert: boolean) {
+  if (element && element.inert !== inert) {
+    element.inert = inert;
+  }
+}
+
+// Elements outside a page host made inert for a blocking page overlay.
+let pageInertElements = new Set<HTMLElement>();
+let topBlockingElement: HTMLElement | undefined;
+
+interface IFocusRestoreTarget {
+  element: HTMLElement | SVGElement;
+  ownerId?: string;
+  fallback?: IFocusRestoreTarget;
+}
+
+const previousFocusByEntry = new WeakMap<HTMLElement, IFocusRestoreTarget>();
+
+export function focusOverlayEntry(entry: HTMLElement) {
+  const { activeElement, body } = entry.ownerDocument;
+  if (!entry.isConnected || entry.contains(activeElement)) return;
+
+  const owner = activeElement?.closest<HTMLElement>(`[${ENTRY_ATTRIBUTE}]`);
+  const ownerId = owner?.getAttribute(ENTRY_ATTRIBUTE) || undefined;
+  const fallback = owner ? previousFocusByEntry.get(owner) : undefined;
+  entry.focus({ preventScroll: true });
+  if (
+    !entry.contains(entry.ownerDocument.activeElement) ||
+    activeElement === body ||
+    !(
+      activeElement instanceof HTMLElement ||
+      activeElement instanceof SVGElement
+    )
+  ) {
+    return;
+  }
+
+  // Focus moving between overlays must preserve an opener already recorded.
+  if (owner && previousFocusByEntry.has(entry)) return;
+
+  if (ownerId && overlayStore.getEntry(ownerId)?.phase !== 'active') {
+    if (fallback) previousFocusByEntry.set(entry, fallback);
+    return;
+  }
+  previousFocusByEntry.set(entry, {
+    element: activeElement,
+    ownerId,
+    fallback,
+  });
+}
+
+export function restoreOverlayEntryFocus(entry: HTMLElement) {
+  let target = previousFocusByEntry.get(entry);
+  previousFocusByEntry.delete(entry);
+  if (!entry.isConnected) return;
+
+  const { activeElement, body } = entry.ownerDocument;
+  if (
+    activeElement &&
+    activeElement !== body &&
+    !entry.contains(activeElement)
+  ) {
+    return;
+  }
+
+  // An exit can finish before the next blocker takes focus on the next frame.
+  const nextBlocker = topBlockingElement;
+  if (
+    target &&
+    nextBlocker?.isConnected &&
+    nextBlocker !== entry &&
+    !previousFocusByEntry.has(nextBlocker)
+  ) {
+    previousFocusByEntry.set(nextBlocker, target);
+  }
+
+  // Keep the opener chain available even when a lower dialog unmounts first.
+  for (; target; target = target.fallback) {
+    const { element, ownerId } = target;
+    if (
+      !element.isConnected ||
+      entry.contains(element) ||
+      (ownerId && overlayStore.getEntry(ownerId)?.phase !== 'active')
+    ) {
+      continue;
+    }
+    element.focus({ preventScroll: true });
+    if (entry.ownerDocument.activeElement !== activeElement) return;
+  }
+}
+
+/**
+ * A page host lives inside the app root, so a blocking page overlay cannot
+ * inert the app root; inert every sibling on the path from the host up to it
+ * instead (other routes, the page itself, navigation chrome).
+ */
+function siblingsOutside(host: HTMLElement, root: HTMLElement) {
+  const siblings = new Set<HTMLElement>();
+  let node: HTMLElement = host;
+  while (node !== root && node.parentElement) {
+    const parent: HTMLElement = node.parentElement;
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling !== node && sibling instanceof HTMLElement) {
+        siblings.add(sibling);
+      }
+    }
+    node = parent;
+  }
+  return siblings;
+}
+
+function inertEntriesBelow(container: ParentNode, top?: IOverlayEntry) {
+  const toastSection = container.querySelector<HTMLElement>(
+    '[data-onekey-toast-section]'
+  );
+  if (toastSection) {
+    setInert(toastSection, !!top);
+  }
+  container
+    .querySelectorAll<HTMLElement>(`[${ENTRY_ATTRIBUTE}]`)
+    .forEach((node) => {
+      const level = Number(node.dataset.overlayLevelOrder);
+      const below =
+        !!top &&
+        (level < OVERLAY_LEVEL_ORDER[top.level] ||
+          (level === OVERLAY_LEVEL_ORDER[top.level] &&
+            Number(node.dataset.stackOrder) < top.seq));
+      setInert(
+        node,
+        below ||
+          node.style.visibility === 'hidden' ||
+          node.getAttribute('aria-hidden') === 'true'
+      );
+    });
+}
+
+/** Everything rendered below the topmost blocking entry becomes inert. */
+export function syncOverlayInert() {
+  const top = overlayStore.getBlockingTop();
+  const appRoot = document.getElementById(APP_ROOT_ID);
+  let nextPageInert = new Set<HTMLElement>();
+  const pageHost =
+    top?.scope === 'page' ? getOverlayPageHost(top.hostKey) : undefined;
+  if (top && pageHost && appRoot?.contains(pageHost)) {
+    setInert(appRoot, false);
+    nextPageInert = siblingsOutside(pageHost, appRoot);
+  } else {
+    setInert(appRoot, !!top);
+  }
+  pageInertElements.forEach((element) => {
+    if (!nextPageInert.has(element)) {
+      setInert(element, false);
+    }
+  });
+  nextPageInert.forEach((element) => setInert(element, true));
+  pageInertElements = nextPageInert;
+
+  for (const [hostKey, host] of pageHosts) {
+    setInert(
+      host,
+      nextPageInert.has(host) || !overlayStore.isPageHostFocused(hostKey)
+    );
+    inertEntriesBelow(
+      host,
+      top?.scope === 'page' && top.hostKey === hostKey ? top : undefined
+    );
+  }
+
+  for (const [level, root] of layerRoots) {
+    // Global layers render above every page overlay.
+    const below =
+      top?.scope === 'global' &&
+      OVERLAY_LEVEL_ORDER[level] < OVERLAY_LEVEL_ORDER[top.level];
+    setInert(root, below);
+    inertEntriesBelow(
+      root,
+      top?.scope === 'global' && level === top.level ? top : undefined
+    );
+  }
+
+  const topHost =
+    top?.scope === 'global' ? layerRoots.get(top.level) : pageHost;
+  const topElement =
+    top &&
+    topHost?.querySelector<HTMLElement>(
+      `[${ENTRY_ATTRIBUTE}][data-stack-order="${top.seq}"]`
+    );
+  const blocker = topElement && !topElement.inert ? topElement : undefined;
+  if (blocker === topBlockingElement) return;
+  topBlockingElement = blocker;
+  if (!blocker || blocker.contains(document.activeElement)) return;
+  // Wait for the React commit before focusing a newly interactive dialog.
+  requestAnimationFrame(() => {
+    if (topBlockingElement === blocker) focusOverlayEntry(blocker);
+  });
+}
+
+function onKeyDown(event: KeyboardEvent) {
+  // Escape while composing belongs to the IME.
+  if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229) {
+    return;
+  }
+  const resolution = overlayStore.resolveBack();
+  if (resolution.kind === 'pass') {
+    return;
+  }
+  event.stopPropagation();
+  event.preventDefault();
+  if (resolution.kind === 'dismiss') {
+    dismissRequesters.get(resolution.id)?.('back');
+  }
+}
+
+function installOverlayWebManager() {
+  if (installed || typeof document === 'undefined') {
+    return;
+  }
+  installed = true;
+  overlayStore.setPageHostAvailabilityCheck(
+    (hostKey) => getOverlayPageHost(hostKey)?.isConnected === true
+  );
+  overlayStore.subscribe(syncOverlayInert);
+  document.addEventListener('keydown', onKeyDown, true);
+}
+
+export function getOverlayLayerRoot(level: IOverlayLevel): HTMLDivElement {
+  installOverlayWebManager();
+  let root = layerRoots.get(level);
+  if (!root || !root.isConnected) {
+    root = createLayerRoot(level);
+    layerRoots.set(level, root);
+    syncOverlayInert();
+  }
+  return root;
+}
+
+export function registerOverlayDismissRequester(
+  id: string,
+  requester: (reason: IOverlayRequestDismissReason) => void
+): () => void {
+  dismissRequesters.set(id, requester);
+  return () => {
+    if (dismissRequesters.get(id) === requester) {
+      dismissRequesters.delete(id);
+    }
+  };
+}
+
+/** Re-run after entry DOM nodes mount, since the store emits before commit. */
+export function scheduleOverlayInertSync() {
+  requestAnimationFrame(syncOverlayInert);
+}
+
+export function registerOverlayPageHost(
+  hostKey: string,
+  element: HTMLDivElement
+): () => void {
+  installOverlayWebManager();
+  pageHosts.set(hostKey, element);
+  syncOverlayInert();
+  pageHostListeners.get(hostKey)?.forEach((listener) => listener());
+  return () => {
+    if (pageHosts.get(hostKey) === element) {
+      pageHosts.delete(hostKey);
+      syncOverlayInert();
+      pageHostListeners.get(hostKey)?.forEach((listener) => listener());
+    }
+  };
+}
+
+export function subscribeOverlayPageHost(
+  hostKey: string | undefined,
+  listener: () => void
+): () => void {
+  if (!hostKey) return () => {};
+  let listeners = pageHostListeners.get(hostKey);
+  if (!listeners) {
+    listeners = new Set();
+    pageHostListeners.set(hostKey, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) pageHostListeners.delete(hostKey);
+  };
+}
+
+export function getOverlayPageHost(
+  hostKey: string | undefined
+): HTMLDivElement | undefined {
+  return hostKey ? pageHosts.get(hostKey) : undefined;
+}

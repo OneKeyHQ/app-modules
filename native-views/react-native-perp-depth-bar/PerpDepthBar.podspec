@@ -16,8 +16,11 @@ Pod::Spec.new do |s|
   s.source_files = [
     "ios/**/*.{swift}",
     "ios/**/*.{m,mm}",
+    "ios/PerpDepthBarInterop.hpp",
     "cpp/**/*.{hpp,cpp}",
   ]
+  s.exclude_files = "ios/tests/**/*"
+  s.public_header_files = "ios/PerpDepthBarInterop.hpp"
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
@@ -26,4 +29,11 @@ Pod::Spec.new do |s|
   add_nitrogen_files(s)
 
   install_modules_dependencies(s)
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+    test_spec.pod_target_xcconfig = {
+      "SWIFT_OBJC_INTEROP_MODE" => "objcxx"
+    }
+  end
 end

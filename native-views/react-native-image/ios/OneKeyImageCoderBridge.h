@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -8,6 +9,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void)addCodersToManager:(id)manager NS_SWIFT_NAME(addCoders(to:));
 + (void)ensureWebPCoderRegistered;
+// A zero target preserves the decoder's intrinsic/vector result.
++ (nullable UIImage *)decodeSVGData:(NSData *)data pixelSize:(CGSize)pixelSize
+  NS_SWIFT_NAME(decodeSVG(_:pixelSize:));
 
 @end
 

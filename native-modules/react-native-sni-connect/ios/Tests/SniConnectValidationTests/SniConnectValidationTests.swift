@@ -3,6 +3,34 @@ import XCTest
 
 final class SniConnectValidationTests: XCTestCase {
 
+  func testUploadProgressKeepsMonotonicCountWithinBodyLength() {
+    let progress = SniConnectUploadProgress()
+    XCTAssertEqual(progress.snapshot(), ["bytesSent": 0, "totalBytes": 0])
+    progress.setTotal(10)
+    progress.record(4)
+    progress.record(1) // Delayed or lower transport callbacks cannot move it backward.
+    XCTAssertEqual(progress.snapshot(), ["bytesSent": 4, "totalBytes": 10])
+    progress.record(20)
+    XCTAssertEqual(progress.snapshot(), ["bytesSent": 10, "totalBytes": 10])
+  }
+
+  func testUnexpectedResolverHostIsLoggedInPlaintextAndStillRejected() throws {
+    let registry = SniConnectPinnedResolverRegistry()
+    let resolverClass: AnyClass = try registry.resolverClass(hostname: "example.com", ip: "93.184.216.34") {
+      NSObject.self
+    }
+    var messages: [String] = []
+    let previousSink = SniConnectCoreDiagnostics.warnSink
+    SniConnectCoreDiagnostics.warnSink = { messages.append($0) }
+    defer { SniConnectCoreDiagnostics.warnSink = previousSink }
+
+    XCTAssertNil(registry.resolve(domain: "Unexpected.example.com", resolverClass: resolverClass))
+    XCTAssertEqual(messages.count, 1)
+    XCTAssertTrue(messages[0].contains("requestedHost=unexpected.example.com"))
+    XCTAssertTrue(messages[0].contains("result=fail_closed"))
+    XCTAssertFalse(messages[0].contains("requestedHostHash="))
+  }
+
   func testSessionWithoutForwardingDataDelegateAllowsResponse() {
     switch SniConnectSessionDelegatePolicy.responseDispositionWithoutForwardingDelegate {
     case .allow:
@@ -548,6 +576,119 @@ final class SniConnectValidationTests: XCTestCase {
       "session=one; Path=/; HttpOnly",
       "theme=dark; Path=/; Secure",
     ])
+  }
+
+  func testUploadMethodAllowsOnlyPostAndPut() {
+    XCTAssertNoThrow(try SniConnectValidation.validateUploadMethod("POST"))
+    XCTAssertNoThrow(try SniConnectValidation.validateUploadMethod("PUT"))
+    ["GET", "HEAD", "PATCH", "DELETE", "OPTIONS"].forEach { method in
+      assertValidationFails {
+        try SniConnectValidation.validateUploadMethod(method)
+      }
+    }
+  }
+
+  func testResolveUploadFileAcceptsSandboxFileByPathAndFileURL() throws {
+    let root = try makeUploadRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("logs.zip")
+    try Data([0x50, 0x4B, 0x03, 0x04, 0xFF]).write(to: file)
+
+    let byPath = try SniConnectValidation.resolveUploadFile(file.path, allowedRoots: [root])
+    XCTAssertEqual(byPath.sizeBytes, 5)
+    XCTAssertEqual(
+      byPath.url.path,
+      file.standardizedFileURL.resolvingSymlinksInPath().path
+    )
+
+    let byURL = try SniConnectValidation.resolveUploadFile(
+      file.absoluteString,
+      allowedRoots: [root]
+    )
+    XCTAssertEqual(byURL.url.path, byPath.url.path)
+
+    let bySingleSlashURL = try SniConnectValidation.resolveUploadFile(
+      "file:" + file.path,
+      allowedRoots: [root]
+    )
+    XCTAssertEqual(bySingleSlashURL.url.path, byPath.url.path)
+  }
+
+  func testResolveUploadFileRejectsInvalidOrOutOfSandboxFiles() throws {
+    let root = try makeUploadRoot()
+    let outside = try makeUploadRoot()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: outside)
+    }
+    let outsideFile = outside.appendingPathComponent("secret.bin")
+    try Data([1, 2, 3]).write(to: outsideFile)
+    let emptyFile = root.appendingPathComponent("empty.zip")
+    try Data().write(to: emptyFile)
+    let link = root.appendingPathComponent("link.zip")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outsideFile)
+
+    [
+      "",
+      "relative/logs.zip",
+      "https://example.com/logs.zip",
+      outsideFile.path,
+      root.appendingPathComponent("../\(outside.lastPathComponent)/secret.bin").path,
+      link.path,
+      emptyFile.path,
+      root.path,
+      root.appendingPathComponent("missing.zip").path,
+      root.path + "/logs\n.zip",
+    ].forEach { path in
+      assertValidationFails {
+        _ = try SniConnectValidation.resolveUploadFile(path, allowedRoots: [root])
+      }
+    }
+  }
+
+  func testResolveUploadFileRejectsFilesOverTheSizeLimit() throws {
+    let root = try makeUploadRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("big.zip")
+    FileManager.default.createFile(atPath: file.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.truncate(atOffset: UInt64(SniConnectValidation.maxUploadFileBytes + 1))
+    try handle.close()
+
+    assertValidationFails {
+      _ = try SniConnectValidation.resolveUploadFile(file.path, allowedRoots: [root])
+    }
+  }
+
+  func testReadUploadFileAcceptsExactLimitBinaryData() throws {
+    let root = try makeUploadRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("exact.zip")
+    let expected = Data(repeating: 0xFF, count: SniConnectValidation.maxUploadFileBytes)
+    try expected.write(to: file)
+    XCTAssertEqual(try SniConnectValidation.readUploadFile(file), expected)
+  }
+
+  func testReadUploadFileRejectsGrowthAndTruncationAfterValidation() throws {
+    let root = try makeUploadRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("changing.zip")
+    try Data([1]).write(to: file)
+    let validated = try SniConnectValidation.resolveUploadFile(file.path, allowedRoots: [root])
+    let handle = try FileHandle(forWritingTo: file)
+    defer { try? handle.close() }
+    // A sparse file exercises the consumption bound without a large fixture.
+    try handle.truncate(atOffset: UInt64(SniConnectValidation.maxUploadFileBytes * 4))
+    XCTAssertThrowsError(try SniConnectValidation.readUploadFile(validated.url))
+    try handle.truncate(atOffset: 0)
+    XCTAssertThrowsError(try SniConnectValidation.readUploadFile(validated.url))
+  }
+
+  private func makeUploadRoot() throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("sni-upload-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
   }
 
   private func assertValidationFails(_ block: () throws -> Void, file: StaticString = #filePath, line: UInt = #line) {

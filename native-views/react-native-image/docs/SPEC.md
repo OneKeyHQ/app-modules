@@ -1,0 +1,1215 @@
+# Native Image Spec
+
+## 1. Implementation status and authority
+
+This document is the behavioral contract for
+`@onekeyfe/react-native-image`. iOS uses SDWebImage and Android uses Glide; their
+cache keys, decode pipelines, and callbacks are independent. This spec names the
+shared semantics and records deliberate differences so they remain visible in
+review.
+
+The OneKeyImage functionality in §§2–11 is implemented. The independent named
+icon component in §12 is implemented; its platform acceptance status is recorded
+separately in §12.6. The table below records
+implementation status only; validation evidence is tracked separately in §11.
+
+| Area                                                     | Implementation status          |
+| -------------------------------------------------------- | ------------------------------ |
+| Public TypeScript API and native bridge                  | Implemented                    |
+| Loading, fallback, cancellation, and recycling ownership | Implemented on iOS and Android |
+| Decode and encoded-data safety limits                    | Implemented on iOS and Android |
+| TOS rendition selection                                  | Implemented on iOS and Android |
+| Synchronous memory probe and cross-size preview          | Implemented on iOS and Android |
+
+## 2. Scope and non-goals
+
+OneKeyImage owns source normalization, native request execution, decoding,
+display state, native loading/fallback presentation, cache operations, request
+cancellation, and safe reuse of a native view.
+
+It supports URI sources and React Native numeric assets resolved to a URI. It
+provides a React wrapper, a Nitro native view, cache/preload methods, and a
+native-only reusable host for native list cells.
+
+The component does not own application image selection, authentication token
+refresh, business placeholders, list identity, or layout size. Callers must
+provide stable dimensions and a `recyclingKey` when a view is reused for
+different logical content.
+
+## 3. Definitions and ownership
+
+- **Raw URL:** the caller-provided source before TOS optimization.
+- **Request URL:** the optimized rendition URL, or the raw URL when optimization
+  is disabled, unsafe, unsupported, or retried after an ordinary optimized-load
+  failure.
+- **Exact memory hit:** a decoded memory entry whose request URL and requested
+  decode dimensions match the current request identity.
+- **Cross-size preview:** a decoded static image from the same family at another
+  compatible size, displayed temporarily while the exact request continues.
+- **Family:** raw URL plus canonical request-header digest. Different headers
+  never share a family.
+- **Variant:** a request URL and decode width/height. Android also includes the
+  circular transform because Glide caches transformed resources.
+- **Terminal request:** the current request generation that exclusively owns
+  `onLoad` or `onError`, followed by `onLoadEnd`.
+
+SDImageCache and Glide remain authoritative for cached resources. The
+cross-size registry stores bounded hints that reproduce cache keys; it does not
+own image bytes and a stale hint is removed after a memory miss.
+
+## 4. Public contract
+
+### 4.1 Source and display props
+
+| Input                         | Contract and default                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `source`                      | URI source or numeric React Native asset. Null, blank, or unresolved input shows fallback without `onError`.                                           |
+| `variant`                     | `generic` by default; also `token`, `network`, and `avatar`. Selects native placeholder/fallback presentation, not cache identity.                     |
+| `contentFit`                  | `cover` by default; also `contain`, `fill`, and `center`. Affects display and decode sizing.                                                           |
+| `cachePolicy`                 | Explicit prop, then source-level value, with `memory-disk` as the final default.                                                                       |
+| `autoplay`                    | Defaults to `false` on Android and `true` on other native platforms. Callers requiring parity must pass it explicitly.                                 |
+| `recyclingKey`                | Part of request generation/signature. A change cancels stale work and resets ownership.                                                                |
+| `optimizeTos`                 | `true` by default. It may replace eligible OneKey asset URLs with a bounded rendition URL.                                                             |
+| `resizeWidth`, `resizeHeight` | Optional logical-size hints used by preload, TOS selection, and pre-layout memory probing. One dimension alone implies a square preload decode target. |
+| `overscan`                    | `1.1` by default. Values below 1 are normalized by the TOS selector.                                                                                   |
+| `round`                       | `false` by default. Clips the native host to an oval; Android includes its circle transform in decoded cache identity.                                 |
+| `loadingStrategy`             | `static` by default; `skeleton` and `none` are supported. A React `placeholder` disables the native loading strategy for that instance.                |
+| `placeholderColor`            | Optional theme-aware native color for loading and terminal native states.                                                                              |
+
+On iOS, an explicit `round` value updates the shape while a source is active.
+A native `nil` during a Fabric prop reset retains the last committed shape until
+an explicit value arrives or a new source is committed after reuse. The React
+wrapper supplies `false` when the prop is omitted.
+
+React `placeholder` and `fallback` are optional overlay content. Their container
+clips to the same rounded bounds as the native image and does not receive pointer
+events.
+
+### 4.2 Methods and cache API
+
+- `reload()` invalidates the last request signature and starts the current
+  source again.
+- `cancel()` cancels current work, invalidates stale completions, and returns the
+  view to a non-requesting loading state.
+- `preload(sources)` resolves `true` only when every valid source succeeds. The
+  JavaScript wrapper filters blank sources but returns `false` if any were blank.
+- `clearMemory()`, `clearDisk()`, and `clearAll()` resolve only after their native
+  cache work is complete. Memory clearing also clears cross-size hints.
+
+## 5. State and event contract
+
+The observable native states are loading, image, error, and fallback.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fallback: null or invalid source
+  [*] --> Loading: valid source
+  Loading --> Image: current request succeeds
+  Loading --> Error: current request fails
+  Image --> Loading: identity changes or reload
+  Error --> Loading: identity changes or reload
+  Fallback --> Loading: valid source assigned
+```
+
+For a valid request, the terminal event order is:
+
+1. `onLoadStart`
+2. exactly one of `onLoad` or `onError`
+3. `onLoadEnd`
+4. `onDisplay` after a successful image is attached and visible in a window
+
+`onDisplay` is not a terminal pair member and may occur later. A null source
+shows fallback without a request and without `onError`.
+
+Each source or identity change advances a native generation. Only the current
+generation may mutate the view or emit terminal callbacks. Cancellation,
+recycling, and disposal invalidate previous generations and release active
+request, display, retry, safety, skeleton, and animation work.
+
+On Android, dropping a React-owned image stops callbacks and playback
+immediately. If the host is still attached and has a drawable, the host
+retains the drawable and its Glide resource until detachment or an actual new
+Fabric binding, whichever comes first. Preparing the outgoing view for the
+recycle pool does not clear that transition frame. A new binding restores the
+layout and attachment callbacks before applying its props. A detached image
+or an explicitly disposed NativeList image releases its resources immediately.
+
+A cross-size preview is presentation only. It MUST NOT emit `onLoad`,
+`onError`, `onLoadEnd`, or `onDisplay`; the exact request retains callback
+ownership. An iOS exact synchronous memory hit is terminal and reports
+`cacheType: memory`. Android may show an exact decoded entry synchronously as a
+preview, while the normal Glide request remains terminal; this is a recorded
+library-level divergence rather than a different public success result.
+
+## 6. Cache identity and synchronous memory probe
+
+**Process disk budgets — Implemented; Android native and focused iOS runtime verified.**
+The iOS Image pipeline MUST configure the existing `SDImageCache.shared` instance
+with a 320 MiB disk-size budget before creating either its ordinary manager or
+an isolated request manager. Both manager paths retain that same cache object;
+configuration occurs once per process and does not change the global default
+configuration used by independent namespaces. Existing memory settings, access-
+date expiry and normal cleanup scheduling remain unchanged. Previously written
+entries are not synchronously purged at initialization; library cleanup may
+leave actual usage temporarily above the configured size.
+
+The component-owned disk budgets are:
+
+| Cache | iOS | Android |
+| --- | --- | --- |
+| Ordinary images | 320 MiB shared SDImageCache | 320 MiB shared Glide cache under the module conditions below |
+| Local blockie avatars | 128 MiB separate namespace | Included in the ordinary Glide cache |
+| Video preview frames | 128 MiB separate namespace | 128 MiB separate directory |
+| Combined configured budget | 576 MiB | 448 MiB |
+
+On Android, the SDK provides the 320 MiB default through Glide 5.0.5's existing
+manifest `GlideModule` discovery, before the first Glide instance is constructed.
+The module sets only `InternalCacheDiskCacheFactory`'s capacity and retains the
+ordinary cache directory. It does not declare an `AppGlideModule`, call
+`Glide.init`, use production reflection, change memory settings or replace the
+existing explicit decoder registrations. It adds no dependency or JS API.
+Glide's existing consumer rules must retain the manifest-discovered class.
+
+This is Glide's supported but deprecated legacy discovery path: it applies only
+when the host permits manifest parsing and does not exclude the module. A host's
+modern `AppGlideModule.applyOptions` runs afterwards and may override this default.
+Such hosts own their final budget; the 448 MiB total assumes the 320 MiB ordinary
+budget applies. The current OneKey App has manifest parsing enabled and no
+conflicting host options. SDK packaging validation MUST verify real merged
+metadata discovery and a fresh Glide instance's effective 320 MiB disk budget,
+not only call the module directly or assert its constant.
+
+These totals describe the Image component's native caches, not a strict App-wide
+storage quota or measured usage. Preload and rendering share the ordinary cache;
+the existing Image clear APIs continue to clear ordinary, avatar and video
+preview caches. Native instances are process-shared and are not duplicated for
+separate main/background JavaScript heaps. React Native's other image pipelines,
+HTTP/URLCache, WebView storage, bundled assets and other App targets are outside
+these totals. This change introduces no JavaScript configuration API or new
+aggregate cache manager and does not change memory/bitmap-pool/animation budgets.
+Focused iOS validation MUST exercise an isolated-manager-first request in a
+fresh process and confirm the shared 320 MiB budget without changing memory,
+age or independent-cache settings. Focused configuration checks do not substitute
+for whole-module compilation and the formal regression suite.
+The Android test APK discovers the production manifest module and its first
+Glide instance uses a 320 MiB cache in the unchanged ordinary directory; all
+four cache instrumentation cases pass. The isolated-manager-first iOS test
+fails with the preceding 250 MiB configuration and passes at 320 MiB. These
+checks do not establish consumer App deployment or new-head hosted CI results.
+
+### 6.1 Exact identity
+
+Cache identity includes the effective request URL, canonical request headers,
+decode dimensions, and native decoder/transformation inputs. Request signatures
+also include caller identity and layout inputs needed to prevent a recycled view
+from accepting an obsolete result.
+
+Headers are part of identity even when the URI is unchanged. TOS optimization is
+disabled for requests with custom headers so an authenticated source is not
+silently rewritten.
+
+On iOS, sized raster requests for an effective `http`, `https`, or `file`
+URL with a density marker recognized by SDWebImage decode at that image scale.
+Their `UIImage.size`, load dimensions, and `contentFit: center` display use
+logical points, including after startup prewarm. The scale comes from the
+effective request URL and is applied with or without custom headers. Unsized
+requests, 1x URLs, avatars, data URIs, and SVG's independent raster path retain
+their existing behavior. The image scale does not change the existing sized
+cache key, cache-key filter, or safety generation.
+
+There is no fixed “three sizes per image” cache contract. TOS currently has five
+layout tiers and up to two density renditions per tier. The memory-variant
+registry records the variants actually requested, with a maximum of eight hints
+per family.
+
+### 6.2 Probe behavior
+
+For `memory` and `memory-disk` policies, a prop change may probe decoded memory
+synchronously on the UI thread before layout when size hints are available. No
+disk or network work is allowed in this probe (the bounded native exception for
+small local images is specified under the named-icon section). Android MUST disable Glide disk
+cache access for the probe and accept only a resource delivered synchronously
+from decoded memory or the prewarmed/sync-decoded startup memory cache.
+
+The probe order is:
+
+1. Exact optimized request URL and dimensions.
+2. Exact raw-URL fallback and dimensions when different.
+3. The smallest cached variant at least as large in both dimensions.
+4. The largest cached variant at most as large in both dimensions.
+
+Cross-size candidates must belong to the same family and their aspect-ratio
+drift must be at most 1.1. Animated resources are excluded. On Android, a square
+target cannot reuse a circle-cropped bitmap; a circular target may reuse an
+uncropped bitmap because the host clips it.
+
+An approximate hit remains visible as the loading placeholder until the exact
+request replaces it. This avoids a blank or skeleton frame while preserving the
+quality and event semantics of the exact request. A cross-size preview for
+`contentFit: center` is temporarily rendered with aspect-fit scaling so a
+smaller image fills the intended visual area and a larger image is not clipped.
+The cached bitmap is not resampled or copied. The exact image restores `center`
+and replaces the preview in the same UI-thread delivery. Replacing a visible
+preview MUST NOT run a whole-view fade that makes the preview disappear first.
+
+Terminal error or fallback, cancellation, recycling, and disposal release
+preview ownership. A later request for the same family may probe memory again.
+`disk` and `none` policies do not participate in synchronous previews.
+
+The registry is bounded to 1,024 families and eight variants per family. Family
+access is recency-ordered; new variants evict the oldest retained hints. A cache
+miss removes the stale variant immediately.
+
+On iOS, an attached image host with positive layout bounds starts its asynchronous
+request during the completed layout callback rather than deferring another main
+queue turn. Existing request signatures and generations still suppress duplicate
+loads and stale completions. No synchronous network work is introduced; the
+only synchronous disk work is the bounded small-image path specified below.
+
+### 6.3 Native video-preview cache — Source implemented; scoped iOS validation
+
+Image owns a native-only OneKeyMediaPreviewCache used by NativeList; it adds no
+JavaScript prop, method, schema or player dependency. The service is shared by
+native callers in one process, independently of the app's separate main/bg JS
+heaps. NativeList retains player/view ownership and supplies extraction callbacks.
+
+A video-preview namespace separates derived frames from ordinary image sources.
+Its opaque SHA-256 identity includes a schema version, full source URI, canonical
+request headers, target pixel tier and capture fit. Header names are case-folded
+and sorted with unambiguous encoding; values participate in identity. Neither
+headers nor source/query text may appear in cache filenames, persisted metadata
+or logs. Row keys and presentation text do not affect resource identity.
+
+Supported identity is the caller-provided URI and explicit request headers,
+plus schema, target pixel tier and capture fit. Cache policy constrains the
+read/write domains and distinguishes flights; it is not a cookie/session API.
+This feature does not manage cookie stores or provide cookie-session cache
+partitioning or automatic invalidation. Media whose identity or authorization
+changes through ambient cookies is outside this preview-cache support contract.
+
+Existing platform-player networking remains unchanged and may use its existing
+cookie handling. This is not a guarantee that network requests contain no cookies.
+Explicit header values remain opaque identity inputs; no cookie-specific key,
+tracker, private-flight rule or global-cookie eligibility check is introduced.
+
+The final scoped Android implementation passed a normal Gradle SDK/test-APK build
+and three instrumentation tests: same-key memory/disk reuse, real embedded-SVG
+pixels/cache sources, and queued-lookup cancellation with a surviving peer.
+This does not verify cookie-authenticated media or complete App NFT rendering.
+
+Target tiers are 128, 256, 512 and 1024 pixels on the longest edge. Frames retain
+aspect ratio and normalized orientation, with at most 1,048,576 pixels. Empty
+layout waits for a valid visible size. Decoded cache retention is configured for
+16 MiB and 64 entries; disk retention uses a 128 MiB capacity budget and each
+encoded entry is at most 8 MiB. Displayed frames, temporary pixel buffers and
+platform player/decoder resources are additional to these cache budgets.
+iOS NSCache cost/count and SDImageCache disk-size settings are library eviction
+targets, not strict instantaneous memory/disk bounds; Android LruCache trims by
+measured bitmap cost and DiskLruCacheWrapper owns disk eviction.
+Pending persistence separately retains at most 16 MiB of frame pixel cost.
+When this queue budget is exhausted, a new disk write is skipped without
+discarding the displayed frame or its permitted decoded-memory entry. Encoding
+and encoded buffers are temporary additional storage, bounded by the single
+persistence worker and the 8 MiB encoded-entry limit.
+
+iOS uses a dedicated SDImageCache namespace; Android uses a separate
+DiskLruCacheWrapper directory from the existing Glide dependency plus a bounded
+LruCache. Android MUST NOT reuse Glide's default disk directory or journal.
+iOS configures a 30-day disk age measured from the file's last access date,
+matching SDImageCache's access-date cleanup policy; Android uses its
+capacity-based LRU without a TTL. This is an intentional platform-policy
+difference, not a shared expiry guarantee.
+
+**iOS disk-read expiry gate — Implemented; focused simulator runtime verified.**
+Before opening or reading a preview file, the serial IO worker MUST inspect its
+last access date. A date at or before the 30-day cutoff, or an unavailable date,
+is a disk miss: remove that disk entry and continue through normal extraction,
+without delivering its pixels or treating expiry as a media failure. A valid,
+bounded, successfully decoded disk hit MUST refresh its access date, as the
+ordinary SDWebImage disk reader does. Reads retain the existing byte/decode
+limits and cancellation/generation checks. This is a disk-read freshness rule;
+it does not expire an already displayed frame or add a memory-cache TTL.
+SDWebImage's periodic cleanup alone does not enforce freshness at lookup time.
+Focused coverage MUST distinguish stale access from recent modification, and
+recent access from stale modification; the former misses and the latter hits.
+A refreshed disk entry must remain reusable without another extraction.
+The two expiry tests fail against the preceding implementation and pass with
+this gate; all six cache XCTest cases pass in the focused iOS Simulator runner
+using the production service and real SDWebImage. This is not a full module/App
+build or a new hosted-CI result.
+These adapters remain part of the existing Image clear API. clearMemory retains
+disk entries; clearDisk retains memory entries; clearAll clears both. Each
+cleared domain advances a generation and serializes clear with outstanding
+writes. The returned promise MUST NOT resolve while an earlier task can still
+repopulate that domain. Already displayed frames may remain visible. New requests
+after the barrier may cache normally. Corrupt/over-budget entries are misses and
+are removed/rebuilt without deleting a concurrent newer valid replacement.
+
+Cache policies constrain reads and writes: memory-disk uses both, memory and disk
+use only their named domain, and none uses neither. Requests with differing policy
+must not share a flight in a way that bypasses these restrictions. Cache I/O,
+decode, scaling and encoding run on bounded background workers; UI probes may
+only access decoded memory. iOS pixel conversion must not allocate a full-size
+UIImage before reducing it. Android's UI-only TextureView copy requests bounded
+dimensions; subsequent processing is off the UI thread.
+
+The service coalesces same-key/policy subscriptions across cells and grants at
+most two concurrent extraction permits. At most 130 total flights may be live,
+including cache lookup, FIFO waiting and active extraction; excess requests fail
+through the existing candidate fallback. Only
+visible subscriptions may own or wait for extraction. Cancelling one subscriber
+does not cancel another's demand. Cancelling the owner revokes its completion
+token and permits another visible subscriber to resume; no subscribers cancels
+the work. Queued disk lookups also carry cancellable work handles: when their
+last subscriber leaves, pending reads/decodes must not start merely to discard
+their result later. One already-running serial lookup may finish, but stale
+identity and clear-generation guards still prevent delivery or cache promotion.
+Cancelling one subscriber must not cancel a lookup still needed by a peer.
+A grant expires after 10 seconds. Successful extraction means a valid
+bounded still frame, not merely a rendered-player notification. Failure releases
+the permit; no failures are persisted. Storage failure does not discard a valid
+displayable frame. Stale binding or owner generations cannot deliver results;
+stale clear generations cannot repopulate the cleared cache domain. Cache clear
+does not cancel a current view's valid extraction or an already obtained memory
+result: it may still display without refilling that domain. An outstanding disk
+lookup must recheck the disk generation before returning or promoting its result.
+
+The shared cache implementation has scoped runtime evidence within the URI and
+explicit-header contract above. The production iOS cache service
+passed 38 simulator checks and a separate-process disk reload; its queued-lookup
+cancellation revision reran the 38 checks and passed four focused queued-lookup
+cancellation checks with the production service. The production video slot previously
+passed 14 checks using a real H.264 MP4, and the detach/tier correction passed a
+focused 13-check replay. Android cache/coordinator and SVG evidence is described
+in the acceptance record; Android video-player runtime, full-app NFT integration
+and physical-device performance remain pending. Required native
+tests cover real disk I/O, cold/warm/restart hits, same-key deduplication, owner
+cancellation, FIFO/bounds/timeouts, headers/size/fit isolation, clear races, corrupt
+entries and policy domains. Slot rendering/player and full-app performance remain
+separate acceptance layers.
+
+Disk reads MUST enforce the 8 MiB byte limit and inspect image metadata before
+allocating decoded pixels. An entry with a side above 1024, more than 1,048,576
+pixels, unsupported/malformed metadata or invalid format is a miss. A generic
+cache API that fully decodes before this check is insufficient; use a bounded
+data lookup with metadata validation or an equivalent allocation-bounded decode.
+Cached images never bypass the frame dimensions simply because this process
+normally writes the files itself.
+
+## 7. TOS rendition and decode contract
+
+Eligible hosts are limited to OneKey's declared asset domains. Optimization is
+skipped for SVG/video paths, protected or signed queries, custom request headers,
+invalid sizes, and non-allowlisted hosts. Ordinary failure of an optimized URL
+may retry the raw URL; a safety rejection MUST NOT bypass its limit by retrying.
+
+| Maximum logical edge | Standard rendition | High-density rendition |
+| -------------------: | -----------------: | ---------------------: |
+|                   48 |                 96 |                    160 |
+|                   96 |                192 |                    320 |
+|                  192 |                384 |                    640 |
+|                  384 |                768 |                   1280 |
+|               larger |               1280 |                   1280 |
+
+Display size selects the tier first. Normalized density and overscan only choose
+between that tier's standard and high-density rendition. Device density is
+clamped to 1–3.
+
+Rendered and preloaded requests must use equivalent logical-size, pixel-ratio,
+overscan, headers, cache policy, and optimization inputs when the caller expects
+an exact decoded-memory hit.
+
+### Embedded SVG data URI cache revision — Implemented; scoped Android runtime verified
+
+Android base64 data URIs MUST reach the existing SVG decoder from the data
+loader's ByteBuffer path as well as from InputStream sources. Both paths retain
+the existing OneKeySVG normalization and safety budgets. The memory-disk policy
+uses Glide DATA caching for data URI source bytes in render and preload; decoded
+resources remain in Glide memory. A source-data disk hit still performs SVG
+parsing/rendering and MUST NOT be described as a decoded-memory hit. Existing
+memory/disk/none policy restrictions and clear operations remain authoritative.
+No HTML support or additional input normalization is introduced.
+
+iOS retains its existing SDWebImage data URI/coder/cache path. The existing
+6.7.0-26 consumer was observed loading an embedded SVG, then reporting a disk
+hit after memory clearing and remounting; this is baseline runtime evidence,
+not acceptance of the Android change. Android acceptance requires a
+real Glide data-SVG load, memory reuse and disk-only reload after memory clear,
+alongside unsafe/over-budget SVG regression coverage.
+
+The normal SDK Gradle AndroidTest build passed with the lockfile's RN 0.88
+dependencies. On an isolated API 35 arm64 emulator, the checked-in
+testRealGlideEmbeddedSVGMemoryAndDataDiskHit passed using the production Glide
+registry: an embedded-PNG foreignObject produced the expected red pixel and
+reported LOCAL, MEMORY_CACHE, then DATA_DISK_CACHE after memory clearing.
+This verifies the embedded-SVG cache path, not the Android video-preview player,
+full-app NFT interaction, the complete SVG safety matrix or device performance.
+
+The consuming Android App also completed a normal local native build and a final
+incremental build with matching SDK/consumer source hashes; the resulting APK
+started and visibly rendered onboarding. A separate in-App QA-image probe
+reported onLoad/onDisplay, but its diagnostic Dialog screenshot was black without
+FLAG_SECURE. That probe is not pixel-validation evidence and does not replace the
+successful instrumentation pixel test. No Modal/provider repair or performance
+claim is included in this change.
+
+### 7.1 Embedded PNGs in SVG foreign objects — Implemented
+
+The native image decoder, including preload and reusable native-list hosts,
+recognizes SVG content independently of URL extensions. A `foreignObject`
+containing exactly one XHTML `img` with a base64 PNG source may be converted
+to an SVG `image` or bounded pixel geometry. The image must fill the explicitly
+sized foreign-object viewport; its geometry, transform, opacity, mask and clip
+remain in the SVG.
+Eight-digit hexadecimal paint attributes are translated to RGBA for both
+backends so the retained background and its alpha do not become black.
+Converted iOS thumbnails compensate for SVGCoder's screen-scale rasterization:
+requested physical pixels are not multiplied by display density again. Their
+output canvas is capped at 4,194,304 pixels, matching the 16 MiB decode target.
+This is a static image subset, not an HTML renderer. Other HTML, external
+sources, unsupported attributes/layout/CSS, malformed XML, DTDs and entities
+fail decoding instead of reporting a partially rendered image as successful.
+
+Normalization runs in the existing native decode job, never in a synchronous
+UI memory probe or a JS runtime. Existing request generations, cancellation,
+thumbnail sizing and native caches retain ownership. No WebView or additional
+network request is created. The native cache generation changes so earlier
+partially decoded SVGs cannot bypass the new decoder after an upgrade.
+
+Documents requiring conversion are limited to 8 MiB, 10,000 XML elements,
+64 levels and 16 foreign objects. Embedded PNGs share an aggregate 8 MiB encoded
+and 4,194,304-pixel budget, have sides at most 8,192, and must be static.
+The bounded PNG must also pass the platform raster decoder before conversion;
+a valid metadata header alone is insufficient to claim successful rendering.
+Only full-viewport `img` dimensions (omitted or `100%`) are supported. The
+supported HTML stylesheet is an `img` rule containing only full-viewport width
+and height and recognized image-rendering declarations. Unsupported
+foreign-object documents return the ordinary image-error/fallback result.
+Ordinary SVGs without foreign objects keep their existing decoder path.
+
+The foreign-object preflight recognizes UTF-8 and UTF-16 LE/BE byte signatures,
+with or without a UTF-16 BOM, before searching for XML markers. The existing XML
+parser remains authoritative for declared encodings and malformed input; UTF-16
+must not bypass conversion or DTD/entity rejection because of interleaved NULs.
+iOS serializes a converted document into one shared output buffer, appending
+each node directly instead of retaining a complete subtree string per ancestor.
+Serialization order and escaping remain unchanged; nesting must not multiply
+the retained serialized PNG payload. The existing byte, depth and raster budgets
+remain in force.
+
+Flat SVG rules for the bare element selectors `rect`, `circle`, `ellipse`,
+`line`, `polyline`, `polygon`, `text`, `tspan` and `stop` (including comma-separated
+lists of these selectors) retain their original stylesheet text for the native
+SVG backend. They may share a stylesheet with supported `img` rules and do not
+select converted image containers or generated pixel paths. Only `img` rules
+participate in embedded-image sampling. Selectors that could affect converted
+content, class/ID/compound selectors, at-rules and nested rules remain outside
+this subset and fail decoding. This is not a general CSS cascade implementation.
+Styles retain the backend's existing rendering semantics. In the current iOS
+CoreSVG backend, SVG rules must precede the artwork they style, and explicit
+presentation attributes take precedence over these rules. Later rules do not
+restyle preceding SVG elements. Embedded `img` sampling still resolves the whole
+document before conversion on both platforms.
+
+Acceptance requires the real On-Chain All-Stars #1982 document, a standard SVG,
+an unsupported HTML subtree, malformed and over-budget embedded PNGs, cached
+reloads and recycled hosts on both platforms. Source completion alone does not
+establish runtime or full-wallet acceptance.
+
+Focused regression coverage is in `OneKeySVGForeignObjectTests.swift` and
+`OneKeySVGForeignObjectTest.kt`; cache-identity expectations remain in the
+existing infrastructure/safety suites. The real #1982 source has been rendered
+with the production iOS coder on iOS Simulator and the production Android SVG
+decoder in an Android emulator Activity. Both reject unsupported HTML. This
+records decoder-level runtime evidence. The iOS wallet also displays the
+all-networks NFT list in light/dark themes and an On-Chain All-Stars detail.
+Thirty downward swipe gestures and a return to cached rows completed without
+an app restart, but the current list reached its end early; this does not
+establish thirty distinct screens or physical-device crash acceptance.
+Android full-wallet acceptance remains open.
+
+#### Pixel-art sampling — Implemented; focused runtime verified
+
+Supported `img` stylesheets are resolved in document/declaration order before
+conversion. The last recognized `image-rendering` value selects pixelated or
+smooth sampling; `auto`, `smooth` and `optimizeQuality` select smooth sampling.
+Without a declaration the HTML image keeps smooth sampling. Legacy nearest
+declarations are supported; `-ms-interpolation-mode` is a fallback only when no
+`image-rendering` declaration is present. This does not add general CSS support.
+
+CoreSVG ignores the embedded image's sampling hints. AndroidSVG 1.4 constructs
+`Paint(0)` for nearest sampling, which still enables filtering on Android Q+.
+For explicitly pixelated PNGs, both platforms convert equal-color horizontal
+pixel runs into filled SVG paths in a nested SVG viewport. Geometry, alpha,
+surrounding SVG layers and clipping are retained; other images keep the raster
+path. Integer-aligned enlargement
+must not introduce interpolated colors. Fractional/transformed vector edges
+may cover one output pixel; this is not an exact browser CSS pixel-grid match.
+Generated pixel paths explicitly disable inherited stroke. Root/group stroke
+continues to apply to original SVG siblings, but MUST NOT outline PNG pixel runs.
+Generated geometry shares a document-wide 16,384-run and 512-KiB path-data
+budget and the existing 10,000-element budget; exceeding it fails through the
+ordinary image fallback. PNG decoding retains the existing aggregate 4MP
+limit. A temporary pixel buffer may add at most 16 MiB during conversion and is
+released with the decode job; no JS heap copies or UI-thread pixel work is added.
+
+Smooth images retain native SVG bitmap drawing. Android acceptance must
+exercise `renderToPicture` and the wallet's `PictureDrawable` path, rather than
+only `renderToCanvas`. Both
+platforms invalidate older decoded cache entries. Pixel tests must cover
+integer/fractional sizes, alpha/background, stylesheet order, smooth images,
+ordinary SVGs and generated-geometry limits; wallet list/detail verification
+and physical-device acceptance are recorded separately.
+
+The production iOS coder passes ten focused XCTest cases. Android passes
+23 SVG/safety JVM tests and four emulator instrumentation cases through
+`PictureDrawable` and `ImageView`, including fractional display sizes and
+geometry-budget rejection. The real #1982 document renders at 192, 197 and
+480 pixels through both backends: integer sizes have exactly the source's
+22 composited colors, and pixels away from fractional edges match the source
+with zero channel error. The rebuilt iOS wallet displays sharp NFT list and
+detail images in dark mode. These checks do not establish physical-device,
+full Android wallet or the original thirty-distinct-screen stress acceptance.
+
+## 8. Safety and resource limits
+
+Both platforms reject oversized or malformed encoded data before allowing an
+unbounded decode. Static and animated paths have separate limits.
+
+| Limit                        |                         iOS |                  Android |
+| ---------------------------- | --------------------------: | -----------------------: |
+| Encoded image                |                      32 MiB |                   32 MiB |
+| Decoded data URI             |                       8 MiB |                    8 MiB |
+| Animated encoded image       |                      16 MiB |                   16 MiB |
+| Static metadata dimensions   | 100,000,000 px; side 32,768 |                     same |
+| Animated frames              |                       1,000 |                    1,000 |
+| Animated duration            |                        60 s |                     60 s |
+| Animated metadata dimensions |   16,000,000 px; side 8,192 | 4,194,304 px; side 8,192 |
+| Decode/frame buffer target   |                      16 MiB |                   16 MiB |
+
+The animated-dimension difference reflects different native decoder allocation
+behavior and is intentional. Safety failures are terminal request failures and
+must clean up request and safety-flight ownership.
+
+## 9. Platform mapping and known divergences
+
+| Contract                  | iOS                                                     | Android                                                                |
+| ------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Image pipeline            | SDWebImage / `SDAnimatedImageView`                      | Glide / native `ImageView`                                             |
+| Exact synchronous hit     | May complete the current request immediately            | Displays immediately; Glide request remains terminal                   |
+| Cross-size preview        | Direct decoded `UIImage` lookup by reproduced cache key | Disk cache disabled; accepts only an immediate decoded-memory callback |
+| Circular output           | Host view corner mask                                   | Circle-cropped Glide resource plus host clipping                       |
+| Default autoplay          | `true`                                                  | `false`                                                                |
+| Preload scheduling        | Up to four concurrent tasks                             | Sequential source loop                                                 |
+| Native-only reusable host | `OneKeyImageReusableView`                               | `OneKeyImageReusableView`                                              |
+
+The shared contract is the result and ownership described above. It does not
+require SDWebImage and Glide to expose identical internal cache behavior.
+
+## 10. Conformance map
+
+| Concern                           | Shared/API                                  | iOS                               | Android                                                  |
+| --------------------------------- | ------------------------------------------- | --------------------------------- | -------------------------------------------------------- |
+| Public props, overlays, cache API | `src/index.tsx`, `src/OneKeyImage.nitro.ts` | generated bridge                  | generated bridge                                         |
+| Request lifecycle and reuse       | wrapper identity state                      | `ios/OneKeyImage.swift`           | `OneKeyImage.kt`                                         |
+| Request context and identity      | header serialization                        | `OneKeyImageRequestContext.swift` | `OneKeyImageSafety.kt`, `OneKeyImage.kt`                 |
+| Cross-size hints                  | —                                           | `OneKeyImageMemoryVariants.swift` | `OneKeyImageMemoryVariants.kt`                           |
+| Preload and cache clearing        | wrapper input normalization                 | `OneKeyImageCache.swift`          | `OneKeyImageCache.kt`                                    |
+| TOS rendition selection           | —                                           | `OneKeyTosURL.swift`              | `OneKeyTosUrl.kt`                                        |
+| Decode/safety policy              | —                                           | `OneKeyImageRequestContext.swift` | `OneKeyImageSafety.kt`, `OneKeyImageDecodeDimensions.kt` |
+
+## 11. Review checklist
+
+For any change to Native Image:
+
+- [ ] Does a new input affect request signature, cache identity, or family
+      identity?
+- [ ] Can a stale request, fallback retry, display callback, or preview write
+      after cancellation or recycling?
+- [ ] Does a preview remain callback-silent while the exact request owns the
+      terminal event pair?
+- [ ] Are memory probes synchronous and memory-only, with stale hints removed?
+- [ ] Are animated images excluded from cross-size reuse?
+- [ ] Do `memory`, `disk`, `none`, and `memory-disk` retain their documented
+      memory/disk behavior?
+- [ ] Do render and preload compute compatible URL and decode identities?
+- [ ] Are new bounds numeric, enforced, and cleared or evicted deterministically?
+- [ ] Is every intentional iOS/Android difference recorded in §9?
+- [ ] Does the implementation still match this spec, or must this spec change in
+      the same PR?
+
+### Acceptance matrix
+
+| Area           | Required cases                                                                                    | Pass condition                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity       | Same URL with different headers, sizes, fit, round, policy, and recycling keys                    | No cache or stale-result ownership crosses an incompatible identity                                                                                     |
+| Memory preview | Exact, larger, smaller, `center`, incompatible aspect ratio, stale hint, animated entry           | Compatible static entries display immediately; cross-size `center` scales without a blank frame; disallowed entries are ignored and stale hints removed |
+| Lifecycle      | Rapid source changes, reload, exact-request failure after preview, cancel, recycle, detach/attach | Only the current generation writes and emits one terminal pair; preview ownership is released on terminal failure                                       |
+| Loading UI     | Native static/skeleton/none and React placeholder/fallback                                        | One loading surface is visible; clipping and terminal state are correct                                                                                 |
+| TOS            | Every tier, DPR boundary, protected query, headers, unsupported path, optimized failure           | Correct rendition or raw URL; only ordinary optimized failure retries raw                                                                               |
+| Safety         | Encoded, dimension, frame, duration, and decode-buffer boundaries                                 | At-limit input follows the supported path; over-limit input fails and cleans up                                                                         |
+| Cache API      | Preload mixed success, memory/disk/all clearing                                                   | Promise result is accurate and requested cache work plus hints are complete                                                                             |
+| Native reuse   | Standalone Nitro view and reusable list-cell host                                                 | No stale image, callback, animation, skeleton, or request survives ownership change                                                                     |
+
+The implementation is complete on iOS and Android. Source tests and native
+builds verify the implementation at their respective layers. Simulator or device
+runs add rendered lifecycle and visual acceptance evidence; missing acceptance
+evidence does not indicate missing implementation.
+
+## 12. Named SVG icon component — Implemented
+
+### 12.1 Scope and ownership
+
+`@onekeyfe/react-native-image/icon` provides `OneKeyIcon` on iOS, Android,
+Web and Desktop. This is independent of OneKeyImage: its existing props,
+URI pipeline, caches and events remain unchanged. This phase does not migrate
+NativeList, BottomTabs, Activity, Market or the application's Icon adapter.
+
+The canonical artwork is the application's `packages/components/svg` directory.
+Generation accepts an explicit `--app-root`, includes all 1,908 current source
+files, and uses the existing application icon naming convention. It rejects
+duplicate names, invalid XML, external references and unsupported currentColor
+locations before writing any output. It does not scan usage or remove icons.
+Generated raw files have unique `IconName.svg` names in one resource directory
+shared by the iOS resource bundle and Android assets. Source paths and digests
+are recorded in a deterministic manifest; paths and SVG markup are not embedded
+in a JavaScript icon map. Existing application React SVG generation is unchanged.
+The current React registry also exposes `ChartPositionOutline` without a matching
+canonical SVG file. This component does not invent that missing source; a later
+application adapter migration must resolve that existing source gap explicitly.
+An absent root namespace is preserved; an explicitly wrong namespace is rejected.
+The current `GooglePayIllus` source contains a local clip reference without its
+definition. Generation reports that diagnostic and preserves the raw reference;
+the sprite prefixes even unresolved local references so they cannot resolve to
+another symbol. It does not invent clipping geometry or silently repair sources.
+
+Native resources belong to the native SDK/package version. Adding or changing
+an icon requires rebuilding that native package; JavaScript OTA alone cannot
+install missing native artwork. On iOS/Android the native service and bounded
+cache are process-owned, while `main` and `bg` JavaScript heaps remain separate.
+The view is for the UI `main` runtime; importing or initializing `bg` MUST NOT
+load artwork or start icon rendering. Web/Desktop use one application JS runtime;
+Electron's renderer and operating-system resources remain separate owners.
+
+### 12.2 Public API and presentation
+
+The independent entry exports `OneKeyIcon` and its props: required `name: string`,
+optional `color: string`, plus standard React Native view `style`, accessibility
+and `testID` props. It is a leaf view and does not accept children.
+No arbitrary XML, URI, preload/cache methods or error events
+are exposed. The native bridge uses `iconName` to avoid a collision with
+`HybridObject.name`.
+The Web entry MUST NOT import the root image entry or runtime Nitro code.
+
+The default logical size is 24 × 24 and the default color is opaque black.
+Explicit style dimensions take precedence. Artwork is aspect-fit and centered
+inside those bounds, preserving its source viewBox, opacity, masks, clipping,
+gradients, strokes and fixed colors. `color` resolves only source `currentColor`
+tokens in `fill`/`stroke` attributes; it is not whole-image tint. Supported native color
+inputs are `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb(r,g,b)` and
+`rgba(r,g,b,a)`. RGB channels are integers in 0–255; alpha is a finite number in
+0–1. Native alpha is quantized to the nearest 8-bit channel (including tiny alpha
+rounding to zero). Native percentages, named colors and theme tokens are not
+accepted; invalid native colors clear the drawing rather than reusing a stale
+one, and development builds log a `[OneKeyIcon] Unsupported color` warning
+naming the icon so a blank icon is diagnosable. Web colors follow browser CSS semantics, including named colors, variables
+and inheritance; caller style takes precedence over the color prop and the inner
+SVG inherits currentColor.
+Native implementations receive a normalized RGBA value. The later application
+adapter owns theme resolution and RTL name selection; this component does not
+infer either from a name. Accessibility names are caller supplied; decorative
+icons do not acquire their internal resource name as an accessible label.
+
+Unknown/empty names, invalid native color, invalid/non-finite/zero layout or a decoder
+failure clear the current image while retaining the view's layout. They MUST NOT
+display the previous icon or silently substitute another artwork. There is no
+network request; invalid requests do not write the named-icon disk cache.
+
+### 12.3 Lifecycle, threading and resource limits
+
+Native prop, layout and attachment updates occur on the UI thread. A change of
+name, color, pixel size or display scale advances a generation and clears the
+previous drawing. Detach/recycle invalidates that generation; only a completion
+matching the current attached generation may bind an image. Reattachment starts
+the current identity again. Before queuing, the view probes the decoded-raster
+LRU synchronously on the UI thread; a hit binds in the same frame (no blank frame
+on remount or recycle). The probe never reads assets or loads the manifest, so
+a cold process still takes the asynchronous path. Decoding runs off the UI thread with at most two
+concurrent tasks per process. Each view owns at most one pending identity;
+replacement or detach removes/replaces that queued identity instead of appending
+obsolete closures. Obsolete queued work is discarded before decoding and
+obsolete running results are discarded on completion.
+
+The host must package `OneKeyIcons.bundle` (iOS) or `assets/icons` (Android);
+when its manifest is missing or invalid the native side logs one warning
+(`[OneKeyIcon]` / tag `OneKeyIcon`) and every named icon stays blank.
+
+The native decoded-raster LRU is limited to 128 entries and 8 MiB of pixel cost.
+Its key includes canonical name, source digest, normalized RGBA, requested pixel
+width/height and scale. Every input that changes pixels changes identity. A
+single larger result may display but is not cached; it is never reduced merely
+to fit the cache budget. Each decode target is limited to 4,096 pixels per edge
+and 4,194,304 pixels total (16 MiB at four bytes/pixel). Non-finite, zero or
+over-limit targets fail without allocating a raster. Concurrent decode buffers
+and currently displayed images are additional memory; the cache limit is not a
+total process-memory guarantee. Resources and cache entries are native shared
+data, not copies serialized into each JavaScript heap.
+
+On iOS, a separate `onekey-named-svg-raster-v1` disk namespace retains PNG
+rasters with a configured 128 MiB capacity and no age-based expiration. OS cache
+purging and SDWebImage size-based cleanup may evict entries. This namespace is
+independent of the URI image cache API and its budget. Source digest, pixel size,
+scale, recolor mode and relevant color/alpha inputs invalidate changed artwork.
+Only named-icon workers read/decode disk entries; a hit skips SVG parsing and
+rasterization but still delivers asynchronously to the UI thread. Invalid-size
+entries are misses. Writes and PNG encoding run on a serial utility queue; only
+results within the existing 8 MiB per-raster admission limit are persisted.
+Android also maintains a 64 MiB disk raster PNG cache under `cacheDir/onekey-named-svg-v1`
+using the same SHA-256 render-key naming and LRU pruning.
+This disk layer alone does not make a cold-process main-thread memory probe synchronous.
+
+`@onekeyfe/react-native-native-overlay` reaches the Android registry by
+reflection (`Class.forName`, then `INSTANCE`, `request` with 8 arguments and
+`cancel`) so it takes no build dependency on this package. The package's
+`consumer-rules.pro` keeps those names in minified App builds; removing or
+re-signing any of them requires updating that lookup in the same change, or
+native toast icons render blank in release builds only.
+
+On both iOS and Android, a startup prewarm closes that cold-process gap for the first screen. Named
+icon requests from both the view probe (`cachedRender`) and the callback bridge
+(`OneKeyNamedSVG.request` / `requestRender` / `OneKeyNamedSVGBridge.request`,
+including native bottom tabs) record `(name, color, pixel size, scale)` up to
+96 distinct entries and are written to `Caches/onekey-named-svg-startup-v1.json`
+(or `cacheDir/onekey-named-svg-startup-v1.json` on Android).
+On the main thread, `request` and `requestRender` also probe `cachedRender` and
+`diskRender` before queuing and invoke their completion synchronously on a hit.
+Persistence uses a 6-second quiet debounce after new entries and keeps recording
+open across pre-home screens (such as App Lock) while fewer than 8 icons have
+been seen, up to 60 seconds from the first request. Each entry carries the launch
+sequence number (`launch`) in which it was last seen; current-launch entries lead
+and earlier entries not seen for 3 launches (`startupMaxLaunchAge = 3`) are
+evicted. At the next process start an Objective-C `+load` hook on iOS and
+`OneKeyImageStartupProvider` (`ContentProvider`) on Android dispatch to a
+background queue/executor and decode that list into the decoded-raster LRU,
+normally from the raster disk namespace, before JavaScript mounts the first
+screen. The main thread never waits for it: a probe that arrives before its entry
+is ready, or while the manifest lock is held, misses and takes the asynchronous
+path as before. Stale entries are harmless because the key is rebuilt from the
+current manifest digest. The list holds icon names, colors, sizes and launch
+numbers only. The first launch after install or a purged Caches directory is not
+prewarmed.
+
+The same process-start hook starts an equivalent prewarm for `OneKeyImage` on iOS and Android. A
+rendered request that succeeds from either the active synchronous memory probe or
+the request pipeline is recorded (up to 48 distinct entries) in
+`onekey-image-startup-v1.json`, using the same 6-second quiet debounce
+(keeping recording open while fewer than 2 images have been seen, up to 60 seconds
+from the first request) and 3-launch staleness eviction (`maxLaunchAge = 3`).
+Only `memory-disk` requests without custom headers are recorded, for `http(s)`,
+`onekey-avatar`, `file` and inline `data:` sources (up to 65,536 characters,
+seeded to the disk cache on the background writer when needed). To avoid writing
+plaintext URLs, `onekey-avatar` wallet addresses, or duplicate inline base64
+payloads to disk, each persisted entry stores only the SHA-256 hash of the
+sized memory-cache key (`keyHash`), the disk cache filename (`diskFile` and
+optional `thumbDiskFile` / `rawDiskFile`), optional cache namespace (`avatar`) or
+shape flag (`round`), target pixel dimensions, image scale on iOS, and `launch`.
+Legacy plaintext entries are migrated
+on read and overwritten with hashed entries on the next flush. At the next
+process start each entry is read from the corresponding disk cache, validated
+through `OneKeyImageSafetyPolicy` / `OneKeyEncodedImageInspector`, decoded at the recorded target size
+(normalizing EXIF orientation `1..8` — including swapping source width/height for
+orientations `5..8` and applying the rotation/flip transform for JPEG `APP1 Exif`,
+WebP `EXIF`, and pre- or post-`IDAT` PNG `eXIf` metadata — restoring the display
+bitmap density on Android after `inDensity`/`inTargetDensity` downsampling, and
+applying circular cropping with matching canvas/bitmap density when `round` is set), and
+stored in the memory cache under its prewarm hash key, which the view's
+synchronous memory probe claims and displays on first hit (requests carrying
+custom headers bypass the unauthenticated prewarmed bitmap cache).
+The iOS prewarm memory identity includes both `keyHash` and resolved image
+scale. A claim succeeds only when the active request context resolves to the
+same scale as the entry. Entries written before the Retina fix may record scale
+1 for an `@2x` or `@3x` key; these must miss prewarm promotion and continue
+through the normal request path. A new observation for the same `keyHash`
+replaces that old scale entry at the next manifest flush, while an unchanged
+full identity retains its existing launch behavior. The manifest JSON format
+and disk cache keys remain unchanged.
+
+Clearing the disk cache (`clearDisk()` / `clearAll()`) advances a generation fence and
+synchronizes with the background writer so queued pre-clear startup flushes or
+local/fallback disk-cache writes cannot recreate files after clearing completes.
+The replay never touches the network. The view-side behavior is unchanged: a
+prewarmed image binds in the mount frame, anything else loads asynchronously as
+before.
+
+#### Main-thread decode of small local images (iOS and Android)
+
+This is the one exception to "UI probes may only access decoded memory" and
+"no synchronous disk work". On a memory miss the UI thread may finish the load
+itself, so the image binds in the mount frame, only when all of the following
+hold. Otherwise the request takes the asynchronous pipeline unchanged.
+
+- The bytes are already on this device: a bundled `file` source, an inline
+  `data:` source, or an entry of the disk cache (including `onekey-avatar` and
+  the named-icon raster namespace). The path never starts or waits for a
+  download; a source that is only on the network is always asynchronous.
+- `memory-disk` policy and no custom headers.
+- Encoded size at most 32 KiB, checked from file attributes before the bytes
+  are read; source dimensions at most 512 px per edge, read from the header
+  before decoding; static image; target thumbnail at most 256 px per edge.
+- Named icons: requested size at most 192 px per edge, encoded disk raster at
+  most 32 KiB (checked from file attributes before decoding on both iOS and
+  Android), the manifest already loaded, its lock uncontended, and the raster
+  present on disk. An icon that still needs SVG parsing is asynchronous.
+- A shared budget of 4 ms per 1/60 s window. Each attempt, hit or miss, is
+  charged its wall time; once the window has spent the budget, later misses in
+  it are asynchronous. The filters above bound a single decode, the budget
+  bounds a frame. `OneKeyMainThreadDecode` records `os_signpost` / `Trace` intervals and
+  per-process metrics (attempts, hits, misses, budget rejections, lock
+  contention, disk misses, limit rejections, window counts, and latency
+  percentiles).
+
+The encoded and decoded safety checks of the pipeline (including EXIF orientation
+normalization and display-density restoration on Android) run on this path too.
+The result is stored under the exact key of the view's memory probe, which is
+then repeated, so such a load reports `cacheType: memory`. The process-start
+hook loads the icon manifest even without a startup list, because every icon
+fast path needs it. Launching with `-OneKeyImageSyncDecodeDisabled YES`
+disables the path for comparison. The budget does not cover a whole first
+screen: with the startup lists removed, a cold start on the iOS simulator bound
+roughly a third to a half of the first-screen icons and images in the mount
+frame and left the rest to the next frames. The startup prewarm remains the
+primary mechanism and this path the fallback for what it misses.
+
+iOS reuses the already declared SDImageSVGCoder decoder. Android reuses the
+already declared AndroidSVG decoder. Native color substitution is restricted to
+generation-validated fill/stroke attribute tokens and preserves literal colors. The public
+resolved CSS RGBA/cache identity is unchanged. Decoder-local serialization uses
+decimal alpha endpoints on iOS and nearest 8-bit `#RRGGBBAA` on Android, avoiding
+the native parsers' integer-endpoint / 256-step rgba behavior. Source fixed
+colors and raw loader bytes are not rewritten by these named-color rules.
+Unsupported source compatibility MUST be reported during acceptance; no silent
+fallback, custom SVG renderer or new decoder dependency is part of this phase.
+
+### 12.4 Web assets and packaging
+
+Web uses one generated external sprite and a thin `<svg><use>` wrapper. Each
+symbol and its internal IDs/references are namespaced by canonical icon name.
+The resource URL is emitted by the consumer's existing SVG asset pipeline;
+JavaScript contains the URL and names, not individual SVG paths or TSX modules.
+The complete sprite initially costs approximately 1.15 MB before compression;
+this design does not promise a smaller initial download. HTTP and Electron's
+production `file:` protocol MUST work under the application's existing CSP and
+`webSecurity: true`; development HTTP alone is insufficient acceptance.
+
+The SDK ships no artwork. `#onekey-icon-assets` must be aliased to the host's
+generated icon table; the packaged fallback returns no href (so named icons,
+including NativeList's built-in Web icons, render blank) and, when `__DEV__`
+is defined and true, logs one `[OneKeyIcon]` warning naming the missing alias.
+
+### 12.5 Generation and acceptance
+
+The generation command validates the full source set before writing, produces
+stable ordering without machine paths/timestamps, and has a read-only `--check`
+that rejects missing sources, invalid semantics and stale generated resources.
+Tests cover repeat generation and failure without partial writes. Native raw
+resources and the external sprite must be present in the packaged artifact.
+
+Acceptance distinguishes parsing, decoding, actual rendering and lifecycle:
+
+- Decode all 1,908 named resources with each existing native decoder. Source
+  XML validity alone is not decoder support or rendering equivalence.
+- Render representative currentColor fills/strokes, fixed/mixed colors, alpha,
+  Bot, non-square Apple, gradients, masks and clipping against source baselines.
+- Exercise rapid name/color/size updates, detach/reuse, invalid names and cache
+  bounds; no obsolete result may replace the current image.
+- In real browser and Electron, verify external resource loading, red/blue
+  currentColor changes, fixed-color retention, repeated gradient/mask symbols,
+  caller accessibility, and absence of path/TSX data from the JS wrapper.
+- Run package TypeScript, focused tests, generated-output check, and native
+  compilation/runtime checks where available. Record missing runtime evidence
+  explicitly; generated code and successful builds do not prove device visuals.
+
+### 12.6 Acceptance status
+
+| Layer | Current evidence |
+| --- | --- |
+| Generator | All 1,908 canonical SVGs, 1,910 outputs; exact source-name coverage, diagnostics, namespace/reference tests, no-partial-write, idempotence and read-only check pass. |
+| iOS integration | Real OneKeyImage Pod target builds for arm64 iOS Simulator, including new Swift view/service, actual generated Nitro bindings and resource bundle. All 1,908 bundled SVG digests match the manifest. |
+| iOS tests | Existing OneKeyImage-Unit-Tests target compiles. A real UIApplication fixture executes all four focused XCTest cases with zero failures and zero skips. Ordinary hostless execution passes the three service cases and explicitly skips the UIWindow case; screenshot output is optional when the evidence environment variable is absent. |
+| iOS runtime | Verified for the SDK fixture on iPhone 16 / iOS 18.6: all 1,908 resources decode; actual production HybridOneKeyIcon views pass rapid name/color updates, resize, zero-size/unknown clearing, detach/reattach and reuse. Cache entry/byte limits and coalesced queue ownership pass. Fifteen representative renderings cover fixed/mixed colors, gradients, masks, clipping and non-square aspect fit; this is not full visual acceptance of all 1,908 images or product App integration. |
+| Android runtime | Existing platform instrumentation runner passes full 1,908-source decode/draw, mixed-color alpha, native-view updates/reuse and bounded-cache/queue probes on the task-owned API 34 simulator. Representative masks, clipping and gradients have source-render comparisons; backend antialiasing can differ. |
+| Web/Desktop | Independent source and locally packed built Web entries emit an external sprite. Real Chromium HTTP and isolated Electron production `file:` with CSP and `webSecurity: true` render representative artwork, theme/fixed colors, repeated gradients, invalid names and caller accessibility. No application-wide Icon migration or signed release acceptance is claimed. |
+
+Evidence and commands are retained outside product sources under this worktree's
+`.tmp/ok-65959-evidence/icon-foundation-probe`. No SDK publication or application
+dependency upgrade is included in this implementation status.
+
+The initial external simulator set was blocked by CoreSimulatorService EPERM;
+runtime acceptance used a specifically authorized independent temporary internal
+set, without changing global simulator settings. Half-transparent blue has alpha
+128 at all three solid dot interiors and alpha zero in distant background.
+Rasterized edge samples reached alpha 134; that edge difference is retained as
+diagnostic evidence rather than attributed to a particular decoder stage or used
+to claim exact pixel parity between rendering backends.
+
+## 13. Shared NativeList / BottomTabs SVG integration — Implemented
+
+Image owns named SVG resources, byte decoding and Web sprite references.
+NativeList and BottomTabs reuse them without changing OneKeyImage/OneKeyIcon
+JavaScript props or introducing third-party dependencies, loaders or renderers.
+
+Native modules may call existing `OneKeyNamedSVG.shared/request/cancel`;
+construction and cache state stay controlled by image. Inputs remain owner,
+canonical name, resolved RGBA, pixel dimensions, scale and completion. The
+two-worker, 128-entry / 8 MiB raster limits remain. Completions run on the UI
+thread; cancellation removes pending work, while caller revisions reject stale
+in-flight results. No source XML or URI is added to the Nitro/JS interface.
+
+Raw SVG is a separate synchronous, uncached native facility. The existing iOS
+CoderBridge exposes SDImageSVGCoder decoding; existing loaders retain source
+detection. An Android native helper owns the existing AndroidSVG parse/render core. No raw decoder creates a
+loader, cache, worker or main-queue hop. RCT/Coil own download, scheduling,
+cancellation and error delivery. Intrinsic/viewBox sizing is retained when no
+target is supplied; generic URI images do not inherit named-icon raster limits.
+Image's Glide PictureDrawable route retains its existing output semantics.
+
+A separate Web DOM subentry exposes `createNamedIcon(document, name)`: it returns
+an aria-hidden 24 × 24 SVG with an external `use` reference. It and the React Web
+entry share one sprite URL module. The DOM entry imports no React, React Native
+or Nitro runtime and embeds no path map. Callers may set width/height/styles;
+currentColor, CSS variables and inherited colors remain browser-owned rather
+than passing through native literal-color normalization.
+
+NativeList owns platform coverage and legacy aliases. BottomTabs adds an
+image SDK peer, CocoaPods dependency and Gradle project dependency. Its iOS
+RCTImageDataDecoder registration/RCT loader/SF Symbols/tint and Android Coil
+network/ordinary-image/cache/FILL/EXACT behavior remain; only SVG decoding moves.
+No Web tabs implementation is added. Existing BottomTabs loader races remain
+outside this migration and must be reported against a baseline, not silently
+fixed. Acceptance requires real consumer slots and reuse, raw SVG beside ordinary
+images, native compilation, Web/Electron DOM and packaged-resource verification;
+compilation alone is not runtime acceptance.
+
+Focused integration validation records native compilation, iOS XCTest service
+and actual view execution, real RCT/Coil consumer fixtures, and Web source/lib
+plus Electron file-protocol paint/interaction separately. All 1,908 sources are
+decoded through the shared named path on each native platform; representative
+rendering is not a claim of pixel equivalence for every source. The external
+sprite's full initial transfer and native resource/OTA version limits remain.
+
+The independently reproduced Android OneKeyIcon same-identity reattach issue is
+addressed as a prerequisite of the global adapter in section 14. NativeList's own
+explicit attached state remains covered by its focused lifecycle regression.
+
+## 14. Global application Icon adapter — Implemented; runtime acceptance recorded separately
+
+The App components package consumes the independent `./icon` entry through an
+explicit local candidate package until a separately approved SDK release. Its
+existing Icon names, theme/size variants, 76 RTL name mappings and default image
+accessibility role remain. Generated JavaScript contains only names and RTL
+metadata; individual SVG React components and their module-loading caches are
+removed. Prefetch/warm entry points retain asynchronous completion compatibility
+but do not promise resource decoding or warming. Extension background stubs stay
+UI-free and do not import the native component. Main/background JS heaps remain
+isolated on native; the process-owned native raster cache is shared.
+
+ChartPositionOutline is restored as canonical SVG from the existing four-path
+React definition without changing geometry, bringing complete resources to 1,909.
+The QRCode story logo becomes a same-position sibling overlay because native
+views cannot be embedded in SVG groups. Its synchronous brand mark, symbol-ready
+callback, quiet zone and sharing behavior remain; symbol-ready does not promise
+completion of the asynchronous named logo. Artwork consumers use the same global
+Icon entry. No general SVG prop API or App-wide SVG drawing replacement is added.
+
+Web accepts browser CSS colors (including variables/inheritance) on the outer
+host, with caller style taking precedence over its default color. The inner SVG
+inherits currentColor, so Tamagui hover/group styles and theme changes reach the
+painted resource. Native retains validated literal RGBA and existing aspect fit.
+The App adapter preserves explicit non-square outer sizes.
+
+Android OneKeyIcon records attachment before lifecycle refresh; pending completion
+while detached cannot suppress a fresh same-identity request after reattachment.
+The existing two-worker, 128-entry/8 MiB native cache and identity rules are unchanged.
+Acceptance includes generator read-only/idempotent checks, exact ChartPosition
+source comparison, Android pending-detach regression, actual theme/pseudo-state
+SVG paint and QR/artwork integration, plus true local source/built package
+resolution. Publication, formal App version pins and signed release acceptance
+remain separate decisions.
+
+The current catalog contains 1,909 SVGs (1,911 generated outputs). Earlier
+foundation/integration evidence in sections 12–13 records the initial 1,908
+source catalog. The current focused iOS UIApplication fixture passes five XCTest
+cases; Android passes all four default decoder/view cases including the original
+pending-detach regression and all 1,909 named-resource completions. These are SDK
+fixtures, not a full installed wallet App acceptance.
+
+Compatibility retains observed baseline limitations: arbitrary numeric `size`
+values and standalone `hoverStyle` follow the old adapter; explicit width/height,
+size tokens and group hover remain supported. Runtime RTL changes require the
+consumer's normal remount/restart; the adapter resolves the current RTL flag when
+rendered. Standard Web image semantics belong to the real outer host and its
+inner SVG stays aria-hidden. The QR logoSvg/brandMark combination is not used by
+existing callers; only logoSvg moves out of the SVG drawing order.
+
+This stage is a local-candidate integration: components points explicitly to an
+unpublished file tarball, while formal mobile SDK pins and the install lock stay
+unchanged. Local verification overrides one root node_modules SDK instance. A
+separately approved publish/version alignment is required before clean CI/release
+installation; the published alpha.395 package is not claimed to export icon.
+
+## 15. Shape cache, native recoloring and demand-loaded Web icons — Implemented; scoped runtime acceptance
+
+This revision preserves all 1,909 canonical resources and the existing JS props.
+It supersedes the full external sprite runtime in sections 12–14: Web generates
+one external SVG symbol file per name and a static URL registry shared by React
+and the pure DOM helper. No geometry enters JS and no old TSX renderer remains.
+All resources ship; only referenced files are requested. Consumer bundlers MUST
+emit these SDK SVGs as external resources even when small, never data URIs.
+HTTP/2 local prototype evidence favors lower transfer/earlier complete icons;
+body readiness, HTTP concurrency and cache state remain measured tradeoffs.
+
+The generator conservatively classifies rendering mode from SVG paint semantics:
+`fixed` has no effective dynamic paint; `single` has exactly one visible dynamic
+paint and no visible fixed paint; `multiple` has only dynamic paints but more than
+one; `raster` handles mixed colors or unproven/complex dynamic semantics. Inherited
+fill/stroke, default black fill, none, fill/stroke opacity and double paints count.
+Dynamic definitions, clipping, masks, gradients, unsupported paint attributes and
+other ambiguous structure use raster. Fixed complex artwork stays unmodified.
+Classification is private metadata, not a new JS API or caller assertion.
+
+Native worker results explicitly carry immutable raster, mode, source identity,
+pixel geometry/scale and mask alpha. The original native final-color request
+remains a compatibility adapter; its callback never silently returns a black mask.
+Fixed cache keys omit color; single caches opaque black masks without color;
+multiple caches black masks by requested alpha; raster retains full RGBA keys.
+Existing limits remain two workers, 128 entries and 8 MiB decoded raster cost.
+UI bind does no manifest/file I/O. Metadata arrives with a successful result.
+
+An attached slot with a compatible displayed result recolors fixed/single
+or same-alpha multiple results synchronously, with no new request or decode.
+Single uses per-view RGBA tint; multiple uses opaque RGB tint on its alpha-key
+mask so per-paint overlap remains correct. Fixed keeps original colors. Different
+alpha multiple and raster changes request asynchronously while retaining the old
+successful same-source/geometry image until the latest result; a failed result
+clears it. Every update cancels pending ownership and advances revision before
+any fast path. Invalid color, name change/unknown, geometry/scale change, zero
+size, detach and recycle immediately clear. Hybrid hide/show preserves its existing
+image and attachment contract; NativeList keeps its pre-existing visibility clear. Stale completions never replace the
+current view. Two views may share pixels but never mutable tint/drawable bounds.
+
+NativeList Android uses the same result rules and its existing Apple/checkbox
+geometry; iOS NativeList retains its black template/original compatibility and
+synchronous UIKit retint. BottomTabs raw decoding is unchanged. No new loader,
+cache, public JS props or third-party dependency is introduced. Acceptance must
+exercise real Hybrid and List consumers, rapid RGB updates without extra decode,
+alpha-key/mixed pending retention, invalid/lifecycle clears, stale callbacks,
+shared bitmap tint isolation, and overlap alpha against source raster baselines.
+Local package/source/built Web plus Electron file/CSP, bundler asset emission and
+all-resource packaging checks remain required. Implementation is not runtime
+verified until separately recorded evidence passes.
+
+Dynamic mask/tint rendering preserves source paint and opacity semantics but does
+not promise byte-for-byte RGBA equivalence to the former per-color raw raster.
+The two routes quantize and resample color/alpha at different stages. Fixed and
+mixed/complex raster routes retain the raw decoder. Acceptance compares dynamic
+results to an independent raw reference using flat-interior color/alpha and
+coverage/contour criteria, with bounded local edge differences documented
+separately. The original strict maximum-byte audit remains diagnostic evidence;
+it must not be relabeled as passing after an acceptance-policy change. Final
+numeric criteria and per-platform runtime results are recorded with their actual
+fixture, pixel geometry, source hashes and artifact hashes. No physical-frame or
+zero-flicker guarantee follows from image binding or snapshot timing alone.
+
+### 15.1 Acceptance and retained diagnostics
+
+The current generator retains 1,909 sources and produces 3,820 outputs, including
+1,909 separate Web symbol resources. Conservative modes are fixed 156, single
+1,026, multiple 712 and raster 15. Four focused generator suites cover complete
+coverage, references, read-only/idempotent/atomic checks and paint classification,
+including inherited/default paints and unsupported CSS inheritance keywords.
+
+Final SDK fixtures pass iOS image seven cases / NativeList three cases and
+Android image six cases / NativeList sixteen cases. The focused independent-raw
+comparison uses explicitly known fixture modes: fixed/raster RGBA difference at
+most one; dynamic premultiplied RGB tracks requested RGB times actual alpha at
+most one. Multiple-paint alpha and opaque single-paint alpha match raw within one;
+zero single-paint alpha is transparent. Intermediate single-paint alpha allows
+only documented contour quantization: 5-by-5 flat raw interiors within one,
+nonzero bounds within one pixel, alpha mass within 2 percent, covered alpha MAE
+within two byte levels, and maximum local alpha difference sixteen. Typed-result
+consumer probes preserve overlap alpha 192 and source-opacity alpha 51.
+
+Independent strict whole-catalog maximum-byte audits completed 1,909 comparisons
+per native platform and remain recorded as strict failures, not renamed passes.
+They diagnose backend contour/resampling and compositing quantization; representative
+semantic criteria and visual review are separate from bit identity. Actual UIKit
+100-RGB single/multiple loops reuse the same immutable pixels with zero workers
+or pending requests and include drawing overhead; their timings are not FPS or
+physical paint latency. The native evidence is SDK hosts, not an installed wallet.
+
+Actual App Web source/built entries and both existing bundler factories emit all
+1,909 external resources. Referenced glyphs load individually; same-name React
+and DOM callers share URLs. Secure Electron file-protocol rendering, theme/RTL,
+QR/artwork and actual Web Swap menus are accepted separately. Extension background
+entry checks do not imply extension UI runtime acceptance. Local candidate .2
+contains production changes; later focused test-only acceptance changes are kept
+in source and do not claim that archived candidate's test files were regenerated.
+No formal publication, dependency pin alignment, signed release or full native
+wallet acceptance is included.
+
+## 16. Host-owned icon resources — Implemented; SDK fixture runtime verified
+
+This section supersedes earlier SDK-owned catalog and generator paths. The App
+repository alone owns canonical artwork and the complete 1,909-source generator
+and validation. Every App build retains the complete catalog; selecting a small
+SDK fixture set is not application tree-shaking. The production Image npm, Pod
+and AAR artifacts contain no named SVG artwork or catalog. Native SVG decoders,
+shape classification metadata, cache limits, request generations and public
+`OneKeyIcon` / NativeList props remain unchanged.
+
+Hosts provide `OneKeyIcons.bundle` on iOS, containing `manifest.json` and
+`CanonicalName.svg` files at its root. Android hosts merge the equivalent files
+under `assets/icons/`. The deterministic manifest retains `source`, SHA-256
+`digest`, `viewBox` and `recolorMode` fields. Names, currentColor semantics and
+source digests retain their previous meaning. Native resources belong to the
+host binary; JS OTA alone cannot install new native artwork. Missing resources
+clear the icon through the existing failure path.
+
+Web React and DOM consumers statically import `#onekey-icon-assets`. A host build
+aliases that module to its generated `iconResourceHref(name: string): string |
+undefined` implementation. The SDK's package-imports default is an empty
+provider. No runtime setter, JS initialization ordering, XML/URI prop or new
+third-party dependency is introduced. Generated resources keep
+`#onekey-CanonicalName` symbol fragments and namespaced internal references.
+All App resource URLs remain reachable in the generated registry and emit as
+external files; unused artwork remains packaged, while browsers request only
+referenced files. Extension background stubs do not import the provider.
+
+SDK examples and native tests share 63 checked-in samples under
+`example/react-native/icon-fixtures`, with independent native and Web packaging.
+Only example targets, explicitly named XCTest target phases and opt-in Android test runners include
+these fixtures; the production Image pod and AAR have no fixture resource input.
+The fixture manifest covers NativeList's 42 canonical names, NativeList Web's
+built-in renderer icons, and additional Image
+semantics, including `EditOutline`, fixed/mixed colors, gradients and non-square
+geometry. NativeList's legacy `BadgeVerifiedSolid` still maps to
+`BadgeRecognizedSolid`; the Image sample named `BadgeVerifiedSolid` remains its
+distinct canonical artwork. Cache pressure tests use more than 128 actual size
+identities rather than relying on a full SDK catalog.
+
+Acceptance requires SDK-only fixture integrity, JS/type checks, example/native
+resource packaging and a zero-artwork production package check. App acceptance
+separately validates all 1,909 sources and generated artifacts, native embedding,
+Web/Desktop/extension/web-embed builds and resource-aware native shell caches.
+A passing SDK sample test does not establish complete App catalog acceptance.
+
+SDK fixture acceptance on 2026-11-02: iOS 26.5 real UIApplication host runs all
+7 Image icon tests without failure or skip. Normal NativeList hosted checks run
+9 cases (8 pass, one archived-legacy-bundle skip). CI-style hostless checks run
+16 cases (9 pass, 7 UIApplication/legacy skips). Every test bundle has the
+complete raw fixture set with matching source digests. Android API 34 runs all 7 Image
+instrumentation cases and 5 NativeList consumer cases without failure. The
+standalone Image instrumentation APK supplies existing React JNI dependencies
+through its opt-in test configuration; its C++ runtime is selected explicitly
+from the resolved React AAR. Production dependency and JNI exclusions remain
+unchanged. Full application catalog and wallet UI acceptance are separate.

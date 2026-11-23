@@ -1,0 +1,143 @@
+import { spawnSync } from "node:child_process";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  loadReleaseWorkspaces,
+  compareReleaseVersions,
+  validateNpmDistTag,
+} from "./validate-npm-dist-tag.mjs";
+import {
+  mapConcurrent,
+  packumentUrl,
+  selectWorkspaces,
+} from "./verify-published.mjs";
+
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const nativeListName = "@onekeyfe/react-native-native-list";
+const pagerName = "@onekeyfe/react-native-pager-view";
+
+export function selectUnpublished(workspaces, packuments, distTag) {
+  const missing = [];
+  for (const workspace of workspaces) {
+    const document = packuments.get(workspace.name);
+    const tagged = document?.["dist-tags"]?.[distTag];
+    if (tagged && compareReleaseVersions(tagged, workspace.version) > 0) {
+      throw new Error(
+        `Refusing to move ${workspace.name} ${distTag} backwards from ${tagged} to ${workspace.version}`
+      );
+    }
+    if (document?.versions?.[workspace.version]) {
+      continue;
+    } else {
+      missing.push(workspace);
+    }
+  }
+  return missing;
+}
+
+export function selectRetags(workspaces, packuments, distTag) {
+  return workspaces.filter((workspace) => {
+    const document = packuments.get(workspace.name);
+    return (
+      document?.versions?.[workspace.version] &&
+      document?.["dist-tags"]?.[distTag] !== workspace.version
+    );
+  });
+}
+
+async function readPackument(name) {
+  const response = await fetch(packumentUrl(name), {
+    headers: { accept: "application/json" },
+  });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Registry returned HTTP ${response.status} for ${name}`);
+  }
+  return response.json();
+}
+
+function runYarn(args) {
+  const result = spawnSync("yarn", args, { cwd: repoRoot, stdio: "inherit" });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`yarn ${args.join(" ")} failed with exit ${result.status}`);
+  }
+}
+
+function runNpm(args) {
+  const result = spawnSync("npm", args, { cwd: repoRoot, stdio: "inherit" });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`npm ${args.join(" ")} failed with exit ${result.status}`);
+  }
+}
+
+async function main() {
+  const [distTag, onlyWorkspace = ""] = process.argv.slice(2);
+  const releaseWorkspaces = await loadReleaseWorkspaces(repoRoot);
+  validateNpmDistTag(distTag, releaseWorkspaces);
+  const workspaces = selectWorkspaces(releaseWorkspaces, onlyWorkspace);
+  if (
+    workspaces.length === 0 ||
+    new Set(workspaces.map(({ version }) => version)).size !== 1
+  ) {
+    throw new Error("Publishable workspace versions must match before release");
+  }
+  const entries = await mapConcurrent(workspaces, async ({ name }) => [
+    name,
+    await readPackument(name),
+  ]);
+  const packuments = new Map(entries);
+  const missing = selectUnpublished(workspaces, packuments, distTag);
+  const retags = selectRetags(workspaces, packuments, distTag);
+  console.log(
+    `${missing.length} package(s) need publishing; ${retags.length} existing version(s) need the ${distTag} tag`
+  );
+  const first = missing.filter(
+    ({ name }) => name !== nativeListName && name !== pagerName
+  );
+  if (first.length > 0) {
+    runYarn([
+      "workspaces",
+      "foreach",
+      "--all",
+      "--topological",
+      "--parallel",
+      "--jobs",
+      "4",
+      "--interlaced",
+      ...first.flatMap(({ name }) => ["--include", name]),
+      "run",
+      "release",
+      "--tag",
+      distTag,
+    ]);
+  }
+  if (missing.some(({ name }) => name === nativeListName || name === pagerName)) {
+    // A recovery runner may skip the already-published Image workspace, but
+    // Pager and NativeList still need its generated declarations during the build.
+    runYarn(["workspace", "@onekeyfe/react-native-image", "prepare"]);
+    for (const name of [pagerName, nativeListName]) {
+      if (missing.some((workspace) => workspace.name === name)) {
+        runYarn(["workspace", name, "release", "--tag", distTag]);
+      }
+    }
+  }
+  for (const { name, version } of retags) {
+    runNpm(["dist-tag", "add", `${name}@${version}`, distTag]);
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

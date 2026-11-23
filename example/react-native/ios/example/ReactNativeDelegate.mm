@@ -25,7 +25,7 @@
   [BackgroundThreadManager installSharedBridgeInMainRuntime:host];
 
 #if DEBUG
-  NSString *bgURL = @"http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=false&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true";
+  NSString *bgURL = [[[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"background"] absoluteString];
 #else
   NSString *bgURL = @"background.bundle";
 #endif

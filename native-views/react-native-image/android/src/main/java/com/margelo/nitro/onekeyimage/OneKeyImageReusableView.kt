@@ -28,6 +28,8 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     optimizeTos: Boolean,
     overscan: Double,
     loadingStrategy: String,
+    placeholderColor: String,
+    round: Boolean = false,
     onLoad: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
   ) {
@@ -56,15 +58,23 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     image.autoplay = autoplay
     image.recyclingKey = recyclingKey
     image.optimizeTos = optimizeTos
+    image.round = round
     image.overscan = overscan
     image.loadingStrategy = when (loadingStrategy) {
       "skeleton" -> OneKeyImageLoadingStrategy.SKELETON
       "none" -> OneKeyImageLoadingStrategy.NONE
       else -> OneKeyImageLoadingStrategy.STATIC
     }
+    image.placeholderColor = placeholderColor
     image.sourceUri = sourceUri
     image.afterUpdate()
   }
+
+  fun isDisplaying(
+    sourceUri: String?,
+    sourceHeadersJson: String?,
+    recyclingKey: String,
+  ): Boolean = image.isDisplaying(sourceUri, sourceHeadersJson, recyclingKey)
 
   fun prepareForReuse() {
     image.prepareForRecycle()

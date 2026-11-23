@@ -13,6 +13,12 @@
 - (void)request:(NSDictionary *)config
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject;
+- (void)uploadFile:(NSDictionary *)config
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject;
+- (void)getUploadProgress:(NSString *)requestId
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject;
 - (void)cancelRequest:(NSString *)requestId
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject;
@@ -82,6 +88,30 @@ RCT_EXPORT_MODULE(SniConnect)
   [_implementation request:configDict resolve:resolve reject:reject];
 }
 
+- (void)uploadFile:(JS::NativeSniConnect::NativeSniConnectUploadFileRequest &)config
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject {
+  NSMutableDictionary *configDict = [NSMutableDictionary dictionary];
+  configDict[@"ip"] = config.ip() ?: @"";
+  configDict[@"hostname"] = config.hostname() ?: @"";
+  configDict[@"method"] = config.method() ?: @"POST";
+  configDict[@"path"] = config.path() ?: @"/";
+  configDict[@"headers"] = config.headers() ?: @{};
+  configDict[@"timeout"] = @(config.timeout());
+  configDict[@"filePath"] = config.filePath() ?: @"";
+  if (config.requestId()) {
+    configDict[@"requestId"] = config.requestId();
+  }
+
+  [_implementation uploadFile:configDict resolve:resolve reject:reject];
+}
+
+- (void)getUploadProgress:(NSString *)requestId
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_implementation getUploadProgress:requestId resolve:resolve reject:reject];
+}
+
 - (void)cancelRequest:(NSString *)requestId
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject {
@@ -125,6 +155,18 @@ RCT_EXPORT_METHOD(request:(NSDictionary *)config
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
   [_implementation request:config resolve:resolve reject:reject];
+}
+
+RCT_EXPORT_METHOD(uploadFile:(NSDictionary *)config
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+  [_implementation uploadFile:config resolve:resolve reject:reject];
+}
+
+RCT_EXPORT_METHOD(getUploadProgress:(NSString *)requestId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+  [_implementation getUploadProgress:requestId resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(cancelRequest:(NSString *)requestId

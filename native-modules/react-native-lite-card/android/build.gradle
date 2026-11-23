@@ -37,8 +37,16 @@ android {
   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
 
   defaultConfig {
+    consumerProguardFiles "consumer-rules.pro"
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+
+    externalNativeBuild {
+      cmake {
+        arguments "-DBUILD_TESTING=OFF"
+        targets "keys", "gpchannelNDK"
+      }
+    }
   }
 
   buildFeatures {

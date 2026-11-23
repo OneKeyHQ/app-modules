@@ -21,7 +21,7 @@ Pod::Spec.new do |s|
   s.dependency "SDWebImage", "~> 5.21.7"
   s.dependency "SDWebImageSVGCoder", "~> 1.7.0"
   s.dependency "SDWebImageWebPCoder", "~> 0.14.6"
-  s.dependency "Skeleton", package["version"]
+  s.dependency "Skeleton"
 
   load "nitrogen/generated/ios/OneKeyImage+autolinking.rb"
   add_nitrogen_files(s)

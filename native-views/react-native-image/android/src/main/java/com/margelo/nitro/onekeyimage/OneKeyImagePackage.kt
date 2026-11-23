@@ -5,6 +5,7 @@ import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.model.ReactModuleInfoProvider
 import com.facebook.react.uimanager.ViewManager
+import com.margelo.nitro.onekeyimage.views.HybridOneKeyIconManager
 import com.margelo.nitro.onekeyimage.views.HybridOneKeyImageManager
 
 class OneKeyImagePackage : BaseReactPackage() {
@@ -17,7 +18,7 @@ class OneKeyImagePackage : BaseReactPackage() {
     reactContext: ReactApplicationContext,
   ): List<ViewManager<*, *>> {
     OneKeyImageGlideRegistry.ensureRegistered(reactContext)
-    return listOf(HybridOneKeyImageManager())
+    return listOf(HybridOneKeyImageManager(), HybridOneKeyIconManager())
   }
 
   companion object {

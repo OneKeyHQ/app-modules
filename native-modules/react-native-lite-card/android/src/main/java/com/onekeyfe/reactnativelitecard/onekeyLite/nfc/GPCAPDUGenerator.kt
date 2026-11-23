@@ -11,7 +11,7 @@ object GPCAPDUGenerator {
     @JvmStatic
     fun buildGPCAPDU(param: APDUParam, safeChannel: Boolean = false): String {
         printLog(TAG, "  --->> BuildGPCAPDU begin")
-        return if (safeChannel) {
+        return (if (safeChannel) {
             GPChannelNatives.nativeGPCBuildSafeAPDU(
                 param.cla,
                 param.ins,
@@ -27,7 +27,7 @@ object GPCAPDUGenerator {
                 param.p2,
                 param.data
             )
-        }.also {
+        } ?: "").also {
             printLog(TAG, "  <<--- BuildGPCAPDU done: safeChannel:$safeChannel")
         }
     }

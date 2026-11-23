@@ -1,0 +1,1470 @@
+# react-native-native-overlay SPEC
+
+Status: Implemented through the P5 caller migration in app-monorepo. Android
+and Web runtime checks passed there; focused iOS 26.5 and iOS 27.0 simulator
+checks and Android 16 emulator checks are recorded below. The iOS 27.0 check
+covers this window handoff with repeated More-sheet gestures, immediate and
+delayed account-selector dismissal, and an interactive cancellation. Broader
+iOS runtime, physical-device and iPad acceptance remain unverified. Packaging
+in app-modules is validated separately.
+
+The implementation is migrated from app-monorepo commit
+`376633bd9f1c410dbccb01fb6a0492be9a5c3f38`, package
+`packages/react-native-native-overlay`. This independent package owns the native
+and Web overlay hosts. Caller migrations remain in app-monorepo.
+
+### Template exception and migration boundary
+
+The package was initialized with `yarn create:view native-overlay` on
+2026-10-01, from app-modules main `5b4574bf0d2a5fdd394b7bd81dd1c8c0d15d101f`.
+The checked-in template is Nitro; the verified implementation uses Fabric
+codegen components and custom shadow nodes to preserve React subtrees, native
+hit testing and `measureInWindow` across overlay windows. Rewriting it to Nitro
+would change those boundaries and requires separate design/runtime validation.
+This SPEC records the explicit template exception allowed by
+`docs/NATIVE_MODULE_DEVELOPMENT.md` section 3.
+
+Keep the generated package/configuration structure, but replace the template's
+Nitro sample view, nitrogen config/bindings and CMake adapter with the existing
+Fabric Android, iOS and custom C++ implementation. The package has no Nitro
+peer dependency or nitrogen build step. Builder Bob emits JavaScript and
+TypeScript declarations; React Native generates the Fabric bindings at app
+build time. Publish `common/cpp`, `src`, `lib`, Android/iOS sources, podspec and
+autolinking configuration. Web consumers additionally provide `react-dom`.
+
+`react-native-native-sheet` is retired from this repository after the App
+consumer migration. Its source workspace, example dependency, and dedicated
+tests are removed; sheet presentation is owned by this package and has no
+dependency on the retired package. The old `NativeSheet` API is not retained as
+a compatibility shim. Previously published npm versions remain unchanged, and
+this repository cleanup does not publish or change package versions. Sheet
+behavior derived from that package retains its original implementation
+attribution in source comments.
+
+### Release boundary
+
+The `6.7.0-11` batch adds the Catalyst compile-time sheet background guard
+and restores the npm-packaged Gopenpgp framework links. The incomplete
+`6.7.0-10` candidate is superseded.
+All 43 publishable workspace manifests and exact internal pins use the same
+version, as required by the release validator. Publish the synchronized batch
+through `package-publish` with `npm_dist_tag=latest`, verify the registry
+versions, and refresh the App dependency and native locks before acceptance.
+The source PR remains open for review.
+
+The `6.7.0-14` batch incorporates the review fixes for framework-link
+self-repair, Android overlay transition cleanup, native list/depth ownership,
+and bounded SNI file uploads, together with main's row accessory press fix.
+It supersedes the source snapshots in the previously published `6.7.0-12`
+and `6.7.0-13` batches. Version and lockfile synchronization do not introduce
+additional public behavior; registry verification remains required after publish.
+
+## 5.1 Purpose, scope, and non-goals
+
+The package owns **where an overlay is drawn, which overlay is on top, and how
+it enters and exits** on iOS, Android, and Web (web, desktop, extension).
+
+Callers are `@onekeyhq/components` (Dialog, Toast, Popover, ActionList, Select,
+DatePicker) and `@onekeyhq/kit` global containers: hardware stage and dialogs,
+password verify, DialogLoading, app lock, Spotlight, in-app notification.
+
+Non-goals:
+
+- Business UI. Titles, buttons, forms, the hardware stage morph and the lock
+  screen UI stay React content owned by components and kit. Message toast
+  cards are the exception: the platform draws them from data (§5.14).
+- Navigation. Screens and navigation modals stay in react-navigation and
+  react-native-screens.
+- Third-party windows such as RN `Modal`, WalletConnect, and system dialogs.
+  They are only handled defensively by the `lock` level (§5.7).
+
+## 5.2 Definitions and ownership boundaries
+
+| Term                | Meaning                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **scope**           | `global`: attached to the app window. `page`: owned by one screen, rendered in that screen's root-route host.                                                                                                      |
+| **root-route host** | A single `PageOverlayHost` rendered as the last child of each root-stack route (Main tabs, Modal, Onboarding, FullScreenPush, WebView). Because it sits there, page overlays cover native headers and the tab bar. |
+| **owner page**      | The nearest screen that requested a page overlay. The overlay is visible only while its owner is on top inside its root route.                                                                                     |
+| **level**           | Fixed layer. `modal` 100 < `hardware` 200 < `secure` 300 < `toast` 400 < `lock` 500 < `debug` 900.                                                                                                                 |
+| **lane**            | The entries sharing (scope, host, level). Strategies apply per lane.                                                                                                                                               |
+| **strategy**        | What a new entry does to its lane. `stack` (default) appears on top. `queue` waits until the lane is empty and is ordered by `priority`. `replace` closes the top entry, or the entries sharing `replaceKey`.      |
+| **presentation**    | Frame and default motion: `sheet`, `center`, `fullscreen`, `toast`, `anchored`.                                                                                                                                    |
+
+Ordering rule:
+
+- Every page entry renders below every global entry.
+- Inside a scope, entries are ordered by level, then by request order.
+- Nothing else affects order: not mount order, portal order, or window add
+  order.
+
+Ownership:
+
+- **JS store** (`OverlayStore`, one per JS runtime, `main` only) owns ordering,
+  queues, page visibility, and back/Escape resolution.
+- **Native hosts** own drawing, hit testing, animation, keyboard, and back-key
+  capture, and report lifecycle back to the store.
+- Android's static host lookup holds weak Activity keys and weak host values;
+  an active overlay or installed back callback owns its host. The lookup does
+  not itself extend the lifetime of an Activity.
+- **Content** is the caller's React subtree. The overlay view stays where the
+  caller rendered it. Native code reparents its content into the host, so React
+  context is preserved; there is no root-siblings portal.
+
+The package MUST NOT infer anything from product data. Levels and strategies
+come only from props.
+
+## 5.3 Public API and defaults
+
+### Store (implemented)
+
+- `overlayStore.request(request, { onRemoved })` returns an `IOverlayEntry`.
+  - Defaults: `scope: 'global'`, `level: 'modal'`, `strategy: 'stack'`,
+    `priority: 0`.
+  - `blocking` defaults to false for `toast` and `debug`, and true for every
+    other level.
+  - `dismissible` defaults to the value of `blocking`.
+  - `page` scope requires `hostKey` and `ownerKey`. Missing either throws
+    `OverlayRequestError`.
+  - Re-requesting an id that already exists is a no-op.
+- `dismiss(id, reason)` moves an entry to `closing`. `finalize(id)` removes it
+  after the native exit animation. A closing entry that is never finalized is
+  removed after 5 s.
+- `reopen(id)` restores a closing entry to active, cancels its fallback timer,
+  and keeps its ordering, content and removal handler. A declarative
+  false-to-true change before exit completion uses this path; it does not
+  report a completed close. Hosts retarget the in-flight animation except iOS
+  global system sheets, which complete their own native exit before reconciling
+  desired visibility with a new controller and the same React child.
+- Removing a queued entry detaches its removal handler before notifying store
+  subscribers or scheduling its callback. Same-tick reuse of that ID owns a
+  separate handler; the old removal cannot invoke or delete the new handler.
+- `dismissAll({ scope, belowLevel, reason })`, `setPageVisible(ownerKey,
+visible)`, `removePage(ownerKey)`.
+- Web navigation calls `setFocusedPageHost(hostKey)` with a root-route host key.
+  `null` makes every page host inactive. The default `undefined` clears
+  the focus restriction, including when navigation unmounts.
+  `isPageHostFocused(hostKey)` reports whether a page host is eligible.
+- `resolveBack(focusedHostKey?)` returns `dismiss(id)`, `block`, or `pass`.
+- `getBlockingTop()` returns the entry that makes everything below it inert.
+- `subscribe` and `getSnapshot` are compatible with `useSyncExternalStore`.
+
+### Component (P1)
+
+```tsx
+<OverlayView
+  open
+  scope="global" | "page"
+  level="modal"
+  strategy="stack"
+  priority={0}
+  replaceKey?
+  presentation="sheet" | "center" | "fullscreen" | "toast" | "anchored"
+  animation?={{ enter, exit, backdrop }}
+  backdrop?={{ opacity, dismissOnPress }}
+  dismissOnBackPress
+  dismissOnPanDown   // sheet and toast only
+  anchor?            // anchored only: a trigger ref or a window rect
+  contentSize?       // native non-sheet only: content frame instead of the window size
+  onPresented onDismissRequest onDismissed(reason)
+/>
+```
+
+- `usePageOverlayHost()` resolves `hostKey` and `ownerKey` from navigation
+  context.
+- A declarative page overlay keeps `scope: 'page'` while either key is
+  unavailable. It does not request or present an entry until both keys are
+  available; becoming ready while visible requests it in the page lane.
+  Hiding or unmounting before readiness creates no entry or close callback.
+  Direct store requests still throw for missing page keys.
+- `useInPageDialog`, `useInModalDialog`, and `useInTabDialog` become aliases of
+  page scope. Tab scope is removed.
+
+### Animation (implemented model)
+
+- `animation.enter` and `animation.exit` are each
+  `{ type: none|fade|slide|scale, edge, distance, scale, offsetY, fade, origin: center|anchor, motion }`.
+- `exit` resolution order: a caller-supplied `animation.exit`, otherwise a
+  mirror of a caller-supplied `animation.enter` (so custom enters keep their
+  old reverse exit), otherwise the presentation's own default exit (currently
+  only `center`, see below), otherwise the default `enter`.
+- `motion` is a preset name or a concrete `{ type: 'spring', spring: { mass, stiffness, damping, overshootClamping } }`
+  or `{ type: 'timing', timing: { durationMs, easing: cubicBezier } }`.
+- Presets are resolved per platform:
+  - Native `quick` supplies spring m 0.1, k 100, c 20. The iOS sheet's
+    measured position and dimming response use the critically damped curve
+    at angular frequency `sqrt(k/m)`; UIKit reports an animator duration near
+    292 ms. Android caps an overdamped spring's effective damping ratio at 1
+    while preserving m and k; underdamped and timing motions retain their
+    existing response. This rule
+    also applies to custom overdamped springs as a platform compatibility
+    inference; only the default `quick` sheet path has been measured on iOS.
+    Android's implementation is covered by native tests. In the consumer
+    shells, the default `quick` Dialog and ActionList sheet enter/exit motion
+    and dimming were compared over three cycles per direction on Android 16
+    and iOS 26.5; their normalized visible curves met the recorded parity
+    tolerance. This does not verify custom springs, exact cross-device
+    rectangles, or callback timing.
+  - Web mirrors the CSS driver: `quick` is 150 ms `cubic-bezier(.25,.1,.25,1)`.
+  - Converting native springs for web is opt-in (`springToCssLinear`), because
+    it would slow web overlays down 4–9×.
+- Presentation defaults (`DEFAULT_OVERLAY_ANIMATIONS`):
+
+| Presentation | Enter                                                                              | Exit                                                            | Backdrop      |
+| ------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------- |
+| sheet        | slide from bottom, `quick`                                                         | same as enter                                                   | fade, `quick` |
+| center       | scale 0.85 + fade, `quick`                                                         | scale 0.96 without fade, `quick`                                | fade, `quick` |
+| toast        | slide from top + fade, `toastSlide` (native 300 ms quad in-out, web 400 ms ease)   | same as enter                                                   | none          |
+| fullscreen   | fade, `quick`                                                                      | same as enter                                                   | none          |
+| anchored     | scale 0.95 + fade from the resolved anchor placement, `popoverQuick`               | same as enter                                                   | fade          |
+
+- **Centered card keeps its surface opaque on exit (Implemented; consumer Web
+  runtime evidence pending):** a centered Dialog is a solid card over the page
+  or over another overlay. Fading the card out made any opaque content behind
+  it — a text-heavy page, the account list inside the account selector —
+  readable through the card for the whole transition, which consumers reported
+  as a doubled render right after closing a dialog (OK-66647, desktop, 120 fps
+  recording: the card reached ~20–30 % opacity while the list rows behind
+  stayed opaque). The default exit therefore shrinks the card from scale 1 to
+  0.96 with `fade: false`; the host unmounts it when the exit completes.
+  `fade: false` is honoured by all three renderers (`hidesOpacity` on iOS and
+  Android, `hiddenKeyframe` on Web), and the backdrop still fades on the same
+  clock. A fade-free exit also starts from full opacity: when it interrupts a
+  still-running fade-in, the partly transparent surface is snapped back to
+  alpha 1 before the scale-out begins, so a rapid close cannot show the
+  content behind the card either. That interruption is covered by
+  `NativeOverlayMotionTest` on Android and by `buildTransitionKeyframes` on
+  Web; the iOS dismiss path lives in `NativeOverlayContainerView`, which the
+  iOS test app does not compile, so its snap is source-reviewed only. Reduce
+  Motion still degrades the exit to a fade on every platform, so this
+  protection does not apply there.
+- **Android sheet transform ownership (Implemented; Android 16 consumer-shell runtime verified):**
+  the overlay's enter/exit transform belongs to the sheet's CoordinatorLayout
+  parent. Material's IME insets callback owns the child sheet's `translationY`,
+  and the keyboard layer owns the IME avoidance lift. These transforms compose
+  while the child sheet remains the BottomSheetBehavior drag target. The
+  overlay must not animate the child sheet's `translationY` during IME motion.
+
+- Special cases the callers set explicitly:
+  - App lock: `enter: none`, `exit: fade lockFade`. The web tamper check reloads
+    the page if the lock fades in from opacity 0.
+  - Hardware stage (MorphOverlay), TradingView fullscreen, ScreenshotBranding,
+    DevOverlay: `presentation: fullscreen`, `enter`/`exit: none`, transparent,
+    touches pass through where content is `box-none`. MorphOverlay keeps its
+    Reanimated springs. The container must not animate alpha, transform, or
+    frame while its content is animating.
+  - Custom toast (`Toast.show`): `scale 0.8 + offsetY -20`, `quick`, with an
+    opt-in blocking backdrop.
+
+## 5.4 Lifecycle and concurrency
+
+Lifecycle:
+
+```
+request ─► queued ─► active ─► (enter anim) presented
+                       │
+     dismiss / replace / page-removed / back / backdrop / pan
+                       ▼
+                    closing ─► (exit anim) onDismissed ─► finalize ─► onRemoved
+```
+
+- Content stays mounted until `finalize`. This replaces today's hardcoded
+  timers: the Dialog 300 ms portal destroy, the ColorPicker 300 ms, the
+  ActionList and Select 150 ms waits, and the DialogLoading 50 ms delays.
+- On Android, moving the same React child between its hidden staging view and
+  the entry host must release an in-progress transition held by the previous
+  parent before the new parent adds it. Completing that previous transition
+  later must not detach the child from its new parent. Animated closing moves
+  the child back after exit completion; reopening during exit keeps the same
+  child and entry without reporting a completed dismissal. Fabric removal or
+  replacement of the React child must also release the old container's layout
+  listener and in-progress transition, leaving the removed child without a
+  parent; a later transition completion must not affect replacement content.
+- A queued entry is promoted only after the previous entry in its lane is
+  finalized, so exit and enter never overlap. `replace` is the exception: the
+  new entry enters while the replaced one exits.
+- Reopening an entry that is still closing retargets the running animation from
+  its current value without restarting, except iOS global system sheets: those
+  finish their own exit, then re-present if still desired visible. The entry and
+  React content survive without a terminal event; its own controller may change.
+- `onRemoved` fires exactly once per entry, even when a finalize and the
+  timeout race.
+- **Android exit ownership (Implemented; blocking page/global touch and global
+  Back runtime verified on Android 16; accessibility native-test verified,
+  TalkBack device verification pending):** A
+  blocking entry keeps ownership of touch, Back, and accessibility isolation
+  until its exit animation completes and the native host detaches it. During
+  exit, the entry consumes touches and Back without forwarding them to its
+  closing React content or requesting a
+  second dismissal. Its content is hidden from TalkBack while lower content
+  remains isolated. A reopen during exit restores content input and
+  accessibility without briefly exposing the page below. Closing non-blocking
+  entries pass through touch and Back to the entry below.
+  Consumer-shell recordings verify that page and global blocking entries keep
+  lower touch targets inert during their visible exit, then release them, and
+  that Back does not navigate beneath a closing global entry. Native tests
+  cover closing non-blocking entries and same-entry reopen; those paths and
+  TalkBack reading during exit have not been verified on device.
+- Page entries:
+  - They are suspended (hidden but kept) while the owner page is covered or
+    detached.
+  - Queued page entries are not promoted into a hidden page.
+  - `removePage` closes them with reason `page-removed`.
+- Hide signals must come from native, because tab stacks use `freezeOnBlur`
+  and frozen React trees receive no updates:
+  - iOS: the owner `RNSScreen`'s `viewWillDisappear` / `viewWillAppear`.
+  - Android: the owner `ScreenFragment`'s view detach / attach.
+  - Web: navigation focus.
+- Threads: store mutations happen on the JS thread. Native animation and layout
+  run on the UI thread. Events are delivered as direct events.
+
+### Independent iOS global windows
+
+Implemented; the final v3 independently passed core OneKey/Fabric Gallery
+verification on iOS 27.0. See [IOS_OVERLAY_ACCEPTANCE.md](../../../IOS_OVERLAY_ACCEPTANCE.md)
+for covered paths and unverified boundaries; the full runtime matrix below is
+not marked complete. iOS
+`main` owns the React store/content; `bg` has an independent JS heap and does
+not own these resources. The native manager is process-shared and confined to
+the main thread. Each scene owns one passthrough UIWindow/root presenter per
+active global entry, for every presentation kind. A system sheet presents only
+from its own root, so closing any other global entry MUST NOT dismiss,
+reconstruct, reparent, or emit terminal events for the surviving entries.
+Independent transparent roots do not apply UIKit presentation-chain push-back
+scaling to lower entries. Each sheet retains its own system geometry and motion.
+React parent unmounting can still unmount a child overlay; native isolation does
+not change React ownership. Public APIs, Android/Web, and page scope are unchanged.
+
+- Preserve the real UISheetPresentationController, custom detent, existing
+  transition animator/dimming, content width, Fabric touch/staging/measurement,
+  contentSize, status/orientation and React Native dimension correction paths.
+- Order windows by level then stackOrder, using a stable native entry sequence
+  only to break ties. Recompute a bounded fractional rank in [0, 1) above each
+  existing level base; raw/unbounded stackOrder MUST NOT increase the level band.
+  Live stackOrder updates reorder the same windows without making them key.
+  Level/strategy changes apply only to the next open cycle, matching the JS
+  store. Keep the initial effective global level through this entry's own
+  non-terminal re-presentation; clear it on terminal close or invalidation.
+- Preserve existing touch-driven input activation. Removing a non-key window
+  MUST NOT change the key window or a surviving first responder. Removing the
+  key window restores the highest-ranked desired-visible, attached, non-closing eligible
+  entry in the same scene, otherwise the app window. Eligible entries are
+  effectively blocking (system sheets always block), or actually contain a
+  first responder; passive toast/debug entries do not win solely by level.
+  Keyboard restoration may finish after dismissal completion; callers/tests
+  requiring keyboard geometry must observe the new keyboard readiness event.
+- Delivered-touch retirement extension (Implemented; thirty native checks and
+  four focused local iOS 27.0 App cases passed):
+  before showing a global entry, install a passive touch observer on its real
+  app window and on the entry window. Active and retired entries of that real
+  host share a touch lifetime, including touches delivered to a lower entry or
+  the exiting window itself. Other real app windows remain independent, even
+  within the same scene. Each observer tracks delivered touch identities, never
+  retains UIEvent objects, never cancels or delays touches, and neither prevents
+  nor can be prevented by another recognizer. It stays possible until the last
+  tracked touch ends or cancels, then fails and resets without recognizing.
+  It accepts concurrent touch types with `requiresExclusiveTouchType = false`
+  and preserves UIKit's default allowed touch types.
+- Removing an entry while its real app window or any active/retired entry owned
+  by that real host has delivered active touches or
+  an interactive UIKit presentation
+  removes that entry from active ordering and restores key ownership immediately,
+  but retains its exiting window/root/scene, without hiding it, until both the
+  delivered touch set is empty and the interaction finishes or cancels. Touch
+  completion/cancellation and UIKit interaction changes schedule cleanup on the
+  next main turn. Cleanup rechecks the complete current touch set and transition
+  coordinator before releasing
+  that exact window lifetime. A newly interactive transition keeps it retired
+  until its own completion; repeated or late callbacks cannot release a new
+  entry for the same owner. A new touch beginning after a previous touch ends but
+  before queued cleanup keeps the window retired. Overlapping multi-touch can
+  extend retirement without a timeout. When neither condition exists, removal
+  still releases synchronously. Remove an entry observer only when its window
+  is released; remove a real app window's observer only when that host has no
+  active or retired entries. Touch callbacks query current host ownership across
+  scenes, rather than binding to the scene of first installation. Moving the
+  same real host to another scene keeps its remaining users protected.
+  Reassigning an observed window to a different host does not change its
+  delivered touch context: retain weak prior-host associations until a next-turn
+  check finds its complete touch set empty and those hosts' retirements released.
+  A new touch during an idle gap still protects a prior host whose context remains
+  retired. Touch completion, observer removal and host reassignment wake current
+  and prior hosts; queued cleanup does not require the source observer to survive.
+  Scene disconnect removes that scene's records and unregisters only observers with
+  no remaining users before releasing active and retired windows
+  without notifying an already removed owner again. No fixed timeout controls
+  this handoff.
+  Key restoration MUST NOT activate a host that has moved to another scene.
+  Public UIKit observation cannot account for a DOWN not yet delivered to the
+  app window; acceptance must separately exercise that delivery/teardown boundary.
+- Every presentation lifetime has a generation. Asynchronous present, dismiss,
+  and animation completions must match the generation, controller/entry
+  identity and applicable phase before changing state or emitting callbacks.
+  Close during enter waits for that entry's presentation completion. Reopening
+  an exiting global system sheet records the latest desired visibility and
+  waits for its own native dismissal completion. If still desired visible, it
+  stages the same React child and presents a new owned window/controller without
+  emitting a terminal event. Its draft/mount survive; its own controller may
+  change. Only an entry that was key when dismissal began may weakly retain its
+  original first responder. After re-presentation completes, restore that input
+  once only if it still belongs to the same child, the entry remains highest
+  eligible in an active scene, no newer input in that window replaced it, and
+  the current key belongs to the app or this manager without a higher entry
+  owning key. Foreign/system key ownership prevents restoration. A non-key
+  lower entry never captures focus for its reopen. Non-sheet reversal is
+  unchanged. No timer/retry, cross-entry polling, business queue or scene-wide
+  transition lock is introduced.
+- Invalidate, owner detachment and scene-disconnect invalidate obsolete work,
+  detach only the owned touch handler, stage the owned child and release only
+  the owned window/root. Scene disconnect callbacks identify their original
+  window lifetime: an owner already cleaned up by nested detachment, or now
+  owning another window, must ignore a stale callback. An entry cannot register
+  in a scene while that scene's disconnect callbacks run. Scene disconnect
+  actively releases its resources; cleanup does not depend on another entry
+  opening. A terminal native event is emitted at most once per close; timer
+  expiry is not native completion.
+- An entry with a presenter that is not ready remains owned by its current
+  generation; stale deferred work cannot reopen or release a later generation.
+
+### Web presentation updates (OK-50653)
+
+For an open Web overlay that keeps its portal host, changing `presentation`
+between sheet and a non-sheet frame MUST preserve the mounted content subtree.
+Its props and React context continue to update normally. Changing the optional
+sheet handle MUST NOT move the content into a different React child slot.
+Closing without `keepContentMounted` still unmounts content after exit; reopening
+creates a fresh content lifecycle. Business entity changes and draft resets
+remain caller-owned; the overlay does not cache or persist form values.
+
+The stable sheet shell must not change non-sheet animation origins or keyboard
+avoidance geometry. Switching away from a sheet clears any pan offset and its
+backdrop opacity override, and releases an active pointer capture.
+
+Conformance: `src/__tests__/draftRetention.web.test.ts` exercises the real Web
+host, portal and store for presentation changes, live props/context/callbacks,
+close/reopen, animation origins, keyboard geometry and an interrupted pan.
+Chrome extension side-panel and ordinary-tab checks use synthetic content;
+this correction does not claim new iOS/Android runtime verification.
+
+These source changes require a new published package version before the app
+can consume them from npm. This fix leaves package versions and lockfiles at
+their existing values and does not publish a release.
+
+## 5.5 Data, cache, and identity
+
+- Identity is the entry `id`: caller-provided, otherwise `overlay-<seq>`.
+- Nothing is persisted. The store is per runtime and empty on reload.
+- `replaceKey` is the only identity shared across entries.
+
+## 5.6 Platform contract
+
+### Mac Catalyst sheet background
+
+Implemented; Catalyst build and runtime verification pending. Global sheets
+retain their configured surface color on Mac Catalyst and MUST NOT call
+`UISheetPresentationController.backgroundEffect` or the matching detent API,
+which are unavailable there. iOS 26.1 and later retain their existing color
+effect. Presentation, sizing, motion, and lifecycle contracts are unchanged.
+
+### Sheet content width
+
+Implemented; unit-tested and iOS native build verified. The reported-width
+path is not yet runtime-verified on a wide window (the app's Dialog and
+ActionList no longer present sheets there). Android and Web unchanged.
+UIKit sizes a global sheet itself and
+gives it less than the window width on wide windows (centered, about 650 pt
+in iPhone compact-height landscape), and `preferredContentSize` with
+`widthFollowsPreferredContentSizeWhenEdgeAttached` was measured not to
+control that width or its position reliably. So the overlay never forces a
+sheet width; the content follows the sheet instead:
+
+- iOS emits `onSheetLayout { width }` whenever the sheet's width settles or
+  changes (presentation, rotation, window resize), for both UIKit global
+  sheets and page-scope sheets, including while the sheet is still entering.
+  It is deduplicated to changes of at least 0.5 pt.
+- JS lays the content out at `min(reported width ?? window width, window
+  width)`. Before the first report the content uses the window width, as
+  before; a narrower report re-lays it out and the fitted height follows.
+- `sheet.maxWidth` caps the content width; any remaining sheet width is split
+  evenly as horizontal inset, so the content is centered in a wider sheet.
+- Android never reports; its sheets stay full width and the content fills the
+  window width (or `maxWidth`, centered). Web is unchanged.
+
+### Adaptive presentation by window width
+
+Implemented: `sheet.maxWidth` in this package and one width resolver in the
+App (`useOverlayWidthClass`). iOS runtime verification is in progress. The
+overlay is the single owner of the rule below;
+consumers (the App's Dialog, Popover, ActionList, Select and sheets) must
+resolve their presentation through it instead of platform checks
+(`isNativeIOSPad`, device type, Tamagui media clamped to the phone's short
+side). The rule depends only on the current window width W, in points on
+iOS, dp on Android and CSS px on Web, and is the same on every platform.
+
+Width classes reuse the App's existing breakpoints:
+
+| Class | Window width | Examples |
+|---|---|---|
+| compact | W < 640 | phones in portrait, iPhone Duo outer display in portrait (466), iPad Slide Over and narrow split windows, narrow browser windows |
+| medium | 640 <= W < 768 | iPhone Duo inner display in portrait (669), iPhone Duo outer display in landscape (678), unfolded Android foldables in portrait |
+| expanded | W >= 768 | iPhone Duo inner display in landscape (951), iPad full screen and large windows (834 and up), desktop, wide browser windows |
+
+Presentation per overlay kind:
+
+| Kind | compact | medium | expanded |
+|---|---|---|---|
+| Dialog (alerts, confirmations, short forms) | full-width sheet | max-width sheet | centered card, 400 wide, outline and no drop shadow |
+| Anchorable menu: Select, ActionList or Popover with a trigger, or with a window rect (`ActionList.show`) | full-width sheet | max-width sheet | anchored panel next to the trigger or rect |
+| Menu without an anchor (`ActionList.show` without a rect) | full-width sheet | max-width sheet | max-width sheet |
+| Other sheets (pickers, long content, forms) | full-width sheet | max-width sheet | max-width sheet |
+
+Max-width sheet (`sheet.maxWidth`, default 540):
+
+- The visible surface is `min(sheet width, maxWidth)` wide, horizontally
+  centered, bottom-attached, with top corners only. JS draws the surface; on
+  iOS the UIKit sheet itself keeps whatever width UIKit gives it but renders
+  transparent (no background color, background effect or shadow), so the
+  surface looks the same however wide UIKit makes the sheet.
+- Without `sheet.backgroundColor`, both the drawn content surface and its
+  bottom safe-area tail keep the native default: iOS `systemBackground` or
+  Android's theme `colorBackground`. Explicit colors, including transparent,
+  take precedence. The platform sheet remains transparent beside the surface.
+- The side margins behave as backdrop for taps: a tap there follows
+  `dismissOnBackdropPress`, and the margins are hidden from accessibility.
+  Known divergence: on iOS and Android the platform sheet owns the drag, so a
+  pan that starts on a margin still moves the sheet. On Web the margins are
+  the real backdrop.
+- Setting `maxWidth` always switches to the drawn surface, even while it
+  spans the whole sheet, so a width change never swaps which side paints the
+  background.
+- In compact windows the sheet is never wider than `maxWidth`, so the
+  max-width sheet and the full-width sheet are identical there.
+- The drawn surface continues below the fitted content with a safe-area tail.
+  The tail renders behind the content surface and overlaps it by a small
+  amount, so the fractional boundary between the two views cannot antialias
+  into a hairline on scaled renders (Simulator windows, screenshots, screen
+  recordings).
+- Android hosts the sheet inside the activity content view and pads the sheet
+  by the navigation-bar inset, so the JS tail below the React content root is
+  not composited there. Native paints that inset strip with the drawn surface
+  color (`sheetBottomInsetColor`, limited by `sheetBottomInsetHorizontal`)
+  instead; the JS tail still covers the iOS home-indicator area.
+
+Width changes while open (rotation, folding, window resize):
+
+| Change | Anchored panel | Sheet | Centered card |
+|---|---|---|---|
+| Within one class | repositions to its anchor | surface width follows | stays centered |
+| Across classes | closes | surface width follows | switches presentation in place, keeping content and input |
+
+Open questions: whether the anchored panel should reopen as a sheet instead
+of closing when the class drops below expanded.
+
+### Window offset for modal-relative anchors
+
+Implemented; iOS runtime-verified on an iPhone Duo inner display. Under
+Fabric, `measureInWindow` / `measure` inside a react-native-screens native
+modal return coordinates relative to that modal, not the screen (measured
+offset of 150, 8 pt for the account selector page sheet in landscape), and no
+JS API exposes the modal's position. Anchored overlays draw in screen
+coordinates, so callers that anchor to a JS-measured rect ask the overlay for
+the correction:
+
+- `windowOffsetRequest` (a counter) and `onWindowOffset({ x, y })`. Each new
+  non-zero value makes iOS report the host's on-screen origin once, after the
+  commit settles; JS measures a plain sibling probe at the same spot and
+  reports `native - measured`. It is `{0, 0}` outside modals. A request that
+  arrives before window attachment or event-emitter setup stays pending and
+  retries after those dependencies attach. It is consumed only after emitting;
+  zero cancels a pending request, and a newer value supersedes it.
+- The host's own shadow node reports the content origin, so the probe is a
+  separate view.
+- The overlay must be mounted to report, so callers keep it mounted
+  (hidden) while waiting. Android never reports; callers treat a missing
+  report as no offset only where the platform cannot report.
+- Rects already in screen space (for example from native lists) need no
+  correction.
+
+### Content size for windows about to rotate
+
+Implemented; Android runtime-verified with OneKey's native chart fullscreen on
+an API 36 emulator. iOS takes the same JS layout path but was not
+runtime-verified. Non-sheet content is laid out by JS at the window size it
+last saw (`useWindowDimensions`), and the Android content host clips the
+content to that frame. JS hears about a rotation only after the window has
+rotated, so until then the content keeps the previous orientation's frame and
+is clipped to it.
+
+- `contentSize?: { width, height }` (non-sheet presentations) replaces the
+  window size for the content frame. A caller that prepares content for the
+  window it is about to rotate into passes the rotated size, so the first
+  rotated frame shows all of it. Omitted, the content follows the window size
+  as before.
+- The content stays anchored at the host origin. While the window has not
+  rotated yet, content larger than the window draws past its edges and takes
+  no touches there; the caller keeps it hidden until the window matches.
+- Sheets ignore it: they size their content from the sheet geometry. Web
+  ignores it: the DOM overlay sizes itself with CSS.
+
+### Web keyboard focus containment
+
+The topmost active, unsuspended blocking Web entry MUST contain sequential
+keyboard focus. Tab from its last tabbable child wraps to the first;
+Shift+Tab from its first wraps to the last. From the entry root, focus enters
+the first/last child respectively. With no tabbable children, focus stays on
+the entry root. Disabled, negative-tabindex, hidden and inert subtrees are
+excluded. Positive tabindex values precede ordinary DOM-order tab stops.
+Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
+focus loop. When a page or global dialog becomes the top blocker, it takes
+focus on its entry root if focus is currently outside the dialog.
+Focus restoration starts after a dialog actually moves focus inside.
+A dialog taking over from an exiting overlay keeps its saved
+opener, or inherits the exiting overlay's restoration target when it has
+none. On exit, focus can return through a chain of nested openers, skipping
+closed overlays and detached targets, when focus is still inside the
+dialog or has fallen back to the document body. An active control outside
+the dialog keeps focus.
+
+A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
+when its entry is non-blocking. This permits a transparent outside-click
+shield without modal focus or accessibility isolation. A passive backdrop on
+a non-blocking entry remains pointer-transparent.
+
+| Concern                                    | iOS                                                                                                                                                          | Android                                                                                                                                                                                                                                                                                                                                                                                                                 | Web                                                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Global level host                          | One passthrough `UIWindow`/root per active global entry per `UIWindowScene`; bounded ranks preserve level bands. `lock` sits above RN Alert (2001).                                | One `OverlayHost` FrameLayout in `android.R.id.content` above the ReactRootView, with one child container per level.                                                                                                                                                                                                                                                                                                    | Sibling `div[data-onekey-layer]` roots under `body`, one z-index band per level (`OVERLAY_WEB_Z_INDEX_BASE`).       |
+| Order within a level                       | Entry window rank by stackOrder, with stable native tie-breaking across all presentations.                                                                             | Child order.                                                                                                                                                                                                                                                                                                                                                                                                            | DOM order.                                                                                                          |
+| Global sheet                               | `UISheetPresentationController`, presented only from the entry window's own root VC (reuses native-sheet).                                                            | View sheet: CoordinatorLayout + BottomSheetBehavior + dimming view (native-sheet reworked off `BottomSheetDialog`).                                                                                                                                                                                                                                                                                                     | Custom sheet: pointer drag, snap by velocity, `visualViewport` keyboard.                                            |
+| Page host                                  | Fabric `PageOverlayHost` as the last child of the root-route screen. Custom-drawn sheet, because UIKit sheets cannot be page-scoped.                         | The same host inside the root-route screen. The ReactRootView already dispatches touches, so no nested RootView.                                                                                                                                                                                                                                                                                                        | `position: absolute` host inside the root-route card.                                                               |
+| Header / tab bar coverage (page)           | Covered: the host is above the tab controller and navigation bars.                                                                                           | Covered.                                                                                                                                                                                                                                                                                                                                                                                                                | Covered.                                                                                                            |
+| Touch passthrough (toast, debug, box-none) | `hitTest` returns nil on the window or root view.                                                                                                            | A non-blocking entry hit-tests its React content with `TouchTargetHelper` (honoring `box-none`) and falls through to the FrameLayout sibling on a miss.                                                                                                                                                                                                                                                                 | `pointer-events: none` root, `auto` per entry.                                                                      |
+| Back / Escape                              | Escape via `accessibilityPerformEscape`. The interactive pop gesture is disabled while a blocking page overlay is shown.                                     | A `Window.Callback` wrapper consumes `KEYCODE_BACK` for the topmost input-ready blocking or dismissible overlay. `ReactActivity.onBackPressed` hands back to JS BackHandler (react-navigation) before the `OnBackPressedDispatcher`, and the app opts out of predictive back, so a dispatcher callback alone never runs first. The dispatcher callback is kept for the predictive-back path. The IME still gets back first to close the keyboard. | Capture-phase `keydown` that ignores IME composition.                                                               |
+| Modality / accessibility                   | `accessibilityViewIsModal` on blocking EntryViews; sheets retain UIKit modality. `.screenChanged` on present; cross-window VoiceOver remains pending.                                                                 | `IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS` on the content below.                                                                                                                                                                                                                                                                                                                                                 | `inert` on the app root and lower layers, `role=dialog`, `aria-modal`, focus trap and restore.                      |
+| Keyboard                                   | System sheet avoidance and custom keyboard layer. Only key-entry removal restores an eligible same-scene entry or app window.                                       | `WindowInsetsAnimationCompat` per sheet (the app uses `adjustPan`).                                                                                                                                                                                                                                                                                                                                                     | `visualViewport`.                                                                                                   |
+| Animation engine                           | `UIViewPropertyAnimator` + `UISpringTimingParameters(mass:stiffness:damping:)`, which maps 1:1 and supports damping ratio > 1.                               | `SpringAnimation` with `stiffness = k/m` and `dampingRatio`; `PathInterpolator` for timing curves.                                                                                                                                                                                                                                                                                                                      | WAAPI `element.animate`. Timing presets use `cubic-bezier`; custom springs use `linear()`.                          |
+| Content hosting                            | `RCTSurfaceTouchHandler` on the host root. A state-driven shadow node sizes Yoga, which replaces native-sheet's forced `frame`. A nested `SafeAreaProvider`. | A `RootView` + `JSTouchDispatcher` container for global levels. A state-driven shadow node, like RN Modal.                                                                                                                                                                                                                                                                                                              | `createPortal`. The Tamagui theme class is set on the layer root, and React event bubbling stops at the entry root. |
+
+Known divergences:
+
+| Divergence                                                                                               | Status                                                     |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| iOS global sheet (system physics) vs. iOS page sheet (custom physics)                                    | Accepted (decision A). Revisit after on-device comparison. |
+| RN `Modal` and third-party dialogs on Android are windows above every layer                              | Accepted, mitigated by the lock policy (§5.7).             |
+| Web anchored origin follows the resolved placement after flip; the Tamagui Popover used the requested placement | Intentional fix, implemented (`getAnchoredTransformOrigin`). |
+
+## 5.7 Failure, fallback, and safety
+
+### iOS global sheet diagnostics
+
+Implemented in source; physical-device verification pending. Native global
+sheets record present/completion, host dismiss/completion/teardown,
+interactive dismiss, appearance/disappearance and unexpected disappearance
+through dynamically resolved OneKeyLog. Missing logger class/selector is a
+no-op and adds no package dependency. These diagnostics do not change the
+presentation, retry, callback, cleanup, or timing contracts.
+
+Only process-local temporary controller/presenter counters, wall time,
+fixed stage/reason enums, and lifecycle booleans are logged. Controller addresses,
+descriptions, entry/business identifiers, content, and arbitrary errors are
+excluded. Weak controller keys must not extend controller lifetime. No layout
+or per-frame events are logged. JS and native IDs are independent; timeline
+correlation by time is approximate during concurrent operations. This host
+belongs to main on iOS; background JS has a separate heap and is not an owner
+of these UIKit resources. Native logger persistence is owned by the logger.
+
+
+- A page request without host or owner keys throws `OverlayRequestError`. This
+  is a programming error; there is no silent global fallback, unlike today's
+  `Portal.Render` retry.
+- A closing entry is removed after 5 s even if native never reports the end of
+  its exit animation.
+- Lock level:
+  - iOS: the lock window sits above everything this app creates.
+  - Android: when lock shows, the app's foreign windows are found with
+    `WindowInspector.getGlobalWindowViews()` (API 29+) and hidden or
+    dismissed. An alternative is to make lock a focus-owning `ComponentDialog`
+    that re-raises itself.
+  - Web: layers below lock get `inert`. Third-party roots are left alone.
+- System view controllers (document picker, PHPicker, share sheet,
+  ASWebAuthenticationSession anchor) must be presented through
+  `OverlayPresenterResolver` on iOS, so they appear above the overlay windows.
+  `lock` is never lowered.
+- No secrets or content are logged. Logs carry only entry id, level, scope and
+  reason.
+
+## 5.8 Performance and resource budget
+
+- iOS entry windows are created lazily and released after their entry detaches,
+  or after an in-progress UIKit interaction finishes when release is deferred.
+  Window count is O(active global entries plus retired interactive windows) per
+  scene, rather than a six-window level cache. Scene disconnect drains both.
+  No new public limit/configuration is introduced; page entries remain views.
+  Re-ranking is O(n log n) for the affected scene and creates no per-frame
+  bridge work.
+- Android layers are views, not windows: no extra surfaces or WindowManager IPC.
+- Store operations are O(n) in the number of live entries. Snapshots are
+  rebuilt once per mutation.
+- Animations run entirely on the UI thread. JS receives only lifecycle events:
+  no per-frame bridge traffic.
+- Content height changes animate only between settled measurements (the
+  two-frame stable pattern from Popover). Continuous per-frame height changes,
+  such as the DatePicker month-row interpolation, are clipped inside the
+  content.
+
+### Page interaction and accessibility isolation (review correction)
+
+The existing ordering and suspension contract also applies when a page entry
+mounts after its owner was suspended. Such entries MUST remain hidden and inert
+until that owner resumes. Resuming an owner MUST NOT clear isolation imposed by
+a higher blocking entry. Web page isolation compares level first, then request
+order within that level; dismissal restores entries no longer below a blocker.
+
+On Web, a covered root route can keep its page overlays visible. Its overlay
+host is inert, and its entries cannot block the foreground route or consume
+Escape. Switching focus restores eligibility without dismissing or remounting
+entries. Host registration and unregistration recalculate DOM isolation. A
+page entry requires a connected, registered host to block the DOM or consume
+Escape. If its host detaches, the next eligible overlay takes precedence, or
+the page becomes interactive if none remains. Global overlays remain eligible
+regardless of the focused page host. iOS and Android use their native host
+lifecycle for page visibility and back handling.
+
+On Android, a blocking page entry MUST hide underlying page/navigation siblings
+from accessibility while preserving the page host and the blocking entry. Entries
+above it, including non-blocking global overlays, remain accessible. Global
+blockers still win over page entries. Attachment, detachment, suspension,
+resumption, input-readiness and blocking changes MUST refresh isolation and
+restore each view's original accessibility flag when it is no longer covered.
+
+These are corrections within the existing contract, not new public props. DOM
+and Robolectric tests will verify lifecycle and native flags; manual TalkBack
+navigation remains a separate runtime acceptance item.
+
+## 5.9 Conformance and acceptance
+
+Focused iOS 27.0 simulator runtime check (2026-11-13): three repetitions of
+the previously failing 0.25-second More-to-account-selector handoff and one
+1.25-second control dismissed to Home. A separate 0.25-second handoff with a
+slow partial selector drag canceled and returned to its original position;
+More reopened and a subsequent full drag dismissed normally. Home and Market
+remained interactive. This checks the main-UI window handoff only; physical
+devices and the broader runtime matrix remain unverified.
+
+Historical app-touch acceptance for revision `404e87c` (2026-11-13,
+local Debug build on an isolated
+iOS 27.0 simulator): all eight first-pan-only cases passed, starting from the
+Home header or list body at 250, 300, 350 and 400 ms after More close UP. The
+250/300 ms cases kept all twenty old-context events routed to the app window;
+350/400 ms started after teardown (observed 5–49 ms later) and routed all twenty
+new-context events normally. No backing-event-only dispatch occurred. Native
+pager logs recorded ended state 3 in every case. List-body accessibility samples
+continued moving after UP without another input, confirming inertia. After
+waiting for release, the first React control tap opened Home More (header) or
+AccountSelectorStack (body), without another pan or tab switch. Per-case main
+and background runtime markers remained unchanged. These measured teardown
+boundaries do not guarantee observation of a DOWN UIKit has not delivered yet.
+
+For the same historical revision, two additional selector handoffs exercised
+multiple front-card drags and a partial rebound, then front dismissal followed
+250 ms later by either a complete
+back-selector dismissal or a partial drag canceled into rebound. Both preserved
+complete old-context delivery (36 and 16 events respectively), zero backing-only
+events, stable main/background markers, and working direct React controls.
+The entry was the watch-only account-row More inside AccountSelectorStack,
+which uses the same global NativeOverlay UIWindow over a UIKit modal host.
+It is an equivalent-host regression, not a replay of the original three-account
+HD wallet-level menu. Release/TestFlight binaries, physical devices and other
+OS versions remain unverified.
+
+Review extension acceptance for `c59572b`: thirty focused native checks passed.
+A rebuilt local Debug App passed first-only header/250 ms and body/300 ms Home
+handoffs with native ended state 3, direct React control actions and stable
+main/background runtime markers. Two further cases used an independently mounted
+passive global entry over Home More. A lower-entry drag received all sixteen
+events in its own context while the upper entry closed; its next React close
+action worked. This does not establish use of the upper entry's context by the
+lower drag. In the exiting-entry case, UIKit delivered DOWN to the upper window,
+restored key ownership to the lower window on close, and delivered UP to the
+same upper window/context 657 ms after native close; the next lower React close
+action worked. Runtime markers stayed stable throughout these four post-recovery
+cases. The earlier nineteen native checks, eight Home cases and two equivalent
+selector handoffs above belong to `404e87c`, not a rerun of the review version.
+The eleven added native groups cover lower/exiting-entry and cross-window touch
+ownership, mixed delivered types, repeated host reassignment, UP/rehost/DOWN and
+coordinator-held idle gaps, projected scene ownership/disconnect, and key scope.
+Mixed-type tests directly deliver synthetic touches and assert observer flags;
+they do not prove physical Pencil input. Scene tests project one real scene into
+controlled manager identity buckets using an internal resolver; they do not prove
+system multi-scene migration. The default resolver remains `ObjectIdentifier(scene)`.
+
+Automated (P0):
+
+- `tests/ios/run.sh` compiles the production WindowManager, SheetController and
+  Animation into an isolated UIKit test app. Its original nineteen checks cover bounded/live
+  ordering, key restoration eligibility, owning-entry release, injected scene
+  disconnect/reuse with original-window identity and reentrant-registration
+  rejection, conditional original-input focus restoration (including
+  higher/foreign/new-input guards), and a native sheet surviving another
+  entry's dismissal. Four focused checks cover interactive retirement after
+  finish and cancellation, reopening the same owner while the old window is
+  retired, and disconnecting a scene with only a retired window. They use a
+  controlled transition coordinator to test manager lifecycle; the real
+  gesture check is the iOS 27.0 simulator run above.
+  Eight app-touch checks directly drive the production observer's
+  `touchesBegan`/`touchesEnded`/`touchesCancelled` and reset with synthetic
+  touch objects. They assert passive gesture flags, touch-only retirement,
+  multi-touch and per-real-window isolation, next-turn touch-set rechecks,
+  reset cleanup, conjunction with coordinator ownership, owner/orphan reuse,
+  and scene-disconnect callback invalidation. They prove manager lifecycle,
+  not UIKit delivery or scroll inertia; those are covered separately by the
+  local App runtime checks above, with the stated selector-entry limitation.
+  Sheet checks use `animated: false`; they do not compile the React/Fabric
+  Container or replace Gallery coverage of animated reversal/generation races,
+  real multi-scene/disconnect, keyboard geometry or accessibility.
+- `src/__tests__/focusTrap.web.test.ts` mounts real Web overlays and checks
+  both Tab boundaries, root/empty fallback, inaccessible children, positive
+  tabindex order, top-entry precedence, page scope, suspension and parking.
+- `src/__tests__/useOverlayController.test.ts` exercises the actual hook and
+  page scope providers: missing/empty keys, delayed readiness, one request,
+  page suspension/removal, hiding/unmounting before readiness and global scope.
+- `NativeOverlayBackTest` exercises the Android host's key interceptor and
+  Back dispatcher with actual entry/page views: dismissible non-blockers,
+  blockers, input readiness, canceled key-up, global/page precedence,
+  suspension and blocking-only accessibility isolation. It also checks live
+  host reuse, Activity isolation and rebuilding after a cleared weak value.
+- `NativeOverlayMotionTest` exercises the production Android view's transition
+  reparenting in both directions, including the exit-completion staging path,
+  old-parent transition completion after the move, and reopen during exit.
+  It also covers Fabric removal of staged content and replacement of presented
+  content during a transition, including layout-listener cleanup, and the
+  fade-free centered exit snapping an interrupted fade-in to full opacity
+  before the scale-out.
+- `NativeOverlayPageHostLayoutTest` places the Android page host below an
+  actual `ReactViewGroup` and checks a sheet at 200, 600 and 320 px after
+  attachment. Height changes MUST relayout and bottom-pin the sheet without
+  a Fabric host-size update, and leave no pending host layout flag.
+- `NativeOverlaySheetInsetTest` exercises the production Android sheet inset
+  painter: the navigation-bar strip sits behind the content, follows the drawn
+  surface width, carries the surface color and is removed when the platform
+  sheet paints its own background. `src/__tests__/sheetSurface.test.ts` checks
+  that the drawn surface color and horizontal inset reach native only while
+  the JS surface is active. Source and Robolectric verified; physical-device
+  verification pending.
+- `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
+  DOM host and verifies late suspension, level ordering and restoration after
+  the blocking entry is removed. It also verifies host isolation and Escape
+  handling when root-route focus changes or the top page host detaches.
+- `tests/browser/pageIsolation.test.cjs` verifies in Chromium that removing a
+  host while its dialog stays visible restores page clicks and focus, and that
+  a dialog opened on a covered route regains focus and contains Tab when its
+  route returns. It also checks that closing a covered dialog preserves
+  foreground typing and that focus acquired after a route returns can be
+  restored on close. Stacked-dialog cases verify focus when a global dialog
+  becomes the top blocker and restoration after nested and concurrent exits.
+  It uses the same browser dependencies as the toast tests (§5.14).
+- `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
+  Android views: page/navigation siblings, entries above the blocker, original
+  flags, global/page transitions, detached hosts and changing blockers. These
+  tests do not replace manual TalkBack navigation.
+
+- `src/__tests__/OverlayStore.test.ts` covers:
+  - level ordering regardless of request order;
+  - page below global;
+  - `stack`, `queue` (priority, lane isolation, promotion after finalize) and
+    `replace` (top entry and `replaceKey`);
+  - the closing timeout and single `onRemoved`;
+  - page suspend, restore and removal;
+  - back resolution (global first, `block`, `pass`, focused host) and the
+    blocking top.
+- `src/__tests__/contentSize.test.ts` covers the non-sheet content frame:
+  the window size by default, and a caller size before and after the window
+  size reaches JS.
+- `src/__tests__/animation.test.ts` covers:
+  - the spring response in all damping regimes, overshoot clamping and settle
+    time;
+  - Android `SpringForce` conversion and CSS `linear()` sampling;
+  - presentation defaults and per-platform preset resolution, including the
+    centered fade-free exit and a caller-supplied exit override;
+  - Web enter/exit keyframes: a fade-free exit keeps opacity 1 when it
+    interrupts a partial fade-in, a fading exit starts from the interrupted
+    opacity, and the interrupted enter transform is retargeted.
+
+Runtime matrix, required per platform before migrating callers (P1–P3):
+
+1. Show sheet, toast, hardware dialog, password and lock in all 5! orders. The
+   final z-order is always level order.
+2. A queue of 3 hardware dialogs with a priority insert.
+3. `replace` DialogLoading text updates without flicker.
+4. Page overlay:
+   - push another screen: the overlay hides;
+   - pop: it restores;
+   - switch tab and come back: it restores;
+   - remove the page: it closes with `page-removed`;
+   - the native header and tab bar are covered.
+5. Back/Escape reaches the topmost input-ready overlay that is blocking or
+   explicitly dismissible, global before page. A non-dismissible blocker
+   consumes Back without closing; a passive non-blocking entry passes through.
+   Accessibility isolation remains blocking-only. The lock swallows Back.
+6. Keyboard: an input in a global sheet, a page sheet and a secure dialog.
+7. iOS: a system picker opened from an overlay appears above it.
+8. Split view: page overlays stay in their own pane.
+9. Reduce motion degrades to fade.
+
+P3 page scope notes:
+
+- kit wraps every root route component (`withOverlayPageHost`) with
+  `OverlayPageHostScope` and renders `OverlayPageHost` after the navigator,
+  keyed by the root route key. components `Page` wraps its content in
+  `PageOverlayOwner`, keyed by the screen's route key.
+- Visibility: `PageOverlayOwner` listens to the screen's `focus` / `blur`
+  events (they fire even while `freezeOnBlur` freezes the React tree) and
+  reports `setPageVisible(owner, activeWithinHost)`. "Active within host"
+  checks every navigator up to, but not including, the root stack, so a root
+  modal over Main does not hide Main's page overlays; a push or tab switch
+  does. Unmounting the page calls `removePage`.
+- The owner may be frozen, so the host applies suspension: `OverlayPageHost`
+  subscribes to the store and hides entries of suspended owners natively
+  (`suspendedOwners`) or in the DOM (`visibility: hidden` + `inert`). Page
+  entries keep `visible=true` while suspended; they are not dismissed.
+- Page entries live inside the React surface: iOS does not attach the
+  overlay's own `RCTSurfaceTouchHandler`, Android disables the entry's
+  `JSTouchDispatcher` (the ReactRootView already dispatches), otherwise every
+  touch would be delivered twice.
+- iOS page sheets are drawn by the entry (bottom-pinned content view, pan to
+  close) because UIKit sheets always cover the window. Android and Web reuse
+  their global sheet implementation inside the page host.
+- Android page hosts MUST complete their own measure/layout lifecycle after
+  native child layout requests. This clears the pending host layout flag so
+  later descendant requests can reach the host through Fabric-managed parents.
+  Scheduling MUST remain available when View construction requests layout
+  before the callback is initialized. Fitted sheets follow settled content
+  height changes in both directions. Runtime verified in app-monorepo 6.7.0
+  with a locally rebuilt shell on a Pixel 10 Pro API 37 emulator: the referral
+  form and Apply button remain visible after loading, error text grows the
+  sheet, and clearing the error restores its height.
+- Android back also resolves page entries: global overlays first, then the
+  topmost visible page overlay.
+- A declarative page overlay waits for a resolvable host and owner; it never
+  falls back to global scope. Direct store requests require both keys.
+- On Web, a page overlay also waits for its registered DOM host while closed
+  with `keepContentMounted`. Registration mounts parked content in that host;
+  close/reopen retains the same DOM and state. Unregistration never moves page
+  content into a global layer.
+
+P2 sheet notes:
+
+- iOS presents each global sheet (`.pageSheet` + one custom detent, ported
+  from native-sheet) from its own entry window root. Non-sheet entries also
+  have independent windows. All global presentations share level/request-order
+  ranking, and dismissing a lower entry leaves upper entries presented with
+  their original native controller, content, input and lifecycle. Genuine
+  unexpected UIKit dismissal still reports `onDismissed('system')`.
+- Android hosts the sheet in a CoordinatorLayout + BottomSheetBehavior inside
+  the level container (no BottomSheetDialog window). Enter / exit use the
+  overlay motion; dragging fades the backdrop; a drag to hidden reports
+  `pan`.
+- Web renders a bottom surface with pointer drag (40% distance or 0.5 px/ms
+  flick dismisses, never from scrolled content). Reopening kept content after
+  a pan dismissal clears the sheet transform, transition and backdrop opacity;
+  the next dismissal follows the normal exit path and restores focus.
+  Cancelling a tracked pointer resets its drag offset, transition and backdrop
+  without dismissing the sheet or swallowing a later click.
+- Sheet content width follows the native `onSheetLayout` report and
+  `sheet.maxWidth` (see Sheet content width); `resolveSheetWidth` is unit
+  tested in `__tests__/sheetWidth.test.ts`.
+- A fitted sheet measures its content with `onLayout` before presenting.
+  Hidden content stays mounted inside the zero-width host (clipped on iOS,
+  INVISIBLE on Android), and the host height stays auto: a fixed 0 height
+  makes Yoga measure the content at most 0 tall.
+- `keepContentMounted` renders content while closed so callers can measure it
+  before opening (Popover waits for header / scroll measurements).
+- `pan` dismissals cannot be vetoed; `onRequestDismiss('pan')` is informative.
+- An active iOS NativeList reorder temporarily suppresses the enclosing page
+  sheet's dismiss pan. The sheet owns the latest `dismissOnPanDown` setting
+  throughout the suppression. Releasing the reorder restores eligibility
+  only when the current setting allows it.
+
+P4a toast notes:
+
+- Message toasts (`Toast.success` / `message` / `error` …) are drawn by the
+  platform from data; see §5.14. The React toast libraries and the persistent
+  `toast`-level fullscreen entry that hosted them are gone.
+- Custom toasts (`Toast.show` / `ShowCustom`) are their own `toast` entries:
+  transparent blocking backdrop (tap closes when `dismissOnOverlayPress`),
+  `scale 0.8 + offsetY -20 + fade` on `quick`, PanResponder swipe up to
+  close unless `disableSwipeGesture` (the Tamagui toast ignored the flag). `Toast.show` unmounts its portal on the overlay's `onClose`, after
+  the exit animation, instead of a 300 ms timer.
+
+P4b dialog loading notes:
+
+- Dialog takes an internal `overlayLevel` prop. With it, `DialogFrame`
+  renders through `OverlayDialogPresentation` on every platform: a sheet
+  (24 pt corners, no handle) on narrow windows, a centered 400 pt card
+  otherwise, the theme `$bgBackdrop`, Escape never closes on web, Android
+  back closes unless `disableSystemClose`.
+- The kit DialogLoading container uses `overlayLevel="modal"`: request order
+  puts it above earlier dialogs, and hardware / password prompts stay above
+  it. Its 50 ms delays and the iOS remount key are gone; text updates in
+  place.
+- Android sheets pad their content by the navigation-bar inset, matching the
+  UIKit sheet's home-indicator inset, and paint that inset strip natively with
+  the drawn surface color (the JS tail is not composited below the React
+  content root on Android).
+
+P1 implementation map:
+
+| Contract                     | iOS                                                            | Android                                                    | Web                                           |
+| ---------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| Level host                   | `NativeOverlayWindowManager.swift`                             | `NativeOverlayHost.kt`                                     | `web/overlayLayers.ts`                        |
+| Entry, hit testing, backdrop | `NativeOverlayEntryView` in `NativeOverlayContainerView.swift` | `NativeOverlayEntryRootView.kt`                            | `WebOverlayEntry` in `OverlayView.web.tsx`    |
+| Page host                    | `NativeOverlayPageHostView.swift`                              | `NativeOverlayPageHostView.kt`                             | `OverlayPageHost.web.tsx`                     |
+| Sheet                        | `NativeOverlaySheetController.swift`                           | `NativeOverlayEntryRootView.configureSheet`                | `OverlayView.web.tsx` + `web/useSheetDrag.ts` |
+| Enter / exit animation       | `NativeOverlayAnimation.swift` (`UIViewPropertyAnimator`)      | `NativeOverlayAnimation.kt` (analytic spring interpolator) | `web/animateTransition.ts` (WAAPI)            |
+| Store bridge                 | `useOverlayController.ts`                                      | same                                                       | same                                          |
+
+P4c dialog notes:
+
+- Every Dialog renders through `OverlayDialogPresentation` (sheet on narrow
+  windows, centered card otherwise); the Tamagui Sheet / Dialog and the
+  NativeSheetPresentation branches of `DialogFrame` are gone. Removed
+  `nativeSheet`, `sheetOverlayProps` and JS portal/layering options throw at
+  the component and imperative API entry points, including object spreads.
+- `floatingPanelProps` style the centered card (width, maxWidth, maxHeight,
+  bg, overflow, radius…); `zIndex`, `sheetOverlayProps`, `sheetProps`
+  (except `disableDrag`), `modal` and `forceMount` no longer apply.
+- Level: `overlayLevel` prop, else from the portal container (`lock` for the
+  lock screen's container, `secure` for the password prompt's, otherwise
+  `modal`). `isOverTopAllViews` is redundant: every level is above app
+  content.
+- `useInPageDialog` / `useInTabDialog` pass the page's host and owner keys:
+  in-page dialogs are page overlays (hidden while the page is covered).
+- `Dialog.show` unmounts its portal when the exit animation ends
+  (`onExited`), with a 1.5 s fallback, instead of a 300 ms timer.
+- Web: a blocking page overlay inerts the siblings on the path from its page
+  host to the app root, not the app root that contains it.
+- Native sheets pad the home indicator / navigation bar and lift above the
+  keyboard natively; the dialog adds no keyboard padding on native (the
+  bounded login layout still caps its scroll view by the keyboard height).
+
+P4d hardware / password notes:
+
+- The hardware stage (MorphOverlay / DeviceStage) renders its portal inside
+  one persistent, non-blocking `hardware`-level fullscreen entry (kit
+  `HardwareStageOverlayContainer`); the stage's own wall blocks the app
+  while it is up, and taps pass through once it is gone. The iOS raise
+  tokens and the Android split-view offset are gone.
+- Hardware dialogs (device confirm, errors, BLE permission, third-party
+  install / permission) use `overlayLevel: 'hardware'`: above every modal
+  dialog, ordered by request with the stage.
+- Password setup / verify prompts use `overlayLevel: 'secure'`, above the
+  stage and every dialog; their web z-index and portal workarounds are gone.
+
+P4e lock screen notes:
+
+- kit `AppStateContainer` (one file for every platform) hosts the lock
+  screen and its dialog portal in a persistent blocking `lock`-level
+  fullscreen entry with no overlay animation (the lock screen keeps its own
+  AnimatePresence fade). Everything below it stays open and is covered.
+- `setSecurityBlocked`, the `security` dismiss reason and
+  `snapshot.securityBlockedBelow` are removed.
+- Dialogs opened into the lock screen's container (forgot passcode, export
+  logs) take the `lock` level from the container, so they render above the
+  lock screen; on web in the same `document.body` child the lock screen keeps
+  interactive (OK-62416).
+- Android back is swallowed on the lock screen (blocking, not dismissible);
+  it no longer reaches navigation behind the lock.
+- The web lock tamper check is retained. The body-level inert pass starts
+  when the lock node actually mounts, covers later body portals, and restores
+  each node's previous inert state on unlock. The lock layer root is a
+  `document.body` child.
+
+P5a native popover notes:
+
+- Every native Popover / ActionList / Select sheet is a native overlay sheet
+  (`NativeSheetPresentation`); the Tamagui Popover sheet (`TMPopover.Adapt`),
+  its external backdrop, z-index and back handler are gone, and
+  the removed `nativeSheet` option throws. iPad / wide windows keep the 400–480 pt centered
+  frame inside the sheet. Native keeps this supported sheet presentation
+  even when a cross-platform caller sets `usingSheet={false}` for its web panel.
+- The native popover renders inline in the caller's tree (its contexts
+  apply) instead of through the full-window portal. Every popover remains
+  mounted until the exit callback (1 s fallback); content then unmounts
+  unless `keepChildrenMounted`. Reopening cancels pending teardown.
+- `closePopover()` waits for exit completion; repeated requests share the
+  same completion promise, and completion or unmount clears its timer.
+- Percent sheet snap points set the viewport height on native and web; fit
+  mode keeps content measurement. Both keep the header and bottom spacing
+  inside the bounded surface. Native Popover and custom Toast also retain
+  their deferred-guide blocker while open.
+- Sheet options are package-owned. Unsupported legacy `sheetProps` keys
+  and floating-panel `zIndex` / `portalProps` throw instead of being ignored.
+
+P5b web popover notes:
+
+- Web Popover / ActionList / Select render in `OverlayView` at the `modal`
+  level; the Tamagui Popover and `PopoverContent` are gone.
+  - Below `md` with `usingSheet` (the default): an overlay sheet with a
+    header and a dismissing backdrop.
+  - Otherwise: `presentation="anchored"`, non-blocking, with a transparent
+    dismissing backdrop for press-triggered panels. Hover panels have no backdrop.
+    Floating UI (`@floating-ui/dom`) places the panel: offset, flip, shift,
+    and a max height from the available space. `autoUpdate` follows scroll
+    and resize.
+- For a single positioned child, Web anchored scale/fade runs on that content,
+  with a local transform origin. Its full-window positioning ancestors remain
+  untransformed, so Floating UI uses the same coordinate space during and after
+  the animation. Completion positioning must not correct coordinates distorted
+  by the enter scale. Multi-child roots retain their shared full-window motion.
+- The anchored content's transform origin is the side and corner facing the
+  anchor, read from its `data-placement` (Floating UI notation, after flip):
+  `bottom-end` scales from `right top`, `top-start` from `left bottom`, and so
+  on. Without a placement it falls back to the content center. The caller
+  sets `data-placement` once Floating UI resolves; because the enter run can
+  start before that, the caller also writes the same origin
+  (`getAnchoredTransformOrigin`) onto the running content.
+- Press-triggered anchored panels close on a backdrop press without activating
+  the page underneath. Presses on the panel or inside an overlay ranked above
+  it do not close it, so a nested Select or a Dialog opened from the panel
+  keeps it open. They also close on Escape, unless `hoverable`.
+- Press-triggered anchored panels own a focus scope and forward caller
+  open/close autofocus callbacks. Hover panels never move or trap focus.
+- `hoverable` opens and closes on mouse enter / leave of the trigger and
+  panel. The default close delay is 100 ms, so the pointer can cross the gap.
+- `keepChildrenMounted` maps to `keepContentMounted`. On web a closed entry
+  stays in its layer, `visibility: hidden` and `inert`.
+- `OverlayStore.resolveBack` also resolves non-blocking entries that are
+  dismissible, so Escape reaches an anchored panel.
+
+P5c tooltip and nested-level notes:
+
+- `OverlayView` provides its level to its content.
+  - `useEnclosingOverlayLevel()` reads that level.
+  - `useNestedOverlayLevel(minimum = 'modal')` returns the higher of it and
+    `minimum`.
+  - Popover (web anchored and sheet), the native popover sheet
+    (`NativeSheetPresentation`) and Tooltip open at that level. A popover in a
+    password prompt or on the lock screen then renders above it, not beneath.
+- Web Tooltip renders in `OverlayView`: anchored, non-blocking, no backdrop.
+  Floating UI places it with offset 6, flip and shift. The Tamagui tooltip is
+  gone; the trigger is still a Tamagui `View`, so `triggerAsChild` works.
+  - Hover and keyboard focus (`:focus-visible`) open it; leaving or blurring
+    the trigger closes it.
+  - A tap toggles it on touch.
+  - A mouse/pen press closes it until the pointer leaves (unchanged).
+  - Escape and an outside press close it.
+  - Non-`hovering` tooltips let the pointer pass through. `hovering` ones
+    stay open while the pointer is over the content.
+  - A controlled `open` wins; requests go to `onOpenChange`.
+  - Native Tooltip still renders only the trigger.
+- iOS: an overlay whose host view lives inside an entry window resolves that
+  window back to the app window. Before this, closing a sheet opened from a
+  `secure` overlay recursed forever in `preferredStatusBarStyle`
+  (`_appearingOrAppearedChildModalViewController` stack overflow). The level
+  root controller also never forwards to itself.
+
+P5d Spotlight notes:
+
+- Spotlight renders in a blocking `OverlayView`: `presentation="fullscreen"`
+  (fade), a 0.3 black backdrop, and the nested level. Back and Escape are
+  swallowed, and the backdrop does not dismiss it; only "Done" ends the tour.
+- It renders inline, so the highlighted copy of the trigger keeps its
+  contexts. The deferred-trigger plumbing and `SPOTLIGHT_OVERLAY_PORTAL`
+  (container and enum member) are gone.
+- The Windows / Linux desktop -30 px title-bar offset is dropped: the overlay
+  layer covers the whole window, so `measureInWindow` coordinates line up.
+  Not yet checked on a Windows / Linux desktop build.
+
+P5e full-window portal notes:
+
+- `FULL_WINDOW_OVERLAY_PORTAL` and `TOASTER_OVERLAY_PORTAL` are only mount
+  roots for the imperative APIs (`Dialog.show`, `Toast.show`,
+  `ActionList.show`, and other `Portal.Render` callers). What mounts there
+  renders its own `OverlayView`. `Portal.Body` into either one throws.
+- These now render their `OverlayView`-backed dialogs and toasts inline
+  instead of through `Portal.Body`: LocalDbDowngrade, the hardware and
+  third-party hardware UI state containers, and ColorPicker's mobile dialog.
+- The Perp OrderBook hover summary is a non-blocking, backdrop-less,
+  unanimated `fullscreen` overlay at `modal`.
+- The Market inline action bar (long-press on a watchlist row) is a
+  `fullscreen` overlay with a transparent, dismissing backdrop. Back now
+  dismisses it as well.
+- `DialogFrame` defaults its level to the nested level, so a Dialog declared
+  inside another overlay opens above it. `Dialog.show` keeps the level of its
+  portal container.
+
+P5f full-window container notes:
+
+- `OverlayContainer` (react-native-screens `FullWindowOverlay` on iOS) and
+  `useOverlayZIndex` are removed. `Dialog.show`'s `isOverTopAllViews` is
+  removed: a dialog's level decides its stacking, and on iOS the flag mounted
+  the dialog twice. `FullWindowOverlayContainer` now only mounts
+  self-hosting overlays and the imperative mount roots.
+- The TradingView native fullscreen chart keeps its global host, because the
+  chart owner's page freezes while fullscreen. The host presents each layer
+  in a non-blocking `fullscreen` overlay at `modal`, without animation, and
+  back is not dismissed. Insets come from the app's safe-area context.
+- ScreenshotBranding is a non-interactive, unanimated overlay at `toast`.
+- The dev overlay window and the TradingView debug panel are non-interactive
+  hosts at `debug`.
+- The Market desktop fullscreen chart stays in place (a remount would reload
+  TradingView), fixed at `OVERLAY_WEB_Z_INDEX_BASE.modal - 1`.
+- iOS: a touched entry window becomes key, and React Native reads its window
+  dimensions from the key window. After a rotation while one was key (the
+  fullscreen chart), JS kept the landscape size, so the page stayed in its
+  wide layout and the native header stayed hidden. An entry window now
+  re-reports the dimensions when it resigns key or resizes while key, by
+  re-assigning the app window's frame (React Native observes it).
+
+Measurement:
+
+- `RNCNativeOverlay` has a hand-written shadow node (`common/cpp`, codegen
+  `interfaceOnly`), like `<Modal>`: it is a `RootNodeKind` (measurements stop
+  at it) and `Unstable_uncullableView`. Its state holds the window origin of
+  the view the content currently lives in (entry window, sheet, page host,
+  or the host itself while staged), returned from
+  `getContentOriginOffset`, so Fabric `measure` / `measureInWindow` report
+  on-screen frames.
+- iOS reports the origin after presenting, on entry / sheet layout, and after
+  restaging; Android on the same events plus container layout changes. Both
+  read model geometry, so a running enter / exit transform is ignored.
+- Web measures the DOM and needs nothing extra.
+- Android builds the codegen library from `android/src/main/jni/CMakeLists.txt`
+  (as react-native-screens does); `jni/RNCNativeOverlay.h` shadows the
+  generated header so autolinking sees the custom descriptor.
+
+Keyboard avoidance:
+
+- One rule on every platform (`computeKeyboardShift` on web,
+  `NativeOverlayKeyboardShift` on iOS, `updateKeyboardShift` on Android): a
+  sheet rises until its content bottom clears the keyboard; other content
+  rises until its bottom is 16 pt above it; nothing rises above the top safe
+  area, so full-window content (toaster host, lock screen) never moves.
+- The lift lives on a keyboard layer between the entry and its animated
+  content, so it composes with enter / exit transforms, and `measure`
+  includes it.
+- iOS: a shared tracker follows `keyboardWillChangeFrame` from the first
+  overlay host on, animated with the keyboard's own curve; UIKit sheets keep
+  their native avoidance.
+- Android: each entry reads IME insets (applied insets at rest, the insets
+  animation per frame, nothing consumed); the app runs edge-to-edge through
+  react-native-keyboard-controller, so the window never pans for overlays.
+- Web: `visualViewport` resize / scroll on mobile browsers.
+- Center dialogs put the card itself at the overlay root (auto margins), so
+  the native content extent is the card, not a full-window wrapper.
+
+Status bar:
+
+- `statusBarStyle` (`light` | `dark`) on an overlay; the topmost shown,
+  unsuspended entry that sets one owns the status bar
+  (`findStatusBarOwner`, render order: level, then request order).
+- The owner mounts a React Native `<StatusBar>`, the same stack the pages
+  use: the app runs without view-controller-based status bar appearance on
+  iOS, and Android sets the window appearance. Web has no status bar.
+- iOS asks the root view controller of entry windows above the status bar
+  (`lock`, `debug`) anyway; without view-controller-based appearance it
+  answers with the app-wide style, so the StatusBar stack still decides.
+
+Migration rules (decided 2026-09-28):
+
+- No transition period. Every overlay (Dialog, Sheet, Toast, DialogLoading,
+  hardware stage and dialogs, password prompts, lock screen, Popover,
+  ActionList, Select, Spotlight) moves onto this package, and the JS
+  overlays (Tamagui Dialog / Sheet / Popover portals, `Portal.Container`
+  overlay hosts, `useOverlayZIndex`) are removed. No lint rule: each old
+  entry point that has to stay exported throws at runtime once its last
+  caller migrates, so a leftover or new use fails at once (2026-09-29).
+- The global Portal exists only for the JS overlays; it is removed once
+  its last caller migrates.
+- The app lock is unified with the rest: the lock screen renders at the
+  `lock` level and covers everything below it. Overlays are no longer
+  closed on lock (done in P4e).
+- Every presentation avoids the keyboard (center, sheet, page sheet) on
+  iOS, Android, and web.
+- Fabric `measure` / `measureInWindow` inside an overlay must report the
+  on-screen frame.
+- The status bar follows the topmost full-screen overlay (`statusBarStyle`).
+- Custom toasts honor `disableSwipeGesture`.
+
+Accepted limitations:
+
+- The iOS page sheet is drawn by the entry (UIKit sheets always cover the
+  window): it has no grabber and does not coordinate its pan with inner
+  scroll views. Page sheets should keep scrollable content short or pass
+  `dismissOnPanDown={false}`.
+- Custom toasts stack by request order and overlap at the top, as before;
+  message toasts stack in the platform toaster (§5.14).
+
+Future work (better to have):
+
+- VoiceOver / TalkBack cross-window modality, verified on device.
+- Screen-reader toasts: the native toaster announces each card's text when
+  it appears (§5.14); the lifetime is not yet extended, and the host should
+  its timer instead.
+
+Known gaps:
+
+- `statusBarStyle` follows React Native's StatusBar stack, so a page that
+  mounts a new `<StatusBar>` while an overlay owns the style, or the
+  imperative theme calls (`StatusBar.setBarStyle`), take over until the owner
+  changes; rare while a full-screen overlay covers the page.
+- The podspec normalizes an npm prerelease version to its stable numeric core.
+  npm remains pinned to the exact prerelease; local CocoaPods never uses a
+  prerelease version string in its path-based dependency resolver.
+
+
+## Package migration conformance audit (2026-10-01)
+
+- Template deviations: Fabric codegen/custom shadow nodes replace Nitro sample
+  code and bindings as documented above. The template's ESLint configuration
+  uses an unregistered Prettier plugin; use RN's exported ESLint 9 flat config
+  and a separate Prettier check. Import CodegenTypes from RN's public namespace
+  so the package typechecks under the template's strict API condition.
+- Behavioral contract: no new overlay behavior in this migration. Formatting,
+  public codegen type imports and build metadata preserve the implementation
+  from the recorded app-monorepo commit. Native-sheet API remains intact.
+- Passed: standalone typecheck; three Jest suites / 39 tests; lint (zero errors,
+  11 advisory style warnings); Builder Bob JS/declaration build; npm tarball
+  contents including custom C++, Web JS, declarations and autolinking files;
+  36 release-tool tests including all four overlay consumer migrations;
+  repository test-integrity check; immutable Yarn installation.
+- Passed: full Android example `:app:assembleDebug` for arm64-v8a, including
+  the overlay Fabric schema, Kotlin and custom C++ autolinking.
+- Passed: example CocoaPods install with NativeOverlay and the synchronized
+  prerelease packages. This is dependency/codegen evidence, not iOS execution.
+- Previous app-monorepo Android/Web interaction evidence remains recorded in
+  the handoff. iOS runtime, physical devices, iPad, screen-reader cross-window
+  modality and real password-lock flows remain outstanding; CI adds packaging
+  checks and builds this pod through the example application.
+
+
+Release recovery: the first batch `3.0.162-alpha.268` left lite-card staged
+but unavailable. A single-package recovery returned npm E409 (previously
+staged version). Following the repository's verification guidance, the entire
+batch advances to `3.0.162-alpha.270`. Existing versions are never overwritten.
+The iOS lockfile failure was only local CocoaPods 1.17.0 versus the Gemfile's
+locked 1.16.2; the actual CI lockfile was adopted, preserving semantic checks.
+
+## 5.14 Message toasts
+
+Message toasts are plain data. `overlayToastStore.show(spec, handlers)` takes
+an `IOverlayToastSpec` (`src/toast/types.ts`) and the platform draws the card:
+DOM on Web, UIKit on iOS, Android views on Android. React draws nothing; the
+only React piece is `OverlayToastHost`, which attaches the renderer.
+
+### Contract
+
+- A spec holds resolved values only: CSS colour strings, points, font sizes,
+  icon names. The package carries no design tokens.
+- Two layouts: `message` (status icon, title, message, action row) and
+  `notification` (round badge, clamped title and message, trailing image,
+  pressable row).
+- Text is paragraphs of runs. A run may set colour, weight, size, underline
+  and `link`; a link is opaque and comes back through `onLink`.
+- Actions are small buttons described by data and report `onAction(id)`.
+  Pressing one does not dismiss the toast.
+- `show` with an id that is on screen updates that card and restarts its
+  lifetime; `update` redraws it (theme or layout change) without restarting.
+- A toast leaves the list when its renderer reports `close`, after the exit.
+  With no renderer attached a dismissal removes it at once. At most 20 toasts
+  are kept; older ones are dropped without animation.
+- Events: `dismiss(reason)` when the card starts leaving (`timeout`, `swipe`,
+  `close`, `programmatic`), `close(reason)` when it is gone, `action`,
+  `link`, `press`.
+- `configure` sets toaster-wide values: position and theme (Web), card colour
+  and content box (native), and the top obstruction the stack rests under.
+
+### Bridge
+
+iOS and Android use one zero-size Fabric component, `RNCNativeOverlayToaster`,
+with two string props (`toasts`, `config`: JSON) and one direct event
+(`onToastEvent { toastId, type, value }`). An infinite duration crosses as
+`-1`. The cards are not children of this view: iOS draws them in a `toast`
+level window from `NativeOverlayWindowManager`, Android in a layer at the
+bottom of the host's `toast` level container, so custom toast entries stay
+above them. Web has no bridge: the DOM renderer subscribes to the store.
+
+Named icons come from `@onekeyfe/react-native-image`'s native registry,
+reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
+package takes no dependency on it; without the registry an icon stays blank.
+On Android the lookup is `OneKeyNamedSVG.INSTANCE` plus its `request` (8
+arguments) and `cancel` methods; the image package's consumer R8 rules keep
+those names, since release app builds minify and would otherwise rename them.
+Web draws an SVG `<use>` of the `href` the caller supplies.
+
+### Platform behaviour
+
+Each platform keeps the look and motion of the renderer it replaced.
+
+| Behaviour | Web | iOS / Android |
+| --- | --- | --- |
+| Position | Per toast or toaster; default bottom-right | Always top-centre |
+| Stack | Newest in front, 3 visible. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Oldest at the top, newest under it, 8 pt apart, all visible |
+| Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
+| Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
+| `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
+| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed; resuming continues the remaining time |
+| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
+| Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
+| Reduced motion | Transitions off (media query) | Every animation is instant |
+
+On Web, the card captures the pointer after recognizing a swipe. Ordinary
+clicks and taps activate the pressable row, buttons, or links through their
+own handlers. Each press ends independently on release or cancellation.
+Card removal, reuse, or repositioning clears its presses, and window blur
+clears all presses and expansion. A touch drag that did not dismiss the card
+ends the press without creating hover or tap expansion.
+
+Divergences from the renderers replaced:
+
+- Web measures a card's own height. The previous renderer could record a
+  scaled height when several toasts arrived in one tick, which put about 4 px
+  less between cards of an expanded stack.
+- Web starts the enter transition synchronously, so a toast shown while the
+  page is hidden still appears.
+- Native shows toasts under a screen reader and announces their text; the
+  previous renderer drew nothing while a screen reader was on.
+
+### Verification
+
+- Web: `src/__tests__/overlayToast.web.test.ts` covers the store and the DOM
+  renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
+  dark, wide light) matched the previous renderer's card boxes, text line
+  rects, icon and button boxes and computed styles within 0.5 px.
+- Web pointer regression: `tests/browser/overlayToast.test.cjs` exercises
+  browser-generated mouse clicks, touch taps, mixed input, and swipes in
+  Chromium. Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
+  Make `esbuild` and `playwright-core` available via `NODE_PATH` or the local
+  install, and set `CHROMIUM_EXECUTABLE_PATH` if using a system Chrome.
+- iOS: built into app-monorepo and run on an iPhone 17 Pro simulator (iOS
+  26.0) beside the previous renderer. In 13 scenarios the card frames and
+  every text line box matched to the pixel; the only differing pixels were
+  corner anti-aliasing against a differently lit backdrop. Timeout, close
+  callback, action press, notification press, swipe up, press-to-pause with
+  resume, programmatic close, id de-duplication and dismiss by id were
+  exercised with injected touches. Not exercised there: the top obstruction
+  shift, the keyboard limit, dark theme, rotation, iPad and VoiceOver.
+- Android: built into app-monorepo and run on a Pixel 7 emulator (API 35,
+  420 dpi) beside the previous renderer, both with the brand typeface. In 13
+  scenarios, light and dark, every card, text, icon and button frame matched
+  to the pixel; inside the cards the remaining pixel differences were at most
+  12 of 255 (anti-aliasing), apart from the spinner's animation frame. The
+  spinner box is 2 px shorter than before (53x52 against 53x54). Timeout and
+  close callback, action press, notification press, swipe up, a short drag
+  that settles back, press-to-pause with resume, programmatic close, id
+  de-duplication, dismiss by id and stacking order were exercised with
+  injected touches. Not exercised there: the top obstruction shift, the
+  keyboard limit, rotation, tablets, foldables and TalkBack.
+
+iOS text is laid out and drawn with TextKit (no font leading, glyphs centred
+in a fixed line box) because that is what the previous text engine did. Two
+of its habits are kept on purpose: a text box is one pixel taller than its
+lines, and an explicit letter spacing, zero included, turns the font's pair
+kerning off.
+
+Android cards follow the previous layout engine's pixel rounding (Yoga): an
+offset from the parent is rounded half up, a text offset is floored, and a
+size is the difference of the rounded absolute edges, so the card keeps its
+unrounded window position. Text is drawn unhinted at subpixel positions with
+the font size and line height rounded up to whole pixels, underlines are
+stroked at baseline + thickness + 1 px, and a bordered pill's fill is inset
+by 0.8 px, all as React Native draws them. Named icons render at their
+rounded frame size.

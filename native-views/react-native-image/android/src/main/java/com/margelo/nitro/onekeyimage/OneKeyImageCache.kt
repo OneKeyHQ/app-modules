@@ -1,5 +1,7 @@
 package com.margelo.nitro.onekeyimage
 
+import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
@@ -65,7 +67,8 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
       } else source.uri
 
       val succeeded = try {
-        load(context, requestUrl, source, options, decodeDimensions)
+        val resource = load(context, requestUrl, source, options, decodeDimensions)
+        recordMemoryVariant(source, requestUrl, decodeDimensions, resource)
         true
       } catch (optimizedError: Exception) {
         if (
@@ -75,7 +78,8 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
           false
         } else {
           try {
-            load(context, source.uri, source, options, decodeDimensions)
+            val resource = load(context, source.uri, source, options, decodeDimensions)
+            recordMemoryVariant(source, source.uri, decodeDimensions, resource)
             true
           } catch (_: Exception) {
             false
@@ -91,13 +95,22 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
     withContext(Dispatchers.Main) {
+      OneKeyMediaPreviewCache.get(context).clearMemory()
       Glide.get(context).clearMemory()
+      OneKeyImageMemoryVariantRegistry.clear()
+      OneKeyImageStartupPrewarm.clearMemoryCache()
     }
   }
 
   override fun clearDisk(): Promise<Unit> = Promise.async {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
+    OneKeyImageStartupPrewarm.clearDiskCache(context.cacheDir)
+    kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+      android.os.Handler(android.os.Looper.getMainLooper()).post {
+        OneKeyMediaPreviewCache.get(context).clearDisk { continuation.resumeWith(Result.success(Unit)) }
+      }
+    }
     Glide.get(context).clearDiskCache()
   }
 
@@ -105,7 +118,16 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
     val context = NitroModules.applicationContext
       ?: throw IllegalStateException("React application context is unavailable")
     withContext(Dispatchers.Main) {
+      OneKeyMediaPreviewCache.get(context).clearMemory()
       Glide.get(context).clearMemory()
+      OneKeyImageMemoryVariantRegistry.clear()
+      OneKeyImageStartupPrewarm.clearMemoryCache()
+    }
+    OneKeyImageStartupPrewarm.clearDiskCache(context.cacheDir)
+    kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+      android.os.Handler(android.os.Looper.getMainLooper()).post {
+        OneKeyMediaPreviewCache.get(context).clearDisk { continuation.resumeWith(Result.success(Unit)) }
+      }
     }
     Glide.get(context).clearDiskCache()
   }
@@ -116,7 +138,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
     source: OneKeyImagePreloadSource,
     options: RequestOptions,
     decodeDimensions: OneKeyImageDecodeDimensions,
-  ) {
+  ): Drawable {
     val request = Glide.with(context)
       .asDrawable()
       .load(OneKeyImageModel.build(url, source.headersJson))
@@ -124,9 +146,33 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
       .override(decodeDimensions.width, decodeDimensions.height)
     val future = request.submit()
     try {
-      future.get()
+      return future.get()
     } finally {
       Glide.with(context).clear(future)
     }
+  }
+
+  private fun recordMemoryVariant(
+    source: OneKeyImagePreloadSource,
+    requestUrl: String,
+    decodeDimensions: OneKeyImageDecodeDimensions,
+    resource: Drawable,
+  ) {
+    val policy = source.cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK
+    if (
+      resource is Animatable ||
+      (policy != OneKeyImageCachePolicy.MEMORY && policy != OneKeyImageCachePolicy.MEMORY_DISK)
+    ) {
+      return
+    }
+    OneKeyImageMemoryVariantRegistry.record(
+      family = OneKeyImageMemoryFamilyKey.from(source.uri, source.headersJson),
+      variant = OneKeyImageMemoryVariant(
+        requestUrl = requestUrl,
+        width = decodeDimensions.width,
+        height = decodeDimensions.height,
+        round = false,
+      ),
+    )
   }
 }

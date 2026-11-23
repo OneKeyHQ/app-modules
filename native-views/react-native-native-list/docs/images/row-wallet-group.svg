@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="342" viewBox="0 0 900 342" role="img" aria-labelledby="title desc">
+<title id="title">walletGroup · a composite wallet family</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">walletGroup · a composite wallet family</text>
+<rect x="24" y="66" width="852" height="226" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="44" y="84" width="250" height="62" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="56" y="109.0" font-size="15" fill="#294766" font-weight="400">parent: identity</text>
+<text x="56" y="131.0" font-size="15" fill="#294766" font-weight="400">walletSidebar</text>
+<rect x="320" y="84" width="534" height="62" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="332" y="120.0" font-size="15" fill="#294766" font-weight="400">Parent key equals the walletGroup key</text>
+<rect x="68" y="160" width="226" height="48" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="80" y="189.0" font-size="15" fill="#294766" font-weight="400">children[0]: identity</text>
+<rect x="320" y="160" width="534" height="48" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="332" y="189.0" font-size="15" fill="#294766" font-weight="400">Member text uses children[0].style</text>
+<rect x="68" y="222" width="226" height="48" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="80" y="251.0" font-size="15" fill="#294766" font-weight="400">children[1…]: identity</text>
+<rect x="320" y="222" width="534" height="48" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="332" y="251.0" font-size="15" fill="#294766" font-weight="400">Fixed parent-first membership</text>
+<path d="M54 148 L54 247" stroke="#9bb0c0" stroke-width="1.5"/>
+<path d="M54 185 L66 185" stroke="#9bb0c0" stroke-width="1.5"/>
+<path d="M54 247 L66 247" stroke="#9bb0c0" stroke-width="1.5"/>
+<text x="24" y="322" font-size="13" fill="#64798b" font-weight="400">Group style is box-only. This template does not own the list’s general sections or header/footer.</text>
+</g>
+</svg>

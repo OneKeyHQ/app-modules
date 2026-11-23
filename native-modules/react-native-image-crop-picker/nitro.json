@@ -1,0 +1,23 @@
+{
+  "cxxNamespace": ["reactnativeimagecroppicker"],
+  "ios": {
+    "iosModuleName": "ReactNativeImageCropPicker"
+  },
+  "android": {
+    "androidNamespace": ["reactnativeimagecroppicker"],
+    "androidCxxLibName": "reactnativeimagecroppicker"
+  },
+  "autolinking": {
+    "ReactNativeImageCropPicker": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "ReactNativeImageCropPicker"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "ReactNativeImageCropPicker"
+      }
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

@@ -1,0 +1,104 @@
+{
+  "comment": "Shared rows for the iOS, Android and Web style gallery. Colors are the OneKey app theme values the app passes in (bgPrimary, neutral5, bg, borderStrong).",
+  "sliderWidth": 320,
+  "sideInset": 24,
+  "rowHeight": 72,
+  "sliderTop": 40,
+  "palettes": {
+    "light": {
+      "background": "#FFFFFF",
+      "fillColor": "#000000df",
+      "trackColor": "#0000001f",
+      "thumbColor": "#FFFFFF",
+      "thumbBorderColor": "#00000031",
+      "markActiveColor": "#000000df",
+      "markInactiveColor": "#FFFFFF",
+      "markBorderColor": "#0000001f",
+      "bubbleColor": "#000000df",
+      "bubbleTextColor": "#FFFFFF"
+    },
+    "dark": {
+      "background": "#1b1b1b",
+      "fillColor": "#ffffffed",
+      "trackColor": "#ffffff22",
+      "thumbColor": "#1b1b1b",
+      "thumbBorderColor": "#ffffff3b",
+      "markActiveColor": "#ffffffed",
+      "markInactiveColor": "#1b1b1b",
+      "markBorderColor": "#ffffff22",
+      "bubbleColor": "#ffffffed",
+      "bubbleTextColor": "#1b1b1b"
+    }
+  },
+  "rows": [
+    {
+      "label": "4 segments · 0",
+      "palette": "light",
+      "segments": 4,
+      "value": 0
+    },
+    {
+      "label": "4 segments · 48",
+      "palette": "light",
+      "segments": 4,
+      "value": 48
+    },
+    {
+      "label": "4 segments · 100",
+      "palette": "light",
+      "segments": 4,
+      "value": 100
+    },
+    {
+      "label": "no segments · 0",
+      "palette": "light",
+      "segments": 0,
+      "value": 0
+    },
+    {
+      "label": "no segments · 48",
+      "palette": "light",
+      "segments": 0,
+      "value": 48
+    },
+    {
+      "label": "no segments · 100",
+      "palette": "light",
+      "segments": 0,
+      "value": 100
+    },
+    {
+      "label": "4 segments · 50 · pressed",
+      "palette": "light",
+      "segments": 4,
+      "value": 50,
+      "pressed": true
+    },
+    {
+      "label": "no segments · 48 · pressed",
+      "palette": "light",
+      "segments": 0,
+      "value": 48,
+      "pressed": true
+    },
+    {
+      "label": "dark · 4 segments · 48",
+      "palette": "dark",
+      "segments": 4,
+      "value": 48
+    },
+    {
+      "label": "dark · no segments · 48",
+      "palette": "dark",
+      "segments": 0,
+      "value": 48
+    },
+    {
+      "label": "dark · 4 segments · 50 · pressed",
+      "palette": "dark",
+      "segments": 4,
+      "value": 50,
+      "pressed": true
+    }
+  ]
+}

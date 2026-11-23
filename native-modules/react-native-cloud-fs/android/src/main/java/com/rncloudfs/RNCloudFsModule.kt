@@ -101,7 +101,6 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
     override fun logout(promise: Promise) {
         val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope(DriveScopes.DRIVE_FILE))
             .build()
         val client: GoogleSignInClient = GoogleSignIn.getClient(reactContext, signInOptions)
         mDriveServiceHelper = null
@@ -131,7 +130,7 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
         Log.d(TAG, "Requesting sign-in")
         val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope(DriveScopes.DRIVE_FILE))
+            .requestScopes(Scope(DriveScopes.DRIVE_APPDATA))
             .build()
         val client: GoogleSignInClient = GoogleSignIn.getClient(reactContext, signInOptions)
         reactContext.startActivityForResult(client.signInIntent, REQUEST_CODE_SIGN_IN, null)

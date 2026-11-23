@@ -143,6 +143,27 @@ function normalizeSource(
   return undefined;
 }
 
+function normalizeHeadersIdentity(
+  headers: Record<string, string> | undefined
+): string {
+  if (!headers) return '';
+  return JSON.stringify(
+    Object.entries(headers)
+      .map(([key, value]) => [key.toLowerCase(), String(value)] as const)
+      .sort(([aKey, aVal], [bKey, bVal]) =>
+        aKey < bKey
+          ? -1
+          : aKey > bKey
+          ? 1
+          : aVal < bVal
+          ? -1
+          : aVal > bVal
+          ? 1
+          : 0
+      )
+  );
+}
+
 export function OneKeyImage({
   source,
   placeholder,
@@ -153,9 +174,12 @@ export function OneKeyImage({
   autoplay,
   recyclingKey,
   optimizeTos = true,
+  round = false,
   resizeWidth,
+  resizeHeight,
   overscan = 1.1,
   loadingStrategy = OneKeyImageLoadingStrategy.STATIC,
+  placeholderColor,
   hybridRef,
   onLoadStart,
   onLoad,
@@ -170,11 +194,11 @@ export function OneKeyImage({
     cachePolicy ??
     normalized?.cachePolicy ??
     OneKeyImageCachePolicy.MEMORY_DISK;
-  const identity = `${normalized?.uri ?? ''}|${JSON.stringify(
-    normalized?.headers ?? {}
+  const identity = `${normalized?.uri ?? ''}|${normalizeHeadersIdentity(
+    normalized?.headers
   )}|${resolvedCachePolicy}|${recyclingKey ?? ''}|${contentFit}|${
     optimizeTos ? '1' : '0'
-  }|${resizeWidth ?? ''}|${overscan}`;
+  }|${resizeWidth ?? ''}|${resizeHeight ?? ''}|${overscan}`;
   const hasSource = normalized != null;
   const hasOverlay = placeholder != null || fallback != null;
   type LoadState = {
@@ -324,12 +348,43 @@ export function OneKeyImage({
       ].some((radius) => typeof radius === 'number' && radius > 0)
   );
   const shouldWrapNative = hasOverlay || hasRoundedCorners;
+  const borderOverlayStyle =
+    flattenedStyle && hasRoundedCorners
+      ? {
+          borderWidth: flattenedStyle.borderWidth,
+          borderTopWidth: flattenedStyle.borderTopWidth,
+          borderRightWidth: flattenedStyle.borderRightWidth,
+          borderBottomWidth: flattenedStyle.borderBottomWidth,
+          borderLeftWidth: flattenedStyle.borderLeftWidth,
+          borderStartWidth: flattenedStyle.borderStartWidth,
+          borderEndWidth: flattenedStyle.borderEndWidth,
+          borderColor: flattenedStyle.borderColor,
+          borderTopColor: flattenedStyle.borderTopColor,
+          borderRightColor: flattenedStyle.borderRightColor,
+          borderBottomColor: flattenedStyle.borderBottomColor,
+          borderLeftColor: flattenedStyle.borderLeftColor,
+          borderStartColor: flattenedStyle.borderStartColor,
+          borderEndColor: flattenedStyle.borderEndColor,
+          borderStyle: flattenedStyle.borderStyle,
+          borderRadius: flattenedStyle.borderRadius,
+          borderTopLeftRadius: flattenedStyle.borderTopLeftRadius,
+          borderTopRightRadius: flattenedStyle.borderTopRightRadius,
+          borderBottomLeftRadius: flattenedStyle.borderBottomLeftRadius,
+          borderBottomRightRadius: flattenedStyle.borderBottomRightRadius,
+          borderStartStartRadius: flattenedStyle.borderStartStartRadius,
+          borderStartEndRadius: flattenedStyle.borderStartEndRadius,
+          borderEndStartRadius: flattenedStyle.borderEndStartRadius,
+          borderEndEndRadius: flattenedStyle.borderEndEndRadius,
+          zIndex: 1,
+          ...(round ? ROUND_CLIP : null),
+        }
+      : undefined;
 
   const native = createElement(NativeOneKeyImage, {
     ...viewProps,
     ...nativeCallbacks,
     style: shouldWrapNative ? StyleSheet.absoluteFill : style,
-    sourceUri: normalized?.uri,
+    sourceUri: normalized?.uri ?? '',
     sourceHeadersJson: normalized?.headers
       ? JSON.stringify(normalized.headers)
       : undefined,
@@ -339,16 +394,27 @@ export function OneKeyImage({
     autoplay: autoplay ?? Platform.OS !== 'android',
     recyclingKey,
     optimizeTos,
+    round,
     resizeWidth,
+    resizeHeight,
     overscan,
     loadingStrategy:
       placeholder == null ? loadingStrategy : OneKeyImageLoadingStrategy.NONE,
+    placeholderColor,
   });
 
   if (!shouldWrapNative) return native;
 
   return (
-    <View style={[style, styles.overlayContainer]} collapsable={false}>
+    <View
+      style={[
+        style,
+        styles.overlayContainer,
+        hasRoundedCorners ? styles.borderlessContainer : undefined,
+        round ? ROUND_CLIP : undefined,
+      ]}
+      collapsable={false}
+    >
       {native}
       {effectiveState === 'loading' && placeholder != null ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -359,6 +425,12 @@ export function OneKeyImage({
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           {fallback}
         </View>
+      ) : null}
+      {borderOverlayStyle ? (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, borderOverlayStyle]}
+        />
       ) : null}
     </View>
   );
@@ -395,8 +467,35 @@ export const OneKeyImageCache = {
   clearAll: () => nativeCache.clearAll(),
 };
 
+// `round` clips the native view to a circle: an oval path on Android
+// (`OneKeyImage.kt` `addOval`), a `min(width, height) / 2` corner radius on iOS
+// (`OneKeyImage.swift` `updateRoundMask`). The overlay container has to clip the
+// same way, or a custom placeholder or fallback is painted square over a round
+// image. A percentage radius says that without measuring the view, and covers
+// every per-corner radius the caller's own style may have set.
+const ROUND_CLIP = {
+  borderRadius: '50%',
+  borderTopLeftRadius: '50%',
+  borderTopRightRadius: '50%',
+  borderBottomLeftRadius: '50%',
+  borderBottomRightRadius: '50%',
+  borderStartStartRadius: '50%',
+  borderStartEndRadius: '50%',
+  borderEndStartRadius: '50%',
+  borderEndEndRadius: '50%',
+} as const;
+
 const styles = StyleSheet.create({
   overlayContainer: {
     overflow: 'hidden',
+  },
+  borderlessContainer: {
+    borderWidth: 0,
+    borderTopWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    borderStartWidth: 0,
+    borderEndWidth: 0,
   },
 });

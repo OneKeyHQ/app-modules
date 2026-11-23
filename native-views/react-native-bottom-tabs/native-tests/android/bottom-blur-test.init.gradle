@@ -1,0 +1,20 @@
+// Opt-in real-View regression using Android's platform test runner.
+gradle.beforeProject { project ->
+  if (project.path == ':onekeyfe_react-native-bottom-tabs') {
+    project.plugins.withId('com.android.library') {
+      project.android {
+        useLibrary 'android.test.runner'
+        useLibrary 'android.test.base'
+        defaultConfig {
+          testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+        }
+        sourceSets {
+          androidTest {
+            java.srcDirs = ['../native-tests/android']
+            manifest.srcFile '../native-tests/android/AndroidManifest.xml'
+          }
+        }
+      }
+    }
+  }
+}

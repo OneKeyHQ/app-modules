@@ -21,9 +21,12 @@ export type ImageSource = Readonly<{
   autoplay?: boolean;
   optimizeTos?: boolean;
   overscan?: number;
+  /** Defaults to `none` in NativeList; use `static` or `skeleton` to opt into loading UI. */
   loadingStrategy?: ImageLoadingStrategy;
   // OneKey patch: fallbackUri is Web-only; retryTimes opts all platforms into terminal retries.
   fallbackUri?: string;
+  /** Web-only ordered continuation; retries each source before advancing. */
+  fallbackUris?: readonly string[];
   retryTimes?: number;
 }>;
 
@@ -31,6 +34,311 @@ export type BadgeModel = Readonly<{
   key: string;
   text: string;
   tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+}>;
+
+/**
+ * Named typography steps, shared with the application's design scale. Resolved
+ * to fontSize/lineHeight/fontWeight in JavaScript before the snapshot is
+ * serialized, so no native renderer needs to know the vocabulary.
+ * See docs/STYLE_SPEC.md §3.2.
+ */
+export type NativeListTypographyToken =
+  | '$headingXl'
+  | '$headingLg'
+  | '$headingMd'
+  | '$headingSm'
+  | '$headingXs'
+  | '$bodyLg'
+  | '$bodyMd'
+  | '$bodySm'
+  | '$bodyXs';
+
+export type NativeListTextStyle = Readonly<{
+  token?: NativeListTypographyToken;
+  fontSize?: number;
+  fontWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
+  color?: string;
+  lineHeight?: number;
+  /** Maximum visible lines; does not reserve empty lines or enlarge the row. */
+  lines?: 1 | 2 | 3;
+  truncate?: 'tail' | 'clip';
+  alignment?: 'start' | 'center' | 'end';
+  verticalAlignment?: 'top' | 'center' | 'bottom';
+  /** Optical translation in logical units; does not affect layout. */
+  offsetY?: number;
+  /** Extra spacing between glyphs in logical units. An explicit 0 turns off the platform's pair kerning on iOS, matching React Native `letterSpacing: 0`. */
+  letterSpacing?: number;
+  /** Equal-width (tabular) digits, matching the App's `SizableText` default. Omission keeps each template's current digits. */
+  tabularNumbers?: boolean;
+}>;
+
+/** Retained alias: Market shipped this name before the style surface was shared. */
+export type MarketTextStyle = NativeListTextStyle;
+
+export type NativeListImageStyle = Readonly<{
+  width?: number;
+  height?: number;
+  shape?: 'circle' | 'rounded' | 'square';
+  cornerRadius?: number;
+  contentFit?: ImageContentFit;
+}>;
+
+export type MarketImageStyle = NativeListImageStyle;
+
+export type NativeListRowContainerStyle = Readonly<{
+  /** Explicit row height in logical units; overrides RowBase.height. */
+  height?: number;
+  backgroundColor?: string;
+  opacity?: number;
+  cornerRadius?: number;
+  borderWidth?: number;
+  borderColor?: string;
+  contentVerticalAlignment?: 'top' | 'center' | 'bottom';
+}>;
+
+/** Local box vocabulary. Each template exposes only parameters for its own slots. */
+export type RowBoxStyle = Readonly<{
+  container?: NativeListRowContainerStyle;
+  horizontalPadding?: number;
+  verticalPadding?: number;
+  leadingGap?: number;
+  /** Gap between the template's text rows. Omission preserves its default. */
+  lineGap?: number;
+  titleBadgeGap?: number;
+  trailingGap?: number;
+  image?: NativeListImageStyle;
+}>;
+
+/** Template-owned slots determine which local box parameters exist, on every platform. */
+export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
+  identity: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  walletGroup: ['horizontalPadding', 'verticalPadding'],
+  rail: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  activity: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  message: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'image',
+  ],
+  dataRow: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'image',
+  ],
+  market: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  mediaTile: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'image',
+  ],
+  metricCard: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'image',
+  ],
+  sectionHeader: [
+    'horizontalPadding',
+    'verticalPadding',
+    'lineGap',
+    'trailingGap',
+  ],
+  action: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'trailingGap',
+    'image',
+  ],
+  buttonGroup: [],
+  system: ['horizontalPadding', 'verticalPadding', 'lineGap'],
+} as const;
+
+type TemplateBoxStyle<T extends keyof typeof ROW_BOX_STYLE_KEYS_BY_TYPE> = Pick<
+  RowBoxStyle,
+  (typeof ROW_BOX_STYLE_KEYS_BY_TYPE)[T][number] | 'container'
+>;
+
+/**
+ * A style key names the model field it modifies, never the view that carries
+ * it. Each template renderer owns its views and maps the key to whichever view
+ * renders that field (for example metricCard `value` is its large number), so
+ * the same key name keeps one meaning across platforms. See docs/STYLE_SPEC.md §4.
+ */
+export type IdentityRowStyle = TemplateBoxStyle<'identity'> &
+  Readonly<{
+    leadingContentMaxWidthRatio?: number;
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    tertiary?: NativeListTextStyle;
+    badge?: NativeListTextStyle;
+    value?: NativeListTextStyle;
+    valueSecondary?: NativeListTextStyle;
+  }>;
+
+export type WalletGroupRowStyle = TemplateBoxStyle<'walletGroup'>;
+
+export type RailRowStyle = TemplateBoxStyle<'rail'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    badge?: NativeListTextStyle;
+    status?: NativeListTextStyle;
+  }>;
+
+export type ActivityRowStyle = TemplateBoxStyle<'activity'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    description?: NativeListTextStyle;
+    status?: NativeListTextStyle;
+    primaryAmount?: NativeListTextStyle;
+    secondaryAmount?: NativeListTextStyle;
+  }>;
+
+export type MessageRowStyle = TemplateBoxStyle<'message'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    body?: NativeListTextStyle;
+    time?: NativeListTextStyle;
+  }>;
+
+export type DataRowStyle = TemplateBoxStyle<'dataRow'> &
+  Readonly<{
+    columns?: NativeListTextStyle;
+    columnSecondary?: NativeListTextStyle;
+    index?: NativeListTextStyle;
+  }>;
+
+export type MarketRowStyle = TemplateBoxStyle<'market'> &
+  Readonly<{
+    /** OneKey patch: keep badges next to the intrinsic title width. */
+    titleBadgeLayout?: 'inline';
+    /** OneKey patch: preserve separate Market content and subtitle insets. */
+    contentTrailingGap?: number;
+    subtitleTrailingPadding?: number;
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    price?: NativeListTextStyle;
+    change?: NativeListTextStyle;
+    changeWidth?: number;
+    changeHeight?: number;
+    changeCornerRadius?: number;
+  }>;
+
+export type MediaTileRowStyle = TemplateBoxStyle<'mediaTile'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    badge?: NativeListTextStyle;
+  }>;
+
+export type MetricCardRowStyle = TemplateBoxStyle<'metricCard'> &
+  Readonly<{
+    /** Standard-card label or composite-card heading. */
+    title?: NativeListTextStyle;
+    /** Large number in the standard template; absent in composite variants. */
+    value?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    trend?: NativeListTextStyle;
+  }>;
+
+export type SectionHeaderRowStyle = TemplateBoxStyle<'sectionHeader'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    value?: NativeListTextStyle;
+    valuePlacement?: 'afterTitle';
+    titleDecoration?: 'none' | 'dashed';
+  }>;
+
+export type RowTextHelp = Readonly<{
+  actionKey: string;
+  presentation: 'tooltip' | 'popover';
+  underline?: 'dashed';
+}>;
+
+export type ActionRowStyle = TemplateBoxStyle<'action'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    value?: NativeListTextStyle;
+  }>;
+
+export type SystemRowStyle = TemplateBoxStyle<'system'> &
+  Readonly<{
+    title?: NativeListTextStyle;
+    message?: NativeListTextStyle;
+    /**
+     * Retry button text. Web draws a retry button only for the Market retry;
+     * a non-Market Web retry is message-only, so this has no target there.
+     */
+    actionText?: NativeListTextStyle;
+  }>;
+
+export type MarketBadgeModel = Readonly<{
+  key: string;
+  text?: string;
+  /** Finite native glyph set; currently only the community verified mark. */
+  iconName?: 'verified';
+  icon?: ImageSource;
+  tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+  textColor?: string;
+  backgroundColor?: string;
+  actionKey?: string;
+  accessibilityLabel?: string;
+  /** OneKey patch: optional Market badge metrics; legacy native defaults remain unchanged. */
+  style?: Readonly<{
+    fontSize?: number;
+    fontWeight?: MarketTextStyle['fontWeight'];
+    lineHeight?: number;
+    height?: number;
+    horizontalPadding?: number;
+  }>;
+}>;
+
+export type MarketChangeModel = Readonly<{
+  text: string;
+  textSegments?: readonly ValueTextSegment[];
+  tone: 'positive' | 'negative' | 'neutral';
+  textColor?: string;
+  backgroundColor?: string;
 }>;
 
 // OneKey patch: keep selector decoration and text data serializable.
@@ -50,19 +358,29 @@ export type VisualOverlay = Readonly<{
   offsetX?: number;
   offsetY?: number;
   image?: ImageSource;
+  fallbackIcon?: Readonly<{ name: string; tintColor?: string }>;
   name?: string;
   text?: string;
+  fontWeight?: NativeListTextStyle['fontWeight'];
   tintColor?: string;
   backgroundColor?: string;
 }>;
 
 type VisualWithImage = Readonly<{
-  fallbackIcon?: Readonly<{ name: string; tintColor?: string }>;
+  fallbackIcon?: Readonly<{
+    name: string;
+    tintColor?: string;
+    size?: number;
+    backgroundColor?: string;
+  }>;
   overlays?: readonly VisualOverlay[];
   borderStyle?: 'dashed';
   borderColor?: string;
+  /** Solid border width in logical units (0 < width <= 4); defaults to 1. Use the host's hairline width for a hairline. */
+  borderWidth?: number;
   image?: ImageSource;
   fallbackText?: string;
+  fallbackTextColor?: string;
   backgroundColor?: string;
   shape?: 'circle' | 'rounded' | 'square';
   cornerIcon?: Readonly<{
@@ -114,8 +432,25 @@ export type TrailingAccessory =
       kind: 'valuePair';
       primary: string;
       secondary: string;
+      primaryFontWeight?: 'medium';
+      primaryHelp?: RowTextHelp;
+      primaryTextSegments?: readonly ValueTextSegment[];
+      secondaryTextSegments?: readonly ValueTextSegment[];
       primaryTone?: TextTone;
       secondaryTone?: TextTone;
+    }>
+  | Readonly<{
+      kind: 'button';
+      label: string;
+      actionKey: string;
+      disabled?: boolean;
+      testID?: string;
+      accessibilityLabel?: string;
+      textColor?: string;
+      backgroundColor?: string;
+      pressedBackgroundColor?: string;
+      hoverBackgroundColor?: string;
+      focusRingColor?: string;
     }>
   | Readonly<{
       kind: 'checkbox';
@@ -144,6 +479,7 @@ export type TrailingAccessory =
       kind: 'icon';
       name: string;
       tintColor?: string;
+      buttonStyle?: 'tertiary';
       disabled?: boolean;
       actionKey?: string;
       testID?: string;
@@ -186,6 +522,10 @@ export type RowBase = Readonly<{
 export type IdentityRow = RowBase &
   Readonly<{
     type: 'identity';
+    /** Opt in to content-based height; explicit row/container height still wins. */
+    contentHeight?: 'auto';
+    /** Emits a row action instead of a press after a successful long press. */
+    longPressActionKey?: string;
     // OneKey patch: UTF-16 ranges match Fuse indices and native attributed strings.
     titleMatch?: readonly Readonly<{ start: number; end: number }>[];
     titleActionKey?: string;
@@ -195,14 +535,40 @@ export type IdentityRow = RowBase &
     leading: LeadingVisual;
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     title: string;
+    /** Plain 12/16 labels beside the title, preserving independent tones. */
+    titleSuffixes?: readonly Readonly<{
+      text: string;
+      tone: 'secondary' | 'disabled';
+      maxWidth?: number;
+    }>[];
+    titleIcon?: Readonly<{
+      name: string;
+      tintColor?: string;
+      accessibilityLabel?: string;
+      /** Web-only anchored help from this icon; does not add a click action. */
+      hoverActionKey?: string;
+    }>;
+    /** Web-only additional help icon after titleIcon. */
+    secondaryTitleIcon?: IdentityRow['titleIcon'];
+    /** Circular image after title icons; image dimensions must be square, 1...40. */
+    titleImage?: Readonly<{
+      image: ImageSource;
+      accessibilityLabel?: string;
+      /** Web-only help anchor; the consumer owns tooltip content. */
+      hoverActionKey?: string;
+    }>;
     subtitle?: string;
     tertiary?: string;
     tertiaryTone?: 'secondary' | 'info';
     titleLines?: 1 | 2;
-    subtitleLines?: 1 | 2;
+    /** Zero displays the complete subtitle. */
+    subtitleLines?: 0 | 1 | 2;
+    /** Drop the trailing column (and its gap) when the row has no trailing accessories. Omitted keeps the legacy 12-point reservation. */
+    collapseEmptyTrailing?: boolean;
     badges?: readonly BadgeModel[];
     trailing?: readonly TrailingAccessory[];
     draggable?: boolean;
+    style?: IdentityRowStyle;
   }>;
 
 export type WalletGroupRow = RowBase &
@@ -211,6 +577,7 @@ export type WalletGroupRow = RowBase &
     parent: IdentityRow;
     children: readonly IdentityRow[];
     draggable?: boolean;
+    style?: WalletGroupRowStyle;
   }>;
 
 export type RailRow = RowBase &
@@ -221,38 +588,88 @@ export type RailRow = RowBase &
     status?: 'none' | 'online' | 'warning' | 'error';
     badge?: BadgeModel;
     draggable?: boolean;
+    style?: RailRowStyle;
   }>;
+
+export type ActivityAmount = Readonly<{
+  key: string;
+  text: string;
+  textSegments?: readonly ValueTextSegment[];
+  leading?: LeadingVisual;
+  tone?: TextTone;
+  secondaryText?: string;
+  secondaryTextSegments?: readonly ValueTextSegment[];
+}>;
 
 export type ActivityRow = RowBase &
   Readonly<{
     type: 'activity';
     leading: LeadingVisual;
+    hideLeading?: boolean;
     secondaryLeading?: LeadingVisual;
     title: string;
     description?: string;
     status?: string;
     primaryAmount?: string;
     secondaryAmount?: string;
+    amounts?: readonly ActivityAmount[];
+    badges?: readonly BadgeModel[];
+    presentation?: 'stacked' | 'table';
+    fee?: Readonly<{
+      label?: string;
+      primary: string;
+      primaryTextSegments?: readonly ValueTextSegment[];
+      secondary?: string;
+      secondaryTextSegments?: readonly ValueTextSegment[];
+      hidden?: boolean;
+    }>;
+    descriptionActionKey?: string;
+    /**
+     * UTF-16 offset into `description` where the text that opens
+     * `descriptionActionKey` starts; the text before it stays plain. An integer
+     * in `0...description.length`: `0`, the default, makes the whole
+     * description the action and `description.length` leaves no action text.
+     * Ignored without `descriptionActionKey`.
+     */
+    descriptionActionStart?: number;
     footerActions?: readonly FooterAction[];
+    style?: ActivityRowStyle;
   }>;
 
 export type MessageRow = RowBase &
   Readonly<{
     type: 'message';
+    /** Draws only top and bottom container borders when a border is supplied. */
+    presentation?: 'inlineWarning';
     unread?: boolean;
     leading?: LeadingVisual;
     title: string;
     body: string;
-    bodyLines?: 1 | 2 | 3;
+    /** Zero displays the complete body. */
+    bodyLines?: 0 | 1 | 2 | 3;
     time: string;
     thumbnail?: ImageSource;
+    style?: MessageRowStyle;
   }>;
 
 export type DataColumn = Readonly<{
   key: string;
   text: string;
+  textSegments?: readonly ValueTextSegment[];
+  titleIcon?: IdentityRow['titleIcon'];
+  secondaryTitleIcon?: IdentityRow['titleIcon'];
+  /**
+   * Web-only passive label before the primary column text. The caller supplies
+   * both colors as #RRGGBB or #RRGGBBAA; native renderers ignore the field.
+   */
+  webLeadingBadge?: Readonly<{
+    text: string;
+    textColor: string;
+    backgroundColor: string;
+  }>;
   secondaryLeadingText?: string;
   secondaryText?: string;
+  secondaryTextSegments?: readonly ValueTextSegment[];
   weight?: 1 | 2 | 3;
   alignment?: 'start' | 'center' | 'end';
   tone?: 'primary' | 'secondary' | 'positive' | 'negative';
@@ -264,18 +681,152 @@ export type DataRow = RowBase &
     type: 'dataRow';
     leading?: LeadingVisual;
     columns: readonly DataColumn[];
+    trailing?: readonly TrailingAccessory[];
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
     index?: number;
     badge?: BadgeModel;
     badges?: readonly BadgeModel[];
     favorite?: boolean;
     favoriteActive?: boolean;
+    style?: DataRowStyle;
+  }>;
+
+export type WebMarketTableColumn = Readonly<{
+  key: string;
+  width?: number;
+  minWidth?: number;
+  flex?: number;
+  alignment?: 'start' | 'center' | 'end';
+  paddingStart?: number;
+  paddingEnd?: number;
+}>;
+
+export type WebMarketTableText = Readonly<{
+  text: string;
+  segments?: readonly ValueTextSegment[];
+  tone?: TextTone;
+  style?: Pick<
+    NativeListTextStyle,
+    'fontSize' | 'fontWeight' | 'lineHeight' | 'color'
+  >;
+}>;
+
+export type WebMarketTableCell = Readonly<{ key: string }> &
+  (
+    | Readonly<{
+        kind: 'favorite';
+        active: boolean;
+        disabled?: boolean;
+        testID?: string;
+        hoverActionKey?: string;
+        actionKey: string;
+        accessibilityLabel: string;
+      }>
+    | Readonly<{
+        kind: 'asset';
+        leading: LeadingVisual;
+        title: WebMarketTableText;
+        secondary?: readonly WebMarketTableText[];
+        lineGap?: number;
+        secondaryBadges?: readonly Pick<
+          MarketBadgeModel,
+          'key' | 'text' | 'style'
+        >[];
+        hoverImages?: readonly (ImageSource | null)[];
+        hoverSecondary?: readonly WebMarketTableText[];
+        hoverActionKey?: string;
+        hoverActionLabel?: string;
+        badges?: readonly Pick<
+          MarketBadgeModel,
+          | 'key'
+          | 'text'
+          | 'iconName'
+          | 'icon'
+          | 'textColor'
+          | 'backgroundColor'
+          | 'actionKey'
+          | 'accessibilityLabel'
+          | 'style'
+        >[];
+      }>
+    | Readonly<{
+        kind: 'text';
+        primary: readonly WebMarketTableText[];
+        partGap?: number;
+        secondary?: readonly WebMarketTableText[];
+      }>
+    | Readonly<{
+        kind: 'sparkline';
+        points: readonly number[];
+        width: number;
+        height: number;
+        strokeColor: string;
+        fillColor: string;
+      }>
+  );
+
+export type WebMarketTablePresentation = Readonly<{
+  draggable?: boolean;
+  contextMenuActionKey?: string;
+  testID?: string;
+  columns: readonly WebMarketTableColumn[];
+  cells: readonly WebMarketTableCell[];
+}>;
+
+/** Native Market quote row. All values are already localized/formatted strings. */
+export type MarketRow = RowBase &
+  Readonly<{
+    type: 'market';
+    variant: 'token' | 'stock' | 'perp';
+    /** Web-only bounded table presentation; native reads the ordinary Market fields. */
+    webTable?: WebMarketTablePresentation;
+    /** Two or three ordered native text metrics; omitting them keeps the compact quote. */
+    metrics?: readonly Pick<
+      DataColumn,
+      | 'key'
+      | 'text'
+      | 'textSegments'
+      | 'secondaryText'
+      | 'secondaryTextSegments'
+      | 'weight'
+      | 'alignment'
+      | 'tone'
+      | 'secondaryTone'
+    >[];
+    leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
+    leading: LeadingVisual;
+    title: string;
+    subtitle?: string;
+    /** OneKey patch: localized name shrinks independently of the volume. */
+    subtitlePrefix?: Readonly<{
+      text: string;
+      /** Web-only anchored help for a truncated name. */
+      hoverActionKey?: string;
+      gap?: number;
+      maxWidth?: number;
+      style?: MarketTextStyle;
+    }>;
+    subtitleSegments?: readonly ValueTextSegment[];
+    price: string;
+    priceSegments?: readonly ValueTextSegment[];
+    change: MarketChangeModel;
+    badges?: readonly MarketBadgeModel[];
+    pressActionKey?: string;
+    pressInActionKey?: string;
+    longPressActionKey?: string;
+    diagnostics?: Readonly<{ imageBindActionKey?: string }>;
+    style?: MarketRowStyle;
   }>;
 
 export type MediaTileRow = RowBase &
   Readonly<{
     type: 'mediaTile';
     variant: 'gallery' | 'browserPreview';
+    /** Native preview; video candidates display a silent first frame, never autoplay. */
+    media?: Readonly<{
+      source: ImageSource;
+      probeOrder: readonly ('image' | 'video')[];
+    }>;
     image?: ImageSource;
     imageState?: 'empty' | 'error';
     networkImage?: ImageSource;
@@ -283,6 +834,7 @@ export type MediaTileRow = RowBase &
     subtitle?: string;
     badge?: BadgeModel;
     closeActionKey?: string;
+    style?: MediaTileRowStyle;
   }>;
 
 /** Compact KPI card for dashboards and grids. */
@@ -307,6 +859,7 @@ export type MetricCardRow = RowBase &
     badge?: BadgeModel;
     metrics?: readonly MetricValue[];
     progress?: number;
+    style?: MetricCardRowStyle;
   }>;
 
 export type SectionHeaderRow = RowBase &
@@ -323,12 +876,16 @@ export type SectionHeaderRow = RowBase &
     indexTitle?: string;
     variant?: 'summary' | 'gallery' | 'history';
     title: string;
+    leadingBadge?: BadgeModel;
+    titleLoading?: boolean;
     subtitle?: string;
     value?: string;
+    valueHelp?: RowTextHelp;
     valueActionKey?: string;
     titleIcon?: Extract<TrailingAccessory, { kind: 'icon' }>;
     valueIcon?: Extract<TrailingAccessory, { kind: 'icon' }>;
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
+    style?: SectionHeaderRowStyle;
   }>;
 
 export type ActionRow = RowBase &
@@ -341,16 +898,41 @@ export type ActionRow = RowBase &
     icon?: Extract<LeadingVisual, { kind: 'icon' }>;
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
     trailing?: readonly TrailingAccessory[];
+    style?: ActionRowStyle;
+  }>;
+
+export type ButtonGroupRow = RowBase &
+  Readonly<{
+    type: 'buttonGroup';
+    buttons: readonly Readonly<{
+      key: string;
+      label: string;
+      actionKey: string;
+      disabled?: boolean;
+      loading?: boolean;
+      testID?: string;
+      accessibilityLabel?: string;
+    }>[];
+    style?: TemplateBoxStyle<'buttonGroup'>;
   }>;
 
 export type SystemRow = RowBase &
+  Readonly<{ style?: SystemRowStyle }> &
   (
-    | Readonly<{ type: 'system'; variant: 'loading'; message?: string }>
+    | Readonly<{
+        type: 'system';
+        variant: 'loading';
+        presentation?: 'market';
+        loadingStyle?: 'skeleton' | 'spinner';
+        message?: string;
+      }>
     | Readonly<{
         type: 'system';
         variant: 'retry';
+        presentation?: 'market';
         message: string;
         actionKey: string;
+        actionText?: string;
       }>
     | Readonly<{
         type: 'system';
@@ -359,8 +941,18 @@ export type SystemRow = RowBase &
         message: string;
         borderColor?: string;
       }>
-    | Readonly<{ type: 'system'; variant: 'noMatch'; message: string }>
-    | Readonly<{ type: 'system'; variant: 'end'; message?: string }>
+    | Readonly<{
+        type: 'system';
+        variant: 'noMatch';
+        presentation?: 'market';
+        message: string;
+      }>
+    | Readonly<{
+        type: 'system';
+        variant: 'end';
+        presentation?: 'market';
+        message?: string;
+      }>
     | Readonly<{ type: 'system'; variant: 'spacer'; height: number }>
   );
 
@@ -371,10 +963,12 @@ export type RowModel =
   | ActivityRow
   | MessageRow
   | DataRow
+  | MarketRow
   | MediaTileRow
   | MetricCardRow
   | SectionHeaderRow
   | ActionRow
+  | ButtonGroupRow
   | SystemRow;
 
 export type NativeListTheme = Readonly<{
@@ -387,8 +981,12 @@ export type NativeListTheme = Readonly<{
   rowBackground: string;
   rowSelectedBackground: string;
   rowPressedBackground?: string;
+  /** Web-only enabled-row hover color; defaults to rowPressedBackground. */
+  rowHoverBackground?: string;
   subduedBackground?: string;
   strongBackground?: string;
+  /** Web-only background for a displayed declared image fallback. */
+  imageFallbackBackground?: string;
   primaryText: string;
   secondaryText: string;
   disabledText?: string;
@@ -397,6 +995,8 @@ export type NativeListTheme = Readonly<{
   separator: string;
   accent: string;
   positive: string;
+  /** Optional exact background for the success tone of section leading badges. */
+  successBackground?: string;
   negative: string;
   criticalBackground?: string;
   inverseBackground?: string;
@@ -412,13 +1012,51 @@ export type SectionIndexConfig = Readonly<{
   centeredInWindow?: boolean;
 }>;
 
+export type NativeListSeparatorStyle = Readonly<{
+  /**
+   * Leading inset in logical pixels. Omitted keeps each platform's own default,
+   * which is not the same everywhere — see docs/STYLE_SPEC.md §6.2.
+   */
+  inset?: number;
+  /**
+   * Overrides the `separator` theme token for this list only. Must be
+   * `#RRGGBB` or `#RRGGBBAA`, like every row style color.
+   */
+  color?: string;
+}>;
+
+/**
+ * List chrome that every platform can honour. Pull to refresh, the section index
+ * rail and the reorder preview are deliberately absent: the first two are system
+ * controls or three independent constant sets, and the third is drawn with
+ * platform-specific primitives. See docs/STYLE_SPEC.md §5.
+ */
+export type NativeListListStyle = Readonly<{
+  separator?: NativeListSeparatorStyle;
+  /**
+   * Corner radius of a `groupId` card, `0…40` logical units. Does not affect
+   * rail or media tiles.
+   */
+  groupCornerRadius?: number;
+}>;
+
 export type NativeListSnapshot = Readonly<{
   schemaVersion: 1;
   generation: number;
+  /** One-shot animation for a user-initiated row-key insertion or removal. */
+  structuralTransition?: Readonly<{
+    id: string;
+    durationMs?: number;
+    anchorKey?: string;
+  }>;
+  disclosure?: Readonly<{
+    expanded: boolean;
+    expandedTrailingInset?: number;
+  }>;
   layout: Readonly<{
     kind: NativeListLayout;
     orientation?: NativeListOrientation;
-    gridColumns?: 2 | 3 | 4;
+    gridColumns?: 2 | 3 | 4 | 5 | 6 | 7;
     stickyHeaders?: boolean;
     contentPadding?: number;
     contentPaddingHorizontal?: number;
@@ -434,8 +1072,15 @@ export type NativeListSnapshot = Readonly<{
   }>;
   capabilities?: Readonly<{
     reorderable?: boolean;
+    /**
+     * `row` (default) starts a reorder from a long press anywhere on a
+     * reorderable row. `handle` starts it only from a long press on the
+     * row's trailing `drag` accessory.
+     */
+    reorderActivation?: 'row' | 'handle';
     pullToRefresh?: boolean;
     refreshing?: boolean;
+    refreshTriggerDistance?: number;
     loadMore?: boolean;
     endReachedThreshold?: number;
     sectionIndex?: SectionIndexConfig;
@@ -443,6 +1088,7 @@ export type NativeListSnapshot = Readonly<{
   emptyState?: ActionRow | SystemRow;
   fixedFooter?: ActionRow | SystemRow;
   theme?: NativeListTheme;
+  listStyle?: NativeListListStyle;
 }>;
 
 // OneKey patch: include selector-only mutable presentation fields.
@@ -458,180 +1104,219 @@ type CommonPatchFields =
   | 'heightRounding'
   | 'opacity'
   | 'pressDisabled'
-  | 'accessibilityLabel';
+  | 'accessibilityLabel'
+  | 'style';
+
+/** Null removes optional fields; undefined leaves the existing value unchanged. */
+export type PatchClearableChanges<Row, Keys extends keyof Row> = Readonly<{
+  [K in Keys]?: undefined extends Row[K] ? Row[K] | null : Row[K];
+}>;
 
 export type RowPatch =
   | Readonly<{
       type: 'identity';
       key: string;
-      changes: Partial<
-        Pick<
-          IdentityRow,
-          | CommonPatchFields
-          | 'title'
-          | 'subtitle'
-          | 'tertiary'
-          | 'tertiaryTone'
-          | 'badges'
-          | 'trailing'
-          | 'leading'
-          | 'leadingAction'
-          | 'titleMatch'
-          | 'titleActionKey'
-          | 'titleActionOnHover'
-          | 'subtitleSegments'
-        >
+      changes: PatchClearableChanges<
+        IdentityRow,
+        | CommonPatchFields
+        | 'title'
+        | 'titleSuffixes'
+        | 'titleIcon'
+        | 'secondaryTitleIcon'
+        | 'titleImage'
+        | 'subtitle'
+        | 'subtitleLines'
+        | 'collapseEmptyTrailing'
+        | 'contentHeight'
+        | 'longPressActionKey'
+        | 'tertiary'
+        | 'tertiaryTone'
+        | 'badges'
+        | 'trailing'
+        | 'leading'
+        | 'leadingAction'
+        | 'titleMatch'
+        | 'titleActionKey'
+        | 'titleActionOnHover'
+        | 'subtitleSegments'
       >;
     }>
   | Readonly<{
       type: 'rail';
       key: string;
-      changes: Partial<
-        Pick<
-          RailRow,
-          CommonPatchFields | 'title' | 'status' | 'badge' | 'visual'
-        >
+      changes: PatchClearableChanges<
+        RailRow,
+        CommonPatchFields | 'title' | 'status' | 'badge' | 'visual'
       >;
     }>
   | Readonly<{
       type: 'activity';
       key: string;
-      changes: Partial<
-        Pick<
-          ActivityRow,
-          | CommonPatchFields
-          | 'title'
-          | 'description'
-          | 'status'
-          | 'primaryAmount'
-          | 'secondaryAmount'
-          | 'leading'
-          | 'secondaryLeading'
-          | 'footerActions'
-        >
+      changes: PatchClearableChanges<
+        ActivityRow,
+        | CommonPatchFields
+        | 'title'
+        | 'description'
+        | 'status'
+        | 'amounts'
+        | 'badges'
+        | 'presentation'
+        | 'fee'
+        | 'descriptionActionKey'
+        | 'descriptionActionStart'
+        | 'primaryAmount'
+        | 'secondaryAmount'
+        | 'leading'
+        | 'hideLeading'
+        | 'secondaryLeading'
+        | 'footerActions'
       >;
     }>
   | Readonly<{
       type: 'message';
       key: string;
-      changes: Partial<
-        Pick<
-          MessageRow,
-          | CommonPatchFields
-          | 'unread'
-          | 'title'
-          | 'body'
-          | 'bodyLines'
-          | 'time'
-          | 'thumbnail'
-        >
+      changes: PatchClearableChanges<
+        MessageRow,
+        | CommonPatchFields
+        | 'unread'
+        | 'title'
+        | 'body'
+        | 'bodyLines'
+        | 'presentation'
+        | 'time'
+        | 'thumbnail'
       >;
     }>
   | Readonly<{
       type: 'dataRow';
       key: string;
-      changes: Partial<
-        Pick<
-          DataRow,
-          | CommonPatchFields
-          | 'leading'
-          | 'columns'
-          | 'checkbox'
-          | 'index'
-          | 'badge'
-          | 'badges'
-          | 'favorite'
-          | 'favoriteActive'
-        >
+      changes: PatchClearableChanges<
+        DataRow,
+        | CommonPatchFields
+        | 'leading'
+        | 'columns'
+        | 'trailing'
+        | 'checkbox'
+        | 'index'
+        | 'badge'
+        | 'badges'
+        | 'favorite'
+        | 'favoriteActive'
+      >;
+    }>
+  | Readonly<{
+      type: 'market';
+      key: string;
+      changes: PatchClearableChanges<
+        MarketRow,
+        | CommonPatchFields
+        | 'leadingAction'
+        | 'leading'
+        | 'title'
+        | 'subtitle'
+        | 'subtitleSegments'
+        | 'price'
+        | 'priceSegments'
+        | 'change'
+        | 'badges'
+        | 'pressActionKey'
+        | 'pressInActionKey'
+        | 'longPressActionKey'
+        | 'diagnostics'
+        | 'webTable'
+        | 'metrics'
+        | 'style'
       >;
     }>
   | Readonly<{
       type: 'mediaTile';
       key: string;
-      changes: Partial<
-        Pick<
-          MediaTileRow,
-          | CommonPatchFields
-          | 'image'
-          | 'imageState'
-          | 'networkImage'
-          | 'title'
-          | 'subtitle'
-          | 'badge'
-          | 'closeActionKey'
-        >
+      changes: PatchClearableChanges<
+        MediaTileRow,
+        | CommonPatchFields
+        | 'image'
+        | 'imageState'
+        | 'media'
+        | 'networkImage'
+        | 'title'
+        | 'subtitle'
+        | 'badge'
+        | 'closeActionKey'
       >;
     }>
   | Readonly<{
       type: 'metricCard';
       key: string;
-      changes: Partial<
-        Pick<
-          MetricCardRow,
-          | CommonPatchFields
-          | 'variant'
-          | 'title'
-          | 'value'
-          | 'subtitle'
-          | 'trend'
-          | 'trendTone'
-          | 'visual'
-          | 'badge'
-          | 'metrics'
-          | 'progress'
-        >
+      changes: PatchClearableChanges<
+        MetricCardRow,
+        | CommonPatchFields
+        | 'variant'
+        | 'title'
+        | 'value'
+        | 'subtitle'
+        | 'trend'
+        | 'trendTone'
+        | 'visual'
+        | 'badge'
+        | 'metrics'
+        | 'progress'
       >;
     }>
   | Readonly<{
       type: 'sectionHeader';
       key: string;
-      changes: Partial<
-        Pick<
-          SectionHeaderRow,
-          | CommonPatchFields
-          | 'variant'
-          | 'title'
-          | 'subtitle'
-          | 'value'
-          | 'valueActionKey'
-          | 'titleActionKey'
-          | 'titleActionOnHover'
-          | 'titleIcon'
-          | 'valueIcon'
-          | 'checkbox'
-        >
+      changes: PatchClearableChanges<
+        SectionHeaderRow,
+        | CommonPatchFields
+        | 'variant'
+        | 'titleLoading'
+        | 'title'
+        | 'subtitle'
+        | 'value'
+        | 'valueHelp'
+        | 'leadingBadge'
+        | 'valueActionKey'
+        | 'titleActionKey'
+        | 'titleActionOnHover'
+        | 'titleIcon'
+        | 'valueIcon'
+        | 'checkbox'
       >;
     }>
   | Readonly<{
       type: 'action';
       key: string;
-      changes: Partial<
-        Pick<
-          ActionRow,
-          | CommonPatchFields
-          | 'title'
-          | 'tone'
-          | 'icon'
-          | 'checkbox'
-          | 'trailing'
-        >
+      changes: PatchClearableChanges<
+        ActionRow,
+        CommonPatchFields | 'title' | 'tone' | 'icon' | 'checkbox' | 'trailing'
+      >;
+    }>
+  | Readonly<{
+      type: 'buttonGroup';
+      key: string;
+      changes: PatchClearableChanges<
+        ButtonGroupRow,
+        CommonPatchFields | 'buttons'
       >;
     }>
   | Readonly<{
       type: 'system';
       key: string;
       changes: Readonly<{
-        revision?: number;
-        disabled?: boolean;
-        message?: string;
+        revision?: number | null;
+        disabled?: boolean | null;
+        message?: string | null;
       }>;
     }>;
 
 export type NativeListActionSource =
   | 'row'
+  | 'marketBadge'
   | 'leadingAction'
   | 'trailingAccessory'
   | 'footerAction'
+  | 'buttonGroup'
+  | 'description'
   | 'mediaClose';
 
 export type NativeListWindowRect = Readonly<{
@@ -646,6 +1331,8 @@ export type NativeListActionAnchor = Readonly<{
   token: string;
   /** Window-relative logical units: CSS px on Web, points on iOS, dp on Android. */
   windowRect: NativeListWindowRect;
+  /** Actual long-press point, in the same logical units as windowRect. */
+  windowPoint?: Readonly<{ x: number; y: number }>;
   source: NativeListActionSource;
   slot?: number;
   generation: number;
@@ -653,6 +1340,8 @@ export type NativeListActionAnchor = Readonly<{
 }>;
 
 export type RowActionEvent = Readonly<{
+  /** Web-only client/window CSS pixel pointer location. */
+  windowPoint?: Readonly<{ x: number; y: number }>;
   rowKey?: string;
   actionKey: string;
   sectionKey?: string;

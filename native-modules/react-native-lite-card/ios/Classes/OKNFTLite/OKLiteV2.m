@@ -80,12 +80,20 @@
             OKNFCLitePINVerifyResult oldPinVerifyResult = [self verifyPin:pin];
             if (oldPinVerifyResult == OKNFCLitePINVerifyResultPass) {
                 [self setPin:pin];
-            } else if (oldPinVerifyResult == OKNFCLitePINVerifyResultNotMatch) {
-                status = OKNFCLiteSetMncStatusPinNotMatch;
-                if (self.pinRTL <= 0) {
-                    BOOL restSeccuss = [self resetSync];
-                    status = restSeccuss ? OKNFCLiteSetMncStatusWiped : OKNFCLiteSetMncStatusError;
+            } else {
+                if (oldPinVerifyResult == OKNFCLitePINVerifyResultNotMatch) {
+                    status = OKNFCLiteSetMncStatusPinNotMatch;
+                    if (self.pinRTL <= 0) {
+                        BOOL restSeccuss = [self resetSync];
+                        status = restSeccuss ? OKNFCLiteSetMncStatusWiped : OKNFCLiteSetMncStatusError;
+                    }
                 }
+                if (status == OKNFCLiteSetMncStatusWiped) {
+                    self.status = OKNFCLiteStatusNewCard;
+                }
+                [self.delegate endNFCSessionWithError:YES];
+                callBack(self,status);
+                return;
             }
         }
 

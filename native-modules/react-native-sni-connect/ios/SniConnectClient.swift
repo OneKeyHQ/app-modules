@@ -112,7 +112,7 @@ final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDataDeleg
     let releasedResolver = resolverLease.release()
     SniConnectLog.info(SniConnectLog.event("sni_session_invalidated", [
       ("hostname", hostname),
-      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("ip", ip),
       ("releasedResolver", releasedResolver),
       ("success", error == nil),
     ]))
@@ -186,6 +186,7 @@ final class SniConnectClient {
   // token so cancelAllRequests() also covers requests that do not have a requestId.
   private var activeTasksByToken: [UUID: Task<Response, Error>] = [:]
   private var requestTokensById: [String: UUID] = [:]
+  private var uploadProgressByToken: [UUID: SniConnectUploadProgress] = [:]
   private var invalidated = false
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
   private let requestLimiter = SniConnectRequestLimiter.shared
@@ -259,6 +260,9 @@ final class SniConnectClient {
     let headers: [String: String]
     let body: String?
     let timeout: TimeInterval
+    // Set only by uploadFile(); already resolved inside the app sandbox.
+    var bodyFileURL: URL? = nil
+    var uploadProgress: SniConnectUploadProgress? = nil
 
     // Advanced timeout configurations
     let connectTimeout: TimeInterval? // Connection establishment timeout
@@ -408,7 +412,7 @@ final class SniConnectClient {
     )
     SniConnectLog.info(SniConnectLog.event("sni_transport_config", [
       ("hostname", hostname),
-      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("ip", ip),
       ("ipFamily", SniConnectLog.ipFamily(ip)),
       ("proxyMode", "no_proxy"),
       ("pinnedResolver", true),
@@ -457,7 +461,7 @@ final class SniConnectClient {
       case .waitForResolverSlots(let resolverLeases):
         SniConnectLog.info(SniConnectLog.event("sni_resolver_slot_wait", [
           ("hostname", key.hostname),
-          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ip", config.ip),
           ("waitCount", resolverLeases.count),
         ]))
         for resolverLease in resolverLeases {
@@ -508,7 +512,7 @@ final class SniConnectClient {
       }
       SniConnectLog.info(SniConnectLog.event("sni_cache_evict", [
         ("hostname", evictedKey.hostname),
-        ("ipHash", SniConnectLog.shortHash(evictedKey.canonicalIP)),
+        ("ip", evictedKey.canonicalIP),
         ("cacheSize", sessionCache.count),
         ("limit", Self.maxCachedSessions),
         ("reason", forPendingInsert ? "max_cached_sessions_pending_insert" : "max_cached_sessions"),
@@ -579,14 +583,15 @@ final class SniConnectClient {
       guard let self = self, let token = self.requestTokensById.removeValue(forKey: requestId),
             let task = self.activeTasksByToken.removeValue(forKey: token) else {
         SniConnectLog.warn(SniConnectLog.event("sni_cancel", [
-          ("requestIdHash", SniConnectLog.shortHash(requestId)),
+          ("requestId", requestId),
           ("success", false),
         ]))
         return false
       }
+      self.uploadProgressByToken.removeValue(forKey: token)
       task.cancel()
       SniConnectLog.info(SniConnectLog.event("sni_cancel", [
-        ("requestIdHash", SniConnectLog.shortHash(requestId)),
+        ("requestId", requestId),
         ("success", true),
       ]))
       return true
@@ -615,6 +620,7 @@ final class SniConnectClient {
       }
       self.activeTasksByToken.removeAll()
       self.requestTokensById.removeAll()
+      self.uploadProgressByToken.removeAll()
       SniConnectLog.info(SniConnectLog.event(logAction, [
         ("cancelledCount", tasks.count),
         ("success", true),
@@ -623,7 +629,11 @@ final class SniConnectClient {
   }
 
   /// Register an active task immediately after creation, before JS can cancel it.
-  func registerTask(_ task: Task<Response, Error>, for requestId: String?) -> UUID {
+  func registerTask(
+    _ task: Task<Response, Error>,
+    for requestId: String?,
+    uploadProgress: SniConnectUploadProgress? = nil
+  ) -> UUID {
     let token = UUID()
     var shouldCancel = false
     tasksQueue.sync(flags: .barrier) { [weak self] in
@@ -634,13 +644,17 @@ final class SniConnectClient {
       }
       if let requestId = requestId, let previousToken = self.requestTokensById[requestId],
          let previousTask = self.activeTasksByToken.removeValue(forKey: previousToken) {
+        self.uploadProgressByToken.removeValue(forKey: previousToken)
         previousTask.cancel()
         SniConnectLog.warn(SniConnectLog.event("sni_duplicate_request_id", [
-          ("requestIdHash", SniConnectLog.shortHash(requestId)),
+          ("requestId", requestId),
           ("action", "cancel_previous"),
         ]))
       }
       self.activeTasksByToken[token] = task
+      if let uploadProgress = uploadProgress {
+        self.uploadProgressByToken[token] = uploadProgress
+      }
       if let requestId = requestId {
         self.requestTokensById[requestId] = token
       }
@@ -653,11 +667,28 @@ final class SniConnectClient {
 
   /// Unregister a completed or failed task
   func unregisterTask(requestId: String?, token: UUID) {
-    tasksQueue.async(flags: .barrier) { [weak self] in
+    tasksQueue.sync(flags: .barrier) { [weak self] in
       self?.activeTasksByToken.removeValue(forKey: token)
+      self?.uploadProgressByToken.removeValue(forKey: token)
       if let requestId = requestId, self?.requestTokensById[requestId] == token {
         self?.requestTokensById.removeValue(forKey: requestId)
       }
+    }
+  }
+
+  func getUploadProgress(requestId: String) -> [String: Int64]? {
+    return tasksQueue.sync { () -> [String: Int64]? in
+      guard let token = requestTokensById[requestId],
+            let progress = uploadProgressByToken[token] else {
+        return nil
+      }
+      return progress.snapshot()
+    }
+  }
+
+  func finishUploadProgress(token: UUID) {
+    _ = tasksQueue.sync(flags: .barrier) {
+      uploadProgressByToken.removeValue(forKey: token)
     }
   }
 
@@ -678,17 +709,24 @@ final class SniConnectClient {
       method = try SniConnectValidation.normalizeMethod(config.method)
       normalizedPath = try SniConnectValidation.normalizePath(config.path)
       try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
-      try SniConnectValidation.validateBody(config.body)
-      try SniConnectValidation.validateMethodBody(method: method, body: config.body)
+      if config.bodyFileURL != nil {
+        try SniConnectValidation.validateUploadMethod(method)
+        if config.body != nil {
+          throw SniConnectValidation.ValidationError.invalidBody
+        }
+      } else {
+        try SniConnectValidation.validateBody(config.body)
+        try SniConnectValidation.validateMethodBody(method: method, body: config.body)
+      }
     } catch {
       let sniError = SniConnectError.invalidConfig("\(error)")
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
         ("result", "error"),
         ("code", sniError.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", config.method.uppercased()),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -719,9 +757,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", sniError.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", method),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -763,25 +801,44 @@ final class SniConnectClient {
     mutableRequest.setValue(config.hostname, forHTTPHeaderField: "Host")
     mutableRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 
-    if let bodyString = config.body, let bodyData = bodyString.data(using: .utf8) {
+    var bodyBytes = 0
+    if let bodyFileURL = config.bodyFileURL {
+      let fileData: Data
+      do {
+        // Bound consumption even if the file grew while waiting for admission.
+        fileData = try SniConnectValidation.readUploadFile(bodyFileURL)
+      } catch {
+        throw SniConnectError.invalidConfig("Upload file is not readable")
+      }
+      mutableRequest.httpBody = fileData
+      bodyBytes = fileData.count
+      config.uploadProgress?.setTotal(fileData.count)
+    } else if let bodyString = config.body, let bodyData = bodyString.data(using: .utf8) {
       mutableRequest.httpBody = bodyData
+      bodyBytes = bodyData.count
     }
 
     // Per-request connect timeout (avoids the process-global setter race).
     EMASCurlProtocol.setConnectTimeoutIntervalFor(mutableRequest, connectTimeoutInterval: connectTimeoutSeconds)
+    if let uploadProgress = config.uploadProgress {
+      EMASCurlProtocol.setUploadProgressUpdateBlockFor(mutableRequest) { _, _, totalBytesSent, _ in
+        uploadProgress.record(totalBytesSent)
+      }
+    }
     let request = mutableRequest as URLRequest
 
     SniConnectLog.info(SniConnectLog.event("sni_request_start", [
-      ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+      ("requestId", config.requestId),
       ("hostname", config.hostname.lowercased()),
-      ("ipHash", SniConnectLog.shortHash(config.ip)),
+      ("ip", config.ip),
       ("ipFamily", SniConnectLog.ipFamily(config.ip)),
       ("method", method),
       ("timeoutMs", Int(config.effectiveTotalTimeout)),
       ("connectTimeoutMs", Int(config.effectiveConnectTimeout)),
       ("queueWaitMs", queueWaitMilliseconds),
       ("headerCount", normalizedHeaders.count),
-      ("bodyBytes", config.body?.data(using: .utf8)?.count ?? 0),
+      ("bodyBytes", bodyBytes),
+      ("bodySource", config.bodyFileURL != nil ? "file" : "string"),
     ]))
 
     do {
@@ -811,12 +868,13 @@ final class SniConnectClient {
         let resultLog = SniConnectLog.event("sni_request_result", [
           ("result", "response"),
           ("status", status),
-          ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+          ("requestId", config.requestId),
           ("hostname", config.hostname.lowercased()),
-          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ip", config.ip),
           ("ipFamily", SniConnectLog.ipFamily(config.ip)),
           ("method", method),
           ("timeoutMs", Int(config.effectiveTotalTimeout)),
+          ("bodyBytes", bodyBytes),
           ("responseBytes", data.count),
           ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
         ])
@@ -839,9 +897,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", error.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", method),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),
@@ -855,9 +913,9 @@ final class SniConnectClient {
         ("result", "error"),
         ("code", sniError.code),
         ("nativeErrorClass", String(describing: type(of: error))),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("requestId", config.requestId),
         ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ip", config.ip),
         ("ipFamily", SniConnectLog.ipFamily(config.ip)),
         ("method", method),
         ("timeoutMs", Int(config.effectiveTotalTimeout)),

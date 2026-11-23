@@ -10,9 +10,15 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 import java.util.Collections
 import java.util.WeakHashMap
+import kotlin.math.ceil
+import kotlin.math.roundToInt
+
+internal class NativeListViewHolder(val rowView: NativeListRowHost) :
+  androidx.recyclerview.widget.RecyclerView.ViewHolder(rowView)
 
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
+  private val fonts: NativeListFonts,
 ) : RecyclerView.Adapter<NativeListViewHolder>() {
   private var suppressDifferUpdates = false
   private var needsThemeRebind = false
@@ -39,11 +45,20 @@ internal class NativeListAdapter(
   )
   val currentList: List<NativeListItem>
     get() = differ.currentList
+  private var marketSourceItems: List<NativeListItem>? = null
+  private var marketSourceEdges = DoubleArray(0)
   private val createdRows = Collections.newSetFromMap(
-    WeakHashMap<NativeListRowView, Boolean>(),
+    WeakHashMap<NativeListRowHost, Boolean>(),
   )
   var usesSelectorSourceScale = false
   var theme: JSONObject? = null
+    set(value) {
+      if (field?.toString() != value?.toString()) needsThemeRebind = true
+      field = value
+    }
+  // Reuses the theme rebind path: chrome lives outside the row payload, so a
+  // changed list style would otherwise not reach rows DiffUtil considers equal.
+  var listStyle: JSONObject? = null
     set(value) {
       if (field?.toString() != value?.toString()) needsThemeRebind = true
       field = value
@@ -54,12 +69,15 @@ internal class NativeListAdapter(
   var checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String = { _, _, fallback -> fallback }
   var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
-  var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
+  var onBindingInvalidated: ((NativeListRowHost, Long) -> Unit)? = null
 
   override fun getItemCount(): Int = reorderItems?.size ?: differ.currentList.size
 
+  override fun getItemViewType(position: Int): Int =
+    requireNotNull(itemAt(position)).rendererKey.ordinal
+
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NativeListViewHolder {
-    val view = NativeListRowView(context)
+    val view = NativeListRendererRegistry.create(context, viewType, fonts)
     view.layoutParams = ViewGroup.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -75,6 +93,7 @@ internal class NativeListAdapter(
 
   override fun onBindViewHolder(holder: NativeListViewHolder, position: Int) {
     val item = itemAt(position) ?: return
+    holder.rowView.listStyle = listStyle
     holder.rowView.bind(
       item,
       theme,
@@ -92,6 +111,10 @@ internal class NativeListAdapter(
     position: Int,
     payloads: MutableList<Any>,
   ) {
+    if (payloads.isNotEmpty() && payloads.all { it == MARKET_QUOTE_PAYLOAD }) {
+      itemAt(position)?.let { holder.rowView.bindMarketQuote(it, theme) }
+      return
+    }
     // OneKey patch: an unknown payload must retain full binding; validated echoes keep images alive.
     // if (payloads.contains(SELECTION_PAYLOAD)) {
     if (payloads.isNotEmpty() && payloads.all { it == SELECTION_PAYLOAD || it == SELECTION_ECHO_PAYLOAD }) {
@@ -115,8 +138,36 @@ internal class NativeListAdapter(
     super.onViewRecycled(holder)
   }
 
+  fun rebindFonts() {
+    notifyItemRangeChanged(0, itemCount)
+  }
+
   fun itemAt(position: Int): NativeListItem? =
     reorderItems?.getOrNull(position) ?: differ.currentList.getOrNull(position)
+
+  // OneKey patch: Yoga rounds badge dimensions from unrounded cumulative row edges.
+  fun marketSourceEdgePx(position: Int): Double {
+    val items = reorderItems ?: differ.currentList
+    if (marketSourceItems !== items) {
+      val density = context.resources.displayMetrics.density.toDouble()
+      val edges = DoubleArray(items.size + 1)
+      items.forEachIndexed { index, item ->
+        val style = item.json.optJSONObject("style")
+        val height = item.json.optDouble("height", 0.0)
+        val sourceHeight = item.styledHeight ?: if (item.type == "market" && style != null) {
+          val titleHeight = ceil((style.optJSONObject("title")?.optDouble("lineHeight", 24.0) ?: 24.0) * density) / density
+          val subtitleHeight = if (item.json.optString("subtitle").isNotEmpty() || item.json.optJSONObject("subtitlePrefix") != null) {
+            ceil((style.optJSONObject("subtitle")?.optDouble("lineHeight", 20.0) ?: 20.0) * density) / density + style.optDouble("lineGap", 0.0)
+          } else 0.0
+          maxOf(height.roundToInt().toDouble(), titleHeight + subtitleHeight + style.optDouble("verticalPadding", 12.0) * 2).toFloat().toDouble()
+        } else height
+        edges[index + 1] = edges[index] + sourceHeight * density
+      }
+      marketSourceItems = items
+      marketSourceEdges = edges
+    }
+    return marketSourceEdges.getOrElse(position) { 0.0 }
+  }
 
   fun positionOfKey(key: String): Int =
     (reorderItems ?: differ.currentList).indexOfFirst { it.key == key }
@@ -165,16 +216,18 @@ internal class NativeListAdapter(
   }
 
   fun dispose() {
+    marketSourceItems = null
+    marketSourceEdges = DoubleArray(0)
     reorderItems = null
     suppressDifferUpdates = false
-    createdRows.forEach(NativeListRowView::dispose)
+    createdRows.forEach(NativeListRowHost::dispose)
     createdRows.clear()
   }
 
   companion object {
     private val DIFF = object : DiffUtil.ItemCallback<NativeListItem>() {
       override fun areItemsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
-        oldItem.key == newItem.key && oldItem.type == newItem.type
+        oldItem.key == newItem.key
 
       override fun areContentsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
         oldItem.revision == newItem.revision && oldItem.content == newItem.content
@@ -183,7 +236,19 @@ internal class NativeListAdapter(
       override fun getChangePayload(oldItem: NativeListItem, newItem: NativeListItem): Any? =
         if (oldItem.key == newItem.key && oldItem.type == newItem.type &&
           newItem.selectionUpdateFromContent == oldItem.content
-        ) SELECTION_ECHO_PAYLOAD else null
+        ) SELECTION_ECHO_PAYLOAD else if (isMarketQuoteUpdate(oldItem, newItem)) MARKET_QUOTE_PAYLOAD else null
+
+      private fun isMarketQuoteUpdate(oldItem: NativeListItem, newItem: NativeListItem): Boolean {
+        if (oldItem.type != "market" || newItem.type != "market") return false
+        if (!hasSameMarketMetricStructure(oldItem, newItem)) return false
+        fun stableContent(item: NativeListItem): String {
+          val value = JSONObject(item.json.toString())
+          listOf("revision", "price", "priceSegments", "change", "accessibilityLabel", "metrics")
+            .forEach(value::remove)
+          return value.toString()
+        }
+        return stableContent(oldItem) == stableContent(newItem)
+      }
     }
   }
 }
@@ -191,3 +256,19 @@ internal class NativeListAdapter(
 internal const val SELECTION_PAYLOAD = "selection"
 // OneKey patch: internal payload, never exposed through the serialized row contract.
 internal const val SELECTION_ECHO_PAYLOAD = "selectionEcho"
+internal const val MARKET_QUOTE_PAYLOAD = "marketQuote"
+
+internal fun hasSameMarketMetricStructure(before: NativeListItem, after: NativeListItem): Boolean {
+  val old = before.json.optJSONArray("metrics")
+  val next = after.json.optJSONArray("metrics")
+  val oldCount = old?.length() ?: 0
+  if (oldCount != (next?.length() ?: 0)) return false
+  for (index in 0 until oldCount) {
+    val previous = old?.optJSONObject(index) ?: return false
+    val current = next?.optJSONObject(index) ?: return false
+    if (previous.optString("key") != current.optString("key") ||
+      previous.optInt("weight", 1) != current.optInt("weight", 1) ||
+      previous.optString("alignment", "end") != current.optString("alignment", "end")) return false
+  }
+  return true
+}

@@ -1,0 +1,28 @@
+[package]
+name = "electron-windows-hello"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "=3.14.2", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi-derive = "=3.6.12"
+windows-future = "=0.3.2"
+windows = { version = "=0.62.2", features = [
+    "Security_Credentials_UI",
+    "Win32_Foundation",
+    "Win32_System_WinRT",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+napi-build = "=2.6.0"
+
+[profile.release]
+lto = true
+strip = "symbols"

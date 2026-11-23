@@ -7,9 +7,13 @@ import UIKit
 private final class OneKeyImageHostView: SDAnimatedImageView {
   var onLayout: (() -> Void)?
   var onWindowChanged: ((Bool) -> Void)?
+  var round = false {
+    didSet { updateRoundMask() }
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    updateRoundMask()
     onLayout?()
   }
 
@@ -17,11 +21,16 @@ private final class OneKeyImageHostView: SDAnimatedImageView {
     super.didMoveToWindow()
     onWindowChanged?(window != nil)
   }
+
+  private func updateRoundMask() {
+    layer.cornerRadius = round ? min(bounds.width, bounds.height) / 2 : 0
+  }
 }
 
 private final class OneKeyImageSkeletonView: UIView {
   private lazy var renderer = OneKeySkeletonRenderer(hostLayer: layer)
   private var requestedRunning = false
+  private var colors: [UIColor]?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -36,7 +45,7 @@ private final class OneKeyImageSkeletonView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    renderer.update(width: bounds.width, height: bounds.height)
+    renderer.update(width: bounds.width, height: bounds.height, colors: colors)
   }
 
   override func didMoveToWindow() {
@@ -50,9 +59,14 @@ private final class OneKeyImageSkeletonView: UIView {
     syncRenderer()
   }
 
+  func updateColors(_ colors: [UIColor]) {
+    self.colors = colors
+    renderer.update(width: bounds.width, height: bounds.height, colors: colors)
+  }
+
   private func syncRenderer() {
     if requestedRunning, window != nil, !bounds.isEmpty {
-      renderer.update(width: bounds.width, height: bounds.height)
+      renderer.update(width: bounds.width, height: bounds.height, colors: colors)
       renderer.start()
     } else {
       renderer.stop()
@@ -66,7 +80,7 @@ private final class OneKeyImageSkeletonIndicator: NSObject, SDWebImageIndicator 
   var indicatorView: UIView { skeletonView }
 
   func startAnimatingIndicator() {
-    skeletonView.setRunning(true)
+    skeletonView.setRunning(!UIAccessibility.isReduceMotionEnabled)
   }
 
   func stopAnimatingIndicator() {
@@ -76,10 +90,17 @@ private final class OneKeyImageSkeletonIndicator: NSObject, SDWebImageIndicator 
   func updateFrame(_ frame: CGRect) {
     skeletonView.frame = frame
   }
+
+  func updateColors(_ colors: [UIColor]) {
+    skeletonView.updateColors(colors)
+  }
 }
 
 final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private enum DisplayState { case loading, image, error, fallback }
+  private enum MemoryProbeResult { case miss, preview, exact }
+  private static let fadeDelayThreshold: CFTimeInterval = 0.1
+  private static let fadeDuration: TimeInterval = 0.14
 
   private let hostView = OneKeyImageHostView()
   private let skeletonIndicator = OneKeyImageSkeletonIndicator()
@@ -95,11 +116,19 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private var requestActive = false
   private var isResetting = false
   private var displayState = DisplayState.loading
+  /// `.loading` with the previous image kept on screen as the placeholder
+  /// (see `showLoading(preservedImage:)`).
+  private var isPreservingDisplayedImage = false
+  private var isShowingMemoryPreview = false
+  private var scalesCenterMemoryPreview = false
+  private var requestStartedAt: CFTimeInterval?
 
   var view: UIView { hostView }
 
   var sourceUri: String? {
-    didSet { if sourceUri != oldValue { identityDidChange() } }
+    didSet {
+      if sourceUri != oldValue { identityDidChange() }
+    }
   }
   var sourceHeadersJson: String? {
     didSet { if sourceHeadersJson != oldValue { identityDidChange() } }
@@ -121,9 +150,15 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   var optimizeTos: Bool? = true {
     didSet { if optimizeTos != oldValue { identityDidChange() } }
   }
+  var round: Bool? = false
   var resizeWidth: Double? {
     didSet {
       if !Self.equalOptionalDouble(resizeWidth, oldValue) { identityDidChange() }
+    }
+  }
+  var resizeHeight: Double? {
+    didSet {
+      if !Self.equalOptionalDouble(resizeHeight, oldValue) { identityDidChange() }
     }
   }
   var overscan: Double? = 1.1 {
@@ -132,6 +167,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     }
   }
   var loadingStrategy: OneKeyImageLoadingStrategy? = .static { didSet { applyVariant() } }
+  var placeholderColor: String? { didSet { applyVariant() } }
   var onLoadStart: (() -> Void)?
   var onLoad: ((_ width: Double, _ height: Double, _ cacheType: OneKeyImageCacheType) -> Void)?
   var onDisplay: (() -> Void)?
@@ -147,7 +183,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       guard let self else { return }
       self.skeletonIndicator.updateFrame(self.hostView.bounds)
       self.layoutFallbackLayer()
-      self.scheduleLoad()
+      if self.attached && !self.hostView.bounds.isEmpty {
+        // Layout completes the prop batch, so start asynchronous work now.
+        self.loadWorkItem?.cancel()
+        self.loadWorkItem = nil
+        self.startLoad(force: false)
+      } else {
+        self.scheduleLoad()
+      }
     }
     hostView.onWindowChanged = { [weak self] attached in
       guard let self else { return }
@@ -171,6 +214,12 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   }
 
   func afterUpdate() {
+    // Fabric can reset `round` before clearing `sourceUri` while removing a view.
+    // Apply the shape once per committed prop batch so the outgoing frame keeps
+    // its clipping, while mounted and recycled views still receive the new value.
+    if let sourceUri, !sourceUri.isEmpty, let round {
+      hostView.round = round
+    }
     scheduleLoad()
   }
 
@@ -215,7 +264,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       self.cancelCurrentRequest(invalidateGeneration: true)
       self.lastRequestSignature = nil
       if let source = self.sourceUri, !source.isEmpty {
-        self.showLoading(requestIsActive: false, letLibraryStartIndicator: false)
+        if self.showMemoryCachedImageIfAvailable(requestIsActive: false) == .miss {
+          self.showLoading(requestIsActive: false, letLibraryStartIndicator: false)
+        }
       } else {
         self.showFallback()
       }
@@ -227,7 +278,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     guard !hostView.bounds.isEmpty else {
       cancelCurrentRequest(invalidateGeneration: true)
       lastRequestSignature = nil
-      showLoading(requestIsActive: false, letLibraryStartIndicator: false)
+      // A memory-cached image shown from `identityDidChange` before layout
+      // stays up; layout re-runs this load with real bounds and confirms it.
+      if !Self.shouldPreserveDisplayedImage(
+        isShowingImage: displayState == .image,
+        hasImage: hostView.image != nil
+      ) {
+        showLoading(requestIsActive: false, letLibraryStartIndicator: false)
+      }
       return
     }
     guard let rawString = sourceUri, !rawString.isEmpty else {
@@ -247,6 +305,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       contentFit?.stringValue ?? "cover",
       String(optimizeTos ?? true),
       resizeWidth.map(String.init(describing:)) ?? "",
+      resizeHeight.map(String.init(describing:)) ?? "",
       String(overscan ?? 1.1),
       String(Int(hostView.bounds.width.rounded())),
       String(Int(hostView.bounds.height.rounded())),
@@ -258,9 +317,29 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
 
     cancelCurrentRequest(invalidateGeneration: true)
     let generation = requestGeneration
-    showLoading(requestIsActive: true, letLibraryStartIndicator: true)
+    requestStartedAt = CACurrentMediaTime()
     onLoadStart?()
     guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else { return }
+    if showMemoryCachedImageIfAvailable(requestIsActive: true) == .exact { return }
+    if promoteSmallCachedImageToMemory(),
+      showMemoryCachedImageIfAvailable(requestIsActive: true) == .exact
+    {
+      return
+    }
+    // The pre-layout probe may have shown this identity from another thumbnail
+    // key (a preload's, or an earlier layout size). Keep it on screen as the
+    // placeholder while the exact rendition loads: blanking to a skeleton and
+    // redrawing is worse than the skeleton it replaced.
+    let preservedImage =
+      Self.shouldPreserveDisplayedImage(
+        isShowingImage: displayState == .image,
+        hasImage: hostView.image != nil
+      ) ? hostView.image : nil
+    showLoading(
+      requestIsActive: true,
+      letLibraryStartIndicator: true,
+      preservedImage: preservedImage
+    )
 
     if let violation = OneKeyImageSafetyPolicy.preflight(source: rawString) {
       finishWithError(violation, generation: generation)
@@ -276,8 +355,11 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     }
 
     let hasCustomIdentity = OneKeyImageRequestContext.headers(from: sourceHeadersJson) != nil
-    let displaySize = resizeWidth.flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil }
-      ?? max(hostView.bounds.width, hostView.bounds.height)
+    let displaySize = OneKeyImageDecodeSizing.tosDisplaySize(
+      bounds: hostView.bounds.size,
+      resizeWidth: resizeWidth,
+      resizeHeight: resizeHeight
+    ) ?? 0
     let requestURL =
       (optimizeTos ?? true)
       ? OneKeyTosURL.optimized(
@@ -292,7 +374,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       url: requestURL,
       rawURL: rawURL,
       generation: generation,
-      mayFallbackToRaw: requestURL != rawURL
+      mayFallbackToRaw: requestURL != rawURL,
+      placeholderImage: preservedImage
     )
   }
 
@@ -300,7 +383,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     url: URL,
     rawURL: URL,
     generation: UInt64,
-    mayFallbackToRaw: Bool
+    mayFallbackToRaw: Bool,
+    placeholderImage: UIImage? = nil
   ) {
     guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else { return }
     let rawScreenScale: CGFloat = hostView.window?.screen.scale ?? UIScreen.main.scale
@@ -326,11 +410,16 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       manager: safetyHandle.manager,
       url: url
     )
-    hostView.sd_setImage(
+    hostView.sd_internalSetImage(
       with: url,
-      placeholderImage: nil,
+      // SDWebImage resets the image view when it starts a load; hand it the
+      // preserved image so the view keeps showing it until the load lands.
+      placeholderImage: placeholderImage,
       options: OneKeyImageRequestContext.renderOptions,
       context: context,
+      setImageBlock: { [weak self] image, _, _, _ in
+        self?.applyDisplayedImage(image, generation: generation)
+      },
       progress: { [weak self] receivedSize, _, _ in
         guard safetyHandle.tracker.inspectReceivedByteCount(Int64(receivedSize)) else { return }
         DispatchQueue.main.async { [weak self] in
@@ -338,7 +427,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
           self.hostView.sd_cancelCurrentImageLoad()
         }
       },
-      completed: { [weak self] image, error, cacheType, _ in
+      completed: { [weak self] image, _, error, cacheType, finished, _ in
+        // Progressive loads deliver partial images before the terminal callback.
+        guard finished else { return }
         guard let self, self.requestGeneration == generation else {
           safetyHandle.finish()
           return
@@ -359,19 +450,50 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
               url: rawURL,
               rawURL: rawURL,
               generation: generation,
-              mayFallbackToRaw: false
+              mayFallbackToRaw: false,
+              placeholderImage: self.hostView.image
             )
             return
           }
           self.finishWithError(safetyViolation ?? error, generation: generation)
           return
         }
+        if let image,
+          Self.canUseAsMemoryPreview(image),
+          let thumbnailPixelSize,
+          self.cachePolicy == .memory || self.cachePolicy == .memoryDisk || self.cachePolicy == nil
+        {
+          OneKeyImageMemoryVariantRegistry.shared.record(
+            OneKeyImageMemoryVariant(
+              requestURL: url,
+              thumbnailPixelSize: thumbnailPixelSize
+            ),
+            for: OneKeyImageMemoryFamilyKey(
+              rawURL: rawURL,
+              headersJson: self.sourceHeadersJson
+            )
+          )
+        }
+        OneKeyImageStartupPrewarm.shared.note(
+          requestURL: url,
+          rawURL: rawURL,
+          headersJson: self.sourceHeadersJson,
+          cachePolicy: self.cachePolicy,
+          thumbnailPixelSize: thumbnailPixelSize
+        )
         guard self.claimTerminal(generation) else { return }
+        let replacesMemoryPreview = self.clearMemoryPreviewPresentation()
         self.requestActive = false
         self.displayState = .image
+        self.isPreservingDisplayedImage = false
         self.skeletonIndicator.stopAnimatingIndicator()
         self.fallbackLayer.isHidden = true
         self.hostView.backgroundColor = .clear
+        let resolvedCacheType = Self.cacheType(cacheType)
+        self.applyLoadedImageTransition(
+          cacheType: resolvedCacheType,
+          replacingMemoryPreview: replacesMemoryPreview
+        )
         self.applyAutoplay()
         let onLoad = self.onLoad
         let onLoadEnd = self.onLoadEnd
@@ -380,7 +502,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
             onLoad?(
               Double(image?.size.width ?? 0),
               Double(image?.size.height ?? 0),
-              Self.cacheType(cacheType)
+              resolvedCacheType
             )
           },
           onLoadEnd: { onLoadEnd?() }
@@ -428,6 +550,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     activeSafetyHandle = nil
     requestActive = false
     skeletonIndicator.stopAnimatingIndicator()
+    requestStartedAt = nil
+    resetImageTransition()
     if invalidateGeneration { requestGeneration &+= 1 }
   }
 
@@ -471,9 +595,12 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     autoplay = true
     recyclingKey = nil
     optimizeTos = true
+    round = false
     resizeWidth = nil
+    resizeHeight = nil
     overscan = 1.1
     loadingStrategy = .static
+    placeholderColor = nil
     onLoadStart = nil
     onLoad = nil
     onDisplay = nil
@@ -492,15 +619,309 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     }
   }
 
+  // OneKey patch: SDWebImage assigns `image` from inside its own completion, which
+  // runs before this object's generation guard and never re-checks whether the view
+  // still belongs to the request that started the load. Fabric recycles a single
+  // OneKeyImage UIView across unrelated images, so a superseded completion could
+  // repaint a slot that now shows a different image. Every write goes through here.
+  func applyDisplayedImage(_ image: UIImage?, generation: UInt64) {
+    guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else {
+      return
+    }
+    // Also the placeholder write path (SDWebImage hands the preserved image
+    // back through setImageBlock when the load starts), so the preservation
+    // flag is NOT touched here; it ends with the terminal callbacks.
+    hostView.image = image
+  }
+
   private func showLoading(
     requestIsActive: Bool,
-    letLibraryStartIndicator: Bool
+    letLibraryStartIndicator: Bool,
+    preservedImage: UIImage? = nil
   ) {
     displayState = .loading
     requestActive = requestIsActive
-    hostView.image = nil
+    resetImageTransition()
     fallbackLayer.isHidden = true
+    if let preservedImage {
+      // Same identity, different thumbnail key: the image already on screen
+      // stands in for the placeholder, so no blank frame and no indicator.
+      // The indicator is unmounted, not just stopped: SDWebImage restarts a
+      // mounted `sd_imageIndicator` when the load begins, and `applyVariant`
+      // must not reinstall it while this state lasts.
+      isPreservingDisplayedImage = true
+      hostView.image = preservedImage
+      skeletonIndicator.stopAnimatingIndicator()
+      if hostView.sd_imageIndicator != nil {
+        hostView.sd_imageIndicator = nil
+      }
+      hostView.backgroundColor = .clear
+      return
+    }
+    clearMemoryPreviewPresentation()
+    isPreservingDisplayedImage = false
+    hostView.image = nil
     applyLoadingAppearance(letLibraryStartIndicator: letLibraryStartIndicator)
+  }
+
+  /// Whether the image currently on screen should stay up while a load for the
+  /// SAME identity runs (bounds not laid out yet, or the laid-out request key
+  /// differs from the one the pre-layout probe hit). Pure for testability.
+  static func shouldPreserveDisplayedImage(isShowingImage: Bool, hasImage: Bool) -> Bool {
+    isShowingImage && hasImage
+  }
+
+  /// A memory miss for a small image that is already local: decode it here so
+  /// the probe that follows hits, instead of waiting a frame for the pipeline.
+  private func promoteSmallCachedImageToMemory() -> Bool {
+    guard (cachePolicy ?? .memoryDisk) == .memoryDisk,
+      OneKeyImageRequestContext.headers(from: sourceHeadersJson) == nil,
+      let sourceUri,
+      OneKeyImageSafetyPolicy.preflight(source: sourceUri) == nil,
+      let rawURL = URL(string: sourceUri)
+    else { return false }
+    let rawScreenScale: CGFloat = hostView.window?.screen.scale ?? UIScreen.main.scale
+    let screenScale = min(max(rawScreenScale, 1), 3)
+    guard
+      let thumbnailPixelSize = OneKeyImageDecodeSizing.thumbnailPixelSize(
+        viewSize: hostView.bounds.size,
+        scale: screenScale,
+        contentFit: contentFit ?? .cover
+      ),
+      max(thumbnailPixelSize.width, thumbnailPixelSize.height)
+        <= OneKeyMainThreadDecode.maximumTargetEdge
+    else { return false }
+    let displaySize =
+      OneKeyImageDecodeSizing.tosDisplaySize(
+        bounds: hostView.bounds.size,
+        resizeWidth: resizeWidth,
+        resizeHeight: resizeHeight
+      ) ?? 0
+    let requestURL =
+      (optimizeTos ?? true)
+      ? OneKeyTosURL.optimized(
+        rawURL: rawURL,
+        displaySize: displaySize,
+        scale: screenScale,
+        overscan: overscan ?? 1.1,
+        hasCustomIdentity: false
+      )
+      : rawURL
+    let promoted = OneKeyMainThreadDecode.run { () -> Bool? in
+      for url in requestURL == rawURL ? [requestURL] : [requestURL, rawURL]
+      where OneKeyMainThreadDecode.promoteToMemory(
+        url: url,
+        rawURL: rawURL,
+        thumbnailPixelSize: thumbnailPixelSize
+      ) {
+        return true
+      }
+      return nil
+    }
+    return promoted ?? false
+  }
+
+  private func showMemoryCachedImageIfAvailable(requestIsActive: Bool) -> MemoryProbeResult {
+    // JS leaves `cachePolicy` unset for the common case and Fabric then hands
+    // Nitro a nil, which the request path already treats as memory-disk; the
+    // probe must agree, otherwise a nil policy skips the memory lookup entirely
+    // and every mount pays the async pipeline round trip (an icon skeleton
+    // frame) for an image that is already decoded in memory.
+    let effectivePolicy = cachePolicy ?? .memoryDisk
+    guard effectivePolicy == .memory || effectivePolicy == .memoryDisk,
+          let sourceUri,
+          let rawURL = URL(string: sourceUri) else {
+      return .miss
+    }
+    let rawScreenScale: CGFloat = hostView.window?.screen.scale ?? UIScreen.main.scale
+    let screenScale = min(max(rawScreenScale, 1), 3)
+    let hasCustomIdentity = OneKeyImageRequestContext.headers(from: sourceHeadersJson) != nil
+    let displaySize = OneKeyImageDecodeSizing.tosDisplaySize(
+      bounds: hostView.bounds.size,
+      resizeWidth: resizeWidth,
+      resizeHeight: resizeHeight
+    ) ?? 0
+    let requestURL =
+      (optimizeTos ?? true)
+      ? OneKeyTosURL.optimized(
+        rawURL: rawURL,
+        displaySize: displaySize,
+        scale: screenScale,
+        overscan: overscan ?? 1.1,
+        hasCustomIdentity: hasCustomIdentity
+      )
+      : rawURL
+    // The thumbnail size is part of the cache key. Laid out, it is this view's
+    // own request key; before layout it comes from the resize hints, under
+    // this view's contentFit and under `.cover` (a preload's key). With no
+    // bounds and no hint the un-thumbnailed key is the only thing to try.
+    let thumbnailCandidates: [CGSize?] = {
+      let sizes = OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+        bounds: hostView.bounds.size,
+        resizeWidth: resizeWidth,
+        resizeHeight: resizeHeight,
+        scale: screenScale,
+        contentFit: contentFit ?? .cover
+      )
+      return sizes.isEmpty ? [nil] : sizes
+    }()
+    func memoryCachedImage(for url: URL, thumbnailPixelSize: CGSize?) -> UIImage? {
+      let context = OneKeyImageRequestContext.make(
+        headersJson: sourceHeadersJson,
+        cachePolicy: cachePolicy ?? .memoryDisk,
+        thumbnailPixelSize: thumbnailPixelSize,
+        safetyTracker: nil,
+        manager: OneKeyImagePipeline.manager,
+        url: url
+      )
+      let cache = context[.imageCache] as? SDImageCache ?? SDImageCache.shared
+      guard let key = OneKeyImagePipeline.manager.cacheKey(for: url, context: context) else {
+        return nil
+      }
+      if let hit = cache.imageFromMemoryCache(forKey: key) {
+        return hit
+      }
+      return OneKeyImageStartupPrewarm.shared.claimPrewarmedImage(
+        forKey: key, context: context, cache: cache
+      )
+    }
+
+    var exactProbes: [(variant: OneKeyImageMemoryVariant?, url: URL, size: CGSize?)] = []
+    for url in requestURL == rawURL ? [requestURL] : [requestURL, rawURL] {
+      for size in thumbnailCandidates {
+        exactProbes.append(
+          (
+            variant: size.map {
+              OneKeyImageMemoryVariant(requestURL: url, thumbnailPixelSize: $0)
+            },
+            url: url,
+            size: size
+          )
+        )
+      }
+    }
+    let family = OneKeyImageMemoryFamilyKey(rawURL: rawURL, headersJson: sourceHeadersJson)
+    let exactVariants = Set(exactProbes.compactMap(\.variant))
+    for probe in exactProbes {
+      guard let image = memoryCachedImage(for: probe.url, thumbnailPixelSize: probe.size) else {
+        if let variant = probe.variant {
+          OneKeyImageMemoryVariantRegistry.shared.remove(variant, for: family)
+        }
+        continue
+      }
+      if let variant = probe.variant, Self.canUseAsMemoryPreview(image) {
+        OneKeyImageMemoryVariantRegistry.shared.record(variant, for: family)
+      }
+      if requestIsActive {
+        OneKeyImageStartupPrewarm.shared.note(
+          requestURL: probe.url,
+          rawURL: rawURL,
+          headersJson: sourceHeadersJson,
+          cachePolicy: cachePolicy,
+          thumbnailPixelSize: probe.size
+        )
+      }
+      displayMemoryCachedImage(
+        image,
+        requestIsActive: requestIsActive,
+        terminal: true,
+        scalesCenterPreview: false
+      )
+      return .exact
+    }
+
+    if let target = exactProbes.compactMap(\.variant).first {
+      let candidates = OneKeyImageMemoryVariantRegistry.shared.candidates(
+        for: family,
+        target: target,
+        excluding: exactVariants
+      )
+      for candidate in candidates {
+        guard
+          let image = memoryCachedImage(
+            for: candidate.requestURL,
+            thumbnailPixelSize: candidate.thumbnailPixelSize
+          ),
+          Self.canUseAsMemoryPreview(image)
+        else {
+          OneKeyImageMemoryVariantRegistry.shared.remove(candidate, for: family)
+          continue
+        }
+        displayMemoryCachedImage(
+          image,
+          requestIsActive: false,
+          terminal: false,
+          scalesCenterPreview: Self.shouldScaleCenterMemoryPreview(
+            contentFit: contentFit ?? .cover,
+            candidate: candidate,
+            target: target
+          )
+        )
+        OneKeyImageMemoryVariantRegistry.shared.record(candidate, for: family)
+        return .preview
+      }
+    }
+    return .miss
+  }
+
+  private func displayMemoryCachedImage(
+    _ image: UIImage,
+    requestIsActive: Bool,
+    terminal: Bool,
+    scalesCenterPreview: Bool
+  ) {
+    let generation = requestGeneration
+    if terminal, requestIsActive, !claimTerminal(generation) { return }
+    isShowingMemoryPreview = !terminal
+    self.scalesCenterMemoryPreview = !terminal && scalesCenterPreview
+    applyContentFit()
+    displayState = .image
+    isPreservingDisplayedImage = false
+    requestActive = false
+    skeletonIndicator.stopAnimatingIndicator()
+    fallbackLayer.isHidden = true
+    resetImageTransition()
+    applyDisplayedImage(image, generation: generation)
+    hostView.backgroundColor = .clear
+    if terminal, requestIsActive {
+      applyLoadedImageTransition(cacheType: .memory, replacingMemoryPreview: false)
+    }
+    applyAutoplay()
+    if terminal, requestIsActive {
+      let onLoad = onLoad
+      let onLoadEnd = onLoadEnd
+      Self.deliverTerminalCallbacks(
+        primary: {
+          onLoad?(Double(image.size.width), Double(image.size.height), .memory)
+        },
+        onLoadEnd: { onLoadEnd?() }
+      )
+      guard requestGeneration == generation else { return }
+      pendingDisplayGeneration = generation
+      schedulePendingDisplayIfNeeded()
+    }
+  }
+
+  private static func canUseAsMemoryPreview(_ image: UIImage) -> Bool {
+    !(image is SDAnimatedImage) && image.images == nil
+  }
+
+  static func shouldScaleCenterMemoryPreview(
+    contentFit: OneKeyImageContentFit,
+    candidate: OneKeyImageMemoryVariant,
+    target: OneKeyImageMemoryVariant
+  ) -> Bool {
+    guard case .center = contentFit else { return false }
+    return candidate.pixelWidth != target.pixelWidth || candidate.pixelHeight != target.pixelHeight
+  }
+
+  @discardableResult
+  private func clearMemoryPreviewPresentation() -> Bool {
+    let wasShowingMemoryPreview = isShowingMemoryPreview
+    isShowingMemoryPreview = false
+    scalesCenterMemoryPreview = false
+    applyContentFit()
+    return wasShowingMemoryPreview
   }
 
   private func showError() {
@@ -514,14 +935,18 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private func showTerminalState(_ state: DisplayState) {
     displayState = state
     requestActive = false
+    isPreservingDisplayedImage = false
+    clearMemoryPreviewPresentation()
     skeletonIndicator.stopAnimatingIndicator()
+    resetImageTransition()
     hostView.image = nil
-    hostView.backgroundColor = placeholderColor
+    let hidesTerminalState = loadingStrategy == .none
+    hostView.backgroundColor = hidesTerminalState ? .clear : resolvedPlaceholderColor
     fallbackLayer.string = stateSymbol
     fallbackLayer.fontSize = min(hostView.bounds.width, hostView.bounds.height) * 0.35
     layoutFallbackLayer()
     fallbackLayer.foregroundColor = UIColor.secondaryLabel.cgColor
-    fallbackLayer.isHidden = false
+    fallbackLayer.isHidden = hidesTerminalState
   }
 
   private func applyVariant() {
@@ -529,24 +954,32 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     case .image:
       break
     case .loading:
+      // A preserved image is the placeholder; re-applying the loading look
+      // would cover it with the skeleton / placeholder color again.
+      if isPreservingDisplayedImage { break }
       applyLoadingAppearance(letLibraryStartIndicator: false)
     case .error, .fallback:
-      hostView.backgroundColor = placeholderColor
+      let hidesTerminalState = loadingStrategy == .none
+      hostView.backgroundColor = hidesTerminalState ? .clear : resolvedPlaceholderColor
       fallbackLayer.string = stateSymbol
+      fallbackLayer.isHidden = hidesTerminalState
     }
   }
 
   private func applyLoadingAppearance(letLibraryStartIndicator: Bool) {
     let strategy = loadingStrategy ?? .static
-    hostView.backgroundColor = strategy == .none ? .clear : placeholderColor
+    hostView.backgroundColor = strategy == .none ? .clear : resolvedPlaceholderColor
 
     if strategy == .skeleton {
+      skeletonIndicator.updateColors(skeletonGradientColors)
       if hostView.sd_imageIndicator !== skeletonIndicator {
         hostView.sd_imageIndicator = skeletonIndicator
       }
       skeletonIndicator.updateFrame(hostView.bounds)
-      if requestActive, !letLibraryStartIndicator {
+      if requestActive, !letLibraryStartIndicator, !UIAccessibility.isReduceMotionEnabled {
         skeletonIndicator.startAnimatingIndicator()
+      } else if UIAccessibility.isReduceMotionEnabled {
+        skeletonIndicator.stopAnimatingIndicator()
       }
     } else {
       skeletonIndicator.stopAnimatingIndicator()
@@ -566,13 +999,93 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     )
   }
 
-  private var placeholderColor: UIColor {
-    switch variant ?? .generic {
-    case .generic: return UIColor(white: 0.91, alpha: 1)
-    case .token: return UIColor(red: 0.91, green: 0.93, blue: 0.98, alpha: 1)
-    case .network: return UIColor(red: 0.90, green: 0.94, blue: 0.96, alpha: 1)
-    case .avatar: return UIColor(red: 0.92, green: 0.92, blue: 0.94, alpha: 1)
+  private var resolvedPlaceholderColor: UIColor {
+    if let color = Self.color(from: placeholderColor) { return color }
+    // OneKey patch: fall back to a semantic system fill instead of a light-only color.
+    // switch variant ?? .generic {
+    // case .generic: return UIColor(white: 0.91, alpha: 1)
+    // case .token: return UIColor(red: 0.91, green: 0.93, blue: 0.98, alpha: 1)
+    // case .network: return UIColor(red: 0.90, green: 0.94, blue: 0.96, alpha: 1)
+    // case .avatar: return UIColor(red: 0.92, green: 0.92, blue: 0.94, alpha: 1)
+    // }
+    return .secondarySystemFill
+  }
+
+  private var skeletonGradientColors: [UIColor] {
+    let base = resolvedPlaceholderColor
+    let resolvedBase = base.resolvedColor(with: hostView.traitCollection)
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    var alpha: CGFloat = 0
+    guard resolvedBase.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+      return [base, base]
     }
+    let average = (red + green + blue) / 3
+    let delta: CGFloat = average < 0.5 ? 18.0 / 255.0 : -12.0 / 255.0
+    let highlight = UIColor(
+      red: min(max(red + delta, 0), 1),
+      green: min(max(green + delta, 0), 1),
+      blue: min(max(blue + delta, 0), 1),
+      alpha: alpha
+    )
+    return [base, highlight]
+  }
+
+  static func shouldAnimateLoadedImageTransition(
+    cacheType: OneKeyImageCacheType,
+    requestDuration: CFTimeInterval?,
+    reduceMotionEnabled: Bool,
+    replacingMemoryPreview: Bool
+  ) -> Bool {
+    !replacingMemoryPreview && cacheType != .memory
+      && (requestDuration ?? 0) >= fadeDelayThreshold && !reduceMotionEnabled
+  }
+
+  private func applyLoadedImageTransition(
+    cacheType: OneKeyImageCacheType,
+    replacingMemoryPreview: Bool
+  ) {
+    resetImageTransition()
+    let requestDuration = requestStartedAt.map { CACurrentMediaTime() - $0 }
+    guard Self.shouldAnimateLoadedImageTransition(
+      cacheType: cacheType,
+      requestDuration: requestDuration,
+      reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled,
+      replacingMemoryPreview: replacingMemoryPreview
+    ) else {
+      return
+    }
+    hostView.alpha = 0
+    UIView.animate(
+      withDuration: Self.fadeDuration,
+      delay: 0,
+      options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseOut]
+    ) {
+      self.hostView.alpha = 1
+    }
+  }
+
+  private func resetImageTransition() {
+    hostView.layer.removeAllAnimations()
+    hostView.alpha = 1
+  }
+
+  private static func color(from value: String?) -> UIColor? {
+    guard var hex = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          hex.hasPrefix("#") else {
+      return nil
+    }
+    hex.removeFirst()
+    guard hex.count == 6 || hex.count == 8,
+          let parsed = UInt64(hex, radix: 16) else {
+      return nil
+    }
+    let red = CGFloat((parsed >> (hex.count == 8 ? 24 : 16)) & 0xFF) / 255
+    let green = CGFloat((parsed >> (hex.count == 8 ? 16 : 8)) & 0xFF) / 255
+    let blue = CGFloat((parsed >> (hex.count == 8 ? 8 : 0)) & 0xFF) / 255
+    let alpha = hex.count == 8 ? CGFloat(parsed & 0xFF) / 255 : 1
+    return UIColor(red: red, green: green, blue: blue, alpha: alpha)
   }
 
   private var stateSymbol: String {
@@ -585,6 +1098,10 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   }
 
   private func applyContentFit() {
+    if scalesCenterMemoryPreview, case .center = contentFit ?? .cover {
+      hostView.contentMode = .scaleAspectFit
+      return
+    }
     switch contentFit ?? .cover {
     case .cover: hostView.contentMode = .scaleAspectFill
     case .contain: hostView.contentMode = .scaleAspectFit

@@ -12,7 +12,12 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => "15.5" }
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules.git", :tag => "#{s.version}" }
   s.source_files = "ios/**/*.{h,m,mm}"
+  s.exclude_files = "ios/tests/**/*"
   s.frameworks   = "UIKit", "UniformTypeIdentifiers"
 
   s.dependency "React-Core"
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.{m,mm}"
+  end
 end
