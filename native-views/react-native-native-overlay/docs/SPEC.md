@@ -828,6 +828,9 @@ Automated (P0):
   and scene-disconnect callback invalidation. They prove manager lifecycle,
   not UIKit delivery or scroll inertia; those are covered separately by the
   local App runtime checks above, with the stated selector-entry limitation.
+  The queued-cleanup fixtures explicitly model reset followed by DOWN on the
+  same observer. When a fixture ends a gesture with UP and later reuses the
+  observer, it waits for UIKit to return the recognizer to the possible state.
   Host lifetime checks detach and deallocate a real UIWindow on either side of
   the last touch callback. A separate check verifies UIKit key handoff to an
   eligible app window while the exiting overlay is still attached for a touch.
@@ -840,8 +843,6 @@ Automated (P0):
   closing overlay attached. UIKit's intermediate choice is recorded with the
   simulator OS version and can vary without failing the check. Synchronous
   key restoration to the closing overlay was observed on iOS 18.6 and 27.0.
-  The full iOS 18.6 run reaches the closing-overlay check and then stops at
-  the existing synthetic-touch recheck after the prior last UP.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.

@@ -126,6 +126,15 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
   }
 }
 
+@MainActor private func waitForUIKitReset(_ observer: NativeOverlayAppTouchObserver) async throws {
+  let deadline = Date().addingTimeInterval(2)
+  while observer.state != .possible && Date() < deadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  try require(observer.state == .possible && !observer.hasActiveTouches,
+    "UIKit resets the observer before the next touch sequence")
+}
+
 private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchObserver {
   guard let observer = window.gestureRecognizers?.compactMap({ $0 as? NativeOverlayAppTouchObserver }).first
   else { throw Failure(name: "app touch observer installed before overlay visibility") }
@@ -490,15 +499,15 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   let queuedWindow = touchManager.window(for: queuedOwner, level: .modal,
     stackOrder: 1, blocking: true, appWindow: app)!
   let queuedObserver = try touchObserver(in: app)
-  let endingTouch = UITouch(), nextTouch = UITouch()
-  queuedObserver.touchesBegan([endingTouch], with: event)
+  let initialTouch = UITouch(), nextTouch = UITouch()
+  queuedObserver.touchesBegan([initialTouch], with: event)
   touchManager.entryRemoved(from: queuedWindow)
-  queuedObserver.touchesEnded([endingTouch], with: event)
+  // Model UIKit's reset before a new sequence without injecting an UP that schedules another reset.
   queuedObserver.reset()
   queuedObserver.touchesBegan([nextTouch], with: event)
   await nextMainTurn()
   try require(queuedWindow.windowScene === scene && queuedObserver.hasActiveTouches,
-    "queued cleanup rechecks a new touch beginning after the prior last UP")
+    "queued cleanup rechecks a new touch beginning after reset")
   queuedObserver.touchesEnded([nextTouch], with: event)
   await nextMainTurn()
   try require(queuedWindow.windowScene == nil, "replacement touch completion releases old window")
@@ -631,6 +640,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
     "lower entry UP releases only retired toast and its observer")
   passed.append("entry-touch-retirement-lower-entry")
 
+  try await waitForUIKitReset(lowerObserver)
   let ownTouch = UITouch(), ownHostTouch = UITouch()
   let ownHostObserver = try touchObserver(in: app)
   ownHostObserver.touchesBegan([ownHostTouch], with: event)
@@ -742,17 +752,16 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   let queuedRehostToast = touchManager.window(for: queuedRehostToastOwner, level: .toast,
     stackOrder: 2, blocking: false, appWindow: queuedHostA)!
   let queuedRehostObserver = try touchObserver(in: queuedRehost)
-  let rehostEnding = UITouch(), rehostBeginning = UITouch()
-  queuedRehostObserver.touchesBegan([rehostEnding], with: event)
+  let rehostInitial = UITouch(), rehostBeginning = UITouch()
+  queuedRehostObserver.touchesBegan([rehostInitial], with: event)
   touchManager.entryRemoved(from: queuedRehostToast)
-  queuedRehostObserver.touchesEnded([rehostEnding], with: event)
   queuedRehostObserver.reset()
   _ = touchManager.window(for: queuedRehostOwner, level: .modal,
     stackOrder: 1, blocking: true, appWindow: queuedHostB)!
   queuedRehostObserver.touchesBegan([rehostBeginning], with: event)
   await nextMainTurn()
   try require(queuedRehostToast.windowScene === scene,
-    "UP then rehost then DOWN before cleanup preserves old host context")
+    "reset then rehost then DOWN before cleanup preserves old host context")
   queuedRehostObserver.touchesCancelled([rehostBeginning], with: event)
   await nextMainTurn()
   try require(queuedRehostToast.windowScene == nil && queuedRehost.windowScene === scene,
@@ -760,7 +769,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   touchManager.entryRemoved(from: queuedRehost)
   queuedHostA.rootViewController = nil; queuedHostA.windowScene = nil
   queuedHostB.rootViewController = nil; queuedHostB.windowScene = nil
-  passed.append("entry-touch-retirement-rehost-up-down-boundary")
+  passed.append("entry-touch-retirement-rehost-reset-down-boundary")
 
   let delayedHost = UIWindow(windowScene: scene), currentHost = UIWindow(windowScene: scene)
   let delayedRoot = TransitionRoot()
@@ -782,7 +791,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   delayedObserver.touchesEnded([delayedTouchA], with: event)
   await nextMainTurn()
   try require(delayedToast.windowScene === scene, "old host coordinator retains context through an idle touch gap")
-  delayedObserver.reset()
+  try await waitForUIKitReset(delayedObserver)
   delayedObserver.touchesBegan([delayedTouchB], with: event)
   delayedCoordinator.changeInteraction(to: false)
   await nextMainTurn()
@@ -791,7 +800,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   delayedObserver.touchesEnded([delayedTouchB], with: event)
   await nextMainTurn()
   try require(delayedToast.windowScene == nil, "last old-context dependency releases after both conditions end")
-  delayedObserver.reset()
+  try await waitForUIKitReset(delayedObserver)
   delayedObserver.touchesBegan([unrelatedTouch], with: event)
   let unrelatedOwner = Owner()
   let unrelatedWindow = touchManager.window(for: unrelatedOwner, level: .toast,
