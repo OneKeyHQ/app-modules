@@ -40,7 +40,9 @@ before(async () => {
           },
         });
         window.showStatus = (status, extra = {}) =>
-          store.show({ ...statusSpec(status), ...extra });
+          store.show({ ...statusSpec(status), ...extra }, {
+            onAction: (id) => window.callbacks.push(id),
+          });
         window.redrawStatus = (status, colors) => store.update(statusSpec(status, colors));
         window.dismissStatus = () => store.dismiss('status');
         window.configure = (config) => store.configure(config);
@@ -653,4 +655,53 @@ test('toasts beyond the display limit regain keyboard access only when visible',
   assert.equal(await oldest.getAttribute('data-visible'), 'true');
   await nowVisibleClose.focus();
   assert.equal(await nowVisibleClose.evaluate((node) => node === document.activeElement), true);
+});
+
+test('collapsed back toast actions regain keyboard access after expansion or promotion', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.evaluate(() => {
+    window.showStatus('success', {
+      id: 'back',
+      testID: 'back',
+      actions: [{
+        id: 'view', label: 'View', testID: 'view', borderRadius: 11,
+        color: '#111', backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
+        fontWeight: '600', paddingHorizontal: 14, paddingVertical: 4,
+      }],
+    });
+    window.showStatus('success', { id: 'front', testID: 'front' });
+  });
+
+  const back = page.getByTestId('back');
+  const action = back.getByTestId('view');
+  const actionHasFocus = () => action.evaluate((node) => node === document.activeElement);
+  const backClose = back.getByRole('button', { name: 'Close toast' });
+  await backClose.focus();
+  assert.ok(await backClose.evaluate((node) => node === document.activeElement));
+  await action.focus();
+  assert.equal(await actionHasFocus(), false);
+
+  await page.keyboard.press('Alt+t');
+  assert.equal(await back.getAttribute('data-expanded'), 'true');
+  await action.focus();
+  assert.ok(await actionHasFocus());
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), ['view']);
+
+  await page.keyboard.press('Escape');
+  assert.equal(await back.getAttribute('data-expanded'), 'false');
+  assert.ok(await back.evaluate((node) => node === document.activeElement));
+  await action.focus();
+  assert.equal(await actionHasFocus(), false);
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), ['view']);
+
+  const frontClose = page.getByTestId('front').getByRole('button', { name: 'Close toast' });
+  await frontClose.press('Enter');
+  await frontClose.waitFor({ state: 'detached', timeout: 2000 });
+  assert.equal(await back.getAttribute('data-front'), 'true');
+  await action.focus();
+  assert.ok(await actionHasFocus());
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), ['view', 'view']);
 });

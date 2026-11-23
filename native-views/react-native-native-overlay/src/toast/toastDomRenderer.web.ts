@@ -571,6 +571,7 @@ export function createToastDomRenderer(
     li.addEventListener('keydown', (event) => {
       if (
         !node.removed &&
+        !node.body.inert &&
         node.spec.layout === 'notification' &&
         node.spec.pressable &&
         event.target === li &&
@@ -652,20 +653,27 @@ export function createToastDomRenderer(
       : `top ${OBSTRUCTION_SHIFT_MS}ms ease`;
     ol.style.top = top > 0 ? `${top}px` : '';
 
+    const expanded = isExpanded();
     group.toasts.forEach((node, index) => {
-      const { li } = node;
+      const { li, body } = node;
       const visible = index < VISIBLE_TOASTS;
+      const front = index === 0;
+      const bodyHidden = !front && !expanded;
       li.inert = !visible || node.removed;
+      if (bodyHidden && !li.inert && body.contains(document.activeElement)) {
+        li.focus({ preventScroll: true });
+      }
+      body.inert = bodyHidden;
       li.setAttribute('data-mounted', String(node.mounted));
       li.setAttribute('data-removed', String(node.removed));
       li.setAttribute('data-visible', String(visible));
       li.setAttribute('data-y-position', yPosition ?? 'bottom');
       li.setAttribute('data-x-position', xPosition ?? 'right');
       li.setAttribute('data-index', String(index));
-      li.setAttribute('data-front', String(index === 0));
+      li.setAttribute('data-front', String(front));
       li.setAttribute('data-swiping', String(node.swiping));
       li.setAttribute('data-swipe-out', String(node.swipeOut));
-      li.setAttribute('data-expanded', String(isExpanded()));
+      li.setAttribute('data-expanded', String(expanded));
       li.style.setProperty('--index', String(index));
       li.style.setProperty('--toasts-before', String(index));
       li.style.setProperty('--z-index', String(group.toasts.length - index));

@@ -513,9 +513,18 @@ final class NativeOverlayToastCardView: UIView {
 
   private func updateStackExpansionFrame() {
     guard canExpandStack else { return }
-    stackExpansionElement.accessibilityFrameInContainerSpace = stackExpansionAnchor.map {
-      $0.convert($0.bounds, to: self)
-    } ?? CGRect(x: 0, y: 0, width: ToastMetrics.cardPaddingHorizontal, height: bounds.height)
+    let visibleContent = content.convert(content.bounds, to: self).intersection(bounds)
+    if let anchor = stackExpansionAnchor {
+      let frame = anchor.convert(anchor.bounds, to: self).intersection(visibleContent)
+      if !frame.isEmpty {
+        stackExpansionElement.accessibilityFrameInContainerSpace = frame
+        return
+      }
+    }
+    stackExpansionElement.accessibilityFrameInContainerSpace = CGRect(
+      x: bounds.minX, y: bounds.minY,
+      width: min(ToastMetrics.cardPaddingHorizontal, bounds.width), height: bounds.height
+    )
   }
 
   func setBodyHidden(_ hidden: Bool, animated: Bool) {

@@ -172,6 +172,28 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   try require(expansion?.accessibilityActivate() == true && expanded, "separate accessibility element expands the stack")
   card.canExpandStack = false
   try require(card.accessibilityElements == nil && expansion?.accessibilityActivate() == false, "expansion control is removed after expand")
+
+  var tallSpec = spec
+  tallSpec.actions = []
+  tallSpec.title = NativeOverlayToastText(json: [
+    "paragraphs": Array(repeating: [["text": "Long message"]], count: 8),
+    "lineHeight": 24,
+  ])
+  card.apply(spec: tallSpec, cardColor: .white)
+  card.layoutCard(contentWidth: 180, contentMaxHeight: nil)
+  card.canExpandStack = true
+  guard let expansion else { throw Failure(name: "expansion control is available") }
+  let iconFrame = expansion.accessibilityFrameInContainerSpace
+  let partialCap = iconFrame.midY - body.frame.minY
+  card.layoutCard(contentWidth: 180, contentMaxHeight: partialCap)
+  let partialFrame = expansion.accessibilityFrameInContainerSpace
+  try require(partialFrame.minY == iconFrame.minY && abs(partialFrame.height - iconFrame.height / 2) < 0.01,
+              "expansion focus uses only the unclipped part of the icon")
+
+  card.layoutCard(contentWidth: 180, contentMaxHeight: 36)
+  let fallbackFrame = expansion.accessibilityFrameInContainerSpace
+  try require(!fallbackFrame.isEmpty && card.bounds.contains(fallbackFrame) && fallbackFrame.minX == card.bounds.minX,
+              "expansion focus falls back to the visible leading inset when the icon is clipped")
 }
 
 @MainActor private func verifyClosingOverlayKeyHandoff(scene: UIWindowScene, app: UIWindow) throws -> Bool {
