@@ -25,6 +25,12 @@ when it lands:
   view managers, so the view could not mount on Android.
 - A second Nitro HybridObject, `QrImageDecoder`, sits beside the view in
   `nitro.json`.
+- The `react-native` devDependency uses the repository's patched build
+  (`patch:react-native@npm%3A0.88.0#…`) like the other packages. The
+  template's plain `0.88.0` made Yarn install a private copy of
+  `react-native` and `react-native-nitro-modules` inside this package, so the
+  view registered with one React Native and rendered with another ("View
+  config getter callback for component `QrScanner` must be a function").
 
 ### Dependencies
 
@@ -203,12 +209,14 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 
 - `./ur` is synchronous and single-owner. Each call to `receive` runs to
   completion; there is no shared state between sessions. — Implemented
-- Live view (iOS, implemented in source): props apply in `afterUpdate` on a
-  serial session queue. Every start and stop increments the capture
-  generation; native code stops emitting text once stopped, and JS drops any
-  event older than the newest generation it has seen. Generations only grow
-  for the lifetime of a view. The same text is re-emitted at most once per
-  second per generation. `onDropView` stops capture and removes observers.
+- Live view (iOS, implemented): props apply in `afterUpdate` on a serial
+  session queue. `ios/QrFrameTextGate.swift` owns which detections reach JS:
+  every start and stop increments the capture generation, nothing is
+  reported while stopped, and the same text is re-emitted at most once per
+  second per generation while new text (each part of an animated code) passes
+  immediately. JS drops any event older than the newest generation it has
+  seen. Generations only grow for the lifetime of a view. `onDropView` stops
+  capture and removes observers.
 - Image decoding (iOS): one decode at a time on a serial queue; each decode
   holds up to a few full-size bitmaps for its passes.
 
@@ -263,6 +271,9 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | iOS image passes and Vision engine | `ios/QrImageDecodingPipeline.swift` | Compiled and run on macOS (Vision only, no ZXing) against generated BTCPay-style lightning invoice QR images (`lightning:` + upper-case BOLT11, version 13, no margin, center icon, dark page): clean, 3x, and edge-to-edge images hit on `original`; a 2x image with an oversized center icon, which plain Vision and CIDetector both miss, hits on `padded`. A missing file rejects with `invalid-image`. Source evidence only, not a device run. |
 
 | iOS image pipeline at runtime | `ios/QrImageDecodingPipeline.swift`, `ios/HybridQrImageDecoder.swift`, `ios/QrZXingReader.mm` | `QrScanner-Unit-Tests` (`ios/tests/`, fixtures in `ios/tests/fixtures/`), 9 tests passing on the iOS 27.2 simulator (iPad Air 13-inch M4). Vision + ZXing decode the real expired BTCPay invoice payload (461 chars) from clean, BTCPay-dark (no QR margin, page padding, center icon), inverted and EXIF-rotated fixtures; ZXing alone decodes clean and inverted codes, proving it is linked; no-QR image resolves `nil`; corrupt and missing files throw `invalid-image`; fake engines prove pass order, stop-at-first-hit, platform-before-fallback and the `maxPixels` downscale. Also in the CI `services` group (`scripts/ios-native-plan.mjs`). |
+| Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
+| Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
+| JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |
 
 Known image-decoding gaps (iOS 27.2 simulator; recorded as non-strict
@@ -283,14 +294,9 @@ expected failures in `testStressFixturesAreKnownGaps`):
 
 Still required:
 
-- iOS: runtime run of `decodeQrImage` through JS (Nitro bridge) and of the
-  live view. The full example app does not build under Xcode 27.2:
-  `react-native-screens` 4.24.0 `RNSModule.mm` references `RCTCxxBridge`,
-  which the RN 0.88 prebuilt core does not declare. CI only builds pod unit
-  test targets, so this is outside this package. An XCTest test spec running
-  the image passes on fixture files would give simulator evidence the same
-  way CI tests other pods.
-- iOS: device run of live scanning (simulators have no camera), image
-  regression set as fixture files, binary-size delta of the `zxing-cpp` pod.
+- iOS: device run of live scanning with a real camera (simulators have
+  none), including an animated UR played on a screen; completion time and
+  parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
+  pod.
 - Android and Web backends.
 - The original OK-67798 album image once available.

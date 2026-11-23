@@ -22,10 +22,6 @@ final class QrPreviewView: UIView {
 }
 
 class HybridQrScanner: HybridQrScannerSpec {
-  /// The same text is reported again after this long, so a caller that reset
-  /// its session still receives a code that stays in view.
-  private static let repeatInterval: TimeInterval = 1.0
-
   var view: UIView { previewView }
   private let previewView = QrPreviewView()
 
@@ -44,12 +40,10 @@ class HybridQrScanner: HybridQrScannerSpec {
   private var observers: [NSObjectProtocol] = []
   private lazy var metadataDelegate = MetadataDelegate(owner: self)
 
-  // Read on `metadataQueue` and written on `sessionQueue`; guarded by `lock`.
-  private let lock = NSLock()
-  private var generation = 0
-  private var capturing = false
-  private var lastText: String?
-  private var lastTextAt: TimeInterval = 0
+  // Shared by `sessionQueue` (start/stop) and `metadataQueue` (detections).
+  // The same text is reported again after 1 s, so a caller that reset its
+  // session still receives a code that stays in view.
+  private let gate = QrFrameTextGate(repeatInterval: 1.0)
 
   override init() {
     super.init()
@@ -215,25 +209,11 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   // MARK: - Generation and events
 
-  private func nextGeneration() -> Int {
-    lock.lock()
-    defer { lock.unlock() }
-    generation += 1
-    lastText = nil
-    return generation
-  }
+  private func nextGeneration() -> Int { gate.nextGeneration() }
 
-  private func setCapturing(_ value: Bool) {
-    lock.lock()
-    capturing = value
-    lock.unlock()
-  }
+  private func setCapturing(_ value: Bool) { gate.setCapturing(value) }
 
-  private func currentGeneration() -> Int {
-    lock.lock()
-    defer { lock.unlock() }
-    return generation
-  }
+  private func currentGeneration() -> Int { gate.currentGeneration }
 
   private func emitError(_ code: String, _ message: String, _ generation: Int) {
     onError?(code, message, Double(generation))
@@ -241,23 +221,8 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   /// Called on `metadataQueue`.
   fileprivate func handle(texts: [String]) {
-    let now = Date().timeIntervalSince1970
-    var toEmit: [String] = []
-    lock.lock()
-    guard capturing else {
-      lock.unlock()
-      return
-    }
-    let currentGeneration = generation
-    for text in texts where !text.isEmpty {
-      if text == lastText, now - lastTextAt < Self.repeatInterval { continue }
-      lastText = text
-      lastTextAt = now
-      toEmit.append(text)
-    }
-    lock.unlock()
-    for text in toEmit {
-      onFrameText?(text, Double(currentGeneration))
+    for report in gate.filter(texts, now: ProcessInfo.processInfo.systemUptime) {
+      onFrameText?(report.text, Double(report.generation))
     }
   }
 }
