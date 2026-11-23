@@ -66,6 +66,10 @@ export type NativeListTextStyle = Readonly<{
   verticalAlignment?: 'top' | 'center' | 'bottom';
   /** Optical translation in logical units; does not affect layout. */
   offsetY?: number;
+  /** Extra spacing between glyphs in logical units. An explicit 0 turns off the platform's pair kerning on iOS, matching React Native `letterSpacing: 0`. */
+  letterSpacing?: number;
+  /** Equal-width (tabular) digits, matching the App's `SizableText` default. Omission keeps each template's current digits. */
+  tabularNumbers?: boolean;
 }>;
 
 /** Retained alias: Market shipped this name before the style surface was shared. */
@@ -372,6 +376,8 @@ type VisualWithImage = Readonly<{
   overlays?: readonly VisualOverlay[];
   borderStyle?: 'dashed';
   borderColor?: string;
+  /** Solid border width in logical units (0 < width <= 4); defaults to 1. Use the host's hairline width for a hairline. */
+  borderWidth?: number;
   image?: ImageSource;
   fallbackText?: string;
   fallbackTextColor?: string;
@@ -557,6 +563,8 @@ export type IdentityRow = RowBase &
     titleLines?: 1 | 2;
     /** Zero displays the complete subtitle. */
     subtitleLines?: 0 | 1 | 2;
+    /** Drop the trailing column (and its gap) when the row has no trailing accessories. Omitted keeps the legacy 12-point reservation. */
+    collapseEmptyTrailing?: boolean;
     badges?: readonly BadgeModel[];
     trailing?: readonly TrailingAccessory[];
     draggable?: boolean;
@@ -650,6 +658,15 @@ export type DataColumn = Readonly<{
   textSegments?: readonly ValueTextSegment[];
   titleIcon?: IdentityRow['titleIcon'];
   secondaryTitleIcon?: IdentityRow['titleIcon'];
+  /**
+   * Web-only passive label before the primary column text. The caller supplies
+   * both colors as #RRGGBB or #RRGGBBAA; native renderers ignore the field.
+   */
+  webLeadingBadge?: Readonly<{
+    text: string;
+    textColor: string;
+    backgroundColor: string;
+  }>;
   secondaryLeadingText?: string;
   secondaryText?: string;
   secondaryTextSegments?: readonly ValueTextSegment[];
@@ -1055,6 +1072,12 @@ export type NativeListSnapshot = Readonly<{
   }>;
   capabilities?: Readonly<{
     reorderable?: boolean;
+    /**
+     * `row` (default) starts a reorder from a long press anywhere on a
+     * reorderable row. `handle` starts it only from a long press on the
+     * row's trailing `drag` accessory.
+     */
+    reorderActivation?: 'row' | 'handle';
     pullToRefresh?: boolean;
     refreshing?: boolean;
     refreshTriggerDistance?: number;
@@ -1103,6 +1126,7 @@ export type RowPatch =
         | 'titleImage'
         | 'subtitle'
         | 'subtitleLines'
+        | 'collapseEmptyTrailing'
         | 'contentHeight'
         | 'longPressActionKey'
         | 'tertiary'

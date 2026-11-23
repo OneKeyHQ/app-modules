@@ -18,6 +18,7 @@ export const nativeListGeneratedIcons: Readonly<Record<string, string>> = {
   GasSolid: 'GasSolid',
   GlobusOutline: 'GlobusOutline',
   GoogleIllus: 'GoogleIllus',
+  InfoCircleOutline: 'InfoCircleOutline',
   LockSolid: 'LockSolid',
   PencilOutline: 'PencilOutline',
   PlusLargeOutline: 'PlusLargeOutline',

@@ -23,6 +23,11 @@ class BottomTabsDrawerManager : ViewGroupManager<BottomTabsDrawerView>(),
         DrawerOpenChangeEvent(UIManagerHelper.getSurfaceId(context), view.id, open),
       )
     }
+    view.onDrawerProgress = { progress ->
+      UIManagerHelper.getEventDispatcherForReactTag(context, view.id)?.dispatchEvent(
+        DrawerProgressEvent(UIManagerHelper.getSurfaceId(context), view.id, progress),
+      )
+    }
     return view
   }
 
@@ -36,6 +41,7 @@ class BottomTabsDrawerManager : ViewGroupManager<BottomTabsDrawerView>(),
   override fun needsCustomLayoutForChildren() = true
   override fun onDropViewInstance(view: BottomTabsDrawerView) {
     view.onDrawerOpenChange = null
+    view.onDrawerProgress = null
     view.dispose()
     super.onDropViewInstance(view)
   }
@@ -45,6 +51,8 @@ class BottomTabsDrawerManager : ViewGroupManager<BottomTabsDrawerView>(),
   override fun setSwipeEnabled(view: BottomTabsDrawerView, value: Boolean) { view.swipeEnabled = value }
   override fun setHapticFeedbackEnabled(view: BottomTabsDrawerView, value: Boolean) { view.drawerHapticFeedbackEnabled = value }
   override fun setBottomBarHeight(view: BottomTabsDrawerView, value: Double) { view.bottomBarHeight = value.toFloat() }
+  override fun setColorScheme(view: BottomTabsDrawerView, value: String?) { view.colorScheme = value ?: "system" }
+  override fun setProgressEventsEnabled(view: BottomTabsDrawerView, value: Boolean) { view.progressEventsEnabled = value }
 }
 
 private class DrawerOpenChangeEvent(surfaceId: Int, tag: Int, private val open: Boolean) :
@@ -52,4 +60,11 @@ private class DrawerOpenChangeEvent(surfaceId: Int, tag: Int, private val open: 
   override fun getEventName() = "onDrawerOpenChange"
   override fun canCoalesce() = false
   override fun getEventData() = Arguments.createMap().apply { putBoolean("open", open) }
+}
+
+// Coalescable: a JS listener only needs the latest position per frame.
+private class DrawerProgressEvent(surfaceId: Int, tag: Int, private val progress: Float) :
+  Event<DrawerProgressEvent>(surfaceId, tag) {
+  override fun getEventName() = "onDrawerProgress"
+  override fun getEventData() = Arguments.createMap().apply { putDouble("progress", progress.toDouble()) }
 }

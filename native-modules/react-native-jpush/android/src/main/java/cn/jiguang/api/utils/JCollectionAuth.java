@@ -2,13 +2,15 @@ package cn.jiguang.api.utils;
 
 import android.content.Context;
 import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.core.JCoreTcpEngine;
 import cn.jpush.android.api.JThirdPlatFormInterface;
 
 public class JCollectionAuth {
     public static synchronized void setAuth(Context context, boolean auth) {
         boolean wasAuthorized = JCoreStorage.isCollectionAuth(context);
         JCoreStorage.setCollectionAuth(context, auth);
-        if (auth && !wasAuthorized) {
+        if (auth && !wasAuthorized && !JCoreStorage.isPushStopped(context)) {
+            JCoreTcpEngine.getInstance().sendPendingPushResume(context);
             JThirdPlatFormInterface.initializeFcm(context);
         }
     }

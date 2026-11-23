@@ -126,6 +126,15 @@ generation may mutate the view or emit terminal callbacks. Cancellation,
 recycling, and disposal invalidate previous generations and release active
 request, display, retry, safety, skeleton, and animation work.
 
+On Android, dropping a React-owned image stops callbacks and playback
+immediately. If the host is still attached and has a drawable, the host
+retains the view bounds, drawable, and its Glide resource until detachment.
+React-owned OneKeyImage hosts opt out of Fabric's Android view pool so the
+view manager cannot reset the bounds while the outgoing screen still draws
+the host. A detached image or an explicitly disposed NativeList image releases
+its resources immediately. NativeList continues to reuse its own image hosts
+and resets their clip to the default before binding another source.
+
 A cross-size preview is presentation only. It MUST NOT emit `onLoad`,
 `onError`, `onLoadEnd`, or `onDisplay`; the exact request retains callback
 ownership. An iOS exact synchronous memory hit is terminal and reports
@@ -759,6 +768,13 @@ results within the existing 8 MiB per-raster admission limit are persisted.
 Android also maintains a 64 MiB disk raster PNG cache under `cacheDir/onekey-named-svg-v1`
 using the same SHA-256 render-key naming and LRU pruning.
 This disk layer alone does not make a cold-process main-thread memory probe synchronous.
+
+`@onekeyfe/react-native-native-overlay` reaches the Android registry by
+reflection (`Class.forName`, then `INSTANCE`, `request` with 8 arguments and
+`cancel`) so it takes no build dependency on this package. The package's
+`consumer-rules.pro` keeps those names in minified App builds; removing or
+re-signing any of them requires updating that lookup in the same change, or
+native toast icons render blank in release builds only.
 
 On both iOS and Android, a startup prewarm closes that cold-process gap for the first screen. Named
 icon requests from both the view probe (`cachedRender`) and the callback bridge

@@ -11,7 +11,10 @@ export interface BottomTabsDrawerNativeProps extends ViewProps {
   swipeEnabled?: CodegenTypes.WithDefault<boolean, false>;
   hapticFeedbackEnabled?: CodegenTypes.WithDefault<boolean, false>;
   bottomBarHeight?: CodegenTypes.Double;
+  colorScheme?: CodegenTypes.WithDefault<"system" | "light" | "dark", "system">;
+  progressEventsEnabled?: CodegenTypes.WithDefault<boolean, false>;
   onDrawerOpenChange?: CodegenTypes.DirectEventHandler<Readonly<{ open: boolean }>>;
+  onDrawerProgress?: CodegenTypes.DirectEventHandler<Readonly<{ progress: CodegenTypes.Double }>>;
 }
 
 export default codegenNativeComponent<BottomTabsDrawerNativeProps>(

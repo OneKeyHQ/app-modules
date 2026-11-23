@@ -21,7 +21,7 @@ public class BundleUpdateStore: NSObject {
     private static let metadataRequiresCommonBundleKey = "requiresCommonBundle"
     private static let metadataBundleFormatKey = "bundleFormat"
     private static let bundleFormatThreeBundle = "three-bundle"
-    private static let supportedBackgroundProtocolVersion = "1"
+    private static let supportedBackgroundProtocolVersion = "2"
 
     // In-memory cache for validatedCurrentBundleInfo. Without this, every
     // bundleURL / common / main / background path getter on startup re-runs

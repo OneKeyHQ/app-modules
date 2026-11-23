@@ -598,7 +598,7 @@ function bindHistory(
   v.descriptionPrefix.style.cssText = `${ellipsis}flex-shrink:0;max-width:${
     actionText ? `calc(100% - ${descriptionActionReserve})` : '100%'
   };white-space:pre;display:${actionStart > 0 ? 'block' : 'none'}`;
-  v.descriptionAction.style.cssText = `${ellipsis}appearance:none;max-width:100%;border:0;padding:0;background:transparent;text-align:left;color:inherit;font:inherit;font-variant-numeric:inherit;display:${
+  v.descriptionAction.style.cssText = `${ellipsis}appearance:none;max-width:100%;border:0;padding:0;background:transparent;text-align:left;color:inherit;font:inherit;font-variant-numeric:inherit;letter-spacing:inherit;display:${
     actionText ? 'block' : 'none'
   };`;
   v.descriptionAction.textContent = actionText;

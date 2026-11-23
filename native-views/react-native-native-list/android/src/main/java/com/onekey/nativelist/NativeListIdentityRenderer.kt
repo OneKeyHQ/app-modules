@@ -157,6 +157,26 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private fun JSONArray?.hasAccessory(kind: String) =
     this != null && (0 until length()).any { optJSONObject(it)?.optString("kind") == kind }
 
+  override fun bindContentUpdate(
+    previous: NativeListItem,
+    item: NativeListItem,
+    theme: JSONObject?,
+  ): Boolean {
+    val segments = item.json.optJSONArray("subtitleSegments") ?: return false
+    if (semanticSubtitleLabels.isEmpty() || semanticSubtitleLabels.size != segments.length() ||
+      !canUpdateIdentitySubtitle(previous, item)
+    ) return false
+
+    val style = item.json.optJSONObject("style")?.optJSONObject("subtitle")
+    semanticSubtitleLabels.forEachIndexed { index, label ->
+      bindIdentitySubtitleLabel(label, segments.getJSONObject(index), theme)
+      style?.let { applyStyledText(label, it) }
+      applySelectorTextTypography(label, style)
+      label.requestLayout()
+    }
+    return true
+  }
+
   override fun bindContent(
     item: NativeListItem,
     theme: JSONObject?,
@@ -172,8 +192,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     setOnLongClickListener(
       if (longPressActionKey.isNotEmpty())
         OnLongClickListener {
+          val actionItem = currentItem ?: return@OnLongClickListener false
           val point = longPressPoint
-          if (!isEnabled || !item.isRowPressEnabled || currentItem?.key != item.key ||
+          if (!isEnabled || !actionItem.isRowPressEnabled || actionItem.key != item.key ||
             bindingEpoch != boundEpoch ||
             (longPressPointEpoch == boundEpoch && point == null)) false
           else {
@@ -182,7 +203,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
               getLocationInWindow(location)
               PointF(location[0] + it.x, location[1] + it.y)
             }
-            onAction?.invoke(item, longPressActionKey, null,
+            onAction?.invoke(actionItem, longPressActionKey, null,
               NativeListActionOrigin(this, this, bindingEpoch, "row",
                 windowPointPixels = windowPoint))
             longPressPoint = null
@@ -365,17 +386,19 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     )
       return
     fun visit(view: View) {
-      if (view is TextView) {
-        view.fontFeatureSettings = "tnum"
-        if (sourceScale) {
-          paintDefaults.putIfAbsent(view, view.paintFlags)
-          // Explicit style fontSize/lineHeight are kept as the caller set them.
-          applyNativeListSourceTypography(view, explicitStyle(view))
-        }
-      }
+      if (view is TextView) applySelectorTextTypography(view, explicitStyle(view))
       if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
     }
     visit(this)
+  }
+
+  private fun applySelectorTextTypography(view: TextView, style: JSONObject?) {
+    if (sourceScale) {
+      paintDefaults.putIfAbsent(view, view.paintFlags)
+      applyNativeListSourceTypography(view, style)
+    } else {
+      applyNativeListTextSpacing(view, style)
+    }
   }
 
   private fun addLeading(visual: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
@@ -393,7 +416,13 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     }
     leadingFrame.bitmapBorderWidth =
       if (descriptor.optString("borderColor").isNotEmpty() &&
-        descriptor.optString("borderStyle") != "dashed") dp(1) else 0
+        descriptor.optString("borderStyle") != "dashed") {
+        // Optional borderWidth (logical units); a hairline still draws one physical pixel.
+        descriptor.optDouble("borderWidth", Double.NaN)
+          .takeIf { it.isFinite() && it > 0 && it <= 4 }
+          ?.let { (it * resources.displayMetrics.density).roundToInt().coerceAtLeast(1) }
+          ?: dp(1)
+      } else 0
     if (visual == null) leadingFrame.recycle()
     val item = currentItem!!
     val style = item.json.optJSONObject("style")?.optJSONObject("image") ?: JSONObject()
@@ -722,11 +751,11 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       leadingActionIcon.setOnClickListener {
         emitAction(item, action.optString("actionKey"), null, leadingActionIcon, "leadingAction")
       }
-      // ListItem.IconButton is 36dp with 6dp inner padding and m=-7. Keep the
-      // full button frame but absorb its leading negative margin into the row
-      // padding and its trailing margin into the following gap.
-      setPadding(dp(5), paddingTop, paddingRight, paddingBottom)
-      addView(leadingActionIcon, LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(5) })
+      // ListItem.IconButton is 38dp (6dp padding plus a 1dp border) with m=-7,
+      // so its glyph sits on a 24dp slot at the 12dp padding. This 36dp frame
+      // centers the same glyph with a 6dp inset and a 6dp following gap.
+      setPadding(dp(6), paddingTop, paddingRight, paddingBottom)
+      addView(leadingActionIcon, LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(6) })
     }
     addLeading(
       leading,
@@ -827,27 +856,11 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
           }
           val label =
             NativeListTextView(context).apply {
-              text = segment.optString("text")
-              typeface = fonts.regular(context)
-              textSize = sp(14f)
               includeFontPadding = false
               maxLines = 1
               ellipsize = TextUtils.TruncateAt.END
-              val toneKey =
-                when (segment.optString("tone")) {
-                  "primary" -> "primaryText"
-                  "disabled" -> "disabledText"
-                  "caution" -> "caution"
-                  "positive" -> "positive"
-                  "negative" -> "negative"
-                  else -> "secondaryText"
-                }
-              setTextColor(
-                color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B")
-              )
             }
-          TextViewCompat.setLineHeight(label, dp(20))
-          applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
+          bindIdentitySubtitleLabel(label, segment, theme)
           semanticSubtitleLabels.add(label)
           line.addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
         }
@@ -921,6 +934,29 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
         ),
     )
     trailingColumn.endInset?.let { setPadding(paddingLeft, paddingTop, it, paddingBottom) }
+    // ListItem keeps 12dp between the text and a tertiary button's 24dp slot; the
+    // button's m=-7 would otherwise pull its slot over the text column.
+    val first = accessories.optJSONObject(0)
+    if (first?.optString("kind") == "drag" || first?.optString("buttonStyle") == "tertiary") {
+      (mainColumn.layoutParams as LayoutParams).marginEnd = dp(12)
+    }
+  }
+
+  private fun bindIdentitySubtitleLabel(label: TextView, segment: JSONObject, theme: JSONObject?) {
+    label.text = segment.optString("text")
+    label.typeface = fonts.regular(context)
+    label.textSize = sp(14f)
+    TextViewCompat.setLineHeight(label, dp(20))
+    val toneKey = when (segment.optString("tone")) {
+      "primary" -> "primaryText"
+      "disabled" -> "disabledText"
+      "caution" -> "caution"
+      "positive" -> "positive"
+      "negative" -> "negative"
+      else -> "secondaryText"
+    }
+    label.setTextColor(color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B"))
+    applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
   }
 
   private fun applyValueSegments(
@@ -1021,6 +1057,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     if (style.has("offsetY"))
       (view as? NativeListTextView)?.opticalOffsetY =
         (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
+    applyNativeListTextSpacing(view, style)
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity =
         (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or

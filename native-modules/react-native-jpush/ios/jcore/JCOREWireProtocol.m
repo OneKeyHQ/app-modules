@@ -643,28 +643,51 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 #pragma mark - Login (cmd = 1, ver = 27)
 
 + (NSData *)buildLoginPayloadWithPassword:(NSString *)password
-                                   appKey:(NSString *)appKey {
+                                  appKey:(NSString *)appKey {
+    uint8_t appState = 1;
+#if __has_include(<UIKit/UIKit.h>)
+    __block UIApplicationState state;
+    void (^readState)(void) = ^{
+        state = UIApplication.sharedApplication.applicationState;
+    };
+    if (NSThread.isMainThread) {
+        readState();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), readState);
+    }
+    if (state == UIApplicationStateInactive) {
+        appState = 0;
+    } else if (state == UIApplicationStateBackground) {
+        appState = 2;
+    }
+#endif
+    return [self buildLoginPayloadWithPassword:password appKey:appKey appState:appState];
+}
+
++ (NSData *)buildLoginPayloadWithPassword:(NSString *)password
+                                  appKey:(NSString *)appKey
+                                appState:(uint8_t)appState {
     JCOREConfiguration *config = [JCOREConfiguration shared];
     NSString *passwordMd5 = [JCORECrypto md5Hex:password ?: @""];
-    NSString *modelName = [config modelNameString];
-    NSString *appVersion = [config appVersionString];
-    NSString *systemVersion = [config osVersionString];
-    NSString *countryCode = [[NSLocale currentLocale] objectForKey:NSLocaleCountryCode] ?: @"CN";
+    NSString *deviceId = [config resolveDeviceIDWithOutHasExisting:NULL] ?: @"";
 
     NSMutableData *body = [NSMutableData data];
-    JCoreAppendUInt32(body, 105);               // Fixed magic 0x00000069
-    JCoreAppendString(body, passwordMd5);       // MD5(password)
-    JCoreAppendUInt32(body, 0x00050200);        // Core SDK version 5.2.0
-    JCoreAppendString(body, appKey ?: @"");     // appKey
-    JCoreAppendUInt8(body, 1);                  // platform = 1 (iOS)
-    JCoreAppendUInt32(body, 0);                 // idc
-    JCoreAppendUInt8(body, config.apsType);     // apsType (1=prod, 0=dev)
-    JCoreAppendUInt8(body, config.buildType);   // buildType (0=debug, 1=release)
-    JCoreAppendString(body, [NSString stringWithFormat:@"$$%@$$%@$$ ", modelName, appVersion]);
-    JCoreAppendString(body, @"5.2.0|6.0.0");    // versions
-    JCoreAppendUInt16(body, 0);                 // connectInfo
-    JCoreAppendString(body, @"|||1$$0$$0$$0");  // extInfo
-    JCoreAppendString(body, [NSString stringWithFormat:@"%@;;%@", systemVersion, countryCode]);
+    JCoreAppendUInt8(body, 105);                        // Fixed iOS login magic 0x69
+    JCoreAppendUInt8(body, 0);                          // Reserved
+    JCoreAppendUInt16(body, 0);                         // Reserved
+    JCoreAppendString(body, passwordMd5);               // MD5(password)
+    // JCore 5.2.0 (0x50200) and JPush 6.0.0 (0x60000), formatted as decimal SDK version codes.
+    JCoreAppendString(body, @"328192|393216||||||");    // sdkVerInfo
+    JCoreAppendString(body, appKey ?: @"");             // appKey
+    JCoreAppendUInt8(body, 1);                          // platform = 1 (iOS)
+    JCoreAppendUInt32(body, 1);                         // loginFlag = 1 (JPush)
+    JCoreAppendUInt8(body, 0);                          // cellular generation unknown
+    JCoreAppendString(body, deviceId);                  // deviceId
+    JCoreAppendUInt16(body, 0);                         // empty location data
+    JCoreAppendString(body, config.accountID);          // accountId
+    JCoreAppendUInt8(body, appState);                  // appState
+    JCoreAppendUInt8(body, 1);                          // isSdkInit = 1
+    JCoreAppendString(body, @"1");                      // sdkTypes = "1"
     return body;
 }
 
@@ -1116,12 +1139,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 }
 
 + (NSData *)buildPushControlPayloadWithStopped:(BOOL)stopped {
-    NSDictionary *dict = @{
-        @"type": @"notif_state",
-        @"enabled": @(!stopped),
-        @"itime": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
-    };
-    return [self buildJsonCommandPayload:dict];
+    uint8_t action = stopped ? 0 : 1;
+    return [NSData dataWithBytes:&action length:1];
 }
 
 @end

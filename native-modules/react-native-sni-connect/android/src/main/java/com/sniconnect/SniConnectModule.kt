@@ -165,6 +165,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private class ManagedRequest(
     val call: Call,
     val settled: AtomicBoolean,
+    val uploadProgress: UploadProgress?,
   ) {
     lateinit var admissionTicket: SniConnectRequestAdmission.Ticket
     private val explicitlyCancelled = AtomicBoolean(false)
@@ -181,6 +182,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
 
     fun wasExplicitlyCancelled(): Boolean = explicitlyCancelled.get()
+  }
+
+  private class UploadProgress {
+    private var bytesSent = 0L
+    private var totalBytes = 0L
+
+    @Synchronized
+    fun record(sent: Long, total: Long) {
+      totalBytes = total
+      bytesSent = maxOf(bytesSent, sent.coerceIn(0, total))
+    }
+
+    @Synchronized
+    fun snapshot(): Pair<Long, Long> = bytesSent to totalBytes
   }
 
   // Cancellation ownership is per module, so cancelAllRequests only affects its RN runtime.
@@ -240,6 +255,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       )
       promise.reject("SNI_INVALID_CONFIG", error.message, error)
     }
+  }
+
+  @ReactMethod
+  override fun getUploadProgress(requestId: String, promise: Promise) {
+    val progress = synchronized(activeCallsLock) {
+      activeCalls[requestId]?.takeUnless { it.settled.get() }?.uploadProgress
+    }
+    val snapshot = progress?.snapshot()
+    promise.resolve(snapshot?.let { (sent, total) ->
+      Arguments.createMap().apply {
+        putDouble("bytesSent", sent.toDouble())
+        putDouble("totalBytes", total.toDouble())
+      }
+    })
   }
 
   @ReactMethod
@@ -337,10 +366,15 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     // Shared by every OkHttp attempt of this logical request. The client's
     // EventListener marks it once any attempt starts sending request headers.
     val requestTransmission = SniRequestTransmissionState()
+    val uploadProgress = if (config.bodyFile != null && config.requestId != null) {
+      UploadProgress()
+    } else {
+      null
+    }
     var registeredRequest: ManagedRequest? = null
     try {
       val client = getOrCreateClient(config)
-      val request = buildRequest(config, requestTransmission)
+      val request = buildRequest(config, requestTransmission, uploadProgress)
       val call = client.newCall(request)
       val settled = AtomicBoolean(false)
       lateinit var managedRequest: ManagedRequest
@@ -493,7 +527,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           }
         },
       )
-      managedRequest = ManagedRequest(call, settled).apply {
+      managedRequest = ManagedRequest(call, settled, uploadProgress).apply {
         this.admissionTicket = admissionTicket
       }
       registerRequest(config.requestId, managedRequest)
@@ -632,6 +666,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private fun buildRequest(
     config: RequestConfig,
     requestTransmission: SniRequestTransmissionState,
+    uploadProgress: UploadProgress?,
   ): Request {
     val url = "https://${config.hostname}${config.path}"
     val builder = Request.Builder().url(url)
@@ -651,7 +686,11 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       ?.value
       ?.toMediaTypeOrNull()
     // Enforce the body bound when OkHttp consumes the file, after admission.
-    val requestBody = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
+    val requestBody = config.bodyFile?.let {
+      SniUploadFileRequestBody(it, mediaType) { sent, total ->
+        uploadProgress?.record(sent, total)
+      }.also { body -> uploadProgress?.record(0, body.contentLength()) }
+    }
       ?: config.body?.toRequestBody(mediaType)
 
     when (method) {

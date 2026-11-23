@@ -33,6 +33,7 @@ import {
   webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
 import { applyTextStyleToSlot } from '../web/templates/RowText';
+import { applyRowPatches, validateSnapshot } from '../validation';
 
 jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
   jest.requireActual('../../../react-native-image/src/icon/dom')
@@ -1853,8 +1854,21 @@ describe('web row style', () => {
       expect(action()?.dataset.nativeListAction).toBe('address-info');
       expect(action()?.textContent).toBe('Router • V2');
       expect(description().textContent).toBe('Router • V2');
+      const style = {
+        description: { letterSpacing: 4, tabularNumbers: false },
+      };
+      bind({ style });
+      expect(description().style.letterSpacing).toBe('4px');
+      expect(description().style.fontVariantNumeric).toBe('proportional-nums');
+      expect(action()?.style.letterSpacing).toBe('inherit');
+      expect(action()?.style.fontVariantNumeric).toBe('inherit');
 
-      bind({ description: '08:48 • Router • V2', descriptionActionStart: 8 });
+      bind({
+        description: '08:48 • Router • V2',
+        descriptionActionStart: 8,
+        style,
+      });
+      expect(action()?.style.letterSpacing).toBe('inherit');
       expect(action()?.textContent).toBe('Router • V2');
       expect(description().textContent).toBe('08:48 • Router • V2');
 
@@ -7050,6 +7064,48 @@ describe('DeFi position Web controls', () => {
     }
   });
 
+  it('keeps tabular digits on a network selector success badge beside proportional text', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const engine = new NativeListWebEngine(
+      host,
+      snap({
+        type: 'sectionHeader',
+        key: 'networks',
+        sectionKey: 'networks',
+        presentation: 'networkSelector',
+        title: '11111111',
+        leadingBadge: { key: 'enabled', text: '88888888', tone: 'success' },
+        value: '22222222',
+        style: {
+          title: { tabularNumbers: false },
+          value: { tabularNumbers: false },
+        },
+      }),
+      {},
+      false
+    );
+    try {
+      const badge = host.querySelector<HTMLElement>(
+        '.ok-native-list-section > [data-tone="success"]'
+      )!;
+      const style = document.defaultView!.getComputedStyle(badge);
+      expect(style.fontVariantNumeric).toBe('inherit');
+      expect(badge.parentElement?.style.fontVariantNumeric).toBe(
+        'tabular-nums'
+      );
+      for (const slot of ['title', 'value']) {
+        const text = host.querySelector<HTMLElement>(
+          `[data-nl-slot="${slot}"]`
+        )!;
+        expect(text.style.fontVariantNumeric).toBe('proportional-nums');
+      }
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('uses hover only for tooltip help and click only for popover help', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -7289,4 +7345,1008 @@ test('commits valid production rows and renders null-cleared overlays in one pat
     environment.__DEV__ = previous;
     warning.mockRestore();
   }
+});
+
+describe('NativeList web handle reorder and host icons', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document } & Window;
+    };
+  };
+  const handleRows: readonly RowModel[] = ['a', 'b', 'c'].map((key) => ({
+    type: 'identity',
+    key,
+    leading: { kind: 'icon', name: 'GlobusOutline' },
+    title: `Site ${key}`,
+    subtitle: `https://${key}.example`,
+    trailing: [
+      { kind: 'icon', name: 'PencilOutline', actionKey: 'rename' },
+      { kind: 'drag' },
+    ],
+  }));
+
+  function mount(
+    reorderActivation?: 'row' | 'handle',
+    sourceRows: readonly RowModel[] = handleRows
+  ) {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const base = snapshot({ kind: 'linear' }, sourceRows);
+    const engine = new NativeListWebEngine(
+      host,
+      {
+        ...base,
+        selection: undefined,
+        capabilities: { reorderable: true, reorderActivation },
+      },
+      {},
+      false
+    );
+    const pointerDown = (target: Element) =>
+      target.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerdown', { bubbles: true }),
+          {
+            pointerId: 1,
+            pointerType: 'touch',
+            isPrimary: true,
+            button: 0,
+            clientX: 10,
+            clientY: 20,
+          }
+        )
+      );
+    const dragging = () =>
+      host.querySelector<HTMLElement>('.ok-native-list-root')!.dataset
+        .nativeListDragging === 'true';
+    return { document, host, engine, pointerDown, dragging };
+  }
+
+  function withElement<T>(document: Document, run: () => T): T {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    try {
+      return run();
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'Element', original);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  }
+
+  it('validates reorderActivation', () => {
+    expect(() =>
+      validateSnapshot({
+        ...snapshot({ kind: 'linear' }, handleRows),
+        capabilities: { reorderable: true, reorderActivation: 'handle' },
+      })
+    ).not.toThrow();
+    expect(() =>
+      validateSnapshot({
+        ...snapshot({ kind: 'linear' }, handleRows),
+        capabilities: {
+          reorderable: true,
+          reorderActivation: 'icon' as unknown as 'handle',
+        },
+      })
+    ).toThrow(/reorderActivation/);
+  });
+
+  it('starts a handle-mode reorder only from the drag accessory', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, pointerDown, dragging } = mount('handle');
+    try {
+      withElement(document, () => {
+        const handle = host.querySelector(
+          '[data-native-list-row-key="a"] [data-native-list-reorder-handle]'
+        )!;
+        expect(handle).not.toBeNull();
+        const title = host.querySelector(
+          '[data-native-list-row-key="a"] .ok-native-list-title'
+        )!;
+        pointerDown(title);
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(false);
+        pointerDown(handle);
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps row-wide reorder activation by default', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, pointerDown, dragging } = mount();
+    try {
+      withElement(document, () => {
+        pointerDown(
+          host.querySelector(
+            '[data-native-list-row-key="a"] .ok-native-list-title'
+          )!
+        );
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([false, true])(
+    'clears a row gesture on a mode change (active: %s)',
+    (active) => {
+      jest.useFakeTimers();
+      const { document, host, engine, pointerDown, dragging } = mount('row');
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onReorder });
+      try {
+        withElement(document, () => {
+          const title = host.querySelector(
+            '[data-native-list-row-key="a"] .ok-native-list-title'
+          )!;
+          pointerDown(title);
+          if (active) jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(active);
+          engine.applySnapshot({
+            ...engine.currentSnapshot(),
+            capabilities: { reorderable: true, reorderActivation: 'handle' },
+          });
+          expect(
+            host
+              .querySelector('.ok-native-list-root')
+              ?.getAttribute('data-native-list-reorder-activation')
+          ).toBe('handle');
+          expect(host.contains(title)).toBe(true);
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(false);
+          expect(onReorder).not.toHaveBeenCalled();
+          pointerDown(title);
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(false);
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it.each([false, true])(
+    'retains a patch that removes a pressed handle (active: %s)',
+    (active) => {
+      jest.useFakeTimers();
+      const { document, host, engine, pointerDown, dragging } = mount(
+        'handle',
+        [
+          { ...(handleRows[0] as IdentityRow), draggable: true },
+          ...handleRows.slice(1),
+        ]
+      );
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onReorder });
+      try {
+        withElement(document, () => {
+          pointerDown(
+            host.querySelector(
+              '[data-native-list-row-key="a"] [data-native-list-reorder-handle]'
+            )!
+          );
+          if (active) jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(active);
+          engine.applyPatches([
+            {
+              type: 'identity',
+              key: 'a',
+              changes: { trailing: [], title: 'Updated' },
+            },
+          ]);
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(false);
+          expect(onReorder).not.toHaveBeenCalled();
+          expect(engine.currentSnapshot().rows[0]).toMatchObject({
+            key: 'a',
+            title: 'Updated',
+            trailing: [],
+          });
+          expect(
+            host.querySelector(
+              '[data-native-list-row-key="a"] [data-native-list-reorder-handle]'
+            )
+          ).toBeNull();
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it('lets an actionable handle start a reorder and retain its short-tap action', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, pointerDown, dragging } = mount('handle', [
+      {
+        ...(handleRows[0] as IdentityRow),
+        trailing: [{ kind: 'drag', actionKey: 'handle.info' }],
+      },
+      ...handleRows.slice(1),
+    ]);
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const handle = host.querySelector<HTMLButtonElement>(
+          'button[data-native-list-reorder-handle]'
+        )!;
+        pointerDown(handle);
+        handle.dispatchEvent(
+          Object.assign(
+            new document.defaultView!.Event('pointerup', { bubbles: true }),
+            { pointerId: 1 }
+          )
+        );
+        handle.click();
+        expect(onRowAction).toHaveBeenCalledWith(
+          expect.objectContaining({ actionKey: 'handle.info' })
+        );
+        pointerDown(handle);
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['mouse', true],
+    ['touch', true],
+    ['touch', false],
+  ])(
+    'suppresses a cancelled %s drag click after a long hold (pointer click: %s)',
+    (pointerType, pointerClick) => {
+      jest.useFakeTimers();
+      const { document, host, engine, dragging } = mount('handle', [
+        {
+          ...(handleRows[0] as IdentityRow),
+          trailing: [{ kind: 'drag', actionKey: 'handle.info' }],
+        },
+        ...handleRows.slice(1),
+      ]);
+      const onRowAction = jest.fn();
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onRowAction, onReorder });
+      try {
+        withElement(document, () => {
+          const handle = host.querySelector<HTMLButtonElement>(
+            'button[data-native-list-reorder-handle]'
+          )!;
+          const pointer = (type: string, clientX = 10) =>
+            handle.dispatchEvent(
+              Object.assign(
+                new document.defaultView!.Event(type, {
+                  bubbles: true,
+                  cancelable: true,
+                }),
+                {
+                  pointerId: 1,
+                  pointerType,
+                  isPrimary: true,
+                  button: 0,
+                  clientX,
+                  clientY: 20,
+                }
+              )
+            );
+          const click = () => {
+            const event = new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+              clientX: 10,
+              clientY: 20,
+            });
+            if (pointerClick) Object.assign(event, { pointerId: 1 });
+            handle.dispatchEvent(event);
+          };
+          pointer('pointerdown');
+          if (pointerType === 'mouse') pointer('pointermove', 60);
+          else jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(true);
+
+          engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+          expect(dragging()).toBe(false);
+          expect(handle.isConnected).toBe(true);
+          handle.click();
+          expect(onRowAction).toHaveBeenCalledTimes(1);
+          onRowAction.mockClear();
+          jest.advanceTimersByTime(450);
+          pointer('pointerup');
+          click();
+          expect(onReorder).not.toHaveBeenCalled();
+          expect(onRowAction).not.toHaveBeenCalled();
+
+          pointer('pointerdown');
+          pointer('pointerup');
+          click();
+          expect(onRowAction).toHaveBeenCalledTimes(1);
+          expect(onRowAction).toHaveBeenCalledWith(
+            expect.objectContaining({ actionKey: 'handle.info' })
+          );
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it.each([true, false])(
+    'suppresses overlapping touch and mouse reorder clicks independently (pointer click: %s)',
+    (pointerClick) => {
+      jest.useFakeTimers();
+      const sources = handleRows.slice(0, 2).map((row) => ({
+        ...(row as IdentityRow),
+        trailing: [{ kind: 'drag' as const, actionKey: row.key }],
+      }));
+      const { document, host, engine, dragging } = mount('handle', sources);
+      const onRowAction = jest.fn();
+      const onReorder = jest.fn();
+      engine.updateCallbacks({ onRowAction, onReorder });
+      try {
+        withElement(document, () => {
+          const handles = host.querySelectorAll<HTMLButtonElement>(
+            'button[data-native-list-reorder-handle]'
+          );
+          const sendPointer = (
+            type: string,
+            handle: HTMLButtonElement,
+            pointerId: number,
+            pointerType: 'touch' | 'mouse',
+            clientX = 10
+          ) =>
+            handle.dispatchEvent(
+              Object.assign(
+                new document.defaultView!.Event(type, {
+                  bubbles: true,
+                  cancelable: true,
+                }),
+                {
+                  pointerId,
+                  pointerType,
+                  isPrimary: true,
+                  button: 0,
+                  clientX,
+                  clientY: 20,
+                }
+              )
+            );
+          const click = (handle: HTMLButtonElement, pointerId: number) => {
+            const event = new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+              clientX: 10,
+              clientY: 20,
+            });
+            if (pointerClick) Object.assign(event, { pointerId });
+            handle.dispatchEvent(event);
+          };
+
+          sendPointer('pointerdown', handles[0]!, 7, 'touch');
+          jest.advanceTimersByTime(800);
+          expect(dragging()).toBe(true);
+          engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+          expect(dragging()).toBe(false);
+
+          sendPointer('pointerdown', handles[1]!, 1, 'mouse');
+          sendPointer('pointermove', handles[1]!, 1, 'mouse', 60);
+          expect(dragging()).toBe(true);
+          engine.applySnapshot({ ...engine.currentSnapshot(), generation: 3 });
+          expect(dragging()).toBe(false);
+          jest.advanceTimersByTime(600);
+
+          sendPointer('pointerup', handles[0]!, 7, 'touch');
+          click(handles[0]!, 7);
+          sendPointer('pointerup', handles[1]!, 1, 'mouse');
+          click(handles[1]!, 1);
+          expect(onRowAction).not.toHaveBeenCalled();
+          expect(onReorder).not.toHaveBeenCalled();
+
+          sendPointer('pointerdown', handles[1]!, 1, 'mouse');
+          sendPointer('pointerup', handles[1]!, 1, 'mouse');
+          click(handles[1]!, 1);
+          expect(onRowAction).toHaveBeenCalledTimes(1);
+          expect(onRowAction).toHaveBeenCalledWith(
+            expect.objectContaining({ actionKey: 'b' })
+          );
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it('matches a delayed legacy click to its drag release across unrelated releases', () => {
+    jest.useFakeTimers();
+    const { document, host, engine, dragging } = mount(
+      'handle',
+      handleRows.slice(0, 2).map((row) => ({
+        ...(row as IdentityRow),
+        trailing: [{ kind: 'drag', actionKey: row.key }],
+      }))
+    );
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      withElement(document, () => {
+        const [handle, unrelated] = host.querySelectorAll<HTMLButtonElement>(
+          'button[data-native-list-reorder-handle]'
+        );
+        const pointer = (
+          type: string,
+          target: Element,
+          pointerId: number,
+          pointerType: 'touch' | 'mouse',
+          clientX = 10,
+          clientY = 20
+        ) =>
+          target.dispatchEvent(
+            Object.assign(
+              new document.defaultView!.Event(type, {
+                bubbles: true,
+                cancelable: true,
+              }),
+              {
+                pointerId,
+                pointerType,
+                isPrimary: true,
+                button: 0,
+                clientX,
+                clientY,
+              }
+            )
+          );
+        const click = (target: Element, clientX = 10, clientY = 20) =>
+          target.dispatchEvent(
+            new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+              clientX,
+              clientY,
+            })
+          );
+
+        pointer('pointerdown', handle!, 7, 'touch');
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(true);
+        engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+        expect(dragging()).toBe(false);
+        pointer('pointerup', handle!, 7, 'touch', 10.5, 20.5);
+
+        // At the same location, the newer short tap on this button still fires.
+        pointer('pointerdown', handle!, 1, 'mouse');
+        pointer('pointerup', handle!, 1, 'mouse');
+        click(handle!);
+        expect(onRowAction).toHaveBeenCalledTimes(1);
+
+        // A different target at the same coordinates is a separate activation.
+        click(unrelated!);
+        expect(onRowAction).toHaveBeenCalledTimes(2);
+        // The same target at a different position is also a separate activation.
+        click(handle!, 19, 24);
+        expect(onRowAction).toHaveBeenCalledTimes(3);
+
+        pointer('pointerdown', outside, 1, 'mouse');
+        pointer('pointerup', outside, 1, 'mouse');
+        jest.advanceTimersByTime(250);
+        click(handle!);
+        expect(onRowAction).toHaveBeenCalledTimes(3);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('suppresses a legacy row click after releasing a cancelled drag over an adjacent action', () => {
+    const { document, host, engine, dragging } = mount('handle', [
+      {
+        ...(handleRows[0] as IdentityRow),
+        trailing: [
+          { kind: 'icon', name: 'PencilOutline', actionKey: 'edit' },
+          { kind: 'drag', actionKey: 'handle.info' },
+        ],
+      },
+    ]);
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const handle = host.querySelector(
+          '[data-native-list-action="handle.info"]'
+        )!;
+        const edit = host.querySelector('[data-native-list-action="edit"]')!;
+        const common = handle.parentElement!;
+        expect(edit.parentElement).toBe(common);
+        const pointer = (type: string, target: Element, clientX: number) =>
+          target.dispatchEvent(
+            Object.assign(
+              new document.defaultView!.Event(type, {
+                bubbles: true,
+                cancelable: true,
+              }),
+              {
+                pointerId: 1,
+                pointerType: 'mouse',
+                isPrimary: true,
+                button: 0,
+                clientX,
+                clientY: 20,
+              }
+            )
+          );
+        const click = (target: Element) =>
+          target.dispatchEvent(
+            new document.defaultView!.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              detail: 1,
+              clientX: 60,
+              clientY: 20,
+            })
+          );
+
+        pointer('pointerdown', handle, 10);
+        pointer('pointermove', handle, 60);
+        expect(dragging()).toBe(true);
+        engine.applySnapshot({ ...engine.currentSnapshot(), generation: 2 });
+        expect(dragging()).toBe(false);
+        pointer('pointerup', edit, 60);
+        click(common);
+        expect(onRowAction).not.toHaveBeenCalled();
+
+        pointer('pointerdown', edit, 60);
+        pointer('pointerup', edit, 60);
+        click(edit);
+        expect(onRowAction).toHaveBeenCalledTimes(1);
+        expect(onRowAction).toHaveBeenCalledWith(
+          expect.objectContaining({ actionKey: 'edit' })
+        );
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
+    const { document, host, engine, dragging } = mount('row', [
+      { ...(handleRows[0] as IdentityRow), draggable: true, trailing: [] },
+      ...handleRows.slice(1),
+    ]);
+    const onReorder = jest.fn();
+    engine.updateCallbacks({ onReorder });
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement');
+    Object.defineProperty(globalThis, 'HTMLElement', {
+      configurable: true,
+      value: document.defaultView!.HTMLElement,
+    });
+    try {
+      const row = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="a"]'
+      )!;
+      row.focus();
+      const keyDown = (key: string) =>
+        document.activeElement!.dispatchEvent(
+          Object.assign(
+            new document.defaultView!.Event('keydown', {
+              bubbles: true,
+              cancelable: true,
+            }),
+            { key }
+          )
+        );
+      keyDown(' ');
+      expect(dragging()).toBe(true);
+
+      keyDown('ArrowDown');
+      expect(engine.currentSnapshot().rows.map(({ key }) => key)).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+      engine.applySnapshot({
+        ...engine.currentSnapshot(),
+        capabilities: { reorderable: true, reorderActivation: 'handle' },
+      });
+      expect(dragging()).toBe(false);
+      expect(
+        document.activeElement?.getAttribute('data-native-list-row-key')
+      ).toBe('a');
+      keyDown('ArrowDown');
+      keyDown(' ');
+      expect(dragging()).toBe(false);
+      expect(onReorder).not.toHaveBeenCalled();
+      expect(engine.currentSnapshot().rows.map(({ key }) => key)).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'HTMLElement', original);
+      else Reflect.deleteProperty(globalThis, 'HTMLElement');
+      engine.destroy();
+    }
+  });
+
+  it('preserves the accepted handle mode when production rejects an invalid update', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    const { engine } = mount('handle');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      environment.__DEV__ = false;
+      const accepted = engine.currentSnapshot();
+      engine.applySnapshot({
+        ...accepted,
+        capabilities: {
+          reorderable: true,
+          reorderActivation: 'invalid' as 'handle',
+        },
+      });
+      expect(engine.currentSnapshot()).toBe(accepted);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('reorderActivation')
+      );
+    } finally {
+      environment.__DEV__ = previous;
+      warn.mockRestore();
+      engine.destroy();
+    }
+  });
+
+  it('reports the scaled glyph rect for a leading action, with artwork or text', () => {
+    const iconRows = ['MinusCircleSolid', 'NoMatchingIcon'].map(
+      (name, index) => ({
+        ...(handleRows[index] as IdentityRow),
+        leadingAction: {
+          kind: 'icon' as const,
+          name,
+          actionKey: 'remove',
+          accessibilityLabel: 'Remove item',
+        },
+      })
+    );
+    const { document, host, engine } = mount(undefined, iconRows);
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const buttons = host.querySelectorAll<HTMLButtonElement>(
+          '[data-native-list-action="remove"]'
+        );
+        expect(buttons).toHaveLength(2);
+        buttons.forEach((button) => {
+          expect(button.getAttribute('aria-label')).toBe('Remove item');
+          const slot = button.querySelector<HTMLElement>(
+            '[data-native-list-anchor-glyph]'
+          )!;
+          button.getBoundingClientRect = () =>
+            ({ left: 2.5, top: 1.5, width: 19, height: 19 } as DOMRect);
+          slot.getBoundingClientRect = () =>
+            ({ left: 6, top: 5, width: 12, height: 12 } as DOMRect);
+          button.click();
+          expect(onRowAction).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              anchor: expect.objectContaining({
+                windowRect: { x: 6, y: 5, width: 12, height: 12 },
+              }),
+            })
+          );
+        });
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('resolves unregistered icon names through the host catalog', () => {
+    const { host, engine } = mount(undefined, [
+      {
+        type: 'identity',
+        key: 'icons',
+        leading: { kind: 'icon', name: 'GlobusOutline' },
+        leadingAction: {
+          kind: 'icon',
+          name: 'MinusCircleSolid',
+          actionKey: 'remove',
+        },
+        title: 'Icons',
+        trailing: [
+          { kind: 'icon', name: 'NotARealIconOutline', actionKey: 'x' },
+        ],
+      },
+    ]);
+    try {
+      const removeIcon = host.querySelector<HTMLElement>(
+        '[data-native-list-action="remove"] use'
+      );
+      expect(removeIcon?.getAttribute('href')).toContain('MinusCircleSolid');
+      expect(removeIcon?.closest('button')?.getAttribute('aria-label')).toBe(
+        '−'
+      );
+      const missing = host.querySelector<HTMLElement>(
+        '[data-native-list-action="x"]'
+      )!;
+      expect(missing.querySelector('svg')).toBeNull();
+      expect(missing.textContent).toBe('N');
+    } finally {
+      engine.destroy();
+    }
+  });
+});
+
+describe('ListItem parity styles', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document } & Window;
+    };
+  };
+  const linear = (sourceRows: readonly RowModel[]) => ({
+    ...snapshot({ kind: 'linear' }, sourceRows),
+    selection: undefined,
+    capabilities: {},
+  });
+  const siteRow = (overrides: Record<string, unknown> = {}): IdentityRow =>
+    ({
+      type: 'identity',
+      key: 'site',
+      leading: {
+        kind: 'token',
+        borderColor: '#0000001A',
+        borderWidth: 0.5,
+        fallbackIcon: { name: 'GlobusOutline', size: 40 },
+      },
+      title: 'Site',
+      subtitle: 'https://site.example',
+      collapseEmptyTrailing: true,
+      style: {
+        title: { letterSpacing: 0 },
+        subtitle: { letterSpacing: -0.5 },
+      },
+      ...overrides,
+    } as IdentityRow);
+
+  it('validates letterSpacing, leading borderWidth and collapseEmptyTrailing', () => {
+    expect(() => validateSnapshot(linear([siteRow()]))).not.toThrow();
+    expect(() =>
+      validateSnapshot(
+        linear([
+          siteRow({
+            leading: {
+              kind: 'token',
+              borderColor: '#0000001A',
+              borderWidth: 0,
+            },
+          }),
+        ])
+      )
+    ).toThrow(/borderWidth/);
+    expect(() =>
+      validateSnapshot(
+        linear([siteRow({ style: { title: { letterSpacing: 12 } } })])
+      )
+    ).toThrow(/letterSpacing/);
+    expect(() =>
+      validateSnapshot(
+        linear([
+          siteRow({
+            style: {
+              title: { tabularNumbers: 'yes' as unknown as boolean },
+            },
+          }),
+        ])
+      )
+    ).toThrow(/tabularNumbers/);
+    expect(() =>
+      validateSnapshot(
+        linear([siteRow({ style: { title: { tabularNumbers: true } } })])
+      )
+    ).not.toThrow();
+  });
+
+  it('spaces the rename + drag pair like ListItem on Web', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      linear([
+        siteRow({
+          trailing: [
+            { kind: 'icon', name: 'PencilOutline', actionKey: 'rename' },
+            { kind: 'drag' },
+          ],
+        }),
+      ]),
+      {},
+      false
+    );
+    try {
+      const accessories = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="site"] .ok-native-list-accessories'
+      );
+      expect(accessories?.style.gap).toBe('24px');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('insets a bordered leading image by the border on Web', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      linear([
+        siteRow({
+          leading: {
+            kind: 'token',
+            borderColor: '#0000001A',
+            borderWidth: 1,
+            image: { uri: 'https://example.com/a.png', width: 40, height: 40 },
+          },
+        }),
+      ]),
+      {},
+      false
+    );
+    try {
+      const main = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="site"] .ok-native-list-visual-main'
+      );
+      expect(main?.style.width).toBe('100%');
+      expect(main?.style.height).toBe('100%');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('sets and clears collapseEmptyTrailing with row patches', () => {
+    const base = linear([siteRow()]);
+    const set = applyRowPatches(base, [
+      {
+        type: 'identity',
+        key: 'site',
+        changes: { collapseEmptyTrailing: false },
+      },
+    ]);
+    expect(set.rows[0]).toMatchObject({ collapseEmptyTrailing: false });
+    const cleared = applyRowPatches(set, [
+      {
+        type: 'identity',
+        key: 'site',
+        changes: { collapseEmptyTrailing: null },
+      },
+    ]);
+    expect(cleared.rows[0]).not.toHaveProperty('collapseEmptyTrailing');
+    expect(() =>
+      applyRowPatches(base, [
+        {
+          type: 'identity',
+          key: 'site',
+          changes: { collapseEmptyTrailing: 'false' as unknown as boolean },
+        },
+      ])
+    ).toThrow(/collapseEmptyTrailing/);
+  });
+
+  it('drops invalid visual border widths and text spacing in production snapshots and patches', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    try {
+      environment.__DEV__ = false;
+      const valid = siteRow();
+      const invalid = siteRow({
+        leading: {
+          ...valid.leading,
+          borderWidth: 100,
+        } as IdentityRow['leading'],
+        style: {
+          title: {
+            letterSpacing: 1000,
+            tabularNumbers: 'false' as unknown as boolean,
+          },
+        },
+      });
+      const accepted = [
+        validateSnapshot(linear([invalid])),
+        applyRowPatches(linear([valid]), [
+          {
+            type: 'identity',
+            key: 'site',
+            changes: { leading: invalid.leading, style: invalid.style },
+          },
+        ]),
+      ];
+      for (const result of accepted) {
+        expect(result.rows[0]).not.toHaveProperty('leading.borderWidth');
+        expect(result.rows[0]).not.toHaveProperty('style.title.letterSpacing');
+        expect(result.rows[0]).not.toHaveProperty('style.title.tabularNumbers');
+      }
+    } finally {
+      environment.__DEV__ = previous;
+    }
+  });
+
+  it('restores default gallery badge typography on the retained element', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const row: RowModel = {
+      type: 'mediaTile',
+      key: 'gallery-badge',
+      variant: 'gallery',
+      title: 'NFT',
+      image,
+      badge: { key: 'count', text: '123' },
+      style: { badge: { letterSpacing: 3, tabularNumbers: true } },
+    };
+    const engine = new NativeListWebEngine(host, linear([row]), {}, false);
+    try {
+      const findBadge = () =>
+        host.querySelector<HTMLElement>('[data-nl-slot="badge"]');
+      const styled = findBadge();
+      expect(styled?.style.letterSpacing).toBe('3px');
+      expect(styled?.style.fontVariantNumeric).toBe('tabular-nums');
+      engine.applyPatches([
+        { type: 'mediaTile', key: row.key, changes: { style: null } },
+      ]);
+      expect(findBadge()).toBe(styled);
+      expect(styled?.style.letterSpacing).toBe('');
+      expect(styled?.style.fontVariantNumeric).toBe('');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('draws the leading border at borderWidth and applies letterSpacing on Web', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      linear([siteRow()]),
+      {},
+      false
+    );
+    try {
+      const row = host.querySelector('[data-native-list-row-key="site"]')!;
+      const bordered = Array.from(row.querySelectorAll<HTMLElement>('*')).find(
+        (element: HTMLElement) => element.style.border.includes('solid')
+      );
+      expect(bordered?.style.border).toContain('0.5px solid');
+      // The fallback glyph keeps its requested size inside the bordered frame.
+      const glyph = bordered?.querySelector<SVGElement>('svg');
+      if (glyph) expect(glyph.style.flexShrink).toBe('0');
+      const slot = document.createElement('span');
+      applyTextStyleToSlot(slot, { letterSpacing: -0.5 });
+      expect(slot.style.letterSpacing).toBe('-0.5px');
+      applyTextStyleToSlot(slot, { tabularNumbers: true });
+      expect(slot.style.fontVariantNumeric).toBe('tabular-nums');
+    } finally {
+      engine.destroy();
+    }
+  });
 });

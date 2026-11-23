@@ -11,6 +11,7 @@ type ColumnViews = {
   body: HTMLElement;
   primaryLine: HTMLElement;
   primary: HTMLElement;
+  leadingBadge: HTMLElement;
   titleIcons: HTMLElement;
   badges: HTMLElement;
   secondaryLine: HTMLElement;
@@ -137,6 +138,45 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
       fontWeight(style?.columns?.fontWeight, 500)
     );
     if (style?.columns) primitives.textStyle(cell.primary, style.columns);
+    const leadingBadge = column.webLeadingBadge;
+    cell.leadingBadge.hidden = !leadingBadge;
+    cell.leadingBadge.style.cssText = '';
+    cell.leadingBadge.textContent = leadingBadge?.text ?? '';
+    if (leadingBadge) {
+      // The line spans the column so the badge cap is a share of the column
+      // rather than of the line's own content; justifyContent then carries
+      // the column alignment the shrink-to-fit line got from its cell.
+      cell.primaryLine.style.alignSelf = 'stretch';
+      cell.primaryLine.style.justifyContent =
+        column.alignment === 'end'
+          ? 'flex-end'
+          : column.alignment === 'center'
+          ? 'center'
+          : 'flex-start';
+      cell.primaryLine.style.gap = '8px';
+      // A long label truncates at half the column; the primary text keeps the
+      // rest and truncates after it, so neither can leave the column.
+      cell.leadingBadge.style.display = 'block';
+      cell.leadingBadge.style.boxSizing = 'border-box';
+      cell.leadingBadge.style.flexShrink = '0';
+      cell.leadingBadge.style.maxWidth = '50%';
+      cell.leadingBadge.style.overflow = 'hidden';
+      cell.leadingBadge.style.textOverflow = 'ellipsis';
+      cell.leadingBadge.style.whiteSpace = 'nowrap';
+      cell.leadingBadge.style.padding = '2px 6px';
+      cell.leadingBadge.style.borderRadius = '4px';
+      cell.leadingBadge.style.fontSize = '12px';
+      cell.leadingBadge.style.lineHeight = '16px';
+      cell.leadingBadge.style.fontWeight = '400';
+      cell.leadingBadge.style.fontFamily = 'var(--nl-font-regular)';
+      cell.leadingBadge.style.color = leadingBadge.textColor;
+      cell.leadingBadge.style.backgroundColor = leadingBadge.backgroundColor;
+      cell.leadingBadge.style.pointerEvents = 'none';
+      cell.primary.style.minWidth = '0';
+      cell.primary.style.overflow = 'hidden';
+      cell.primary.style.textOverflow = 'ellipsis';
+      cell.primary.style.whiteSpace = 'nowrap';
+    }
     cell.titleIcons.replaceChildren();
     if (column.titleIcon || column.secondaryTitleIcon) {
       cell.primary.style.minWidth = '0';
@@ -238,10 +278,16 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       'ok-native-list-data-primary'
     );
     const primary = tagSlot(createElement(document, 'span'), 'columns');
+    const leadingBadge = createElement(
+      document,
+      'span',
+      'ok-native-list-data-leading-badge'
+    );
+    leadingBadge.hidden = true;
     const titleIcons = createElement(document, 'span');
     titleIcons.style.display = 'contents';
     const badges = createElement(document, 'span');
-    primaryLine.append(primary, titleIcons, badges);
+    primaryLine.append(leadingBadge, primary, titleIcons, badges);
     const secondaryLine = createElement(
       document,
       'span',
@@ -260,6 +306,7 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       body: cell,
       primaryLine,
       primary,
+      leadingBadge,
       titleIcons,
       badges,
       secondaryLine,

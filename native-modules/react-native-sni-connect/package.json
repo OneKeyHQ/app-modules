@@ -1,14 +1,34 @@
 {
   "name": "@onekeyfe/react-native-sni-connect",
-  "version": "6.7.0-26",
+  "version": "6.8.0-1",
   "description": "A React Native library for SNI-based HTTP requests with DNS caching and request management",
-  "main": "./lib/module/index.js",
-  "types": "./lib/typescript/src/index.d.ts",
+  "main": "./lib/commonjs/index.js",
+  "module": "./lib/module/index.js",
+  "types": "./lib/typescript/commonjs/src/index.d.ts",
+  "react-native": "./src/index.tsx",
+  "source": "./src/index.tsx",
   "exports": {
     ".": {
       "source": "./src/index.tsx",
-      "types": "./lib/typescript/src/index.d.ts",
-      "default": "./lib/module/index.js"
+      "import": {
+        "types": "./lib/typescript/module/src/index.d.ts",
+        "default": "./lib/module/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/src/index.d.ts",
+        "default": "./lib/commonjs/index.js"
+      }
+    },
+    "./node": {
+      "source": "./src/node/index.ts",
+      "import": {
+        "types": "./lib/typescript/module/src/node/index.d.ts",
+        "default": "./lib/module/node/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/src/node/index.d.ts",
+        "default": "./lib/commonjs/node/index.js"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -93,6 +113,12 @@
     "source": "src",
     "output": "lib",
     "targets": [
+      [
+        "commonjs",
+        {
+          "esm": true
+        }
+      ],
       [
         "module",
         {

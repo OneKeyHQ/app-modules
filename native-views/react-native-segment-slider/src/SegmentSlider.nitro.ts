@@ -9,8 +9,7 @@ import type {
  * N+1 segment marks, the draggable thumb and the value bubble are all drawn on
  * the native UI thread (CALayer on iOS, Canvas onDraw on Android) and the pan
  * gesture is handled natively — there is NO JS round-trip per frame during a
- * drag. This mirrors the web variant
- * (`packages/components/src/composite/SegmentSlider/index.tsx`) which avoids
+ * drag. This mirrors the web variant (`./SegmentSlider.web.tsx`) which avoids
  * React state per frame by mutating the DOM imperatively.
  *
  * Geometry contract (points):
@@ -26,13 +25,9 @@ import type {
  */
 export interface SegmentSliderProps extends HybridViewProps {
   /**
-   * Initial value, applied ONCE when the view mounts. The slider is
-   * UNCONTROLLED: after mount the native view owns the value (driven by the
-   * pan gesture and reported via `onChange`). To set the value imperatively
-   * from JS — e.g. a leverage / coin reset — call the `setValue` method on the
-   * hybrid ref instead of re-rendering with a new prop. This keeps reset (and
-   * any high-rate) updates off the Fabric prop-commit path (REACT-NATIVE-1JZ)
-   * and removes the controlled-value-vs-drag conflict entirely.
+   * Seeds the native view on the first prop commit. Later updates use
+   * `setValue` with the last completed interaction ID, keeping value sync
+   * off the Fabric prop-commit path (REACT-NATIVE-1JZ).
    */
   defaultValue: number;
   /** Range minimum (default range 0..100). */
@@ -45,6 +40,8 @@ export interface SegmentSliderProps extends HybridViewProps {
   sliderHeight: number;
   /** When true the slider is non-interactive and dimmed. */
   disabled: boolean;
+  /** Accessible name from the public aria-label prop. An empty string clears it. */
+  sliderAccessibilityLabel: string;
   /** When true a `${round(value)}%` bubble appears above the thumb on drag. */
   showBubble: boolean;
   /** When true the fill grows from the value-0 origin instead of the left. */
@@ -56,6 +53,17 @@ export interface SegmentSliderProps extends HybridViewProps {
    * callers keep the free-tap behavior.
    */
   snapTapToSegment: boolean;
+  /**
+   * Light haptic tick each time a drag moves the value into a new
+   * `hapticStep`-sized bucket from `min`. Mark ticks stay stronger and win when
+   * both apply. 0 = mark-only ticks.
+   */
+  hapticStep: number;
+  /**
+   * Master switch for every haptic tick (mark and step). False silences the
+   * slider entirely, e.g. when the app-level haptic setting is off.
+   */
+  hapticFeedbackEnabled: boolean;
 
   // --- Resolved theme colors (hex `#rgb`/`#rrggbb`/`#rrggbbaa` or rgba()) ---
   /** Active fill bar color (Tamagui `bgPrimary`). */
@@ -81,19 +89,16 @@ export interface SegmentSliderProps extends HybridViewProps {
   onChange?: (value: number) => void;
   /** Fired once when a drag/tap begins. */
   onSlideStart?: () => void;
-  /** Fired once when a drag/tap ends. */
-  onSlideComplete?: () => void;
+  /** Reports the interaction ID and final native value when a drag/tap ends. */
+  onSlideComplete?: (interactionId: number, finalValue: number) => void;
 }
 
 export interface SegmentSliderMethods extends HybridViewMethods {
   /**
-   * Imperatively set the slider value (clamped to `min..max`). Hard-snaps the
-   * thumb to the new value, cancelling any in-flight drag, and does NOT fire
-   * `onChange` (the JS caller already knows the value, so re-emitting would
-   * loop). This is the supported way to update the value after mount — see
-   * `defaultValue`.
+   * Sets a controlled value silently while idle, provided the given ID is
+   * still the latest native interaction (0 before the first interaction).
    */
-  setValue(value: number): void;
+  setValue(value: number, interactionId: number): void;
 }
 
 export type SegmentSlider = HybridView<

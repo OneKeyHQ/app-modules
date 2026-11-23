@@ -7,6 +7,8 @@ final class NativeListAccessoryButton: NativeListIconButton {
   var fixedTextLineHeight: CGFloat?
   var rowTextOffsetY: CGFloat = 0
   var helpBindingGeneration = 0
+  /// Marks the trailing `drag` accessory that can start a handle-only reorder.
+  var isReorderHandle = false
   private var helpTrackingGeneration = 0
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
     helpTrackingGeneration = helpBindingGeneration
@@ -278,6 +280,14 @@ final class NativeListAccessoryStack: UIStackView {
     }
     isHidden = arrangedSubviews.allSatisfy { $0.isHidden }
   }
+  func explicitTextStyle(for view: UIView, style: [String: Any]) -> [String: Any]? {
+    switch semanticValueButtons.firstIndex(where: { $0 === view }) {
+    case 0: return style.dictionary("value")
+    case 1: return style.dictionary("valueSecondary")
+    default: return nil
+    }
+  }
+
   func updateSelection(
     _ item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
@@ -339,6 +349,7 @@ final class NativeListAccessoryStack: UIStackView {
       button.isHidden = true
       button.isEnabled = true
       button.isUserInteractionEnabled = true
+      button.isReorderHandle = false
       button.alpha = 1
       button.accessibilityIdentifier = nil
       button.accessibilityLabel = nil
@@ -440,10 +451,15 @@ final class NativeListAccessoryStack: UIStackView {
       case "drag":
         var icon = accessory
         icon["name"] = "DragOutline"
+        // ListItem draws the handle as a medium tertiary IconButton (38-point frame).
+        icon["buttonStyle"] = "tertiary"
         if icon["tintColor"] == nil {
           icon["tintColor"] = theme?["iconSubdued"] as? String ?? "#8D8D8D"
         }
         showAccessoryIcon(textIndex, icon)
+        if accessoryButtons.indices.contains(textIndex) {
+          accessoryButtons[textIndex].isReorderHandle = true
+        }
         textIndex += 1
       case "icon":
         var icon = accessory
@@ -690,6 +706,8 @@ final class NativeListAccessoryStack: UIStackView {
       button.layer.cornerRadius = size / 2
     }
     if isAccountIcon { contentGap = 5 }
+    // A leading tertiary button's m=-7 also pulls the text column 7 points closer.
+    if isTertiary && index == 0 && contentGap == nil { contentGap = 5 }
     button.accessibilityIdentifier = data["testID"] as? String
     button.accessibilityLabel = data["accessibilityLabel"] as? String
     if !isDrillIn, !data.string("actionKey").isEmpty {
@@ -789,6 +807,7 @@ final class NativeListAccessoryStack: UIStackView {
     var attributes: [NSAttributedString.Key: Any] = [:]
     applyStyledFont(attributed, style, fallback: baseFont)
     if style["color"] != nil { attributes[.foregroundColor] = color }
+    if style["letterSpacing"] != nil { attributes[.kern] = CGFloat(style.double("letterSpacing")) }
     if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
       || style["truncate"] != nil
     {
@@ -832,6 +851,9 @@ final class NativeListAccessoryStack: UIStackView {
           value: nativeListFont(ofSize: ceil(size * 0.6), weight: weight, fonts: fonts),
           range: range)
       }
+    }
+    if let tabular = style["tabularNumbers"] as? Bool {
+      NativeListTextStyles.applyDigitSpacing(attributed, tabular: tabular, fallback: font)
     }
     button.setAttributedTitle(attributed, for: .normal)
   }

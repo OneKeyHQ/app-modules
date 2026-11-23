@@ -15,14 +15,16 @@ const gate = workflow.jobs["ios-xctest"];
 const gateStep = gate.steps.find((step) => step.id === "gate");
 const groups = { "ios-native": "ui", "device-utils-store": "services" };
 
-const originalSchemes = [
+const expectedSchemes = [
   "react-native-pager-view-Unit-Tests", "OneKeyTextInput-Unit-Tests", "OneKeyImage-Unit-Tests",
   "react-native-native-list-Unit-Tests", "PerpDepthBar-Unit-Tests", "ReactNativeBundleCrypto-Unit-Tests",
   "ReactNativeImageCropPicker-Unit-Tests", "ReactNativeCaptureProtection-Unit-Tests",
+  "ReactNativeDeviceUtils-Unit-Tests",
   "ReactNativePhotoLibrary-Unit-Tests", "ReactNativeJpush-Unit-Tests",
+  "react-native-bottom-tabs-Unit-Tests",
 ];
 
-test("two independent macOS jobs preserve every original iOS suite and both pod builds", () => {
+test("two independent macOS jobs run every iOS suite and both pod builds", () => {
   assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job["runs-on"] === "macos-26").map(([name]) => name).sort(), ["device-utils-store", "ios-native"]);
   const plans = Object.entries(groups).map(([jobId, group]) => {
     const job = workflow.jobs[jobId];
@@ -38,11 +40,12 @@ test("two independent macOS jobs preserve every original iOS suite and both pod 
     return getIosNativePlan(group);
   });
   const schemes = plans.flatMap((plan) => plan.testSchemes);
-  assert.deepEqual([...schemes].sort(), [...originalSchemes].sort());
+  assert.deepEqual([...schemes].sort(), [...expectedSchemes].sort());
   assert.equal(new Set(schemes).size, schemes.length);
   assert.deepEqual(plans.flatMap((plan) => plan.buildTargets), ["ReactNativeLiteCard", "NativeOverlay"]);
   assert.deepEqual(getIosNativePlan("ui").testSchemes, [
     "react-native-pager-view-Unit-Tests", "react-native-native-list-Unit-Tests", "OneKeyImage-Unit-Tests",
+    "react-native-bottom-tabs-Unit-Tests",
   ]);
 });
 

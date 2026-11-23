@@ -197,7 +197,8 @@ internal fun nativeListIdentityTrailingIsHorizontal(
       first.actionKey.isEmpty()) ||
     (kinds == listOf("icon", "icon") &&
       first.name == "PencilOutline" &&
-      second.name == "DragOutline")
+      second.name == "DragOutline") ||
+    (kinds == listOf("icon", "drag") && first.name == "PencilOutline")
 }
 
 internal fun resolveNativeListSelectorBackgroundColor(
@@ -330,6 +331,8 @@ internal data class NativeListConfig(
   val rowPressToggles: Boolean,
   val selectedKeys: LinkedHashSet<String>,
   val reorderable: Boolean,
+  /** `handle` starts a reorder only from a long press on a trailing `drag` accessory. */
+  val reorderFromHandleOnly: Boolean = false,
   val pullToRefresh: Boolean,
   val refreshTriggerDistance: Double? = null,
   val refreshing: Boolean,
@@ -377,6 +380,9 @@ internal data class NativeListConfig(
       val layout = root.getJSONObject("layout")
       val selection = root.optJSONObject("selection")
       val capabilities = root.optJSONObject("capabilities")
+      val reorderActivation = capabilities?.opt("reorderActivation")
+      require(reorderActivation == null || reorderActivation == "row" ||
+        reorderActivation == "handle") { "Invalid reorderActivation" }
       val sectionIndex = capabilities?.optJSONObject("sectionIndex")
       val rowArray = root.getJSONArray("rows")
       val items = ArrayList<NativeListItem>(rowArray.length())
@@ -410,6 +416,7 @@ internal data class NativeListConfig(
         rowPressToggles = selection?.optBoolean("rowPressToggles", false) ?: false,
         selectedKeys = selectedKeys,
         reorderable = capabilities?.optBoolean("reorderable", false) ?: false,
+        reorderFromHandleOnly = reorderActivation == "handle",
         pullToRefresh = capabilities?.optBoolean("pullToRefresh", false) ?: false,
         refreshTriggerDistance = capabilities?.optDouble("refreshTriggerDistance")?.takeIf { it.isFinite() && it > 0 },
         refreshing = capabilities?.optBoolean("refreshing", false) ?: false,
