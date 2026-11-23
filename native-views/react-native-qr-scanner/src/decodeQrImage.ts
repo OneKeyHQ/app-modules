@@ -4,8 +4,9 @@ import { toQrScannerError } from './errors';
 
 import type { QrImageDecoder } from './QrImageDecoder.nitro';
 
-/** Default pixel budget: a 12 MP photo decodes without downscaling. */
-export const DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
+import { DEFAULT_MAX_IMAGE_PIXELS } from './decodeQrImage.constants';
+
+export { DEFAULT_MAX_IMAGE_PIXELS };
 
 export interface DecodeQrImageOptions {
   /** Images above this many pixels are downscaled before decoding. */

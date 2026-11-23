@@ -15,6 +15,11 @@
       "types": "./lib/typescript/src/ur/index.d.ts",
       "default": "./lib/module/ur/index.js"
     },
+    "./web": {
+      "source": "./src/web/index.ts",
+      "types": "./lib/typescript/src/web/index.d.ts",
+      "default": "./lib/module/web/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -176,6 +181,7 @@
     "version": "0.56.0"
   },
   "dependencies": {
-    "@ngraveio/bc-ur": "1.1.13"
+    "@ngraveio/bc-ur": "1.1.13",
+    "zxing-wasm": "3.1.3"
   }
 }

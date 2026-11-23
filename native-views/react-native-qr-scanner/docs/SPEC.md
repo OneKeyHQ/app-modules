@@ -36,8 +36,16 @@ when it lands:
 
 `./ur` uses `@ngraveio/bc-ur` `1.1.13` (pinned; the version app-monorepo ships)
 for bytewords and fountain decoding, so assembly matches production behavior.
-That library needs a global `Buffer`; OneKey runtimes provide one. Replacing
-it with a dependency-free decoder is a possible follow-up, not a goal here.
+That library needs a global `Buffer`, and its `assert` dependency reads
+`process` when loaded; OneKey runtimes provide both (a plain browser page
+needs polyfills). Replacing it with a dependency-free decoder is a possible
+follow-up, not a goal here.
+
+`./web` uses `zxing-wasm` `3.1.3` (the version app-monorepo ships) as its
+fallback reader. The SDK never downloads the WASM binary: callers pass
+`configureWebQrScanner({ loadZXingWasm })` (the app keeps its own bundled,
+CSP- and `file://`-aware loader). Without a loader, zxing is unavailable and
+only a QR-capable native `BarcodeDetector` is used.
 
 iOS depends on the CocoaPods `zxing-cpp` pod `2.2.0` (Apache-2.0, default
 `Wrapper` subspec) for the image fallback. Its `Core` headers are private to
@@ -158,7 +166,7 @@ Rules:
   of accepted, duplicate, malformed and foreign frames for metrics; it never
   exposes frame contents.
 
-### 3.2 Image decoding — iOS implemented in source; Android placeholder; Web proposed
+### 3.2 Image decoding — iOS and Web implemented; Android placeholder
 
 ```ts
 decodeQrImage(uri: string, options?: { maxPixels?: number }): Promise<string | null>;
@@ -182,8 +190,13 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
 - Native code resolves `{ text?, engine?, pass? }`; the JS entry returns the
   text only. Engine and pass exist for diagnostics and tests.
 - Android currently rejects every call with `decoder-unavailable`.
+- Web (`./web`): `decodeQrImage(blob: Blob, options?)` with the same budget,
+  limits, errors and pass order. Orientation comes from
+  `createImageBitmap(blob, { imageOrientation: "from-image" })`; the passes
+  are pure functions on RGBA buffers (`src/web/imageOps.ts`); engines are a
+  QR-capable native `BarcodeDetector` first, then zxing-wasm when configured.
 
-### 3.3 Live view — iOS implemented in source; Android placeholder; Web proposed
+### 3.3 Live view — iOS and Web implemented; Android placeholder
 
 `QrScanner` (React component) props: `active`, `mode`, `allowPlainText`,
 `limits`, `sessionKey`, `style`, and callbacks `onReady`, `onProgress`,
@@ -204,6 +217,33 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 - iOS requests camera access when it is undetermined. Apps must declare
   `NSCameraUsageDescription`.
 - Android currently reports `decoder-unavailable` each time `active` turns on.
+
+Web (`./web`):
+
+```ts
+configureWebQrScanner({ loadZXingWasm?, disableNativeDetector? }): void;
+createWebQrScanner({
+  video: HTMLVideoElement;
+  source?: { kind: "camera"; deviceId? } | { kind: "element" };
+  mode; allowPlainText?; limits?; maxAnalysisSize?; // default 1280
+  onReady?; onProgress?; onResult?; onError?;
+}): { start(): Promise<void>; stop(): void; resetSession(): void; dispose(): void };
+```
+
+- `camera` calls `getUserMedia({ audio: false, video: { facingMode:
+  "environment", 1280x720 ideal } })` and owns the stream; `element` analyses
+  a video the caller already plays (a file, a stream it owns).
+- One frame in analysis at a time, driven by `requestVideoFrameCallback`
+  (15 fps timer fallback); frames arriving meanwhile are skipped. Frames are
+  downscaled to `maxAnalysisSize` on the longer side.
+- The native detector runs on every frame; zxing runs on every 4th frame the
+  native detector missed, or on every frame when there is no native detector.
+- Errors: `NotAllowedError`/`SecurityError` → `permission-denied`,
+  `NotFoundError`/`OverconstrainedError` → `no-camera`,
+  `NotReadableError`/`AbortError` → `camera-busy`, others and engine failures
+  → `decoder-unavailable`. Results from a stopped generation are dropped.
+- Detection runs on the page's thread today; moving zxing into a Worker is
+  pending (section 9).
 
 ## 4. Lifecycle and concurrency
 
@@ -232,8 +272,9 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 | --- | --- | --- | --- | --- |
 | iOS | AVFoundation metadata output, 1080p, continuous near autofocus | Vision | ZXing-C++ (image only) | Implemented in source |
 | Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ | Placeholder (`decoder-unavailable`) |
-| Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader in a Worker |
-| Windows / macOS Electron | N-API packages under `desktop/` | Same | ZXing-C++ |
+| Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread; Worker pending) | Implemented, browser verified |
+| macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ pending | Implemented, not integrated |
+| Windows Electron | `desktop/win/electron-qr-scanner` | Same | ZXing-C++ | Not started |
 
 All platforms feed frame text into the same `./ur` session.
 
@@ -274,6 +315,8 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
 | Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
+| Web pixel passes and engine selection | `src/web/imageOps.ts`, `src/web/engines.ts` | `src/web/__tests__/` (jest, 9 tests): budget fit, padding, grayscale/invert, pass order and stop-at-first-hit, no zxing without a loader, loader used once, native preferred only with `qr_code`, `disableNativeDetector`. |
+| Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |
 
 Known image-decoding gaps (iOS 27.2 simulator; recorded as non-strict
@@ -298,5 +341,8 @@ Still required:
   none), including an animated UR played on a screen; completion time and
   parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
   pod.
-- Android and Web backends.
+- Android backend.
+- Web: zxing in a Worker; `getUserMedia` camera run (permission, device
+  switch, track release); Firefox and Safari runs; extension CSP and
+  Linux Electron `file://` runs.
 - The original OK-67798 album image once available.

@@ -44,6 +44,24 @@ const text = await decodeQrImage(pickedImagePath); // string | null
 `@onekeyfe/react-native-qr-scanner/ur` exposes the platform-independent UR
 assembler and scan session.
 
+Web, extension and Linux Electron use `@onekeyfe/react-native-qr-scanner/web`
+(no React Native imports):
+
+```ts
+import {
+  configureWebQrScanner,
+  createWebQrScanner,
+  decodeQrImage,
+} from '@onekeyfe/react-native-qr-scanner/web';
+
+// Pass your bundled zxing-wasm 3.1.3 reader binary; the SDK never fetches it.
+configureWebQrScanner({ loadZXingWasm: () => loadBundledWasm() });
+
+const scanner = createWebQrScanner({ video, mode: 'auto', onResult });
+await scanner.start();
+const text = await decodeQrImage(fileFromInput); // string | null
+```
+
 ## License
 
 MIT
