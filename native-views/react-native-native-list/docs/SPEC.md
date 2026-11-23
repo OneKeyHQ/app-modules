@@ -550,8 +550,10 @@ An already bound `identity` row with `presentation: 'accountSelector'` updates
 its existing subtitle labels in place when only their text, formatted text
 segments, tone, or the row's accessibility label changes. The same avatar
 view and its active or completed request stay in place. Selection and
-accessibility reflect the accepted row. A different key, subtitle slot
-structure, other row content, or binding inputs (such as theme or layout)
+accessibility reflect the accepted row, and the updated labels are remeasured
+to allocate their new widths. The comparison uses the last rendered content
+even when a newer selection callback has arrived. A different key, subtitle
+slot structure, other row content, or binding inputs (such as theme or layout)
 uses the normal binding path. Recycling still releases the row's image work.
 
 ### Updates before native host binding

@@ -172,6 +172,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       bindIdentitySubtitleLabel(label, segments.getJSONObject(index), theme)
       style?.let { applyStyledText(label, it) }
       applySelectorTextTypography(label, style)
+      label.requestLayout()
     }
     return true
   }

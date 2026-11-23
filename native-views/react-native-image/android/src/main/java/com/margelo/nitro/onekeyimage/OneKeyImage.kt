@@ -34,7 +34,6 @@ import com.bumptech.glide.request.transition.Transition
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
 import com.margelo.nitro.skeleton.OneKeySkeletonRenderer
-import com.margelo.nitro.views.RecyclableView
 import kotlin.math.ceil
 
 private fun Context.findActivity(): Activity? {
@@ -227,9 +226,9 @@ internal fun oneKeyImageRequestSignature(
   density.toString(),
 ).joinToString("|")
 
+// Fabric's recycle pool zeroes view bounds while ScreenStack can still draw the host.
 @DoNotStrip
-class HybridOneKeyImage(private val context: ThemedReactContext) :
-  HybridOneKeyImageSpec(), RecyclableView {
+class HybridOneKeyImage(private val context: ThemedReactContext) : HybridOneKeyImageSpec() {
   private enum class DisplayState { LOADING, IMAGE, ERROR, FALLBACK }
   private companion object {
     const val FADE_DELAY_THRESHOLD_MS = 100L
@@ -261,7 +260,6 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var requestStartedAtMs: Long? = null
   private var dropCleanupPending = false
   private var dropCleanupFinished = false
-  private var reactRecyclePending = false
 
   /**
    * Native reusable containers own their request cleanup explicitly, so their
@@ -367,12 +365,6 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   init {
     OneKeyImageGlideRegistry.ensureRegistered(context)
-    installHostCallbacks()
-    applyContentFit()
-    applyVariant()
-  }
-
-  private fun installHostCallbacks() {
     hostView.onReadyForRequest = { loadForCurrentLayout() }
     hostView.onAttachmentChanged = { attached ->
       if (attached) {
@@ -383,16 +375,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         displayRunnable = null
       }
     }
-  }
-
-  override fun beforeUpdate() {
-    super.beforeUpdate()
-    if (!reactRecyclePending) return
-    reactRecyclePending = false
-    if (dropCleanupPending) finishDrop()
-    dropCleanupFinished = false
-    disposed = false
-    installHostCallbacks()
+    applyContentFit()
+    applyVariant()
   }
 
   override fun afterUpdate() {
@@ -414,13 +398,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     showLoading(requestIsActive = false)
   }
 
-  override fun prepareForRecycle() {
-    if (disposed) {
-      // Fabric can enqueue the view while ScreenStack is still drawing it.
-      reactRecyclePending = !usesApplicationRequestManager
-    } else {
-      resetForReuse()
-    }
+  internal fun prepareForReuse() {
+    if (!disposed) resetForReuse()
   }
 
   override fun onDropView() {
@@ -429,7 +408,6 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
 
   override fun dispose() {
-    reactRecyclePending = false
     beginDrop()
     super.dispose()
   }
@@ -486,6 +464,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     displayState = DisplayState.LOADING
     isPreservingDisplayedImage = false
     hostView.setImageDrawable(null)
+    hostView.round = false
     hostView.drawStateSymbol = false
     hostView.skeletonRequested = false
     hostView.setBackgroundColor(Color.TRANSPARENT)

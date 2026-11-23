@@ -128,11 +128,12 @@ request, display, retry, safety, skeleton, and animation work.
 
 On Android, dropping a React-owned image stops callbacks and playback
 immediately. If the host is still attached and has a drawable, the host
-retains the drawable and its Glide resource until detachment or an actual new
-Fabric binding, whichever comes first. Preparing the outgoing view for the
-recycle pool does not clear that transition frame. A new binding restores the
-layout and attachment callbacks before applying its props. A detached image
-or an explicitly disposed NativeList image releases its resources immediately.
+retains the view bounds, drawable, and its Glide resource until detachment.
+React-owned OneKeyImage hosts opt out of Fabric's Android view pool so the
+view manager cannot reset the bounds while the outgoing screen still draws
+the host. A detached image or an explicitly disposed NativeList image releases
+its resources immediately. NativeList continues to reuse its own image hosts
+and resets their clip to the default before binding another source.
 
 A cross-size preview is presentation only. It MUST NOT emit `onLoad`,
 `onError`, `onLoadEnd`, or `onDisplay`; the exact request retains callback
