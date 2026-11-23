@@ -221,6 +221,24 @@ static void testSisWireFormatAndUdpLoopback(void) {
     ASSERT_TRUE(customEndpoints.count == 2 && customEndpoints[0].useSSL && customEndpoints[1].useSSL,
                 "Custom SIS ssl_ips must keep TLS on non-443 ports");
 
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *sslIpsKey = @"com.onekey.jcore.sis.ssl_ips";
+    NSString *sourceKey = @"com.onekey.jcore.sis.custom_ssl_ips";
+    id oldSslIps = [defaults objectForKey:sslIpsKey];
+    id oldSource = [defaults objectForKey:sourceKey];
+    [defaults setObject:@[@"gateway.example:7002"] forKey:sslIpsKey];
+    [defaults removeObjectForKey:sourceKey];
+    JCOREConfiguration *legacyCache = [[JCOREConfiguration alloc] init];
+    ASSERT_TRUE([legacyCache.sslIps isEqualToArray:@[@"gateway.example:7002"]] && legacyCache.cachedSslIpsRequireTls,
+                "An upgraded SSL cache with unknown provenance must preserve TLS");
+    [defaults setObject:@NO forKey:sourceKey];
+    ASSERT_TRUE(![[[JCOREConfiguration alloc] init] cachedSslIpsRequireTls],
+                "A known built-in cache may use the Jiguang plain TCP exceptions");
+    if (oldSslIps != nil) [defaults setObject:oldSslIps forKey:sslIpsKey];
+    else [defaults removeObjectForKey:sslIpsKey];
+    if (oldSource != nil) [defaults setObject:oldSource forKey:sourceKey];
+    else [defaults removeObjectForKey:sourceKey];
+
     JCOREConfiguration *config = [JCOREConfiguration shared];
     config.collectionAuthorized = YES;
     config.pushStopped = NO;
@@ -357,6 +375,18 @@ static void testSisWireFormatAndUdpLoopback(void) {
 }
 
 static void testWireProtocolFraming(void) {
+    NSString *metadata = [@"" stringByPaddingToLength:10907 withString:@"界" startingAtIndex:0];
+    NSData *maximalAck = [JCOREWireProtocol buildMessageAckPayloadWithStatusCode:0 messageType:2 messageId:8 msgData:metadata];
+    NSData *oversizedAck = [JCOREWireProtocol buildMessageAckPayloadWithStatusCode:0 messageType:2 messageId:8
+                                                                         msgData:[metadata stringByAppendingString:@"界"]];
+    ASSERT_TRUE(maximalAck.length == 11 + 2 + 10907 * 3 && oversizedAck.length == 11,
+                "Receipt metadata must fit in the encrypted UTF-8 frame");
+    for (NSNumber *algorithm in @[@1, @2]) {
+        NSData *wire = [JCOREWireProtocol encodeClientFrameWithCommand:JCOREWireCommandMessageAck version:3 requestId:14
+                                                            sessionId:8 uid:909 algorithm:algorithm.unsignedCharValue bodyData:maximalAck];
+        ASSERT_TRUE(wire.length > 0 && wire.length <= 0x7FFF, "Largest receipt must fit in the 15-bit frame length");
+    }
+
     uint64_t uid = 888999000ULL;
     NSData *tagPayload = [JCOREWireProtocol buildTagOperationPayloadWithOperator:@"add"
                                                                             tags:@[@"alpha", @"beta"]
@@ -713,7 +743,7 @@ static void testEndToEndMockServerHandshake(void) {
 
         NSData *finalBody = [JCOREWireProtocol buildPushMessagePayloadWithMessageType:4
                                                                            messageId:expectedMsgId + 1
-                                                                             content:@"com.example\napp-key\n{\n  \"title\": \"Final push\"\n}\n"];
+                                                                             content:@"com.example\napp-key\n{\n  \"title\": \"Final push\", \"_j_data_\": \"回执\"\n}\n"];
         NSData *finalFrame = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandPushMessage version:4
                                                                    requestId:903 uid:assignedUid algorithm:1 statusCode:0 bodyData:finalBody];
         ASSERT_TRUE(writeExactBytes(clientFd, finalFrame.bytes, finalFrame.length), "Failed writing final PushMessage");
@@ -724,6 +754,11 @@ static void testEndToEndMockServerHandshake(void) {
         ASSERT_TRUE(finalAck.requestId == 903 &&
                     [JCOREWireProtocol parseMessageAckFrame:finalAck outMessageType:&finalType outMessageId:&finalId] &&
                     finalType == 4 && finalId == expectedMsgId + 1, "Final push must be ACKed after peer half-close");
+        const uint8_t expectedMetadata[] = {0, 6, 0xe5, 0x9b, 0x9e, 0xe6, 0x89, 0xa7};
+        NSData *expectedExtension = [NSData dataWithBytes:expectedMetadata length:sizeof(expectedMetadata)];
+        ASSERT_TRUE(finalAck.bodyData.length == 11 + sizeof(expectedMetadata) &&
+                    [[finalAck.bodyData subdataWithRange:NSMakeRange(11, sizeof(expectedMetadata))] isEqualToData:expectedExtension],
+                    "Receipt must echo the UTF-8 _j_data_ field");
 
         close(clientFd);
         close(listenFd);
@@ -969,13 +1004,22 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     getsockname(liveFd, (struct sockaddr *)&liveAddr, &liveLen);
     uint16_t livePort = ntohs(liveAddr.sin_port);
 
+    int eofFd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in eofAddr = liveAddr;
+    eofAddr.sin_port = 0;
+    socklen_t eofLen = sizeof(eofAddr);
+    ASSERT_TRUE(eofFd >= 0 && bind(eofFd, (struct sockaddr *)&eofAddr, eofLen) == 0 &&
+                listen(eofFd, 2) == 0 && getsockname(eofFd, (struct sockaddr *)&eofAddr, &eofLen) == 0,
+                "Could not start the pre-login EOF candidate");
+    NSString *expectedEofIpPort = [NSString stringWithFormat:@"127.0.0.1:%u", ntohs(eofAddr.sin_port)];
     NSString *expectedDeadIpPort = [NSString stringWithFormat:@"127.0.0.1:%u", deadPort];
     NSString *expectedErrIpPort = [NSString stringWithFormat:@"127.0.0.1:%u", errPort];
 
     // Client already has stored registration from Suite 4 (uid=900100200).
     // Candidate 0 (deadPort): TCP connect fails -> advances to Candidate 1
     // Candidate 1 (errPort): TCP connect succeeds, Fast-Login returns statusCode=1005 -> advances to Candidate 2
-    // Candidate 2 (livePort):
+    // Candidate 2 (eofPort): TCP connects, receives Fast-Login, and closes without a response.
+    // Candidate 3 (livePort):
     //   - On connection #1:
     //     - Client fast-logs-in (first frame is Login cmd=1, NOT Register cmd=0!)
     //     - Server replies with Login statusCode=108 (invalid uid), triggering automatic re-Register(cmd=0) -> Login(cmd=1)
@@ -1023,8 +1067,17 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
         close(cErrFd);
         close(errFd);
 
+        int cEofFd = accept(eofFd, (struct sockaddr *)&cAddr, &cLen);
+        ASSERT_TRUE(cEofFd >= 0, "accept on EOF candidate failed");
+        setsockopt(cEofFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        JCOREWireFrame *eofLogin = readSingleClientFrameOnServer(cEofFd);
+        ASSERT_TRUE(eofLogin != nil && eofLogin.command == JCOREWireCommandLogin, "EOF candidate must receive Login before closing");
+        close(cEofFd);
+        // Keep the listener alive so retrying the same candidate cannot pass via connection refusal.
+
         int cFd1 = accept(liveFd, (struct sockaddr *)&cAddr, &cLen);
         ASSERT_TRUE(cFd1 >= 0, "accept #1 failed");
+        close(eofFd);
         setsockopt(cFd1, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         // Connection #1: Expect Fast-Login (cmd=1) first!
@@ -1034,7 +1087,8 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
         firstFrameWasFastLogin = YES;
         NSSet<NSString *> *failedBeforeLogin = [NSSet setWithArray:[JCOREConfiguration shared].failedIps];
         sawFailedIpsBeforeLogin = [failedBeforeLogin containsObject:expectedDeadIpPort] &&
-                                  [failedBeforeLogin containsObject:expectedErrIpPort];
+                                  [failedBeforeLogin containsObject:expectedErrIpPort] &&
+                                  [failedBeforeLogin containsObject:expectedEofIpPort];
 
         // Return statusCode = 108 to force re-registration
         NSData *err108Body = [JCOREWireProtocol buildLoginResponsePayloadWithStatusCode:108
@@ -1123,6 +1177,7 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
         @"ips": @[
             expectedDeadIpPort,
             expectedErrIpPort,
+            expectedEofIpPort,
             [NSString stringWithFormat:@"127.0.0.1:%u", livePort],
         ],
     }];
@@ -1155,8 +1210,8 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     [[JCORETcpSession shared] disconnect];
 
     ASSERT_TRUE(errCandidateAdvanced && sawFailedIpsBeforeLogin,
-                "Failed endpoints (%@, %@) must be recorded in failedIps before login succeeds",
-                expectedDeadIpPort, expectedErrIpPort);
+                "Failed endpoints (%@, %@, %@) must be recorded in failedIps before login succeeds",
+                expectedDeadIpPort, expectedErrIpPort, expectedEofIpPort);
     ASSERT_TRUE(config.failedIps.count == 0,
                 "failedIps must be cleared upon successful CMD_LOGIN, got: %@", config.failedIps);
     ASSERT_TRUE(firstFrameWasFastLogin && reRegisteredAfter108 && autoReconnectedAndLoggedIn,
@@ -2016,6 +2071,67 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
     printf("[PASS] Suite 9: PushCtrl(cmd=40, body={1}) resume, Heartbeat cmd=0/ver=0 general ACK, and Heartbeat timeout auto-reconnect verified\n");
 }
 
+static void testSisSetupAndAppKeyReplacement(void) {
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    [config configureWithAppKey:@"sis-before" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    NSUInteger policy = config.policyGeneration;
+    dispatch_queue_t workers = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+    dispatch_group_t concurrentSetup = dispatch_group_create();
+    dispatch_group_async(concurrentSetup, workers, ^{
+        for (int i = 0; i < 50; i++) {
+            [config configureWithAppKey:@"sis-before" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+        }
+    });
+    dispatch_group_async(concurrentSetup, workers, ^{
+        for (int i = 0; i < 50; i++) {
+            ASSERT_TRUE([config commitSisDictionary:@{@"ips": @[]} addresses:@[] udpServer:nil customSis:NO
+                                             appKey:@"sis-before" policyGeneration:policy], "Same-AppKey SIS commit should succeed");
+        }
+    });
+    ASSERT_TRUE(dispatch_group_wait(concurrentSetup, dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC)) == 0,
+                "Concurrent setup and SIS commits must complete without a lock-order deadlock");
+
+    int udpFd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in address = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+    socklen_t addressLen = sizeof(address);
+    struct timeval timeout = {.tv_sec = 5, .tv_usec = 0};
+    ASSERT_TRUE(udpFd >= 0 && bind(udpFd, (struct sockaddr *)&address, addressLen) == 0 &&
+                getsockname(udpFd, (struct sockaddr *)&address, &addressLen) == 0 &&
+                setsockopt(udpFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0,
+                "Could not open loopback SIS fixture");
+    JCORESisResolver *resolver = [JCORESisResolver shared];
+    [resolver clearCustomConnectEndpoint];
+    resolver.customSisHost = @"127.0.0.1";
+    resolver.customSisPort = ntohs(address.sin_port);
+    JCORETcpSession *session = [JCORETcpSession shared];
+    [session reconnect];
+
+    uint8_t bytes[4096];
+    struct sockaddr_in peer;
+    socklen_t peerLen = sizeof(peer);
+    ssize_t size = recvfrom(udpFd, bytes, sizeof(bytes), 0, (struct sockaddr *)&peer, &peerLen);
+    ASSERT_TRUE(size > 0, "Initial SIS request did not reach the loopback server");
+    NSDictionary *before = [JCORESisResolver parseUdpSisPacket:[NSData dataWithBytes:bytes length:(NSUInteger)size]];
+    ASSERT_TRUE([before[@"appkey"] isEqualToString:@"sis-before"], "Expected SIS for original AppKey");
+
+    [config configureWithAppKey:@"sis-after" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    [session startIfNeeded];
+    NSData *late = [JCORESisResolver assembleUdpSisPacketWithPayload:@{@"ips": @[@"127.0.0.1:7005"]} magic:'U' seed:17];
+    ASSERT_TRUE(sendto(udpFd, late.bytes, late.length, 0, (struct sockaddr *)&peer, peerLen) == (ssize_t)late.length,
+                "Could not deliver old AppKey's late SIS response");
+    size = recvfrom(udpFd, bytes, sizeof(bytes), 0, (struct sockaddr *)&peer, &peerLen);
+    ASSERT_TRUE(size > 0, "New AppKey must initiate SIS despite the superseded attempt");
+    NSDictionary *after = [JCORESisResolver parseUdpSisPacket:[NSData dataWithBytes:bytes length:(NSUInteger)size]];
+    ASSERT_TRUE([after[@"appkey"] isEqualToString:@"sis-after"] && ![config.ips containsObject:@"127.0.0.1:7005"],
+                "New AppKey must start discovery without committing the stale endpoint");
+
+    [session disconnect];
+    resolver.customSisHost = nil;
+    resolver.customSisPort = 0;
+    close(udpFd);
+    printf("[PASS] Suite 10: concurrent SIS commits and discovery restart on AppKey replacement verified\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -2027,6 +2143,7 @@ int main(int argc, const char * argv[]) {
         testPolicyAndPendingContentCleanup();
         testTokenAcknowledgementAndConnectedPolicy();
         testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume();
+        testSisSetupAndAppKeyReplacement();
     }
     return 0;
 }

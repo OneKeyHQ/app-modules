@@ -446,7 +446,7 @@ public class ActionHelper {
 
     private static boolean isSupportedDownlinkMessageType(byte messageType) {
         int type = messageType & 0xFF;
-        return type == 0 || type == 1 || type == 2 || type == 20
+        return type == 0 || type == 1 || type == 2 || type == 4 || type == 20
             || type == 100 || type == 101 || type == 103 || type == 104 || type == 115;
     }
 
@@ -457,6 +457,7 @@ public class ActionHelper {
         }
         String content = extractDownlinkContent(rawContent);
         JSONObject envelope = parseDownlinkObject(content);
+        if (messageType == 4 && envelope == null) return;
         JSONObject body = envelope == null ? null : envelope.optJSONObject("m_content");
         String msgId = downlinkString(envelope, body, content, "_j_msgid", "msg_id");
         if (msgId.isEmpty()) {
@@ -503,7 +504,7 @@ public class ActionHelper {
         custom.contentType = downlinkString(envelope, body, content, "content_type");
         custom.extra = extractDownlinkExtras(envelope, body, content, "extras", "n_extras");
         custom.platform = (byte) downlinkInt(envelope, body, content, "platform", 0);
-        if (custom.title.isEmpty() && custom.message.isEmpty() && custom.extra.isEmpty()) {
+        if (custom.title.isEmpty() && custom.message.isEmpty() && "{}".equals(custom.extra)) {
             return;
         }
         if (contentGeneration == JCoreStorage.getContentGeneration()) {

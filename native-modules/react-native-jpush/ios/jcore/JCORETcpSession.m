@@ -299,7 +299,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 
 - (void)startLockedForceReconnect:(BOOL)forceReconnect {
     JCOREConfiguration *config = [JCOREConfiguration shared];
-    if (!_initialized || config.appKey.length == 0 || !config.policyAllowsPush) {
+    NSString *appKey = config.appKey;
+    if (!_initialized || appKey.length == 0 || !config.policyAllowsPush) {
         return;
     }
     [self cancelReconnectTimerLocked];
@@ -320,27 +321,31 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     _lastReportedVoipTokenHex = nil;
     [self postNotificationOnMain:kJPFNetworkIsConnectingNotification userInfo:nil];
 
-    NSString *appKey = config.appKey;
     [[JCORESisResolver shared] resolveEndpointsWithResponse:^(NSArray<JCORESisEndpoint *> *endpoints,
                                                                NSDictionary *response, NSString *udpServer, BOOL customSis) {
         dispatch_async(self->_sessionQueue, ^{
-            if (attemptGeneration != self->_attemptGeneration || ![self ownsCurrentPolicy]
-                || ![appKey isEqualToString:config.appKey]) { return; }
+            if (attemptGeneration != self->_attemptGeneration || ![self ownsCurrentPolicy]) return;
             if (self->_userDisconnected) {
                 self->_connecting = NO;
+                return;
+            }
+            BOOL accepted = [appKey isEqualToString:config.appKey];
+            if (accepted && response != nil && endpoints.count > 0) {
+                accepted = [config commitSisDictionary:response
+                                              addresses:[endpoints valueForKey:@"addressString"]
+                                              udpServer:udpServer
+                                              customSis:customSis
+                                                 appKey:appKey
+                                       policyGeneration:self->_policyGeneration];
+            }
+            if (!accepted) {
+                self->_connecting = NO;
+                if ([self ownsCurrentPolicy]) [self startLockedForceReconnect:NO];
                 return;
             }
             if (endpoints.count == 0) {
                 self->_connecting = NO;
                 [self scheduleReconnectLocked];
-                return;
-            }
-            if (response != nil && ![config commitSisDictionary:response
-                                                     addresses:[endpoints valueForKey:@"addressString"]
-                                                     udpServer:udpServer
-                                                     customSis:customSis
-                                                        appKey:appKey
-                                              policyGeneration:self->_policyGeneration]) {
                 return;
             }
             self->_candidateEndpoints = [endpoints copy];
@@ -414,11 +419,12 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             strongSelf->_connecting = NO;
             strongSelf->_connected = YES;
             [strongSelf postNotificationOnMain:kJPFNetworkDidSetupNotification userInfo:nil];
-            [strongSelf receiveLoopForConnection:connection];
+            [strongSelf receiveLoopForConnection:connection endpoint:endpoint];
             [strongSelf performHandshakeLocked];
         } else if (state == nw_connection_state_waiting || state == nw_connection_state_failed) {
             BOOL wasConnected = strongSelf->_connected;
-            if (!wasConnected) {
+            if (!strongSelf->_loggedIn) {
+                if (wasConnected) [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
                 [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:endpoint];
             } else {
                 strongSelf->_connecting = NO;
@@ -718,7 +724,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     });
 }
 
-- (void)receiveLoopForConnection:(nw_connection_t)connection {
+- (void)receiveLoopForConnection:(nw_connection_t)connection endpoint:(JCORESisEndpoint *)endpoint {
     __weak typeof(self) weakSelf = self;
     nw_connection_receive(connection, 1, 65536, ^(dispatch_data_t content, nw_content_context_t context, bool is_complete, nw_error_t error) {
         (void)context;
@@ -740,7 +746,13 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         }
         if (strongSelf->_connection != connection) return;
         if (error == nil && !is_complete) {
-            [strongSelf receiveLoopForConnection:connection];
+            [strongSelf receiveLoopForConnection:connection endpoint:endpoint];
+            return;
+        }
+
+        if (!strongSelf->_loggedIn) {
+            if (strongSelf->_connected) [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
+            [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:endpoint];
             return;
         }
 
@@ -783,9 +795,11 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         if (envelope != nil) {
             [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP push message received msgType=%u msgId=%llu",
                                          envelope.messageType, envelope.messageId]];
+            id metadata = envelope.jsonPayload[@"_j_data_"];
             [self sendReceiptLockedForMessageType:envelope.messageType
                                         messageId:envelope.messageId
-                                        requestId:frame.requestId];
+                                        requestId:frame.requestId
+                                         metadata:[metadata isKindOfClass:[NSString class]] ? metadata : nil];
             if (envelope.messageType == 4 && ![envelope.jsonPayload isKindOfClass:[NSDictionary class]]) {
                 return;
             }
@@ -966,17 +980,21 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
     dispatch_async(_sessionQueue, ^{
         if (![[JCOREConfiguration shared] allowsPolicyGeneration:generation]) { return; }
-        [self sendReceiptLockedForMessageType:messageType messageId:messageId requestId:0];
+        [self sendReceiptLockedForMessageType:messageType messageId:messageId requestId:0 metadata:nil];
     });
 }
 
 - (void)sendReceiptLockedForMessageType:(uint8_t)messageType
                               messageId:(uint64_t)messageId
-                              requestId:(uint16_t)requestId {
+                              requestId:(uint16_t)requestId
+                               metadata:(NSString *)metadata {
     if (![self ownsCurrentPolicy] || !_connected || messageId == 0) {
         return;
     }
-    NSData *body = [JCOREWireProtocol buildMessageAckPayloadWithMessageType:messageType messageId:messageId];
+    NSData *body = [JCOREWireProtocol buildMessageAckPayloadWithStatusCode:0
+                                                             messageType:messageType
+                                                               messageId:messageId
+                                                                 msgData:metadata];
     uint16_t rid = (requestId != 0) ? requestId : [[JCOREConfiguration shared] nextRequestId];
     [self sendPacketWithExplicitRequestIdLocked:rid
                                         command:JCOREWireCommandMessageAck

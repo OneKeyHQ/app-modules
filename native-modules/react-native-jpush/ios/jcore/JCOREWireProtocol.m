@@ -10,6 +10,9 @@ static NSString *const kJCOREReportRsaPublicKey =
     @"9TNgW8WpXwCklSLxFDM46eHWzT2TV46gZ0A6xTNVHKX4zAW621jfb6qzljTvwzM5Cxa5n2440kU8HF/"
     @"EDu04yqUpWCsNXs+jQD4R2gjGE203LW87fBivmfq0mxPvIR94UdKf10YQIDAQAB";
 
+static const NSUInteger kJCoreMaxFrameLength = 0x7FFF;
+static const NSUInteger kJCoreClientHeaderLength = 24;
+
 static void JCoreAppendUInt8(NSMutableData *data, uint8_t value) {
     [data appendBytes:&value length:sizeof(uint8_t)];
 }
@@ -178,11 +181,11 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
     NSData *encryptedBody = [self encryptBodyData:(bodyData ?: [NSData data])
                                          withSeed:encryptionSeed
                                         algorithm:effectiveAlg];
-    if (encryptedBody == nil) {
+    if (encryptedBody == nil || encryptedBody.length > kJCoreMaxFrameLength - kJCoreClientHeaderLength) {
         return nil;
     }
 
-    uint16_t totalLength = (uint16_t)(24 + encryptedBody.length);
+    uint16_t totalLength = (uint16_t)(kJCoreClientHeaderLength + encryptedBody.length);
     NSMutableData *packet = [NSMutableData dataWithCapacity:totalLength];
     JCoreAppendUInt16(packet, (uint16_t)(totalLength | 0x8000));
     JCoreAppendUInt8(packet, version);
@@ -838,8 +841,14 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
     JCoreAppendUInt16(body, statusCode);
     JCoreAppendUInt8(body, messageType);
     JCoreAppendUInt64(body, messageId);
-    if (msgData != nil) {
-        JCoreAppendString(body, msgData);
+    NSUInteger metadataLength = [msgData lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    if (metadataLength > 0 && metadataLength <= kJCoreMaxFrameLength) {
+        NSUInteger extendedLength = body.length + sizeof(uint16_t) + metadataLength;
+        // AES and SM4 CBC both add a full PKCS padding block at aligned lengths.
+        NSUInteger encryptedLength = (extendedLength / 16 + 1) * 16;
+        if (kJCoreClientHeaderLength + encryptedLength <= kJCoreMaxFrameLength) {
+            JCoreAppendString(body, msgData);
+        }
     }
     return body;
 }

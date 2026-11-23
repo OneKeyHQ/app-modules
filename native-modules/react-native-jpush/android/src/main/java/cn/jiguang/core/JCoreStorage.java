@@ -20,6 +20,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class JCoreStorage {
@@ -503,19 +505,96 @@ public final class JCoreStorage {
         putBooleanPref(context, KEY_CONNECTED, connected);
     }
 
-    public static void saveSisConfig(Context context, String rawJson) {
-        if (isEmpty(rawJson)) {
-            return;
+    static final class SisConfig {
+        final String rawJson;
+        final JSONObject response;
+        final Set<String> ips;
+        final Set<String> sslIps;
+
+        SisConfig(String rawJson, JSONObject response) {
+            this.rawJson = rawJson;
+            this.response = response;
+            ips = readSisAddresses(response.optJSONArray("ips"), true);
+            sslIps = readSisAddresses(response.optJSONArray("ssl_ips"), true);
         }
-        putStringPref(context, KEY_SIS_RAW_JSON, rawJson);
-        saveCsvSet(context, KEY_SIS_IPS, JCoreWireCodec.extractJsonStringArray(rawJson, "ips"));
-        saveCsvSet(context, KEY_SIS_SSL_IPS, JCoreWireCodec.extractJsonStringArray(rawJson, "ssl_ips"));
-        saveCsvSet(context, KEY_SIS_UDP_IPS, JCoreWireCodec.extractJsonStringArray(rawJson, "sis_ips"));
-        saveCsvSet(context, KEY_SIS_HTTP_REPORT, JCoreWireCodec.extractJsonStringArray(rawJson, "http_report"));
-        saveCsvSet(context, KEY_SIS_HTTPS_REPORT, JCoreWireCodec.extractJsonStringArray(rawJson, "https_report"));
-        saveCsvSet(context, KEY_SIS_TCP_REPORT, JCoreWireCodec.extractJsonStringArray(rawJson, "tcp_report"));
-        putLongPref(context, KEY_SIS_CERT_VER, JCoreWireCodec.extractJsonInt(rawJson, "cert_ver", 1));
-        putBooleanPref(context, KEY_SIS_DATA_REPORT, rawJson.contains("\"data_report\":true") || rawJson.contains("\"data_report\":1"));
+
+        String firstEndpoint() {
+            if (!ips.isEmpty()) return ips.iterator().next();
+            return sslIps.isEmpty() ? null : sslIps.iterator().next();
+        }
+    }
+
+    static SisConfig parseSisConfig(String rawJson) {
+        if (isEmpty(rawJson)) return null;
+        try {
+            return new SisConfig(rawJson, new JSONObject(rawJson));
+        } catch (JSONException malformed) {
+            return null;
+        }
+    }
+
+    private static Set<String> readSisAddresses(JSONArray array, boolean validatePort) {
+        Set<String> addresses = new LinkedHashSet<>();
+        if (array == null) return addresses;
+        for (int i = 0; i < array.length(); i++) {
+            Object value = array.opt(i);
+            if (!(value instanceof String)) continue;
+            String address = ((String) value).trim();
+            if (validatePort) {
+                String[] endpoint = splitHostPort(address);
+                if (endpoint != null) addresses.add(endpoint[0] + ":" + endpoint[1]);
+            } else if (!address.isEmpty()) {
+                addresses.add(address);
+            }
+        }
+        return addresses;
+    }
+
+    static String[] splitHostPort(String ipPort) {
+        if (ipPort == null) {
+            return null;
+        }
+        String trimmed = ipPort.trim();
+        int colon = trimmed.lastIndexOf(':');
+        if (colon <= 0 || colon + 1 >= trimmed.length()) {
+            return null;
+        }
+        String host = trimmed.substring(0, colon).trim();
+        String portStr = trimmed.substring(colon + 1).trim();
+        try {
+            int port = Integer.parseInt(portStr);
+            if (port > 0 && port <= 65535) {
+                return new String[] { host, String.valueOf(port) };
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return null;
+    }
+
+    public static void saveSisConfig(Context context, String rawJson) {
+        SisConfig config = parseSisConfig(rawJson);
+        if (config != null) saveSisConfig(context, config, false);
+    }
+
+    static synchronized void saveSisConfig(Context context, SisConfig config, boolean clearEndpointFailures) {
+        JSONObject response = config.response;
+        putStringPref(context, KEY_SIS_RAW_JSON, config.rawJson);
+        saveCsvSet(context, KEY_SIS_IPS, config.ips);
+        saveCsvSet(context, KEY_SIS_SSL_IPS, config.sslIps);
+        saveCsvSet(context, KEY_SIS_UDP_IPS, readSisAddresses(response.optJSONArray("sis_ips"), false));
+        saveCsvSet(context, KEY_SIS_HTTP_REPORT, readSisAddresses(response.optJSONArray("http_report"), false));
+        saveCsvSet(context, KEY_SIS_HTTPS_REPORT, readSisAddresses(response.optJSONArray("https_report"), false));
+        saveCsvSet(context, KEY_SIS_TCP_REPORT, readSisAddresses(response.optJSONArray("tcp_report"), false));
+        putLongPref(context, KEY_SIS_CERT_VER, response.optInt("cert_ver", 1));
+        Object dataReport = response.opt("data_report");
+        putBooleanPref(context, KEY_SIS_DATA_REPORT, Boolean.TRUE.equals(dataReport)
+            || (dataReport instanceof Number && ((Number) dataReport).doubleValue() == 1));
+        if (clearEndpointFailures) {
+            Set<String> failures = new LinkedHashSet<>(loadCsvList(context, KEY_FAILED_IPS));
+            failures.removeAll(config.ips);
+            failures.removeAll(config.sslIps);
+            saveCsvSet(context, KEY_FAILED_IPS, failures);
+        }
     }
 
     public static void resetSisCache(Context context) {
@@ -593,13 +672,6 @@ public final class JCoreStorage {
 
     public static synchronized void clearFailedIps(Context context) {
         putStringPref(context, KEY_FAILED_IPS, "");
-    }
-
-    static synchronized void clearFailedSisEndpoints(Context context) {
-        Set<String> failures = new LinkedHashSet<String>(loadCsvList(context, KEY_FAILED_IPS));
-        failures.removeAll(getSisIps(context));
-        failures.removeAll(getSisSslIps(context));
-        saveCsvSet(context, KEY_FAILED_IPS, failures);
     }
 
     private static void saveCsvSet(Context context, String key, Collection<String> items) {

@@ -834,8 +834,9 @@ public class ReactNativeJpushProtocolTest {
                         DatagramPacket req = new DatagramPacket(buf, buf.length);
                         sisUdpServer.receive(req);
                         int queryIdx = sisQueryCount.incrementAndGet();
-                        String endpoints = queryIdx == 1 ? String.join(",", deadAddresses) : "\"127.0.0.1:" + sisTcpPort + "\"";
-                        String sisJson = "{\"ips\":[" + endpoints + "]}";
+                        String endpoints = queryIdx == 1 ? String.join(", ", deadAddresses)
+                            : deadAddresses.get(1) + ", \"127.0.0.1:" + sisTcpPort + "\"";
+                        String sisJson = "{\n  \"ips\": [\"invalid\", " + endpoints + "]\n}";
                         byte[] encoded = JCoreWireCodec.encodeUdpSisPacket(sisJson, 0x234567);
                         DatagramPacket resp = new DatagramPacket(
                             encoded,

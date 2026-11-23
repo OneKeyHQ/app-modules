@@ -286,7 +286,7 @@ static BOOL JCOREUsesTlsForSisEndpoint(JCORESisEndpoint *endpoint, BOOL fromSslL
             }
         }
     }
-    BOOL customSslIps = config.cachedSslIpsFromCustomSis || (self.customSisHost.length > 0 && self.customSisPort > 0);
+    BOOL customSslIps = config.cachedSslIpsRequireTls || (self.customSisHost.length > 0 && self.customSisPort > 0);
     for (NSString *addr in config.sslIps) {
         JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil) {

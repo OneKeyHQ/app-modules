@@ -718,9 +718,13 @@ public final class SdkHostRegressionTest {
         sisThread.setDaemon(true);
         sisThread.start();
 
+        JCoreStorage.recordFailedIp(reactContext, liveEndpoint);
         String[] resolvedSis = JCoreTcpEngine.getInstance().resolveUdpSisEndpoint(reactContext, "127.0.0.1", sisPort);
         check("127.0.0.1".equals(resolvedSis[0]) && String.valueOf(tcpPort).equals(resolvedSis[1]), "UDP SIS loopback resolution");
         check(sisReceivedReqRef.get().contains(deadEndpoint), "UDP SIS request must include recorded fail_ips");
+        check(JCoreStorage.getFailedIps(reactContext).contains(deadEndpoint) &&
+            !JCoreStorage.getFailedIps(reactContext).contains(liveEndpoint),
+            "SIS must clear failures only for the endpoints it has accepted");
         check(JCoreStorage.getSisCertVer(reactContext) == 2 && JCoreStorage.getSisDataReport(reactContext), "SIS config must be persisted in JCoreStorage");
 
         // Verify MessageReceipt (cmd=4, ver=3), CtrlAck (cmd=25, ver=1), and ThirdToken callback (CmdMessage 10000)
@@ -3506,25 +3510,22 @@ public final class SdkHostRegressionTest {
         JCoreStorage.updateRegistration(context, 88971093104L, "parity_pw", "100d8559081eb0a0367", "parity_dev");
         JCoreStorage.setServerRegistered(context, true);
 
-        final AtomicInteger customMessageCount = new AtomicInteger();
-        final AtomicReference<String> lastCustomMessageId = new AtomicReference<String>("");
-        final CountDownLatch validCustomReceived = new CountDownLatch(1);
+        final List<String> customMessageIds = new CopyOnWriteArrayList<>();
+        final CountDownLatch validCustomReceived = new CountDownLatch(2);
+        final CountDownLatch allReceiptsSeen = new CountDownLatch(4);
         final CountDownLatch thirdTokenAcked = new CountDownLatch(3);
         final AtomicInteger thirdTokenCode = new AtomicInteger(-1);
-        final CountDownLatch msgType4AckSeen = new CountDownLatch(1);
         final AtomicReference<JCoreWireCodec.MessageAck> msgType2AckRef =
             new AtomicReference<JCoreWireCodec.MessageAck>();
-        final CountDownLatch msgType2AckSeen = new CountDownLatch(1);
         final AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
         final CountDownLatch finish = new CountDownLatch(1);
 
         JPushMessageReceiver receiver = new JPushMessageReceiver() {
             @Override
             public void onMessage(Context ctx, CustomMessage customMessage) {
-                customMessageCount.incrementAndGet();
                 if (customMessage != null) {
-                    lastCustomMessageId.set(customMessage.messageId);
-                    if ("777002".equals(customMessage.messageId)) {
+                    customMessageIds.add(customMessage.messageId);
+                    if ("777002".equals(customMessage.messageId) || "777004".equals(customMessage.messageId)) {
                         validCustomReceived.countDown();
                     }
                 }
@@ -3549,60 +3550,41 @@ public final class SdkHostRegressionTest {
                         InputStream in = socket.getInputStream();
                         OutputStream out = socket.getOutputStream();
 
-                        acknowledgeParityLogin(socket, 55215);
-
-                        // Push internal msgType=4 msgId=999999 with 2-line packageName + appKey header and no JSON body
-                        byte[] msgType4Body = JCoreWireCodec.buildPushMessagePayload(
-                            (byte) 4,
-                            999999L,
-                            "com.example.jpushdemo\n3af172b794896c3e1de43fe7"
-                        );
-                        out.write(JCoreWireCodec.encodeServerFrame(
-                            JCoreWireCodec.CMD_PUSH_MESSAGE,
-                            1,
-                            JCoreWireCodec.ALG_AES_CBC,
-                            0,
-                            10000L,
-                            88971093104L,
-                            0L,
-                            msgType4Body
-                        ));
+                        long uid = 88971093104L;
+                        JCoreWireCodec.DecodedFrame login = readParityLogin(in, uid);
+                        ByteArrayOutputStream initialFrames = new ByteArrayOutputStream();
+                        initialFrames.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_LOGIN, JCoreWireCodec.VER_LOGIN, login.requestId, 55215, uid, 0,
+                            JCoreWireCodec.buildLoginResponsePayload(55215, 1, "", 1700000000)));
+                        initialFrames.write(parityPush(uid, 10000L, 4, 999999L, "pkg\napp-key"));
+                        initialFrames.write(parityPush(uid, 10001L, 2, 777002L,
+                            "pkg\napp-key\n{\"_j_data_\":\"jdata_ext_01\",\"message\":\"real_payload\"}"));
+                        initialFrames.write(parityPush(uid, 10002L, 2, 777003L, "{}"));
+                        initialFrames.write(parityPush(uid, 10003L, 4, 777004L,
+                            "pkg\napp-key\n{\n\"extras\":{\"route\":\"test\"}\n}\n"));
+                        out.write(initialFrames.toByteArray());
                         out.flush();
 
-                        // Push valid msgType=2 custom message with _j_data_
-                        byte[] msgType2Body = JCoreWireCodec.buildPushMessagePayload(
-                            (byte) 2,
-                            777002L,
-                            "so.onekey.app.wallet\nlogin-parity-app-key\n{\"_j_msgid\":\"777002\",\"_j_data_\":\"jdata_ext_01\",\"message\":\"real_payload\"}"
-                        );
-                        out.write(JCoreWireCodec.encodeServerFrame(
-                            JCoreWireCodec.CMD_PUSH_MESSAGE,
-                            1,
-                            JCoreWireCodec.ALG_AES_CBC,
-                            0,
-                            10001L,
-                            88971093104L,
-                            0L,
-                            msgType2Body
-                        ));
-                        out.flush();
-
+                        int[] types = {4, 2, 2, 4};
+                        long[] ids = {999999L, 777002L, 777003L, 777004L};
+                        boolean[] receiptsSeen = new boolean[ids.length];
                         int tokenBinds = 0;
                         JCoreWireCodec.DecodedFrame clientFrame;
                         while ((clientFrame = JCoreWireCodec.readClientFrameFromStream(in, 88971093104L)) != null) {
                             if (clientFrame.command == JCoreWireCodec.CMD_MESSAGE_ACK) {
                                 JCoreWireCodec.MessageAck ack = JCoreWireCodec.parseMessageAck(clientFrame);
-                                if (clientFrame.requestId == 10000L) {
-                                    check(ack != null && ack.messageType == 4 && ack.messageId == 999999L
-                                        && msgType4AckSeen.getCount() == 1, "Expected exactly one internal push receipt");
-                                    msgType4AckSeen.countDown();
-                                } else {
-                                    check(clientFrame.requestId == 10001L && ack != null && ack.messageType == 2
-                                        && ack.messageId == 777002L && msgType2AckSeen.getCount() == 1,
-                                        "Expected exactly one user push receipt");
-                                    msgType2AckRef.set(ack);
-                                    msgType2AckSeen.countDown();
-                                }
+                                long index = clientFrame.requestId - 10000L;
+                                check(clientFrame.sessionId == 55215 && index >= 0 && index < ids.length,
+                                    "A push behind the Login ACK must use the newly negotiated session ID");
+                                int i = (int) index;
+                                check(ack != null && ack.messageType == types[i] && ack.messageId == ids[i] && !receiptsSeen[i],
+                                    "Expected exactly one matching ACK for each push");
+                                receiptsSeen[i] = true;
+                                if (i == 1) msgType2AckRef.set(ack);
+                                allReceiptsSeen.countDown();
+                            } else if (clientFrame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                                check(clientFrame.sessionId == 55215, "Initial heartbeat must use the new session ID");
+                                writeLoopbackAck(socket, clientFrame, uid, 55215, 0, new byte[0]);
                             } else {
                                 JCoreWireCodec.DeviceTokenPayload token = JCoreWireCodec.parseDeviceTokenPayload(clientFrame.body);
                                 check(clientFrame.command == JCoreWireCodec.CMD_THIRD_TOKEN
@@ -3634,13 +3616,12 @@ public final class SdkHostRegressionTest {
                 for (int i = 0; i < 3; i++) {
                     ActionHelper.getInstance().setThirdTokenWithCallBack(context, CLOUD_FIXTURE_TOKEN, (byte) 8, false);
                 }
-                check(msgType4AckSeen.await(3000L, TimeUnit.MILLISECONDS), "Internal msgType=4 must still be ACKed on wire");
-                check(msgType2AckSeen.await(3000L, TimeUnit.MILLISECONDS), "Valid msgType=2 must be ACKed on wire");
+                check(allReceiptsSeen.await(3000L, TimeUnit.MILLISECONDS), "All four pushes must be ACKed on wire: " + serverError.get());
                 check(msgType2AckRef.get() != null && "jdata_ext_01".equals(msgType2AckRef.get().extData),
                     "CMD_MESSAGE_ACK must echo _j_data_ in extData");
-                check(validCustomReceived.await(3000L, TimeUnit.MILLISECONDS), "Valid msgType=2 custom message must be delivered");
-                check(customMessageCount.get() == 1 && "777002".equals(lastCustomMessageId.get()),
-                    "Internal msgType=4 msgId=999999 must NOT emit a spurious onMessage callback; count=" + customMessageCount.get());
+                check(validCustomReceived.await(3000L, TimeUnit.MILLISECONDS), "Both payload-bearing custom messages must be delivered");
+                check(customMessageIds.equals(Arrays.asList("777002", "777004")),
+                    "Only the message and extras-only push may dispatch: " + customMessageIds);
                 check(thirdTokenAcked.await(3000L, TimeUnit.MILLISECONDS) && thirdTokenCode.get() == 0,
                     "CMD_THIRD_TOKEN must succeed with code=0 and keep TCP connection open");
                 check(CLOUD_FIXTURE_TOKEN.equals(JCoreStorage.getThirdToken(context, (byte) 8)),
@@ -3660,15 +3641,25 @@ public final class SdkHostRegressionTest {
         }
     }
 
-    private static void acknowledgeParityLogin(Socket socket, int sessionId) throws Exception {
-        long uid = 88971093104L;
-        InputStream in = socket.getInputStream();
+    private static byte[] parityPush(long uid, long rid, int type, long messageId, String content) {
+        return JCoreWireCodec.encodeServerFrame(JCoreWireCodec.CMD_PUSH_MESSAGE, 1, JCoreWireCodec.ALG_AES_CBC,
+            0, rid, uid, 0, JCoreWireCodec.buildPushMessagePayload((byte) type, messageId, content));
+    }
+
+    private static JCoreWireCodec.DecodedFrame readParityLogin(InputStream in, long uid) throws Exception {
         JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(in, uid);
         check(frame != null && frame.uid == uid && frame.command == JCoreWireCodec.CMD_LOGIN
             && frame.version == JCoreWireCodec.VER_LOGIN && frame.sessionId == 0, "Expected Fast-Login with a zero header session ID");
         JCoreWireCodec.LoginRequest login = JCoreWireCodec.parseLoginRequest(frame.body);
         check(login != null && "328192|329984".equals(login.sdkVerInfo) && "4|64".equals(login.gSdkTypeInfo)
             && login.romPlatformMask == 0, "Both sessions must advertise packed SDK versions and no FCM capability on TCP-only hosts");
+        return frame;
+    }
+
+    private static void acknowledgeParityLogin(Socket socket, int sessionId) throws Exception {
+        long uid = 88971093104L;
+        InputStream in = socket.getInputStream();
+        JCoreWireCodec.DecodedFrame frame = readParityLogin(in, uid);
         writeLoopbackAck(socket, frame, uid, sessionId, 0,
             JCoreWireCodec.buildLoginResponsePayload(sessionId, 1, "", 1700000000));
         JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(in, uid);

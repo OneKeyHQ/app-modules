@@ -40,7 +40,6 @@ import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 public final class JCoreTcpEngine {
@@ -190,7 +189,7 @@ public final class JCoreTcpEngine {
     private volatile ScheduledFuture<?> activeHeartbeatFuture;
     private volatile int reconnectAttempt = 0;
     private volatile long connectionGeneration = 0L;
-    private volatile int sessionId = 1;
+    private volatile int sessionId;
     private volatile String customHost = "";
     private volatile int customPort = 0;
     private volatile String customReportUrl = "";
@@ -362,7 +361,7 @@ public final class JCoreTcpEngine {
         if (!this.candidateEndpoints.isEmpty()) {
             this.testConnectionEnabled = true;
             String first = this.candidateEndpoints.get(0);
-            String[] hp = splitHostPort(first);
+            String[] hp = JCoreStorage.splitHostPort(first);
             if (hp != null) {
                 this.customHost = hp[0];
                 this.customPort = Integer.parseInt(hp[1]);
@@ -628,27 +627,6 @@ public final class JCoreTcpEngine {
         return "127.0.0.1".equals(host) || "localhost".equalsIgnoreCase(host) || "::1".equals(host);
     }
 
-    private static String[] splitHostPort(String ipPort) {
-        if (ipPort == null) {
-            return null;
-        }
-        String trimmed = ipPort.trim();
-        int colon = trimmed.lastIndexOf(':');
-        if (colon <= 0 || colon + 1 >= trimmed.length()) {
-            return null;
-        }
-        String host = trimmed.substring(0, colon).trim();
-        String portStr = trimmed.substring(colon + 1).trim();
-        try {
-            int port = Integer.parseInt(portStr);
-            if (port > 0 && port <= 65535) {
-                return new String[] { host, String.valueOf(port) };
-            }
-        } catch (NumberFormatException ignored) {
-        }
-        return null;
-    }
-
     private List<String> buildOrderedCandidateList(Context context, boolean preferSis) {
         Set<String> ordered = new LinkedHashSet<String>();
         for (String ep : candidateEndpoints) {
@@ -791,7 +769,7 @@ public final class JCoreTcpEngine {
             }
             for (String endpoint : candidates) {
                 if (!owns(owner, context)) return;
-                String[] hp = splitHostPort(endpoint);
+                String[] hp = JCoreStorage.splitHostPort(endpoint);
                 if (hp == null) continue;
                 if (tryConnectAndHandshakeEndpoint(context, hp[0], Integer.parseInt(hp[1]), owner)) {
                     synchronized (this) {
@@ -831,6 +809,7 @@ public final class JCoreTcpEngine {
             final OutputStream out = connectedSocket.getOutputStream();
             synchronized (this) {
                 if (!owns(owner, context)) { connectedSocket.close(); return false; }
+                sessionId = 0;
                 owner.socket = connectedSocket;
                 owner.output = out;
                 synchronized (socketLock) { activeSocket = connectedSocket; activeOutput = out; }
@@ -961,7 +940,6 @@ public final class JCoreTcpEngine {
 
             synchronized (this) {
                 if (!owns(owner, context) || activeSocket != connectedSocket || connectedSocket.isClosed()) return false;
-                this.sessionId = loginResp.sessionId != 0 ? loginResp.sessionId : loginFrame.sessionId;
                 this.reconnectAttempt = 0;
                 setConnectedLocked(context, true);
             }
@@ -1301,6 +1279,18 @@ public final class JCoreTcpEngine {
         if (slot != null && slot.owner == owner && slot.socket == socket
             && (slot.command == frame.command || (genericHeartbeatAck && slot.command == JCoreWireCodec.CMD_HEARTBEAT))
             && pendingRequests.remove(frame.requestId, slot)) {
+            if (slot.command == JCoreWireCodec.CMD_LOGIN) {
+                JCoreWireCodec.LoginResponse login = JCoreWireCodec.parseLoginResponse(frame);
+                synchronized (this) {
+                    if (!owns(owner, context) || activeSocket != socket) {
+                        slot.complete(null);
+                        return;
+                    }
+                    if (login != null && login.statusCode == 0) {
+                        sessionId = login.sessionId != 0 ? login.sessionId : frame.sessionId;
+                    }
+                }
+            }
             slot.complete(frame);
             return;
         }
@@ -1425,15 +1415,8 @@ public final class JCoreTcpEngine {
             byte[] respBytes = new byte[respPacket.getLength()];
             System.arraycopy(recvBuf, 0, respBytes, 0, respBytes.length);
             String decodedJson = JCoreWireCodec.decodeUdpSisPacket(respBytes);
-            String[] endpoint = firstSisEndpoint(decodedJson);
-            if (endpoint != null) {
-                synchronized (this) {
-                    if (owner != null && !owns(owner, context)) return null;
-                    JCoreStorage.saveSisConfig(context, decodedJson);
-                    JCoreStorage.clearFailedSisEndpoints(context);
-                }
-                return endpoint;
-            }
+            String[] endpoint = acceptSisResponse(context, owner, decodedJson);
+            if (endpoint != null) return endpoint;
         } catch (Throwable ignored) {
         } finally {
             if (udpSocket != null) {
@@ -1494,15 +1477,8 @@ public final class JCoreTcpEngine {
                     byte[] decrypted = JCoreCrypto.aesCbcDecrypt(buffer.toByteArray(), aesKey, SIS_AES_IV, 32);
                     byte[] plain = JCoreCrypto.gzipDecompress(decrypted);
                     String plainStr = new String(plain, StandardCharsets.UTF_8);
-                    String[] endpoint = firstSisEndpoint(plainStr);
-                    if (endpoint != null) {
-                        synchronized (this) {
-                            if (owner != null && !owns(owner, context)) return null;
-                            JCoreStorage.saveSisConfig(context, plainStr);
-                            JCoreStorage.clearFailedSisEndpoints(context);
-                        }
-                        return endpoint;
-                    }
+                    String[] endpoint = acceptSisResponse(context, owner, plainStr);
+                    if (endpoint != null) return endpoint;
                 }
             } catch (Throwable ignored) {
             } finally {
@@ -1520,27 +1496,16 @@ public final class JCoreTcpEngine {
         return resolveUdpSisEndpoint(context, defaultSisUdpHost, defaultSisUdpPort, owner);
     }
 
-    private static String[] firstSisEndpoint(String json) {
-        Set<String> addresses = JCoreWireCodec.extractJsonStringArray(json, "ips");
-        addresses.addAll(JCoreWireCodec.extractJsonStringArray(json, "ssl_ips"));
-        for (String address : addresses) {
-            String[] endpoint = splitHostPort(address);
-            if (endpoint != null) return endpoint;
+    private String[] acceptSisResponse(Context context, Attempt owner, String json) {
+        JCoreStorage.SisConfig config = JCoreStorage.parseSisConfig(json);
+        if (config == null) return null;
+        String first = config.firstEndpoint();
+        if (first == null) return null;
+        synchronized (this) {
+            if (owner != null && !owns(owner, context)) return null;
+            JCoreStorage.saveSisConfig(context, config, true);
         }
-        try {
-            JSONObject response = new JSONObject(json);
-            for (String field : new String[] { "ips", "ssl_ips" }) {
-                JSONArray entries = response.optJSONArray(field);
-                if (entries == null) continue;
-                for (int i = 0; i < entries.length(); i++) {
-                    String[] endpoint = splitHostPort(entries.optString(i, ""));
-                    if (endpoint != null) return endpoint;
-                }
-            }
-        } catch (org.json.JSONException ignored) {
-            // An unusable response cannot replace the active cache.
-        }
-        return null;
+        return JCoreStorage.splitHostPort(first);
     }
 
     /**
