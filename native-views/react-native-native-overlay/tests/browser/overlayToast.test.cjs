@@ -705,3 +705,54 @@ test('collapsed back toast actions regain keyboard access after expansion or pro
   await page.keyboard.press('Enter');
   assert.deepEqual(await callbacks(page), ['view', 'view']);
 });
+
+test('collapse focus handoff preserves layout when a focus listener shows another toast', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.evaluate(() => {
+    window.showStatus('success', {
+      id: 'back',
+      testID: 'back',
+      actions: [{
+        id: 'view', label: 'View', testID: 'view', borderRadius: 11,
+        color: '#111', backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
+        fontWeight: '600', paddingHorizontal: 14, paddingVertical: 4,
+      }],
+    });
+    window.showStatus('success', { id: 'front', testID: 'front' });
+
+    function showOnShellFocus(event) {
+      if (event.target !== document.querySelector('[data-testid="back"]')) return;
+      document.removeEventListener('focusin', showOnShellFocus);
+      window.showStatus('success', { id: 'new', testID: 'new' });
+    }
+    document.addEventListener('focusin', showOnShellFocus);
+  });
+
+  await page.keyboard.press('Alt+t');
+  const back = page.getByTestId('back');
+  const action = back.getByTestId('view');
+  await action.focus();
+  await page.keyboard.press('Escape');
+
+  assert.ok(await back.evaluate((node) => node === document.activeElement));
+  assert.deepEqual(
+    await page.locator('[data-onekey-toast]').evaluateAll((cards) =>
+      cards.map((card) => [card.dataset.testid, card.dataset.index, card.style.getPropertyValue('--offset')])
+    ),
+    [['new', '0', '0px'], ['front', '1', '66px'], ['back', '2', '132px']]
+  );
+
+  await page.keyboard.press('Alt+t');
+  await action.focus();
+  await page.evaluate(() => {
+    const outside = document.createElement('button');
+    outside.id = 'outside-focus';
+    document.body.append(outside);
+    document.activeElement.dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true })
+    );
+    outside.focus();
+  });
+  assert.equal(await back.getAttribute('data-expanded'), 'false');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'outside-focus');
+});

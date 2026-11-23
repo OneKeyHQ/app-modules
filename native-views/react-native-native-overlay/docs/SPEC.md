@@ -1488,8 +1488,9 @@ The Web close control stays keyboard- and screen-reader-accessible on
 visible toasts on touch browsers. The hidden control is transparent to
 pointer input. Cards beyond the display limit are excluded from focus and
 the accessibility tree until they become visible. While the stack is
-collapsed, the hidden bodies of back cards are also excluded. Focus inside
-a newly collapsed body moves to its visible shell, which also keeps its
+collapsed, the hidden bodies of back cards are also excluded. After the
+stack layout updates, focus inside a newly collapsed body moves to its
+visible shell if focus has stayed with the toast. The shell keeps its
 close button accessible. Enabling Reduce Motion
 finalizes mounted status animations and keeps loading rings static.
 Restoring motion resumes the loading ring. iOS action buttons use

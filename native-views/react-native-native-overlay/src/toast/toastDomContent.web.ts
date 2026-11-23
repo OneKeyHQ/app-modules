@@ -478,7 +478,7 @@ export function layoutMessageAction(content: HTMLElement, heightCap?: number) {
       placeInline(false);
     }
   }
-  if (focused && document.activeElement !== button) {
-    button.focus({ preventScroll: true });
-  }
+  return focused && document.activeElement === document.body
+    ? button
+    : undefined;
 }

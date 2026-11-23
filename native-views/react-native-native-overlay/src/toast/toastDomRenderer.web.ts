@@ -231,6 +231,25 @@ export function createToastDomRenderer(
     return heightIndex * GAP + heightsBefore;
   }
 
+  function focusAfterLayout(
+    target: HTMLElement,
+    expectedFocus: Element | null,
+    isStillEligible?: () => boolean
+  ) {
+    // A focusin listener can synchronously change the toast store.
+    queueMicrotask(() => {
+      if (
+        !destroyed &&
+        target.isConnected &&
+        !target.closest('[inert]') &&
+        document.activeElement === expectedFocus &&
+        isStillEligible?.() !== false
+      ) {
+        target.focus({ preventScroll: true });
+      }
+    });
+  }
+
   function measure(node: IToastNode) {
     const group = groups.get(node.position);
     if (!group || node.removed) {
@@ -239,7 +258,13 @@ export function createToastDomRenderer(
     const { style } = node.li;
     const originalHeight = style.height;
     style.height = 'auto';
-    layoutMessageAction(node.content, config.webContentMaxHeight);
+    const actionToFocus = layoutMessageAction(
+      node.content,
+      config.webContentMaxHeight
+    );
+    if (actionToFocus) {
+      focusAfterLayout(actionToFocus, document.body);
+    }
     const { offsetHeight: height } = node.li;
     style.height = originalHeight;
     node.initialHeight = height;
@@ -660,10 +685,16 @@ export function createToastDomRenderer(
       const front = index === 0;
       const bodyHidden = !front && !expanded;
       li.inert = !visible || node.removed;
-      if (bodyHidden && !li.inert && body.contains(document.activeElement)) {
-        li.focus({ preventScroll: true });
-      }
+      const lastFocus = document.activeElement;
+      const needsFocusHandoff =
+        bodyHidden && !body.inert && !li.inert && body.contains(lastFocus);
       body.inert = bodyHidden;
+      if (needsFocusHandoff) {
+        const currentFocus = document.activeElement;
+        if (currentFocus === lastFocus || currentFocus === document.body) {
+          focusAfterLayout(li, currentFocus, () => body.inert);
+        }
+      }
       li.setAttribute('data-mounted', String(node.mounted));
       li.setAttribute('data-removed', String(node.removed));
       li.setAttribute('data-visible', String(visible));
