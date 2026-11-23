@@ -60,6 +60,20 @@ internal fun collapsiblePagerHeaderFlingContentVelocity(
   return within
 }
 
+/**
+ * Whether a fling handed to the owner keeps the direction it is given. On
+ * Android 9 (API 28) React Native replaces the sign of every ScrollView fling
+ * with the direction of the last content scroll it recorded, and that record
+ * can be neither read nor set from outside: when the header took the whole
+ * drag it may point the other way, and a first scroll written to it overflows
+ * to a negative one. The content's share cannot be handed over there, so the
+ * release is left to the owner as it was.
+ */
+internal fun collapsiblePagerHeaderFlingOwnerKeepsDirection(
+  sdkInt: Int,
+  reactNativeOwner: Boolean,
+): Boolean = !(reactNativeOwner && sdkInt == 28)
+
 internal data class CollapsiblePagerHeaderFlingStep(val offset: Int, val ended: Boolean)
 
 /**

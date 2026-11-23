@@ -22,6 +22,14 @@ fun main() {
   check(collapsiblePagerHeaderFlingDirection(40, range, 0f, false) == 0)
   check(collapsiblePagerHeaderFlingDirection(0, 0, 1600f, false) == 0)
 
+  // A React Native owner on Android 9 re-signs the fling it is handed, so its
+  // releases are not carried there; every other owner and version is.
+  check(!collapsiblePagerHeaderFlingOwnerKeepsDirection(28, reactNativeOwner = true))
+  check(collapsiblePagerHeaderFlingOwnerKeepsDirection(28, reactNativeOwner = false))
+  check(collapsiblePagerHeaderFlingOwnerKeepsDirection(27, reactNativeOwner = true))
+  check(collapsiblePagerHeaderFlingOwnerKeepsDirection(29, reactNativeOwner = true))
+  check(collapsiblePagerHeaderFlingOwnerKeepsDirection(36, reactNativeOwner = true))
+
   // The content gets only what the header leaves of a collapsing release.
   check(collapsiblePagerHeaderFlingContentTravel(100, range, 1, 25) == 0)
   check(collapsiblePagerHeaderFlingContentTravel(100, range, 1, 26) == 0)
@@ -181,7 +189,7 @@ fun main() {
   check(collapsiblePagerScrollViewRoomBelow(Int.MAX_VALUE, 0, Int.MAX_VALUE, Int.MIN_VALUE, Int.MIN_VALUE) == 0)
 
   println(
-    "Collapsible pager header fling: eligible releases, content share on both sides of the header end, " +
+    "Collapsible pager header fling: eligible releases and owners, content share on both sides of the header end, " +
       "finished frame, weak release, grown and shrunk range, expansion, touch-down, room below and bounds passed",
   )
 }

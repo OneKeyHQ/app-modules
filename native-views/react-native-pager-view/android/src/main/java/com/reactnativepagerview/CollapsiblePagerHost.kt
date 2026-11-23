@@ -2588,6 +2588,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     // forwards a release as its own, and the owner does the same for a scroller
     // nested inside it, so neither says whose content was flung or where it is.
     if (target !== owner || owner.nestedScrollAxes != ViewCompat.SCROLL_AXIS_NONE) return false
+    if (!collapsiblePagerHeaderFlingOwnerKeepsDirection(Build.VERSION.SDK_INT, owner is ReactScrollView)) return false
     val direction = collapsiblePagerHeaderFlingDirection(
       headerOffsetPx, headerHeightPx, velocityY, owner.canScrollVertically(-1),
     )
@@ -2631,13 +2632,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     )
     // Started inside the release itself, so the owner sees one fling and one
     // momentum run; it is never delayed, restarted or topped up afterwards.
-    if (contentVelocity > 0) {
-      // On Android 9 React Native re-signs a fling from the last content
-      // scroll it recorded, which can be the opposite of this release when the
-      // header took the whole drag. One pixel this way makes the record agree.
-      if (Build.VERSION.SDK_INT == Build.VERSION_CODES.P && owner is ReactScrollView) owner.scrollBy(0, 1)
-      owner.fling(contentVelocity)
-    }
+    if (contentVelocity > 0) owner.fling(contentVelocity)
     return true
   }
 

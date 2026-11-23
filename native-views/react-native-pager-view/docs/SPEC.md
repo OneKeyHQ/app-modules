@@ -821,10 +821,10 @@ baseline and corrected builds; that existing NativeScroller case remains open.
 
 Status: implemented. Runtime verified on 2026-11-23 in the OneKey app on an
 Android 16 emulator (API 36): the cases listed at the end of this section.
-A short padded page, a page-top command during the content fling, Android 9, a
-page change during the motion, a scroller nested inside the owner, a snapping
-ScrollView, a header resized mid-flight and a smooth-mode switch during the
-motion have source and JVM coverage only.
+A short padded page, a page-top command during the content fling, the Android 9
+exclusion, a page change during the motion, a scroller nested inside the owner,
+a snapping ScrollView, a header resized mid-flight and a smooth-mode switch
+during the motion have source and JVM coverage only.
 
 In smooth-header mode the shared header moves only through nested scrolling.
 RecyclerView and the owned NativeScroller keep dispatching nested scrolls while
@@ -879,11 +879,14 @@ sequence once: for React Native, one `onMomentumScrollBegin` and one
 `onMomentumScrollEnd`, the end arriving after the content has stopped. When the
 content's share is small the header can still be finishing its collapse then.
 
-On Android 9 (API 28) React Native replaces the sign of every ScrollView fling
-with the direction of the last content scroll it recorded. When the header took
-the whole drag, that record can point the other way. Before it starts the
-content's fling there, the coordinator scrolls a React Native owner one pixel in
-the release direction, inside the content's share, so the record agrees.
+A React Native owner on Android 9 (API 28) is not carried. There React Native
+replaces the sign of every ScrollView fling with the direction of the last
+content scroll it recorded. That record cannot be read or set from outside: it
+can point against the release when the header took the whole drag, and a first
+scroll written into it overflows to a negative one. The content's share could
+not be handed over in a known direction, so those releases keep the behavior
+they had before this section. A plain platform ScrollView on Android 9 keeps
+the sign it is given and is carried.
 
 The coordinator owns the header motion on the UI thread, one frame callback at a
 time, with no JavaScript callbacks. Its fling is unbounded; the header range is
@@ -935,8 +938,9 @@ divergences from RecyclerView:
 
 - A content fling that reaches the top with the header collapsed leaves the
   header collapsed until the next drag.
-- A ScrollView behind a refresh wrapper, and a scroller nested inside the
-  owner, keep the behavior they had before this section.
+- A ScrollView behind a refresh wrapper, a scroller nested inside the owner,
+  and a React Native ScrollView on Android 9 keep the behavior they had before
+  this section.
 - A snapping ScrollView is not recognized. React Native keeps `pagingEnabled`,
   `snapToInterval`, `snapToOffsets` and `snapToAlignment` in private fields, so
   the coordinator cannot leave such an owner out. It receives the same split,
@@ -949,7 +953,7 @@ divergences from RecyclerView:
 iOS and Web derive the header from the content offset and are unchanged.
 
 The focused JVM regression `CollapsiblePagerHeaderFlingTest.kt` runs in the
-native workflow. It covers which releases are carried, the content's share and
+native workflow. It covers which releases and owners are carried, the content's share and
 the speed that fits it, the total travel at every release speed on both sides of
 the end of the header, a fling that finishes in one late frame, a weak release,
 a header range that grows or shrinks mid-flight, an expansion and content that
@@ -965,8 +969,9 @@ its end, a touch-down during each kind of motion followed by a vertical drag
 and by a horizontal one, a short page that can still scroll by its padding, a
 page-top command during the content fling, a page change during the motion, a
 release on a scroller nested inside the owner, a smooth-mode switch during the
-motion, the same on Android 9, and an unchanged RecyclerView page in the same
-pager. Source and JVM checks are not runtime acceptance.
+motion, an unchanged React Native ScrollView page on Android 9, and an
+unchanged RecyclerView page in the same pager. Source and JVM checks are not
+runtime acceptance.
 
 The 2026-11-23 runs used the Receive selector's network list (FlashList, a React
 Native ScrollView) beside its token list (NativeList) with a 116 px header, and
