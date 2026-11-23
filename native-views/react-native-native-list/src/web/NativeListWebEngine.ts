@@ -306,7 +306,8 @@ type PointerReorderState = {
   }>;
   previewOffsetX?: number;
   previewOffsetY?: number;
-  handoff?: { index: number; pointerCoordinate: number; itemCenter: number };
+  handoff?: { index: number; scrollOffset: number; itemCenter: number };
+  restoringKeyboardOrder?: boolean;
   longPressTimer?: number;
   activatedAt?: number;
   active: boolean;
@@ -2482,6 +2483,8 @@ export class NativeListWebEngine {
     const nextCapabilities = validated.capabilities;
     if (
       this.pointerReorder?.active ||
+      this.pointerReorder?.restoringKeyboardOrder ||
+      this.keyboardReorder ||
       capabilities?.reorderable !== nextCapabilities?.reorderable ||
       (capabilities?.reorderActivation ?? 'row') !==
         (nextCapabilities?.reorderActivation ?? 'row')
@@ -2617,11 +2620,14 @@ export class NativeListWebEngine {
       if (target === event.currentTarget) break;
       if (!(target instanceof view.HTMLElement)) continue;
       const offset = horizontal ? target.scrollLeft : target.scrollTop;
-      const maxOffset = horizontal
+      const scrollRange = horizontal
         ? target.scrollWidth - target.clientWidth
         : target.scrollHeight - target.clientHeight;
-      if (maxOffset <= 0) continue;
+      if (scrollRange <= 0) continue;
       const style = view.getComputedStyle(target);
+      const negativeOffset = horizontal && style.direction === 'rtl';
+      const minOffset = negativeOffset ? -scrollRange : 0;
+      const maxOffset = negativeOffset ? 0 : scrollRange;
       const overflow =
         (horizontal ? style.overflowX : style.overflowY) || style.overflow;
       if (overflow !== 'auto' && overflow !== 'scroll') continue;
@@ -2631,7 +2637,7 @@ export class NativeListWebEngine {
       if (
         overscroll === 'contain' ||
         overscroll === 'none' ||
-        (delta < 0 ? offset > 0 : offset < maxOffset)
+        (delta < 0 ? offset > minOffset : offset < maxOffset)
       ) {
         return false;
       }
@@ -3002,7 +3008,7 @@ export class NativeListWebEngine {
           (next.capabilities?.reorderActivation !== 'handle' ||
             hasWebReorderHandle(source));
       if (!canContinue) {
-        if (pointer) this.cancelPointerReorder(false);
+        this.cancelPointerReorder(false);
         if (keyboard) {
           this.keyboardReorder = undefined;
           this.updateReorderVisualState();
@@ -3336,8 +3342,7 @@ export class NativeListWebEngine {
 
   private setSnapshot(
     snapshot: NativeListSnapshot,
-    selectedKeys?: ReadonlySet<string>,
-    revealIndex?: number
+    selectedKeys?: ReadonlySet<string>
   ) {
     this.cancelMarketPointer();
     this.pressedHelpElement = undefined;
@@ -3354,7 +3359,7 @@ export class NativeListWebEngine {
     if (this.reachedGeneration !== snapshot.generation)
       this.reachedGeneration = undefined;
     this.applyTheme();
-    this.recomputeLayout(revealIndex);
+    this.recomputeLayout();
     this.renderFooter();
     this.updateRefreshIndicator();
   }
@@ -3591,7 +3596,7 @@ export class NativeListWebEngine {
         'instant'
       );
     }
-    this.renderWindow();
+    this.renderWindow(revealIndex);
     this.performPendingScroll();
   };
 
@@ -3654,7 +3659,7 @@ export class NativeListWebEngine {
     });
   }
 
-  private renderWindow() {
+  private renderWindow(revealIndex?: number) {
     this.updateAvatarWindow();
     const viewportLength = this.viewportLength();
     const visible =
@@ -3743,7 +3748,7 @@ export class NativeListWebEngine {
       }
     });
     if (measuredHeightChanged) {
-      this.recomputeLayout();
+      this.recomputeLayout(revealIndex);
       return;
     }
     this.updateVisibleSelection();
@@ -5236,11 +5241,13 @@ export class NativeListWebEngine {
       from.sectionKey !== to.sectionKey
     )
       return;
+    this.cancelPendingPointerReorder();
     const rows = moveWebReorderRow(this.snapshot.rows, fromIndex, toIndex);
-    this.remapMountedRows(rows);
-    this.setSnapshot({ ...this.snapshot, rows }, this.selectedKeys, toIndex);
-    this.updateReorderVisualState();
-    this.focusMountedRow(state.sourceKey);
+    this.setReorderRows(rows, toIndex);
+    if (this.keyboardReorder === state) {
+      this.updateReorderVisualState();
+      this.focusMountedRow(state.sourceKey);
+    }
   }
 
   private finishKeyboardReorder() {
@@ -5260,14 +5267,21 @@ export class NativeListWebEngine {
     const state = this.keyboardReorder;
     if (!state) return;
     this.keyboardReorder = undefined;
-    this.remapMountedRows(state.originalRows);
-    this.setSnapshot(
-      { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
-      this.selectedKeys,
-      revealIndex
-    );
+    this.cancelPendingPointerReorder();
+    const rows = cancelWebReorderRows(state.originalRows);
+    this.setReorderRows(rows, revealIndex);
     this.updateReorderVisualState();
-    if (restoreFocus) this.focusMountedRow(state.sourceKey);
+    if (restoreFocus && this.snapshot.rows === rows)
+      this.focusMountedRow(state.sourceKey);
+  }
+
+  private setReorderRows(rows: readonly RowModel[], revealIndex?: number) {
+    this.cancelMarketPointer();
+    this.pressedHelpElement = undefined;
+    this.remapMountedRows(rows);
+    this.snapshot = { ...this.snapshot, rows };
+    this.rows = rows;
+    this.recomputeLayout(revealIndex);
   }
 
   private focusMountedRow(key: string) {
@@ -5541,35 +5555,54 @@ export class NativeListWebEngine {
     );
   }
 
-  private activatePointerReorder(state: PointerReorderState) {
-    if (this.pointerReorder !== state) return;
-    const rowIndex = this.snapshot.rows.findIndex(
+  private pointerReorderSourceIndex(state: PointerReorderState): number {
+    const index = this.snapshot.rows.findIndex(
       (row) => row.key === state.sourceKey
     );
-    const keyboard = this.keyboardReorder;
-    const restoredIndex = keyboard
-      ? keyboard.originalRows.findIndex((row) => row.key === state.sourceKey)
-      : rowIndex;
-    const source = this.mounted.get(rowIndex);
+    const element = this.mounted.get(index);
     if (
-      !source ||
-      restoredIndex < 0 ||
+      !element ||
       !this.canStartPointerReorder(state, this.snapshot) ||
-      (state.handle && !source.contains(state.handle))
+      (state.handle && !element.contains(state.handle))
     ) {
+      return -1;
+    }
+    return index;
+  }
+
+  private activatePointerReorder(state: PointerReorderState) {
+    if (this.pointerReorder !== state) return;
+    let sourceIndex = this.pointerReorderSourceIndex(state);
+    if (sourceIndex < 0) {
       this.cancelPointerReorder(false);
       return;
     }
     this.clearReorderLongPress(state);
+    const keyboard = this.keyboardReorder;
     if (keyboard) {
+      const restoredIndex = keyboard.originalRows.findIndex(
+        (row) => row.key === state.sourceKey
+      );
+      if (restoredIndex < 0) {
+        this.cancelPointerReorder(false);
+        return;
+      }
       // Capture the pressed row at its visible position before restoring order.
-      state.currentIndex = rowIndex;
+      state.currentIndex = sourceIndex;
       state.workingRows = [...this.snapshot.rows];
+      state.restoringKeyboardOrder = true;
       this.showReorderPreview(state);
+      if (this.pointerReorder !== state) return;
       this.cancelKeyboardReorder(false, restoredIndex);
       if (this.pointerReorder !== state) return;
+      state.restoringKeyboardOrder = false;
+      sourceIndex = this.pointerReorderSourceIndex(state);
+      if (sourceIndex < 0) {
+        this.cancelPointerReorder(false);
+        return;
+      }
     }
-    state.currentIndex = restoredIndex;
+    state.currentIndex = sourceIndex;
     state.originalRows = this.snapshot.rows;
     state.workingRows = [...this.snapshot.rows];
     state.active = true;
@@ -5590,18 +5623,15 @@ export class NativeListWebEngine {
       this.mounted.forEach((element) =>
         setData(element, 'nativeListAnimateReorder', true)
       );
-      this.recomputeLayout();
+      this.recomputeLayout(keyboard ? sourceIndex : undefined);
+      if (this.pointerReorder !== state) return;
     }
     if (keyboard) {
-      const item = this.layout.items[restoredIndex];
+      const item = this.layout.items[sourceIndex];
       if (item) {
         state.handoff = {
-          index: restoredIndex,
-          pointerCoordinate: this.reorderPointerCoordinate(
-            state,
-            state.startX,
-            state.startY
-          ),
+          index: sourceIndex,
+          scrollOffset: this.currentOffset(),
           itemCenter:
             (itemStart(item, this.layout.horizontal) +
               itemEnd(item, this.layout.horizontal)) /
@@ -5931,17 +5961,19 @@ export class NativeListWebEngine {
     clientX: number,
     clientY: number
   ): number {
-    const pointerCoordinate = this.reorderPointerCoordinate(
-      state,
-      clientX,
-      clientY
-    );
     const handoff = state.handoff;
-    if (handoff && pointerCoordinate === handoff.pointerCoordinate)
-      return handoff.index;
-    const coordinate = handoff
-      ? handoff.itemCenter + (pointerCoordinate - handoff.pointerCoordinate)
-      : pointerCoordinate;
+    let coordinate: number;
+    if (handoff) {
+      const pointerDelta = this.layout.horizontal
+        ? clientX - state.startX
+        : clientY - state.startY;
+      const displacement =
+        pointerDelta + (this.currentOffset() - handoff.scrollOffset);
+      if (displacement === 0) return handoff.index;
+      coordinate = handoff.itemCenter + displacement;
+    } else {
+      coordinate = this.reorderPointerCoordinate(state, clientX, clientY);
+    }
     const centerAt = (index: number) => {
       const item = this.layout.items[index];
       return item
@@ -5976,6 +6008,7 @@ export class NativeListWebEngine {
     const to = state.workingRows[toIndex];
     if (
       !from ||
+      from.key !== state.sourceKey ||
       !to ||
       fromIndex === toIndex ||
       !this.isReorderable(from) ||
@@ -6084,6 +6117,7 @@ export class NativeListWebEngine {
 
   private completePointerReorder(state: PointerReorderState) {
     this.flushReorderMove(state);
+    if (this.pointerReorder !== state) return;
     const finalRows = this.snapshot.rows;
     const reorderEvent = webReorderEventForRows(
       state.originalRows,
@@ -6114,6 +6148,12 @@ export class NativeListWebEngine {
     this.reorderAutoScrollFrame = undefined;
   }
 
+  private cancelPendingPointerReorder() {
+    const pointer = this.pointerReorder;
+    if (pointer && !pointer.active && !pointer.restoringKeyboardOrder)
+      this.cancelPointerReorder(false);
+  }
+
   private cancelPointerReorder(restore: boolean) {
     const state = this.pointerReorder;
     if (!state) return;
@@ -6122,13 +6162,8 @@ export class NativeListWebEngine {
     this.pointerReorder = undefined;
     this.stopReorderMove();
     this.stopReorderAutoScroll();
-    if (state.active && restore) {
-      this.remapMountedRows(state.originalRows);
-      this.setSnapshot(
-        { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
-        this.selectedKeys
-      );
-    }
+    if (state.active && restore)
+      this.setReorderRows(cancelWebReorderRows(state.originalRows));
     if (state.active && restore) this.animateReorderPreviewToCurrent(state);
     else this.hideReorderPreview();
     this.updateReorderVisualState();

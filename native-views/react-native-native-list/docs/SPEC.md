@@ -738,21 +738,26 @@ their ordinary focus and action rules. Toggling sorting eligibility preserves
 focus on unchanged inline controls.
 
 Space starts the keyboard preview with the source row and its handle visible.
-Arrow keys move it and reveal the new position. Space on the focused source
-row commits. Escape restores the original order and returns focus to the
-source while it is mounted, including when focus has moved to another row. Tab, wheel input directed to the list's
-scroll owner, virtualization of the source by another scroll, or recognition
-of a pointer reorder discards the preview without emitting `onReorder` or
-reclaiming focus. Independent nested scroll areas keep their own wheel input.
-A key event from another row cannot commit the previous source's preview.
-If rolling back a preview recycles the key event's target, that event cannot
-activate the newly bound row or control.
+Arrow keys move it and reveal the new position using measured row heights.
+Space on the focused source row commits. Escape restores the original order
+and returns focus to the source while it is mounted, including when focus has
+moved to another row. Tab, wheel input directed to the list's scroll owner,
+virtualization of the source by another scroll, or recognition of a pointer
+reorder discards the preview without emitting `onReorder` or reclaiming focus.
+Independent nested scroll areas keep their own wheel input in either layout
+direction. A key event from another row cannot commit the previous source's
+preview. An unchanged fixed footer keeps its focused control and accepts its
+normal keyboard action after rollback. If rollback recycles the key event's
+target, that event cannot activate the newly bound row or control.
 
 A short pointer click keeps its normal action during a keyboard preview.
-Once the pointer gesture qualifies as a reorder, it restores the original
-order and reveals the selected row if needed. The pointer's displacement
-determines movement from that restored position, so releasing a stationary
-long press keeps the restored order.
+A keyboard move or independent rollback invalidates any pending pointer
+reorder from the previous geometry. Once the pointer gesture qualifies as a
+reorder, it restores the original order and reveals the selected row if
+needed. A full snapshot accepted during that rollback supersedes the handoff.
+Pointer displacement, including movement beyond the viewport edge, determines
+movement from the restored position. A stationary long press keeps the
+restored order.
 
 Leading visual `borderWidth` supports values in (0, 4]. Development rejects
 out-of-range widths; production discards the invalid width in full snapshots
