@@ -18,9 +18,21 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ]
 
+const expoCryptoMock = path.resolve(projectRoot, 'mocks/expo-crypto.js')
+
 config.resolver.extraNodeModules = {
   modules: workspaceRoot,
-  'expo-crypto': path.resolve(projectRoot, 'mocks/expo-crypto.js'),
+  'expo-crypto': expoCryptoMock,
+}
+
+// extraNodeModules is only a fallback, and the real expo-crypto is hoisted to
+// the workspace root (it needs expo-modules-core, which the example does not
+// install), so force the mock.
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'expo-crypto') {
+    return { type: 'sourceFile', filePath: expoCryptoMock }
+  }
+  return context.resolveRequest(context, moduleName, platform)
 }
 
 module.exports = config

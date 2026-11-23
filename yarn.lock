@@ -3081,7 +3081,7 @@ __metadata:
     react-native-mmkv: "npm:4.3.2"
     react-native-nitro-modules: "npm:0.37.0"
     react-native-safe-area-context: "npm:^5.5.2"
-    react-native-screens: "npm:^4.24.0"
+    react-native-screens: "npm:4.30.0"
     react-native-web: "npm:0.21.2"
     react-test-renderer: "npm:19.3.0"
     typescript: "npm:^5.8.3"
@@ -4252,6 +4252,7 @@ __metadata:
     "@release-it/conventional-changelog": "npm:^10.0.1"
     "@types/jest": "npm:^29.5.14"
     "@types/react": "npm:^19.3.0"
+    "@types/react-test-renderer": "npm:^19.1.0"
     commitlint: "npm:^19.8.1"
     del-cli: "npm:^6.0.0"
     eslint: "npm:^9.35.0"
@@ -4262,9 +4263,10 @@ __metadata:
     nitrogen: "npm:0.37.0"
     prettier: "npm:^2.8.8"
     react: "npm:19.3.0"
-    react-native: "npm:0.88.0"
+    react-native: "patch:react-native@npm%3A0.88.0#~/.yarn/patches/react-native-npm-0.88.0-60c6201dd2.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.37.0"
+    react-test-renderer: "npm:19.3.0"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -13289,16 +13291,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-screens@npm:^4.24.0":
-  version: 4.24.0
-  resolution: "react-native-screens@npm:4.24.0"
+"react-native-screens@npm:4.30.0":
+  version: 4.30.0
+  resolution: "react-native-screens@npm:4.30.0"
   dependencies:
     react-freeze: "npm:^1.0.0"
     warn-once: "npm:^0.1.0"
   peerDependencies:
     react: "*"
     react-native: "*"
-  checksum: 10/1ac705f7c0c37f62f0c29c5bf477b4a2360c37dec6b689e7fa9a768cc8a08d828ac7260d168a60638d207e0be21ae22bb3f170d55f0ae97837c2053ba8e38aff
+  checksum: 10/f66072de9b7938a47fa2fec9bbd51bfac4908b1f8a56dc7c8418872ba70a9f586f3afe6502d92f87649fde4af220057d44937ea1c37d70070bf377c6a137563e
   languageName: node
   linkType: hard
 

@@ -3131,7 +3131,7 @@ PODS:
     - ReactNativeDependencies
     - SSZipArchive (>= 2.5.4)
     - Yoga
-  - RNScreens (4.24.0):
+  - RNScreens (4.30.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3154,9 +3154,9 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNScreens/common (= 4.24.0)
+    - RNScreens/common (= 4.30.0)
     - Yoga
-  - RNScreens/common (4.24.0):
+  - RNScreens/common (4.30.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3913,7 +3913,7 @@ SPEC CHECKSUMS:
   ReactNativeRangeDownloader: 0ac48a52390fce920d441f9791d17d71e73ce0fb
   ReactNativeSplashScreen: 3b0fff80c90fabb4ce36216d9f260567cd993cdf
   ReactNativeZipArchive: 569565269ebe4b8274323861392997b4b6a1ab62
-  RNScreens: f14ec3511b8d5de5a3b2f4fe9abcab3adc4726a6
+  RNScreens: 6d0d3b7819284dbf9f222899eb819f069fce4b8b
   ScrollGuard: 61e4f28e7f3cd22b94eb0ef430b4ac629707c3cb
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageSVGCoder: 15a300a97ec1c8ac958f009c02220ac0402e936c
