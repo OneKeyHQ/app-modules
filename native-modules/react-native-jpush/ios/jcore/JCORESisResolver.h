@@ -42,6 +42,7 @@ NS_ASSUME_NONNULL_BEGIN
                                            aesKey:(NSString *)aesKey;
 
 - (NSArray<JCORESisEndpoint *> *)parseSisResponseDictionary:(NSDictionary *)dict;
+- (NSArray<JCORESisEndpoint *> *)parseSisResponseDictionary:(NSDictionary *)dict customSis:(BOOL)customSis;
 - (NSArray<JCORESisEndpoint *> *)defaultFallbackEndpoints;
 
 - (void)resolveUdpSisWithHost:(NSString *)host
@@ -50,6 +51,11 @@ NS_ASSUME_NONNULL_BEGIN
                    completion:(void (^)(NSArray<JCORESisEndpoint *> *endpoints))completion;
 
 - (void)resolveEndpointsWithCompletion:(void (^)(NSArray<JCORESisEndpoint *> *endpoints))completion;
+
+- (void)resolveEndpointsWithResponse:(void (^)(NSArray<JCORESisEndpoint *> *endpoints,
+                                                NSDictionary * _Nullable response,
+                                                NSString * _Nullable udpServer,
+                                                BOOL customSis))completion;
 
 @end
 

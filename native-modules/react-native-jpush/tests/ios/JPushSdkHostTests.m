@@ -214,8 +214,42 @@ static void testSisWireFormatAndUdpLoopback(void) {
     ASSERT_TRUE([parsedDict isKindOfClass:[NSDictionary class]], "UDP SIS packet parse failed");
     NSArray<JCORESisEndpoint *> *endpoints = [[JCORESisResolver shared] parseSisResponseDictionary:parsedDict];
     ASSERT_TRUE(endpoints.count == 3, "Expected 3 SIS endpoints, got %lu", (unsigned long)endpoints.count);
+    ASSERT_TRUE(!endpoints[2].useSSL, "Built-in Jiguang ssl_ips on port 7002 uses plain TCP");
+    NSArray<JCORESisEndpoint *> *customEndpoints =
+        [[JCORESisResolver shared] parseSisResponseDictionary:@{@"ssl_ips": @[@"gateway.example:8443", @"gateway.example:7002"]}
+                                                  customSis:YES];
+    ASSERT_TRUE(customEndpoints.count == 2 && customEndpoints[0].useSSL && customEndpoints[1].useSSL,
+                "Custom SIS ssl_ips must keep TLS on non-443 ports");
+
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    config.collectionAuthorized = YES;
+    config.pushStopped = NO;
+    [config addFailedIp:endpoints[2].addressString];
+    [config addFailedIp:@"198.51.100.2:7000"];
+    ASSERT_TRUE([config commitSisDictionary:parsedDict addresses:[endpoints valueForKey:@"addressString"] udpServer:nil
+                                  customSis:NO appKey:config.appKey policyGeneration:config.policyGeneration],
+                "Current SIS response should commit");
+    ASSERT_TRUE(![config.failedIps containsObject:endpoints[2].addressString] && [config.failedIps containsObject:@"198.51.100.2:7000"],
+                "Only refreshed endpoint failures should be removed");
+    [config addFailedIp:endpoints[2].addressString];
+    NSUInteger oldPolicy = config.policyGeneration;
+    config.collectionAuthorized = NO;
+    config.collectionAuthorized = YES;
+    ASSERT_TRUE(![config commitSisDictionary:parsedDict addresses:[endpoints valueForKey:@"addressString"] udpServer:nil
+                                   customSis:NO appKey:config.appKey policyGeneration:oldPolicy],
+                "Stale SIS response should not commit under the new policy");
+    ASSERT_TRUE([config.failedIps containsObject:endpoints[2].addressString], "Stale response erased a newer failure");
+
     ASSERT_TRUE([JCOREPersistence shared].certVer == 2 && [JCOREPersistence shared].dataReport == YES,
                 "SIS fields not persisted to JCOREPersistence");
+    NSDictionary *customResponse = @{@"ips": @[], @"ssl_ips": @[@"gateway.example:8443", @"gateway.example:7002"]};
+    ASSERT_TRUE([config commitSisDictionary:customResponse addresses:[customEndpoints valueForKey:@"addressString"]
+                                  udpServer:nil customSis:YES appKey:config.appKey policyGeneration:config.policyGeneration],
+                "Custom SIS response should commit");
+    NSArray<JCORESisEndpoint *> *cachedEndpoints = [[JCORESisResolver shared] defaultFallbackEndpoints];
+    ASSERT_TRUE(cachedEndpoints.count >= 2 && cachedEndpoints[0].port == 8443 && cachedEndpoints[0].useSSL &&
+                cachedEndpoints[1].port == 7002 && cachedEndpoints[1].useSSL,
+                "Cached custom SIS endpoints must keep their TLS policy");
 
     NSString *aesKey = [JCORECrypto httpSeedKeyWithOutSeed:NULL];
     NSString *authHeader = nil;
@@ -246,7 +280,7 @@ static void testSisWireFormatAndUdpLoopback(void) {
             NSData *reqData = [NSData dataWithBytes:buf length:(NSUInteger)n];
             NSDictionary *reqDict = [JCORESisResolver parseUdpSisPacket:reqData];
             if (reqDict != nil) {
-                NSData *respData = [JCORESisResolver assembleUdpSisPacketWithPayload:@{@"ssl_ips": @[@"127.0.0.1:28888"]}
+                NSData *respData = [JCORESisResolver assembleUdpSisPacketWithPayload:@{@"ssl_ips": @[@"127.0.0.1:8003"]}
                                                                                magic:'U'
                                                                                 seed:0x123456];
                 sendto(udpFd, respData.bytes, respData.length, 0, (struct sockaddr *)&clientAddr, clientLen);
@@ -266,7 +300,7 @@ static void testSisWireFormatAndUdpLoopback(void) {
     }];
     ASSERT_TRUE(dispatch_semaphore_wait(udpSem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC))) == 0,
                 "UDP SIS loopback timed out");
-    ASSERT_TRUE(resolvedUdp.count == 1 && [resolvedUdp[0].host isEqualToString:@"127.0.0.1"] && resolvedUdp[0].port == 28888 && resolvedUdp[0].useSSL == NO,
+    ASSERT_TRUE(resolvedUdp.count == 1 && [resolvedUdp[0].host isEqualToString:@"127.0.0.1"] && resolvedUdp[0].port == 8003 && resolvedUdp[0].useSSL == NO,
                 "UDP SIS loopback resolved unexpected endpoint or wrongly enabled standard TLS on non-443 ssl_ips port");
 
     // Verify stale SIS cache fallback in resolveEndpointsWithCompletion: when all cached ips/ssl_ips are in failedIps
@@ -677,6 +711,20 @@ static void testEndToEndMockServerHandshake(void) {
         [ctrlAckFrame.bodyData getBytes:&rawCtrlReqId range:NSMakeRange(2, 8)];
         serverCtrlAckReqId = CFSwapInt64BigToHost(rawCtrlReqId);
 
+        NSData *finalBody = [JCOREWireProtocol buildPushMessagePayloadWithMessageType:4
+                                                                           messageId:expectedMsgId + 1
+                                                                             content:@"com.example\napp-key\n{\n  \"title\": \"Final push\"\n}\n"];
+        NSData *finalFrame = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandPushMessage version:4
+                                                                   requestId:903 uid:assignedUid algorithm:1 statusCode:0 bodyData:finalBody];
+        ASSERT_TRUE(writeExactBytes(clientFd, finalFrame.bytes, finalFrame.length), "Failed writing final PushMessage");
+        ASSERT_TRUE(shutdown(clientFd, SHUT_WR) == 0, "Server could not half-close its write side");
+        JCOREWireFrame *finalAck = readSingleClientFrameOnServer(clientFd);
+        uint8_t finalType = 0;
+        uint64_t finalId = 0;
+        ASSERT_TRUE(finalAck.requestId == 903 &&
+                    [JCOREWireProtocol parseMessageAckFrame:finalAck outMessageType:&finalType outMessageId:&finalId] &&
+                    finalType == 4 && finalId == expectedMsgId + 1, "Final push must be ACKed after peer half-close");
+
         close(clientFd);
         close(listenFd);
         dispatch_semaphore_signal(serverDoneSem);
@@ -697,6 +745,7 @@ static void testEndToEndMockServerHandshake(void) {
     __block BOOL sawRegister = NO;
     __block BOOL sawLogin = NO;
     __block NSDictionary *receivedMessagePayload = nil;
+    __block BOOL receivedFinalType4 = NO;
     __block NSDictionary *receivedCtrlPayload = nil;
     dispatch_semaphore_t loginSem = dispatch_semaphore_create(0);
     dispatch_semaphore_t pushMsgSem = dispatch_semaphore_create(0);
@@ -717,8 +766,12 @@ static void testEndToEndMockServerHandshake(void) {
         dispatch_semaphore_signal(loginSem);
     }];
     id obs5 = [nc addObserverForName:kJPFNetworkDidReceiveMessageNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
-        receivedMessagePayload = note.userInfo;
-        dispatch_semaphore_signal(pushMsgSem);
+        if ([note.userInfo[@"_j_msgid"] unsignedLongLongValue] == expectedMsgId + 1) {
+            receivedFinalType4 = [note.userInfo[@"title"] isEqualToString:@"Final push"];
+        } else {
+            receivedMessagePayload = note.userInfo;
+            dispatch_semaphore_signal(pushMsgSem);
+        }
     }];
     id obs6 = [nc addObserverForName:@"kJPFNetworkDidReceiveCtrlCommandNotification" object:nil queue:nil usingBlock:^(NSNotification *note) {
         receivedCtrlPayload = note.userInfo;
@@ -822,6 +875,10 @@ static void testEndToEndMockServerHandshake(void) {
     }
     while (dispatch_semaphore_wait(serverDoneSem, DISPATCH_TIME_NOW) != 0) {
         ASSERT_TRUE([[NSDate date] compare:deadline] == NSOrderedAscending, "Timed out waiting for mock server completion");
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    while (!receivedFinalType4) {
+        ASSERT_TRUE([deadline timeIntervalSinceNow] > 0, "Multiline type-4 push was not delivered");
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
     }
 

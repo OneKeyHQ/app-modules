@@ -56,6 +56,7 @@ public final class JCoreStorage {
     private static final String KEY_FAILED_IPS = "sis_failed_ips";
     private static final String KEY_LAST_GOOD_IP = "sis_last_good_ip";
     private static final String KEY_THIRD_TOKEN_PREFIX = "third_token_";
+    private static final String KEY_FCM_BOUND_IDENTITY = "fcm_bound_identity";
     private static final String KEY_LATEST_NOTIFICATION_NUM = "latest_notification_num";
     private static final String KEY_PUSH_TIME_CONFIGURED = "push_time_configured";
     private static final String KEY_PUSH_TIME_DAYS = "push_time_days";
@@ -404,6 +405,7 @@ public final class JCoreStorage {
     }
 
     public static synchronized void clearRegistration(Context context) {
+        putStringPref(context, KEY_FCM_BOUND_IDENTITY, "");
         putBooleanPref(context, KEY_SERVER_REGISTERED, false);
         putLongPref(context, KEY_UID, 0L);
         putStringPref(context, KEY_PASSWORD, "");
@@ -593,6 +595,13 @@ public final class JCoreStorage {
         putStringPref(context, KEY_FAILED_IPS, "");
     }
 
+    static synchronized void clearFailedSisEndpoints(Context context) {
+        Set<String> failures = new LinkedHashSet<String>(loadCsvList(context, KEY_FAILED_IPS));
+        failures.removeAll(getSisIps(context));
+        failures.removeAll(getSisSslIps(context));
+        saveCsvSet(context, KEY_FAILED_IPS, failures);
+    }
+
     private static void saveCsvSet(Context context, String key, Collection<String> items) {
         if (items == null || items.isEmpty()) {
             putStringPref(context, key, "");
@@ -629,6 +638,28 @@ public final class JCoreStorage {
 
     public static void saveThirdToken(Context context, byte platform, String token) {
         putStringPref(context, KEY_THIRD_TOKEN_PREFIX + (platform & 0xFF), token != null ? token : "");
+    }
+
+    static synchronized void saveAcknowledgedThirdToken(Context context, byte platform, String token,
+        String appKey, long uid, String registrationId) {
+        if (!appKey.equals(getAppKey(context)) || uid != getUid(context)
+            || !registrationId.equals(getRegistrationId(context))) return;
+        saveThirdToken(context, platform, token);
+        if (platform == 8) {
+            putStringPref(context, KEY_FCM_BOUND_IDENTITY, isEmpty(token) ? "" : fcmBindingIdentity(appKey, uid, registrationId));
+        }
+    }
+
+    static synchronized boolean hasBoundFcmToken(Context context) {
+        long uid = getUid(context);
+        String registrationId = getRegistrationId(context);
+        return uid > 0 && !registrationId.isEmpty() && !getThirdToken(context, (byte) 8).isEmpty()
+            && fcmBindingIdentity(getAppKey(context), uid, registrationId)
+                .equals(getStringPref(context, KEY_FCM_BOUND_IDENTITY, ""));
+    }
+
+    private static String fcmBindingIdentity(String appKey, long uid, String registrationId) {
+        return appKey + ":" + uid + ":" + registrationId;
     }
 
     public static String getThirdToken(Context context, byte platform) {

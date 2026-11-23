@@ -814,8 +814,13 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
     envelope.messageId = msgId;
     envelope.content = content;
     if (content.length > 0) {
-        NSArray<NSString *> *segments = [content componentsSeparatedByString:@"\n"];
-        NSString *jsonCandidate = segments.lastObject ?: content;
+        NSCharacterSet *whitespace = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+        NSString *jsonCandidate = [content stringByTrimmingCharactersInSet:whitespace];
+        for (NSUInteger headerLines = 0; headerLines < 2 && ![jsonCandidate hasPrefix:@"{"]; headerLines++) {
+            NSRange newline = [jsonCandidate rangeOfString:@"\n"];
+            if (newline.location == NSNotFound) break;
+            jsonCandidate = [[jsonCandidate substringFromIndex:NSMaxRange(newline)] stringByTrimmingCharactersInSet:whitespace];
+        }
         NSData *jsonData = [jsonCandidate dataUsingEncoding:NSUTF8StringEncoding];
         id parsed = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:nil];
         if ([parsed isKindOfClass:[NSDictionary class]]) {

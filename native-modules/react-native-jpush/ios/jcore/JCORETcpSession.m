@@ -58,6 +58,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 @interface JCORETcpSession () {
     dispatch_queue_t _sessionQueue;
     nw_connection_t _connection;
+    nw_connection_t _receiptDrainConnection;
+    dispatch_group_t _pendingReceipts;
     nw_path_monitor_t _pathMonitor;
     dispatch_source_t _heartbeatTimer;
     dispatch_source_t _connectTimeoutTimer;
@@ -145,6 +147,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         if (generation != config.policyGeneration ||
             (config.policyAllowsPush && self->_policyGeneration == generation)) { return; }
         self->_attemptGeneration++;
+        [self finishReceiptDrainLockedForConnection:self->_receiptDrainConnection];
         [self cancelReconnectTimerLocked];
         if (config.policyAllowsPush) {
             [self discardQueuedRequestsOutsideGenerationLocked:generation];
@@ -317,9 +320,12 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     _lastReportedVoipTokenHex = nil;
     [self postNotificationOnMain:kJPFNetworkIsConnectingNotification userInfo:nil];
 
-    [[JCORESisResolver shared] resolveEndpointsWithCompletion:^(NSArray<JCORESisEndpoint *> *endpoints) {
+    NSString *appKey = config.appKey;
+    [[JCORESisResolver shared] resolveEndpointsWithResponse:^(NSArray<JCORESisEndpoint *> *endpoints,
+                                                               NSDictionary *response, NSString *udpServer, BOOL customSis) {
         dispatch_async(self->_sessionQueue, ^{
-            if (attemptGeneration != self->_attemptGeneration || ![self ownsCurrentPolicy]) { return; }
+            if (attemptGeneration != self->_attemptGeneration || ![self ownsCurrentPolicy]
+                || ![appKey isEqualToString:config.appKey]) { return; }
             if (self->_userDisconnected) {
                 self->_connecting = NO;
                 return;
@@ -327,6 +333,14 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             if (endpoints.count == 0) {
                 self->_connecting = NO;
                 [self scheduleReconnectLocked];
+                return;
+            }
+            if (response != nil && ![config commitSisDictionary:response
+                                                     addresses:[endpoints valueForKey:@"addressString"]
+                                                     udpServer:udpServer
+                                                     customSis:customSis
+                                                        appKey:appKey
+                                              policyGeneration:self->_policyGeneration]) {
                 return;
             }
             self->_candidateEndpoints = [endpoints copy];
@@ -383,6 +397,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     nw_parameters_t parameters = nw_parameters_create_secure_tcp(tlsConfig, NW_PARAMETERS_DEFAULT_CONFIGURATION);
     nw_connection_t connection = nw_connection_create(nwEndpoint, parameters);
     _connection = connection;
+    _pendingReceipts = dispatch_group_create();
     nw_connection_set_queue(connection, _sessionQueue);
 
     [self startConnectTimeoutTimerLockedForConnection:connection endpoint:endpoint];
@@ -718,36 +733,47 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                 NSArray<JCOREWireFrame *> *frames = [JCOREWireProtocol decodeServerFramesFromStreamBuffer:strongSelf->_receiveBuffer
                                                                                                defaultUid:[JCOREConfiguration shared].uid];
                 for (JCOREWireFrame *frame in frames) {
+                    if (strongSelf->_connection != connection) return;
                     [strongSelf handleDecodedFrameLocked:frame];
                 }
             }
         }
+        if (strongSelf->_connection != connection) return;
         if (error == nil && !is_complete) {
             [strongSelf receiveLoopForConnection:connection];
-        } else if (is_complete || error != nil) {
-            BOOL wasConnected = strongSelf->_connected;
-            strongSelf->_connecting = NO;
-            strongSelf->_connected = NO;
-            strongSelf->_loggedIn = NO;
-            strongSelf->_sessionId = 0;
-            [strongSelf stopHeartbeatLocked];
-            if (strongSelf->_inFlightRequests.count > 0) {
-                NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
-                                                        code:6002
-                                                    userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
-                [strongSelf failAllInFlightRequestsLockedWithError:closeErr];
-            }
-            if (strongSelf->_connection == connection) {
-                [strongSelf tearDownConnectionLocked];
-                if (wasConnected) {
-                    [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
-                    if (!strongSelf->_userDisconnected && [JCOREConfiguration shared].policyAllowsPush && !strongSelf->_connecting) {
-                        [strongSelf scheduleReconnectLocked];
-                    }
-                }
-            }
+            return;
+        }
+
+        BOOL wasConnected = strongSelf->_connected;
+        strongSelf->_connecting = NO;
+        if (error == nil && [strongSelf ownsCurrentPolicy]) {
+            [strongSelf drainReceiptsLockedForConnection:connection];
+        }
+        [strongSelf tearDownConnectionLocked];
+        if (wasConnected) {
+            [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
+            [strongSelf scheduleReconnectLocked];
         }
     });
+}
+
+- (void)drainReceiptsLockedForConnection:(nw_connection_t)connection {
+    [self finishReceiptDrainLockedForConnection:_receiptDrainConnection];
+    _receiptDrainConnection = connection;
+    _connection = nil;
+    dispatch_group_notify(_pendingReceipts, _sessionQueue, ^{
+        [self finishReceiptDrainLockedForConnection:connection];
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), _sessionQueue, ^{
+        [self finishReceiptDrainLockedForConnection:connection];
+    });
+}
+
+- (void)finishReceiptDrainLockedForConnection:(nw_connection_t)connection {
+    if (connection != nil && _receiptDrainConnection == connection) {
+        _receiptDrainConnection = nil;
+        nw_connection_cancel(connection);
+    }
 }
 
 - (void)handleDecodedFrameLocked:(JCOREWireFrame *)frame {
@@ -979,8 +1005,11 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                                                           packet.length,
                                                           _sessionQueue,
                                                           DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    dispatch_group_t receipts = command == JCOREWireCommandMessageAck ? _pendingReceipts : nil;
+    if (receipts != nil) dispatch_group_enter(receipts);
     nw_connection_send(_connection, dispatchPacket, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t error) {
         (void)error;
+        if (receipts != nil) dispatch_group_leave(receipts);
     });
 }
 
@@ -1175,6 +1204,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         _connection = nil;
         nw_connection_cancel(oldConnection);
     }
+    _pendingReceipts = nil;
     [_receiveBuffer setLength:0];
     _connected = NO;
     _loggedIn = NO;
@@ -1195,6 +1225,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     dispatch_async(_sessionQueue, ^{
         self->_userDisconnected = YES;
         self->_attemptGeneration++;
+        [self finishReceiptDrainLockedForConnection:self->_receiptDrainConnection];
         [self failQueuedRequestsLocked];
         [self cancelReconnectTimerLocked];
         BOOL wasConnected = self->_connected;

@@ -172,7 +172,7 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
                                                                      uid:88574312908ULL
                                                                algorithm:1
                                                                 bodyData:loginBody];
-    JCOREWireFrame *decodedLogin = [JCOREWireProtocol decodeClientSingleFrame:loginFrame];
+    JCOREWireFrame *decodedLogin = [JCOREWireProtocol decodeClientFramesFromStreamBuffer:[loginFrame mutableCopy]].firstObject;
     XCTAssertNotNil(decodedLogin);
     XCTAssertEqual(decodedLogin.sessionId, 0u);
 }

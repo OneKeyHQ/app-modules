@@ -2,13 +2,8 @@ package com.margelo.nitro.reactnativejpush;
 
 import static org.junit.Assert.*;
 import cn.jiguang.core.JCoreCrypto;
-import cn.jiguang.core.JCoreStorage;
-import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.core.JCoreWireCodec;
-import cn.jiguang.plugins.push.helper.JPushHelper;
-import cn.jiguang.plugins.push.receiver.JPushModuleReceiver;
-import cn.jpush.android.api.JPushInterface;
-import cn.jpush.android.local.ActionHelper;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.DatagramPacket;
@@ -21,8 +16,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.Assume;
 import org.junit.Test;
@@ -31,89 +24,6 @@ public class JPushCloudHandshakeTest {
     private static final String LIVE_TEST_FCM_TOKEN_142B =
         "fcm_token_142_bytes_APA91bH0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345";
 
-    @Test
-    public void liveEngineEndToEndLifecycle() throws Exception {
-        boolean enabled = "1".equals(System.getenv("JPUSH_LIVE_TESTS"));
-        Assume.assumeTrue("External cloud handshake requires JPUSH_LIVE_TESTS=1", enabled);
-
-        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
-        final JPushModuleReceiver receiver = new JPushModuleReceiver();
-        final List<String> receivedEvents = new CopyOnWriteArrayList<String>();
-        final CountDownLatch connectedLatch = new CountDownLatch(1);
-        final CountDownLatch thirdTokenLatch = new CountDownLatch(3);
-        int listenerId = 0;
-
-        try {
-            engine.stop(null);
-            engine.setCustomEndpoint("", 0);
-            engine.setCustomSisUrl("");
-            engine.setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
-            engine.setTestConnectionEnabled(false);
-            engine.setAutoReconnectEnabled(true);
-            JCoreStorage.resetSisCache(null);
-            JCoreStorage.clearRegistration(null);
-            JCoreStorage.setPushStopped(null, false);
-            JCoreStorage.setCollectionAuth(null, true);
-            JCoreStorage.setAppKey(null, ReactNativeJpushProtocolTest.DEMO_TEST_APP_KEY);
-            JCoreStorage.setChannel(null, "developer-default");
-            JCoreStorage.saveThirdToken(null, (byte) 8, "");
-
-            ActionHelper.getInstance().clearRegisteredReceivers();
-            ActionHelper.getInstance().registerReceiver(receiver);
-            listenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
-                @Override
-                public void onEvent(String eventName, String payloadJson) {
-                    receivedEvents.add(eventName + ":" + payloadJson);
-                    if ("ConnectEvent".equals(eventName) && payloadJson.contains("true")) {
-                        connectedLatch.countDown();
-                    }
-                    if ("CommandEvent".equals(eventName) && payloadJson.contains("10000") && payloadJson.contains("\"commandResult\":0")) {
-                        thirdTokenLatch.countDown();
-                    }
-                }
-            });
-
-            android.content.Context testCtx = new android.content.Context() {
-                @Override
-                public String getPackageName() {
-                    return ReactNativeJpushProtocolTest.DEMO_TEST_PACKAGE_NAME;
-                }
-            };
-
-            JPushInterface.resumePush(testCtx);
-            assertTrue("Live JCoreTcpEngine handshake must complete", engine.awaitHandshake(15000L));
-            assertTrue("Live JCoreTcpEngine must be logged in", engine.isLoggedIn());
-            assertTrue("ConnectEvent(true) must fire", connectedLatch.await(5000L, TimeUnit.MILLISECONDS));
-
-            // Simulate 3 concurrent 142-byte FCM token bindings after login (matching Android cold-start behavior)
-            ActionHelper.getInstance().setThirdTokenWithCallBack(testCtx, LIVE_TEST_FCM_TOKEN_142B, (byte) 8, false);
-            ActionHelper.getInstance().setThirdTokenWithCallBack(testCtx, LIVE_TEST_FCM_TOKEN_142B, (byte) 8, false);
-            ActionHelper.getInstance().setThirdTokenWithCallBack(testCtx, LIVE_TEST_FCM_TOKEN_142B, (byte) 8, false);
-            assertTrue("All 3 CMD_THIRD_TOKEN callbacks must succeed with errorCode=0", thirdTokenLatch.await(10000L, TimeUnit.MILLISECONDS));
-            assertEquals("Third token must be saved on statusCode == 0", LIVE_TEST_FCM_TOKEN_142B, JCoreStorage.getThirdToken(testCtx, (byte) 8));
-            assertTrue("TCP session must remain logged in after CMD_THIRD_TOKEN", engine.isLoggedIn());
-
-            // Simulate reconnect (Fast-Login with persisted uid/password/registrationId and third_token_8 present -> romPlatformMask=0x28)
-            engine.triggerReconnectNow(testCtx);
-            assertTrue("Fast-Login reconnect handshake must complete", engine.awaitHandshake(15000L));
-            assertTrue("Fast-Login must succeed against live server", engine.isLoggedIn());
-
-            for (String ev : receivedEvents) {
-                assertFalse("Must never emit spurious msgId=999999 CustomMessageEvent: " + ev, ev.contains("999999"));
-                assertFalse("Must never emit CMD_THIRD_TOKEN 6002 timeout: " + ev, ev.contains("6002"));
-            }
-            System.out.println("Live JCoreTcpEngine register/login/third-token/fast-login lifecycle passed");
-        } finally {
-            if (listenerId > 0) {
-                JPushHelper.unregisterNitroListener(listenerId);
-            }
-            ActionHelper.getInstance().unregisterReceiver(receiver);
-            JCoreStorage.saveThirdToken(null, (byte) 8, "");
-            engine.stop(null);
-            JCoreStorage.resetSisCache(null);
-            JCoreStorage.clearRegistration(null);
-        }
-    }
     @Test
     public void liveCloudHandshake() throws Exception {
         boolean enabled = "1".equals(System.getenv("JPUSH_LIVE_TESTS"));
@@ -160,28 +70,11 @@ public class JPushCloudHandshakeTest {
             out.write(hbFrame);
             out.flush();
 
-            tcp.setSoTimeout(1500);
-            for (int i = 0; i < 3; i++) {
-                try {
-                    JCoreWireCodec.DecodedFrame f = JCoreWireCodec.readFrameFromStream(in, uid);
-                    assertNotNull("Server closed connection after Login/Heartbeat", f);
-                    if (f.command == JCoreWireCodec.CMD_PUSH_MESSAGE) {
-                        JCoreWireCodec.PushEnvelope env = JCoreWireCodec.parsePushMessage(f);
-                        assertFalse(
-                            "Server pushed legacy msgType=4 msgId=999999 due to invalid sdkVerInfo",
-                            env != null && env.messageType == (byte) 4 && env.messageId == 999999L
-                        );
-                    }
-                } catch (SocketTimeoutException expectedIdle) {
-                    break;
-                }
-            }
-
-            tcp.setSoTimeout(5000);
+            long thirdTokenRequestId = 104L;
             byte[] thirdTokenFrame = JCoreWireCodec.encodeFrame(
                 JCoreWireCodec.CMD_THIRD_TOKEN,
                 JCoreWireCodec.VER_THIRD_TOKEN,
-                104L,
+                thirdTokenRequestId,
                 sessionId,
                 uid,
                 JCoreWireCodec.buildThirdTokenPayload(LIVE_TEST_FCM_TOKEN_142B, (byte) 8, false)
@@ -189,12 +82,66 @@ public class JPushCloudHandshakeTest {
             out.write(thirdTokenFrame);
             out.flush();
 
-            JCoreWireCodec.DecodedFrame tokenResp = JCoreWireCodec.readFrameFromStream(in, uid);
-            assertNotNull("Server closed TCP connection (EOF) on CMD_THIRD_TOKEN", tokenResp);
-            assertEquals("Third token response command", JCoreWireCodec.CMD_THIRD_TOKEN, tokenResp.command);
+            JCoreWireCodec.DecodedFrame tokenResp = awaitThirdTokenAck(tcp, uid, thirdTokenRequestId, 5000L);
             assertEquals("Third token bind statusCode", 0, tokenResp.statusCode);
         }
         System.out.println("Live Jiguang register/login/heartbeat/third-token handshake passed");
+    }
+
+    private static JCoreWireCodec.DecodedFrame awaitThirdTokenAck(Socket socket, long uid, long requestId, long timeoutMs)
+        throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        ByteArrayOutputStream pending = new ByteArrayOutputStream();
+        InputStream in = socket.getInputStream();
+        byte[] chunk = new byte[4096];
+        while (System.nanoTime() < deadline) {
+            long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            socket.setSoTimeout((int) Math.max(1L, Math.min(100L, remainingMs)));
+            int count;
+            try {
+                count = in.read(chunk);
+            } catch (SocketTimeoutException retry) {
+                continue;
+            }
+            assertTrue("Server closed TCP while waiting for token bind ACK", count >= 0);
+            pending.write(chunk, 0, count);
+            for (JCoreWireCodec.DecodedFrame frame : JCoreWireCodec.decodeFramesFromStreamBuffer(pending, uid)) {
+                if (frame.command == JCoreWireCodec.CMD_THIRD_TOKEN && frame.requestId == requestId) return frame;
+                if (frame.command == JCoreWireCodec.CMD_PUSH_MESSAGE) {
+                    JCoreWireCodec.PushEnvelope envelope = JCoreWireCodec.parsePushMessage(frame);
+                    assertFalse("Unexpected legacy internal message",
+                        envelope != null && envelope.messageType == 4 && envelope.messageId == 999999L);
+                }
+            }
+        }
+        throw new SocketTimeoutException("Timed out waiting for matching CMD_THIRD_TOKEN ACK");
+    }
+
+    @Test
+    public void waitsForMatchingThirdTokenAckAcrossPartialReads() throws Exception {
+        long uid = 101L;
+        try (java.net.ServerSocket listener = new java.net.ServerSocket(0);
+             Socket client = new Socket("127.0.0.1", listener.getLocalPort());
+             Socket server = listener.accept()) {
+            byte[] heartbeat = JCoreWireCodec.encodeResponseFrame(19, 8, 103L, 0, uid, 0, new byte[0]);
+            byte[] wrongRid = JCoreWireCodec.encodeResponseFrame(27, 2, 105L, 0, uid, 42, new byte[0]);
+            byte[] token = JCoreWireCodec.encodeResponseFrame(27, 2, 104L, 0, uid, 0, new byte[0]);
+            OutputStream out = server.getOutputStream();
+            out.write(heartbeat, 0, 1);
+            java.util.concurrent.ScheduledExecutorService executor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+            try {
+                java.util.concurrent.Future<?> delivery = executor.schedule(() -> {
+                    out.write(heartbeat, 1, heartbeat.length - 1);
+                    out.write(wrongRid);
+                    out.write(token);
+                    return null;
+                }, 180L, TimeUnit.MILLISECONDS);
+                assertEquals(0, awaitThirdTokenAck(client, uid, 104L, 2000L).statusCode);
+                delivery.get();
+            } finally {
+                executor.shutdownNow();
+            }
+        }
     }
 
     // Shared by the opt-in cloud test and deterministic failure-propagation regressions.

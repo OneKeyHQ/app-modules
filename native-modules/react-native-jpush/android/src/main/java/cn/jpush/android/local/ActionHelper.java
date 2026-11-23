@@ -511,6 +511,12 @@ public class ActionHelper {
         }
     }
 
+    public static String getDownlinkReceiptMetadata(String rawContent) {
+        JSONObject envelope = parseDownlinkObject(extractDownlinkContent(rawContent));
+        Object value = envelope != null ? envelope.opt("_j_data_") : null;
+        return value instanceof String ? (String) value : "";
+    }
+
     private static String extractDownlinkContent(String rawContent) {
         String content = rawContent != null ? rawContent : "";
         if (content.trim().startsWith("{")) {
@@ -944,9 +950,6 @@ public class ActionHelper {
             new JCoreTcpEngine.RequestCallback() {
                 @Override
                 public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
-                    if (statusCode == 0) {
-                        JCoreStorage.saveThirdToken(context, platform, unbind ? "" : token);
-                    }
                     cn.jiguang.plugins.push.common.JLogger.i("Third token result platform=" + platform + " code=" + statusCode);
                     Intent intent = buildBaseReceiverIntent(context, "cmd_result", 0, statusCode);
                     intent.putExtra("cmd", 10000);

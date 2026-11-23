@@ -6,7 +6,15 @@ import android.os.Bundle;
 import cn.jiguang.core.JCoreTcpEngine;
 
 public class ActivityLifeCallBack implements Application.ActivityLifecycleCallbacks {
-    private static int activityTaskCount = 0;
+    private static boolean registered;
+    private int activityTaskCount;
+
+    public static synchronized void register(Application application) {
+        if (!registered) {
+            application.registerActivityLifecycleCallbacks(new ActivityLifeCallBack());
+            registered = true;
+        }
+    }
 
     @Override
     public void onActivityCreated(Activity activity, Bundle savedInstanceState) {

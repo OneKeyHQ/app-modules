@@ -25,6 +25,7 @@ static NSString *const kJCoreKeyDeviceSeed = @"com.onekey.jcore.device_seed";
 
 static NSString *const kJCoreKeySisIps = @"com.onekey.jcore.sis.ips";
 static NSString *const kJCoreKeySisSslIps = @"com.onekey.jcore.sis.ssl_ips";
+static NSString *const kJCoreKeySisCustomSslIps = @"com.onekey.jcore.sis.custom_ssl_ips";
 static NSString *const kJCoreKeySisServerIps = @"com.onekey.jcore.sis.sis_ips";
 static NSString *const kJCoreKeySisHttpReport = @"com.onekey.jcore.sis.http_report";
 static NSString *const kJCoreKeySisHttpsReport = @"com.onekey.jcore.sis.https_report";
@@ -75,6 +76,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     NSUInteger _policyGeneration;
     NSArray<NSString *> *_ips;
     NSArray<NSString *> *_sslIps;
+    BOOL _cachedSslIpsFromCustomSis;
     NSArray<NSString *> *_sisIps;
     NSArray<NSString *> *_httpReportAddresses;
     NSArray<NSString *> *_httpsReportAddresses;
@@ -147,6 +149,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 
         _ips = [defaults stringArrayForKey:kJCoreKeySisIps] ?: @[];
         _sslIps = [defaults stringArrayForKey:kJCoreKeySisSslIps] ?: @[];
+        _cachedSslIpsFromCustomSis = [defaults boolForKey:kJCoreKeySisCustomSslIps];
         _sisIps = [defaults stringArrayForKey:kJCoreKeySisServerIps] ?: @[];
         _httpReportAddresses = [defaults stringArrayForKey:kJCoreKeySisHttpReport] ?: @[];
         _httpsReportAddresses = [defaults stringArrayForKey:kJCoreKeySisHttpsReport] ?: @[];
@@ -369,6 +372,26 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 }
 
 - (void)updateWithSisDictionary:(NSDictionary *)sisDict {
+    [self updateWithSisDictionary:sisDict customSis:NO refreshingAddresses:@[] udpServer:nil];
+}
+
+- (BOOL)commitSisDictionary:(NSDictionary *)sisDict
+                  addresses:(NSArray<NSString *> *)addresses
+                  udpServer:(NSString *)udpServer
+                  customSis:(BOOL)customSis
+                     appKey:(NSString *)appKey
+           policyGeneration:(NSUInteger)generation {
+    @synchronized (self) {
+        if (![self allowsPolicyGeneration:generation] || ![_appKey isEqualToString:appKey]) return NO;
+        [self updateWithSisDictionary:sisDict customSis:customSis refreshingAddresses:addresses udpServer:udpServer];
+        return YES;
+    }
+}
+
+- (void)updateWithSisDictionary:(NSDictionary *)sisDict
+                     customSis:(BOOL)customSis
+           refreshingAddresses:(NSArray<NSString *> *)addresses
+                     udpServer:(NSString *)udpServer {
     if (![sisDict isKindOfClass:[NSDictionary class]]) {
         return;
     }
@@ -381,6 +404,8 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         if ([sisDict[@"ssl_ips"] isKindOfClass:[NSArray class]]) {
             self->_sslIps = [sisDict[@"ssl_ips"] copy];
             [defaults setObject:self->_sslIps forKey:kJCoreKeySisSslIps];
+            self->_cachedSslIpsFromCustomSis = customSis;
+            [defaults setBool:customSis forKey:kJCoreKeySisCustomSslIps];
         }
         if ([sisDict[@"sis_ips"] isKindOfClass:[NSArray class]]) {
             self->_sisIps = [sisDict[@"sis_ips"] copy];
@@ -414,6 +439,14 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
             self->_dataReport = [sisDict[@"data_report"] boolValue];
             [defaults setBool:self->_dataReport forKey:kJCoreKeySisDataReport];
         }
+        if (addresses.count > 0) {
+            [self->_failedIpsMutable removeObjectsInArray:addresses];
+            [defaults setObject:[self->_failedIpsMutable copy] forKey:kJCoreKeySisFailedIps];
+        }
+        if (udpServer.length > 0 && ![self->_lastSuccessSisIpsMutable containsObject:udpServer]) {
+            [self->_lastSuccessSisIpsMutable addObject:udpServer];
+            [defaults setObject:[self->_lastSuccessSisIpsMutable copy] forKey:kJCoreKeySisLastSuccess];
+        }
     });
 }
 
@@ -427,6 +460,12 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     __block NSArray<NSString *> *res = nil;
     dispatch_sync(_stateQueue, ^{ res = [self->_sslIps copy] ?: @[]; });
     return res;
+}
+
+- (BOOL)cachedSslIpsFromCustomSis {
+    __block BOOL customSis;
+    dispatch_sync(_stateQueue, ^{ customSis = self->_cachedSslIpsFromCustomSis; });
+    return customSis;
 }
 
 - (NSArray<NSString *> *)sisIps {
@@ -524,6 +563,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     dispatch_sync(_stateQueue, ^{
         self->_ips = @[];
         self->_sslIps = @[];
+        self->_cachedSslIpsFromCustomSis = NO;
         self->_sisIps = @[];
         self->_httpReportAddresses = @[];
         self->_httpsReportAddresses = @[];
@@ -536,6 +576,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         [defaults removeObjectForKey:kJCoreKeySisIps];
         [defaults removeObjectForKey:kJCoreKeySisSslIps];
+        [defaults removeObjectForKey:kJCoreKeySisCustomSslIps];
         [defaults removeObjectForKey:kJCoreKeySisServerIps];
         [defaults removeObjectForKey:kJCoreKeySisHttpReport];
         [defaults removeObjectForKey:kJCoreKeySisHttpsReport];

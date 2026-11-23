@@ -54,6 +54,7 @@ public final class JCoreWireCodec {
 
     public static final int CLIENT_HEADER_BYTES = 24;
     public static final int SERVER_HEADER_BYTES = 20;
+    private static final int MAX_WIRE_FRAME_BYTES = 0x7FFF;
 
     private static volatile long lastRegisterSeed = 1L;
     private static volatile int defaultAlgorithm = ALG_AES_CBC;
@@ -485,6 +486,7 @@ public final class JCoreWireCodec {
         byte[] payload = body != null ? body : new byte[0];
         byte[] encryptedBody = encryptPayload(payload, effectiveAlg, flag, cryptoSeed);
         int totalLen = CLIENT_HEADER_BYTES + encryptedBody.length;
+        if (totalLen > MAX_WIRE_FRAME_BYTES) return new byte[0];
 
         ByteBuffer buffer = ByteBuffer.allocate(totalLen);
         buffer.putShort((short) ((totalLen & 0x7FFF) | 0x8000));
@@ -1039,7 +1041,7 @@ public final class JCoreWireCodec {
      * 2. uint8(0)
      * 3. uint16(0)
      * 4. string(md5Hex(password))
-     * 5. string("328192|387328") (sdkVerInfo: JCore 5.2.0 = (5<<16)|(2<<8) = 328192, JPush 5.9.0 = (5<<16)|(9<<8) = 387328)
+     * 5. string("328192|329984") (sdkVerInfo: JCore 5.2.0 = (5<<16)|(2<<8) = 328192, JPush 5.9.0 = (5<<16)|(9<<8) = 329984)
      * 6. string(appKey)
      * 7. uint8(0) (Android platform = 0)
      * 8. uint32(1) (loginFlag = 1 for JPush)
@@ -1079,7 +1081,7 @@ public final class JCoreWireCodec {
         buf.put((byte) 0);
         buf.putShort((short) 0);
         writeString(buf, pwdMd5);
-        writeString(buf, "328192|387328");
+        writeString(buf, "328192|329984");
         writeString(buf, appKey != null ? appKey : "");
         buf.put((byte) 0); // Android platform = 0
         buf.putInt(1); // loginFlag = 1
@@ -1246,12 +1248,18 @@ public final class JCoreWireCodec {
 
     public static byte[] buildMessageAckPayload(int statusCode, byte messageType, long messageId, String extData) {
         byte[] extBytes = (extData != null ? extData : "").getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buf = ByteBuffer.allocate(16 + extBytes.length);
+        int bodyBytes = Short.BYTES + Byte.BYTES + Long.BYTES;
+        int extendedBytes = bodyBytes + Short.BYTES + extBytes.length;
+        // Both CBC algorithms add PKCS padding, including a full block when already aligned.
+        int encryptedBytes = (extendedBytes / 16 + 1) * 16;
+        boolean includeExtension = extBytes.length > 0 && CLIENT_HEADER_BYTES + encryptedBytes <= MAX_WIRE_FRAME_BYTES;
+        ByteBuffer buf = ByteBuffer.allocate(includeExtension ? extendedBytes : bodyBytes);
         buf.putShort((short) (statusCode & 0xFFFF));
         buf.put(messageType);
         buf.putLong(messageId);
-        if (extData != null && !extData.isEmpty()) {
-            writeString(buf, extData);
+        if (includeExtension) {
+            buf.putShort((short) extBytes.length);
+            buf.put(extBytes);
         }
         return sliceUsed(buf);
     }
