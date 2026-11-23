@@ -5,13 +5,17 @@ private enum ToasterMetrics {
   /// The first toast sits this far under the top safe-area inset.
   static let topOffset: CGFloat = 16
   static let gutter: CGFloat = 10
+  static let visibleToasts: Int = 3
+  static let stackScaleStep: CGFloat = 0.05
+  static let enterFadeDuration: TimeInterval = 0.22
   static let exitDuration: TimeInterval = 0.2
   static let obstructionDuration: TimeInterval = 0.22
   /// Keep leaving cards mounted long enough for the exit transition and close callback.
-  static let removeDelay: TimeInterval = 0.26
+  static let removeDelay: TimeInterval = 0.22
   /// Extra travel above the top edge for the resting-out position.
   static let enterOvershoot: CGFloat = 32
   static let hiddenScale: CGFloat = 0.96
+  static let collapsedLeaveScale: CGFloat = 0.92
   static let fallbackHeight: CGFloat = 56
   static let swipeDistance: CGFloat = 32
   static let swipeFlickDistance: CGFloat = 12
@@ -42,9 +46,17 @@ private func toastExitAnimator(duration: TimeInterval = ToasterMetrics.exitDurat
 
 /// Lets touches that miss every card fall through to the windows below.
 private final class ToastPassthroughView: UIView {
+  var onOutsideTouch: (() -> Void)?
+
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let hit = super.hitTest(point, with: event)
-    return hit === self ? nil : hit
+    if hit === self {
+      if event?.type == .touches {
+        onOutsideTouch?()
+      }
+      return nil
+    }
+    return hit
   }
 }
 
@@ -64,6 +76,7 @@ private final class ToastEntry {
   var dragStart: CGFloat = 0
   var dragged = false
   var entered = false
+  var lastActiveIndex = 0
 
   init(item: NativeOverlayToastItem, cardColor: UIColor, cardBorderColor: UIColor?) {
     id = item.spec.id
@@ -81,15 +94,28 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private weak var hostView: UIView?
   private var window: UIWindow?
   /// Rides under whatever hangs from the top of the window.
-  private let stage: UIView = ToastPassthroughView()
+  private let stage = ToastPassthroughView()
   private var entries: [ToastEntry] = [] // newest first
   private var config = NativeOverlayToasterConfig()
   private var pressedCount = 0
+  private var expanded = false
   private var obstructionShift: CGFloat = 0
+
+  private var activeEntries: [ToastEntry] {
+    entries.filter { !$0.leaving }
+  }
 
   init(hostView: UIView) {
     self.hostView = hostView
     super.init()
+    stage.onOutsideTouch = { [weak self] in
+      DispatchQueue.main.async {
+        guard let self, self.expanded else { return }
+        self.expanded = false
+        self.layout(animated: true)
+        self.syncTimers()
+      }
+    }
     NotificationCenter.default.addObserver(
       self, selector: #selector(layoutChanged), name: NativeOverlayKeyboard.didChange, object: nil
     )
@@ -176,6 +202,8 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       entry.slot.removeFromSuperview()
     }
     entries = []
+    expanded = false
+    pressedCount = 0
     releaseWindow()
   }
 
@@ -282,8 +310,13 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       guard let self, let entry else { return }
       self.remove(entry, report: true)
       self.layout(animated: true)
+      self.syncTimers()
+    }
+    if activeEntries.count <= 1 {
+      expanded = false
     }
     layout(animated: true)
+    syncTimers()
   }
 
   private func remove(_ entry: ToastEntry, report: Bool) {
@@ -292,11 +325,15 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     entry.card.cancelStatusMotion()
     entry.slot.removeFromSuperview()
     entries.removeAll { $0 === entry }
+    if activeEntries.count <= 1 {
+      expanded = false
+    }
     if report {
       onEvent?(entry.id, entry.item.generation, "close", entry.reason)
     }
     if entries.isEmpty {
       pressedCount = 0
+      expanded = false
       releaseWindow()
     }
   }
@@ -345,51 +382,130 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       }
     }
 
-    // Oldest at the top, newest under it: a toast keeps its place when a
-    // newer one arrives and moves up when an older one leaves.
-    var offset: CGFloat = 0
-    for entry in entries.reversed() {
-      let size = entry.card.layoutCard(
-        contentWidth: width, contentMaxHeight: config.contentMaxHeight
+    let active = activeEntries
+    if active.count <= 1 {
+      expanded = false
+    }
+    let isCollapsed = !expanded && active.count > 1
+
+    // Measure every card's natural size first so collapsed back cards know frontHeight.
+    for entry in entries {
+      entry.card.layoutCard(
+        contentWidth: width, contentMaxHeight: config.contentMaxHeight, applyBounds: false
       )
-      let x = safe.left + (root.bounds.width - safe.left - safe.right - size.width) / 2
-      // Where the card rests before it enters and after it leaves.
-      let hidden = -(size.height > 0 ? size.height : ToasterMetrics.fallbackHeight)
-        - safe.top - ToasterMetrics.enterOvershoot
-      let targetY = top + (entry.leaving ? hidden : offset)
-      let targetAlpha: CGFloat = entry.leaving ? 0 : 1
-      if !entry.leaving {
-        offset += size.height + ToasterMetrics.gutter
+    }
+    let frontHeight = active.first?.card.naturalSize.height ?? ToasterMetrics.fallbackHeight
+
+    // Keep newest card at the highest z-order.
+    for entry in entries.reversed() {
+      stage.bringSubviewToFront(entry.slot)
+    }
+
+    var activeIndex = 0
+    var expandedOffset: CGFloat = 0
+    for entry in entries {
+      let naturalSize = entry.card.naturalSize
+      let x = safe.left + (root.bounds.width - safe.left - safe.right - naturalSize.width) / 2
+      let displayHeight: CGFloat
+      let targetY: CGFloat
+      let targetScale: CGFloat
+      let targetAlpha: CGFloat
+      let hideBody: Bool
+      let interactive: Bool
+
+      if entry.leaving {
+        displayHeight = entry.card.bounds.height > 0 ? entry.card.bounds.height : naturalSize.height
+        let hidden = -(displayHeight > 0 ? displayHeight : ToasterMetrics.fallbackHeight)
+          - safe.top - ToasterMetrics.enterOvershoot
+        let collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && entry.reason != "swipe"
+        targetY = collapsedBackExit ? top - displayHeight * 0.4 : top + hidden
+        targetScale = collapsedBackExit ? ToasterMetrics.collapsedLeaveScale : ToasterMetrics.hiddenScale
+        targetAlpha = 0
+        hideBody = collapsedBackExit
+        interactive = false
+      } else {
+        let index = activeIndex
+        entry.lastActiveIndex = index
+        activeIndex += 1
+        let isVisible = index < ToasterMetrics.visibleToasts
+        if isCollapsed {
+          displayHeight = index == 0 ? naturalSize.height : frontHeight
+          targetY = top + CGFloat(min(index, ToasterMetrics.visibleToasts)) * ToasterMetrics.gutter
+          targetScale = max(0.85, 1 - CGFloat(min(index, ToasterMetrics.visibleToasts)) * ToasterMetrics.stackScaleStep)
+          hideBody = index > 0
+        } else {
+          displayHeight = naturalSize.height
+          targetY = top + expandedOffset
+          targetScale = 1
+          hideBody = false
+        }
+        if isVisible {
+          expandedOffset += naturalSize.height + ToasterMetrics.gutter
+        }
+        targetAlpha = isVisible ? 1 : 0
+        interactive = isVisible
       }
-      let frame = CGRect(x: x, y: targetY, width: size.width, height: size.height)
-      let targetTransform = entry.leaving
-        ? CGAffineTransform(scaleX: ToasterMetrics.hiddenScale, y: ToasterMetrics.hiddenScale)
-        : .identity
-      if !entry.entered {
+
+      let displaySize = CGSize(width: naturalSize.width, height: displayHeight)
+      let frame = CGRect(x: x, y: targetY, width: displaySize.width, height: displaySize.height)
+      let targetTransform = targetScale == 1
+        ? CGAffineTransform.identity
+        : CGAffineTransform(scaleX: targetScale, y: targetScale)
+      let wasEntered = entry.entered
+
+      if !wasEntered {
         entry.entered = true
+        let hidden = -(displayHeight > 0 ? displayHeight : ToasterMetrics.fallbackHeight)
+          - safe.top - ToasterMetrics.enterOvershoot
+        entry.card.applyDisplayHeight(displayHeight)
+        entry.card.setBodyHidden(hideBody, animated: false)
         entry.slot.transform = .identity
-        entry.slot.frame = CGRect(x: x, y: top + hidden, width: size.width, height: size.height)
+        entry.slot.bounds.size = displaySize
+        entry.card.center = CGPoint(x: displaySize.width / 2, y: displaySize.height / 2)
+        entry.slot.center = CGPoint(x: x + displaySize.width / 2, y: top + hidden + displaySize.height / 2)
         entry.slot.transform = CGAffineTransform(
           scaleX: ToasterMetrics.hiddenScale, y: ToasterMetrics.hiddenScale
         )
         if animate && !entry.leaving { entry.card.animateMessageStatusEntrance() }
+      } else {
+        entry.card.setBodyHidden(hideBody, animated: animate)
       }
+
+      entry.slot.isUserInteractionEnabled = interactive
       if !entry.leaving && !reduceMotion { entry.card.animateMessageStatusRing() }
       if reduceMotion { entry.card.cancelStatusMotion() }
-      entry.slot.bounds.size = size
-      entry.card.center = CGPoint(x: size.width / 2, y: size.height / 2)
-      let apply = {
+
+      let applyGeometry = {
         entry.slot.center = CGPoint(x: frame.midX, y: frame.midY)
-        entry.slot.bounds.size = size
+        entry.slot.bounds.size = displaySize
         entry.slot.transform = targetTransform
-        entry.card.alpha = targetAlpha
+        entry.card.applyDisplayHeight(displayHeight)
+        entry.card.center = CGPoint(x: displaySize.width / 2, y: displaySize.height / 2)
       }
+
       if animate {
-        let animator = entry.leaving ? toastExitAnimator() : toastSpringAnimator()
-        animator.addAnimations(apply)
-        animator.startAnimation()
+        if entry.leaving {
+          let animator = toastExitAnimator()
+          animator.addAnimations {
+            applyGeometry()
+            entry.card.alpha = targetAlpha
+          }
+          animator.startAnimation()
+        } else {
+          let spring = toastSpringAnimator()
+          spring.addAnimations(applyGeometry)
+          spring.startAnimation()
+          if entry.card.alpha != targetAlpha {
+            let fade = UIViewPropertyAnimator(
+              duration: ToasterMetrics.enterFadeDuration, curve: .easeOut
+            )
+            fade.addAnimations { entry.card.alpha = targetAlpha }
+            fade.startAnimation()
+          }
+        }
       } else {
-        apply()
+        applyGeometry()
+        entry.card.alpha = targetAlpha
       }
     }
   }
@@ -397,7 +513,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   // MARK: Timers
 
   private func syncTimers() {
-    let paused = pressedCount > 0
+    let paused = pressedCount > 0 || expanded
     for entry in entries where !entry.leaving {
       guard let remaining = entry.remaining else { continue }
       if paused {
@@ -432,7 +548,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
 
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     if gestureRecognizer is UITapGestureRecognizer {
-      guard let entry = entry(for: gestureRecognizer), entry.item.spec.pressable else { return false }
+      guard let entry = entry(for: gestureRecognizer) else { return false }
+      let canExpand = !expanded && activeEntries.count > 1
+      if !canExpand && !entry.item.spec.pressable { return false }
       if touch.view is UIControl || touch.view is ToastTextLabel { return false }
     }
     return true
@@ -451,13 +569,21 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   }
 
   @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-    guard let entry = entry(for: gesture), !entry.leaving, !entry.dragged,
-          entry.item.spec.pressable else { return }
+    guard let entry = entry(for: gesture), !entry.leaving, !entry.dragged else { return }
+    if !expanded && activeEntries.count > 1 {
+      expanded = true
+      layout(animated: true)
+      syncTimers()
+      return
+    }
+    guard entry.item.spec.pressable else { return }
     onEvent?(entry.id, entry.item.generation, "press", "")
   }
 
   @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
     guard let entry = entry(for: gesture), !entry.leaving else { return }
+    let active = activeEntries
+    if !expanded && active.count > 1 && entry !== active.first { return }
     let card = entry.card
     // Toasts land at the top, so the dismiss direction is up.
     let translation = gesture.translation(in: stage)

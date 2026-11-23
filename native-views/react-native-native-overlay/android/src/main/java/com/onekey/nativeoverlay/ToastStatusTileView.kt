@@ -1,5 +1,7 @@
 package com.onekey.nativeoverlay
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ArgbEvaluator
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
@@ -93,10 +95,27 @@ internal class ToastStatusTileView(context: Context, private var status: ToastIc
   private fun animateFor(duration: Long, frame: (Float) -> Unit) {
     animation?.cancel()
     frame(0f)
+    var cancelled = false
     animation = ValueAnimator.ofFloat(0f, duration.toFloat()).apply {
       this.duration = duration
       interpolator = LinearInterpolator()
       addUpdateListener { frame(it.animatedValue as Float) }
+      addListener(object : AnimatorListenerAdapter() {
+        override fun onAnimationCancel(animator: Animator) {
+          cancelled = true
+        }
+
+        override fun onAnimationEnd(animator: Animator) {
+          if (!cancelled) {
+            tinting = false
+            removeDeparting()
+            fade(this@ToastStatusTileView, 1f, 1f)
+            fade(glyph, 1f, 1f)
+            glyph.strokeProgress = 1f
+            applyTileColor(status.backgroundColor)
+          }
+        }
+      })
       start()
     }
   }

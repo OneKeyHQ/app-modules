@@ -285,6 +285,7 @@ final class ToastTextLabel: UIView {
 
 private final class ToastActionButton: UIControl {
   let action: NativeOverlayToastAction
+  var isInline = false
   private let label = UILabel()
   private var iconView: ToastIconView?
 
@@ -336,8 +337,9 @@ private final class ToastActionButton: UIControl {
 
   /// The button's border box.
   var fittedSize: CGSize {
-    CGSize(
-      width: labelWidth + iconExtent + 2 * (action.paddingHorizontal + action.borderWidth),
+    let padX = isInline ? max(action.paddingHorizontal, 14) : action.paddingHorizontal
+    return CGSize(
+      width: labelWidth + iconExtent + 2 * (padX + action.borderWidth),
       height: max(action.lineHeight + textBoxSlack, action.icon?.size ?? 0)
         + 2 * (action.paddingVertical + action.borderWidth)
     )
@@ -345,8 +347,10 @@ private final class ToastActionButton: UIControl {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    layer.cornerRadius = min(action.borderRadius, bounds.height / 2)
-    var x = action.paddingHorizontal + action.borderWidth
+    let radius = isInline ? ToastMetrics.inlineActionRadius : action.borderRadius
+    layer.cornerRadius = min(radius, bounds.height / 2)
+    let padX = isInline ? max(action.paddingHorizontal, 14) : action.paddingHorizontal
+    var x = padX + action.borderWidth
     if let iconView, let icon = action.icon {
       iconView.frame = CGRect(
         x: x, y: (bounds.height - icon.size) / 2, width: icon.size, height: icon.size
@@ -377,6 +381,8 @@ final class NativeOverlayToastCardView: UIView {
   private let content = UIView()
   private var messageStatusIcon: ToastIconView?
   private var layoutBlocks: [(CGFloat) -> CGFloat] = []
+  private var bodyHidden = false
+  private(set) var naturalSize: CGSize = .zero
 
   init(spec: NativeOverlayToastSpec, cardColor: UIColor, cardBorderColor: UIColor? = nil) {
     self.spec = spec
@@ -386,7 +392,7 @@ final class NativeOverlayToastCardView: UIView {
     surface.layer.borderWidth = 1
     surface.layer.shadowColor = UIColor.black.cgColor
     surface.layer.shadowOffset = CGSize(width: 0, height: 2)
-    surface.layer.shadowOpacity = 0.07
+    surface.layer.shadowOpacity = 0.06
     surface.layer.shadowRadius = 4
     addSubview(surface)
     content.clipsToBounds = true
@@ -414,7 +420,7 @@ final class NativeOverlayToastCardView: UIView {
     messageStatusIcon = nil
     self.spec = spec
     surface.backgroundColor = cardColor
-    surface.layer.borderColor = (cardBorderColor ?? UIColor(white: 0, alpha: 0.07)).cgColor
+    surface.layer.borderColor = (cardBorderColor ?? UIColor(white: 0, alpha: 0.06)).cgColor
     accessibilityIdentifier = spec.testID
     content.subviews.forEach { view in
       if view !== retained { view.removeFromSuperview() }
@@ -423,6 +429,26 @@ final class NativeOverlayToastCardView: UIView {
     switch spec.layout {
     case .message: buildMessage(statusIcon: retained)
     case .notification: buildNotification()
+    }
+    if settleStatus && retained != nil {
+      let swapped = content.subviews.filter { $0 !== retained }
+      swapped.forEach { view in
+        view.alpha = 0
+        view.transform = CGAffineTransform(translationX: 0, y: 3)
+      }
+      let animator = UIViewPropertyAnimator(
+        duration: 0.16,
+        timingParameters: UICubicTimingParameters(
+          controlPoint1: CGPoint(x: 0.2, y: 0), controlPoint2: CGPoint(x: 0, y: 1)
+        )
+      )
+      animator.addAnimations {
+        swapped.forEach { view in
+          view.alpha = 1
+          view.transform = .identity
+        }
+      }
+      animator.startAnimation()
     }
     if spec.pressable {
       accessibilityCustomActions = [
@@ -435,6 +461,35 @@ final class NativeOverlayToastCardView: UIView {
     } else {
       accessibilityCustomActions = nil
     }
+  }
+
+  func setBodyHidden(_ hidden: Bool, animated: Bool) {
+    guard hidden != bodyHidden else { return }
+    bodyHidden = hidden
+    let targetAlpha: CGFloat = hidden ? 0 : 1
+    if animated {
+      UIView.animate(withDuration: 0.24, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+        self.content.alpha = targetAlpha
+      }
+    } else {
+      content.alpha = targetAlpha
+    }
+  }
+
+  func applyDisplayHeight(_ height: CGFloat) {
+    let clamped = max(height, 0)
+    let size = CGSize(width: naturalSize.width, height: clamped)
+    bounds.size = size
+    surface.frame = CGRect(origin: .zero, size: size)
+    surface.layer.shadowPath = UIBezierPath(
+      roundedRect: surface.bounds, cornerRadius: ToastMetrics.cardRadius
+    ).cgPath
+    content.frame = CGRect(
+      x: ToastMetrics.cardPaddingHorizontal,
+      y: ToastMetrics.cardPaddingVertical,
+      width: max(size.width - 2 * ToastMetrics.cardPaddingHorizontal, 0),
+      height: max(clamped - 2 * ToastMetrics.cardPaddingVertical, 0)
+    )
   }
 
   func animateMessageStatusEntrance() { messageStatusIcon?.statusTile?.enter() }
@@ -537,6 +592,9 @@ final class NativeOverlayToastCardView: UIView {
     let messageLabels = makeLabels(spec.message)
     let buttons = makeButtons()
     let inlineAction = shouldUseInlineAction()
+    if inlineAction, let button = buttons.first {
+      button.isInline = true
+    }
     let iconSize = spec.icon?.size ?? 0
     layoutBlocks.append { [weak self] width in
       guard let self else { return 0 }
@@ -646,9 +704,10 @@ final class NativeOverlayToastCardView: UIView {
   }
 
   /// Sizes the card for a content box of `contentWidth` and lays its content
-  /// out. Returns the card's size.
+  /// out. Returns the card's natural size. Pass `applyBounds: false` when the
+  /// caller will animate height via `applyDisplayHeight(_:)`.
   @discardableResult
-  func layoutCard(contentWidth: CGFloat, contentMaxHeight: CGFloat?) -> CGSize {
+  func layoutCard(contentWidth: CGFloat, contentMaxHeight: CGFloat?, applyBounds: Bool = true) -> CGSize {
     var height = layoutBlocks.reduce(CGFloat(0)) { $0 + $1(contentWidth) }
     if let contentMaxHeight, contentMaxHeight > 0 {
       height = min(height, contentMaxHeight)
@@ -657,15 +716,10 @@ final class NativeOverlayToastCardView: UIView {
       width: contentWidth + 2 * ToastMetrics.cardPaddingHorizontal,
       height: height + 2 * ToastMetrics.cardPaddingVertical
     )
-    bounds.size = size
-    surface.frame = CGRect(origin: .zero, size: size)
-    surface.layer.shadowPath = UIBezierPath(
-      roundedRect: surface.bounds, cornerRadius: ToastMetrics.cardRadius
-    ).cgPath
-    content.frame = CGRect(
-      x: ToastMetrics.cardPaddingHorizontal, y: ToastMetrics.cardPaddingVertical,
-      width: contentWidth, height: height
-    )
+    naturalSize = size
+    if applyBounds || bounds.size == .zero || bounds.width != size.width {
+      applyDisplayHeight(size.height)
+    }
     return size
   }
 }

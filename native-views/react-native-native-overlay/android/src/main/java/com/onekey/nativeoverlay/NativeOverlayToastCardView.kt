@@ -1,5 +1,9 @@
 package com.onekey.nativeoverlay
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.TimeInterpolator
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.AssetManager
@@ -9,6 +13,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
+import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -36,7 +41,9 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ProgressBar
@@ -62,12 +69,13 @@ private object ToastMetrics {
   const val CARD_PADDING_HORIZONTAL = 10f
   const val CARD_PADDING_VERTICAL = 10f
   const val CARD_RADIUS = 21f
-  const val CARD_ELEVATION = 5f
+  const val CARD_ELEVATION = 4f
   const val MESSAGE_ICON_GAP = 12f
   const val MESSAGE_TEXT_GAP = 2f
   const val NO_ICON_PADDING_START = 6f
   const val TILE_MIN_HEIGHT = 36f
   const val INLINE_ACTION_HEIGHT = 36f
+  const val INLINE_ACTION_RADIUS = 11f
   const val INLINE_ACTION_MAX_LABEL = 16
   const val INLINE_ACTION_MAX_MESSAGE = 72
   const val NOTIFICATION_GAP = 10f
@@ -76,6 +84,8 @@ private object ToastMetrics {
   const val ACTIONS_PADDING_TOP = 10f
   const val ACTIONS_PADDING_END = 2f
   const val ACTIONS_PADDING_BOTTOM = 2f
+  const val CONTENT_SWAP_MS = 160L
+  const val BODY_FADE_MS = 240L
 }
 
 private const val IMAGE_POOL_THREADS = 4
@@ -290,8 +300,9 @@ internal class ToastIconView(context: Context, icon: ToastIcon) : FrameLayout(co
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
-    if (icon is ToastIcon.Image && cancelled.get() && imageView.drawable == null) {
-      load(icon.uri)
+    val currentIcon = icon
+    if (currentIcon is ToastIcon.Image && cancelled.get() && imageView.drawable == null) {
+      load(currentIcon.uri)
     }
     requestIcon()
   }
@@ -550,6 +561,7 @@ private class ToastActionButton(context: Context, val action: ToastAction) : Vie
   private val surface = ToastPillDrawable(if (action.borderWidth > 0) 0.8f else 0f)
   val label = TextView(context)
   val iconView = action.icon?.let { ToastIconView(context, it) }
+  var isInline = false
   /** Child frames in the card's coordinates; the card lays the button out. */
   var frame = Rect()
   var labelFrame = Rect()
@@ -606,7 +618,8 @@ private class ToastActionButton(context: Context, val action: ToastAction) : Vie
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    surface.radius = minOf(action.borderRadius * resources.displayMetrics.density, (bottom - top) / 2f)
+    val radiusDp = if (isInline) ToastMetrics.INLINE_ACTION_RADIUS else action.borderRadius
+    surface.radius = minOf(radiusDp * resources.displayMetrics.density, (bottom - top) / 2f)
     label.layoutAt(labelFrame, frame.left, frame.top)
     iconView?.layoutAt(iconFrame, frame.left, frame.top)
   }
@@ -629,6 +642,8 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   var originY = 0.0
 
   private val surface = GradientDrawable()
+  private val contentSwapInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+  private val bodyFadeInterpolator = PathInterpolator(0f, 0f, 0.58f, 1f)
   private var iconView: ToastIconView? = null
   private var badge: View? = null
   private var imageView: ToastIconView? = null
@@ -637,19 +652,129 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   private var buttons: List<ToastActionButton> = emptyList()
   private val frames = HashMap<View, Rect>()
   private var size = Rect()
+  private var bodyHidden = false
+  private var displayHeightPx = -1
+  private var targetDisplayHeightPx = -1
+  private var heightAnimator: ValueAnimator? = null
+
+  val naturalHeightPx: Int get() = size.height()
+  val currentDisplayHeightPx: Int
+    get() = when {
+      displayHeightPx > 0 -> displayHeightPx
+      size.height() > 0 -> size.height()
+      else -> measuredHeight
+    }
 
   init {
+    setWillNotDraw(false)
     surface.cornerRadius = context.dp(ToastMetrics.CARD_RADIUS).toFloat()
-    background = surface
     elevation = context.dp(ToastMetrics.CARD_ELEVATION).toFloat()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      outlineAmbientShadowColor = Color.argb(46, 0, 0, 0)
+      outlineSpotShadowColor = Color.argb(56, 0, 0, 0)
+    }
+    outlineProvider = object : ViewOutlineProvider() {
+      override fun getOutline(view: View, outline: Outline) {
+        val h = if (displayHeightPx > 0) displayHeightPx else view.height
+        outline.setRoundRect(0, 0, view.width, max(h, 0), context.dp(ToastMetrics.CARD_RADIUS).toFloat())
+      }
+    }
+    clipToOutline = true
     clipChildren = true
     clipToPadding = true
   }
 
+  override fun onDraw(canvas: Canvas) {
+    val h = if (displayHeightPx > 0) displayHeightPx else height
+    surface.setBounds(0, 0, width, max(h, 0))
+    surface.draw(canvas)
+  }
+
+  override fun onDetachedFromWindow() {
+    heightAnimator?.cancel()
+    heightAnimator = null
+    super.onDetachedFromWindow()
+  }
+
   fun cancelLoads() {
+    heightAnimator?.cancel()
+    heightAnimator = null
     iconView?.cancelLoad()
     imageView?.cancelLoad()
     buttons.forEach { it.iconView?.cancelLoad() }
+  }
+
+  private fun childRestAlpha(view: View): Float =
+    if (view is ToastActionButton && view.action.disabled) view.action.disabledOpacity else 1f
+
+  fun setBodyHidden(hidden: Boolean, animated: Boolean) {
+    if (hidden == bodyHidden) return
+    bodyHidden = hidden
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      val target = if (hidden) 0f else childRestAlpha(child)
+      if (animated) {
+        child.animate().alpha(target).setDuration(ToastMetrics.BODY_FADE_MS)
+          .setInterpolator(bodyFadeInterpolator).start()
+      } else {
+        child.animate().cancel()
+        child.alpha = target
+      }
+    }
+  }
+
+  fun setDisplayHeight(targetPx: Int, animated: Boolean, durationMs: Long, interpolator: TimeInterpolator) {
+    val clamped = max(targetPx, 0)
+    val natural = size.height()
+    if (clamped == 0 || natural == 0) return
+    val isNatural = clamped == natural
+    val current = if (displayHeightPx > 0) displayHeightPx else natural
+    if (!animated || current == clamped) {
+      heightAnimator?.cancel()
+      heightAnimator = null
+      displayHeightPx = if (isNatural) -1 else clamped
+      targetDisplayHeightPx = if (isNatural) -1 else clamped
+      if (measuredHeight < clamped || (isNatural && measuredHeight != natural)) {
+        requestLayout()
+      }
+      invalidateOutline()
+      invalidate()
+      return
+    }
+    if (targetDisplayHeightPx == clamped && heightAnimator?.isRunning == true) return
+    heightAnimator?.cancel()
+    targetDisplayHeightPx = clamped
+    if (measuredHeight < max(current, clamped)) {
+      requestLayout()
+    }
+    var cancelled = false
+    heightAnimator = ValueAnimator.ofInt(current, clamped).apply {
+      duration = durationMs
+      this.interpolator = interpolator
+      addUpdateListener { anim ->
+        displayHeightPx = anim.animatedValue as Int
+        invalidateOutline()
+        invalidate()
+      }
+      addListener(object : AnimatorListenerAdapter() {
+        override fun onAnimationCancel(animation: Animator) {
+          cancelled = true
+        }
+
+        override fun onAnimationEnd(animation: Animator) {
+          if (!cancelled && isNatural) {
+            displayHeightPx = -1
+            targetDisplayHeightPx = -1
+            if (measuredHeight != size.height()) {
+              requestLayout()
+            }
+            invalidateOutline()
+            invalidate()
+          }
+        }
+      })
+      start()
+    }
   }
 
   fun apply(spec: ToastSpec, cardColor: Int, cardBorderColor: Int? = null, settleStatus: Boolean = false) {
@@ -660,7 +785,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     }
     this.spec = spec
     surface.setColor(cardColor)
-    surface.setStroke(max(1, context.dp(1f)), cardBorderColor ?: Color.argb(18, 0, 0, 0))
+    surface.setStroke(max(1, context.dp(1f)), cardBorderColor ?: Color.argb(15, 0, 0, 0))
     spec.testID?.let { tag = it }
     isClickable = spec.pressable
     isFocusable = spec.pressable
@@ -704,7 +829,26 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
         addView(button)
       }
     }
+    if (bodyHidden) {
+      for (index in 0 until childCount) {
+        getChildAt(index).alpha = 0f
+      }
+    } else if (settleStatus && retained != null) {
+      val shiftPx = context.dp(3f).toFloat()
+      val swapped: List<View> = titles + messages + buttons
+      for (view in swapped) {
+        view.alpha = 0f
+        view.translationY = shiftPx
+        view.animate()
+          .alpha(childRestAlpha(view))
+          .translationY(0f)
+          .setDuration(ToastMetrics.CONTENT_SWAP_MS)
+          .setInterpolator(contentSwapInterpolator)
+          .start()
+      }
+    }
     requestLayout()
+    invalidate()
   }
 
   fun animateMessageStatusEntrance() {
@@ -841,6 +985,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
 
   /** Lays the content box out from [content]; returns its height in px. */
   private fun placeContent(spec: ToastSpec, content: Node, width: Double): Double {
+    buttons.forEach { it.isInline = false }
     if (spec.isNotification) {
       val badgeSize = px(spec.badgeSize)
       val badgeNode = content.child(0.0, 0.0)
@@ -875,6 +1020,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     var inlineHeight = 0.0
     if (inlineAction) {
       val button = buttons.first()
+      button.isInline = true
       val action = button.action
       val (labelWidth, labelHeight) = button.measureLabel()
       val actionIconSize = action.icon?.let { px(it.size) } ?: 0.0
@@ -955,7 +1101,8 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       width + 2 * px(ToastMetrics.CARD_PADDING_HORIZONTAL),
       height + 2 * px(ToastMetrics.CARD_PADDING_VERTICAL),
     )
-    setMeasuredDimension(size.width(), size.height())
+    val measuredH = max(size.height(), max(displayHeightPx, targetDisplayHeightPx))
+    setMeasuredDimension(size.width(), measuredH)
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
