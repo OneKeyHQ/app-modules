@@ -239,7 +239,7 @@ export function createToastDomRenderer(
     const { style } = node.li;
     const originalHeight = style.height;
     style.height = 'auto';
-    layoutMessageAction(node.content);
+    layoutMessageAction(node.content, config.webContentMaxHeight);
     const { offsetHeight: height } = node.li;
     style.height = originalHeight;
     node.initialHeight = height;
@@ -827,7 +827,12 @@ export function createToastDomRenderer(
       }
       syncing = true;
       const shouldReduceBeforeSync = reduceMotion();
+      const heightCapChanged =
+        config.webContentMaxHeight !== nextConfig.webContentMaxHeight;
       config = nextConfig;
+      if (heightCapChanged) {
+        groups.forEach(applyGroup);
+      }
       if (!shouldReduceBeforeSync && reduceMotion()) {
         finalizeReducedMotion();
       }
@@ -857,7 +862,8 @@ export function createToastDomRenderer(
           }
           return;
         }
-        if (node.revision !== item.revision) {
+        const needsRedraw = node.revision !== item.revision;
+        if (needsRedraw) {
           const nextIcon =
             item.spec.layout === 'message'
               ? item.spec.statusIcon ?? item.spec.icon
@@ -870,6 +876,8 @@ export function createToastDomRenderer(
           node.revision = item.revision;
           node.spec = item.spec;
           renderContent(node, settling ? 'settle' : undefined);
+        }
+        if (needsRedraw || heightCapChanged) {
           measure(node);
         }
         if (node.generation !== item.generation) {

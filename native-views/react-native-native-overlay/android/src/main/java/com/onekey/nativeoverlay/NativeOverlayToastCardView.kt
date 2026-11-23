@@ -1029,6 +1029,20 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     val icon = spec.icon
     val iconSize = icon?.let { px(it.size) } ?: 0.0
     val columnX = icon?.let { iconSize + px(ToastMetrics.MESSAGE_ICON_GAP) } ?: px(ToastMetrics.NO_ICON_PADDING_START)
+    val gap = px(ToastMetrics.MESSAGE_TEXT_GAP)
+    val measureColumn = content.child(columnX, 0.0)
+    val textBlocks = listOf(titles, messages).filter { it.isNotEmpty() }
+    fun measureText(columnWidth: Double): Double {
+      var height = 0.0
+      textBlocks.forEachIndexed { index, block ->
+        if (index > 0) height += gap
+        for (view in block) {
+          val node = measureColumn.child(0.0, height, text = true)
+          height += textHeight(view, node.width(columnWidth, text = true))
+        }
+      }
+      return height
+    }
     var inlineAction = false
     var inlineWidth = 0.0
     var inlineHeight = 0.0
@@ -1041,31 +1055,29 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       val insetX = px(max(action.paddingHorizontal, 14f) + action.borderWidth)
       val insetY = px(action.paddingVertical + action.borderWidth)
       inlineWidth = labelWidth + iconExtent + 2 * insetX
-      val minTextWidth = if (titles.isEmpty() && messages.isEmpty()) 0.0 else px(ToastMetrics.INLINE_TEXT_MIN_WIDTH)
-      inlineAction = width - columnX - px(ToastMetrics.MESSAGE_ICON_GAP) - inlineWidth >= minTextWidth
-      button.isInline = inlineAction
-      if (inlineAction) {
-        inlineHeight = max(max(labelHeight.toDouble(), actionIconSize) + 2 * insetY, px(ToastMetrics.INLINE_ACTION_HEIGHT))
+      val minTextWidth = if (textBlocks.isEmpty()) 0.0 else px(ToastMetrics.INLINE_TEXT_MIN_WIDTH)
+      val inlineTextWidth = width - columnX - px(ToastMetrics.MESSAGE_ICON_GAP) - inlineWidth
+      val fittedHeight = max(labelHeight.toDouble(), actionIconSize) + 2 * insetY
+      val candidateHeight = max(fittedHeight, px(ToastMetrics.INLINE_ACTION_HEIGHT))
+      inlineAction = inlineTextWidth >= minTextWidth
+      if (!inlineAction && contentMaxHeight > 0f && inlineTextWidth > 0.0) {
+        val heightCap = px(contentMaxHeight)
+        val lowerButtonBottom = measureText(max(width - columnX, 0.0)) + gap +
+          px(ToastMetrics.ACTIONS_PADDING_TOP) + fittedHeight
+        if (lowerButtonBottom > heightCap) {
+          val inlineTextHeight = measureText(inlineTextWidth)
+          inlineAction = maxOf(inlineTextHeight, candidateHeight, iconSize, px(ToastMetrics.TILE_MIN_HEIGHT)) <= heightCap
+        }
       }
+      button.isInline = inlineAction
+      if (inlineAction) inlineHeight = candidateHeight
     }
     val trailing = if (inlineAction) inlineWidth + px(ToastMetrics.MESSAGE_ICON_GAP) else 0.0
     val columnWidth = max(width - columnX - trailing, 0.0)
-    val gap = px(ToastMetrics.MESSAGE_TEXT_GAP)
-    val measureColumn = content.child(columnX, 0.0)
-    var textHeight = 0.0
-    var hasBlock = false
-    for (block in listOf(titles, messages)) {
-      if (block.isEmpty()) continue
-      if (hasBlock) textHeight += gap
-      hasBlock = true
-      for (view in block) {
-        val drawnWidth = measureColumn.child(0.0, textHeight, text = true).width(columnWidth, text = true)
-        textHeight += textHeight(view, drawnWidth).toDouble()
-      }
-    }
+    var textHeight = measureText(columnWidth)
     var bottomActionsHeight = 0.0
     if (buttons.isNotEmpty() && !inlineAction) {
-      if (hasBlock) textHeight += gap
+      if (textBlocks.isNotEmpty()) textHeight += gap
       bottomActionsHeight = placeActions(
         measureColumn.child(0.0, textHeight), columnWidth, ToastMetrics.ACTIONS_PADDING_END, ToastMetrics.ACTIONS_PADDING_BOTTOM,
       )

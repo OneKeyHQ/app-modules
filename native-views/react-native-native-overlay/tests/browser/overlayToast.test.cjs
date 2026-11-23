@@ -583,3 +583,42 @@ test('restoring motion resumes the ring without replaying a mounted status anima
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   assert.equal(await page.locator('[data-okt-status-motion]').count(), 0);
 });
+
+test('a compact action stays reachable when lowering it would exceed the content height cap', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.setViewportSize({ width: 232, height: 800 });
+  await page.evaluate(() => window.showStatus('success', {
+    title: {
+      paragraphs: [[{ text: 'Done' }]], color: '#111', fontSize: 16,
+      lineHeight: 24, fontWeight: '600',
+    },
+    actions: [{
+      id: 'view', label: 'View', borderRadius: 28, color: '#111',
+      backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
+      fontWeight: '600', paddingHorizontal: 10, paddingVertical: 4,
+    }],
+  }));
+  const action = page.getByRole('button', { name: 'View', exact: true });
+  assert.equal(await action.getAttribute('data-okt-inline-action'), null);
+  await action.focus();
+
+  await page.evaluate(() => window.configure({ webContentMaxHeight: 36 }));
+  assert.equal(await action.getAttribute('data-okt-inline-action'), '');
+  const geometry = await action.evaluate((node) => {
+    const root = node.closest('[data-okt-root]').getBoundingClientRect();
+    const button = node.getBoundingClientRect();
+    const column = node.parentElement.querySelector('[data-okt-message-col]');
+    return {
+      cap: root.height,
+      fits: button.top >= root.top && button.bottom <= root.bottom,
+      textWidth: column.clientWidth,
+      focused: node === document.activeElement,
+    };
+  });
+  assert.equal(geometry.cap, 36);
+  assert.ok(geometry.fits && geometry.focused);
+  assert.ok(geometry.textWidth > 0 && geometry.textWidth < 96);
+
+  await page.evaluate(() => window.configure({ webContentMaxHeight: 160 }));
+  assert.equal(await action.getAttribute('data-okt-inline-action'), null);
+});

@@ -434,38 +434,48 @@ export function buildToastContent(
   return root;
 }
 
-export function layoutMessageAction(content: HTMLElement) {
+export function layoutMessageAction(content: HTMLElement, heightCap?: number) {
   const button = content.querySelector<HTMLElement>(
     '[data-okt-inline-candidate]'
   );
   const row = button?.closest<HTMLElement>('[data-okt-row]');
   const actions = row?.querySelector<HTMLElement>('[data-okt-actions]');
-  if (!button || !row || !actions) {
+  const column = actions?.parentElement;
+  if (!button || !row || !actions || !column) {
     return;
   }
   const icon = row.querySelector<HTMLElement>('[data-okt-icon-box]');
   const textStart = icon
     ? icon.offsetWidth + MESSAGE_ICON_GAP
     : TOAST_GEOMETRY.noIconPaddingStart;
-  const minTextWidth = row.querySelector('[data-okt-paragraphs]')
+  const minTextWidth = column.querySelector('[data-okt-paragraphs]')
     ? TOAST_GEOMETRY.inlineTextMinWidth
     : 0;
 
-  button.setAttribute('data-okt-inline-action', '');
-  const fitsInline =
-    row.clientWidth - textStart - MESSAGE_ICON_GAP - button.offsetWidth >=
-    minTextWidth;
   const focused = document.activeElement === button;
-  if (fitsInline) {
-    if (button.parentElement !== row) {
-      row.append(button);
-      actions.hidden = true;
+  const placeInline = (inline: boolean) => {
+    button.toggleAttribute('data-okt-inline-action', inline);
+    const parent = inline ? row : actions;
+    if (button.parentElement !== parent) {
+      parent.append(button);
+      actions.hidden = inline;
     }
-  } else {
-    button.removeAttribute('data-okt-inline-action');
-    if (button.parentElement !== actions) {
-      actions.hidden = false;
-      actions.append(button);
+  };
+
+  button.setAttribute('data-okt-inline-action', '');
+  const inlineTextWidth =
+    row.clientWidth - textStart - MESSAGE_ICON_GAP - button.offsetWidth;
+  placeInline(inlineTextWidth >= minTextWidth);
+  if (
+    inlineTextWidth > 0 &&
+    inlineTextWidth < minTextWidth &&
+    heightCap !== undefined &&
+    heightCap > 0 &&
+    column.offsetTop + button.offsetTop + button.offsetHeight > heightCap
+  ) {
+    placeInline(true);
+    if (row.offsetHeight > heightCap) {
+      placeInline(false);
     }
   }
   if (focused && document.activeElement !== button) {

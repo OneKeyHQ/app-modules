@@ -1441,16 +1441,19 @@ and unified spring motion (`card` stiffness/damping `460/36`, `tile` `620/50`,
 | Reduced motion | Transitions off (media query) | Every animation is instant |
 
 A single eligible message action stays inline when its measured width, icon
-and spacing leave at least 96 px/pt/dp for the text column. Otherwise it uses
-the lower action row. Inline buttons use an 11-unit radius. Lower-row buttons
-use the caller's radius. Disabled actions keep their configured opacity
+and spacing leave at least 96 px/pt/dp for the text column. A smaller text
+column is allowed when the lower action would be clipped by a configured
+content height cap and the measured inline row fits within the cap. Other
+eligible actions use the lower row. Inline buttons use an 11-unit radius.
+Lower-row buttons use the caller's radius. Disabled actions keep their configured opacity
 through settlement.
 
 Native collapsed back cards accept taps in their visible bounds to expand
 the stack. Movement past the drag threshold does not expand a back card.
 An active swipe is cancelled when the card loses swipe eligibility. The
-front card exposes an accessibility action to expand a collapsed stack.
-Removing a toast clears its press and timer before synchronizing survivors.
+front card exposes an accessibility action to expand a collapsed stack. On
+iOS the expansion control is a separate accessibility element alongside the
+front card's visible text, links and action buttons. Removing a toast clears its press and timer before synchronizing survivors.
 
 The Web close control stays keyboard- and screen-reader-accessible on
 touch browsers. Its hidden state is transparent to pointer input. Enabling
