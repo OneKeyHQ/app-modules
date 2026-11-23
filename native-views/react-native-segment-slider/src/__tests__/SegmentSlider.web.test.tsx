@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { act } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 
@@ -261,6 +262,17 @@ describe('bubble after a tap', () => {
     }
   );
 
+  it('uses the release snap setting after selecting a continuous value on press', () => {
+    const onSlideComplete = jest.fn();
+    const { slider, onChange, rerender } = render({ onSlideComplete });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    expect(onChange.mock.calls).toEqual([[30]]);
+    rerender({ value: 30, snapTapToSegment: true });
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(onChange.mock.calls).toEqual([[30], [25]]);
+    expect(onSlideComplete).toHaveBeenCalledTimes(1);
+  });
+
   it('lingers when a snap selects the current value without emitting a change', () => {
     const { slider, onChange } = render({ value: 25, snapTapToSegment: true });
     pointer(slider, 'pointerdown', TRACK_LEFT + 60);
@@ -485,6 +497,24 @@ it('cancels an active drag when the slider becomes disabled', () => {
   pointer(slider, 'pointerup', TRACK_LEFT + 150);
   expect(onChange.mock.calls.map(([v]) => v)).toEqual([10, 50]);
   expect(onSlideComplete).toHaveBeenCalledTimes(1);
+});
+
+it('completes a snap once when onChange synchronously disables the slider', () => {
+  const onSlideComplete = jest.fn();
+  const { slider, onChange, rerender } = render({
+    snapTapToSegment: true,
+    onSlideComplete,
+  });
+  onChange.mockImplementation((value) => {
+    flushSync(() => rerender({ value, disabled: true }));
+  });
+
+  pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+  pointer(slider, 'pointerup', TRACK_LEFT + 60);
+  expect(onChange.mock.calls).toEqual([[25]]);
+  expect(onSlideComplete).toHaveBeenCalledTimes(1);
+  expect(slider.getAttribute('aria-disabled')).toBe('true');
+  expect(bubbleOpacity()).toBe('0');
 });
 
 it('keeps a drag bound to the pointer that started it', () => {

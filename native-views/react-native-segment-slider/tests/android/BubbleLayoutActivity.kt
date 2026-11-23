@@ -328,6 +328,33 @@ class BubbleLayoutActivity : Activity() {
       },
       300L to {
         check(!bubbleDrawn(slider), "stationary press lingered after snapping was disabled")
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "plain tap bubble never appeared")
+        press(MotionEvent.ACTION_UP, 0.3f)
+        check(bubbleDrawn(slider), "plain tap bubble disappeared at release")
+        confirmTap()
+      },
+      0L to {
+        check(bubbleDrawn(slider), "acceptance restarted the visible bubble from zero")
+      },
+      300L to {
+        check(bubbleDrawn(slider), "accepted plain tap did not resume its bubble")
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+      },
+      0L to {
+        val selectionCount = changes.size
+        slider.snapTapToSegment = true
+        press(MotionEvent.ACTION_UP, 0.3f, elapsedMs = 0L)
+        check(completedValue == 25.0 && changes.size == selectionCount + 1 &&
+          changes.lastOrNull() == 25.0, "enabling snap did not snap the quick release")
+        check(!bubbleDrawn(slider), "snap on release showed the unconfirmed value")
+        confirmTap()
+      },
+      300L to {
+        check(bubbleDrawn(slider), "confirmed release snap did not show the bubble")
+        slider.snapTapToSegment = false
         completionsBeforeDisable = completions
         press(MotionEvent.ACTION_DOWN, 0.3f)
         press(MotionEvent.ACTION_MOVE, 0.6f)

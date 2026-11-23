@@ -75,6 +75,36 @@ enum BubbleLayoutTests {
   }
 
   @MainActor
+  static func verifyTapBubbleTransitions() async throws {
+    let slider = makeSlider(width: 320, value: 0)
+    let control = sliderControl(for: slider)
+    let bubble: CALayer = layer(slider, "bubbleLayer")
+    let x = 12 + 0.3 * 296
+    var completedId: Double = 0
+    var changes: [Double] = []
+    slider.onChange = { changes.append($0) }
+    slider.onSlideComplete = { id, _ in completedId = id }
+
+    control.onTouchBegan?(x)
+    check(bubble.opacity == 1, "plain press bubble did not show")
+    control.onTouchEnded?()
+    check(bubble.opacity == 0, "plain tap did not target zero opacity before acceptance")
+    try slider.setValue(value: 30, interactionId: completedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "accepting a plain tap did not restore the bubble")
+
+    control.onTouchBegan?(x)
+    slider.snapTapToSegment = true
+    control.onTouchEnded?()
+    check(changes == [30, 25], "enabling snapping did not snap the quick release")
+    check(bubble.opacity == 0 && bubble.animation(forKey: "opacity") == nil,
+          "release snap animated an unconfirmed bubble")
+    try slider.setValue(value: 25, interactionId: completedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "accepting the release snap did not show the bubble")
+  }
+
+  @MainActor
   static func verifyDelayedValueSync() async throws {
     let slider = makeSlider(width: 320, value: 0)
     let control = sliderControl(for: slider)
@@ -451,6 +481,7 @@ enum BubbleLayoutTests {
     boundedControl.onTouchEnded?()
     check(boundChanges == [10, 1], "fractional bound values: \(boundChanges)")
 
+    try await verifyTapBubbleTransitions()
     try await verifyDelayedValueSync()
     try await verifyAccessibilityAdjustments()
 

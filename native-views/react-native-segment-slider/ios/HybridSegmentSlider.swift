@@ -495,26 +495,20 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private func handleTouchEnded(cancelled: Bool) {
     guard isDragging else { return }
     isDragging = false
-    // A quick tap (no drag) lands directly on the nearest segment node in a
-    // single move — no detour through the raw touch point. A long press (held
-    // past tapMaxDuration without dragging) does nothing. A drag keeps its
-    // free value. Only a real release lingers the bubble; a system cancel
-    // hides it like the end of a drag.
-    let releasedWithoutDrag = !hasDragged && !cancelled
-    if releasedWithoutDrag, !hasSelectedValue, snapTapsActive,
-       CACurrentMediaTime() - touchStartTime <= tapMaxDuration {
+    let shouldSnap = snapTapsActive
+    let isTap = !hasDragged && !cancelled &&
+      (!shouldSnap || CACurrentMediaTime() - touchStartTime <= tapMaxDuration)
+    if isTap, shouldSnap {
+      // Snapping may replace a value already shown during a continuous press.
+      if hasSelectedValue { hideBubbleNow() }
       hasSelectedValue = true
       commitInteractionValue(snapValueToNearestMark(valueFromX(lastTouchX)))
     }
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
-    if releasedWithoutDrag, hasSelectedValue, showBubble {
-      hideBubbleNow()
-      pendingTapBubble = true
-    } else {
-      setBubbleVisible(false)
-    }
+    setBubbleVisible(false)
+    pendingTapBubble = isTap && hasSelectedValue && showBubble
     onSlideComplete?(interactionId, currentValue)
   }
 
@@ -654,10 +648,23 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private func setBubbleVisible(_ visible: Bool) {
     pendingTapBubble = false
     cancelBubbleHide()
-    guard showBubble else { return }
+    let target: Float = visible ? 1 : 0
+    guard showBubble, bubbleLayer.opacity != target else { return }
+    // Acceptance can reverse the release fade while the model opacity is zero.
+    let currentOpacity = bubbleLayer.presentation()?.opacity ?? bubbleLayer.opacity
     CATransaction.begin()
-    CATransaction.setAnimationDuration(0.15)
-    bubbleLayer.opacity = visible ? 1 : 0
+    CATransaction.setDisableActions(true)
+    bubbleLayer.opacity = target
+    if currentOpacity == target {
+      bubbleLayer.removeAnimation(forKey: "opacity")
+    } else {
+      let fade = CABasicAnimation(keyPath: "opacity")
+      fade.fromValue = currentOpacity
+      fade.toValue = target
+      fade.duration = 0.15
+      fade.timingFunction = CAMediaTimingFunction(name: .default)
+      bubbleLayer.add(fade, forKey: "opacity")
+    }
     CATransaction.commit()
   }
 }

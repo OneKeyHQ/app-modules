@@ -232,26 +232,19 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
           if (isDragging) {
             isDragging = false
-            // A quick tap (no drag) lands directly on the nearest segment node
-            // in a single move — no detour through the raw touch point. A long
-            // press (held past tapMaxDurationMs without dragging) does nothing.
-            // A drag keeps its free value. Only a real release lingers the
-            // bubble; a system cancel hides it like the end of a drag.
-            val releasedWithoutDrag = !hasDragged && event.actionMasked == MotionEvent.ACTION_UP
-            if (releasedWithoutDrag && !hasSelectedValue && snapTapsActive &&
-              event.eventTime - event.downTime <= tapMaxDurationMs
-            ) {
+            val shouldSnap = snapTapsActive
+            val isTap = !hasDragged && event.actionMasked == MotionEvent.ACTION_UP &&
+              (!shouldSnap || event.eventTime - event.downTime <= tapMaxDurationMs)
+            if (isTap && shouldSnap) {
+              // Snapping may replace a value already shown during a continuous press.
+              if (hasSelectedValue) hideBubbleNow()
               hasSelectedValue = true
               commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
             }
             hoverMarkIndex = -1
             animateThumbScale(1f)
-            if (releasedWithoutDrag && hasSelectedValue && showBubble) {
-              hideBubbleNow()
-              pendingTapBubble = true
-            } else {
-              setBubbleVisible(false)
-            }
+            setBubbleVisible(false)
+            pendingTapBubble = isTap && hasSelectedValue && showBubble
             view.invalidate()
             onSlideComplete?.invoke(interactionId, currentValue)
           }

@@ -96,19 +96,27 @@ at the Nitro entry and takes precedence over the Web `browser` field.
   After a tap selects a value, the bubble stays up for 800 ms from controlled
   acceptance and then fades. The value committed with the release, including
   changes from `onSlideComplete`, must match the tap's value. A different
-  controlled value is drawn with the bubble hidden. A new press cancels a
+  controlled value is drawn with the bubble hidden. On iOS and Android, a
+  plain tap's visible bubble begins the normal release fade while it waits for
+  acceptance. Acceptance reverses the fade from its current opacity. A snap on
+  release keeps its bubble hidden until acceptance. A new press cancels a
   pending tap bubble or fade. A later value change, keyboard or accessibility
   adjustment, or turning `showBubble` off clears a lingering bubble. Turning
   `showBubble` on during a press shows the bubble once it has selected a value.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
   (default false). It has no effect without marks. On Web a press on a mark
-  always lands exactly on that mark.
+  always lands exactly on that mark. Other quick taps use the snap setting
+  and marks at release, including when snapping was enabled after the press
+  began. If snapping is turned off before release and the press has selected
+  no value, releasing without movement leaves the value unchanged.
 - `hapticStep` adds the per-step tick described above (native default 0).
 - Color props supply resolved theme colors. Invalid colors fall back according
   to the platform color parser; the view does not resolve application themes.
 - `onChange` reports changed, integer-rounded interaction values.
-  `onSlideStart` / `onSlideComplete` delimit an interaction.
+  `onSlideStart` / `onSlideComplete` delimit an interaction. A completed
+  interaction emits one completion, including when a release callback
+  synchronously disables the slider.
 - `setValue(value, interactionId)` updates the native view without emitting
   `onChange`. Callers supply a finite value within their range and the last
   completed interaction ID (0 before the first interaction).

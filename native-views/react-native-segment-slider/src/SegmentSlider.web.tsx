@@ -181,6 +181,7 @@ function SegmentSliderComponent({
   const pressStartTimeRef = useRef(0);
   const hasDraggedRef = useRef(false);
   const hasSelectedValueRef = useRef(false);
+  const pressedMarkRef = useRef(false);
   const bubbleHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Value of the tap whose bubble is lingering or fading; null otherwise.
   const bubbleOwnerValueRef = useRef<number | null>(null);
@@ -519,7 +520,8 @@ function SegmentSliderComponent({
           ? e.target.closest('[data-segment-mark]')
           : null;
       const markIndex = mark?.getAttribute('data-segment-mark') ?? null;
-      hasSelectedValueRef.current = markIndex !== null || !snapTapsActive;
+      pressedMarkRef.current = markIndex !== null;
+      hasSelectedValueRef.current = pressedMarkRef.current || !snapTapsActive;
       if (hasSelectedValueRef.current) {
         setBubbleVisible(true);
       } else {
@@ -577,24 +579,26 @@ function SegmentSliderComponent({
 
   const finishDrag = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (!draggingRef.current || e.pointerId !== pointerIdRef.current) return;
-      const releasedWithoutDrag =
-        !hasDraggedRef.current && e.type === 'pointerup';
-      if (
-        releasedWithoutDrag &&
-        !hasSelectedValueRef.current &&
-        snapTapsActive &&
-        Date.now() - pressStartTimeRef.current <= TAP_MAX_DURATION_MS
-      ) {
+      const { pointerId } = e;
+      if (!draggingRef.current || pointerId !== pointerIdRef.current) return;
+      const shouldSnap = snapTapsActive && !pressedMarkRef.current;
+      const isTap =
+        !hasDraggedRef.current &&
+        e.type === 'pointerup' &&
+        (!shouldSnap ||
+          Date.now() - pressStartTimeRef.current <= TAP_MAX_DURATION_MS);
+      if (isTap && shouldSnap) {
+        if (hasSelectedValueRef.current) hideBubbleNow();
         hasSelectedValueRef.current = true;
         snapToStep(nearestMarkIndex(valueFromClientX(pressLastXRef.current)));
+        // onChange can synchronously disable the slider and end this press.
+        if (!draggingRef.current || pointerId !== pointerIdRef.current) return;
       }
-      endInteraction(
-        releasedWithoutDrag && hasSelectedValueRef.current ? 'tap' : 'release'
-      );
+      endInteraction(isTap && hasSelectedValueRef.current ? 'tap' : 'release');
     },
     [
       endInteraction,
+      hideBubbleNow,
       snapTapsActive,
       snapToStep,
       nearestMarkIndex,
