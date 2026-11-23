@@ -1453,11 +1453,13 @@ the stack. Movement past the drag threshold does not expand a back card.
 An active swipe is cancelled when the card loses swipe eligibility. The
 front card exposes an accessibility action to expand a collapsed stack. On
 iOS the expansion control is a separate accessibility element alongside the
-front card's visible text, links and action buttons. Removing a toast clears its press and timer before synchronizing survivors.
+front card's visible text, links and action buttons. Removing a toast clears
+its press and timer before synchronizing survivors.
 
 The Web close control stays keyboard- and screen-reader-accessible on
-touch browsers. Its hidden state is transparent to pointer input. Enabling
-Reduce Motion finalizes mounted status animations and keeps loading rings
+visible toasts on touch browsers. The hidden control is transparent to
+pointer input. Cards beyond the display limit are excluded from focus and
+the accessibility tree until they become visible. Enabling Reduce Motion finalizes mounted status animations and keeps loading rings
 static. Restoring motion resumes the loading ring. iOS action buttons use
 color-only press feedback while motion reduction is active.
 

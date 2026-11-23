@@ -654,9 +654,11 @@ export function createToastDomRenderer(
 
     group.toasts.forEach((node, index) => {
       const { li } = node;
+      const visible = index < VISIBLE_TOASTS;
+      li.inert = !visible || node.removed;
       li.setAttribute('data-mounted', String(node.mounted));
       li.setAttribute('data-removed', String(node.removed));
-      li.setAttribute('data-visible', String(index + 1 <= VISIBLE_TOASTS));
+      li.setAttribute('data-visible', String(visible));
       li.setAttribute('data-y-position', yPosition ?? 'bottom');
       li.setAttribute('data-x-position', xPosition ?? 'right');
       li.setAttribute('data-index', String(index));

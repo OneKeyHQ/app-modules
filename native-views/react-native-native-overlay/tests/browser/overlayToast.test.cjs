@@ -622,3 +622,35 @@ test('a compact action stays reachable when lowering it would exceed the content
   await page.evaluate(() => window.configure({ webContentMaxHeight: 160 }));
   assert.equal(await action.getAttribute('data-okt-inline-action'), null);
 });
+
+test('toasts beyond the display limit regain keyboard access only when visible', async (t) => {
+  const context = await browser.newContext({ hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
+  t.after(() => context.close());
+  const page = await context.newPage();
+  await page.setContent('<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">');
+  await page.addScriptTag({ content: bundle });
+  await page.evaluate(() => {
+    for (let index = 0; index < 4; index += 1) {
+      window.showStatus('success', { id: `status-${index}`, testID: `status-${index}` });
+    }
+  });
+
+  const oldest = page.getByTestId('status-0');
+  assert.equal(await oldest.getAttribute('data-visible'), 'false');
+  const cdp = await context.newCDPSession(page);
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const accessibleCloseButtons = nodes.filter(
+    (node) => !node.ignored && node.role?.value === 'button' && node.name?.value === 'Close toast'
+  );
+  assert.equal(accessibleCloseButtons.length, 3);
+  await oldest.locator('[data-close-button]').focus();
+  assert.equal(await oldest.evaluate((node) => node.contains(document.activeElement)), false);
+
+  const frontClose = page.getByTestId('status-3').getByRole('button', { name: 'Close toast' });
+  await frontClose.press('Enter');
+  await frontClose.waitFor({ state: 'detached', timeout: 2000 });
+  const nowVisibleClose = oldest.getByRole('button', { name: 'Close toast' });
+  assert.equal(await oldest.getAttribute('data-visible'), 'true');
+  await nowVisibleClose.focus();
+  assert.equal(await nowVisibleClose.evaluate((node) => node === document.activeElement), true);
+});
