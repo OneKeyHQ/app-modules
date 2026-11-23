@@ -581,9 +581,12 @@ public final class JCoreStorage {
 
     private static Set<String> loadSisEndpoints(Context context, String key) {
         Set<String> endpoints = new LinkedHashSet<>();
+        boolean failureHistory = KEY_FAILED_IPS.equals(key);
         for (String address : loadCsvList(context, key)) {
             String endpoint = normalizeSisEndpoint(address);
-            if (endpoint != null) endpoints.add(endpoint);
+            if (endpoint == null) continue;
+            if (failureHistory) endpoints.remove(endpoint);
+            endpoints.add(endpoint);
         }
         return endpoints;
     }

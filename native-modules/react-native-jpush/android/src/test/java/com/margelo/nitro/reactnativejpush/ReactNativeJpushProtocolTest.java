@@ -2,6 +2,7 @@ package com.margelo.nitro.reactnativejpush;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -33,6 +34,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -969,6 +971,39 @@ public class ReactNativeJpushProtocolTest {
         JCoreTcpEngine.getInstance().setCustomSisUrl("");
         JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
         JCoreTcpEngine.getInstance().stop(null);
+    }
+
+    @Test
+    public void testSisFailureAliasesKeepTheirLatestPosition() {
+        String candidateKey = "sis_ips_list";
+        String failureKey = "sis_failed_ips";
+        String previousCandidates = JCoreStorage.getSpValue(null, candidateKey, "");
+        String previousFailures = JCoreStorage.getSpValue(null, failureKey, "");
+        String repeated = "a.example:7001";
+        String older = "b.example:7002";
+        List<String> legacy = Arrays.asList("a.example:07001", older, repeated);
+        List<String> fullHistory = new ArrayList<>(legacy);
+        for (int i = 0; i < 29; i++) {
+            fullHistory.add("history-" + i + ".example:7003");
+        }
+
+        try {
+            JCoreStorage.putSpValue(null, candidateKey, String.join(",", legacy));
+            JCoreStorage.putSpValue(null, failureKey, String.join(",", fullHistory));
+            assertEquals(Arrays.asList(repeated, older), JCoreStorage.getSisIps(null));
+            assertEquals(Arrays.asList(older, repeated), JCoreStorage.getFailedIps(null).subList(0, 2));
+
+            JCoreStorage.recordFailedIp(null, "newer.example:7004");
+            JCoreStorage.recordFailedIp(null, "latest.example:7005");
+            List<String> failures = JCoreStorage.getFailedIps(null);
+            assertEquals(32, failures.size());
+            assertEquals(repeated, failures.get(0));
+            assertEquals("latest.example:7005", failures.get(failures.size() - 1));
+            assertFalse(failures.contains(older));
+        } finally {
+            JCoreStorage.putSpValue(null, candidateKey, previousCandidates);
+            JCoreStorage.putSpValue(null, failureKey, previousFailures);
+        }
     }
 
     @Test
