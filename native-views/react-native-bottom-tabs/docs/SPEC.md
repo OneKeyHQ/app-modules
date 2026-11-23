@@ -556,11 +556,14 @@ from `getSceneStyle`. Native code never writes it. The scene has no
 autoresizing mask and no Auto Layout constraints.
 
 - `onNativeLayout` reports the size of the selected tab's page view once it is
-  in the window, and the container's size before that. It fires on every
-  container layout pass and when the selected page view changes size. The
-  scene style uses that size, so the scene's default frame matches the visible
-  page, including when the iPad sidebar (`sidebarAdaptable`) takes part of the
-  width.
+  in the window, and the container's size before that. It fires on container
+  layout, when the selected page changes size, and when the selected page
+  appears or reattaches to a window even if its bounds are unchanged.
+- Loaded scenes and lazy placeholders use the reported page size with either
+  a native or custom tab bar. They fill the container until a measurement
+  arrives. For loaded scenes, `getSceneStyle` can override the size and position.
+  The default frame matches the visible page when the iPad sidebar
+  (`sidebarAdaptable`) takes part of the width.
 - Autoresizing is not used because it applies the change in host bounds to the
   frame Fabric already set. A tab view controller's view starts at screen size
   and Fabric sizes the scene to the container. When the container is narrower
@@ -577,7 +580,10 @@ Acceptance:
   another tab, and after rotating. Each tab scene's frame equals its view
   controller's view bounds, and the tab responds to taps and scrolls.
 - With `sidebarAdaptable` and the sidebar shown, the `onNativeLayout` width
-  equals the selected page's width.
+  equals the selected page's width. The default scene and placeholder sizes
+  follow that width even with a custom tab bar and `tabBarHidden={false}`.
+- Selecting a cached page or reattaching the tab container reports the visible
+  page's width and height even when the page and container bounds did not change.
 - A route whose scene style sets its own offset or size keeps that frame after
   UIKit layout passes.
 

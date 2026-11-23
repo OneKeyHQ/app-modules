@@ -34,7 +34,7 @@ import React
 /// scene out at the page size (it differs from the container when the iPad
 /// sidebar takes part of the width).
 final class BottomTabsPageView: UIView {
-  var onSizeChange: ((BottomTabsPageView) -> Void)?
+  var onLayoutChange: ((BottomTabsPageView) -> Void)?
   private var lastSize: CGSize = .zero
 
   override func layoutSubviews() {
@@ -42,7 +42,17 @@ final class BottomTabsPageView: UIView {
     let size = bounds.size
     guard size != lastSize else { return }
     lastSize = size
-    onSizeChange?(self)
+    onLayoutChange?(self)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil else { return }
+    // UIKit can update the page bounds after this attachment callback.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.window != nil else { return }
+      self.onLayoutChange?(self)
+    }
   }
 }
 
@@ -54,6 +64,13 @@ final class BottomTabsPageViewController: UIViewController {
     pageView.backgroundColor = .clear
     pageView.clipsToBounds = true
     view = pageView
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    // A cached page can become selected without changing bounds or windows.
+    let page = pageView
+    page.onLayoutChange?(page)
   }
 }
 
@@ -581,7 +598,7 @@ class RCTBottomTabsContainerView: UIView {
     onNativeLayout?(["width": Double(size.width), "height": Double(size.height)])
   }
 
-  private func pageDidChangeSize(_ page: BottomTabsPageView) {
+  private func pageDidChangeLayout(_ page: BottomTabsPageView) {
     // handleLayout emits once after its own layout pass.
     guard !isHandlingLayout,
           page === tabBarController?.selectedViewController?.viewIfLoaded else { return }
@@ -663,8 +680,8 @@ class RCTBottomTabsContainerView: UIView {
           childView.autoresizingMask = []
         }
       }
-      vc.pageView.onSizeChange = { [weak self] page in
-        self?.pageDidChangeSize(page)
+      vc.pageView.onLayoutChange = { [weak self] page in
+        self?.pageDidChangeLayout(page)
       }
 
       // Configure tab bar item
