@@ -185,6 +185,8 @@ function SegmentSliderComponent({
   const bubbleHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Value of the tap whose bubble is lingering or fading; null otherwise.
   const bubbleOwnerValueRef = useRef<number | null>(null);
+  const pendingTapValueRef = useRef<number | null>(null);
+  const [tapCompletionCount, setTapCompletionCount] = useState(0);
   const [focusVisible, setFocusVisible] = useState(false);
 
   const range = max - min;
@@ -311,6 +313,7 @@ function SegmentSliderComponent({
   const setBubbleVisible = useCallback(
     (visible: boolean) => {
       clearBubbleHideTimer();
+      pendingTapValueRef.current = null;
       bubbleOwnerValueRef.current = null;
       const bubble = bubbleRef.current;
       if (!bubble) return;
@@ -323,6 +326,7 @@ function SegmentSliderComponent({
   // did not come from the tap that showed it.
   const hideBubbleNow = useCallback(() => {
     clearBubbleHideTimer();
+    pendingTapValueRef.current = null;
     bubbleOwnerValueRef.current = null;
     const bubble = bubbleRef.current;
     if (!bubble) return;
@@ -363,12 +367,20 @@ function SegmentSliderComponent({
   useLayoutEffect(() => {
     latestValueRef.current = value;
     if (draggingRef.current) return;
-    // A tap's lingering bubble shows that tap's value; an unrelated update
-    // ends it before the new value is painted.
-    const owner = bubbleOwnerValueRef.current;
+    const tapValue = pendingTapValueRef.current;
+    pendingTapValueRef.current = null;
+    const owner = tapValue ?? bubbleOwnerValueRef.current;
     if (owner !== null && owner !== value) hideBubbleNow();
     reconcileValue();
-  }, [value, reconcileValue, hideBubbleNow]);
+    if (showBubble && tapValue === value) lingerThenHideBubble(tapValue);
+  }, [
+    value,
+    showBubble,
+    tapCompletionCount,
+    reconcileValue,
+    hideBubbleNow,
+    lingerThenHideBubble,
+  ]);
 
   const valueFromClientX = useCallback(
     (clientX: number) => {
@@ -455,18 +467,23 @@ function SegmentSliderComponent({
           /* ignore */
         }
       }
-      // The tap's own value, before the parent's latest value is reconciled.
-      const tapValue = lastEmittedRef.current;
-      // Repaint even when the value matched: marks or colors may have changed.
-      reconcileValue();
       if (tap) {
-        lingerThenHideBubble(tapValue);
+        // Check the tap against the value committed with this release, including
+        // parent updates from onChange and onSlideComplete.
+        pendingTapValueRef.current = lastEmittedRef.current;
+        try {
+          onSlideComplete?.();
+        } finally {
+          setTapCompletionCount((count) => count + 1);
+        }
       } else {
+        // Repaint even when the value matched: marks or colors may have changed.
+        reconcileValue();
         setBubbleVisible(false);
+        onSlideComplete?.();
       }
-      onSlideComplete?.();
     },
-    [onSlideComplete, reconcileValue, setBubbleVisible, lingerThenHideBubble]
+    [onSlideComplete, reconcileValue, setBubbleVisible]
   );
 
   const handlePointerDown = useCallback(

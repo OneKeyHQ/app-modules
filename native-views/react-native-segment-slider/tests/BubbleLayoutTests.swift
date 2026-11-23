@@ -294,6 +294,27 @@ enum BubbleLayoutTests {
     check(toggledBubble.opacity == 1, "showBubble enabled mid-drag stayed hidden")
     toggledControl.onTouchEnded?()
     check(toggledBubble.opacity == 0, "drag bubble lingered after enabling showBubble")
+    for removeMarks in [false, true] {
+      let slider = makeSlider(width: 320, value: 0)
+      slider.snapTapToSegment = true
+      let control = sliderControl(for: slider)
+      let bubble: CALayer = layer(slider, "bubbleLayer")
+      let text: CATextLayer = layer(slider, "bubbleTextLayer")
+      let setting = removeMarks ? "removing marks" : "disabling snap"
+      control.onTouchBegan?(12 + 0.3 * 296)
+      check(bubble.opacity == 0, "\(setting): pending press showed the bubble")
+      if removeMarks {
+        slider.segments = 0
+      } else {
+        slider.snapTapToSegment = false
+      }
+      control.onTouchMoved?(12 + 0.6 * 296)
+      check(bubble.opacity == 1 && text.string as? String == "60%",
+            "\(setting): continuous move did not show its value")
+      control.onTouchEnded?()
+      check(bubble.opacity == 0, "\(setting): drag bubble lingered")
+    }
+
     for (x, value): (CGFloat, Double) in [(0, 0), (320, 100)] {
       control.onTouchBegan?(x)
       control.onTouchEnded?()

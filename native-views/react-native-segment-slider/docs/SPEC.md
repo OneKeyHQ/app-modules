@@ -91,12 +91,17 @@ at the Nitro entry and takes precedence over the Web `browser` field.
   end of a drag. In `snapTapToSegment` mode the bubble stays hidden while a
   press is still a tap candidate (it would show the old value), including a
   previous tap's lingering bubble, and appears once the press becomes a drag or
-  the tap lands; a long press that changes nothing shows no bubble. A drag
-  ended by `disabled` hides it at once, and keyboard or accessibility changes
-  do not show it. The lingering bubble belongs to its tap: a keyboard or
-  accessibility change, or a controlled value other than the tap's, removes it
-  at once before the new value is drawn. Turning `showBubble` off hides a
-  lingering bubble; turning it on during a drag shows the drag's bubble.
+  the tap lands; a long press that changes nothing shows no bubble. A move
+  that starts updating the value shows the bubble even if snapping was turned
+  off or the marks were removed after the press began. A drag ended by
+  `disabled` hides it at once, and keyboard or accessibility changes do not show
+  it. The lingering bubble belongs to its tap. The controlled value committed
+  with the release, including updates from `onSlideComplete`, determines whether
+  the tap can linger. If it differs from the tap's value, the bubble is removed
+  before the controlled value is drawn. A later controlled value change or
+  keyboard or accessibility adjustment also removes the bubble. Turning
+  `showBubble` off hides a lingering bubble. Turning it on during a drag shows
+  the drag's bubble.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
   (default false). It has no effect without marks. On Web a press on a mark
@@ -122,8 +127,10 @@ Each native interaction begins a new view-local interaction ID. The internal
 completion callback reports its ID and final value to JS. The UI thread
 applies a value update only while idle and only if its ID matches the most
 recent interaction, so a delayed update cannot alter or interrupt a newer
-interaction. On the newer interaction's completion, JS compares the latest
-controlled value with the value reported by that completion.
+interaction. On completion, JS reconciles the reported value in a layout
+effect, after React commits the controlled value for that interaction. This
+lets a parent accept the value in `onSlideComplete` without queuing a sync
+with the previous value.
 
 The iOS control temporarily disables ancestor pan gestures during a touch and
 restores them on completion, cancellation or detachment.

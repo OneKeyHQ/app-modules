@@ -1,4 +1,11 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ComponentProps, ComponentType } from 'react';
 
 import { StyleSheet } from 'react-native';
@@ -84,6 +91,7 @@ function SegmentSliderComponent({
   // True between onSlideStart/onSlideComplete; gates the value sync.
   const draggingRef = useRef(false);
   const lastCompletedInteractionIdRef = useRef(0);
+  const [completionCount, setCompletionCount] = useState(0);
 
   const sliderRef = useRef<ISegmentSliderHybridRef | null>(null);
   const hybridRef = useMemo(
@@ -127,18 +135,20 @@ function SegmentSliderComponent({
 
   const handleSlideComplete = useCallback(
     (interactionId: number, finalValue: number) => {
-      draggingRef.current = false;
       lastCompletedInteractionIdRef.current = interactionId;
       // Native reports the actual value because an earlier sync could have
       // arrived during a newer gesture and been dropped.
       lastValueRef.current = finalValue;
-      const node = sliderRef.current;
-      const acceptedValue = latestValueRef.current;
-      if (node && acceptedValue !== finalValue) {
-        lastValueRef.current = acceptedValue;
-        node.setValue(acceptedValue, interactionId);
+      try {
+        onSlideComplete?.();
+      } finally {
+        draggingRef.current = false;
+        // The parent may accept the value in the same React commit. Reconcile
+        // there so we don't first send the previous value to the native view.
+        if (latestValueRef.current !== finalValue) {
+          setCompletionCount((count) => count + 1);
+        }
       }
-      onSlideComplete?.();
     },
     [onSlideComplete]
   );
@@ -154,7 +164,7 @@ function SegmentSliderComponent({
     }
     lastValueRef.current = value;
     node.setValue(value, lastCompletedInteractionIdRef.current);
-  }, [value]);
+  }, [value, completionCount]);
 
   return (
     <SegmentSliderNativeView

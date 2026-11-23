@@ -62,6 +62,7 @@ class BubbleLayoutActivity : Activity() {
   private val sliders = mutableListOf<HybridSegmentSlider>()
   private val failures = mutableListOf<String>()
   private var checks = 0
+  private val touchDownTimes = mutableMapOf<HybridSegmentSlider, Long>()
   private val handler = Handler(Looper.getMainLooper())
   private val density get() = resources.displayMetrics.density
   private fun px(dp: Int) = (dp * density).toInt()
@@ -69,11 +70,17 @@ class BubbleLayoutActivity : Activity() {
   private fun field(slider: HybridSegmentSlider, name: String): Any =
     slider.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(slider)!!
 
-  private fun touch(slider: HybridSegmentSlider, action: Int, x: Float) {
+  private fun touch(slider: HybridSegmentSlider, action: Int, x: Float, elapsedMs: Long? = null) {
     val now = SystemClock.uptimeMillis()
-    val event = MotionEvent.obtain(now, now, action, x, slider.view.height / 2f, 0)
+    if (action == MotionEvent.ACTION_DOWN) touchDownTimes[slider] = now
+    val downTime = touchDownTimes.getValue(slider)
+    val eventTime = if (elapsedMs == null) now else downTime + elapsedMs
+    val event = MotionEvent.obtain(downTime, eventTime, action, x, slider.view.height / 2f, 0)
     slider.view.dispatchTouchEvent(event)
     event.recycle()
+    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+      touchDownTimes.remove(slider)
+    }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,15 +156,17 @@ class BubbleLayoutActivity : Activity() {
     slider.view.layout(0, 0, px(320), px(24))
     val inset = 12f * density
     fun x(fraction: Float) = inset + fraction * (slider.view.width - 2 * inset)
-    fun press(action: Int, fraction: Float) = touch(slider, action, x(fraction))
+    fun press(action: Int, fraction: Float, elapsedMs: Long? = null) =
+      touch(slider, action, x(fraction), elapsedMs)
     var completionsBeforeCancel = 0
+    var changesBeforeHold = 0
     runSteps(listOf(
       0L to {
         press(MotionEvent.ACTION_DOWN, 0.3f)
       },
       200L to {
         check(!bubbleDrawn(slider), "snap tap candidate shows the old value")
-        press(MotionEvent.ACTION_UP, 0.3f)
+        press(MotionEvent.ACTION_UP, 0.3f, elapsedMs = 100L)
         check(changes.lastOrNull() == 25.0, "tap no longer snaps to segment")
       },
       300L to { check(bubbleDrawn(slider), "bubble hidden right after a tap") },
@@ -174,9 +183,19 @@ class BubbleLayoutActivity : Activity() {
       },
       300L to {
         check(!bubbleDrawn(slider), "pending snap press kept the previous tap bubble")
-        press(MotionEvent.ACTION_UP, 0.8f)
+        press(MotionEvent.ACTION_UP, 0.8f, elapsedMs = 200L)
       },
-      300L to { check(bubbleDrawn(slider), "bubble hidden after the follow-up tap landed") },
+      300L to {
+        check(bubbleDrawn(slider), "bubble hidden after the follow-up tap landed")
+        changesBeforeHold = changes.size
+        press(MotionEvent.ACTION_DOWN, 0.1f)
+      },
+      400L to {
+        check(!bubbleDrawn(slider), "pending long press kept the previous tap bubble")
+        press(MotionEvent.ACTION_UP, 0.1f, elapsedMs = 350L)
+        check(changes.size == changesBeforeHold, "long press snapped to a segment")
+      },
+      300L to { check(!bubbleDrawn(slider), "bubble lingered after a long press") },
       // A drag that follows a tap hides on release.
       0L to {
         press(MotionEvent.ACTION_DOWN, 0.3f)
@@ -240,6 +259,32 @@ class BubbleLayoutActivity : Activity() {
       },
       300L to {
         check(!bubbleDrawn(slider), "drag bubble lingered after enabling showBubble")
+        slider.snapTapToSegment = true
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        check(!bubbleDrawn(slider), "pending press showed the bubble before disabling snap")
+        slider.snapTapToSegment = false
+        press(MotionEvent.ACTION_MOVE, 0.6f)
+      },
+      300L to {
+        check(changes.lastOrNull() == 60.0 && bubbleDrawn(slider),
+          "disabling snap: continuous move did not show its value")
+        press(MotionEvent.ACTION_UP, 0.6f)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "drag bubble lingered after disabling snap")
+        slider.snapTapToSegment = true
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        check(!bubbleDrawn(slider), "pending press showed the bubble before removing marks")
+        slider.segments = 0.0
+        press(MotionEvent.ACTION_MOVE, 0.7f)
+      },
+      300L to {
+        check(changes.lastOrNull() == 70.0 && bubbleDrawn(slider),
+          "removing marks: continuous move did not show its value")
+        press(MotionEvent.ACTION_UP, 0.7f)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "drag bubble lingered after removing marks")
         root.removeView(slider.view)
         slider.dispose()
       }

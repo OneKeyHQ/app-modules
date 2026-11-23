@@ -214,10 +214,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
             lastTouchX = event.x
             if (!hasDragged && Math.abs(event.x - touchStartX) > tapMoveThresholdPx) {
               hasDragged = true
-              if (snapTapsActive) setBubbleVisible(true)
             }
             // Still a tap candidate in snap mode → keep the thumb put.
             if (!(snapTapsActive && !hasDragged)) {
+              if (showBubble && bubbleAlphaTarget == 0f) setBubbleVisible(true)
               stepTicksArmed = true
               commitDragValue(valueFromX(event.x))
             }

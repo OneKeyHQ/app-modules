@@ -65,6 +65,25 @@ it('does not push the echoed drag value back after the drag', () => {
   expect(node.setValue).not.toHaveBeenCalled();
 });
 
+it.each([
+  [25, []],
+  [40, [[40, 1]]],
+  [0, [[0, 1]]],
+])('syncs only the value committed at completion (%i)', (accepted, writes) => {
+  const onSlideComplete = jest.fn<void, []>(() =>
+    rerender({ value: accepted })
+  );
+  const { node, rerender } = setup({ onSlideComplete });
+  act(() => viewProps.onSlideStart());
+  act(() => {
+    viewProps.onChange(25);
+    viewProps.onSlideComplete(1, 25);
+  });
+
+  expect(node.setValue.mock.calls).toEqual(writes);
+  expect(onSlideComplete).toHaveBeenCalledTimes(1);
+});
+
 it('pushes external value changes outside a drag', () => {
   const { node, onChange, rerender } = setup();
   rerender({ value: 75 });

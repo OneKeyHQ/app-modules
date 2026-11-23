@@ -201,7 +201,7 @@ describe('bubble after a tap', () => {
   });
 
   it('lingers after a plain tap without snapping', () => {
-    const { slider } = render({ value: 0 });
+    const { slider } = render({ value: 0 }, { acceptChanges: true });
     pointer(slider, 'pointerdown', TRACK_LEFT + 60);
     expect(bubbleOpacity()).toBe('1');
     pointer(slider, 'pointerup', TRACK_LEFT + 60);
@@ -259,6 +259,41 @@ describe('bubble after a tap', () => {
     pointer(slider, 'pointerdown', TRACK_LEFT + 60);
     pointer(slider, 'pointerup', TRACK_LEFT + 60);
     rerender({ value: 25 });
+    expect(bubbleOpacity()).toBe('1');
+    expect(container.querySelector('[data-segment-bubble]')!.textContent).toBe(
+      '25%'
+    );
+  });
+
+  it('hides a plain tap bubble when the parent clamps the value before release', () => {
+    const { slider, onChange, rerender } = render();
+    pointer(slider, 'pointerdown', TRACK_LEFT + 120);
+    expect(onChange).toHaveBeenCalledWith(60);
+    expect(bubbleOpacity()).toBe('1');
+    rerender({ value: 40 });
+    pointer(slider, 'pointerup', TRACK_LEFT + 120);
+    expect(thumb().style.left).toBe('40%');
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('does not linger when the parent rejects a snapped tap', () => {
+    const { slider, onChange } = render({ snapTapToSegment: true });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(onChange).toHaveBeenCalledWith(25);
+    expect(thumb().style.left).toBe('0%');
+    expect(bubbleOpacity()).toBe('0');
+  });
+
+  it('lingers when onSlideComplete accepts the tap in the release commit', () => {
+    const onSlideComplete = jest.fn(() => rerender({ value: 25 }));
+    const { slider, rerender } = render({
+      snapTapToSegment: true,
+      onSlideComplete,
+    });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(onSlideComplete).toHaveBeenCalledTimes(1);
     expect(bubbleOpacity()).toBe('1');
     expect(container.querySelector('[data-segment-bubble]')!.textContent).toBe(
       '25%'

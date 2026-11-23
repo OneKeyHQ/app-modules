@@ -465,10 +465,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     lastTouchX = x
     if !hasDragged, abs(x - touchStartX) > tapMoveThreshold {
       hasDragged = true
-      if snapTapsActive { setBubbleVisible(true) }
     }
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
+    if showBubble, bubbleLayer.opacity == 0 { setBubbleVisible(true) }
     stepTicksArmed = true
     commitInteractionValue(valueFromX(x))
   }
