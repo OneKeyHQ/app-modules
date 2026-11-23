@@ -310,10 +310,16 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   nestedWindow.makeKey()
   _ = navigation.popViewController(animated: true)
   popInteraction.update(0.25)
-  for _ in 0..<5 where navigation.transitionCoordinator?.isInteractive != true { await nextMainTurn() }
-  try require(containerRoot.transitionCoordinator == nil &&
-    navigation.transitionCoordinator?.isInteractive == true && navigation.viewIfLoaded?.window === nestedApp,
-    "real contained navigation transition is interactive only in the child")
+  let popDeadline = Date().addingTimeInterval(2)
+  while navigation.transitionCoordinator?.isInteractive != true && Date() < popDeadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  try require(navigation.viewIfLoaded?.window === nestedApp,
+    "contained navigation is attached to the app window")
+  try require(navigation.transitionCoordinator?.isInteractive == true,
+    "real contained navigation transition becomes interactive")
+  try require(containerRoot.transitionCoordinator == nil,
+    "real contained navigation transition is not visible from the root")
   nestedManager.entryRemoved(from: nestedWindow)
   try require(nestedWindow.windowScene === scene && nestedWindow.rootViewController != nil,
     "attached child navigation transition retains the exiting window")
@@ -828,6 +834,80 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
     "removal cannot restore key to a host outside the entry scene")
   detachedHost.rootViewController = nil
   passed.append("entry-removal-host-scene-focus-boundary")
+
+  let retiringHost = KeyCountingWindow(windowScene: scene)
+  retiringHost.rootViewController = UIViewController()
+  retiringHost.makeKeyAndVisible()
+  let retiringOwner = Owner(), passiveOwner = Owner()
+  let retiringEntry = touchManager.window(for: retiringOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: retiringHost)!
+  let passiveEntry = touchManager.window(for: passiveOwner, level: .toast,
+    stackOrder: 2, blocking: false, appWindow: app)!
+  let retiringObserver = try touchObserver(in: retiringEntry)
+  let retiringTouch = UITouch()
+  retiringEntry.makeKey()
+  retiringObserver.touchesBegan([retiringTouch], with: event)
+  retiringHost.windowScene = nil
+  let retiringHostActivations = retiringHost.keyActivations
+  try require(retiringEntry.isKeyWindow && !app.isHidden && app.windowScene === scene,
+    "key handoff starts with a key overlay and an eligible scene app window")
+  touchManager.entryRemoved(from: retiringEntry)
+  try require(retiringEntry.windowScene === scene && !retiringEntry.isHidden &&
+    app.isKeyWindow && !retiringEntry.isKeyWindow && !passiveEntry.isKeyWindow &&
+    retiringHost.keyActivations == retiringHostActivations,
+    "retired key overlay hands input to the same-scene app window immediately")
+  retiringObserver.touchesEnded([retiringTouch], with: event)
+  await nextMainTurn()
+  try require(retiringEntry.windowScene == nil && retiringObserver.view == nil &&
+    app.isKeyWindow && passiveEntry.windowScene === scene,
+    "last touch releases the exiting window and preserves app key ownership")
+  touchManager.entryRemoved(from: passiveEntry)
+  retiringHost.rootViewController = nil
+  passed.append("retired-key-window-hands-off-after-host-detach")
+
+  for hostDeallocatesBeforeTouchEnds in [true, false] {
+    var host: UIWindow? = autoreleasepool {
+      let window = UIWindow(windowScene: scene)
+      window.rootViewController = UIViewController()
+      return window
+    }
+    let hostHasDeallocated = { [weak host] in host == nil }
+    let owner = Owner()
+    let touch = UITouch()
+    let (entry, observer) = try autoreleasepool {
+      let entry = touchManager.window(for: owner, level: .modal, stackOrder: 1,
+        blocking: true, appWindow: host!)!
+      let observer = try touchObserver(in: entry)
+      observer.touchesBegan([touch], with: event)
+      touchManager.entryRemoved(from: entry)
+      return (entry, observer)
+    }
+    try require(entry.windowScene === scene && observer.hasActiveTouches,
+      "entry remains retired for an active touch before the host deallocates")
+    autoreleasepool {
+      host?.rootViewController = nil
+      host?.windowScene = nil
+    }
+    await nextMainTurn()
+    autoreleasepool {
+      if !hostDeallocatesBeforeTouchEnds {
+        observer.touchesEnded([touch], with: event)
+      }
+      host = nil
+    }
+    try require(hostHasDeallocated(), "host deallocated before next-turn cleanup")
+    try require(entry.windowScene === scene, "retired entry stays attached before next-turn cleanup")
+    if hostDeallocatesBeforeTouchEnds {
+      observer.touchesEnded([touch], with: event)
+    }
+    await nextMainTurn()
+    try require(entry.windowScene == nil && entry.rootViewController == nil &&
+      observer.view == nil && observer.onTouchesFinished == nil,
+      "last-touch cleanup releases the retired window after host deallocation")
+    passed.append(hostDeallocatesBeforeTouchEnds
+      ? "retired-window-host-deallocates-before-last-touch"
+      : "retired-window-host-deallocates-after-last-touch")
+  }
   return passed
 }
 

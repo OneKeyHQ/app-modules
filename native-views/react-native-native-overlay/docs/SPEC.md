@@ -346,10 +346,14 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   non-terminal re-presentation; clear it on terminal close or invalidation.
 - Preserve existing touch-driven input activation. Removing a non-key window
   MUST NOT change the key window or a surviving first responder. Removing the
-  key window restores the highest-ranked desired-visible, attached, non-closing eligible
-  entry in the same scene, otherwise the app window. Eligible entries are
-  effectively blocking (system sheets always block), or actually contain a
-  first responder; passive toast/debug entries do not win solely by level.
+  key window restores the highest-ranked desired-visible, attached, non-closing
+  eligible entry in the same scene, then the original app window if it is
+  still attached to that scene. If the original host has detached, moved, or
+  deallocated, use a visible normal-level app window in the same scene that
+  has a root controller and can become key. Overlay windows are excluded.
+  This handoff also happens while the exiting window is retained for touches.
+  Eligible entries are effectively blocking (system sheets always block) or
+  contain a first responder. Passive toast/debug entries need a first responder.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
 - Delivered-touch retirement extension (Implemented; thirty native checks and
@@ -381,10 +385,13 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   still releases synchronously. Remove an entry observer only when its window
   is released; remove a real app window's observer only when that host has no
   active or retired entries. Touch callbacks query current host ownership across
-  scenes, rather than binding to the scene of first installation. Moving the
-  same real host to another scene keeps its remaining users protected.
+  scenes using an identity unique to each host window lifetime. Moving the
+  same real host to another scene keeps its remaining users protected. The
+  identity holds a weak reference to the host, so a last-touch check can
+  release a retired window even if the host deallocates before the callback
+  or while the check is queued.
   Reassigning an observed window to a different host does not change its
-  delivered touch context: retain weak prior-host associations until a next-turn
+  delivered touch context. Retain prior host identities until a next-turn
   check finds its complete touch set empty and those hosts' retirements released.
   A new touch during an idle gap still protects a prior host whose context remains
   retired. Touch completion, observer removal and host reassignment wake current
@@ -819,6 +826,9 @@ Automated (P0):
   and scene-disconnect callback invalidation. They prove manager lifecycle,
   not UIKit delivery or scroll inertia; those are covered separately by the
   local App runtime checks above, with the stated selector-entry limitation.
+  Host lifetime checks detach and deallocate a real UIWindow on either side of
+  the last touch callback. A separate check verifies UIKit key handoff to an
+  eligible app window while the exiting overlay is still attached for a touch.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
