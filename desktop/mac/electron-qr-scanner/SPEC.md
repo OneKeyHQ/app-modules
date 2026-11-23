@@ -96,6 +96,7 @@ the callback context only after `destroy` returns.
 | Animated UR through live frames | `test/native.test.cjs`: `test/fixtures/animated-ur.mp4` (2,003-byte `crypto-psbt`, 17 fragments, 51 frames at 8 fps, from `scripts/make-ur-fixture.mjs`) assembles to the expected type, size and FNV-1a in about 2.2 s. |
 | Generations and dispose | `test/native.test.cjs`: stop/start yields a newer generation, dispose is idempotent and later `start` throws. |
 | Electron runtime | `test/electron.cjs` on Electron 44.5.1 (main process): image decode, error code, animated UR. |
+| Real camera (manual) | `test/camera-live.cjs` (`npm run test:camera`, or `open -n -W -a Electron.app --args test/camera-live.cjs --out report.json` so macOS asks Electron for camera access): MacBook Pro camera, Electron 44.5.1, animated UR shown on an iPhone held 20-30 cm away. Camera ready 1.45 s; 285 preview frames drawn through `sharedTexture` (~23 fps); `crypto-psbt` 2,003 bytes assembled in 4.23 s from the first part with 25 distinct parts, FNV-1a matching; at most 1 slot lent, 0 after dispose; no errors. Static codes not exercised in that run. |
 | Preview path | `test/preview.cjs` on Electron 44.5.1 with a sandboxed, context-isolated preload (`test/preview-preload.cjs`): frames from the animated video go through `importSharedTexture` → `sendSharedTexture` → `setSharedTextureReceiver` → canvas. 32-33 of 32-33 frames drawn in 4 s at 8 fps, none skipped, at most 1 slot lent, 0 after stop; the captured page shows the QR (dark and light pixels); the animated UR completes at the same time. |
 
 Build note: Cargo's `strip = "symbols"` produced a binary whose LC_SYMTAB
@@ -109,7 +110,6 @@ repository root `node_modules`; the package itself has no dependencies.
 
 Pending:
 
-- Real camera run (`QR_SCANNER_CAMERA=1 npm test`, or `electron test/electron.cjs --camera`) needs a person to grant camera access.
 - app-monorepo integration: main-process camera lease and IPC, preload
   receiver, DeviceStage/scan-page canvas, permission flow; real-camera
   preview latency and frame rate.
