@@ -260,8 +260,16 @@ createWebQrScanner({
   `NotFoundError`/`OverconstrainedError` → `no-camera`,
   `NotReadableError`/`AbortError` → `camera-busy`, others and engine failures
   → `decoder-unavailable`. Results from a stopped generation are dropped.
-- Detection runs on the page's thread today; moving zxing into a Worker is
-  pending (section 9).
+- zxing runs on the page thread by default. With
+  `configureWebQrScanner({ createZXingWorker })` it runs in a Worker built
+  from the `./web/zxing-worker` entry: one worker, requests answered in order,
+  pixels copied before transfer (the same image feeds several passes), and a
+  crashed worker is replaced on the next request (`decoder-unavailable` for
+  the failed one). The callers create the Worker because worker URLs are
+  bundler-specific.
+- A camera whose track delivers no frame within `firstFrameTimeoutMs`
+  (default 8000) fails `start()` with `camera-busy` and is released, instead
+  of waiting forever on `video.play()`.
 
 ## 4. Lifecycle and concurrency
 
@@ -290,8 +298,8 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 | --- | --- | --- | --- | --- |
 | iOS | AVFoundation metadata output, 1080p, continuous near autofocus | Vision | ZXing-C++ (image only) | Implemented in source |
 | Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only; arm ABIs) | Implemented, emulator verified (image) |
-| Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread; Worker pending) | Implemented, browser verified |
-| macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ pending | Implemented, not integrated |
+| Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread or Worker) | Implemented; Chrome, WebKit and extension-CSP verified |
+| macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ (image) | Implemented, not integrated |
 | Windows Electron | `desktop/win/electron-qr-scanner` | Same | ZXing-C++ | Not started |
 
 All platforms feed frame text into the same `./ur` session.
@@ -337,6 +345,8 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests: gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
 | Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
+| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped). 43 jest tests in total. |
+| Web in other engines and the extension CSP | harness via Playwright 1.58 | Chrome 156 Worker mode: images exact (5-26 ms), animated UR 2.4 s, one worker. WebKit 26.0 (Safari's engine; no BarcodeDetector, so zxing automatically): page thread and Worker, images exact, animated UR ~2.4 s. MV3 extension with OneKey's production CSP (`script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`): page thread and Worker, images exact, animated UR 2.4-2.6 s, no CSP violations. Real camera: Chrome 157 sees "MacBook Pro Camera" and getUserMedia returns a live 640x480 track, but no frames reached the `<video>` when launched from this automation (OS capture permission of the launching process); the SDK now reports `camera-busy` and releases the camera in that case. The built-in browser pane blocks capture, which verified `permission-denied`. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |
 
 Known image-decoding gaps (iOS 27.2 simulator; recorded as non-strict
@@ -365,7 +375,7 @@ Still required:
   headless emulator's emulated camera produced black frames), real-device
   permission flows, binary-size delta (ML Kit model, ZXing .so ~1.6 MB on
   arm64).
-- Web: zxing in a Worker; `getUserMedia` camera run (permission, device
-  switch, track release); Firefox and Safari runs; extension CSP and
-  Linux Electron `file://` runs.
+- Web: a real camera producing frames (Chrome or Safari launched normally,
+  not from automation), real Safari.app (WebKit verified instead), Firefox,
+  Linux Electron from `file://`.
 - The original OK-67798 album image once available.

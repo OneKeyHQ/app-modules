@@ -21,6 +21,8 @@ export interface WebQrScannerOptions {
   limits?: Partial<UrLimits>;
   /** Longest side of the analysed frame, in pixels. Default 1280. */
   maxAnalysisSize?: number;
+  /** A camera that produces no frame within this many ms fails with `camera-busy`. Default 8000. */
+  firstFrameTimeoutMs?: number;
   onReady?: () => void;
   onProgress?: (progress: number) => void;
   onResult?: (result: ScanResult) => void;
@@ -55,6 +57,7 @@ function cameraErrorCode(error: unknown): QrScannerErrorCode {
 export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   const { video, source = { kind: 'camera' }, mode, allowPlainText, limits } = options;
   const maxAnalysisSize = options.maxAnalysisSize ?? 1280;
+  const firstFrameTimeoutMs = options.firstFrameTimeoutMs ?? 8000;
   const element = video as VideoWithFrameCallback;
   const handlers = options;
 
@@ -198,9 +201,24 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           video.srcObject = next;
           video.muted = true;
           video.playsInline = true;
-          await video.play();
+          // A live track can still deliver no frames (another app holds the
+          // device, OS-level capture permission); play() then never settles.
+          const started = await Promise.race([
+            video.play().then(() => true),
+            new Promise<false>((resolve) =>
+              setTimeout(() => resolve(false), firstFrameTimeoutMs)
+            ),
+          ]);
+          if (!started) {
+            if (runGeneration === generation) {
+              releaseCamera();
+              fail('camera-busy', 'The camera produced no frames');
+            }
+            return;
+          }
         } catch (error) {
           if (runGeneration === generation) {
+            releaseCamera();
             fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
           }
           return;

@@ -55,7 +55,15 @@ import {
 } from '@onekeyfe/react-native-qr-scanner/web';
 
 // Pass your bundled zxing-wasm 3.1.3 reader binary; the SDK never fetches it.
-configureWebQrScanner({ loadZXingWasm: () => loadBundledWasm() });
+// createZXingWorker is optional and moves zxing off the page thread.
+configureWebQrScanner({
+  loadZXingWasm: () => loadBundledWasm(),
+  createZXingWorker: () =>
+    new Worker(
+      new URL('@onekeyfe/react-native-qr-scanner/web/zxing-worker', import.meta.url),
+      { type: 'module' }
+    ),
+});
 
 const scanner = createWebQrScanner({ video, mode: 'auto', onResult });
 await scanner.start();

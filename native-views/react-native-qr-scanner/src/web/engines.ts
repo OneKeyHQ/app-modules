@@ -1,8 +1,16 @@
-import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader';
-
 import { QrScannerError } from '../errors';
+import { prepareZXingFromBinary, readQrText } from './zxingWorkerProtocol';
 
 import type { QrImageEngine, RgbaImage } from './imageOps';
+import type { ZXingWorkerRequest, ZXingWorkerResponse } from './zxingWorkerProtocol';
+
+/** The part of `Worker` the SDK uses. */
+export interface ZXingWorkerLike {
+  postMessage(message: ZXingWorkerRequest, transfer?: Transferable[]): void;
+  onmessage: ((event: { data: ZXingWorkerResponse }) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  terminate(): void;
+}
 
 export interface WebQrScannerConfig {
   /**
@@ -11,19 +19,27 @@ export interface WebQrScannerConfig {
    * BarcodeDetector; the SDK never downloads the binary itself.
    */
   loadZXingWasm?: () => Promise<ArrayBuffer>;
+  /**
+   * Creates a Worker running `@onekeyfe/react-native-qr-scanner/web/zxing-worker`.
+   * When set, zxing decodes off the page thread; otherwise on it.
+   */
+  createZXingWorker?: () => ZXingWorkerLike;
   /** Skip the native BarcodeDetector even when present (tests, comparisons). */
   disableNativeDetector?: boolean;
 }
 
 let config: WebQrScannerConfig = {};
-let zxingReady: Promise<void> | undefined;
+let pageZXingReady: Promise<void> | undefined;
 let nativeDetector: Promise<QrImageEngine | null> | undefined;
+let workerClient: ZXingWorkerClient | undefined;
 
 /** Call before the first decode. Later calls replace the config. */
 export function configureWebQrScanner(next: WebQrScannerConfig): void {
   config = { ...next };
-  zxingReady = undefined;
+  pageZXingReady = undefined;
   nativeDetector = undefined;
+  workerClient?.dispose();
+  workerClient = undefined;
 }
 
 interface DetectedBarcodeLike {
@@ -35,10 +51,6 @@ interface BarcodeDetectorLike {
 interface BarcodeDetectorClassLike {
   new (options: { formats: string[] }): BarcodeDetectorLike;
   getSupportedFormats?: () => Promise<string[]>;
-}
-
-function toImageData(image: RgbaImage): ImageData {
-  return new ImageData(image.data, image.width, image.height);
 }
 
 async function createNativeEngine(): Promise<QrImageEngine | null> {
@@ -53,7 +65,9 @@ async function createNativeEngine(): Promise<QrImageEngine | null> {
     return {
       name: 'native',
       async decode(image) {
-        const results = await detector.detect(toImageData(image));
+        const results = await detector.detect(
+          new ImageData(image.data, image.width, image.height)
+        );
         return results.find((result) => result.rawValue)?.rawValue ?? null;
       },
     };
@@ -62,50 +76,110 @@ async function createNativeEngine(): Promise<QrImageEngine | null> {
   }
 }
 
-function prepareZXing(): Promise<void> {
+function requireLoader(): () => Promise<ArrayBuffer> {
   const { loadZXingWasm } = config;
   if (!loadZXingWasm) {
-    return Promise.reject(
-      new QrScannerError(
-        'decoder-unavailable',
-        'No QR-capable BarcodeDetector and no zxing-wasm loader configured'
-      )
-    );
-  }
-  zxingReady ??= loadZXingWasm().then(async (binary) => {
-    await prepareZXingModule({
-      overrides: {
-        instantiateWasm(imports, receiveInstance) {
-          void WebAssembly.instantiate(binary, imports).then(({ instance }) =>
-            receiveInstance(instance)
-          );
-          return {};
-        },
-      },
-      fireImmediately: true,
-    });
-  });
-  return zxingReady.catch((error: unknown) => {
-    zxingReady = undefined;
     throw new QrScannerError(
       'decoder-unavailable',
-      `zxing-wasm failed to load: ${error instanceof Error ? error.message : String(error)}`
+      'No QR-capable BarcodeDetector and no zxing-wasm loader configured'
     );
-  });
+  }
+  return loadZXingWasm;
+}
+
+function zxingUnavailable(error: unknown): QrScannerError {
+  if (error instanceof QrScannerError) return error;
+  return new QrScannerError(
+    'decoder-unavailable',
+    `zxing-wasm failed: ${error instanceof Error ? error.message : String(error)}`
+  );
+}
+
+/**
+ * One worker, requests answered in order. A worker that errors is dropped;
+ * the next request starts a fresh one.
+ */
+class ZXingWorkerClient {
+  private worker: ZXingWorkerLike;
+  private nextId = 1;
+  private pending = new Map<number, (response: ZXingWorkerResponse) => void>();
+  private ready: Promise<void>;
+  broken = false;
+
+  constructor(create: () => ZXingWorkerLike, loadWasm: () => Promise<ArrayBuffer>) {
+    this.worker = create();
+    this.worker.onmessage = ({ data }) => {
+      this.pending.get(data.id)?.(data);
+      this.pending.delete(data.id);
+    };
+    this.worker.onerror = () => this.fail('zxing worker crashed');
+    this.ready = loadWasm().then((wasm) =>
+      this.request({ id: 0, type: 'init', wasm }, [wasm]).then(() => undefined)
+    );
+  }
+
+  private fail(message: string) {
+    this.broken = true;
+    for (const resolve of this.pending.values()) resolve({ id: 0, ok: false, error: message });
+    this.pending.clear();
+  }
+
+  private request(
+    message: ZXingWorkerRequest,
+    transfer: Transferable[]
+  ): Promise<string | null> {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      if (this.broken) {
+        reject(new Error('zxing worker is unavailable'));
+        return;
+      }
+      this.pending.set(id, (response) =>
+        response.ok ? resolve(response.text) : reject(new Error(response.error))
+      );
+      this.worker.postMessage({ ...message, id }, transfer);
+    });
+  }
+
+  async decode(image: RgbaImage): Promise<string | null> {
+    await this.ready;
+    // The same image feeds several passes and engines; send a copy.
+    const data = image.data.slice();
+    return this.request(
+      { id: 0, type: 'decode', data, width: image.width, height: image.height },
+      [data.buffer]
+    );
+  }
+
+  dispose() {
+    this.fail('zxing worker disposed');
+    this.worker.terminate();
+  }
 }
 
 export const zxingEngine: QrImageEngine = {
   name: 'zxing',
   async decode(image) {
-    await prepareZXing();
-    const results = await readBarcodes(toImageData(image), {
-      formats: ['QRCode'],
-      tryHarder: true,
-      // The pipeline has its own inverted pass.
-      tryInvert: false,
-      maxNumberOfSymbols: 1,
-    });
-    return results.find((result) => result.isValid && result.text)?.text ?? null;
+    try {
+      const loadWasm = requireLoader();
+      if (config.createZXingWorker) {
+        if (!workerClient || workerClient.broken) {
+          workerClient?.dispose();
+          workerClient = new ZXingWorkerClient(config.createZXingWorker, loadWasm);
+        }
+        return await workerClient.decode(image);
+      }
+      pageZXingReady ??= loadWasm().then(prepareZXingFromBinary);
+      try {
+        await pageZXingReady;
+      } catch (error) {
+        pageZXingReady = undefined;
+        throw error;
+      }
+      return await readQrText(image.data, image.width, image.height);
+    } catch (error) {
+      throw zxingUnavailable(error);
+    }
   },
 };
 

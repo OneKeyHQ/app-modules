@@ -20,6 +20,11 @@
       "types": "./lib/typescript/src/web/index.d.ts",
       "default": "./lib/module/web/index.js"
     },
+    "./web/zxing-worker": {
+      "source": "./src/web/zxing.worker.ts",
+      "types": "./lib/typescript/src/web/zxing.worker.d.ts",
+      "default": "./lib/module/web/zxing.worker.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
