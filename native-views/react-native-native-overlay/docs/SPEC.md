@@ -346,10 +346,16 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   non-terminal re-presentation; clear it on terminal close or invalidation.
 - Preserve existing touch-driven input activation. Removing a non-key window
   MUST NOT change the key window or a surviving first responder. Removing the
-  key window restores the highest-ranked desired-visible, attached, non-closing eligible
-  entry in the same scene, otherwise the app window. Eligible entries are
-  effectively blocking (system sheets always block), or actually contain a
-  first responder; passive toast/debug entries do not win solely by level.
+  key window restores the highest-ranked desired-visible, attached, non-closing
+  eligible entry in the same scene, then the original app window if it is
+  still attached to that scene. When neither target exists, preserve the key
+  ownership of an app or system window after release or retirement. If the
+  scene has no key window or UIKit gives key to an ineligible overlay, use an
+  available visible normal-level app window in the same scene with a root
+  controller and the ability to become key. This fallback also handles an
+  exiting overlay that remains key while it is retained for touches.
+  Eligible entries are effectively blocking (system sheets always block) or
+  contain a first responder. Passive toast/debug entries need a first responder.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
 - Delivered-touch retirement extension (Implemented; thirty native checks and
@@ -364,16 +370,16 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   tracked touch ends or cancels, then fails and resets without recognizing.
   It accepts concurrent touch types with `requiresExclusiveTouchType = false`
   and preserves UIKit's default allowed touch types.
-- Removing an entry while its real app window or any active/retired entry owned
-  by that real host has delivered active touches or
-  an interactive UIKit presentation
-  removes that entry from active ordering and restores key ownership immediately,
-  but retains its exiting window/root/scene, without hiding it, until both the
-  delivered touch set is empty and the interaction finishes or cancels. Touch
-  completion/cancellation and UIKit interaction changes schedule cleanup on the
-  next main turn. Cleanup rechecks the complete current touch set and transition
-  coordinator before releasing
-  that exact window lifetime. A newly interactive transition keeps it retired
+- On removal, the manager updates active ordering and restores key ownership
+  immediately. It keeps the exiting window visible and retains its root
+  controller and scene attachment while the real app window or any active or
+  retired entry of that host has delivered active touches, or while the app
+  window has an interactive UIKit transition. The search covers the root,
+  presented controllers, and child controllers whose loaded views belong to
+  the app window. Touch completion/cancellation and UIKit interaction changes
+  schedule cleanup on the next main turn. Cleanup rechecks the complete current
+  touch set and transition coordinator before releasing that exact window
+  lifetime. A newly interactive transition keeps it retired
   until its own completion; repeated or late callbacks cannot release a new
   entry for the same owner. A new touch beginning after a previous touch ends but
   before queued cleanup keeps the window retired. Overlapping multi-touch can
@@ -381,10 +387,13 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   still releases synchronously. Remove an entry observer only when its window
   is released; remove a real app window's observer only when that host has no
   active or retired entries. Touch callbacks query current host ownership across
-  scenes, rather than binding to the scene of first installation. Moving the
-  same real host to another scene keeps its remaining users protected.
+  scenes using an identity unique to each host window lifetime. Moving the
+  same real host to another scene keeps its remaining users protected. The
+  identity holds a weak reference to the host, so a last-touch check can
+  release a retired window even if the host deallocates before the callback
+  or while the check is queued.
   Reassigning an observed window to a different host does not change its
-  delivered touch context: retain weak prior-host associations until a next-turn
+  delivered touch context. Retain prior host identities until a next-turn
   check finds its complete touch set empty and those hosts' retirements released.
   A new touch during an idle gap still protects a prior host whose context remains
   retired. Touch completion, observer removal and host reassignment wake current
@@ -799,16 +808,18 @@ system multi-scene migration. The default resolver remains `ObjectIdentifier(sce
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its original nineteen checks cover bounded/live
-  ordering, key restoration eligibility, owning-entry release, injected scene
+  Animation into an isolated UIKit test app. Checks cover bounded/live ordering,
+  key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
   higher/foreign/new-input guards), and a native sheet surviving another
-  entry's dismissal. Four focused checks cover interactive retirement after
+  entry's dismissal. Six focused checks cover interactive retirement after
   finish and cancellation, reopening the same owner while the old window is
-  retired, and disconnecting a scene with only a retired window. They use a
-  controlled transition coordinator to test manager lifecycle; the real
-  gesture check is the iOS 27.0 simulator run above.
+  retired, and disconnecting a scene with only a retired window. Four use a
+  controlled transition coordinator to test manager lifecycle. One uses a
+  real contained `UINavigationController` interactive pop to verify retention
+  until cancellation. One ensures unloaded and unattached children do not
+  retain the window or load their views.
   Eight app-touch checks directly drive the production observer's
   `touchesBegan`/`touchesEnded`/`touchesCancelled` and reset with synthetic
   touch objects. They assert passive gesture flags, touch-only retirement,
@@ -817,6 +828,21 @@ Automated (P0):
   and scene-disconnect callback invalidation. They prove manager lifecycle,
   not UIKit delivery or scroll inertia; those are covered separately by the
   local App runtime checks above, with the stated selector-entry limitation.
+  The queued-cleanup fixtures explicitly model reset followed by DOWN on the
+  same observer. When a fixture ends a gesture with UP and later reuses the
+  observer, it waits for UIKit to return the recognizer to the possible state.
+  Host lifetime checks detach and deallocate a real UIWindow on either side of
+  the last touch callback. A separate check verifies UIKit key handoff to an
+  eligible app window while the exiting overlay is still attached for a touch.
+  The two-app-window check verifies that, without an eligible overlay or
+  attached original host, synchronous release preserves the key window UIKit
+  restored even when another app window is the first fallback candidate.
+  The closing-overlay check sets the closing overlay as key to verify the
+  fallback candidate independently of UIKit's release order. It then verifies
+  that releasing a different key overlay leaves the app window key and the
+  closing overlay attached. UIKit's intermediate choice is recorded with the
+  simulator OS version and can vary without failing the check. Synchronous
+  key restoration to the closing overlay was observed on iOS 18.6 and 27.0.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.

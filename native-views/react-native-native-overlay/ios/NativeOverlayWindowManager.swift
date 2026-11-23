@@ -201,9 +201,15 @@ final class NativeOverlayAppTouchObserver: UIGestureRecognizer {
 final class NativeOverlayWindowManager: NSObject {
   static let shared = NativeOverlayWindowManager()
 
+  // Touches can outlive the app window that owns their routing context.
+  private final class AppWindowLifetime: NSObject {
+    weak var window: UIWindow?
+    init(_ window: UIWindow) { self.window = window }
+  }
+
   private final class Entry {
     weak var owner: NativeOverlayWindowOwner?
-    weak var appWindow: UIWindow?
+    var host: AppWindowLifetime
     let window: NativeOverlayPassthroughWindow
     let sequence: Int
     let level: NativeOverlayLevel
@@ -212,11 +218,11 @@ final class NativeOverlayWindowManager: NSObject {
     var desiredVisible = true
     var closing = false
 
-    init(owner: NativeOverlayWindowOwner, appWindow: UIWindow,
+    init(owner: NativeOverlayWindowOwner, host: AppWindowLifetime,
          window: NativeOverlayPassthroughWindow, sequence: Int,
          level: NativeOverlayLevel, stackOrder: Int, blocking: Bool) {
       self.owner = owner
-      self.appWindow = appWindow
+      self.host = host
       self.window = window
       self.sequence = sequence
       self.level = level
@@ -227,39 +233,36 @@ final class NativeOverlayWindowManager: NSObject {
 
   private final class RetiredWindow {
     let window: NativeOverlayPassthroughWindow
-    weak var appWindow: UIWindow?
+    let host: AppWindowLifetime
     weak var observedCoordinator: AnyObject?
 
-    init(window: NativeOverlayPassthroughWindow, appWindow: UIWindow?) {
+    init(window: NativeOverlayPassthroughWindow, host: AppWindowLifetime) {
       self.window = window
-      self.appWindow = appWindow
+      self.host = host
     }
-  }
-
-  private final class WeakAppWindow {
-    weak var window: UIWindow?
-    init(_ window: UIWindow) { self.window = window }
   }
 
   private final class AppTouchObservation {
     weak var window: UIWindow?
-    weak var appWindow: UIWindow?
+    var host: AppWindowLifetime
     let observer: NativeOverlayAppTouchObserver
-    var previousAppWindows: [ObjectIdentifier: WeakAppWindow] = [:]
+    var previousHosts = Set<AppWindowLifetime>()
 
-    var appWindows: [UIWindow] {
-      (appWindow.map { [$0] } ?? []) + previousAppWindows.values.compactMap(\.window)
+    var hosts: [AppWindowLifetime] {
+      [host] + Array(previousHosts)
     }
 
-    init(window: UIWindow, appWindow: UIWindow, observer: NativeOverlayAppTouchObserver) {
+    init(window: UIWindow, host: AppWindowLifetime, observer: NativeOverlayAppTouchObserver) {
       self.window = window
-      self.appWindow = appWindow
+      self.host = host
       self.observer = observer
     }
   }
 
   private var scenes: [ObjectIdentifier: [ObjectIdentifier: Entry]] = [:]
   private var retiredWindows: [ObjectIdentifier: [ObjectIdentifier: RetiredWindow]] = [:]
+  private let hostLifetimes = NSMapTable<UIWindow, AppWindowLifetime>(
+    keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory)
   private var appTouchObservations: [ObjectIdentifier: AppTouchObservation] = [:]
   private var disconnectingScenes = Set<ObjectIdentifier>()
   private var sequence = 0
@@ -299,7 +302,8 @@ final class NativeOverlayWindowManager: NSObject {
     guard !disconnectingScenes.contains(sceneKey) else { return nil }
     let orphanWindows = (scenes[sceneKey] ?? [:]).values.filter { $0.owner == nil }.map(\.window)
     orphanWindows.forEach { entryRemoved(from: $0) }
-    observeTouches(in: appWindow, appWindow: appWindow)
+    let host = hostLifetime(for: appWindow)
+    observeTouches(in: appWindow, host: host)
     let ownerKey = ObjectIdentifier(owner)
     var entries = scenes[sceneKey] ?? [:]
     let entry: Entry
@@ -315,14 +319,14 @@ final class NativeOverlayWindowManager: NSObject {
       root.appWindow = appWindow
       window.rootViewController = root
       window.frame = scene.coordinateSpace.bounds
-      entry = Entry(owner: owner, appWindow: appWindow, window: window,
+      entry = Entry(owner: owner, host: host, window: window,
                     sequence: sequence, level: level, stackOrder: stackOrder, blocking: blocking)
       entries[ownerKey] = entry
       scenes[sceneKey] = entries
     }
-    entry.appWindow = appWindow
+    entry.host = host
     (entry.window.rootViewController as? NativeOverlayRootViewController)?.appWindow = appWindow
-    observeTouches(in: entry.window, appWindow: appWindow)
+    observeTouches(in: entry.window, host: host)
     reorder(entries)
     entry.window.isHidden = false
     entry.window.rootViewController?.setNeedsStatusBarAppearanceUpdate()
@@ -356,11 +360,10 @@ final class NativeOverlayWindowManager: NSObject {
     let wasKey = entry.window.isKeyWindow
     let scene = entry.window.windowScene
     scenes[sceneKey]?[ownerKey] = nil
-    let remaining = scenes[sceneKey] ?? [:]
-    if remaining.isEmpty { scenes[sceneKey] = nil }
-    if hasActiveTouches(in: entry.appWindow) || Self.interactiveCoordinator(in: entry.appWindow) != nil {
+    if scenes[sceneKey]?.isEmpty == true { scenes[sceneKey] = nil }
+    if hasActiveTouches(for: entry.host) || Self.interactiveCoordinator(in: entry.host.window) != nil {
       // Keep the routing context until this host's delivered touches and UIKit interactions finish.
-      let retirement = RetiredWindow(window: entry.window, appWindow: entry.appWindow)
+      let retirement = RetiredWindow(window: entry.window, host: entry.host)
       let windowKey = ObjectIdentifier(entry.window)
       retiredWindows[sceneKey, default: [:]][windowKey] = retirement
       finishRetirement(retirement, sceneKey: sceneKey, windowKey: windowKey)
@@ -368,13 +371,19 @@ final class NativeOverlayWindowManager: NSObject {
       release(entry.window)
     }
     removeUnusedTouchObservers()
+    let remaining = scenes[sceneKey] ?? [:]
     reorder(remaining)
     guard wasKey, let scene,
           scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive else { return }
     let next = remaining.values.filter { Self.eligible($0, in: scene) }
       .max { Self.ordered($0, before: $1) }
-    let appWindow = entry.appWindow?.windowScene === scene ? entry.appWindow : nil
-    (next?.window ?? appWindow)?.makeKey()
+    let appWindow = entry.host.window
+    let attachedAppWindow = appWindow?.windowScene === scene ? appWindow : nil
+    if let target = next?.window ?? attachedAppWindow {
+      target.makeKey()
+      return
+    }
+    Self.fallbackKeyWindow(in: scene)?.makeKey()
   }
 
   func restoreFocus(_ responder: UIView, in window: UIWindow) -> Bool {
@@ -386,7 +395,7 @@ final class NativeOverlayWindowManager: NSObject {
     guard entries.values.filter({ Self.eligible($0, in: scene) })
       .max(by: { Self.ordered($0, before: $1) }) === entry,
       let key = scene.windows.first(where: { $0.isKeyWindow }) else { return false }
-    if key !== entry.appWindow {
+    if key !== entry.host.window {
       guard let keyEntry = entries.values.first(where: { $0.window === key && $0.owner != nil }),
             !Self.ordered(entry, before: keyEntry) else { return false }
     }
@@ -399,6 +408,16 @@ final class NativeOverlayWindowManager: NSObject {
     entry.owner != nil && entry.desiredVisible && !entry.closing &&
       !entry.window.isHidden && entry.window.windowScene === scene &&
       (entry.blocking || firstResponder(in: entry.window) != nil)
+  }
+
+  // The caller has already considered eligible overlays and the original host.
+  static func fallbackKeyWindow(in scene: UIWindowScene) -> UIWindow? {
+    if let keyWindow = scene.keyWindow, !(keyWindow is NativeOverlayPassthroughWindow) { return nil }
+    return scene.windows.first {
+      $0.windowScene === scene && $0.windowLevel == .normal &&
+        !$0.isHidden && $0.alpha > 0 && $0.rootViewController != nil &&
+        $0.canBecomeKey && !($0 is NativeOverlayPassthroughWindow)
+    }
   }
 
   private func find(_ window: UIWindow?) -> (ObjectIdentifier, ObjectIdentifier, Entry)? {
@@ -443,99 +462,105 @@ final class NativeOverlayWindowManager: NSObject {
     window.windowScene = nil
   }
 
-  private func observeTouches(in window: UIWindow, appWindow: UIWindow) {
+  private func hostLifetime(for window: UIWindow) -> AppWindowLifetime {
+    if let host = hostLifetimes.object(forKey: window) { return host }
+    let host = AppWindowLifetime(window)
+    hostLifetimes.setObject(host, forKey: window)
+    return host
+  }
+
+  private func observeTouches(in window: UIWindow, host: AppWindowLifetime) {
     let windowKey = ObjectIdentifier(window)
-    if let observation = appTouchObservations[windowKey] {
-      if observation.appWindow !== appWindow, let previous = observation.appWindow {
-        // Reparenting does not change the context of an already delivered or queued touch stream.
-        if observation.observer.hasActiveTouches || hasRetirements(for: previous) {
-          observation.previousAppWindows[ObjectIdentifier(previous)] = WeakAppWindow(previous)
-        }
-        observation.appWindow = appWindow
-        scheduleObservationCleanup(observation, windowKey: windowKey)
-        scheduleRetirementCheck(for: previous)
-      } else {
-        observation.appWindow = appWindow
+    if let observation = appTouchObservations[windowKey], observation.window === window {
+      let previous = observation.host
+      guard previous !== host else { return }
+      // Reparenting does not change the context of an already delivered or queued touch stream.
+      if observation.observer.hasActiveTouches || hasRetirements(for: previous) {
+        observation.previousHosts.insert(previous)
       }
+      observation.host = host
+      observation.previousHosts.remove(host)
+      scheduleObservationCleanup(observation, windowKey: windowKey)
+      scheduleRetirementCheck(for: previous)
       return
     }
     let observer = NativeOverlayAppTouchObserver(target: nil, action: nil)
-    appTouchObservations[windowKey] = AppTouchObservation(
-      window: window, appWindow: appWindow, observer: observer)
-    observer.onTouchesFinished = { [weak self, weak window, weak observer] in
-      guard let self, let window, let observer,
-            let observation = self.appTouchObservations[ObjectIdentifier(window)],
+    appTouchObservations[windowKey] = AppTouchObservation(window: window, host: host, observer: observer)
+    observer.onTouchesFinished = { [weak self, weak observer] in
+      guard let self, let observer,
+            let observation = self.appTouchObservations[windowKey],
             observation.observer === observer else { return }
-      self.scheduleObservationCleanup(observation, windowKey: ObjectIdentifier(window))
-      for appWindow in observation.appWindows { self.scheduleRetirementCheck(for: appWindow) }
+      self.scheduleObservationCleanup(observation, windowKey: windowKey)
+      for host in observation.hosts { self.scheduleRetirementCheck(for: host) }
     }
     window.addGestureRecognizer(observer)
   }
 
   private func scheduleObservationCleanup(_ observation: AppTouchObservation, windowKey: ObjectIdentifier) {
-    guard !observation.previousAppWindows.isEmpty else { return }
+    guard !observation.previousHosts.isEmpty else { return }
     DispatchQueue.main.async { [weak self, weak observation] in
       guard let self, let observation, self.appTouchObservations[windowKey] === observation,
             !observation.observer.hasActiveTouches else { return }
-      self.prunePreviousAppWindows(in: observation)
+      self.prunePreviousHosts(in: observation)
     }
   }
 
-  private func prunePreviousAppWindows(in observation: AppTouchObservation) {
+  private func prunePreviousHosts(in observation: AppTouchObservation) {
     guard !observation.observer.hasActiveTouches else { return }
     // An idle gap does not retire the old context if another touch or transition still owns it.
-    observation.previousAppWindows = observation.previousAppWindows.filter {
-      $0.value.window.map { hasRetirements(for: $0) } ?? false
-    }
+    observation.previousHosts = observation.previousHosts.filter { hasRetirements(for: $0) }
   }
 
-  private func hasRetirements(for appWindow: UIWindow) -> Bool {
-    retiredWindows.values.contains { $0.values.contains { $0.appWindow === appWindow } }
+  private func hasRetirements(for host: AppWindowLifetime) -> Bool {
+    retiredWindows.values.contains { $0.values.contains { $0.host === host } }
   }
 
-  private func scheduleRetirementCheck(for appWindow: UIWindow?) {
-    guard let appWindow, hasRetirements(for: appWindow) else { return }
-    DispatchQueue.main.async { [weak self, weak appWindow] in
-      guard let self, let appWindow else { return }
+  private func scheduleRetirementCheck(for host: AppWindowLifetime) {
+    guard hasRetirements(for: host) else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
       // The source observer may be gone; query current host ownership and all delivered touches.
       for (sceneKey, windows) in self.retiredWindows {
-        for (windowKey, retirement) in windows where retirement.appWindow === appWindow {
+        for (windowKey, retirement) in windows where retirement.host === host {
           self.finishRetirement(retirement, sceneKey: sceneKey, windowKey: windowKey)
         }
       }
     }
   }
 
-  private func hasActiveTouches(in appWindow: UIWindow?) -> Bool {
-    guard let appWindow else { return false }
-    return appTouchObservations.values.contains {
-      $0.observer.hasActiveTouches && ($0.appWindow === appWindow ||
-        $0.previousAppWindows[ObjectIdentifier(appWindow)]?.window === appWindow)
+  private func hasActiveTouches(for host: AppWindowLifetime) -> Bool {
+    appTouchObservations.values.contains {
+      $0.window != nil && $0.observer.hasActiveTouches &&
+        ($0.host === host || $0.previousHosts.contains(host))
     }
   }
 
   private func removeUnusedTouchObservers() {
     for (key, observation) in appTouchObservations {
-      prunePreviousAppWindows(in: observation)
+      prunePreviousHosts(in: observation)
       let active = observation.window.map { window in
-        scenes.values.contains { $0.values.contains { $0.window === window || $0.appWindow === window } } ||
-          retiredWindows.values.contains { $0.values.contains { $0.window === window || $0.appWindow === window } }
+        scenes.values.contains { $0.values.contains { $0.window === window || $0.host.window === window } } ||
+          retiredWindows.values.contains { $0.values.contains { $0.window === window || $0.host.window === window } }
       } ?? false
       guard !active else { continue }
       observation.observer.onTouchesFinished = nil
       observation.window?.removeGestureRecognizer(observation.observer)
       appTouchObservations[key] = nil
-      for appWindow in observation.appWindows { scheduleRetirementCheck(for: appWindow) }
+      for host in observation.hosts { scheduleRetirementCheck(for: host) }
     }
   }
 
   private static func interactiveCoordinator(in appWindow: UIWindow?) -> UIViewControllerTransitionCoordinator? {
-    var controller = appWindow?.rootViewController
-    while let current = controller {
+    guard let appWindow, let root = appWindow.rootViewController else { return nil }
+    var stack = [root]
+    var visited = Set<ObjectIdentifier>()
+    while let current = stack.popLast() {
+      guard visited.insert(ObjectIdentifier(current)).inserted else { continue }
       if let coordinator = current.transitionCoordinator, coordinator.isInteractive {
         return coordinator
       }
-      controller = current.presentedViewController
+      stack.append(contentsOf: current.children.filter { $0.viewIfLoaded?.window === appWindow })
+      if let presented = current.presentedViewController { stack.append(presented) }
     }
     return nil
   }
@@ -543,8 +568,8 @@ final class NativeOverlayWindowManager: NSObject {
   private func finishRetirement(_ retirement: RetiredWindow, sceneKey: ObjectIdentifier,
                                 windowKey: ObjectIdentifier) {
     guard retiredWindows[sceneKey]?[windowKey] === retirement else { return }
-    let coordinator = Self.interactiveCoordinator(in: retirement.appWindow)
-    if coordinator == nil && !hasActiveTouches(in: retirement.appWindow) {
+    let coordinator = Self.interactiveCoordinator(in: retirement.host.window)
+    if coordinator == nil && !hasActiveTouches(for: retirement.host) {
       retiredWindows[sceneKey]?[windowKey] = nil
       if retiredWindows[sceneKey]?.isEmpty == true { retiredWindows[sceneKey] = nil }
       release(retirement.window)
