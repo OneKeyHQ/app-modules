@@ -1,5 +1,9 @@
 /* cspell:ignore dasharray dashoffset */
+import { TOAST_GEOMETRY } from './toastMotion';
+import { createStatusTile, updateStatusTile } from './toastStatusTile.web';
+
 import type {
+  IOverlayMessageToast,
   IOverlayToastAction,
   IOverlayToastIcon,
   IOverlayToastSpec,
@@ -9,14 +13,15 @@ import type {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-// The card geometry of the layouts this replaces.
-const MESSAGE_ICON_GAP = 8;
-const MESSAGE_TEXT_GAP = 4;
-const NOTIFICATION_GAP = 8;
+const MESSAGE_ICON_GAP = TOAST_GEOMETRY.contentGap;
+const MESSAGE_TEXT_GAP = TOAST_GEOMETRY.textGap;
+const NOTIFICATION_GAP = 10;
 const NOTIFICATION_TEXT_GAP = 2;
-const ACTIONS_PADDING_TOP = 12;
+const ACTIONS_PADDING_TOP = 10;
 const ACTIONS_PADDING_END = 2;
 const ACTIONS_PADDING_BOTTOM = 2;
+const INLINE_ACTION_MAX_LABEL = 16;
+const INLINE_ACTION_MAX_MESSAGE = 72;
 
 export type IToastContentEvent =
   | { type: 'action'; actionId: string }
@@ -31,7 +36,41 @@ function element(tag: string, marker: string): HTMLElement {
   return node;
 }
 
+function textLength(text: IOverlayToastText | undefined): number {
+  if (!text) {
+    return 0;
+  }
+  return text.paragraphs.reduce(
+    (sum, runs) =>
+      sum + runs.reduce((runSum, run) => runSum + run.text.length, 0),
+    0
+  );
+}
+
+function shouldUseInlineAction(spec: IOverlayMessageToast): boolean {
+  if (spec.actions?.length !== 1) {
+    return false;
+  }
+  if ((spec.actionsAlign ?? 'right') !== 'right') {
+    return false;
+  }
+  const [action] = spec.actions;
+  if (!action || action.label.length > INLINE_ACTION_MAX_LABEL) {
+    return false;
+  }
+  if (action.marginHorizontal || action.marginVertical) {
+    return false;
+  }
+  if ((spec.message?.paragraphs.length ?? 0) > 1) {
+    return false;
+  }
+  return textLength(spec.message) <= INLINE_ACTION_MAX_MESSAGE;
+}
+
 function createIcon(icon: IOverlayToastIcon): Element {
+  if (icon.kind === 'status') {
+    return createStatusTile(icon);
+  }
   if (icon.kind === 'image') {
     const image = document.createElement('img');
     image.setAttribute('data-okt-image', '');
@@ -54,7 +93,6 @@ function createIcon(icon: IOverlayToastIcon): Element {
   svg.setAttribute('focusable', 'false');
   svg.style.color = icon.color;
   if (icon.kind === 'spinner') {
-    // The indeterminate ring of the activity indicator this replaces.
     svg.setAttribute('data-okt-spinner', '');
     svg.style.color = '';
     svg.setAttribute('viewBox', '0 0 32 32');
@@ -180,10 +218,17 @@ function createParagraphs(text: IOverlayToastText, emit: IEmit): HTMLElement {
   return container;
 }
 
-function createAction(action: IOverlayToastAction, emit: IEmit): HTMLElement {
+function createAction(
+  action: IOverlayToastAction,
+  emit: IEmit,
+  inline = false
+): HTMLElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.setAttribute('data-okt-action', '');
+  if (inline) {
+    button.setAttribute('data-okt-inline-action', '');
+  }
   if (action.testID) {
     button.setAttribute('data-testid', action.testID);
   }
@@ -212,8 +257,13 @@ function createAction(action: IOverlayToastAction, emit: IEmit): HTMLElement {
   if (action.fontFamily) {
     style.fontFamily = action.fontFamily;
   }
-  style.padding = `${action.paddingVertical}px ${action.paddingHorizontal}px`;
-  style.borderRadius = `${action.borderRadius}px`;
+  if (inline) {
+    style.padding = `0 ${Math.max(action.paddingHorizontal, 14)}px`;
+    style.borderRadius = `${TOAST_GEOMETRY.actionRadius}px`;
+  } else {
+    style.padding = `${action.paddingVertical}px ${action.paddingHorizontal}px`;
+    style.borderRadius = `${action.borderRadius}px`;
+  }
   style.borderWidth = `${action.borderWidth ?? 0}px`;
   if (action.marginHorizontal || action.marginVertical) {
     style.margin = `${action.marginVertical ?? 0}px ${
@@ -224,7 +274,6 @@ function createAction(action: IOverlayToastAction, emit: IEmit): HTMLElement {
     style.opacity = String(action.disabledOpacity);
   }
   button.addEventListener('click', (event) => {
-    // A press on an action never reaches the row under it.
     event.stopPropagation();
     if (!action.disabled) {
       emit({ type: 'action', actionId: action.id });
@@ -249,10 +298,13 @@ function createActions(
 /** Builds the body of one card. The caller owns the card element. */
 export function buildToastContent(
   spec: IOverlayToastSpec,
-  emit: IEmit
+  emit: IEmit,
+  previous?: HTMLElement,
+  statusMotion?: 'enter' | 'settle'
 ): HTMLElement {
   if (spec.layout === 'notification') {
     const row = element('div', 'data-okt-row');
+    row.setAttribute('data-okt-layout', 'notification');
     row.style.flex = '1 1 auto';
     row.style.gap = `${NOTIFICATION_GAP}px`;
     if (spec.pressable) {
@@ -319,23 +371,21 @@ export function buildToastContent(
     return row;
   }
 
-  const root = element('div', 'data-okt-root');
-  const row = element('div', 'data-okt-row');
-  if (spec.icon) {
-    row.style.gap = `${MESSAGE_ICON_GAP}px`;
-    const box = element('div', 'data-okt-icon-box');
-    box.append(createIcon(spec.icon));
-    row.append(box);
-  }
+  const icon = spec.statusIcon ?? spec.icon;
+  const inlineAction = shouldUseInlineAction(spec);
   const column = element('div', 'data-okt-col');
+  column.setAttribute('data-okt-message-col', '');
   column.style.gap = `${MESSAGE_TEXT_GAP}px`;
+  if (!icon) {
+    column.setAttribute('data-okt-no-icon', '');
+  }
   if (spec.title) {
     column.append(createParagraphs(spec.title, emit));
   }
   if (spec.message) {
     column.append(createParagraphs(spec.message, emit));
   }
-  if (spec.actions?.length) {
+  if (spec.actions?.length && !inlineAction) {
     column.append(
       createActions(
         spec.actions,
@@ -345,7 +395,49 @@ export function buildToastContent(
       )
     );
   }
+  const trailingAction =
+    inlineAction && spec.actions?.[0]
+      ? createAction(spec.actions[0], emit, true)
+      : undefined;
+
+  if (icon?.kind === 'status' && previous?.hasAttribute('data-okt-root')) {
+    const row = previous.querySelector<HTMLElement>(':scope > [data-okt-row]');
+    const tile = row?.querySelector<HTMLElement>(
+      ':scope > [data-okt-icon-box] > [data-okt-status-tile]'
+    );
+    const iconBox = tile?.parentElement;
+    if (row && tile && iconBox) {
+      updateStatusTile(tile, icon, statusMotion === 'settle');
+      if (statusMotion === 'settle') {
+        column.setAttribute('data-okt-content-swap', '');
+      }
+      while (iconBox.nextSibling) {
+        iconBox.nextSibling.remove();
+      }
+      row.style.gap = `${MESSAGE_ICON_GAP}px`;
+      row.append(column);
+      if (trailingAction) {
+        row.append(trailingAction);
+      }
+      return previous;
+    }
+  }
+  const root = element('div', 'data-okt-root');
+  const row = element('div', 'data-okt-row');
+  row.style.gap = `${MESSAGE_ICON_GAP}px`;
+  if (icon) {
+    const box = element('div', 'data-okt-icon-box');
+    box.append(
+      icon.kind === 'status'
+        ? createStatusTile(icon, statusMotion === 'enter')
+        : createIcon(icon)
+    );
+    row.append(box);
+  }
   row.append(column);
+  if (trailingAction) {
+    row.append(trailingAction);
+  }
   root.append(row);
   return root;
 }

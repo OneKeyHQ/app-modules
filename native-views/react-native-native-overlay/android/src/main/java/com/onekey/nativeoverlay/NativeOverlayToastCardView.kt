@@ -57,20 +57,23 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-// The card geometry of the layouts this replaces, in dp.
+// RareUI-inspired concentric geometry in dp: cardRadius = tileRadius (11) + padding (10).
 private object ToastMetrics {
-  const val CARD_PADDING_HORIZONTAL = 16f
-  const val CARD_PADDING_VERTICAL = 12f
-  const val CARD_RADIUS = 8f
-  const val CARD_ELEVATION = 7f
-  const val MESSAGE_ICON_GAP = 8f
-  /** The status icon sits this far under the top of its box. */
-  const val MESSAGE_ICON_PADDING_TOP = 2f
-  const val MESSAGE_TEXT_GAP = 4f
-  const val NOTIFICATION_GAP = 8f
+  const val CARD_PADDING_HORIZONTAL = 10f
+  const val CARD_PADDING_VERTICAL = 10f
+  const val CARD_RADIUS = 21f
+  const val CARD_ELEVATION = 5f
+  const val MESSAGE_ICON_GAP = 12f
+  const val MESSAGE_TEXT_GAP = 2f
+  const val NO_ICON_PADDING_START = 6f
+  const val TILE_MIN_HEIGHT = 36f
+  const val INLINE_ACTION_HEIGHT = 36f
+  const val INLINE_ACTION_MAX_LABEL = 16
+  const val INLINE_ACTION_MAX_MESSAGE = 72
+  const val NOTIFICATION_GAP = 10f
   const val NOTIFICATION_TEXT_GAP = 2f
   const val ACTIONS_GAP = 8f
-  const val ACTIONS_PADDING_TOP = 12f
+  const val ACTIONS_PADDING_TOP = 10f
   const val ACTIONS_PADDING_END = 2f
   const val ACTIONS_PADDING_BOTTOM = 2f
 }
@@ -238,7 +241,10 @@ private object ToastNamedIcon {
 }
 
 @SuppressLint("ViewConstructor")
-internal class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayout(context) {
+internal class ToastIconView(context: Context, icon: ToastIcon) : FrameLayout(context) {
+  var icon = icon
+    private set
+  val statusTile = (icon as? ToastIcon.Status)?.let { ToastStatusTileView(context, it) }
   private val owner = Any()
   private val imageView = ImageView(context)
   /** The size the named icon was last drawn at; it renders at its frame. */
@@ -254,6 +260,9 @@ internal class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayou
         spinner.isIndeterminate = true
         spinner.indeterminateTintList = ColorStateList.valueOf(icon.color)
         addView(spinner, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+      }
+      is ToastIcon.Status -> {
+        addView(statusTile, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
       }
       is ToastIcon.Image -> {
         imageView.scaleType = ImageView.ScaleType.CENTER_CROP
@@ -272,6 +281,11 @@ internal class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayou
         addView(imageView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
       }
     }
+  }
+
+  fun applyStatus(status: ToastIcon.Status, settle: Boolean) {
+    icon = status
+    statusTile?.apply(status, settle)
   }
 
   override fun onAttachedToWindow() {
@@ -574,8 +588,14 @@ private class ToastActionButton(context: Context, val action: ToastAction) : Vie
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (isEnabled) {
       when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> surface.setColor(action.pressedBackgroundColor ?: action.backgroundColor)
-        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> surface.setColor(action.backgroundColor)
+        MotionEvent.ACTION_DOWN -> {
+          surface.setColor(action.pressedBackgroundColor ?: action.backgroundColor)
+          animate().scaleX(0.95f).scaleY(0.95f).setDuration(120L).start()
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          surface.setColor(action.backgroundColor)
+          animate().scaleX(1f).scaleY(1f).setDuration(120L).start()
+        }
       }
     }
     return super.onTouchEvent(event)
@@ -632,9 +652,15 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     buttons.forEach { it.iconView?.cancelLoad() }
   }
 
-  fun apply(spec: ToastSpec, cardColor: Int) {
+  fun apply(spec: ToastSpec, cardColor: Int, cardBorderColor: Int? = null, settleStatus: Boolean = false) {
+    val nextStatus = spec.icon as? ToastIcon.Status
+    val retained = iconView?.takeIf {
+      this.spec?.isNotification == false && !spec.isNotification &&
+        nextStatus != null && it.statusTile != null
+    }
     this.spec = spec
     surface.setColor(cardColor)
+    surface.setStroke(max(1, context.dp(1f)), cardBorderColor ?: Color.argb(18, 0, 0, 0))
     spec.testID?.let { tag = it }
     isClickable = spec.pressable
     isFocusable = spec.pressable
@@ -644,7 +670,9 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       IMPORTANT_FOR_ACCESSIBILITY_AUTO
     }
     cancelLoads()
-    removeAllViews()
+    for (index in childCount - 1 downTo 0) {
+      if (getChildAt(index) !== retained) removeViewAt(index)
+    }
     val link: (String) -> Unit = { onLink?.invoke(it) }
     badge = if (spec.isNotification) {
       View(context).also { view ->
@@ -657,7 +685,12 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     } else {
       null
     }
-    iconView = spec.icon?.let { ToastIconView(context, it).also(::addView) }
+    iconView = if (retained != null && nextStatus != null) {
+      retained.applyStatus(nextStatus, settleStatus)
+      retained
+    } else {
+      spec.icon?.let { ToastIconView(context, it).also(::addView) }
+    }
     imageView = spec.image?.let { ToastIconView(context, it).also(::addView) }
     titles = spec.title?.let { text ->
       text.paragraphs.map { makeParagraph(context, text, it, link).also(::addView) }
@@ -672,6 +705,18 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       }
     }
     requestLayout()
+  }
+
+  fun animateMessageStatusEntrance() {
+    if (spec?.isNotification == false) iconView?.statusTile?.enter()
+  }
+
+  fun animateMessageStatusRing() {
+    if (spec?.isNotification == false) iconView?.statusTile?.startRing()
+  }
+
+  fun cancelStatusMotion() {
+    iconView?.statusTile?.cancelMotion()
   }
 
   /** What TalkBack reads when the card appears. */
@@ -783,6 +828,17 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     return paddingTop + rowHeight + px(paddingBottom)
   }
 
+  private fun shouldUseInlineAction(spec: ToastSpec): Boolean {
+    if (buttons.size != 1 || spec.actionsAlignLeft) return false
+    val action = buttons.first().action
+    if (action.label.length > ToastMetrics.INLINE_ACTION_MAX_LABEL) return false
+    if (action.marginHorizontal != 0f || action.marginVertical != 0f) return false
+    val message = spec.message ?: return true
+    if (message.paragraphs.size > 1) return false
+    val length = message.paragraphs.sumOf { runs -> runs.sumOf { it.text.length } }
+    return length <= ToastMetrics.INLINE_ACTION_MAX_MESSAGE
+  }
+
   /** Lays the content box out from [content]; returns its height in px. */
   private fun placeContent(spec: ToastSpec, content: Node, width: Double): Double {
     if (spec.isNotification) {
@@ -812,30 +868,76 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       return maxOf(y, badgeSize, imageSize)
     }
     val icon = spec.icon
-    val columnX = icon?.let { px(it.size) + px(ToastMetrics.MESSAGE_ICON_GAP) } ?: 0.0
-    iconView?.let { view ->
-      val size = px(view.icon.size)
-      frames[view] = content.child(0.0, px(ToastMetrics.MESSAGE_ICON_PADDING_TOP)).frame(size, size)
+    val iconSize = icon?.let { px(it.size) } ?: 0.0
+    val columnX = icon?.let { iconSize + px(ToastMetrics.MESSAGE_ICON_GAP) } ?: px(ToastMetrics.NO_ICON_PADDING_START)
+    val inlineAction = shouldUseInlineAction(spec)
+    var inlineWidth = 0.0
+    var inlineHeight = 0.0
+    if (inlineAction) {
+      val button = buttons.first()
+      val action = button.action
+      val (labelWidth, labelHeight) = button.measureLabel()
+      val actionIconSize = action.icon?.let { px(it.size) } ?: 0.0
+      val iconExtent = if (action.icon != null) actionIconSize + px(action.iconGap) else 0.0
+      val insetX = px(max(action.paddingHorizontal, 14f) + action.borderWidth)
+      val insetY = px(action.paddingVertical + action.borderWidth)
+      inlineWidth = labelWidth + iconExtent + 2 * insetX
+      inlineHeight = max(max(labelHeight.toDouble(), actionIconSize) + 2 * insetY, px(ToastMetrics.INLINE_ACTION_HEIGHT))
     }
-    val columnWidth = max(width - columnX, 0.0)
-    val column = content.child(columnX, 0.0)
+    val trailing = if (inlineAction) inlineWidth + px(ToastMetrics.MESSAGE_ICON_GAP) else 0.0
+    val columnWidth = max(width - columnX - trailing, 0.0)
     val gap = px(ToastMetrics.MESSAGE_TEXT_GAP)
-    var y = 0.0
+    val measureColumn = content.child(columnX, 0.0)
+    var textHeight = 0.0
     var hasBlock = false
     for (block in listOf(titles, messages)) {
       if (block.isEmpty()) continue
-      if (hasBlock) y += gap
+      if (hasBlock) textHeight += gap
       hasBlock = true
-      y += placeParagraphs(block, column.child(0.0, y), columnWidth)
+      for (view in block) {
+        val drawnWidth = measureColumn.child(0.0, textHeight, text = true).width(columnWidth, text = true)
+        textHeight += textHeight(view, drawnWidth).toDouble()
+      }
     }
-    if (buttons.isNotEmpty()) {
-      if (hasBlock) y += gap
-      y += placeActions(
-        column.child(0.0, y), columnWidth, ToastMetrics.ACTIONS_PADDING_END, ToastMetrics.ACTIONS_PADDING_BOTTOM,
+    var bottomActionsHeight = 0.0
+    if (buttons.isNotEmpty() && !inlineAction) {
+      if (hasBlock) textHeight += gap
+      bottomActionsHeight = placeActions(
+        measureColumn.child(0.0, textHeight), columnWidth, ToastMetrics.ACTIONS_PADDING_END, ToastMetrics.ACTIONS_PADDING_BOTTOM,
       )
     }
-    val iconBox = icon?.let { px(it.size + ToastMetrics.MESSAGE_ICON_PADDING_TOP) } ?: 0.0
-    return max(y, iconBox)
+    val rowHeight = maxOf(textHeight + bottomActionsHeight, iconSize, inlineHeight, px(ToastMetrics.TILE_MIN_HEIGHT))
+    val textTop = if (bottomActionsHeight > 0.0) 0.0 else (rowHeight - textHeight) / 2.0
+    val textColumn = content.child(columnX, textTop)
+    var y = 0.0
+    var placedBlock = false
+    for (block in listOf(titles, messages)) {
+      if (block.isEmpty()) continue
+      if (placedBlock) y += gap
+      placedBlock = true
+      y += placeParagraphs(block, textColumn.child(0.0, y), columnWidth)
+    }
+    iconView?.let { view ->
+      frames[view] = content.child(0.0, (rowHeight - iconSize) / 2.0).frame(iconSize, iconSize)
+    }
+    if (inlineAction) {
+      val button = buttons.first()
+      val action = button.action
+      val node = content.child(width - inlineWidth, (rowHeight - inlineHeight) / 2.0)
+      button.frame = node.frame(inlineWidth, inlineHeight)
+      frames[button] = button.frame
+      val insetX = px(max(action.paddingHorizontal, 14f) + action.borderWidth)
+      var labelX = insetX
+      button.iconView?.let {
+        val actionIconSize = px(action.icon!!.size)
+        button.iconFrame = node.child(insetX, (inlineHeight - actionIconSize) / 2.0).frame(actionIconSize, actionIconSize)
+        labelX += actionIconSize + px(action.iconGap)
+      }
+      val labelHeight = button.label.measuredHeight.toDouble()
+      button.labelFrame = node.child(labelX, (inlineHeight - labelHeight) / 2.0, text = true)
+        .frame(button.label.measuredWidth.toDouble(), labelHeight, text = true)
+    }
+    return rowHeight
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

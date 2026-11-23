@@ -59,6 +59,7 @@ export {
   OverlayToastStore,
   overlayToastStore,
 } from './toast/OverlayToastStore';
+export { TOAST_GEOMETRY, TOAST_MOTION } from './toast/toastMotion';
 export type { IOverlayToastSnapshot } from './toast/OverlayToastStore';
 export type {
   IOverlayMessageToast,
@@ -70,6 +71,8 @@ export type {
   IOverlayToastHandle,
   IOverlayToastHandlers,
   IOverlayToastIcon,
+  IOverlayToastStatus,
+  IOverlayToastStatusIcon,
   IOverlayToastItem,
   IOverlayToastPosition,
   IOverlayToastSpec,

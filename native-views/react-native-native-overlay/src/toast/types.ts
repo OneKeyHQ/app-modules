@@ -65,6 +65,22 @@ export interface IOverlayToastText {
   linkPressedColor?: string;
 }
 
+export type IOverlayToastStatus =
+  | 'success'
+  | 'error'
+  | 'warning'
+  | 'info'
+  | 'loading';
+
+export interface IOverlayToastStatusIcon {
+  kind: 'status';
+  status: IOverlayToastStatus;
+  color: string;
+  backgroundColor: string;
+  /** Edge of the square tile, including the centered glyph. */
+  size: number;
+}
+
 export type IOverlayToastIcon =
   | {
       kind: 'icon';
@@ -76,7 +92,8 @@ export type IOverlayToastIcon =
       size: number;
     }
   | { kind: 'spinner'; color: string; size: number }
-  | { kind: 'image'; uri: string; size: number; borderRadius?: number };
+  | { kind: 'image'; uri: string; size: number; borderRadius?: number }
+  | IOverlayToastStatusIcon;
 
 export interface IOverlayToastAction {
   /** Opaque id reported through `onAction`. */
@@ -133,6 +150,8 @@ interface IOverlayToastBase {
 export interface IOverlayMessageToast extends IOverlayToastBase {
   layout: 'message';
   icon?: IOverlayToastIcon;
+  /** Takes precedence over icon. Older renderers continue to show icon. */
+  statusIcon?: IOverlayToastStatusIcon;
   title?: IOverlayToastText;
   message?: IOverlayToastText;
   actions?: IOverlayToastAction[];
@@ -182,8 +201,10 @@ export interface IOverlayToasterConfig {
   position?: IOverlayToastPosition;
   /** Web chrome follows this; native reads `cardColor`. */
   theme?: 'light' | 'dark';
-  /** Native card surface. */
+  /** Card surface colour on native and web. */
   cardColor?: string;
+  /** Subtle inner hairline stroke colour on native and web. */
+  cardBorderColor?: string;
   /**
    * Native: the width of the card's content box. The card adds its own
    * padding around it.

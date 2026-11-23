@@ -1,7 +1,10 @@
+import { TOAST_STATUS_GLYPHS } from './toastStatusGlyph';
+
 import type {
   IOverlayToastDismissReason,
   IOverlayToastEvent,
   IOverlayToastItem,
+  IOverlayToastIcon,
 } from './types';
 
 /** How a toast that never times out crosses the bridge: JSON has no Infinity. */
@@ -14,6 +17,12 @@ const DISMISS_REASONS: readonly IOverlayToastDismissReason[] = [
   'programmatic',
 ];
 
+function serializeIcon(icon: IOverlayToastIcon | undefined) {
+  return icon?.kind === 'status'
+    ? { ...icon, glyph: TOAST_STATUS_GLYPHS[icon.status] }
+    : icon;
+}
+
 export function serializeToastItems(
   items: readonly IOverlayToastItem[]
 ): string {
@@ -22,6 +31,14 @@ export function serializeToastItems(
       ...item,
       spec: {
         ...item.spec,
+        icon: serializeIcon(item.spec.icon),
+        ...(item.spec.layout === 'message' && {
+          statusIcon: serializeIcon(item.spec.statusIcon),
+        }),
+        actions: item.spec.actions?.map((action) => ({
+          ...action,
+          icon: serializeIcon(action.icon),
+        })),
         duration: Number.isFinite(item.spec.duration)
           ? item.spec.duration
           : TOAST_DURATION_INFINITE,

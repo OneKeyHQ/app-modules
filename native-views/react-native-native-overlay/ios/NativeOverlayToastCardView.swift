@@ -1,17 +1,23 @@
 import ObjectiveC
 import UIKit
 
-// The card geometry of the layouts this replaces.
+// RareUI-inspired concentric geometry: cardRadius = tileRadius (11) + padding (10).
 private enum ToastMetrics {
-  static let cardPaddingHorizontal: CGFloat = 16
-  static let cardPaddingVertical: CGFloat = 12
-  static let cardRadius: CGFloat = 8
-  static let messageIconGap: CGFloat = 8
-  static let messageTextGap: CGFloat = 4
-  static let notificationGap: CGFloat = 8
+  static let cardPaddingHorizontal: CGFloat = 10
+  static let cardPaddingVertical: CGFloat = 10
+  static let cardRadius: CGFloat = 21
+  static let messageIconGap: CGFloat = 12
+  static let messageTextGap: CGFloat = 2
+  static let noIconPaddingStart: CGFloat = 6
+  static let tileMinHeight: CGFloat = 36
+  static let inlineActionHeight: CGFloat = 36
+  static let inlineActionRadius: CGFloat = 11
+  static let inlineActionMaxLabel: Int = 16
+  static let inlineActionMaxMessage: Int = 72
+  static let notificationGap: CGFloat = 10
   static let notificationTextGap: CGFloat = 2
   static let actionsGap: CGFloat = 8
-  static let actionsPaddingTop: CGFloat = 12
+  static let actionsPaddingTop: CGFloat = 10
   static let actionsPaddingEnd: CGFloat = 2
   static let actionsPaddingBottom: CGFloat = 2
 }
@@ -66,7 +72,8 @@ private final class ToastIconView: UIView {
   private var spinner: UIActivityIndicatorView?
   private var task: URLSessionDataTask?
   private var requested = false
-  let icon: NativeOverlayToastIcon
+  private(set) var icon: NativeOverlayToastIcon
+  private(set) var statusTile: ToastStatusTileView?
 
   init(icon: NativeOverlayToastIcon) {
     self.icon = icon
@@ -85,12 +92,23 @@ private final class ToastIconView: UIView {
       indicator.center = CGPoint(x: bounds.midX, y: bounds.midY)
       addSubview(indicator)
       spinner = indicator
+    case let .status(status):
+      let tile = ToastStatusTileView(status: status)
+      tile.frame = bounds
+      tile.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      addSubview(tile)
+      statusTile = tile
     case let .image(uri, _, radius):
       imageView.layer.cornerRadius = radius
       load(uri)
     case .named:
       break
     }
+  }
+
+  func applyStatus(_ status: NativeOverlayToastStatus, settle: Bool) {
+    icon = .status(status)
+    statusTile?.apply(status, settle: settle)
   }
 
   @available(*, unavailable)
@@ -306,6 +324,10 @@ private final class ToastActionButton: UIControl {
       backgroundColor = isHighlighted
         ? (action.pressedBackgroundColor ?? action.backgroundColor)
         : action.backgroundColor
+      let scale: CGFloat = isHighlighted ? 0.95 : 1
+      UIView.animate(withDuration: 0.12) {
+        self.transform = CGAffineTransform(scaleX: scale, y: scale)
+      }
     }
   }
 
@@ -353,33 +375,53 @@ final class NativeOverlayToastCardView: UIView {
 
   private let surface = UIView()
   private let content = UIView()
+  private var messageStatusIcon: ToastIconView?
   private var layoutBlocks: [(CGFloat) -> CGFloat] = []
 
-  init(spec: NativeOverlayToastSpec, cardColor: UIColor) {
+  init(spec: NativeOverlayToastSpec, cardColor: UIColor, cardBorderColor: UIColor? = nil) {
     self.spec = spec
     super.init(frame: .zero)
     surface.layer.cornerRadius = ToastMetrics.cardRadius
-    surface.layer.shadowColor = UIColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x21 / 255, alpha: 1).cgColor
-    surface.layer.shadowOffset = CGSize(width: 0, height: 3)
-    surface.layer.shadowOpacity = 0.15
-    surface.layer.shadowRadius = 4.65
+    surface.layer.cornerCurve = .continuous
+    surface.layer.borderWidth = 1
+    surface.layer.shadowColor = UIColor.black.cgColor
+    surface.layer.shadowOffset = CGSize(width: 0, height: 2)
+    surface.layer.shadowOpacity = 0.07
+    surface.layer.shadowRadius = 4
     addSubview(surface)
     content.clipsToBounds = true
     surface.addSubview(content)
-    apply(spec: spec, cardColor: cardColor)
+    apply(spec: spec, cardColor: cardColor, cardBorderColor: cardBorderColor)
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-  func apply(spec: NativeOverlayToastSpec, cardColor: UIColor) {
+  func apply(
+    spec: NativeOverlayToastSpec,
+    cardColor: UIColor,
+    cardBorderColor: UIColor? = nil,
+    settleStatus: Bool = false
+  ) {
+    let retained: ToastIconView?
+    if spec.layout == .message, case let .status(status)? = spec.icon, let messageStatusIcon {
+      messageStatusIcon.applyStatus(status, settle: settleStatus)
+      retained = messageStatusIcon
+    } else {
+      cancelStatusMotion()
+      retained = nil
+    }
+    messageStatusIcon = nil
     self.spec = spec
     surface.backgroundColor = cardColor
+    surface.layer.borderColor = (cardBorderColor ?? UIColor(white: 0, alpha: 0.07)).cgColor
     accessibilityIdentifier = spec.testID
-    content.subviews.forEach { $0.removeFromSuperview() }
+    content.subviews.forEach { view in
+      if view !== retained { view.removeFromSuperview() }
+    }
     layoutBlocks = []
     switch spec.layout {
-    case .message: buildMessage()
+    case .message: buildMessage(statusIcon: retained)
     case .notification: buildNotification()
     }
     if spec.pressable {
@@ -394,6 +436,12 @@ final class NativeOverlayToastCardView: UIView {
       accessibilityCustomActions = nil
     }
   }
+
+  func animateMessageStatusEntrance() { messageStatusIcon?.statusTile?.enter() }
+
+  func animateMessageStatusRing() { messageStatusIcon?.statusTile?.startRing() }
+
+  func cancelStatusMotion() { messageStatusIcon?.statusTile?.cancelMotion() }
 
   @objc private func handleAccessibilityPressAction() -> Bool {
     guard spec.pressable, let onPress else { return false }
@@ -465,38 +513,89 @@ final class NativeOverlayToastCardView: UIView {
     return ToastMetrics.actionsPaddingTop + rowHeight + paddingBottom
   }
 
-  private func buildMessage() {
-    let iconView = spec.icon.map(ToastIconView.init(icon:))
-    iconView.map(content.addSubview)
+  private func shouldUseInlineAction() -> Bool {
+    guard spec.actions.count == 1, !spec.actionsAlignLeft, let action = spec.actions.first else {
+      return false
+    }
+    if action.label.count > ToastMetrics.inlineActionMaxLabel { return false }
+    if action.marginHorizontal != 0 || action.marginVertical != 0 { return false }
+    if let message = spec.message {
+      if message.paragraphs.count > 1 { return false }
+      let len = message.paragraphs.reduce(0) { sum, runs in
+        sum + runs.reduce(0) { $0 + $1.text.count }
+      }
+      if len > ToastMetrics.inlineActionMaxMessage { return false }
+    }
+    return true
+  }
+
+  private func buildMessage(statusIcon: ToastIconView?) {
+    let iconView = statusIcon ?? spec.icon.map(ToastIconView.init(icon:))
+    if statusIcon == nil { iconView.map(content.addSubview) }
+    if iconView?.statusTile != nil { messageStatusIcon = iconView }
     let titleLabels = makeLabels(spec.title)
     let messageLabels = makeLabels(spec.message)
     let buttons = makeButtons()
+    let inlineAction = shouldUseInlineAction()
     let iconSize = spec.icon?.size ?? 0
     layoutBlocks.append { [weak self] width in
       guard let self else { return 0 }
-      iconView?.frame = CGRect(x: 0, y: 0, width: iconSize, height: iconSize)
-      let x = iconView == nil ? 0 : iconSize + ToastMetrics.messageIconGap
-      let columnWidth = max(width - x, 0)
-      var y: CGFloat = 0
+      let startX = iconView == nil ? ToastMetrics.noIconPaddingStart : iconSize + ToastMetrics.messageIconGap
+      var trailingWidth: CGFloat = 0
+      var inlineSize = CGSize.zero
+      if inlineAction, let button = buttons.first {
+        let fitted = button.fittedSize
+        inlineSize = CGSize(width: fitted.width, height: max(fitted.height, ToastMetrics.inlineActionHeight))
+        trailingWidth = inlineSize.width + ToastMetrics.messageIconGap
+      }
+      let columnWidth = max(width - startX - trailingWidth, 0)
+      var textHeight: CGFloat = 0
       var hasBlock = false
+      var frames: [(UIView, CGFloat)] = []
       for labels in [titleLabels, messageLabels] where !labels.isEmpty {
-        if hasBlock { y += ToastMetrics.messageTextGap }
+        if hasBlock { textHeight += ToastMetrics.messageTextGap }
         hasBlock = true
         for label in labels {
           let height = label.fittedHeight(width: columnWidth)
-          label.frame = CGRect(x: x, y: y, width: columnWidth, height: height)
-          y += height
+          frames.append((label, height))
+          textHeight += height
         }
       }
-      if !buttons.isEmpty {
-        if hasBlock { y += ToastMetrics.messageTextGap }
-        y += self.layoutActions(
-          buttons, x: x, y: y, width: columnWidth,
+      var bottomActionsHeight: CGFloat = 0
+      if !buttons.isEmpty && !inlineAction {
+        if hasBlock { textHeight += ToastMetrics.messageTextGap }
+        bottomActionsHeight = self.layoutActions(
+          buttons, x: startX, y: textHeight, width: columnWidth,
           paddingEnd: ToastMetrics.actionsPaddingEnd,
           paddingBottom: ToastMetrics.actionsPaddingBottom
         )
       }
-      return max(y, iconSize)
+      let columnTotalHeight = textHeight + bottomActionsHeight
+      let rowHeight = max(columnTotalHeight, iconSize, inlineSize.height, ToastMetrics.tileMinHeight)
+      let textStartY = bottomActionsHeight > 0 ? 0 : (rowHeight - textHeight) / 2
+      var cursorY = textStartY
+      var previousGroupWasTitle = false
+      for (index, pair) in frames.enumerated() {
+        let isMessage = index >= titleLabels.count
+        if isMessage && previousGroupWasTitle {
+          cursorY += ToastMetrics.messageTextGap
+        }
+        pair.0.frame = CGRect(x: startX, y: cursorY, width: columnWidth, height: pair.1)
+        cursorY += pair.1
+        previousGroupWasTitle = !isMessage
+      }
+      if let iconView {
+        iconView.frame = CGRect(x: 0, y: (rowHeight - iconSize) / 2, width: iconSize, height: iconSize)
+      }
+      if inlineAction, let button = buttons.first {
+        button.frame = CGRect(
+          x: width - inlineSize.width,
+          y: (rowHeight - inlineSize.height) / 2,
+          width: inlineSize.width,
+          height: inlineSize.height
+        )
+      }
+      return rowHeight
     }
   }
 

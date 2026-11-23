@@ -1,19 +1,18 @@
 import React
 import UIKit
 
-// The motion and gesture constants of the toaster this replaces.
 private enum ToasterMetrics {
   /// The first toast sits this far under the top safe-area inset.
   static let topOffset: CGFloat = 16
-  static let gutter: CGFloat = 8
-  static let animationDuration: TimeInterval = 0.3
+  static let gutter: CGFloat = 10
+  static let exitDuration: TimeInterval = 0.2
   static let obstructionDuration: TimeInterval = 0.22
-  /// A dismissed card stays in the list this long, so `close` is reported
-  /// when the previous renderer unmounted the card.
-  static let removeDelay: TimeInterval = 1
+  /// Keep leaving cards mounted long enough for the exit transition and close callback.
+  static let removeDelay: TimeInterval = 0.26
   /// Extra travel above the top edge for the resting-out position.
-  static let enterOvershoot: CGFloat = 50
-  static let fallbackHeight: CGFloat = 50
+  static let enterOvershoot: CGFloat = 32
+  static let hiddenScale: CGFloat = 0.96
+  static let fallbackHeight: CGFloat = 56
   static let swipeDistance: CGFloat = 32
   static let swipeFlickDistance: CGFloat = 12
   static let swipeFlickVelocity: CGFloat = 600
@@ -23,12 +22,20 @@ private enum ToasterMetrics {
   static let fallbackMaxPageWidth: CGFloat = 640
 }
 
-/// Quadratic ease-in-out, the timing curve of the animations this replaces.
-private func toastAnimator(duration: TimeInterval) -> UIViewPropertyAnimator {
+/// Spring timing shared with Web and Android: mass 1, stiffness 460, damping 36.
+private func toastSpringAnimator() -> UIViewPropertyAnimator {
+  let timing = UISpringTimingParameters(
+    mass: 1, stiffness: 460, damping: 36, initialVelocity: .zero
+  )
+  return UIViewPropertyAnimator(duration: 0, timingParameters: timing)
+}
+
+/// Brisk ease-out curve for card exit and obstruction shifts.
+private func toastExitAnimator(duration: TimeInterval = ToasterMetrics.exitDuration) -> UIViewPropertyAnimator {
   UIViewPropertyAnimator(
     duration: duration,
     timingParameters: UICubicTimingParameters(
-      controlPoint1: CGPoint(x: 0.455, y: 0.03), controlPoint2: CGPoint(x: 0.515, y: 0.955)
+      controlPoint1: CGPoint(x: 0.32, y: 0.72), controlPoint2: CGPoint(x: 0, y: 1)
     )
   )
 }
@@ -58,10 +65,10 @@ private final class ToastEntry {
   var dragged = false
   var entered = false
 
-  init(item: NativeOverlayToastItem, cardColor: UIColor) {
+  init(item: NativeOverlayToastItem, cardColor: UIColor, cardBorderColor: UIColor?) {
     id = item.spec.id
     self.item = item
-    card = NativeOverlayToastCardView(spec: item.spec, cardColor: cardColor)
+    card = NativeOverlayToastCardView(spec: item.spec, cardColor: cardColor, cardBorderColor: cardBorderColor)
     slot.addSubview(card)
   }
 }
@@ -106,7 +113,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   func sync(items: [NativeOverlayToastItem], config next: NativeOverlayToasterConfig) {
     let configChanged =
       next.contentWidth != config.contentWidth || next.contentMaxHeight != config.contentMaxHeight
-      || next.cardColor != config.cardColor
+      || next.cardColor != config.cardColor || next.cardBorderColor != config.cardBorderColor
     config = next
     let present = Set(items.map(\.spec.id))
     // Cards the list no longer knows leave without ceremony.
@@ -130,7 +137,20 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
         continue
       }
       if entry.item.revision != item.revision || configChanged {
-        entry.card.apply(spec: item.spec, cardColor: config.cardColor)
+        let settleStatus: Bool
+        if case let .status(status)? = item.spec.icon {
+          settleStatus = item.visible && entry.entered && !reduceMotion
+            && entry.item.generation != item.generation
+            && status.status != "loading"
+        } else {
+          settleStatus = false
+        }
+        entry.card.apply(
+          spec: item.spec,
+          cardColor: config.cardColor,
+          cardBorderColor: config.cardBorderColor,
+          settleStatus: settleStatus
+        )
       }
       if entry.item.generation != item.generation {
         // Shown again: the toast starts its lifetime over.
@@ -152,6 +172,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     entries.forEach { entry in
       entry.timer?.invalidate()
       entry.removal?.invalidate()
+      entry.card.cancelStatusMotion()
       entry.slot.removeFromSuperview()
     }
     entries = []
@@ -203,7 +224,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   // MARK: Cards
 
   private func add(_ item: NativeOverlayToastItem) {
-    let entry = ToastEntry(item: item, cardColor: config.cardColor)
+    let entry = ToastEntry(item: item, cardColor: config.cardColor, cardBorderColor: config.cardBorderColor)
     entry.remaining = lifetime(of: item.spec)
     entry.card.onAction = { [weak self, weak entry] actionId in
       guard let entry, !entry.leaving else { return }
@@ -248,6 +269,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private func dismiss(_ entry: ToastEntry, reason: String, report: Bool) {
     guard !entry.leaving else { return }
     entry.leaving = true
+    entry.card.cancelStatusMotion()
     entry.reason = reason
     entry.timer?.invalidate()
     entry.timer = nil
@@ -267,6 +289,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private func remove(_ entry: ToastEntry, report: Bool) {
     entry.timer?.invalidate()
     entry.removal?.invalidate()
+    entry.card.cancelStatusMotion()
     entry.slot.removeFromSuperview()
     entries.removeAll { $0 === entry }
     if report {
@@ -314,7 +337,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       obstructionShift = shift
       let apply = { self.stage.transform = CGAffineTransform(translationX: 0, y: shift) }
       if animate {
-        let animator = toastAnimator(duration: ToasterMetrics.obstructionDuration)
+        let animator = toastExitAnimator(duration: ToasterMetrics.obstructionDuration)
         animator.addAnimations(apply)
         animator.startAnimation()
       } else {
@@ -339,18 +362,30 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
         offset += size.height + ToasterMetrics.gutter
       }
       let frame = CGRect(x: x, y: targetY, width: size.width, height: size.height)
+      let targetTransform = entry.leaving
+        ? CGAffineTransform(scaleX: ToasterMetrics.hiddenScale, y: ToasterMetrics.hiddenScale)
+        : .identity
       if !entry.entered {
         entry.entered = true
+        entry.slot.transform = .identity
         entry.slot.frame = CGRect(x: x, y: top + hidden, width: size.width, height: size.height)
+        entry.slot.transform = CGAffineTransform(
+          scaleX: ToasterMetrics.hiddenScale, y: ToasterMetrics.hiddenScale
+        )
+        if animate && !entry.leaving { entry.card.animateMessageStatusEntrance() }
       }
+      if !entry.leaving && !reduceMotion { entry.card.animateMessageStatusRing() }
+      if reduceMotion { entry.card.cancelStatusMotion() }
       entry.slot.bounds.size = size
       entry.card.center = CGPoint(x: size.width / 2, y: size.height / 2)
       let apply = {
-        entry.slot.frame = frame
+        entry.slot.center = CGPoint(x: frame.midX, y: frame.midY)
+        entry.slot.bounds.size = size
+        entry.slot.transform = targetTransform
         entry.card.alpha = targetAlpha
       }
       if animate {
-        let animator = toastAnimator(duration: ToasterMetrics.animationDuration)
+        let animator = entry.leaving ? toastExitAnimator() : toastSpringAnimator()
         animator.addAnimations(apply)
         animator.startAnimation()
       } else {
@@ -463,7 +498,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       card.transform = .identity
       return
     }
-    let animator = toastAnimator(duration: ToasterMetrics.animationDuration)
+    let animator = toastSpringAnimator()
     animator.addAnimations { card.transform = .identity }
     animator.startAnimation()
   }
