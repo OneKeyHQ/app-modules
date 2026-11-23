@@ -703,7 +703,7 @@ public final class SdkHostRegressionTest {
                     byte[] received = Arrays.copyOf(pkt.getData(), pkt.getLength());
                     String reqJson = JCoreWireCodec.decodeUdpSisPacket(received);
                     sisReceivedReqRef.set(reqJson);
-                    String respJson = "{\"ips\":[\"" + liveEndpoint + "\"],\"ssl_ips\":[\"" + liveEndpoint
+                    String respJson = "{\"ips\":[\"invalid,127.0.0.1:1\",\"" + liveEndpoint + "\"],\"ssl_ips\":[\"" + liveEndpoint
                         + "\"],\"sis_ips\":[\"127.0.0.1:" + sisPort
                         + "\"],\"http_report\":[\"127.0.0.1:18080\"],\"https_report\":[\"127.0.0.1:18443\"],\"cert_ver\":2,\"data_report\":true}";
                     byte[] respBytes = JCoreWireCodec.encodeUdpSisPacket(respJson, 7777L);
@@ -718,13 +718,28 @@ public final class SdkHostRegressionTest {
         sisThread.setDaemon(true);
         sisThread.start();
 
-        JCoreStorage.recordFailedIp(reactContext, liveEndpoint);
+        String legacyLiveEndpoint = "127.0.0.1:0" + tcpPort;
+        JCoreStorage.putSpValue(reactContext, "sis_last_good_ip", legacyLiveEndpoint);
+        JCoreStorage.putSpValue(reactContext, "sis_ips_list", legacyLiveEndpoint + "," + liveEndpoint);
+        JCoreStorage.putSpValue(reactContext, "sis_failed_ips", deadEndpoint + "," + legacyLiveEndpoint + "," + liveEndpoint);
+        check(liveEndpoint.equals(JCoreStorage.getLastGoodIp(reactContext))
+            && JCoreStorage.getSisIps(reactContext).equals(Collections.singletonList(liveEndpoint)),
+            "The last-good and cached aliases must reload as one canonical candidate");
+        check(JCoreStorage.getFailedIps(reactContext).equals(Arrays.asList(deadEndpoint, liveEndpoint)),
+            "Legacy and canonical failure spellings must reload as one entry");
+
         String[] resolvedSis = JCoreTcpEngine.getInstance().resolveUdpSisEndpoint(reactContext, "127.0.0.1", sisPort);
         check("127.0.0.1".equals(resolvedSis[0]) && String.valueOf(tcpPort).equals(resolvedSis[1]), "UDP SIS loopback resolution");
-        check(sisReceivedReqRef.get().contains(deadEndpoint), "UDP SIS request must include recorded fail_ips");
-        check(JCoreStorage.getFailedIps(reactContext).contains(deadEndpoint) &&
-            !JCoreStorage.getFailedIps(reactContext).contains(liveEndpoint),
-            "SIS must clear failures only for the endpoints it has accepted");
+        check(sisReceivedReqRef.get().contains(deadEndpoint) && sisReceivedReqRef.get().contains(liveEndpoint)
+            && !sisReceivedReqRef.get().contains(legacyLiveEndpoint), "UDP SIS must report canonical failed endpoints");
+        check(JCoreStorage.getSisIps(reactContext).equals(Collections.singletonList(liveEndpoint)),
+            "A comma-bearing SIS host must never enter candidate selection or the cache");
+        check(JCoreStorage.getFailedIps(reactContext).equals(Collections.singletonList(deadEndpoint)),
+            "Fresh SIS must clear both spellings of the recovered endpoint and keep other failures");
+        JCoreStorage.putSpValue(reactContext, "sis_failed_ips", deadEndpoint + "," + legacyLiveEndpoint);
+        JCoreStorage.removeFailedIp(reactContext, liveEndpoint);
+        check(JCoreStorage.getFailedIps(reactContext).equals(Collections.singletonList(deadEndpoint)),
+            "A successful login must remove a legacy failure without needing a fresh SIS response");
         check(JCoreStorage.getSisCertVer(reactContext) == 2 && JCoreStorage.getSisDataReport(reactContext), "SIS config must be persisted in JCoreStorage");
 
         // Verify MessageReceipt (cmd=4, ver=3), CtrlAck (cmd=25, ver=1), and ThirdToken callback (CmdMessage 10000)
