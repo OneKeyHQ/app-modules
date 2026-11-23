@@ -2,6 +2,7 @@ package com.margelo.nitro.reactnativejpush;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -33,6 +34,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -688,6 +690,7 @@ public class ReactNativeJpushProtocolTest {
         };
         broadcastReceiver.onReceive(null, alreadyDispatchedIntent);
         assertEquals(null, cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver.NOTIFICATION_BUNDLE);
+        ActionHelper.getInstance().unregisterReceiver(receiver);
         JPushHelper.clearNitroListeners();
 
         // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
@@ -803,9 +806,19 @@ public class ReactNativeJpushProtocolTest {
         //    and JCoreStorage has no cached lastGoodIp or sisIps:
         //    (a) When SIS resolves to an unreachable port, connectAndHandshake must NOT set fake connected=true.
         //    (b) When SIS resolves to a live TCP server, connectAndHandshake connects without setCustomEndpoint.
-        ServerSocket deadProbe = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
-        final int deadTcpPort = deadProbe.getLocalPort();
-        deadProbe.close();
+        InetAddress loopback = InetAddress.getByName("127.0.0.1");
+        List<ServerSocket> unusedEndpoints = new java.util.ArrayList<>();
+        List<String> deadAddresses = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < 33; i++) {
+                ServerSocket endpoint = new ServerSocket(0, 1, loopback);
+                unusedEndpoints.add(endpoint);
+                deadAddresses.add("\"127.0.0.1:" + endpoint.getLocalPort() + "\"");
+            }
+        } finally {
+            for (ServerSocket endpoint : unusedEndpoints) endpoint.close();
+        }
+        final int deadTcpPort = unusedEndpoints.get(0).getLocalPort();
 
         final ServerSocket sisTcpServer = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
         final int sisTcpPort = sisTcpServer.getLocalPort();
@@ -823,8 +836,9 @@ public class ReactNativeJpushProtocolTest {
                         DatagramPacket req = new DatagramPacket(buf, buf.length);
                         sisUdpServer.receive(req);
                         int queryIdx = sisQueryCount.incrementAndGet();
-                        int targetPort = (queryIdx == 1) ? deadTcpPort : sisTcpPort;
-                        String sisJson = "{\"ips\":[\"127.0.0.1:" + targetPort + "\"]}";
+                        String endpoints = queryIdx == 1 ? String.join(", ", deadAddresses)
+                            : deadAddresses.get(1) + ", \"127.0.0.1:" + sisTcpPort + "\"";
+                        String sisJson = "{\n  \"ips\": [\"invalid\", " + endpoints + "]\n}";
                         byte[] encoded = JCoreWireCodec.encodeUdpSisPacket(sisJson, 0x234567);
                         DatagramPacket resp = new DatagramPacket(
                             encoded,
@@ -928,24 +942,86 @@ public class ReactNativeJpushProtocolTest {
         assertEquals(0L, (long) JCoreTcpEngine.getInstance().getCustomPort());
         assertTrue(JCoreStorage.getSisIps(null).isEmpty());
 
-        // (a) First SIS query returns deadTcpPort -> connectAndHandshake must NOT set fake connected=true,
-        //     and deadTcpPort is now cached in sisIps and recorded in failedIps.
+        // Exhaust more cached candidates than the reported failure history can hold.
         JCoreTcpEngine.getInstance().connectAndHandshake(null);
         assertEquals(false, JCoreStorage.isConnected(null));
         assertEquals("", JPushInterface.getRegistrationID(null));
         assertTrue(JCoreStorage.getSisIps(null).contains("127.0.0.1:" + deadTcpPort));
-        assertTrue(JCoreStorage.getFailedIps(null).contains("127.0.0.1:" + deadTcpPort));
+        assertEquals(33, JCoreStorage.getSisIps(null).size());
+        assertEquals(32, JCoreStorage.getFailedIps(null).size());
+        String lastGood = "127.0.0.1:" + deadTcpPort;
+        JCoreStorage.setLastGoodIp(null, lastGood);
+        org.junit.Assert.assertFalse(JCoreStorage.getFailedIps(null).contains(lastGood));
 
-        // (b) Without clearing sisIps, all cached SIS IPs are in failedIps (!hasHealthyCandidate) ->
-        //     connectAndHandshake automatically re-runs SIS resolution (second SIS query returns live sisTcpPort)
-        //     and connects cleanly!
-        JCoreTcpEngine.getInstance().connectAndHandshake(null);
-        assertEquals(true, JCoreStorage.isConnected(null));
-        assertEquals("reg_auto_sis_990022", JPushInterface.getRegistrationID(null));
-        assertTrue(JCoreStorage.getSisIps(null).contains("127.0.0.1:" + sisTcpPort));
+        // The evicted last-good address looks healthy, but it is no longer in the new SIS response.
+        try (ServerSocket staleLastGood = new ServerSocket(deadTcpPort, 1, InetAddress.getByName("127.0.0.1"))) {
+            JCoreTcpEngine.getInstance().connectAndHandshake(null);
+            assertEquals(2, sisQueryCount.get());
+            assertEquals(true, JCoreStorage.isConnected(null));
+            assertEquals("reg_auto_sis_990022", JPushInterface.getRegistrationID(null));
+            assertTrue(JCoreStorage.getSisIps(null).contains("127.0.0.1:" + sisTcpPort));
+            staleLastGood.setSoTimeout(150);
+            try (Socket ignored = staleLastGood.accept()) {
+                org.junit.Assert.fail("Retired last-good endpoint must not be visited ahead of fresh SIS");
+            } catch (java.net.SocketTimeoutException expected) {
+                // The fresh endpoint was tried first.
+            }
+        }
 
         JCoreTcpEngine.getInstance().setCustomSisUrl("");
         JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
         JCoreTcpEngine.getInstance().stop(null);
     }
+
+    @Test
+    public void testSisFailureAliasesKeepTheirLatestPosition() {
+        String candidateKey = "sis_ips_list";
+        String failureKey = "sis_failed_ips";
+        String previousCandidates = JCoreStorage.getSpValue(null, candidateKey, "");
+        String previousFailures = JCoreStorage.getSpValue(null, failureKey, "");
+        String repeated = "a.example:7001";
+        String older = "b.example:7002";
+        List<String> legacy = Arrays.asList("a.example:07001", older, repeated);
+        List<String> fullHistory = new ArrayList<>(legacy);
+        for (int i = 0; i < 29; i++) {
+            fullHistory.add("history-" + i + ".example:7003");
+        }
+
+        try {
+            JCoreStorage.putSpValue(null, candidateKey, String.join(",", legacy));
+            JCoreStorage.putSpValue(null, failureKey, String.join(",", fullHistory));
+            assertEquals(Arrays.asList(repeated, older), JCoreStorage.getSisIps(null));
+            assertEquals(Arrays.asList(older, repeated), JCoreStorage.getFailedIps(null).subList(0, 2));
+
+            JCoreStorage.recordFailedIp(null, "newer.example:7004");
+            JCoreStorage.recordFailedIp(null, "latest.example:7005");
+            List<String> failures = JCoreStorage.getFailedIps(null);
+            assertEquals(32, failures.size());
+            assertEquals(repeated, failures.get(0));
+            assertEquals("latest.example:7005", failures.get(failures.size() - 1));
+            assertFalse(failures.contains(older));
+        } finally {
+            JCoreStorage.putSpValue(null, candidateKey, previousCandidates);
+            JCoreStorage.putSpValue(null, failureKey, previousFailures);
+        }
+    }
+
+    @Test
+    public void testMessageReceiptRespectsEncryptedWireLength() {
+        String fitting = String.join("", Collections.nCopies(10907, "界"));
+        String oversized = fitting + "界";
+        byte[] withExtension = JCoreWireCodec.buildMessageAckPayload(0, (byte) 2, 55L, fitting);
+        byte[] withoutExtension = JCoreWireCodec.buildMessageAckPayload(0, (byte) 2, 55L, oversized);
+        assertEquals(fitting, JCoreWireCodec.parseMessageAck(withExtension).extData);
+        assertEquals("", JCoreWireCodec.parseMessageAck(withoutExtension).extData);
+        for (int algorithm : new int[] { JCoreWireCodec.ALG_AES_CBC, JCoreWireCodec.ALG_SM4_CBC }) {
+            byte[] packet = JCoreWireCodec.encodeClientFrame(JCoreWireCodec.CMD_MESSAGE_ACK, 3, algorithm,
+                0, 11L, 101, 42L, withExtension);
+            assertEquals(packet.length, ((packet[0] & 0x7F) << 8) | (packet[1] & 0xFF));
+            assertEquals(fitting, JCoreWireCodec.parseMessageAck(JCoreWireCodec.decodeClientFrame(packet, 42L)).extData);
+            assertEquals(0, JCoreWireCodec.encodeClientFrame(JCoreWireCodec.CMD_MESSAGE_ACK, 3, algorithm,
+                0, 12L, 101, 42L, new byte[32736]).length);
+        }
+    }
+
 }

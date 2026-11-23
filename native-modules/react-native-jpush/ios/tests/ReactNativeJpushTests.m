@@ -164,6 +164,17 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
     XCTAssertEqual(((const uint8_t *)stopPayload.bytes)[0], 0);
     XCTAssertEqual(resumePayload.length, 1u);
     XCTAssertEqual(((const uint8_t *)resumePayload.bytes)[0], 1);
+
+    NSData *loginFrame = [JCOREWireProtocol encodeClientFrameWithCommand:JCOREWireCommandLogin
+                                                                 version:27
+                                                               requestId:42
+                                                               sessionId:46453
+                                                                     uid:88574312908ULL
+                                                               algorithm:1
+                                                                bodyData:loginBody];
+    JCOREWireFrame *decodedLogin = [JCOREWireProtocol decodeClientFramesFromStreamBuffer:[loginFrame mutableCopy]].firstObject;
+    XCTAssertNotNil(decodedLogin);
+    XCTAssertEqual(decodedLogin.sessionId, 0u);
 }
 
 @end

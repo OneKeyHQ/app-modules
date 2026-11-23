@@ -116,6 +116,13 @@ public class FcmAdapterTest {
     }
 
     @Test
+    public void receiptMetadataDecodesJsonEscapesAndKeepsStringType() {
+        assertEquals("中", ActionHelper.getDownlinkReceiptMetadata("pkg\napp-key\n{\n  \"_j_data_\": \"\\u4e2d\"\n}\n"));
+        assertEquals("", ActionHelper.getDownlinkReceiptMetadata("{\"_j_data_\": 123}"));
+        assertEquals("", ActionHelper.getDownlinkReceiptMetadata("pkg\napp-key"));
+    }
+
+    @Test
     public void localSchedulingPostsAndDispatchesOnlyTheUncancelledNotification() throws Exception {
         ActionHelper helper = ActionHelper.getInstance();
         helper.clearActiveNotificationIds();

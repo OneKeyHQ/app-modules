@@ -31,12 +31,16 @@ def run(cmd: list[str]) -> str:
     return proc.stdout
 
 
-def junit_classpath() -> str:
+def test_classpath() -> str:
     import os
 
     cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1"
     jars = []
-    for group, artifact, version in (("junit", "junit", "4.13.2"), ("org.hamcrest", "hamcrest-core", "1.3")):
+    for group, artifact, version in (
+        ("junit", "junit", "4.13.2"),
+        ("org.hamcrest", "hamcrest-core", "1.3"),
+        ("org.json", "json", "20231013"),
+    ):
         matches = sorted((cache / group / artifact / version).glob(f"*/{artifact}-{version}.jar"))
         if not matches:
             raise RuntimeError(f"Missing {artifact}:{version}; run the example Gradle JPush testDebugUnitTest task to resolve test dependencies first")
@@ -82,7 +86,7 @@ def main() -> int:
     android_jar = find_android_jar(None)
     javac = find_javac()
     java_bin = str(Path(javac).with_name("java"))
-    junit_cp = junit_classpath()
+    test_cp = test_classpath()
     fixtures = ROOT / "tests" / "android"
 
     with tempfile.TemporaryDirectory(prefix="test-jpush-android-sdk-") as tmp:
@@ -139,7 +143,7 @@ def main() -> int:
             encoding="utf-8",
         )
 
-        test_compile_cp = f"{rn_classes_dir}:{jcore_jar}:{jpush_jar}:{android_jar}:{junit_cp}"
+        test_compile_cp = f"{rn_classes_dir}:{jcore_jar}:{jpush_jar}:{test_cp}:{android_jar}"
         run([
             javac,
             "--release",
@@ -154,7 +158,7 @@ def main() -> int:
             f"@{test_arg_file}",
         ])
 
-        runtime_cp = f"{test_classes_dir}:{rn_classes_dir}:{jcore_jar}:{jpush_jar}:{android_jar}:{junit_cp}"
+        runtime_cp = f"{test_classes_dir}:{rn_classes_dir}:{jcore_jar}:{jpush_jar}:{test_cp}:{android_jar}"
         output = run([
             java_bin, "-cp", runtime_cp, "org.junit.runner.JUnitCore",
             "com.margelo.nitro.reactnativejpush.ReactNativeJpushProtocolTest",
