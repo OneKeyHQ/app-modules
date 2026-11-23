@@ -41,7 +41,7 @@ before(async () => {
         });
         window.showStatus = (status, extra = {}) =>
           store.show({ ...statusSpec(status), ...extra });
-        window.redrawStatus = (status, colors) => store.update('status', statusSpec(status, colors));
+        window.redrawStatus = (status, colors) => store.update(statusSpec(status, colors));
         window.dismissStatus = () => store.dismiss('status');
         window.configure = (config) => store.configure(config);
         window.showToast = (duration, position) => {
@@ -238,6 +238,7 @@ test('loading settles within the same card and tile and keeps motion on redraw',
     const bumpEase = getComputedStyle(tile()).animationTimingFunction;
     const pop = incoming.getAnimations()[0];
     window.redrawStatus('success', { color: '#ffe' });
+    const redrawnColor = tile().style.color;
     const keptPop = pop === incoming.getAnimations()[0];
     seek(185);
     const drawing = parseFloat(
@@ -262,6 +263,7 @@ test('loading settles within the same card and tile and keeps motion on redraw',
       leaveEase,
       bumpEase,
       keptPop,
+      redrawnColor,
       drawing,
       stopped:
         !tile().hasAttribute('data-okt-status-motion') &&
@@ -271,6 +273,7 @@ test('loading settles within the same card and tile and keeps motion on redraw',
   assert.ok(
     sample.sameCard && sample.sameTile && sample.keptPop && sample.stopped
   );
+  assert.equal(sample.redrawnColor, 'rgb(255, 255, 238)');
   assert.equal(sample.startingOpacity, sample.expectedOpacity);
   assert.equal(sample.startingTransform, sample.expectedTransform);
   assert.equal(sample.incomingBeforeDeparture, 0);
@@ -443,7 +446,7 @@ for (const [position, direction] of [
   });
 }
 
-test('card adopts concentric squircle chrome, hover-only close button and inline right action', async (t) => {
+test('card adopts concentric squircle chrome, a hover close button and an inline right action', async (t) => {
   const page = await statusPage(t);
   await page.evaluate(() => {
     window.configure({
@@ -486,7 +489,7 @@ test('card adopts concentric squircle chrome, hover-only close button and inline
       tileClip: tile.style.clipPath,
       bg: surfaceStyle.backgroundColor,
       closeOpacityIdle: Number(getComputedStyle(close).opacity),
-      actionHeight: Math.round(actionBox.height),
+      actionHeight: action.offsetHeight,
       actionRadius: getComputedStyle(action).borderRadius,
       alignedVertically:
         Math.abs(
@@ -515,4 +518,68 @@ test('card adopts concentric squircle chrome, hover-only close button and inline
     { timeout: 1000 }
   );
   assert.ok(await closeButton.isVisible());
+});
+
+test('a wide icon action falls back on a narrow viewport and returns inline on resize', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.evaluate(() => window.showStatus('success', {
+    actions: [{
+      id: 'view', label: 'MMMMMMMM', borderRadius: 28,
+      color: '#111', backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
+      fontWeight: '600', paddingHorizontal: 10, paddingVertical: 4,
+      icon: { kind: 'icon', name: 'View', size: 20, color: '#111' },
+      iconGap: 4,
+    }],
+  }));
+  const action = page.getByRole('button', { name: 'MMMMMMMM' });
+  assert.equal(await action.getAttribute('data-okt-inline-action'), null);
+  assert.equal(await action.evaluate((node) => getComputedStyle(node).borderRadius), '28px');
+  assert.ok(await page.locator('[data-okt-message-col]').evaluate((node) => node.clientWidth >= 96));
+  await page.setViewportSize({ width: 820, height: 800 });
+  await page.waitForSelector('[data-okt-inline-action]', { timeout: 2000 });
+  assert.equal(await action.evaluate((node) => getComputedStyle(node).borderRadius), '11px');
+});
+
+test('touch browsers keep close available to the keyboard and the idle corner passes through touch', async (t) => {
+  for (const isMobile of [true, false]) {
+    const context = await browser.newContext({ hasTouch: true, isMobile, reducedMotion: 'reduce' });
+    t.after(() => context.close());
+    const page = await context.newPage();
+    await page.setContent('<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">');
+    await page.addScriptTag({ content: bundle });
+    await page.evaluate(() => window.showStatus('success'));
+    const close = page.getByRole('button', { name: 'Close toast' });
+    const box = await close.boundingBox();
+    assert.ok(box);
+    assert.equal(await close.evaluate((node) => getComputedStyle(node).pointerEvents), 'none');
+    await page.touchscreen.tap(box.x + 10, box.y + 10);
+    assert.equal(await page.locator('[data-onekey-toast]').getAttribute('data-removed'), 'false');
+    await page.locator('[data-onekey-toast]').focus();
+    await page.keyboard.press('Tab');
+    assert.ok(await close.evaluate((node) => node === document.activeElement));
+    assert.equal(await close.evaluate((node) => getComputedStyle(node).opacity), '1');
+    await page.keyboard.press('Enter');
+    await close.waitFor({ state: 'detached' });
+  }
+});
+
+test('restoring motion resumes the ring without replaying a mounted status animation', async (t) => {
+  const page = await statusPage(t);
+  await page.evaluate(() => window.showStatus('loading'));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForFunction(() => !document.querySelector('[data-okt-status-motion]'));
+  const ring = page.locator('[data-okt-status-ring]');
+  assert.equal(await ring.evaluate((node) => getComputedStyle(node).animationName), 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.waitForFunction(() =>
+    document.querySelector('[data-okt-status-ring]').getAnimations().length === 1
+  );
+  assert.equal(await page.locator('[data-okt-status-motion]').count(), 0);
+  await page.evaluate(() => window.showStatus('success'));
+  await page.waitForSelector('[data-okt-status-outgoing]', { state: 'attached' });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForSelector('[data-okt-status-outgoing]', { state: 'detached' });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  assert.equal(await page.locator('[data-okt-status-motion]').count(), 0);
 });

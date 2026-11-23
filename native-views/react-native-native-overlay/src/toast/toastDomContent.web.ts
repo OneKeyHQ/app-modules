@@ -218,17 +218,10 @@ function createParagraphs(text: IOverlayToastText, emit: IEmit): HTMLElement {
   return container;
 }
 
-function createAction(
-  action: IOverlayToastAction,
-  emit: IEmit,
-  inline = false
-): HTMLElement {
+function createAction(action: IOverlayToastAction, emit: IEmit): HTMLElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.setAttribute('data-okt-action', '');
-  if (inline) {
-    button.setAttribute('data-okt-inline-action', '');
-  }
   if (action.testID) {
     button.setAttribute('data-testid', action.testID);
   }
@@ -257,13 +250,11 @@ function createAction(
   if (action.fontFamily) {
     style.fontFamily = action.fontFamily;
   }
-  if (inline) {
-    style.padding = `0 ${Math.max(action.paddingHorizontal, 14)}px`;
-    style.borderRadius = `${TOAST_GEOMETRY.actionRadius}px`;
-  } else {
-    style.padding = `${action.paddingVertical}px ${action.paddingHorizontal}px`;
-    style.borderRadius = `${action.borderRadius}px`;
-  }
+  style.setProperty(
+    '--okt-action-padding',
+    `${action.paddingVertical}px ${action.paddingHorizontal}px`
+  );
+  style.setProperty('--okt-action-radius', `${action.borderRadius}px`);
   style.borderWidth = `${action.borderWidth ?? 0}px`;
   if (action.marginHorizontal || action.marginVertical) {
     style.margin = `${action.marginVertical ?? 0}px ${
@@ -372,7 +363,6 @@ export function buildToastContent(
   }
 
   const icon = spec.statusIcon ?? spec.icon;
-  const inlineAction = shouldUseInlineAction(spec);
   const column = element('div', 'data-okt-col');
   column.setAttribute('data-okt-message-col', '');
   column.style.gap = `${MESSAGE_TEXT_GAP}px`;
@@ -385,20 +375,28 @@ export function buildToastContent(
   if (spec.message) {
     column.append(createParagraphs(spec.message, emit));
   }
-  if (spec.actions?.length && !inlineAction) {
-    column.append(
-      createActions(
-        spec.actions,
-        spec.actionsAlign ?? 'right',
-        `${ACTIONS_PADDING_TOP}px ${ACTIONS_PADDING_END}px ${ACTIONS_PADDING_BOTTOM}px 0`,
-        emit
-      )
+  if (spec.actions?.length) {
+    const actions = createActions(
+      spec.actions,
+      spec.actionsAlign ?? 'right',
+      `${ACTIONS_PADDING_TOP}px ${ACTIONS_PADDING_END}px ${ACTIONS_PADDING_BOTTOM}px 0`,
+      emit
     );
+    const button = actions.firstElementChild;
+    const [action] = spec.actions;
+    if (
+      action &&
+      shouldUseInlineAction(spec) &&
+      button instanceof HTMLElement
+    ) {
+      button.setAttribute('data-okt-inline-candidate', '');
+      button.style.setProperty(
+        '--okt-inline-padding',
+        `${Math.max(action.paddingHorizontal, 14)}px`
+      );
+    }
+    column.append(actions);
   }
-  const trailingAction =
-    inlineAction && spec.actions?.[0]
-      ? createAction(spec.actions[0], emit, true)
-      : undefined;
 
   if (icon?.kind === 'status' && previous?.hasAttribute('data-okt-root')) {
     const row = previous.querySelector<HTMLElement>(':scope > [data-okt-row]');
@@ -416,9 +414,6 @@ export function buildToastContent(
       }
       row.style.gap = `${MESSAGE_ICON_GAP}px`;
       row.append(column);
-      if (trailingAction) {
-        row.append(trailingAction);
-      }
       return previous;
     }
   }
@@ -435,9 +430,45 @@ export function buildToastContent(
     row.append(box);
   }
   row.append(column);
-  if (trailingAction) {
-    row.append(trailingAction);
-  }
   root.append(row);
   return root;
+}
+
+export function layoutMessageAction(content: HTMLElement) {
+  const button = content.querySelector<HTMLElement>(
+    '[data-okt-inline-candidate]'
+  );
+  const row = button?.closest<HTMLElement>('[data-okt-row]');
+  const actions = row?.querySelector<HTMLElement>('[data-okt-actions]');
+  if (!button || !row || !actions) {
+    return;
+  }
+  const icon = row.querySelector<HTMLElement>('[data-okt-icon-box]');
+  const textStart = icon
+    ? icon.offsetWidth + MESSAGE_ICON_GAP
+    : TOAST_GEOMETRY.noIconPaddingStart;
+  const minTextWidth = row.querySelector('[data-okt-paragraphs]')
+    ? TOAST_GEOMETRY.inlineTextMinWidth
+    : 0;
+
+  button.setAttribute('data-okt-inline-action', '');
+  const fitsInline =
+    row.clientWidth - textStart - MESSAGE_ICON_GAP - button.offsetWidth >=
+    minTextWidth;
+  const focused = document.activeElement === button;
+  if (fitsInline) {
+    if (button.parentElement !== row) {
+      row.append(button);
+      actions.hidden = true;
+    }
+  } else {
+    button.removeAttribute('data-okt-inline-action');
+    if (button.parentElement !== actions) {
+      actions.hidden = false;
+      actions.append(button);
+    }
+  }
+  if (focused && document.activeElement !== button) {
+    button.focus({ preventScroll: true });
+  }
 }

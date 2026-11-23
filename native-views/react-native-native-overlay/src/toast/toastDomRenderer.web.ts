@@ -1,7 +1,7 @@
 /* cspell:ignore dasharray dashoffset */
 import { getOverlayLayerRoot, syncOverlayInert } from '../web/overlayLayers';
 
-import { buildToastContent } from './toastDomContent.web';
+import { buildToastContent, layoutMessageAction } from './toastDomContent.web';
 import { TOAST_GEOMETRY, TOAST_MOTION } from './toastMotion';
 import { stopStatusTile } from './toastStatusTile.web';
 import { ensureOverlayToastStyles } from './toastStyles.web';
@@ -144,9 +144,11 @@ export function createToastDomRenderer(
   const positionOf = (spec: IOverlayToastSpec): IOverlayToastPosition =>
     spec.position ?? config.position ?? DEFAULT_POSITION;
 
+  const motionPreference = globalThis.matchMedia?.(
+    '(prefers-reduced-motion: reduce)'
+  );
   const reduceMotion = () =>
-    config.respectReducedMotion !== false &&
-    globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    config.respectReducedMotion !== false && motionPreference?.matches;
 
   function ensureSection(): HTMLElement {
     const root = getOverlayLayerRoot('toast');
@@ -236,12 +238,10 @@ export function createToastDomRenderer(
     }
     const { style } = node.li;
     const originalHeight = style.height;
-    const originalTransform = style.transform;
     style.height = 'auto';
-    style.transform = 'none';
-    const { height } = node.li.getBoundingClientRect();
+    layoutMessageAction(node.content);
+    const { offsetHeight: height } = node.li;
     style.height = originalHeight;
-    style.transform = originalTransform;
     node.initialHeight = height;
     const existing = group.heights.find((entry) => entry.id === node.id);
     if (existing) {
@@ -552,6 +552,19 @@ export function createToastDomRenderer(
       offsetBeforeRemove: 0,
       initialHeight: 0,
     };
+    const revealClose = (event: PointerEvent) => {
+      if (
+        event.buttons === 0 &&
+        (event.pointerType === 'mouse' || event.pointerType === 'pen')
+      ) {
+        li.setAttribute('data-okt-close-hover', '');
+      }
+    };
+    li.addEventListener('pointerenter', revealClose);
+    li.addEventListener('pointermove', revealClose);
+    li.addEventListener('pointerleave', () =>
+      li.removeAttribute('data-okt-close-hover')
+    );
     closeButton.addEventListener('click', () =>
       deleteToast(node, 'close', true)
     );
@@ -753,12 +766,14 @@ export function createToastDomRenderer(
   }
 
   function onResize() {
-    if ((config.topObstruction ?? 0) > 0) {
-      update();
-    }
+    nodes.forEach(measure);
+    update();
   }
 
   function onGlobalPointerDown(event: PointerEvent) {
+    if (event.pointerType === 'touch') {
+      nodes.forEach(({ li }) => li.removeAttribute('data-okt-close-hover'));
+    }
     if (
       (touchExpandedGroup || keyboardExpanded) &&
       !groupContaining(event.target as Node | null)
@@ -777,6 +792,26 @@ export function createToastDomRenderer(
     update();
   }
 
+  function finalizeReducedMotion() {
+    if (!reduceMotion()) {
+      return;
+    }
+    nodes.forEach(({ content }) => {
+      content
+        .querySelectorAll<HTMLElement>('[data-okt-status-motion]')
+        .forEach(stopStatusTile);
+      content
+        .querySelector('[data-okt-content-swap]')
+        ?.removeAttribute('data-okt-content-swap');
+    });
+  }
+
+  function onMotionPreferenceChange() {
+    finalizeReducedMotion();
+    update();
+  }
+
+  motionPreference?.addEventListener?.('change', onMotionPreferenceChange);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('pointerdown', onGlobalPointerDown, true);
   document.addEventListener('pointermove', onGlobalPointerMove, true);
@@ -791,7 +826,11 @@ export function createToastDomRenderer(
         return;
       }
       syncing = true;
+      const shouldReduceBeforeSync = reduceMotion();
       config = nextConfig;
+      if (!shouldReduceBeforeSync && reduceMotion()) {
+        finalizeReducedMotion();
+      }
       const present = new Set(items.map((item) => item.spec.id));
       [...nodes.values()].forEach((node) => {
         if (!present.has(node.id)) {
@@ -858,6 +897,10 @@ export function createToastDomRenderer(
     },
     destroy() {
       destroyed = true;
+      motionPreference?.removeEventListener?.(
+        'change',
+        onMotionPreferenceChange
+      );
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('pointerdown', onGlobalPointerDown, true);
       document.removeEventListener('pointermove', onGlobalPointerMove, true);

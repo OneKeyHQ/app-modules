@@ -9,6 +9,7 @@ import type { IOverlaySpring } from '../animation/types';
  * Concentric corner rule: `CARD_RADIUS = TILE_RADIUS + CARD_PADDING` (21 = 11 + 10).
  */
 export const TOAST_GEOMETRY = {
+  inlineTextMinWidth: 96,
   cardPadding: 10,
   tileSize: 36,
   tileRadius: 11,

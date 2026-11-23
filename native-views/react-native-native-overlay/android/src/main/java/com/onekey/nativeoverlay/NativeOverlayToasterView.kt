@@ -6,10 +6,12 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -99,6 +101,14 @@ internal class NativeOverlayToastEvent(
 /** Full-window toast stage that passes outside touches through while reporting them to collapse an expanded stack. */
 private class ToastStageLayout(context: Context) : FrameLayout(context) {
   var onOutsideTouch: (() -> Unit)? = null
+  val cards = FrameLayout(context).apply {
+    clipChildren = false
+    clipToPadding = false
+  }
+
+  init {
+    addView(cards, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+  }
 
   override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
     val handled = super.dispatchTouchEvent(ev)
@@ -112,16 +122,28 @@ private class ToastStageLayout(context: Context) : FrameLayout(context) {
 /** Hosts one card: forwards presses and vertical drags to the presenter. */
 @SuppressLint("ViewConstructor")
 private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) : FrameLayout(context) {
-  var onPressChanged: ((Boolean) -> Unit)? = null
+  var onPressChanged: (() -> Unit)? = null
   var onDrag: ((Float) -> Unit)? = null
   var onRelease: ((translationY: Float, translationX: Float, velocityY: Float, cancelled: Boolean) -> Unit)? = null
   var onTap: (() -> Unit)? = null
   var allowDrag = true
+    set(value) {
+      if (field && !value && dragging) {
+        cancelDrag()
+        moved = true
+        onRelease?.invoke(0f, 0f, 0f, true)
+      }
+      field = value
+    }
+  var expansionOnly = false
 
   private var downX = 0f
   private var downY = 0f
   private var dragging = false
-  private var isPressedDown = false
+  private var moved = false
+  private val slop get() = ToasterMetrics.SWIPE_START * resources.displayMetrics.density
+  var hasActivePress = false
+    private set
   private var tracker: VelocityTracker? = null
 
   init {
@@ -130,29 +152,37 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
     addView(card, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
   }
 
-  fun resetPress() {
-    if (isPressedDown) {
-      isPressedDown = false
-      onPressChanged?.invoke(false)
+  private fun cancelDrag() {
+    dragging = false
+    tracker?.recycle()
+    tracker = null
+  }
+
+  fun clearTouch() {
+    resetPress()
+    cancelDrag()
+  }
+
+  private fun resetPress() {
+    if (hasActivePress) {
+      hasActivePress = false
+      onPressChanged?.invoke()
     }
   }
 
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-    when (event.actionMasked) {
-      MotionEvent.ACTION_DOWN -> {
-        if (!isEnabled) return false
-        isPressedDown = true
-        onPressChanged?.invoke(true)
-      }
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-        resetPress()
-        if (!isEnabled) return false
-      }
-      else -> {
-        if (!isEnabled) return false
-      }
+    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+      if (!isEnabled || event.x < card.x || event.x >= card.x + card.width ||
+        event.y < card.y || event.y >= card.y + card.currentDisplayHeightPx
+      ) return false
+      hasActivePress = true
+      onPressChanged?.invoke()
     }
-    return super.dispatchTouchEvent(event)
+    val handled = isEnabled && super.dispatchTouchEvent(event)
+    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL ||
+      (event.actionMasked == MotionEvent.ACTION_DOWN && !handled)
+    ) clearTouch()
+    return handled
   }
 
   private fun track(event: MotionEvent) {
@@ -165,9 +195,9 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
       MotionEvent.ACTION_DOWN -> {
         downX = event.rawX
         downY = event.rawY
-        dragging = false
-        tracker?.recycle()
-        tracker = null
+        moved = false
+        cancelDrag()
+        if (expansionOnly) return true
         if (allowDrag) track(event)
       }
       MotionEvent.ACTION_MOVE -> {
@@ -175,7 +205,6 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
         track(event)
         val dy = event.rawY - downY
         val dx = event.rawX - downX
-        val slop = ToasterMetrics.SWIPE_START * resources.displayMetrics.density
         if (!dragging && abs(dy) > slop && abs(dy) > abs(dx)) {
           dragging = true
           parent?.requestDisallowInterceptTouchEvent(true)
@@ -190,11 +219,11 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
     if (!isEnabled) return false
     when (event.actionMasked) {
       MotionEvent.ACTION_MOVE -> {
+        val dy = event.rawY - downY
+        val dx = event.rawX - downX
+        if (abs(dy) > slop || abs(dx) > slop) moved = true
         if (allowDrag) {
           track(event)
-          val dy = event.rawY - downY
-          val dx = event.rawX - downX
-          val slop = ToasterMetrics.SWIPE_START * resources.displayMetrics.density
           if (!dragging && abs(dy) > slop && abs(dy) > abs(dx)) dragging = true
           if (dragging) onDrag?.invoke(dy)
         }
@@ -205,12 +234,12 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
         if (dragging) {
           tracker?.computeCurrentVelocity(1000)
           onRelease?.invoke(event.rawY - downY, event.rawX - downX, tracker?.yVelocity ?: 0f, cancelled)
-        } else if (!cancelled) {
+        } else if (!cancelled && !moved &&
+          abs(event.rawX - downX) <= slop && abs(event.rawY - downY) <= slop
+        ) {
           onTap?.invoke()
         }
-        dragging = false
-        tracker?.recycle()
-        tracker = null
+        cancelDrag()
       }
     }
     // Claim the gesture so a press on the card's own surface can become a drag.
@@ -252,9 +281,13 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private var stage: ToastStageLayout? = null
   private var entries = mutableListOf<ToastEntry>() // newest first
   private var config = ToasterConfig()
-  private var pressed = 0
   private var expanded = false
   private var obstructionShift = 0f
+  private val motionObserver = object : ContentObserver(handler) {
+    override fun onChange(selfChange: Boolean) {
+      layout(animated = false)
+    }
+  }
 
   private val activeEntries: List<ToastEntry>
     get() = entries.filter { !it.leaving }
@@ -310,17 +343,18 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   }
 
   fun invalidate() {
-    entries.forEach { entry ->
+    val departing = entries.toList()
+    entries.clear()
+    departing.forEach { entry ->
       cancelTimer(entry)
       entry.removal?.let(handler::removeCallbacks)
       entry.alphaAnimator?.cancel()
       entry.alphaAnimator = null
-      entry.slot.resetPress()
+      entry.slot.onPressChanged = null
+      entry.slot.clearTouch()
       entry.slot.card.cancelStatusMotion()
       entry.slot.card.cancelLoads()
     }
-    entries.clear()
-    pressed = 0
     expanded = false
     releaseStage()
   }
@@ -353,6 +387,9 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
           handler.post { layout(animated = false) }
         }
       }
+      context.contentResolver.registerContentObserver(
+        Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, motionObserver,
+      )
     }
     stage = layer
     NativeOverlayHost.of(activity).attachToastLayer(layer)
@@ -365,11 +402,12 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
 
   private fun releaseStage() {
     val layer = stage ?: return
-    layer.removeAllViews()
+    stage = null
+    context.contentResolver.unregisterContentObserver(motionObserver)
+    layer.cards.removeAllViews()
     activity?.let { NativeOverlayHost.of(it).detachToastLayer(layer) }
       ?: (layer.parent as? ViewGroup)?.removeView(layer)
     obstructionShift = 0f
-    layer.translationY = 0f
   }
 
   /** The host joined a window: draw the toasts that were waiting for one. */
@@ -393,10 +431,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     card.onAction = { actionId -> if (!entry.leaving) onEvent?.invoke(entry.id, entry.item.generation, "action", actionId) }
     card.onLink = { link -> if (!entry.leaving) onEvent?.invoke(entry.id, entry.item.generation, "link", link) }
     card.apply(item.spec, config.cardColor, config.cardBorderColor)
-    slot.onPressChanged = { down ->
-      pressed = if (down) pressed + 1 else max(0, pressed - 1)
-      syncTimers()
-    }
+    slot.onPressChanged = { syncTimers() }
     slot.onDrag = { translation ->
       if (!entry.leaving) {
         card.animate().cancel()
@@ -432,9 +467,9 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     ensureStage()?.let { attach(entry, it) }
   }
 
-  private fun attach(entry: ToastEntry, layer: FrameLayout) {
+  private fun attach(entry: ToastEntry, layer: ToastStageLayout) {
     entry.slot.alpha = 0f
-    layer.addView(
+    layer.cards.addView(
       entry.slot,
       FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT),
     )
@@ -455,7 +490,8 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private fun dismiss(entry: ToastEntry, reason: String, report: Boolean) {
     if (entry.leaving) return
     entry.leaving = true
-    entry.slot.resetPress()
+    entry.slot.onPressChanged = null
+    entry.slot.clearTouch()
     entry.slot.card.cancelStatusMotion()
     entry.reason = reason
     cancelTimer(entry)
@@ -475,22 +511,22 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   }
 
   private fun remove(entry: ToastEntry, report: Boolean) {
+    entries.remove(entry)
     cancelTimer(entry)
     entry.removal?.let(handler::removeCallbacks)
     entry.alphaAnimator?.cancel()
     entry.alphaAnimator = null
-    entry.slot.resetPress()
+    entry.slot.onPressChanged = null
+    entry.slot.clearTouch()
     entry.slot.card.cancelStatusMotion()
     entry.slot.card.cancelLoads()
     entry.slot.animate().cancel()
     (entry.slot.parent as? ViewGroup)?.removeView(entry.slot)
-    entries.remove(entry)
     if (activeEntries.size <= 1) {
       expanded = false
     }
     if (report) onEvent?.invoke(entry.id, entry.item.generation, "close", entry.reason)
     if (entries.isEmpty()) {
-      pressed = 0
       expanded = false
       releaseStage()
     }
@@ -514,6 +550,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private fun layout(animated: Boolean) {
     val layer = stage ?: return
     if (entries.isEmpty() || layer.width == 0) return
+    val cards = layer.cards
     val insets = ViewCompat.getRootWindowInsets(layer)
     val bars = insets?.getInsets(
       WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
@@ -528,11 +565,11 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     if (shift != obstructionShift) {
       obstructionShift = shift
       if (animate) {
-        layer.animate().translationY(shift).setDuration(ToasterMetrics.OBSTRUCTION_MS)
+        cards.animate().translationY(shift).setDuration(ToasterMetrics.OBSTRUCTION_MS)
           .setInterpolator(toastExitInterpolator).start()
       } else {
-        layer.animate().cancel()
-        layer.translationY = shift
+        cards.animate().cancel()
+        cards.translationY = shift
       }
     }
 
@@ -578,10 +615,10 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
 
     // Keep newest card at the highest z-order (last child of FrameLayout).
     val ordered = entries.asReversed()
-    var zMismatch = layer.childCount != ordered.size
+    var zMismatch = cards.childCount != ordered.size
     if (!zMismatch) {
       for (i in ordered.indices) {
-        if (layer.getChildAt(i) !== ordered[i].slot) {
+        if (cards.getChildAt(i) !== ordered[i].slot) {
           zMismatch = true
           break
         }
@@ -648,6 +685,11 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       slot.translationX = drawnX.toFloat()
       slot.isEnabled = interactive
       slot.allowDrag = allowDrag
+      slot.expansionOnly = hideBody
+      slot.importantForAccessibility = if (interactive && !hideBody) {
+        View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+      } else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+      card.canExpandStack = isCollapsed && entry === active.firstOrNull()
       slot.pivotX = slot.measuredWidth / 2f
       slot.pivotY = displayHeight / 2f
 
@@ -710,7 +752,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   }
 
   private fun syncTimers() {
-    val paused = pressed > 0 || expanded
+    val paused = expanded || entries.any { !it.leaving && it.slot.hasActivePress }
     val now = SystemClock.uptimeMillis()
     for (entry in entries) {
       if (entry.leaving) continue

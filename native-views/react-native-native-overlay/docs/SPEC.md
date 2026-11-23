@@ -1431,14 +1431,32 @@ and unified spring motion (`card` stiffness/damping `460/36`, `tile` `620/50`,
 | --- | --- | --- |
 | Position | Per toast or toaster; default bottom-right | Always top-centre |
 | Stack | Newest in front, 3 visible, `10 px` gap, depth scale `1 - 0.05 * i` with back bodies faded. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Newest in front, 3 visible, `10 pt/dp` peek, depth scale `1 - 0.05 * i` with collapsed back heights matched to front card and back bodies faded (`240 ms`). Tap stack to expand; an outside tap passes through and collapses the stack. |
-| Card | `356 px` wide, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, hover-only close button | Content box from `contentWidth` plus `10 pt/dp` padding, `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
+| Card | `356 px` wide, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding, `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
 | Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` (collapsed back exit scales to `0.92`) |
 | Message status entrance & settle | Tile at `110 ms` (`620/50` spring), glyph pop at `155 ms` (`920/40` spring), `180 ms` stroke draw at `210 ms` (~`390 ms` total); settle crossfades text/actions over `160 ms` `cubic-bezier(0.2, 0, 0, 1)` (`translateY 3 -> 0`) | Same spring parameters, stroke draw, tile bump/tint, and `160 ms` content crossfade (`CASpringAnimation` on iOS, analytical spring step response on Android) |
 | `close` reported | `200 ms` after the exit starts | `220 ms` after the exit starts |
 | Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed or the stack is expanded; resuming continues the remaining time |
 | Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up on front card (or any card when expanded); 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far; settle-back uses the card spring |
-| Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
+| Top obstruction | Inline `top` on top groups, 220 ms | Cards translate within the full-window touch stage, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
+
+A single eligible message action stays inline when its measured width, icon
+and spacing leave at least 96 px/pt/dp for the text column. Otherwise it uses
+the lower action row. Inline buttons use an 11-unit radius. Lower-row buttons
+use the caller's radius. Disabled actions keep their configured opacity
+through settlement.
+
+Native collapsed back cards accept taps in their visible bounds to expand
+the stack. Movement past the drag threshold does not expand a back card.
+An active swipe is cancelled when the card loses swipe eligibility. The
+front card exposes an accessibility action to expand a collapsed stack.
+Removing a toast clears its press and timer before synchronizing survivors.
+
+The Web close control stays keyboard- and screen-reader-accessible on
+touch browsers. Its hidden state is transparent to pointer input. Enabling
+Reduce Motion finalizes mounted status animations and keeps loading rings
+static. Restoring motion resumes the loading ring. iOS action buttons use
+color-only press feedback while motion reduction is active.
 
 On Web, the card, tile and glyph springs are generated from the shared
 `TOAST_MOTION` spring definitions via `springToCssLinear`. Stroke reveal and
@@ -1467,6 +1485,12 @@ Divergences from the renderers replaced:
 
 ### Verification
 
+- The shared toast geometry was checked with the same specs in Chromium,
+  in a UIKit harness on iPhone 16 (iOS 26.0), and through the Fabric toaster
+  host on Pixel 7 (Android API 35). The cases cover light and dark card
+  styling, inline and lower-row action placement, and the expanded stack.
+  The native harnesses exercise their respective renderers in isolation
+  from the OneKey app.
 - Web: `src/__tests__/overlayToast.web.test.ts` covers the store and the DOM
   renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
   dark, wide light) matched the previous renderer's card boxes, text line

@@ -76,6 +76,7 @@ private object ToastMetrics {
   const val TILE_MIN_HEIGHT = 36f
   const val INLINE_ACTION_HEIGHT = 36f
   const val INLINE_ACTION_RADIUS = 11f
+  const val INLINE_TEXT_MIN_WIDTH = 96f
   const val INLINE_ACTION_MAX_LABEL = 16
   const val INLINE_ACTION_MAX_MESSAGE = 72
   const val NOTIFICATION_GAP = 10f
@@ -633,6 +634,12 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   var onAction: ((String) -> Unit)? = null
   var onLink: ((String) -> Unit)? = null
   var onPress: (() -> Unit)? = null
+  var canExpandStack = false
+    set(value) {
+      if (field == value) return
+      field = value
+      updateAccessibilityImportance()
+    }
   /** Width of the content box in dp; the card adds its padding around it. */
   var contentWidth = 0f
   /** Tallest the content box grows, in dp; zero leaves it unbounded. */
@@ -789,11 +796,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     spec.testID?.let { tag = it }
     isClickable = spec.pressable
     isFocusable = spec.pressable
-    importantForAccessibility = if (spec.pressable) {
-      IMPORTANT_FOR_ACCESSIBILITY_YES
-    } else {
-      IMPORTANT_FOR_ACCESSIBILITY_AUTO
-    }
+    updateAccessibilityImportance()
     cancelLoads()
     for (index in childCount - 1 downTo 0) {
       if (getChildAt(index) !== retained) removeViewAt(index)
@@ -867,11 +870,22 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   val announcement: String
     get() = (titles + messages).map { it.text.toString() }.filter { it.isNotEmpty() }.joinToString(". ")
 
+  private fun updateAccessibilityImportance() {
+    importantForAccessibility = if (canExpandStack || spec?.pressable == true) {
+      IMPORTANT_FOR_ACCESSIBILITY_YES
+    } else {
+      IMPORTANT_FOR_ACCESSIBILITY_AUTO
+    }
+  }
+
   override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
     super.onInitializeAccessibilityNodeInfo(info)
-    if (spec?.pressable == true) {
+    if (canExpandStack || spec?.pressable == true) {
       info.isClickable = true
-      info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
+      val click = AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK
+      info.addAction(if (canExpandStack) {
+        AccessibilityNodeInfo.AccessibilityAction(click.id, "Expand notifications")
+      } else click)
       if (info.contentDescription.isNullOrEmpty()) {
         info.contentDescription = announcement
       }
@@ -879,7 +893,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   }
 
   override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
-    if (action == AccessibilityNodeInfo.ACTION_CLICK && spec?.pressable == true) {
+    if (action == AccessibilityNodeInfo.ACTION_CLICK && (canExpandStack || spec?.pressable == true)) {
       onPress?.invoke()
       return true
     }
@@ -1015,12 +1029,11 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     val icon = spec.icon
     val iconSize = icon?.let { px(it.size) } ?: 0.0
     val columnX = icon?.let { iconSize + px(ToastMetrics.MESSAGE_ICON_GAP) } ?: px(ToastMetrics.NO_ICON_PADDING_START)
-    val inlineAction = shouldUseInlineAction(spec)
+    var inlineAction = false
     var inlineWidth = 0.0
     var inlineHeight = 0.0
-    if (inlineAction) {
+    if (shouldUseInlineAction(spec)) {
       val button = buttons.first()
-      button.isInline = true
       val action = button.action
       val (labelWidth, labelHeight) = button.measureLabel()
       val actionIconSize = action.icon?.let { px(it.size) } ?: 0.0
@@ -1028,7 +1041,12 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       val insetX = px(max(action.paddingHorizontal, 14f) + action.borderWidth)
       val insetY = px(action.paddingVertical + action.borderWidth)
       inlineWidth = labelWidth + iconExtent + 2 * insetX
-      inlineHeight = max(max(labelHeight.toDouble(), actionIconSize) + 2 * insetY, px(ToastMetrics.INLINE_ACTION_HEIGHT))
+      val minTextWidth = if (titles.isEmpty() && messages.isEmpty()) 0.0 else px(ToastMetrics.INLINE_TEXT_MIN_WIDTH)
+      inlineAction = width - columnX - px(ToastMetrics.MESSAGE_ICON_GAP) - inlineWidth >= minTextWidth
+      button.isInline = inlineAction
+      if (inlineAction) {
+        inlineHeight = max(max(labelHeight.toDouble(), actionIconSize) + 2 * insetY, px(ToastMetrics.INLINE_ACTION_HEIGHT))
+      }
     }
     val trailing = if (inlineAction) inlineWidth + px(ToastMetrics.MESSAGE_ICON_GAP) else 0.0
     val columnWidth = max(width - columnX - trailing, 0.0)
