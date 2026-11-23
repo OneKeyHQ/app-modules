@@ -1,9 +1,9 @@
 # electron-qr-scanner (macOS) SPEC
 
-Status: **In development, not released.** Image decoding and raw-text capture
-are implemented and tested on macOS arm64 (Node and Electron 44.5.1). The
-embedded camera preview (IOSurface shared texture) and app-monorepo
-integration are pending. The module is not listed in `desktop/release.json`
+Status: **In development, not released.** Image decoding, raw-text capture
+and the preview frame path (IOSurface → Electron `sharedTexture` → canvas)
+are implemented and tested on macOS arm64 (Node and Electron 44.5.1).
+app-monorepo integration is pending. The module is not listed in `desktop/release.json`
 and has no release workflow; adding it requires the locked build, test and
 pack contract `desktop/SPEC.md` asks of every module.
 
@@ -41,8 +41,19 @@ createCapture(options?: {
   onText?(text: string, generation: number): void;
   onError?(error: Error & { code: QrScannerErrorCode }, generation: number): void;
   onEnded?(generation: number): void;
-}): { start(): void; stop(): void; dispose(): void };
+  onFrame?(frame: { ioSurface: Buffer; width: number; height: number; generation: number; release(): void }): void;
+}): { start(): void; stop(): void; lentFrames(): number; dispose(): void };
 ```
+
+Preview (`onFrame`, opt-in): each frame is a BGRA, IOSurface-backed
+`CVPixelBuffer` lent from a pool of **3 slots**. `ioSurface` is the 8-byte
+IOSurfaceRef buffer for `sharedTexture.importSharedTexture({ textureInfo: {
+pixelFormat: "bgra", codedSize, handle: { ioSurface } } })`. The consumer
+calls `release()` when Electron reports `allReferencesReleased`. While all
+slots are out, new preview frames are skipped (detection still runs). Frames
+from an older generation or arriving after `dispose` are released by the JS
+wrapper without being delivered. Preview is emitted before detection on the
+analysis queue, so preview rate is bounded by detection time per frame.
 
 - `decodeImage`: passes `original`, `padded`, `grayscale`, `inverted` with
   Vision (same pipeline as iOS). `maxPixels` default 12 MP, capped at 50 MP.
@@ -71,6 +82,13 @@ the callback context only after `destroy` returns.
 | Animated UR through live frames | `test/native.test.cjs`: `test/fixtures/animated-ur.mp4` (2,003-byte `crypto-psbt`, 17 fragments, 51 frames at 8 fps, from `scripts/make-ur-fixture.mjs`) assembles to the expected type, size and FNV-1a in about 2.2 s. |
 | Generations and dispose | `test/native.test.cjs`: stop/start yields a newer generation, dispose is idempotent and later `start` throws. |
 | Electron runtime | `test/electron.cjs` on Electron 44.5.1 (main process): image decode, error code, animated UR. |
+| Preview path | `test/preview.cjs` on Electron 44.5.1 with a sandboxed, context-isolated preload (`test/preview-preload.cjs`): frames from the animated video go through `importSharedTexture` → `sendSharedTexture` → `setSharedTextureReceiver` → canvas. 32-33 of 32-33 frames drawn in 4 s at 8 fps, none skipped, at most 1 slot lent, 0 after stop; the captured page shows the QR (dark and light pixels); the animated UR completes at the same time. |
+
+Build note: Cargo's `strip = "symbols"` produced a binary whose LC_SYMTAB
+string table was not 8-byte aligned, which dyld on macOS 27 refuses to load
+("mis-aligned LINKEDIT string pool"). The profile keeps symbols and
+`scripts/build.mjs` strips with Xcode `strip -x`, then fails the build if the
+string table offset is misaligned.
 
 The tests load `@ngraveio/bc-ur` (to assemble the animated UR) from the
 repository root `node_modules`; the package itself has no dependencies.
@@ -79,5 +97,7 @@ Pending:
 
 - Real camera run (`QR_SCANNER_CAMERA=1 npm test`, or `electron test/electron.cjs --camera`) needs a person to grant camera access.
 - ZXing-C++ fallback (the design's macOS fallback); Vision only today.
-- Preview: IOSurface frames to Electron `sharedTexture` and the DeviceStage canvas.
+- app-monorepo integration: main-process camera lease and IPC, preload
+  receiver, DeviceStage/scan-page canvas, permission flow; real-camera
+  preview latency and frame rate.
 - x64 build and test; release packaging and attestation contract.

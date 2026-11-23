@@ -7,6 +7,11 @@ public typealias OqsEventCallback = @convention(c) (
   UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>, UnsafePointer<CChar>, Int64
 ) -> Void
 
+/// (context, token, IOSurfaceRef, width, height, generation)
+public typealias OqsFrameCallback = @convention(c) (
+  UnsafeMutableRawPointer?, Int64, UnsafeMutableRawPointer, Int32, Int32, Int64
+) -> Void
+
 private let imagePipeline = QrImageDecodingPipeline(engines: [VisionQrEngine()])
 private let imageLock = NSLock()
 
@@ -41,10 +46,12 @@ public func oqs_free_string(_ value: UnsafeMutablePointer<CChar>?) {
   free(value)
 }
 
-/// sourceKind 0: camera (deviceId optional), 1: video file at `path`.
+/// sourceKind 0: camera, 1: video file at `path`. `frameCallback` is optional;
+/// when set, every lent frame must be returned with oqs_capture_release_frame.
 @_cdecl("oqs_capture_create")
 public func oqs_capture_create(
   _ context: UnsafeMutableRawPointer?, _ callback: OqsEventCallback,
+  _ frameCallback: OqsFrameCallback?,
   _ sourceKind: Int32, _ path: UnsafePointer<CChar>?, _ loop: Bool
 ) -> UnsafeMutableRawPointer {
   let filePath = path.map { String(cString: $0) }
@@ -62,8 +69,27 @@ public func oqs_capture_create(
           callback(context, kind.rawValue, first, second, Int64(generation))
         }
       }
+    },
+    emitFrame: frameCallback.map { frameCallback in
+      { token, surface, width, height, generation in
+        frameCallback(
+          context, token, surface, Int32(width), Int32(height), Int64(generation))
+      }
     })
   return Unmanaged.passRetained(controller).toOpaque()
+}
+
+@_cdecl("oqs_capture_release_frame")
+public func oqs_capture_release_frame(_ handle: UnsafeMutableRawPointer, _ token: Int64) {
+  Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue()
+    .previewPool.release(token)
+}
+
+@_cdecl("oqs_capture_lent_frames")
+public func oqs_capture_lent_frames(_ handle: UnsafeMutableRawPointer) -> Int32 {
+  Int32(
+    Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue()
+      .previewPool.lentCount)
 }
 
 @_cdecl("oqs_capture_start")

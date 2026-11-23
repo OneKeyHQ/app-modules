@@ -146,7 +146,11 @@ final class QrFileSource: QrFrameSource {
     else { return false }
     let output = AVAssetReaderTrackOutput(
       track: track,
-      outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+      outputSettings: [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        // IOSurface-backed, so frames can be shared with Electron as textures.
+        kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+      ])
     output.alwaysCopiesSampleData = false
     guard reader.canAdd(output) else { return false }
     reader.add(output)
@@ -167,10 +171,60 @@ final class QrFileSource: QrFrameSource {
   }
 }
 
+/// Frames lent to the preview consumer. A slot holds the CVPixelBuffer (and so
+/// its IOSurface) until the consumer releases the token. When every slot is in
+/// use, new preview frames are skipped rather than queued.
+final class QrPreviewPool {
+  static let slotCount = 3
+
+  private let lock = NSLock()
+  private var slots: [Int64: CVPixelBuffer] = [:]
+  private var nextToken: Int64 = 1
+
+  /// A token and the frame's IOSurface, or nil when the pool is full or the
+  /// frame is not IOSurface-backed.
+  func lend(_ buffer: CVPixelBuffer) -> (token: Int64, surface: IOSurfaceRef)? {
+    guard let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue() else {
+      return nil
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    guard slots.count < Self.slotCount else { return nil }
+    let token = nextToken
+    nextToken += 1
+    slots[token] = buffer
+    return (token, surface)
+  }
+
+  func release(_ token: Int64) {
+    lock.lock()
+    slots[token] = nil
+    lock.unlock()
+  }
+
+  var lentCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return slots.count
+  }
+
+  func clear() {
+    lock.lock()
+    slots.removeAll()
+    lock.unlock()
+  }
+}
+
 /// One capture: a frame source, Vision QR detection per frame and the shared
 /// text gate. Every callback goes through `emit`, which stops after `destroy`.
 final class QrCaptureController {
   typealias Emit = (QrCaptureEventKind, String, String, Int) -> Void
+  /// token, IOSurfaceRef, width, height, generation
+  typealias EmitFrame = (Int64, UnsafeMutableRawPointer, Int, Int, Int) -> Void
+
+  let previewPool = QrPreviewPool()
+  private var frameEmitter: EmitFrame?
+  private var previewing = false
 
   private let sessionQueue = DispatchQueue(label: "so.onekey.qrscanner.desktop.session")
   private let analysisQueue = DispatchQueue(label: "so.onekey.qrscanner.desktop.analysis")
@@ -182,10 +236,31 @@ final class QrCaptureController {
   private let usesCamera: Bool
   private var running = false
 
-  init(usesCamera: Bool, makeSource: @escaping (DispatchQueue) -> QrFrameSource, emit: @escaping Emit) {
+  init(
+    usesCamera: Bool, makeSource: @escaping (DispatchQueue) -> QrFrameSource,
+    emit: @escaping Emit, emitFrame: EmitFrame?
+  ) {
     self.usesCamera = usesCamera
     self.makeSource = makeSource
     self.emitter = emit
+    self.frameEmitter = emitFrame
+  }
+
+  private func setPreviewing(_ value: Bool) {
+    emitLock.lock()
+    previewing = value
+    emitLock.unlock()
+  }
+
+  /// Runs on the analysis queue, before Vision, so preview latency does not
+  /// include detection time.
+  private func preview(_ buffer: CVPixelBuffer) {
+    emitLock.lock()
+    defer { emitLock.unlock() }
+    guard previewing, let frameEmitter, let lent = previewPool.lend(buffer) else { return }
+    frameEmitter(
+      lent.token, Unmanaged.passUnretained(lent.surface).toOpaque(),
+      CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), gate.currentGeneration)
   }
 
   private func emit(_ kind: QrCaptureEventKind, _ a: String, _ b: String, _ generation: Int) {
@@ -207,7 +282,10 @@ final class QrCaptureController {
     sessionQueue.sync { stopOnQueue() }
     emitLock.lock()
     emitter = nil
+    frameEmitter = nil
     emitLock.unlock()
+    // Electron holds its own reference to imported surfaces.
+    previewPool.clear()
   }
 
   private func startOnQueue() {
@@ -241,7 +319,10 @@ final class QrCaptureController {
     let source = self.source ?? makeSource(analysisQueue)
     self.source = source
     if let failure = source.start(
-      deliver: { [weak self] buffer in self?.analyze(buffer) },
+      deliver: { [weak self] buffer in
+        self?.preview(buffer)
+        self?.analyze(buffer)
+      },
       ended: { [weak self] in
         guard let self else { return }
         self.gate.setCapturing(false)
@@ -253,12 +334,14 @@ final class QrCaptureController {
     }
     running = true
     gate.setCapturing(true)
+    setPreviewing(true)
     emit(.ready, "", "", generation)
   }
 
   private func stopOnQueue() {
     _ = gate.nextGeneration()
     gate.setCapturing(false)
+    setPreviewing(false)
     guard running else { return }
     source?.stop()
     running = false

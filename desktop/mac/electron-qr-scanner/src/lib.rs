@@ -3,7 +3,7 @@
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr;
 
-use napi::bindgen_prelude::AsyncTask;
+use napi::bindgen_prelude::{AsyncTask, Buffer};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{Env, Error, Result, Status, Task};
 use napi_derive::napi;
@@ -13,6 +13,7 @@ const MAX_PIXELS_CEILING: i64 = 50_000_000;
 const DEFAULT_MAX_PIXELS: i64 = 12_000_000;
 
 type EventCallback = extern "C" fn(*mut c_void, i32, *const c_char, *const c_char, i64);
+type FrameCallback = extern "C" fn(*mut c_void, i64, *mut c_void, i32, i32, i64);
 
 extern "C" {
     fn oqs_decode_image(
@@ -25,10 +26,13 @@ extern "C" {
     fn oqs_capture_create(
         context: *mut c_void,
         callback: EventCallback,
+        frame_callback: Option<FrameCallback>,
         source_kind: i32,
         path: *const c_char,
         loop_file: bool,
     ) -> *mut c_void;
+    fn oqs_capture_release_frame(handle: *mut c_void, token: i64);
+    fn oqs_capture_lent_frames(handle: *mut c_void) -> i32;
     fn oqs_capture_start(handle: *mut c_void);
     fn oqs_capture_stop(handle: *mut c_void);
     fn oqs_capture_destroy(handle: *mut c_void);
@@ -88,12 +92,19 @@ pub fn decode_image(path: String, max_pixels: Option<f64>) -> Result<AsyncTask<D
 
 #[napi(object)]
 pub struct CaptureEvent {
-    /// `ready`, `text`, `error` or `ended`.
+    /// `ready`, `text`, `error`, `ended` or `frame`.
     pub kind: String,
     pub text: Option<String>,
     pub code: Option<String>,
     pub message: Option<String>,
     pub generation: f64,
+    /// `frame`: pass to `releaseFrame` once the consumer is done with it.
+    pub token: Option<f64>,
+    /// `frame`: the IOSurfaceRef as the 8-byte buffer Electron's
+    /// `sharedTexture` handle expects. Valid until the token is released.
+    pub io_surface: Option<Buffer>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 type EventTsfn = ThreadsafeFunction<CaptureEvent, (), CaptureEvent, Status, false>;
@@ -105,7 +116,33 @@ fn event(kind: &str, generation: i64) -> CaptureEvent {
         code: None,
         message: None,
         generation: generation as f64,
+        token: None,
+        io_surface: None,
+        width: None,
+        height: None,
     }
+}
+
+extern "C" fn on_frame(
+    context: *mut c_void,
+    token: i64,
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    generation: i64,
+) {
+    if context.is_null() {
+        return;
+    }
+    let tsfn = unsafe { &*(context as *const EventTsfn) };
+    let payload = CaptureEvent {
+        token: Some(token as f64),
+        io_surface: Some(Buffer::from((surface as usize).to_ne_bytes().to_vec())),
+        width: Some(width as u32),
+        height: Some(height as u32),
+        ..event("frame", generation)
+    };
+    tsfn.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
 }
 
 extern "C" fn on_event(
@@ -149,6 +186,7 @@ impl NativeCapture {
         source: String,
         path: Option<String>,
         loop_file: Option<bool>,
+        preview: Option<bool>,
         callback: EventTsfn,
     ) -> Result<Self> {
         let (kind, path) = match source.as_str() {
@@ -169,6 +207,7 @@ impl NativeCapture {
             oqs_capture_create(
                 context as *mut c_void,
                 on_event,
+                if preview.unwrap_or(false) { Some(on_frame) } else { None },
                 kind,
                 path.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
                 loop_file.unwrap_or(false),
@@ -189,6 +228,24 @@ impl NativeCapture {
         self.live()?;
         unsafe { oqs_capture_stop(self.handle) };
         Ok(())
+    }
+
+    /// Returns a preview frame's slot. Unknown or repeated tokens are ignored.
+    #[napi]
+    pub fn release_frame(&self, token: f64) {
+        if !self.handle.is_null() {
+            unsafe { oqs_capture_release_frame(self.handle, token as i64) };
+        }
+    }
+
+    /// Preview frames currently lent out (at most 3).
+    #[napi]
+    pub fn lent_frames(&self) -> u32 {
+        if self.handle.is_null() {
+            0
+        } else {
+            unsafe { oqs_capture_lent_frames(self.handle) as u32 }
+        }
     }
 
     /// Idempotent. No event is delivered after this returns.

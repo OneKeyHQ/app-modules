@@ -31,11 +31,30 @@ export interface CaptureOptions {
   onError?: (error: QrScannerError, generation: number) => void;
   /** A file source reached its end (not looping). */
   onEnded?: (generation: number) => void;
+  /**
+   * Preview frames (BGRA IOSurface). Setting this enables preview. Call
+   * `release()` once the frame is no longer used, e.g. from Electron's
+   * `allReferencesReleased`; at most 3 frames are lent at a time and newer
+   * frames are skipped while all are out.
+   */
+  onFrame?: (frame: QrPreviewFrame) => void;
+}
+
+export interface QrPreviewFrame {
+  /** IOSurfaceRef for `sharedTexture.importSharedTexture({ handle: { ioSurface } })`. */
+  ioSurface: Buffer;
+  width: number;
+  height: number;
+  generation: number;
+  /** Idempotent. */
+  release(): void;
 }
 
 export interface QrCapture {
   start(): void;
   stop(): void;
+  /** Preview frames currently held by the consumer (at most 3). */
+  lentFrames(): number;
   /** Idempotent; no callback runs after it returns. */
   dispose(): void;
 }

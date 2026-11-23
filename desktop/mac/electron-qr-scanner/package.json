@@ -21,7 +21,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test test/*.test.cjs",
-    "test:electron": "electron test/electron.cjs"
+    "test:electron": "electron test/electron.cjs",
+    "test:preview": "electron test/preview.cjs"
   },
   "repository": {
     "type": "git",
@@ -29,8 +30,13 @@
     "directory": "desktop/mac/electron-qr-scanner"
   },
   "license": "MIT",
-  "os": ["darwin"],
-  "cpu": ["arm64", "x64"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
   "engines": {
     "node": ">=20"
   }

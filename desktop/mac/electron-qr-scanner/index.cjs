@@ -51,7 +51,8 @@ async function decodeImage(path, options = {}) {
  * dispose().
  */
 function createCapture(options) {
-  const { source = { kind: "camera" }, onReady, onText, onError, onEnded } = options ?? {};
+  const { source = { kind: "camera" }, onReady, onText, onError, onEnded, onFrame } =
+    options ?? {};
   if (source.kind !== "camera" && source.kind !== "file") {
     throw errorWithCode("decoder-unavailable", `Unknown source: ${source.kind}`);
   }
@@ -61,7 +62,34 @@ function createCapture(options) {
     source.kind,
     source.kind === "file" ? source.path : undefined,
     source.kind === "file" ? Boolean(source.loop) : undefined,
+    typeof onFrame === "function",
     (event) => {
+      if (event.kind === "frame") {
+        // Every lent frame must go back to the pool, delivered or not.
+        let released = false;
+        const release = () => {
+          if (released || disposed) return;
+          released = true;
+          native.releaseFrame(event.token);
+        };
+        if (disposed || event.generation < latestGeneration) {
+          release();
+          return;
+        }
+        try {
+          onFrame({
+            ioSurface: event.ioSurface,
+            width: event.width,
+            height: event.height,
+            generation: event.generation,
+            release,
+          });
+        } catch (error) {
+          release();
+          throw error;
+        }
+        return;
+      }
       if (disposed || event.generation < latestGeneration) return;
       latestGeneration = event.generation;
       switch (event.kind) {
@@ -92,6 +120,10 @@ function createCapture(options) {
     },
     stop() {
       if (!disposed) native.stop();
+    },
+    /** Preview frames currently held by the consumer (at most 3). */
+    lentFrames() {
+      return disposed ? 0 : native.lentFrames();
     },
     dispose() {
       if (disposed) return;
