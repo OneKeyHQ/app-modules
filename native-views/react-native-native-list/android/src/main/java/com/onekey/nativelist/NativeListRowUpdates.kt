@@ -2,7 +2,7 @@ package com.margelo.nitro.nativelist
 
 import org.json.JSONObject
 
-/** Only text and tone inside existing subtitle slots may change without rebuilding an identity row. */
+/** Compare account-selector content that the subtitle and selection binders cannot refresh. */
 internal fun canUpdateIdentitySubtitle(previous: NativeListItem, next: NativeListItem): Boolean {
   if (previous.key != next.key || previous.type != "identity" || next.type != "identity") return false
 
@@ -18,6 +18,14 @@ internal fun canUpdateIdentitySubtitle(previous: NativeListItem, next: NativeLis
       segment.remove("tone")
     }
     data.remove("accessibilityLabel")
+    // Selection chrome and the existing checkbox are refreshed on every bind.
+    data.remove("selected")
+    data.optJSONArray("trailing")?.let { accessories ->
+      for (index in 0 until accessories.length()) {
+        val accessory = accessories.optJSONObject(index) ?: continue
+        if (accessory.optString("kind") == "checkbox") accessory.remove("state")
+      }
+    }
     return nativeListCanonical(data)
   }
 

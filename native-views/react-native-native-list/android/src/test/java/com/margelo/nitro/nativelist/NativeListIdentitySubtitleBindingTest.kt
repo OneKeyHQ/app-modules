@@ -53,12 +53,7 @@ class NativeListIdentitySubtitleBindingTest {
     assertTrue(originalWidth > 0)
     assertFalse(balance.isLayoutRequested)
     val originalEpoch = row.bindingEpoch
-    val avatar = descendants(row).single { it is NativeListLeadingVisual }
-    var detachments = 0
-    avatar.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-      override fun onViewAttachedToWindow(view: View) = Unit
-      override fun onViewDetachedFromWindow(view: View) { detachments++ }
-    })
+    val avatarDetachments = watchAvatarDetachments()
 
     val updated = account("12345678.90")
     bind(updated)
@@ -70,7 +65,27 @@ class NativeListIdentitySubtitleBindingTest {
     assertSame(updated, row.tag)
     assertEquals("Account, 12345678.90", row.contentDescription)
     assertEquals(originalEpoch, row.bindingEpoch)
-    assertEquals(0, detachments)
+    assertEquals(0, avatarDetachments())
+  }
+
+  @Test
+  fun selectionEchoThenBalanceKeepsTheSubtitleAndAvatarAttached() {
+    bind(account("--", checkbox = "unchecked"))
+    val balance = requireNotNull(label("--"))
+    val originalEpoch = row.bindingEpoch
+    val avatarDetachments = watchAvatarDetachments()
+    val checkbox = descendants(row).filterIsInstance<OneKeyCheckboxView>().single()
+
+    row.bindSelection(
+      account("--", selected = true, checkbox = "checked"), null, "linear", 0, true, checkboxState,
+    )
+    assertEquals("CheckboxCheckedCustom", checkbox.iconName)
+    bind(account("12.34", selected = true, checkbox = "checked"))
+
+    assertSame(balance, label("12.34"))
+    assertEquals("CheckboxCheckedCustom", checkbox.iconName)
+    assertEquals(originalEpoch, row.bindingEpoch)
+    assertEquals(0, avatarDetachments())
   }
 
   @Test
@@ -79,9 +94,9 @@ class NativeListIdentitySubtitleBindingTest {
     val originalEpoch = row.bindingEpoch
     val previousAction = requireNotNull(label("Manage"))
 
-    row.bindSelection(account("--"), null, "linear", 0, true, checkboxState)
+    row.bindSelection(account("--", selected = true), null, "linear", 0, true, checkboxState)
     assertSame(previousAction, label("Manage"))
-    bind(account("12.34"), selected = true)
+    bind(account("12.34", selected = true))
 
     assertNull(label("Manage"))
     assertEquals("12.34", label("12.34")?.text.toString())
@@ -100,8 +115,11 @@ class NativeListIdentitySubtitleBindingTest {
     assertEquals(originalEpoch, row.bindingEpoch)
   }
 
-  private fun bind(item: NativeListItem, selected: Boolean = false) {
-    row.bind(item, null, "linear", "vertical", 0, selected, checkboxState, useSourceScale = false)
+  private fun bind(item: NativeListItem) {
+    row.bind(
+      item, null, "linear", "vertical", 0, item.json.optBoolean("selected"), checkboxState,
+      useSourceScale = false,
+    )
   }
 
   private fun measureRow() {
@@ -112,14 +130,23 @@ class NativeListIdentitySubtitleBindingTest {
     row.layout(0, 0, row.measuredWidth, row.measuredHeight)
   }
 
-  private fun account(balance: String, showAction: Boolean = false, formatted: Boolean = false): NativeListItem {
+  private fun account(
+    balance: String,
+    showAction: Boolean = false,
+    formatted: Boolean = false,
+    selected: Boolean = false,
+    checkbox: String? = null,
+  ): NativeListItem {
     val json = JSONObject("""
       {"key":"account","type":"identity","presentation":"accountSelector","title":"Account",
        "leading":{"kind":"account","fallbackText":"AC"},
        "subtitleSegments":[{"text":"$balance"},{"text":"0x1234","separatorBefore":true}]}
-    """).put("accessibilityLabel", "Account, $balance")
+    """).put("accessibilityLabel", "Account, $balance").put("selected", selected)
     if (showAction) {
       json.put("trailing", JSONArray("""[{"kind":"button","label":"Manage","actionKey":"manage"}]"""))
+    }
+    if (checkbox != null) {
+      json.put("trailing", JSONArray().put(JSONObject().put("kind", "checkbox").put("state", checkbox)))
     }
     if (formatted) {
       json.getJSONArray("subtitleSegments").getJSONObject(0)
@@ -130,6 +157,16 @@ class NativeListIdentitySubtitleBindingTest {
 
   private fun label(text: String): TextView? =
     descendants(row).filterIsInstance<TextView>().singleOrNull { it.text.toString() == text && it.visibility == View.VISIBLE }
+
+  private fun watchAvatarDetachments(): () -> Int {
+    val avatar = descendants(row).single { it is NativeListLeadingVisual }
+    var detachments = 0
+    avatar.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+      override fun onViewAttachedToWindow(view: View) = Unit
+      override fun onViewDetachedFromWindow(view: View) { detachments++ }
+    })
+    return { detachments }
+  }
 
   private fun descendants(view: View): Sequence<View> = sequence {
     yield(view)
