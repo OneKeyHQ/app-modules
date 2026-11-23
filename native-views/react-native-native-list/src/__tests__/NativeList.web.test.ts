@@ -7353,7 +7353,7 @@ describe('NativeList web handle reorder and host icons', () => {
       window: { document: Document } & Window;
     };
   };
-  const handleRows: readonly RowModel[] = ['a', 'b', 'c'].map((key) => ({
+  const handleRows: readonly IdentityRow[] = ['a', 'b', 'c'].map((key) => ({
     type: 'identity',
     key,
     leading: { kind: 'icon', name: 'GlobusOutline' },
@@ -7367,7 +7367,11 @@ describe('NativeList web handle reorder and host icons', () => {
 
   function mount(
     reorderActivation?: 'row' | 'handle',
-    sourceRows: readonly RowModel[] = handleRows
+    sourceRows: readonly RowModel[] = handleRows,
+    options: Readonly<{
+      fixedFooter?: NativeListSnapshot['fixedFooter'];
+      virtualizationEnabled?: boolean;
+    }> = {}
   ) {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -7379,9 +7383,10 @@ describe('NativeList web handle reorder and host icons', () => {
         ...base,
         selection: undefined,
         capabilities: { reorderable: true, reorderActivation },
+        fixedFooter: options.fixedFooter,
       },
       {},
-      false
+      options.virtualizationEnabled ?? false
     );
     const pointerDown = (target: Element) =>
       target.dispatchEvent(
@@ -7400,20 +7405,46 @@ describe('NativeList web handle reorder and host icons', () => {
     const dragging = () =>
       host.querySelector<HTMLElement>('.ok-native-list-root')!.dataset
         .nativeListDragging === 'true';
-    return { document, host, engine, pointerDown, dragging };
+    const rowElement = (key: string) =>
+      host.querySelector<HTMLElement>(`[data-native-list-row-key="${key}"]`)!;
+    const keyDown = (key: string, target = document.activeElement!) =>
+      target.dispatchEvent(
+        new document.defaultView!.KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    return {
+      document,
+      host,
+      engine,
+      pointerDown,
+      dragging,
+      rowElement,
+      keyDown,
+    };
   }
 
   function withElement<T>(document: Document, run: () => T): T {
-    const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
-    Object.defineProperty(globalThis, 'Element', {
-      configurable: true,
-      value: document.defaultView!.Element,
-    });
+    const names = ['Element', 'HTMLElement'] as const;
+    const originals = names.map((name) =>
+      Object.getOwnPropertyDescriptor(globalThis, name)
+    );
+    names.forEach((name) =>
+      Object.defineProperty(globalThis, name, {
+        configurable: true,
+        value: document.defaultView![name],
+      })
+    );
     try {
       return run();
     } finally {
-      if (original) Object.defineProperty(globalThis, 'Element', original);
-      else Reflect.deleteProperty(globalThis, 'Element');
+      names.forEach((name, index) => {
+        const original = originals[index];
+        if (original) Object.defineProperty(globalThis, name, original);
+        else Reflect.deleteProperty(globalThis, name);
+      });
     }
   }
 
@@ -7998,6 +8029,209 @@ describe('NativeList web handle reorder and host icons', () => {
       }
     }
   );
+
+  it('reveals a keyboard move past tall rows before checking overscan', () => {
+    const { document, host, engine, rowElement, keyDown } = mount(
+      'handle',
+      [
+        { ...handleRows[0]!, pressDisabled: true },
+        { ...handleRows[1]!, height: 600 },
+        ...handleRows.slice(2),
+      ],
+      { virtualizationEnabled: true }
+    );
+    const onReorder = jest.fn();
+    engine.updateCallbacks({ onReorder });
+    const viewport = host.querySelector<HTMLElement>(
+      '.ok-native-list-viewport'
+    )!;
+    Object.defineProperty(viewport, 'clientHeight', { value: 200 });
+    viewport.scrollTo = jest.fn((options?: ScrollToOptions | number) => {
+      if (typeof options === 'object') viewport.scrollTop = options.top ?? 0;
+    });
+    try {
+      withElement(document, () => {
+        document.defaultView!.dispatchEvent(
+          new document.defaultView!.Event('resize')
+        );
+        const source = rowElement('a');
+        source.focus();
+        keyDown(' ');
+        keyDown('ArrowDown');
+
+        expect(viewport.scrollTop).toBeGreaterThan(400);
+        expect(document.activeElement).toBe(source);
+        expect(source.dataset.nativeListRowIndex).toBe('1');
+        keyDown(' ');
+        expect(onReorder).toHaveBeenCalledTimes(1);
+        expect(onReorder).toHaveBeenCalledWith(
+          expect.objectContaining({ key: 'a', fromIndex: 0, toIndex: 1 })
+        );
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('restores the keyboard source focus when Escape comes from another row', () => {
+    const { document, host, engine, rowElement, keyDown, dragging } =
+      mount('handle');
+    try {
+      withElement(document, () => {
+        host.querySelector<HTMLElement>('.ok-native-list-viewport')!.scrollTo =
+          jest.fn();
+        rowElement('a').focus();
+        keyDown(' ');
+        keyDown('ArrowDown');
+        rowElement('b').focus();
+
+        expect(keyDown('Escape')).toBe(false);
+        expect(dragging()).toBe(false);
+        expect(rowElement('a').dataset.nativeListRowIndex).toBe('0');
+        expect(document.activeElement).toBe(rowElement('a'));
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps a short handle click and starts a stationary touch reorder from the restored index', () => {
+    jest.useFakeTimers();
+    const {
+      document,
+      host,
+      engine,
+      rowElement,
+      keyDown,
+      pointerDown,
+      dragging,
+    } = mount('handle', [
+      ...handleRows.slice(0, 2),
+      { ...handleRows[2]!, trailing: [{ kind: 'drag', actionKey: 'info' }] },
+    ]);
+    const onReorder = jest.fn();
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onReorder, onRowAction });
+    try {
+      withElement(document, () => {
+        const viewport = host.querySelector<HTMLElement>(
+          '.ok-native-list-viewport'
+        )!;
+        viewport.scrollTo = jest.fn();
+        rowElement('a').focus();
+        keyDown(' ');
+        keyDown('ArrowDown');
+        keyDown('ArrowDown');
+        const handle = rowElement('c').querySelector<HTMLButtonElement>(
+          '[data-native-list-reorder-handle]'
+        )!;
+        const release = () =>
+          viewport.dispatchEvent(
+            Object.assign(
+              new document.defaultView!.Event('pointerup', { bubbles: true }),
+              { pointerId: 1, pointerType: 'touch', clientX: 10, clientY: 20 }
+            )
+          );
+
+        pointerDown(handle);
+        expect(rowElement('a').dataset.nativeListRowIndex).toBe('2');
+        release();
+        handle.click();
+        expect(onRowAction).toHaveBeenCalledWith(
+          expect.objectContaining({ rowKey: 'c', actionKey: 'info' })
+        );
+
+        pointerDown(handle);
+        jest.advanceTimersByTime(800);
+        expect(rowElement('a').dataset.nativeListRowIndex).toBe('0');
+        expect(dragging()).toBe(true);
+        release();
+        expect(rowElement('c').dataset.nativeListRowIndex).toBe('2');
+        expect(onReorder).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(800);
+        expect(dragging()).toBe(false);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('preserves a focused row action when sorting is disabled or enabled', () => {
+    const action: RowModel = {
+      type: 'action',
+      key: 'actions',
+      actionKey: 'press',
+      title: 'Actions',
+      pressDisabled: true,
+      trailing: [
+        { kind: 'icon', name: 'PencilOutline', actionKey: 'edit' },
+        { kind: 'drag' },
+      ],
+    };
+    const { document, engine, rowElement } = mount('handle', [action]);
+    try {
+      withElement(document, () => {
+        const row = rowElement('actions');
+        const edit = row.querySelector<HTMLElement>(
+          '[data-native-list-action="edit"]'
+        )!;
+        const current = engine.currentSnapshot();
+        edit.focus();
+        for (const reorderable of [false, true]) {
+          engine.applySnapshot({
+            ...current,
+            capabilities: { ...current.capabilities, reorderable },
+          });
+          expect(document.activeElement).toBe(edit);
+          expect(row.querySelector('[data-native-list-action="edit"]')).toBe(
+            edit
+          );
+          expect(row.tabIndex).toBe(reorderable ? 0 : -1);
+        }
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps a fixed footer out of keyboard sorting and preserves its own actions', () => {
+    const { document, engine, rowElement, keyDown, dragging } = mount(
+      'handle',
+      handleRows,
+      {
+        fixedFooter: {
+          type: 'action',
+          key: 'footer',
+          actionKey: 'press',
+          title: 'Footer',
+          pressDisabled: true,
+          trailing: [{ kind: 'drag', actionKey: 'footer.info' }],
+        },
+      }
+    );
+    const onRowAction = jest.fn();
+    engine.updateCallbacks({ onRowAction });
+    try {
+      withElement(document, () => {
+        const footer = rowElement('footer');
+        expect(footer.hasAttribute('tabindex')).toBe(false);
+        keyDown(' ', footer);
+        expect(dragging()).toBe(false);
+        const action = footer.querySelector<HTMLElement>(
+          '[data-native-list-action="footer.info"]'
+        )!;
+        action.focus();
+        expect(document.activeElement).toBe(action);
+        action.click();
+        expect(onRowAction).toHaveBeenCalledWith(
+          expect.objectContaining({ actionKey: 'footer.info' })
+        );
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
 
   it('ends a keyboard reorder when a new handle-mode snapshot arrives', () => {
     const { document, host, engine, dragging } = mount('row', [

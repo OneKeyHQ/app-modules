@@ -730,15 +730,29 @@ snapshot supersedes a provisional reorder; accepted row patches retain their
 content even if a gesture is cancelled. The capability travels in snapshot JSON;
 the Nitro ABI is unchanged.
 
-Web reorderable rows can receive keyboard focus even when `pressDisabled`.
-In `handle` mode the focused row must have a rendered handle to start
-keyboard sorting. Space starts the preview, arrow keys move it, and Space
-on the focused source row commits. Escape restores the original order and
-returns focus to the source while it is mounted. Tab, wheel scrolling,
-virtualization of the source, or starting a valid pointer reorder discards
-the preview without emitting `onReorder` or reclaiming focus. A key event
-from a different row cannot commit the previous source's preview. A pointer
-reorder starts from the selected row's position in the restored order.
+Web reorderable data rows, including wallet groups, show a visible focus
+indicator and can receive keyboard focus even when `pressDisabled`. In
+`handle` mode the focused row must have a rendered handle to start keyboard
+sorting. Fixed footers and other rows outside the reorderable data set follow
+their ordinary focus and action rules. Toggling sorting eligibility preserves
+focus on unchanged inline controls.
+
+Space starts the keyboard preview with the source row and its handle visible.
+Arrow keys move it and reveal the new position. Space on the focused source
+row commits. Escape restores the original order and returns focus to the
+source while it is mounted, including when focus has moved to another row. Tab, wheel input directed to the list's
+scroll owner, virtualization of the source by another scroll, or recognition
+of a pointer reorder discards the preview without emitting `onReorder` or
+reclaiming focus. Independent nested scroll areas keep their own wheel input.
+A key event from another row cannot commit the previous source's preview.
+If rolling back a preview recycles the key event's target, that event cannot
+activate the newly bound row or control.
+
+A short pointer click keeps its normal action during a keyboard preview.
+Once the pointer gesture qualifies as a reorder, it restores the original
+order and reveals the selected row if needed. The pointer's displacement
+determines movement from that restored position, so releasing a stationary
+long press keeps the restored order.
 
 Leading visual `borderWidth` supports values in (0, 4]. Development rejects
 out-of-range widths; production discards the invalid width in full snapshots
