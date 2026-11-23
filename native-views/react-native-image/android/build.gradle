@@ -56,7 +56,10 @@ android {
   }
   buildFeatures { buildConfig true; prefab true }
   buildTypes { release { minifyEnabled false } }
-  testOptions { unitTests.returnDefaultValues = true }
+  testOptions {
+    unitTests.returnDefaultValues = true
+    unitTests.includeAndroidResources = true
+  }
   lintOptions { disable "GradleCompatible" }
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_1_8
@@ -86,4 +89,5 @@ dependencies {
   implementation project(":onekeyfe_react-native-skeleton")
   testImplementation "junit:junit:4.13.2"
   testImplementation "org.json:json:20231013"
+  testImplementation "org.robolectric:robolectric:4.17"
 }

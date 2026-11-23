@@ -24,7 +24,17 @@ private final class TypedTouch: UITouch {
 
 private final class KeyCountingWindow: UIWindow {
   var keyActivations = 0
+  var keyAcquisitions = 0
   override func makeKey() { keyActivations += 1; super.makeKey() }
+  override func becomeKey() { keyAcquisitions += 1; super.becomeKey() }
+}
+
+@MainActor private final class SceneKeyObserver: NSObject {
+  private(set) weak var keyWindow: UIWindow?
+
+  @objc func windowDidBecomeKey(_ notification: Notification) {
+    keyWindow = (notification.object as? UIWindow)?.windowScene?.keyWindow
+  }
 }
 
 private final class TransitionRoot: UIViewController {
@@ -71,6 +81,40 @@ private final class TestTransitionCoordinator: NSObject, UIViewControllerTransit
   }
 }
 
+private final class TestPopAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  func transitionDuration(using context: UIViewControllerContextTransitioning?) -> TimeInterval { 0.2 }
+
+  func animateTransition(using context: UIViewControllerContextTransitioning) {
+    guard let from = context.view(forKey: .from), let to = context.view(forKey: .to) else {
+      context.completeTransition(false)
+      return
+    }
+    if to.superview == nil { context.containerView.insertSubview(to, belowSubview: from) }
+    UIView.animate(withDuration: transitionDuration(using: context), animations: {
+      from.transform = CGAffineTransform(translationX: context.containerView.bounds.width, y: 0)
+    }, completion: { _ in
+      from.transform = .identity
+      context.completeTransition(!context.transitionWasCancelled)
+    })
+  }
+}
+
+private final class TestPopDelegate: NSObject, UINavigationControllerDelegate {
+  let animator = TestPopAnimator()
+  var interaction: UIPercentDrivenInteractiveTransition?
+
+  func navigationController(_ navigationController: UINavigationController,
+                            animationControllerFor operation: UINavigationController.Operation,
+                            from fromVC: UIViewController, to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+    operation == .pop ? animator : nil
+  }
+
+  func navigationController(_ navigationController: UINavigationController,
+                            interactionControllerFor animationController: UIViewControllerAnimatedTransitioning) -> UIViewControllerInteractiveTransitioning? {
+    interaction
+  }
+}
+
 private struct Failure: Error { let name: String }
 private func require(_ condition: @autoclosure () -> Bool, _ name: String) throws {
   if !condition() { throw Failure(name: name) }
@@ -80,6 +124,15 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
   await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
     DispatchQueue.main.async { done.resume() }
   }
+}
+
+@MainActor private func waitForUIKitReset(_ observer: NativeOverlayAppTouchObserver) async throws {
+  let deadline = Date().addingTimeInterval(2)
+  while observer.state != .possible && Date() < deadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  try require(observer.state == .possible && !observer.hasActiveTouches,
+    "UIKit resets the observer before the next touch sequence")
 }
 
 private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchObserver {
@@ -119,6 +172,41 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   try require(expansion?.accessibilityActivate() == true && expanded, "separate accessibility element expands the stack")
   card.canExpandStack = false
   try require(card.accessibilityElements == nil && expansion?.accessibilityActivate() == false, "expansion control is removed after expand")
+}
+
+@MainActor private func verifyClosingOverlayKeyHandoff(scene: UIWindowScene, app: UIWindow) throws -> Bool {
+  let manager = NativeOverlayWindowManager()
+  let closingOwner = Owner()
+  let closingEntry = manager.window(for: closingOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  closingEntry.makeKey()
+  manager.setClosing(true, window: closingEntry)
+  try require(scene.keyWindow === closingEntry && closingEntry.windowScene === scene && !closingEntry.isHidden,
+    "the closing overlay is still visible and key")
+  try require(NativeOverlayWindowManager.fallbackKeyWindow(in: scene) === app,
+    "a closing overlay holding key allows fallback to the app")
+
+  let outgoingHost = UIWindow(windowScene: scene)
+  outgoingHost.rootViewController = UIViewController()
+  let outgoingOwner = Owner()
+  let outgoingEntry = manager.window(for: outgoingOwner, level: .modal,
+    stackOrder: 2, blocking: true, appWindow: outgoingHost)!
+  outgoingEntry.makeKey()
+  outgoingHost.windowScene = nil
+  try require(scene.keyWindow === outgoingEntry, "the outgoing overlay remains key after its host detaches")
+
+  let closingKeyObserver = SceneKeyObserver()
+  let notifications = NotificationCenter.default
+  notifications.addObserver(closingKeyObserver, selector: #selector(SceneKeyObserver.windowDidBecomeKey(_:)),
+    name: UIWindow.didBecomeKeyNotification, object: closingEntry)
+  manager.entryRemoved(from: outgoingEntry)
+  notifications.removeObserver(closingKeyObserver)
+  let restoredDuringRelease = closingKeyObserver.keyWindow === closingEntry
+  try require(outgoingEntry.windowScene == nil, "the outgoing key overlay releases synchronously")
+  try require(scene.keyWindow === app && closingEntry.windowScene === scene && !closingEntry.isHidden,
+    "the app becomes key while the closing overlay remains visible")
+  manager.entryRemoved(from: closingEntry)
+  return restoredDuringRelease
 }
 
 @MainActor private func runTests(scene: UIWindowScene, app: UIWindow) async throws -> [String] {
@@ -289,6 +377,74 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   transitionManager.entryRemoved(from: newWindow)
   passed.append("interactive-window-retirement-owner-reuse")
 
+  let nestedApp = UIWindow(windowScene: scene)
+  let containerRoot = UIViewController()
+  nestedApp.rootViewController = containerRoot
+  nestedApp.makeKeyAndVisible()
+  let navigation = UINavigationController(rootViewController: UIViewController())
+  containerRoot.addChild(navigation)
+  navigation.view.frame = containerRoot.view.bounds
+  containerRoot.view.addSubview(navigation.view)
+  navigation.didMove(toParent: containerRoot)
+  navigation.pushViewController(UIViewController(), animated: false)
+  let popDelegate = TestPopDelegate()
+  let popInteraction = UIPercentDrivenInteractiveTransition()
+  popDelegate.interaction = popInteraction
+  navigation.delegate = popDelegate
+  let nestedManager = NativeOverlayWindowManager()
+  let nestedOwner = Owner()
+  let nestedWindow = nestedManager.window(for: nestedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: nestedApp)!
+  nestedWindow.makeKey()
+  _ = navigation.popViewController(animated: true)
+  popInteraction.update(0.25)
+  let popDeadline = Date().addingTimeInterval(2)
+  while navigation.transitionCoordinator?.isInteractive != true && Date() < popDeadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  try require(navigation.viewIfLoaded?.window === nestedApp,
+    "contained navigation is attached to the app window")
+  try require(navigation.transitionCoordinator?.isInteractive == true,
+    "real contained navigation transition becomes interactive")
+  try require(containerRoot.transitionCoordinator == nil,
+    "real contained navigation transition is not visible from the root")
+  nestedManager.entryRemoved(from: nestedWindow)
+  try require(nestedWindow.windowScene === scene && nestedWindow.rootViewController != nil,
+    "attached child navigation transition retains the exiting window")
+  popInteraction.cancel()
+  let nestedDeadline = Date().addingTimeInterval(2)
+  while nestedWindow.windowScene != nil && Date() < nestedDeadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  try require(nestedWindow.windowScene == nil && nestedWindow.rootViewController == nil,
+    "cancelled child navigation transition releases the exiting window")
+  let unloadedChild = TransitionRoot()
+  unloadedChild.activeCoordinator = TestTransitionCoordinator()
+  containerRoot.addChild(unloadedChild)
+  let detachedChild = TransitionRoot()
+  _ = detachedChild.view
+  detachedChild.activeCoordinator = TestTransitionCoordinator()
+  containerRoot.addChild(detachedChild)
+  try require(unloadedChild.viewIfLoaded == nil && detachedChild.viewIfLoaded?.window == nil,
+    "inactive child transition precondition")
+  let inactiveOwner = Owner()
+  let inactiveWindow = nestedManager.window(for: inactiveOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: nestedApp)!
+  nestedManager.entryRemoved(from: inactiveWindow)
+  try require(inactiveWindow.windowScene == nil && inactiveWindow.rootViewController == nil &&
+    unloadedChild.viewIfLoaded == nil, "unattached children do not retain a window or load a view")
+  unloadedChild.removeFromParent()
+  detachedChild.removeFromParent()
+  passed.append("interactive-window-retirement-unattached-children")
+  navigation.willMove(toParent: nil)
+  navigation.view.removeFromSuperview()
+  navigation.removeFromParent()
+  nestedApp.isHidden = true
+  nestedApp.rootViewController = nil
+  nestedApp.windowScene = nil
+  transitionApp.makeKey()
+  passed.append("interactive-window-retirement-contained-navigation")
+
   let disconnectedOwner = Owner()
   let disconnectedWindow = transitionManager.window(for: disconnectedOwner, level: .modal,
     stackOrder: 1, blocking: true, appWindow: transitionApp)!
@@ -377,15 +533,15 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   let queuedWindow = touchManager.window(for: queuedOwner, level: .modal,
     stackOrder: 1, blocking: true, appWindow: app)!
   let queuedObserver = try touchObserver(in: app)
-  let endingTouch = UITouch(), nextTouch = UITouch()
-  queuedObserver.touchesBegan([endingTouch], with: event)
+  let initialTouch = UITouch(), nextTouch = UITouch()
+  queuedObserver.touchesBegan([initialTouch], with: event)
   touchManager.entryRemoved(from: queuedWindow)
-  queuedObserver.touchesEnded([endingTouch], with: event)
+  // Model UIKit's reset before a new sequence without injecting an UP that schedules another reset.
   queuedObserver.reset()
   queuedObserver.touchesBegan([nextTouch], with: event)
   await nextMainTurn()
   try require(queuedWindow.windowScene === scene && queuedObserver.hasActiveTouches,
-    "queued cleanup rechecks a new touch beginning after the prior last UP")
+    "queued cleanup rechecks a new touch beginning after reset")
   queuedObserver.touchesEnded([nextTouch], with: event)
   await nextMainTurn()
   try require(queuedWindow.windowScene == nil, "replacement touch completion releases old window")
@@ -518,6 +674,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
     "lower entry UP releases only retired toast and its observer")
   passed.append("entry-touch-retirement-lower-entry")
 
+  try await waitForUIKitReset(lowerObserver)
   let ownTouch = UITouch(), ownHostTouch = UITouch()
   let ownHostObserver = try touchObserver(in: app)
   ownHostObserver.touchesBegan([ownHostTouch], with: event)
@@ -629,17 +786,16 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   let queuedRehostToast = touchManager.window(for: queuedRehostToastOwner, level: .toast,
     stackOrder: 2, blocking: false, appWindow: queuedHostA)!
   let queuedRehostObserver = try touchObserver(in: queuedRehost)
-  let rehostEnding = UITouch(), rehostBeginning = UITouch()
-  queuedRehostObserver.touchesBegan([rehostEnding], with: event)
+  let rehostInitial = UITouch(), rehostBeginning = UITouch()
+  queuedRehostObserver.touchesBegan([rehostInitial], with: event)
   touchManager.entryRemoved(from: queuedRehostToast)
-  queuedRehostObserver.touchesEnded([rehostEnding], with: event)
   queuedRehostObserver.reset()
   _ = touchManager.window(for: queuedRehostOwner, level: .modal,
     stackOrder: 1, blocking: true, appWindow: queuedHostB)!
   queuedRehostObserver.touchesBegan([rehostBeginning], with: event)
   await nextMainTurn()
   try require(queuedRehostToast.windowScene === scene,
-    "UP then rehost then DOWN before cleanup preserves old host context")
+    "reset then rehost then DOWN before cleanup preserves old host context")
   queuedRehostObserver.touchesCancelled([rehostBeginning], with: event)
   await nextMainTurn()
   try require(queuedRehostToast.windowScene == nil && queuedRehost.windowScene === scene,
@@ -647,7 +803,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   touchManager.entryRemoved(from: queuedRehost)
   queuedHostA.rootViewController = nil; queuedHostA.windowScene = nil
   queuedHostB.rootViewController = nil; queuedHostB.windowScene = nil
-  passed.append("entry-touch-retirement-rehost-up-down-boundary")
+  passed.append("entry-touch-retirement-rehost-reset-down-boundary")
 
   let delayedHost = UIWindow(windowScene: scene), currentHost = UIWindow(windowScene: scene)
   let delayedRoot = TransitionRoot()
@@ -669,7 +825,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   delayedObserver.touchesEnded([delayedTouchA], with: event)
   await nextMainTurn()
   try require(delayedToast.windowScene === scene, "old host coordinator retains context through an idle touch gap")
-  delayedObserver.reset()
+  try await waitForUIKitReset(delayedObserver)
   delayedObserver.touchesBegan([delayedTouchB], with: event)
   delayedCoordinator.changeInteraction(to: false)
   await nextMainTurn()
@@ -678,7 +834,7 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   delayedObserver.touchesEnded([delayedTouchB], with: event)
   await nextMainTurn()
   try require(delayedToast.windowScene == nil, "last old-context dependency releases after both conditions end")
-  delayedObserver.reset()
+  try await waitForUIKitReset(delayedObserver)
   delayedObserver.touchesBegan([unrelatedTouch], with: event)
   let unrelatedOwner = Owner()
   let unrelatedWindow = touchManager.window(for: unrelatedOwner, level: .toast,
@@ -766,6 +922,109 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
     "removal cannot restore key to a host outside the entry scene")
   detachedHost.rootViewController = nil
   passed.append("entry-removal-host-scene-focus-boundary")
+
+  let alternateApp = KeyCountingWindow(windowScene: scene)
+  alternateApp.rootViewController = UIViewController()
+  alternateApp.makeKeyAndVisible()
+  try require(scene.keyWindow === alternateApp, "alternate app window starts as key")
+  let releasedHost = UIWindow(windowScene: scene)
+  releasedHost.rootViewController = UIViewController()
+  let releasedOwner = Owner()
+  let releasedEntry = touchManager.window(for: releasedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: releasedHost)!
+  releasedEntry.makeKey()
+  releasedHost.windowScene = nil
+  let alternateActivations = alternateApp.keyActivations
+  let alternateAcquisitions = alternateApp.keyAcquisitions
+  try require(scene.keyWindow === releasedEntry &&
+    scene.windows.first(where: {
+      $0.windowLevel == .normal && !$0.isHidden && $0.alpha > 0 &&
+        $0.rootViewController != nil && $0.canBecomeKey
+    }) === app, "removing the key overlay would select the first app window as fallback")
+  touchManager.entryRemoved(from: releasedEntry)
+  try require(releasedEntry.windowScene == nil && alternateApp.keyAcquisitions > alternateAcquisitions,
+    "synchronous release lets UIKit restore the alternate app window")
+  try require(scene.keyWindow === alternateApp && alternateApp.keyActivations == alternateActivations,
+    "fallback preserves the app window UIKit restored")
+  alternateApp.isHidden = true
+  alternateApp.rootViewController = nil
+  alternateApp.windowScene = nil
+  app.makeKey()
+  passed.append("released-key-window-preserves-uikit-restoration")
+
+  let retiringHost = KeyCountingWindow(windowScene: scene)
+  retiringHost.rootViewController = UIViewController()
+  retiringHost.makeKeyAndVisible()
+  let retiringOwner = Owner(), passiveOwner = Owner()
+  let retiringEntry = touchManager.window(for: retiringOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: retiringHost)!
+  let passiveEntry = touchManager.window(for: passiveOwner, level: .toast,
+    stackOrder: 2, blocking: false, appWindow: app)!
+  let retiringObserver = try touchObserver(in: retiringEntry)
+  let retiringTouch = UITouch()
+  retiringEntry.makeKey()
+  retiringObserver.touchesBegan([retiringTouch], with: event)
+  retiringHost.windowScene = nil
+  let retiringHostActivations = retiringHost.keyActivations
+  try require(retiringEntry.isKeyWindow && !app.isHidden && app.windowScene === scene,
+    "key handoff starts with a key overlay and an eligible scene app window")
+  touchManager.entryRemoved(from: retiringEntry)
+  try require(retiringEntry.windowScene === scene && !retiringEntry.isHidden &&
+    app.isKeyWindow && !retiringEntry.isKeyWindow && !passiveEntry.isKeyWindow &&
+    retiringHost.keyActivations == retiringHostActivations,
+    "retired key overlay hands input to the same-scene app window immediately")
+  retiringObserver.touchesEnded([retiringTouch], with: event)
+  await nextMainTurn()
+  try require(retiringEntry.windowScene == nil && retiringObserver.view == nil &&
+    app.isKeyWindow && passiveEntry.windowScene === scene,
+    "last touch releases the exiting window and preserves app key ownership")
+  touchManager.entryRemoved(from: passiveEntry)
+  retiringHost.rootViewController = nil
+  passed.append("retired-key-window-hands-off-after-host-detach")
+
+  for hostDeallocatesBeforeTouchEnds in [true, false] {
+    var host: UIWindow? = autoreleasepool {
+      let window = UIWindow(windowScene: scene)
+      window.rootViewController = UIViewController()
+      return window
+    }
+    let hostHasDeallocated = { [weak host] in host == nil }
+    let owner = Owner()
+    let touch = UITouch()
+    let (entry, observer) = try autoreleasepool {
+      let entry = touchManager.window(for: owner, level: .modal, stackOrder: 1,
+        blocking: true, appWindow: host!)!
+      let observer = try touchObserver(in: entry)
+      observer.touchesBegan([touch], with: event)
+      touchManager.entryRemoved(from: entry)
+      return (entry, observer)
+    }
+    try require(entry.windowScene === scene && observer.hasActiveTouches,
+      "entry remains retired for an active touch before the host deallocates")
+    autoreleasepool {
+      host?.rootViewController = nil
+      host?.windowScene = nil
+    }
+    await nextMainTurn()
+    autoreleasepool {
+      if !hostDeallocatesBeforeTouchEnds {
+        observer.touchesEnded([touch], with: event)
+      }
+      host = nil
+    }
+    try require(hostHasDeallocated(), "host deallocated before next-turn cleanup")
+    try require(entry.windowScene === scene, "retired entry stays attached before next-turn cleanup")
+    if hostDeallocatesBeforeTouchEnds {
+      observer.touchesEnded([touch], with: event)
+    }
+    await nextMainTurn()
+    try require(entry.windowScene == nil && entry.rootViewController == nil &&
+      observer.view == nil && observer.onTouchesFinished == nil,
+      "last-touch cleanup releases the retired window after host deallocation")
+    passed.append(hostDeallocatesBeforeTouchEnds
+      ? "retired-window-host-deallocates-before-last-touch"
+      : "retired-window-host-deallocates-after-last-touch")
+  }
   return passed
 }
 
@@ -781,10 +1040,19 @@ final class TestScene: UIResponder, UIWindowSceneDelegate {
     guard !started, let scene = scene as? UIWindowScene, let window else { return }
     started = true
     Task { @MainActor in
-      let result: [String: Any]
-      do { result = ["outcome": "passed", "tests": try await runTests(scene: scene, app: window)] }
-      catch let failure as Failure { result = ["outcome": "failed", "failure": failure.name] }
-      catch { result = ["outcome": "failed", "failure": "unexpected test error"] }
+      var result: [String: Any] = ["iosVersion": UIDevice.current.systemVersion]
+      do {
+        result["closingOverlayRegainedKeyDuringRelease"] = try verifyClosingOverlayKeyHandoff(scene: scene, app: window)
+        let tests = try await runTests(scene: scene, app: window)
+        result["outcome"] = "passed"
+        result["tests"] = ["released-key-window-skips-closing-overlay"] + tests
+      } catch let failure as Failure {
+        result["outcome"] = "failed"
+        result["failure"] = failure.name
+      } catch {
+        result["outcome"] = "failed"
+        result["failure"] = "unexpected test error"
+      }
       let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("results.json")
       try! JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: url)
     }

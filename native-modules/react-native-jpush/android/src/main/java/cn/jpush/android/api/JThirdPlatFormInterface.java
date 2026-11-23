@@ -80,6 +80,26 @@ public abstract class JThirdPlatFormInterface {
         return false;
     }
 
+    private static synchronized JThirdPlatFormInterface getSupportedFcm(Context context)
+        throws ReflectiveOperationException {
+        if (context == null) return null;
+        if (fcmPlugin == null) {
+            // This optional source module is linked only by Google hosts.
+            fcmPlugin = (JThirdPlatFormInterface) Class.forName(
+                "com.onekey.jpush.fcm.FcmPushManager"
+            ).getDeclaredConstructor().newInstance();
+        }
+        return fcmPlugin.isSupport(context) ? fcmPlugin : null;
+    }
+
+    public static boolean supportsFcm(Context context) {
+        try {
+            return getSupportedFcm(context) != null;
+        } catch (Exception | LinkageError unavailablePlugin) {
+            return false;
+        }
+    }
+
     public static void initializeFcm(final Context context) {
         if (context == null || JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
             return;
@@ -92,21 +112,14 @@ public abstract class JThirdPlatFormInterface {
                         return;
                     }
                     try {
-                        if (fcmPlugin == null) {
-                            // This optional source module is linked only by Google hosts.
-                            fcmPlugin = (JThirdPlatFormInterface) Class.forName(
-                                "com.onekey.jpush.fcm.FcmPushManager"
-                            ).getDeclaredConstructor().newInstance();
-                        }
-                        if (!fcmPlugin.isSupport(context)) {
-                            return;
-                        }
+                        JThirdPlatFormInterface plugin = getSupportedFcm(context);
+                        if (plugin == null) return;
                         if (!fcmRegistered) {
-                            fcmPlugin.init(context);
-                            fcmPlugin.register(context, new Bundle());
+                            plugin.init(context);
+                            plugin.register(context, new Bundle());
                             fcmRegistered = true;
                         }
-                        fcmPlugin.getToken(context);
+                        plugin.getToken(context);
                     } catch (ClassNotFoundException absentPlugin) {
                         // Non-Google hosts intentionally do not include the optional plugin.
                     } catch (Exception | LinkageError unavailablePlugin) {

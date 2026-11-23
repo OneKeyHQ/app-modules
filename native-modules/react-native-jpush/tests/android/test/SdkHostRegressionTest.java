@@ -1,5 +1,9 @@
 package test;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -40,6 +44,7 @@ import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.margelo.nitro.nativelogger.OneKeyLog;
+import com.margelo.nitro.reactnativejpush.ReactNativeJpushProtocolTest;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -64,6 +69,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -77,6 +83,7 @@ import javax.net.ssl.SSLSessionContext;
 import javax.security.cert.X509Certificate;
 
 public final class SdkHostRegressionTest {
+    private static final String CLOUD_FIXTURE_TOKEN = "f" + String.join("", Collections.nCopies(141, "c"));
     private static void check(boolean condition, String message) {
         if (!condition) {
             throw new AssertionError("Assertion failed: " + message);
@@ -265,12 +272,13 @@ public final class SdkHostRegressionTest {
             check(
                 parsedLoginReq != null
                     && parsedLoginReq.passwordMd5.equals(JCoreCrypto.md5Hex("pw_secret"))
-                    && "5.1.1|5.9.0".equals(parsedLoginReq.sdkVerInfo)
+                    && "328192|329984".equals(parsedLoginReq.sdkVerInfo)
                     && "appkey_123".equals(parsedLoginReq.appKey)
                     && "srv_dev_001".equals(parsedLoginReq.deviceId)
                     && "US".equals(parsedLoginReq.countryCode)
                     && parsedLoginReq.loginFlag == 1
-                    && "1".equals(parsedLoginReq.gSdkTypeInfo),
+                    && parsedLoginReq.romPlatformMask == 8
+                    && "4|64".equals(parsedLoginReq.gSdkTypeInfo),
                 "Login v27 payload fields must match production spec"
             );
 
@@ -695,7 +703,7 @@ public final class SdkHostRegressionTest {
                     byte[] received = Arrays.copyOf(pkt.getData(), pkt.getLength());
                     String reqJson = JCoreWireCodec.decodeUdpSisPacket(received);
                     sisReceivedReqRef.set(reqJson);
-                    String respJson = "{\"ips\":[\"" + liveEndpoint + "\"],\"ssl_ips\":[\"" + liveEndpoint
+                    String respJson = "{\"ips\":[\"invalid,127.0.0.1:1\",\"" + liveEndpoint + "\"],\"ssl_ips\":[\"" + liveEndpoint
                         + "\"],\"sis_ips\":[\"127.0.0.1:" + sisPort
                         + "\"],\"http_report\":[\"127.0.0.1:18080\"],\"https_report\":[\"127.0.0.1:18443\"],\"cert_ver\":2,\"data_report\":true}";
                     byte[] respBytes = JCoreWireCodec.encodeUdpSisPacket(respJson, 7777L);
@@ -710,9 +718,28 @@ public final class SdkHostRegressionTest {
         sisThread.setDaemon(true);
         sisThread.start();
 
+        String legacyLiveEndpoint = "127.0.0.1:0" + tcpPort;
+        JCoreStorage.putSpValue(reactContext, "sis_last_good_ip", legacyLiveEndpoint);
+        JCoreStorage.putSpValue(reactContext, "sis_ips_list", legacyLiveEndpoint + "," + liveEndpoint);
+        JCoreStorage.putSpValue(reactContext, "sis_failed_ips", deadEndpoint + "," + legacyLiveEndpoint + "," + liveEndpoint);
+        check(liveEndpoint.equals(JCoreStorage.getLastGoodIp(reactContext))
+            && JCoreStorage.getSisIps(reactContext).equals(Collections.singletonList(liveEndpoint)),
+            "The last-good and cached aliases must reload as one canonical candidate");
+        check(JCoreStorage.getFailedIps(reactContext).equals(Arrays.asList(deadEndpoint, liveEndpoint)),
+            "Legacy and canonical failure spellings must reload as one entry");
+
         String[] resolvedSis = JCoreTcpEngine.getInstance().resolveUdpSisEndpoint(reactContext, "127.0.0.1", sisPort);
         check("127.0.0.1".equals(resolvedSis[0]) && String.valueOf(tcpPort).equals(resolvedSis[1]), "UDP SIS loopback resolution");
-        check(sisReceivedReqRef.get().contains(deadEndpoint), "UDP SIS request must include recorded fail_ips");
+        check(sisReceivedReqRef.get().contains(deadEndpoint) && sisReceivedReqRef.get().contains(liveEndpoint)
+            && !sisReceivedReqRef.get().contains(legacyLiveEndpoint), "UDP SIS must report canonical failed endpoints");
+        check(JCoreStorage.getSisIps(reactContext).equals(Collections.singletonList(liveEndpoint)),
+            "A comma-bearing SIS host must never enter candidate selection or the cache");
+        check(JCoreStorage.getFailedIps(reactContext).equals(Collections.singletonList(deadEndpoint)),
+            "Fresh SIS must clear both spellings of the recovered endpoint and keep other failures");
+        JCoreStorage.putSpValue(reactContext, "sis_failed_ips", deadEndpoint + "," + legacyLiveEndpoint);
+        JCoreStorage.removeFailedIp(reactContext, liveEndpoint);
+        check(JCoreStorage.getFailedIps(reactContext).equals(Collections.singletonList(deadEndpoint)),
+            "A successful login must remove a legacy failure without needing a fresh SIS response");
         check(JCoreStorage.getSisCertVer(reactContext) == 2 && JCoreStorage.getSisDataReport(reactContext), "SIS config must be persisted in JCoreStorage");
 
         // Verify MessageReceipt (cmd=4, ver=3), CtrlAck (cmd=25, ver=1), and ThirdToken callback (CmdMessage 10000)
@@ -1616,6 +1643,7 @@ public final class SdkHostRegressionTest {
         final AtomicInteger connections = new AtomicInteger(), registrations = new AtomicInteger(), binds = new AtomicInteger();
         final java.util.Set<Long> boundUids = java.util.concurrent.ConcurrentHashMap.<Long>newKeySet();
         final AtomicBoolean failLogin = new AtomicBoolean(false), done = new AtomicBoolean(false);
+        final AtomicBoolean reregisterNextLogin = new AtomicBoolean(false);
         final AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
         final AtomicReference<Socket> active = new AtomicReference<Socket>();
         try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
@@ -1632,8 +1660,13 @@ public final class SdkHostRegressionTest {
                                 int registration = registrations.incrementAndGet(); uid = 880000L + registration;
                                 body = JCoreWireCodec.buildRegisterResponsePayload(uid, "loopback_password", "rebind_rid_" + registration, "loopback_device");
                             } else if (frame.command == JCoreWireCodec.CMD_LOGIN) {
-                                status = failLogin.get() ? 1005 : 0;
-                                body = JCoreWireCodec.buildLoginResponsePayload(9001, 520, "", 1700000000);
+                                uid = frame.uid;
+                                JCoreWireCodec.LoginRequest login = JCoreWireCodec.parseLoginRequest(frame.body);
+                                boolean requiresRegister = reregisterNextLogin.compareAndSet(true, false);
+                                check(login != null && (login.romPlatformMask & 0xFF) == (requiresRegister ? 0x28 : 0x08),
+                                    "The uploaded FCM bit must apply only to the current registration");
+                                status = failLogin.get() ? 1005 : requiresRegister ? 108 : 0;
+                                if (status == 0) body = JCoreWireCodec.buildLoginResponsePayload(9001, 520, "", 1700000000);
                             }
                             socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(frame.command, frame.version,
                                 frame.requestId, frame.command == JCoreWireCodec.CMD_REGISTER ? frame.sessionId : 9001, uid, status, body));
@@ -1660,7 +1693,8 @@ public final class SdkHostRegressionTest {
                 String initialRid = JCoreStorage.getRegistrationId(context);
                 engine.start(context); engine.start(context);
                 check(connections.get() == 1, "Repeated init must not establish another connection");
-                engine.stop(context); JCoreStorage.clearRegistration(context); engine.start(context);
+                reregisterNextLogin.set(true);
+                engine.triggerReconnectNow(context);
                 awaitCondition(() -> engine.isLoggedIn() && boundUids.contains(880002L)
                     && tokenRequests.get() == initialRequests + 1 && binds.get() == initialRequests + 1
                     && acknowledgedBinds.get() == initialRequests + 1, "Second real registration must complete its new-UID bind acknowledgement callback");
@@ -2439,6 +2473,197 @@ public final class SdkHostRegressionTest {
         }
     }
 
+    private static volatile Runnable loginLogBarrier;
+
+    public static void recordLoginFixtureLog(String tag, String message) {
+        Runnable barrier = loginLogBarrier;
+        if (barrier != null && message.startsWith("TCP login success")) barrier.run();
+    }
+
+    @org.junit.Test
+    public void testLoginAckThenEofDeliversConnectionEventsInOrder() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "login-eof-fixture");
+        Field eventsField = JCoreTcpEngine.class.getDeclaredField("connectionEvents");
+        eventsField.setAccessible(true);
+        java.util.concurrent.ExecutorService eventExecutor = (java.util.concurrent.ExecutorService) eventsField.get(engine);
+        eventExecutor.submit(() -> {}).get(3000L, TimeUnit.MILLISECONDS);
+        Field infoField = JLogger.class.getDeclaredField("sInfoMethod");
+        infoField.setAccessible(true);
+        Object originalInfo = infoField.get(null);
+        boolean originalLogging = JLogger.isLoggerEnable();
+        CountDownLatch loginCommitted = new CountDownLatch(1);
+        CountDownLatch releaseLogin = new CountDownLatch(1);
+        CountDownLatch disconnected = new CountDownLatch(1);
+        List<Boolean> events = new CopyOnWriteArrayList<>();
+        AtomicReference<Throwable> serverError = new AtomicReference<>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override
+            public void onConnected(Context ctx, boolean connected) {
+                events.add(connected);
+                if (!connected) disconnected.countDown();
+            }
+        };
+
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket socket = listener.accept()) {
+                    socket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), RESUME_FIXTURE_UID);
+                    check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Expected fast-login before EOF");
+                    writeLoopbackAck(socket, login, RESUME_FIXTURE_UID, 8830, 0,
+                        JCoreWireCodec.buildLoginResponsePayload(8830, 520, "", 1700000000));
+                    check(loginCommitted.await(3000L, TimeUnit.MILLISECONDS), "Login never reached the state transition");
+                    socket.shutdownOutput();
+                } catch (Throwable failure) {
+                    serverError.set(failure);
+                }
+            }, "test-login-ack-eof");
+            server.setDaemon(true);
+            loginLogBarrier = () -> {
+                loginCommitted.countDown();
+                try { releaseLogin.await(4000L, TimeUnit.MILLISECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            };
+            // Resolve the normal logger before installing the blocking hook.
+            JLogger.setLoggerEnable(true);
+            JLogger.i("Starting login EOF fixture");
+            infoField.set(null, SdkHostRegressionTest.class.getMethod("recordLoginFixtureLog", String.class, String.class));
+            ActionHelper.getInstance().registerReceiver(receiver);
+            try {
+                server.start();
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.start(context);
+                check(disconnected.await(3000L, TimeUnit.MILLISECONDS), "EOF did not close the logged-in socket: " + serverError.get());
+                releaseLogin.countDown();
+                check(engine.awaitHandshake(3000L), "Old login worker did not finish");
+                eventExecutor.submit(() -> {}).get(3000L, TimeUnit.MILLISECONDS);
+                check(events.equals(Arrays.asList(true, false)) && !engine.isLoggedIn(),
+                    "Login and EOF must deliver true then false with no stale true: " + events);
+            } finally {
+                releaseLogin.countDown();
+                engine.stop(context);
+                server.join(3500L);
+                ActionHelper.getInstance().unregisterReceiver(receiver);
+                loginLogBarrier = null;
+                infoField.set(null, originalInfo);
+                JLogger.setLoggerEnable(originalLogging);
+                engine.setAutoReconnectEnabled(true);
+                engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Login EOF fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testSdkInitRegistersForegroundProbeAndStopIgnoresBlockedReceivers() throws Exception {
+        android.app.Application app = new android.app.Application();
+        android.app.Activity activity = new android.app.Activity(app);
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        Field appContext = JCoreStorage.class.getDeclaredField("sAppContext");
+        appContext.setAccessible(true);
+        Object previousContext = appContext.get(null);
+        appContext.set(null, app);
+        Field registered = cn.jpush.android.local.ActivityLifeCallBack.class.getDeclaredField("registered");
+        registered.setAccessible(true);
+        boolean previouslyRegistered = registered.getBoolean(null);
+        registered.setBoolean(null, false);
+        prepareResumeRaceFixture(app, engine, "foreground-probe-fixture");
+
+        CountDownLatch initialHeartbeat = new CountDownLatch(1);
+        CountDownLatch foregroundDuringLogin = new CountDownLatch(1);
+        CountDownLatch foregroundHeartbeat = new CountDownLatch(1);
+        CountDownLatch connected = new CountDownLatch(1);
+        CountDownLatch disconnectEntered = new CountDownLatch(1);
+        CountDownLatch releaseDisconnect = new CountDownLatch(1);
+        CountDownLatch socketClosed = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override
+            public void onConnected(Context context, boolean connectedState) {
+                if (connectedState) {
+                    connected.countDown();
+                } else if (connected.getCount() == 0) {
+                    disconnectEntered.countDown();
+                    try { releaseDisconnect.await(2500L, TimeUnit.MILLISECONDS); }
+                    catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                }
+            }
+        };
+        ActionHelper.getInstance().registerReceiver(receiver);
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getLoopbackAddress())) {
+            listener.setSoTimeout(4000);
+            Thread server = new Thread(() -> {
+                try (Socket socket = listener.accept()) {
+                    socket.setSoTimeout(3000);
+                    InputStream in = socket.getInputStream();
+                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(in, RESUME_FIXTURE_UID);
+                    check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Expected Login");
+                    writeLoopbackAck(socket, login, RESUME_FIXTURE_UID, 8820, 0,
+                        JCoreWireCodec.buildLoginResponsePayload(8820, 520, "", 1700000000));
+                    JCoreWireCodec.DecodedFrame first = JCoreWireCodec.readClientFrameFromStream(in, RESUME_FIXTURE_UID);
+                    check(first != null && first.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
+                    initialHeartbeat.countDown();
+                    check(foregroundDuringLogin.await(3000L, TimeUnit.MILLISECONDS), "Foreground callback not exercised");
+                    socket.setSoTimeout(150);
+                    try {
+                        in.read();
+                        throw new AssertionError("Foreground must not send another frame during initial heartbeat");
+                    } catch (java.net.SocketTimeoutException expectedQuiet) {
+                        socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(19, 8, 0, 0,
+                            RESUME_FIXTURE_UID, 0, new byte[0]));
+                    }
+                    socket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame probe = JCoreWireCodec.readClientFrameFromStream(in, RESUME_FIXTURE_UID);
+                    check(probe != null && probe.command == JCoreWireCodec.CMD_HEARTBEAT && probe.sessionId == 8820,
+                        "Foreground must probe the ready socket with its session ID");
+                    writeLoopbackAck(socket, probe, RESUME_FIXTURE_UID, 8820, 0, new byte[0]);
+                    foregroundHeartbeat.countDown();
+                    JCoreWireCodec.DecodedFrame stop = JCoreWireCodec.readClientFrameFromStream(in, RESUME_FIXTURE_UID);
+                    check(stop == null || stop.command == JCoreWireCodec.CMD_PUSH_CTRL, "Unexpected request during stop");
+                    if (stop != null) check(in.read() == -1, "Socket must close after stop control");
+                    socketClosed.countDown();
+                } catch (Throwable failure) {
+                    serverError.set(failure);
+                }
+            }, "test-foreground-lifecycle");
+            server.setDaemon(true);
+            server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                JPushInterface.init(app);
+                JPushInterface.init(app);
+                check(app.registeredActivityCallbacks() == 1, "SDK init must register one process-wide lifecycle callback");
+                check(initialHeartbeat.await(3000L, TimeUnit.MILLISECONDS), "Initial heartbeat missing: " + serverError.get());
+                app.startActivityForTest(activity);
+                foregroundDuringLogin.countDown();
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Zero-RID initial heartbeat must finish");
+                app.stopActivityForTest(activity);
+                app.startActivityForTest(activity);
+                check(foregroundHeartbeat.await(3000L, TimeUnit.MILLISECONDS), "Lifecycle foreground probe missing: " + serverError.get());
+                check(connected.await(3000L, TimeUnit.MILLISECONDS), "Initial connection event missing");
+                JPushInterface.stopPush(app);
+                check(disconnectEntered.await(1000L, TimeUnit.MILLISECONDS), "Disconnect callback did not block as expected");
+                check(socketClosed.await(750L, TimeUnit.MILLISECONDS), "Blocked disconnect callback delayed socket shutdown");
+            } finally {
+                releaseDisconnect.countDown();
+                engine.stop(app);
+                server.join(3500L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Foreground/stop fixture failed: " + serverError.get());
+        } finally {
+            app.stopActivityForTest(activity);
+            ActionHelper.getInstance().unregisterReceiver(receiver);
+            JCoreStorage.setPushStopped(app, false);
+            engine.setAutoReconnectEnabled(true);
+            engine.setDefaultRequestTimeoutMs(5000L);
+            registered.setBoolean(null, previouslyRegistered);
+            appContext.set(null, previousContext);
+        }
+    }
+
     private static void runPublicStopCancellationFixture(final int mode) throws Exception {
         final boolean holdWriter = mode == 1 || mode == 3;
         final boolean blockOutput = mode == 2;
@@ -2670,7 +2895,8 @@ public final class SdkHostRegressionTest {
                     try (Socket socket1 = listener.accept()) {
                         socket1.setSoTimeout(3000);
                         JCoreWireCodec.DecodedFrame login1 = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
-                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #1");
+                        check(login1 != null && login1.command == JCoreWireCodec.CMD_LOGIN && login1.sessionId == 0,
+                            "Expected fast login with sessionId=0 on connection #1");
                         writeLoopbackAck(socket1, login1, 870001L, 8701, 0, JCoreWireCodec.buildLoginResponsePayload(8701, 520, "", 1700000000));
 
                         JCoreWireCodec.DecodedFrame initialHb = JCoreWireCodec.readClientFrameFromStream(socket1.getInputStream(), 870001L);
@@ -2724,7 +2950,8 @@ public final class SdkHostRegressionTest {
                     try (Socket socket2 = listener.accept()) {
                         socket2.setSoTimeout(3000);
                         JCoreWireCodec.DecodedFrame login2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
-                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN, "Expected fast login on connection #2");
+                        check(login2 != null && login2.command == JCoreWireCodec.CMD_LOGIN && login2.sessionId == 0,
+                            "Expected fast login with sessionId=0 on connection #2");
                         writeLoopbackAck(socket2, login2, 870001L, 8702, 0, JCoreWireCodec.buildLoginResponsePayload(8702, 520, "", 1700000001));
 
                         JCoreWireCodec.DecodedFrame hb2 = JCoreWireCodec.readClientFrameFromStream(socket2.getInputStream(), 870001L);
@@ -2761,8 +2988,8 @@ public final class SdkHostRegressionTest {
                         try (Socket socket3 = listener.accept()) {
                             socket3.setSoTimeout(3000);
                             JCoreWireCodec.DecodedFrame login3 = JCoreWireCodec.readClientFrameFromStream(socket3.getInputStream(), 870001L);
-                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN,
-                                "Expected fast login on connection #3 after heartbeat timeout");
+                            check(login3 != null && login3.command == JCoreWireCodec.CMD_LOGIN && login3.sessionId == 0,
+                                "Expected fast login with sessionId=0 on connection #3 after heartbeat timeout");
                             writeLoopbackAck(socket3, login3, 870001L, 8703, 0, JCoreWireCodec.buildLoginResponsePayload(8703, 520, "", 1700000002));
                             reconnectedAfterHbTimeout.countDown();
                         }
@@ -2824,6 +3051,13 @@ public final class SdkHostRegressionTest {
                     "Engine must auto-reconnect when periodic heartbeat ACK times out");
                 check(com.margelo.nitro.nativelogger.OneKeyLog.getCapturedLogs().toString().contains("TCP heartbeat timed out, scheduling reconnect"),
                     "OneKeyLog must record WARN when periodic heartbeat ACK times out");
+                byte[] encodedLoginWithStaleSid = JCoreWireCodec.encodeClientFrame(
+                    JCoreWireCodec.CMD_LOGIN, JCoreWireCodec.VER_LOGIN, JCoreWireCodec.ALG_AES_CBC, 0,
+                    99L, 46453, 870001L, JCoreWireCodec.buildLoginPayload("hb-password", "hb-ack-and-resume-noop", "hb-device", "US")
+                );
+                JCoreWireCodec.DecodedFrame decodedLoginWithStaleSid = JCoreWireCodec.decodeClientFrame(encodedLoginWithStaleSid, 870001L);
+                check(decodedLoginWithStaleSid != null && decodedLoginWithStaleSid.sessionId == 0,
+                    "encodeClientFrame must force sessionId=0 on CMD_LOGIN frames");
             } finally {
                 engine.stop(context);
                 server.join(3000L);
@@ -3284,6 +3518,267 @@ public final class SdkHostRegressionTest {
     }
 
     @org.junit.Test
+    public void testLoginSdkVerParityAndDownlinkMsgType4Filtering() throws Exception {
+        final Context context = new Context();
+        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        prepareResumeRaceFixture(context, engine, "login-parity-app-key");
+        JCoreStorage.updateRegistration(context, 88971093104L, "parity_pw", "100d8559081eb0a0367", "parity_dev");
+        JCoreStorage.setServerRegistered(context, true);
+
+        final List<String> customMessageIds = new CopyOnWriteArrayList<>();
+        final CountDownLatch validCustomReceived = new CountDownLatch(2);
+        final CountDownLatch allReceiptsSeen = new CountDownLatch(4);
+        final CountDownLatch thirdTokenAcked = new CountDownLatch(3);
+        final AtomicInteger thirdTokenCode = new AtomicInteger(-1);
+        final AtomicReference<JCoreWireCodec.MessageAck> msgType2AckRef =
+            new AtomicReference<JCoreWireCodec.MessageAck>();
+        final AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        final CountDownLatch finish = new CountDownLatch(1);
+
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override
+            public void onMessage(Context ctx, CustomMessage customMessage) {
+                if (customMessage != null) {
+                    customMessageIds.add(customMessage.messageId);
+                    if ("777002".equals(customMessage.messageId) || "777004".equals(customMessage.messageId)) {
+                        validCustomReceived.countDown();
+                    }
+                }
+            }
+
+            @Override
+            public void onCommandResult(Context ctx, CmdMessage cmdMessage) {
+                if (cmdMessage != null && cmdMessage.cmd == 10000) {
+                    thirdTokenCode.set(cmdMessage.errorCode);
+                    thirdTokenAcked.countDown();
+                }
+            }
+        };
+        ActionHelper.getInstance().registerReceiver(receiver);
+
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(4000);
+            Thread server = new Thread(() -> {
+                try {
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        InputStream in = socket.getInputStream();
+                        OutputStream out = socket.getOutputStream();
+
+                        long uid = 88971093104L;
+                        JCoreWireCodec.DecodedFrame login = readParityLogin(in, uid);
+                        ByteArrayOutputStream initialFrames = new ByteArrayOutputStream();
+                        initialFrames.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_LOGIN, JCoreWireCodec.VER_LOGIN, login.requestId, 55215, uid, 0,
+                            JCoreWireCodec.buildLoginResponsePayload(55215, 1, "", 1700000000)));
+                        initialFrames.write(parityPush(uid, 10000L, 4, 999999L, "pkg\napp-key"));
+                        initialFrames.write(parityPush(uid, 10001L, 2, 777002L,
+                            "pkg\napp-key\n{\"_j_data_\":\"jdata_ext_01\",\"message\":\"real_payload\"}"));
+                        initialFrames.write(parityPush(uid, 10002L, 2, 777003L, "{}"));
+                        initialFrames.write(parityPush(uid, 10003L, 4, 777004L,
+                            "pkg\napp-key\n{\n\"extras\":{\"route\":\"test\"}\n}\n"));
+                        out.write(initialFrames.toByteArray());
+                        out.flush();
+
+                        int[] types = {4, 2, 2, 4};
+                        long[] ids = {999999L, 777002L, 777003L, 777004L};
+                        boolean[] receiptsSeen = new boolean[ids.length];
+                        int tokenBinds = 0;
+                        JCoreWireCodec.DecodedFrame clientFrame;
+                        while ((clientFrame = JCoreWireCodec.readClientFrameFromStream(in, 88971093104L)) != null) {
+                            if (clientFrame.command == JCoreWireCodec.CMD_MESSAGE_ACK) {
+                                JCoreWireCodec.MessageAck ack = JCoreWireCodec.parseMessageAck(clientFrame);
+                                long index = clientFrame.requestId - 10000L;
+                                check(clientFrame.sessionId == 55215 && index >= 0 && index < ids.length,
+                                    "A push behind the Login ACK must use the newly negotiated session ID");
+                                int i = (int) index;
+                                check(ack != null && ack.messageType == types[i] && ack.messageId == ids[i] && !receiptsSeen[i],
+                                    "Expected exactly one matching ACK for each push");
+                                receiptsSeen[i] = true;
+                                if (i == 1) msgType2AckRef.set(ack);
+                                allReceiptsSeen.countDown();
+                            } else if (clientFrame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                                check(clientFrame.sessionId == 55215, "Initial heartbeat must use the new session ID");
+                                writeLoopbackAck(socket, clientFrame, uid, 55215, 0, new byte[0]);
+                            } else {
+                                JCoreWireCodec.DeviceTokenPayload token = JCoreWireCodec.parseDeviceTokenPayload(clientFrame.body);
+                                check(clientFrame.command == JCoreWireCodec.CMD_THIRD_TOKEN
+                                    && clientFrame.version == JCoreWireCodec.VER_THIRD_TOKEN
+                                    && clientFrame.body.length == 146 && token != null && token.platform == 8 && !token.unbind
+                                    && CLOUD_FIXTURE_TOKEN.equals(token.token), "Third-token bind bytes do not match the expected payload");
+                                tokenBinds++;
+                                writeLoopbackAck(socket, clientFrame, 88971093104L, 55215, 0, new byte[0]);
+                            }
+                        }
+                        check(tokenBinds == 3, "Expected three matching third-token bind requests");
+                    }
+                    try (Socket second = listener.accept()) {
+                        second.setSoTimeout(3000);
+                        acknowledgeParityLogin(second, 55216);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Fast-Login fixture did not finish");
+                    }
+                } catch (Throwable error) {
+                    serverError.set(error);
+                }
+            }, "test-login-parity-and-msgtype4");
+            server.setDaemon(true);
+            server.start();
+
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Login parity handshake must succeed");
+                for (int i = 0; i < 3; i++) {
+                    ActionHelper.getInstance().setThirdTokenWithCallBack(context, CLOUD_FIXTURE_TOKEN, (byte) 8, false);
+                }
+                check(allReceiptsSeen.await(3000L, TimeUnit.MILLISECONDS), "All four pushes must be ACKed on wire: " + serverError.get());
+                check(msgType2AckRef.get() != null && "jdata_ext_01".equals(msgType2AckRef.get().extData),
+                    "CMD_MESSAGE_ACK must echo _j_data_ in extData");
+                check(validCustomReceived.await(3000L, TimeUnit.MILLISECONDS), "Both payload-bearing custom messages must be delivered");
+                check(customMessageIds.equals(Arrays.asList("777002", "777004")),
+                    "Only the message and extras-only push may dispatch: " + customMessageIds);
+                check(thirdTokenAcked.await(3000L, TimeUnit.MILLISECONDS) && thirdTokenCode.get() == 0,
+                    "CMD_THIRD_TOKEN must succeed with code=0 and keep TCP connection open");
+                check(CLOUD_FIXTURE_TOKEN.equals(JCoreStorage.getThirdToken(context, (byte) 8)),
+                    "Only an acknowledged bind must persist the token");
+                check(engine.isLoggedIn(), "Connection must remain logged in after CMD_THIRD_TOKEN");
+                engine.triggerReconnectNow(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn() && engine.getSessionId() == 55216,
+                    "Fast-Login must complete and own the second session");
+            } finally {
+                finish.countDown();
+                JCoreStorage.saveThirdToken(context, (byte) 8, "");
+                ActionHelper.getInstance().unregisterReceiver(receiver);
+                engine.stop(context);
+                server.join(3000L);
+            }
+            check(serverError.get() == null, "Login parity server error: " + serverError.get());
+        }
+    }
+
+    private static byte[] parityPush(long uid, long rid, int type, long messageId, String content) {
+        return JCoreWireCodec.encodeServerFrame(JCoreWireCodec.CMD_PUSH_MESSAGE, 1, JCoreWireCodec.ALG_AES_CBC,
+            0, rid, uid, 0, JCoreWireCodec.buildPushMessagePayload((byte) type, messageId, content));
+    }
+
+    private static JCoreWireCodec.DecodedFrame readParityLogin(InputStream in, long uid) throws Exception {
+        JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(in, uid);
+        check(frame != null && frame.uid == uid && frame.command == JCoreWireCodec.CMD_LOGIN
+            && frame.version == JCoreWireCodec.VER_LOGIN && frame.sessionId == 0, "Expected Fast-Login with a zero header session ID");
+        JCoreWireCodec.LoginRequest login = JCoreWireCodec.parseLoginRequest(frame.body);
+        check(login != null && "328192|329984".equals(login.sdkVerInfo) && "4|64".equals(login.gSdkTypeInfo)
+            && login.romPlatformMask == 0, "Both sessions must advertise packed SDK versions and no FCM capability on TCP-only hosts");
+        return frame;
+    }
+
+    private static void acknowledgeParityLogin(Socket socket, int sessionId) throws Exception {
+        long uid = 88971093104L;
+        InputStream in = socket.getInputStream();
+        JCoreWireCodec.DecodedFrame frame = readParityLogin(in, uid);
+        writeLoopbackAck(socket, frame, uid, sessionId, 0,
+            JCoreWireCodec.buildLoginResponsePayload(sessionId, 1, "", 1700000000));
+        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(in, uid);
+        check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT && heartbeat.sessionId == sessionId,
+            "Expected initial heartbeat for the assigned session");
+        writeLoopbackAck(socket, heartbeat, uid, sessionId, 0, new byte[0]);
+    }
+
+    @org.junit.Test
+    public void liveEngineEndToEndLifecycle() throws Exception {
+        boolean enabled = "1".equals(System.getenv("JPUSH_LIVE_TESTS"));
+        org.junit.Assume.assumeTrue("External cloud handshake requires JPUSH_LIVE_TESTS=1", enabled);
+
+        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        final JPushModuleReceiver receiver = new JPushModuleReceiver();
+        final List<String> receivedEvents = new CopyOnWriteArrayList<String>();
+        final CountDownLatch connectedLatch = new CountDownLatch(1);
+        final CountDownLatch thirdTokenLatch = new CountDownLatch(3);
+        int listenerId = 0;
+
+        try {
+            engine.stop(null);
+            engine.setCustomEndpoint("", 0);
+            engine.setCustomSisUrl("");
+            engine.setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
+            engine.setTestConnectionEnabled(false);
+            engine.setAutoReconnectEnabled(false);
+            JCoreStorage.resetSisCache(null);
+            JCoreStorage.clearRegistration(null);
+            JCoreStorage.setPushStopped(null, false);
+            JCoreStorage.setCollectionAuth(null, true);
+            JCoreStorage.setAppKey(null, ReactNativeJpushProtocolTest.DEMO_TEST_APP_KEY);
+            JCoreStorage.setChannel(null, "developer-default");
+            JCoreStorage.saveThirdToken(null, (byte) 8, "");
+
+            ActionHelper.getInstance().clearRegisteredReceivers();
+            ActionHelper.getInstance().registerReceiver(receiver);
+            listenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+                @Override
+                public void onEvent(String eventName, String payloadJson) {
+                    receivedEvents.add(eventName + ":" + payloadJson);
+                    if ("ConnectEvent".equals(eventName) && payloadJson.contains("true")) {
+                        connectedLatch.countDown();
+                    }
+                    if ("CommandEvent".equals(eventName) && payloadJson.contains("10000") && payloadJson.contains("\"commandResult\":0")) {
+                        thirdTokenLatch.countDown();
+                    }
+                }
+            });
+
+            Context testCtx = new Context();
+            AtomicInteger registrations = new AtomicInteger();
+            JPushMessageReceiver registerReceiver = new JPushMessageReceiver() {
+                @Override
+                public void onRegister(Context context, String registrationId) {
+                    registrations.incrementAndGet();
+                }
+            };
+            ActionHelper.getInstance().registerReceiver(registerReceiver);
+            try {
+                JPushInterface.resumePush(testCtx);
+                assertTrue("Live JCoreTcpEngine handshake must complete", engine.awaitHandshake(15000L));
+                assertTrue("Live JCoreTcpEngine must be logged in", engine.isLoggedIn());
+                assertTrue("ConnectEvent(true) must fire", connectedLatch.await(5000L, TimeUnit.MILLISECONDS));
+
+                // Simulate 3 concurrent 142-byte FCM token bindings after login (matching Android cold-start behavior)
+                ActionHelper.getInstance().setThirdTokenWithCallBack(testCtx, CLOUD_FIXTURE_TOKEN, (byte) 8, false);
+                ActionHelper.getInstance().setThirdTokenWithCallBack(testCtx, CLOUD_FIXTURE_TOKEN, (byte) 8, false);
+                ActionHelper.getInstance().setThirdTokenWithCallBack(testCtx, CLOUD_FIXTURE_TOKEN, (byte) 8, false);
+                assertTrue("All 3 CMD_THIRD_TOKEN callbacks must succeed with errorCode=0", thirdTokenLatch.await(10000L, TimeUnit.MILLISECONDS));
+                assertEquals("Third token must be saved on statusCode == 0", CLOUD_FIXTURE_TOKEN, JCoreStorage.getThirdToken(testCtx, (byte) 8));
+                assertTrue("TCP session must remain logged in after CMD_THIRD_TOKEN", engine.isLoggedIn());
+
+                long uid = JCoreStorage.getUid(testCtx);
+                String registrationId = JCoreStorage.getRegistrationId(testCtx);
+                assertEquals("Cold connection must register once", 1, registrations.get());
+                engine.triggerReconnectNow(testCtx);
+                assertTrue("Fast-Login reconnect handshake must complete", engine.awaitHandshake(15000L));
+                assertTrue("Fast-Login must succeed against live server", engine.isLoggedIn());
+                assertEquals("Fast-Login must skip Register", 1, registrations.get());
+                assertEquals(uid, JCoreStorage.getUid(testCtx));
+                assertEquals(registrationId, JCoreStorage.getRegistrationId(testCtx));
+
+                for (String ev : receivedEvents) {
+                    assertFalse("Must never emit spurious msgId=999999 CustomMessageEvent: " + ev, ev.contains("999999"));
+                    assertFalse("Must never emit CMD_THIRD_TOKEN 6002 timeout: " + ev, ev.contains("6002"));
+                }
+                System.out.println("Live JCoreTcpEngine register/login/third-token/fast-login lifecycle passed");
+            } finally {
+                ActionHelper.getInstance().unregisterReceiver(registerReceiver);
+            }
+        } finally {
+            if (listenerId > 0) {
+                JPushHelper.unregisterNitroListener(listenerId);
+            }
+            ActionHelper.getInstance().unregisterReceiver(receiver);
+            JCoreStorage.saveThirdToken(null, (byte) 8, "");
+            engine.stop(null);
+            engine.setAutoReconnectEnabled(true);
+            JCoreStorage.resetSisCache(null);
+            JCoreStorage.clearRegistration(null);
+        }
+    }
+    @org.junit.Test
     public void testSdkHostRegressions() throws Exception {
         testCryptoParity();
         testUdpSis10ByteAndAsymmetricTcpWireCodec();
@@ -3294,6 +3789,7 @@ public final class SdkHostRegressionTest {
         testAutoReconnectScheduleAndBinderSecurity();
         testStoppedInitAndRealLoginFcmRebind();
         testContentQueueInvalidation();
+        testLoginSdkVerParityAndDownlinkMsgType4Filtering();
 
     }
 }

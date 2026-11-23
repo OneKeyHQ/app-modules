@@ -85,10 +85,32 @@ at the Nitro entry and takes precedence over the Web `browser` field.
 - `disabled` dims the view and prevents interaction (default false).
 - `showBubble` displays the rounded value followed by `%` during interaction
   (native default true). It does not change the value or callback behavior.
+  The bubble fades in and out over 150 ms. A drag fades on release or system
+  cancellation. Disabling an active drag hides the bubble immediately, before
+  the controlled value is reapplied. Keyboard and accessibility changes do
+  not show the bubble.
+  A press that is waiting to snap hides any prior bubble immediately and
+  stays hidden until the press selects a value through movement or a valid
+  tap. A selection counts even if it leaves the value unchanged. Changing
+  the snap setting or removing the marks does not itself make a selection.
+  A cancelled press never commits a deferred snap, and still completes once.
+  After a tap selects a value, the bubble stays up for 800 ms from controlled
+  acceptance and then fades. The value committed with the release, including
+  changes from `onSlideComplete`, must match the tap's value. A different
+  controlled value is drawn with the bubble hidden. On iOS and Android, a
+  plain tap's visible bubble begins the normal release fade while it waits for
+  acceptance. Acceptance reverses the fade from its current opacity. A snap on
+  release keeps its bubble hidden until acceptance. A new press cancels a
+  pending tap bubble or fade. A later value change, keyboard or accessibility
+  adjustment, or turning `showBubble` off clears a lingering bubble. Turning
+  `showBubble` on during a press shows the bubble once it has selected a value.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
   (default false). It has no effect without marks. On Web a press on a mark
-  always lands exactly on that mark.
+  always lands exactly on that mark. Other quick taps use the snap setting
+  and marks at release, including when snapping was enabled after the press
+  began. If snapping is turned off before release and the press has selected
+  no value, releasing without movement leaves the value unchanged.
 - `hapticStep` adds the per-step tick described above (native default 0).
 - `hapticFeedbackEnabled` is the master haptic switch (default true). False
   silences both the mark tick and the step tick on iOS and Android, so a host
@@ -96,7 +118,9 @@ at the Nitro entry and takes precedence over the Web `browser` field.
 - Color props supply resolved theme colors. Invalid colors fall back according
   to the platform color parser; the view does not resolve application themes.
 - `onChange` reports changed, integer-rounded interaction values.
-  `onSlideStart` / `onSlideComplete` delimit an interaction.
+  `onSlideStart` / `onSlideComplete` delimit an interaction. A completed
+  interaction emits one completion, including when a release callback
+  synchronously disables the slider.
 - `setValue(value, interactionId)` updates the native view without emitting
   `onChange`. Callers supply a finite value within their range and the last
   completed interaction ID (0 before the first interaction).
@@ -113,13 +137,18 @@ Each native interaction begins a new view-local interaction ID. The internal
 completion callback reports its ID and final value to JS. The UI thread
 applies a value update only while idle and only if its ID matches the most
 recent interaction, so a delayed update cannot alter or interrupt a newer
-interaction. On the newer interaction's completion, JS compares the latest
-controlled value with the value reported by that completion.
+interaction. On completion, JS reconciles the reported value in a layout
+effect, after React commits the controlled value for that interaction. JS
+sends that value with `setValue` even if it matches the final native value.
+The first valid update consumes the native tap's pending bubble. If the
+values match, the UI thread starts the linger. A newer interaction, disabling
+the view, or hiding the bubble clears the pending tap.
 
 The iOS control temporarily disables ancestor pan gestures during a touch and
 restores them on completion, cancellation or detachment.
-Android prevents parent touch interception during interaction. Layer/paint work
-stays native; no new bridge calls or resources are required for bubble layout.
+Android prevents parent touch interception during interaction. Layer and paint
+work stays native. Completion requires one controlled value sync per
+interaction, with no additional calls during movement.
 The caller controls the number of marks and must leave vertical room above the
 track for a 20-point bubble and its 8-point gap.
 
@@ -129,6 +158,7 @@ track for a 20-point bubble and its 8-point gap.
 | --- | --- | --- | --- |
 | Rendering | CALayer / CATextLayer | Canvas / Paint | DOM elements, styles mutated during drag |
 | Bubble text | Rounded value plus `%` | Rounded value plus `%` | Rounded value plus `%` |
+| Bubble fade and tap linger | `CATransaction` opacity, `DispatchWorkItem` delay | Animated paint alpha, `View.postDelayed` delay | CSS opacity transition, `setTimeout` delay |
 | Endpoint inset | 12 points; contains the 18.4-point active thumb and 18-point halo | 12 dp; contains the 18.4-dp active thumb and 18-dp halo | 8 px (half the 16-px thumb) |
 | Bubble horizontal position | Centered on thumb, clamped inside view width | Background and text move together, clamped inside view width | Centered on thumb, not clamped |
 | Stacking (bottom to top) | Track, fill, halo, marks, thumb, bubble | Track, fill, halo, marks, thumb, bubble | Track, fill, marks, thumb, bubble; marks stay clickable under the thumb |

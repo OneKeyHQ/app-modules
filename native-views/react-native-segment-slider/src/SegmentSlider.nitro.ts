@@ -97,6 +97,8 @@ export interface SegmentSliderMethods extends HybridViewMethods {
   /**
    * Sets a controlled value silently while idle, provided the given ID is
    * still the latest native interaction (0 before the first interaction).
+   * The first matching update after completion confirms or discards any pending
+   * tap bubble, even when the controlled value is unchanged.
    */
   setValue(value: number, interactionId: number): void;
 }
