@@ -75,6 +75,8 @@ android {
     disable "GradleCompatible"
   }
 
+  testOptions { unitTests.includeAndroidResources = true }
+
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_1_8
     targetCompatibility JavaVersion.VERSION_1_8
@@ -110,4 +112,5 @@ dependencies {
   implementation project(":onekeyfe_react-native-native-logger")
   implementation project(":onekeyfe_react-native-image")
   testImplementation "junit:junit:4.13.2"
+  testImplementation "org.robolectric:robolectric:4.17"
 }

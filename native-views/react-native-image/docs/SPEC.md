@@ -126,6 +126,15 @@ generation may mutate the view or emit terminal callbacks. Cancellation,
 recycling, and disposal invalidate previous generations and release active
 request, display, retry, safety, skeleton, and animation work.
 
+On Android, dropping a React-owned image stops callbacks and playback
+immediately. If the host is still attached and has a drawable, the host
+retains the view bounds, drawable, and its Glide resource until detachment.
+React-owned OneKeyImage hosts opt out of Fabric's Android view pool so the
+view manager cannot reset the bounds while the outgoing screen still draws
+the host. A detached image or an explicitly disposed NativeList image releases
+its resources immediately. NativeList continues to reuse its own image hosts
+and resets their clip to the default before binding another source.
+
 A cross-size preview is presentation only. It MUST NOT emit `onLoad`,
 `onError`, `onLoadEnd`, or `onDisplay`; the exact request retains callback
 ownership. An iOS exact synchronous memory hit is terminal and reports

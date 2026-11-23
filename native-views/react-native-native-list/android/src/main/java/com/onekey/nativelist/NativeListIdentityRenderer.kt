@@ -157,6 +157,26 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private fun JSONArray?.hasAccessory(kind: String) =
     this != null && (0 until length()).any { optJSONObject(it)?.optString("kind") == kind }
 
+  override fun bindContentUpdate(
+    previous: NativeListItem,
+    item: NativeListItem,
+    theme: JSONObject?,
+  ): Boolean {
+    val segments = item.json.optJSONArray("subtitleSegments") ?: return false
+    if (semanticSubtitleLabels.isEmpty() || semanticSubtitleLabels.size != segments.length() ||
+      !canUpdateIdentitySubtitle(previous, item)
+    ) return false
+
+    val style = item.json.optJSONObject("style")?.optJSONObject("subtitle")
+    semanticSubtitleLabels.forEachIndexed { index, label ->
+      bindIdentitySubtitleLabel(label, segments.getJSONObject(index), theme)
+      style?.let { applyStyledText(label, it) }
+      applySelectorTextTypography(label, style)
+      label.requestLayout()
+    }
+    return true
+  }
+
   override fun bindContent(
     item: NativeListItem,
     theme: JSONObject?,
@@ -172,8 +192,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     setOnLongClickListener(
       if (longPressActionKey.isNotEmpty())
         OnLongClickListener {
+          val actionItem = currentItem ?: return@OnLongClickListener false
           val point = longPressPoint
-          if (!isEnabled || !item.isRowPressEnabled || currentItem?.key != item.key ||
+          if (!isEnabled || !actionItem.isRowPressEnabled || actionItem.key != item.key ||
             bindingEpoch != boundEpoch ||
             (longPressPointEpoch == boundEpoch && point == null)) false
           else {
@@ -182,7 +203,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
               getLocationInWindow(location)
               PointF(location[0] + it.x, location[1] + it.y)
             }
-            onAction?.invoke(item, longPressActionKey, null,
+            onAction?.invoke(actionItem, longPressActionKey, null,
               NativeListActionOrigin(this, this, bindingEpoch, "row",
                 windowPointPixels = windowPoint))
             longPressPoint = null
@@ -365,18 +386,19 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     )
       return
     fun visit(view: View) {
-      if (view is TextView) {
-        if (sourceScale) {
-          paintDefaults.putIfAbsent(view, view.paintFlags)
-          // Explicit style fontSize/lineHeight are kept as the caller set them.
-          applyNativeListSourceTypography(view, explicitStyle(view))
-        } else {
-          applyNativeListTextSpacing(view, explicitStyle(view))
-        }
-      }
+      if (view is TextView) applySelectorTextTypography(view, explicitStyle(view))
       if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
     }
     visit(this)
+  }
+
+  private fun applySelectorTextTypography(view: TextView, style: JSONObject?) {
+    if (sourceScale) {
+      paintDefaults.putIfAbsent(view, view.paintFlags)
+      applyNativeListSourceTypography(view, style)
+    } else {
+      applyNativeListTextSpacing(view, style)
+    }
   }
 
   private fun addLeading(visual: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
@@ -834,27 +856,11 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
           }
           val label =
             NativeListTextView(context).apply {
-              text = segment.optString("text")
-              typeface = fonts.regular(context)
-              textSize = sp(14f)
               includeFontPadding = false
               maxLines = 1
               ellipsize = TextUtils.TruncateAt.END
-              val toneKey =
-                when (segment.optString("tone")) {
-                  "primary" -> "primaryText"
-                  "disabled" -> "disabledText"
-                  "caution" -> "caution"
-                  "positive" -> "positive"
-                  "negative" -> "negative"
-                  else -> "secondaryText"
-                }
-              setTextColor(
-                color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B")
-              )
             }
-          TextViewCompat.setLineHeight(label, dp(20))
-          applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
+          bindIdentitySubtitleLabel(label, segment, theme)
           semanticSubtitleLabels.add(label)
           line.addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
         }
@@ -934,6 +940,23 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     if (first?.optString("kind") == "drag" || first?.optString("buttonStyle") == "tertiary") {
       (mainColumn.layoutParams as LayoutParams).marginEnd = dp(12)
     }
+  }
+
+  private fun bindIdentitySubtitleLabel(label: TextView, segment: JSONObject, theme: JSONObject?) {
+    label.text = segment.optString("text")
+    label.typeface = fonts.regular(context)
+    label.textSize = sp(14f)
+    TextViewCompat.setLineHeight(label, dp(20))
+    val toneKey = when (segment.optString("tone")) {
+      "primary" -> "primaryText"
+      "disabled" -> "disabledText"
+      "caution" -> "caution"
+      "positive" -> "positive"
+      "negative" -> "negative"
+      else -> "secondaryText"
+    }
+    label.setTextColor(color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B"))
+    applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
   }
 
   private fun applyValueSegments(
