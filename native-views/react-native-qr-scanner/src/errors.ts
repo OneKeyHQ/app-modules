@@ -38,8 +38,11 @@ export function isQrScannerErrorCode(
  */
 export function toQrScannerError(error: unknown): QrScannerError {
   if (error instanceof QrScannerError) return error;
-  const message = error instanceof Error ? error.message : String(error);
-  const match = /(?:^|\s)([a-z-]+):\s*(.*)$/s.exec(message);
+  // Android's Nitro errors append the Java stack trace; keep the first line.
+  const message = (error instanceof Error ? error.message : String(error))
+    .split('\n')[0]!
+    .trim();
+  const match = /(?:^|\s)([a-z-]+):\s*(.*)$/.exec(message);
   if (match && isQrScannerErrorCode(match[1]!)) {
     return new QrScannerError(match[1], match[2] || message);
   }

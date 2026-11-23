@@ -31,6 +31,9 @@ def getExtOrIntegerDefault(name) {
 }
 
 android {
+  testOptions {
+    unitTests.includeAndroidResources = true
+  }
   namespace "com.margelo.nitro.qrscanner"
 
   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
@@ -121,8 +124,24 @@ repositories {
 
 def kotlin_version = getExtOrDefault("kotlinVersion")
 
+// Match the versions app-monorepo already resolves (expo-camera, camera-kit).
+def camerax_version = "1.6.0"
+
 dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
   implementation project(":react-native-nitro-modules")
+
+  implementation "androidx.camera:camera-core:${camerax_version}"
+  implementation "androidx.camera:camera-camera2:${camerax_version}"
+  implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+  implementation "androidx.camera:camera-view:${camerax_version}"
+  // Bundled model: no Google Play Services needed.
+  implementation "com.google.mlkit:barcode-scanning:17.3.0"
+  implementation "androidx.exifinterface:exifinterface:1.4.1"
+  // Fallback for still images; arm64-v8a and armeabi-v7a only. Same 2.2.0 as iOS.
+  implementation "io.github.zxing-cpp:android:2.2.0"
+
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.robolectric:robolectric:4.17"
 }

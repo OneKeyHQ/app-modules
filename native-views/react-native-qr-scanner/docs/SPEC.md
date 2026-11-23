@@ -23,6 +23,11 @@ when it lands:
 - The Android `QrScannerPackage` registers `HybridQrScannerManager` and loads
   the native library, like the other Nitro views. The template returned no
   view managers, so the view could not mount on Android.
+- Android `CMakeLists.txt` uses Nitrogen's `qrscanner+autolinking.cmake` and
+  `cpp-adapter.cpp` calls `margelo::nitro::qrscanner::initialize`, like the
+  other Nitro views. The template compiled a hardcoded
+  `../node_modules/react-native-nitro-modules/...` source that does not exist
+  once nitro-modules is hoisted, and only initialized the Nitro core.
 - A second Nitro HybridObject, `QrImageDecoder`, sits beside the view in
   `nitro.json`.
 - The `react-native` devDependency uses the repository's patched build
@@ -166,7 +171,7 @@ Rules:
   of accepted, duplicate, malformed and foreign frames for metrics; it never
   exposes frame contents.
 
-### 3.2 Image decoding — iOS and Web implemented; Android placeholder
+### 3.2 Image decoding — iOS, Android and Web implemented
 
 ```ts
 decodeQrImage(uri: string, options?: { maxPixels?: number }): Promise<string | null>;
@@ -189,14 +194,20 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
   4. `inverted`: the grayscale image inverted, for light-on-dark codes.
 - Native code resolves `{ text?, engine?, pass? }`; the JS entry returns the
   text only. Engine and pass exist for diagnostics and tests.
-- Android currently rejects every call with `decoder-unavailable`.
+- Android: same budget, passes and errors. Bitmaps are decoded with a
+  power-of-two `inSampleSize`, scaled to the budget and oriented by
+  ExifInterface; passes use Canvas and `ColorMatrix`. Engines: bundled ML Kit
+  (`barcode-scanning` 17.3.0, no Play Services), then ZXing-C++
+  (`io.github.zxing-cpp:android` 2.2.0). The ZXing AAR ships arm64-v8a and
+  armeabi-v7a only; on other ABIs its library does not load and ML Kit is
+  used alone. `content://` URIs are not accepted (`invalid-image`).
 - Web (`./web`): `decodeQrImage(blob: Blob, options?)` with the same budget,
   limits, errors and pass order. Orientation comes from
   `createImageBitmap(blob, { imageOrientation: "from-image" })`; the passes
   are pure functions on RGBA buffers (`src/web/imageOps.ts`); engines are a
   QR-capable native `BarcodeDetector` first, then zxing-wasm when configured.
 
-### 3.3 Live view — iOS and Web implemented; Android placeholder
+### 3.3 Live view — iOS, Android and Web implemented
 
 `QrScanner` (React component) props: `active`, `mode`, `allowPlainText`,
 `limits`, `sessionKey`, `style`, and callbacks `onReady`, `onProgress`,
@@ -216,7 +227,14 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
 - iOS requests camera access when it is undetermined. Apps must declare
   `NSCameraUsageDescription`.
-- Android currently reports `decoder-unavailable` each time `active` turns on.
+- Android: CameraX 1.6.0 `PreviewView` (`FILL_CENTER`) plus `ImageAnalysis`
+  (`KEEP_ONLY_LATEST`, 1280x720 target) with bundled ML Kit, through
+  `QrFrameTextGate.kt` (same rules as iOS). The view owns a `LifecycleOwner`
+  that is RESUMED only while `active` and the host activity is resumed, so
+  the camera pauses in the background. Missing hardware (`no-camera`) is
+  checked before permission; permission is requested through React Native's
+  `PermissionAwareActivity`. The library manifest declares `CAMERA` and
+  `android.hardware.camera.any` (not required).
 
 Web (`./web`):
 
@@ -271,7 +289,7 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 | Platform | Live engine | Image engine | Fallback | Status |
 | --- | --- | --- | --- | --- |
 | iOS | AVFoundation metadata output, 1080p, continuous near autofocus | Vision | ZXing-C++ (image only) | Implemented in source |
-| Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ | Placeholder (`decoder-unavailable`) |
+| Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only; arm ABIs) | Implemented, emulator verified (image) |
 | Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread; Worker pending) | Implemented, browser verified |
 | macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ pending | Implemented, not integrated |
 | Windows Electron | `desktop/win/electron-qr-scanner` | Same | ZXing-C++ | Not started |
@@ -316,6 +334,8 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
 | Web pixel passes and engine selection | `src/web/imageOps.ts`, `src/web/engines.ts` | `src/web/__tests__/` (jest, 9 tests): budget fit, padding, grayscale/invert, pass order and stop-at-first-hit, no zxing without a loader, loader used once, native preferred only with `qr_code`, `disableNativeDetector`. |
+| Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests: gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
+| Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |
 
@@ -341,7 +361,10 @@ Still required:
   none), including an animated UR played on a screen; completion time and
   parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
   pod.
-- Android backend.
+- Android: live preview content and live detection on a device (the
+  headless emulator's emulated camera produced black frames), real-device
+  permission flows, binary-size delta (ML Kit model, ZXing .so ~1.6 MB on
+  arm64).
 - Web: zxing in a Worker; `getUserMedia` camera run (permission, device
   switch, track release); Firefox and Safari runs; extension CSP and
   Linux Electron `file://` runs.

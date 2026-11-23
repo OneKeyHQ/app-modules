@@ -1,6 +1,8 @@
 #include <jni.h>
-#include "NitroModules.hpp"
+#include "qrscannerOnLoad.hpp"
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * reserved) {
-  return margelo::nitro::initialize(vm);
+// Registers this package's HybridObjects (the template only initialized the
+// Nitro core, so QrScanner/QrImageDecoder would not be found at runtime).
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+  return margelo::nitro::qrscanner::initialize(vm);
 }

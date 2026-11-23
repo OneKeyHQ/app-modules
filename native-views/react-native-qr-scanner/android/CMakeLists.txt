@@ -1,31 +1,23 @@
-cmake_minimum_required(VERSION 3.13)
+project(qrscanner)
+cmake_minimum_required(VERSION 3.9.0)
+
+set(PACKAGE_NAME qrscanner)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_STANDARD 20)
 
-set(NITROGEN_PATH "../node_modules/react-native-nitro-modules/nitrogen/generated/android/")
+# The template pointed at ../node_modules/react-native-nitro-modules sources,
+# which do not exist once nitro-modules is hoisted. Use Nitrogen's autolinking
+# CMake like the other Nitro views (it finds NitroModules via find_package and
+# compiles this package's generated specs).
+add_library(${PACKAGE_NAME} SHARED src/main/cpp/cpp-adapter.cpp)
+include(${CMAKE_SOURCE_DIR}/../nitrogen/generated/android/qrscanner+autolinking.cmake)
 
-add_library(
-  qrscanner
-  SHARED
-  "src/main/cpp/cpp-adapter.cpp"
-  "${NITROGEN_PATH}c++/NitroModules.cpp"
-)
+include_directories("src/main/cpp")
 
-# Header Search Paths (includes)
-target_include_directories(
-  qrscanner
-  PRIVATE
-  "../nitrogen/generated/shared/c++"
-  "${NITROGEN_PATH}c++"
-)
+find_library(LOG_LIB log)
 
-# Link everything together
 target_link_libraries(
-  qrscanner
-  android
-  log
-  react_nativemodule_core
-  react_render_core
-  reactnative
-  turbomodulejsijni
+        ${PACKAGE_NAME}
+        ${LOG_LIB}
+        android
 )
