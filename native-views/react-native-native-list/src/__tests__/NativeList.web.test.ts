@@ -8235,6 +8235,169 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   );
 
+  it.each([true, false])(
+    'suppresses the release click after a snapshot cancels a recognized handoff (pointer click: %s)',
+    (pointerClick) => {
+      jest.useFakeTimers();
+      const { document, host, engine, rowElement, keyDown, pointerDown } =
+        mount('row');
+      const onReorder = jest.fn();
+      const onRowAction = jest.fn();
+      try {
+        withElement(document, () => {
+          host.querySelector<HTMLElement>(
+            '.ok-native-list-viewport'
+          )!.scrollTo = jest.fn();
+          const original = engine.currentSnapshot();
+          rowElement('a').focus();
+          keyDown(' ');
+          keyDown('ArrowDown');
+          const pressedRow = rowElement('b');
+          engine.updateCallbacks({
+            onReorder,
+            onRowAction,
+            onVisibleRangeChanged: jest.fn().mockImplementationOnce(() => {
+              engine.applySnapshot({
+                ...original,
+                rows: [handleRows[0]!, handleRows[2]!],
+              });
+            }),
+          });
+
+          pointerDown(pressedRow);
+          jest.advanceTimersByTime(120);
+          expect(rowElement('c')).toBe(pressedRow);
+          const { Event, MouseEvent } = document.defaultView!;
+          const pointer = {
+            pointerId: 1,
+            pointerType: 'touch',
+            clientX: 10,
+            clientY: 20,
+          };
+          pressedRow.dispatchEvent(
+            Object.assign(new Event('pointerup', { bubbles: true }), {
+              ...pointer,
+              button: 0,
+            })
+          );
+          const click = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            detail: 1,
+            clientX: pointer.clientX,
+            clientY: pointer.clientY,
+          });
+          expect(
+            pressedRow.dispatchEvent(
+              pointerClick ? Object.assign(click, { pointerId: 1 }) : click
+            )
+          ).toBe(false);
+          expect(onRowAction).not.toHaveBeenCalled();
+          expect(onReorder).not.toHaveBeenCalled();
+          pressedRow.click();
+          expect(onRowAction).toHaveBeenCalledWith(
+            expect.objectContaining({ rowKey: 'c', actionKey: 'press' })
+          );
+        });
+      } finally {
+        engine.destroy();
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it('lets a wallet group settle when Tab cancels a fresh pending press', () => {
+    jest.useFakeTimers();
+    const parent: IdentityRow = {
+      ...handleRows[0]!,
+      key: 'group',
+      presentation: 'walletSidebar',
+    };
+    const { document, host, engine, rowElement, keyDown, pointerDown } = mount(
+      'row',
+      [
+        {
+          type: 'walletGroup',
+          key: parent.key,
+          parent,
+          children: [{ ...parent, key: 'child' }],
+          draggable: true,
+        },
+        ...handleRows,
+      ]
+    );
+    try {
+      withElement(document, () => {
+        const viewport = host.querySelector<HTMLElement>(
+          '.ok-native-list-viewport'
+        )!;
+        viewport.scrollTo = jest.fn();
+        const preview = document.querySelector<HTMLElement>(
+          '.ok-native-list-reorder-preview'
+        )!;
+        pointerDown(rowElement('group'));
+        jest.advanceTimersByTime(120);
+        viewport.dispatchEvent(
+          Object.assign(
+            new document.defaultView!.Event('pointerup', { bubbles: true }),
+            { pointerId: 1, pointerType: 'touch', clientX: 10, clientY: 20 }
+          )
+        );
+        expect(preview.hidden).toBe(false);
+
+        rowElement('a').focus();
+        keyDown(' ');
+        keyDown('ArrowDown');
+        pointerDown(rowElement('b'));
+        expect(keyDown('Tab')).toBe(true);
+
+        expect(preview.hidden).toBe(false);
+        expect(rowElement('a').dataset.nativeListRowIndex).toBe('1');
+        jest.advanceTimersByTime(800);
+        expect(preview.hidden).toBe(true);
+      });
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a keyboard reorder while an RTL vertical-lr sidecar scrolls right', () => {
+    const { document, host, engine, rowElement, keyDown } = mount('handle');
+    try {
+      withElement(document, () => {
+        const viewport = host.querySelector<HTMLElement>(
+          '.ok-native-list-viewport'
+        )!;
+        viewport.scrollTo = jest.fn();
+        const sidecar = document.createElement('div');
+        sidecar.style.writingMode = 'vertical-lr';
+        sidecar.style.direction = 'rtl';
+        sidecar.style.overflowX = 'auto';
+        Object.defineProperties(sidecar, {
+          clientWidth: { value: 200 },
+          scrollWidth: { value: 400 },
+        });
+        sidecar.scrollLeft = 100;
+        viewport.appendChild(sidecar);
+        const source = rowElement('a');
+        source.focus();
+        keyDown(' ');
+        keyDown('ArrowDown');
+        sidecar.dispatchEvent(
+          new document.defaultView!.WheelEvent('wheel', {
+            bubbles: true,
+            deltaX: 60,
+          })
+        );
+        expect(source.dataset.nativeListRowIndex).toBe('1');
+        expect(source.getAttribute('aria-grabbed')).toBe('true');
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('preserves a focused row action when sorting is disabled or enabled', () => {
     const action: RowModel = {
       type: 'action',

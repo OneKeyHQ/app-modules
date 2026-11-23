@@ -744,17 +744,20 @@ and returns focus to the source while it is mounted, including when focus has
 moved to another row. Tab, wheel input directed to the list's scroll owner,
 virtualization of the source by another scroll, or recognition of a pointer
 reorder discards the preview without emitting `onReorder` or reclaiming focus.
-Independent nested scroll areas keep their own wheel input in either layout
-direction. A key event from another row cannot commit the previous source's
-preview. An unchanged fixed footer keeps its focused control and accepts its
-normal keyboard action after rollback. If rollback recycles the key event's
-target, that event cannot activate the newly bound row or control.
+Independent nested scroll areas keep their own wheel input according to their
+physical scroll direction, including vertical writing modes. A key event from
+another row cannot commit the previous source's preview. An unchanged fixed
+footer keeps its focused control and accepts its normal keyboard action after
+rollback. If rollback recycles the key event's target, that event cannot
+activate the newly bound row or control.
 
 A short pointer click keeps its normal action during a keyboard preview.
 A keyboard move or independent rollback invalidates any pending pointer
-reorder from the previous geometry. Once the pointer gesture qualifies as a
-reorder, it restores the original order and reveals the selected row if
-needed. A full snapshot accepted during that rollback supersedes the handoff.
+reorder from the previous geometry and lets a previous drop animation finish.
+Once the pointer gesture qualifies as a reorder, it restores the original
+order and reveals the selected row if needed. A full snapshot accepted during
+that rollback supersedes the handoff, and the recognized gesture still
+suppresses its release click.
 Pointer displacement, including movement beyond the viewport edge, determines
 movement from the restored position. A stationary long press keeps the
 restored order.

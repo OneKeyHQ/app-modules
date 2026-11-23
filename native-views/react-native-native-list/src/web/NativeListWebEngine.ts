@@ -2625,7 +2625,7 @@ export class NativeListWebEngine {
         : target.scrollHeight - target.clientHeight;
       if (scrollRange <= 0) continue;
       const style = view.getComputedStyle(target);
-      const negativeOffset = horizontal && style.direction === 'rtl';
+      const negativeOffset = this.hasNegativeScrollOffsets(style, horizontal);
       const minOffset = negativeOffset ? -scrollRange : 0;
       const maxOffset = negativeOffset ? 0 : scrollRange;
       const overflow =
@@ -2643,6 +2643,23 @@ export class NativeListWebEngine {
       }
     }
     return true;
+  }
+
+  private hasNegativeScrollOffsets(
+    style: CSSStyleDeclaration,
+    horizontal: boolean
+  ): boolean {
+    const { writingMode, direction, display, flexDirection } = style;
+    const horizontalWritingMode =
+      !writingMode || writingMode === 'horizontal-tb';
+    const inlineAxis = horizontal === horizontalWritingMode;
+    const negative = inlineAxis
+      ? (direction === 'rtl') !== (writingMode === 'sideways-lr')
+      : horizontal && writingMode.endsWith('-rl');
+    const reversedFlex =
+      (display === 'flex' || display === 'inline-flex') &&
+      flexDirection === (inlineAxis ? 'row-reverse' : 'column-reverse');
+    return negative !== reversedFlex;
   }
 
   private updateStructuralTailWindow() {
@@ -5573,20 +5590,21 @@ export class NativeListWebEngine {
   private activatePointerReorder(state: PointerReorderState) {
     if (this.pointerReorder !== state) return;
     let sourceIndex = this.pointerReorderSourceIndex(state);
-    if (sourceIndex < 0) {
+    const keyboard = this.keyboardReorder;
+    const restoredIndex = keyboard
+      ? keyboard.originalRows.findIndex((row) => row.key === state.sourceKey)
+      : sourceIndex;
+    if (sourceIndex < 0 || restoredIndex < 0) {
       this.cancelPointerReorder(false);
       return;
     }
     this.clearReorderLongPress(state);
-    const keyboard = this.keyboardReorder;
+    this.reorderClickPointers.set(state.pointerId, {
+      suppress: true,
+      pressTarget: this.reorderClickPointers.get(state.pointerId)?.pressTarget,
+    });
+    this.cancelMarketPointer();
     if (keyboard) {
-      const restoredIndex = keyboard.originalRows.findIndex(
-        (row) => row.key === state.sourceKey
-      );
-      if (restoredIndex < 0) {
-        this.cancelPointerReorder(false);
-        return;
-      }
       // Capture the pressed row at its visible position before restoring order.
       state.currentIndex = sourceIndex;
       state.workingRows = [...this.snapshot.rows];
@@ -5606,15 +5624,13 @@ export class NativeListWebEngine {
     state.originalRows = this.snapshot.rows;
     state.workingRows = [...this.snapshot.rows];
     state.active = true;
-    this.reorderClickPointers.set(state.pointerId, {
-      suppress: true,
-      pressTarget: this.reorderClickPointers.get(state.pointerId)?.pressTarget,
-    });
-    this.cancelMarketPointer();
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
-    if (!keyboard) this.showReorderPreview(state);
+    if (!keyboard) {
+      this.showReorderPreview(state);
+      if (this.pointerReorder !== state) return;
+    }
     if (
       state.workingRows[state.currentIndex]?.type === 'walletGroup' &&
       this.reorderCompactKey !== state.sourceKey
@@ -5741,6 +5757,7 @@ export class NativeListWebEngine {
 
   private showReorderPreview(state: PointerReorderState) {
     this.hideReorderPreview();
+    if (this.pointerReorder !== state) return;
     const source = [...this.mounted.values()].find(
       (element) => element.dataset.nativeListRowKey === state.sourceKey
     );
@@ -6158,8 +6175,9 @@ export class NativeListWebEngine {
     const state = this.pointerReorder;
     if (!state) return;
     this.clearReorderLongPress(state);
-    this.releaseReorderPointer(state);
     this.pointerReorder = undefined;
+    if (!state.active && !state.restoringKeyboardOrder) return;
+    this.releaseReorderPointer(state);
     this.stopReorderMove();
     this.stopReorderAutoScroll();
     if (state.active && restore)
