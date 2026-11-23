@@ -91,6 +91,7 @@ function SegmentSliderComponent({
   // True between onSlideStart/onSlideComplete; gates the value sync.
   const draggingRef = useRef(false);
   const lastCompletedInteractionIdRef = useRef(0);
+  const pendingCompletionRef = useRef(false);
   const [completionCount, setCompletionCount] = useState(0);
 
   const sliderRef = useRef<ISegmentSliderHybridRef | null>(null);
@@ -108,6 +109,7 @@ function SegmentSliderComponent({
         // delivers onSlideComplete, so clear the flag here.
         draggingRef.current = false;
         lastCompletedInteractionIdRef.current = 0;
+        pendingCompletionRef.current = false;
         // `defaultValue` only captures the first value; a rebuilt native view
         // (remount, Fabric recycling) may sit at a stale position. Push the
         // latest value unconditionally — `setValue` is idempotent.
@@ -143,11 +145,9 @@ function SegmentSliderComponent({
         onSlideComplete?.();
       } finally {
         draggingRef.current = false;
-        // The parent may accept the value in the same React commit. Reconcile
-        // there so we don't first send the previous value to the native view.
-        if (latestValueRef.current !== finalValue) {
-          setCompletionCount((count) => count + 1);
-        }
+        // The tap bubble waits for the controlled value committed by React.
+        pendingCompletionRef.current = true;
+        setCompletionCount((count) => count + 1);
       }
     },
     [onSlideComplete]
@@ -156,12 +156,13 @@ function SegmentSliderComponent({
   useLayoutEffect(() => {
     latestValueRef.current = value;
     if (draggingRef.current) return;
-    if (value === lastValueRef.current) return;
+    if (!pendingCompletionRef.current && value === lastValueRef.current) return;
     const node = sliderRef.current;
     if (!node) {
       // Leave lastValueRef stale so the hybridRef callback pushes this value.
       return;
     }
+    pendingCompletionRef.current = false;
     lastValueRef.current = value;
     node.setValue(value, lastCompletedInteractionIdRef.current);
   }, [value, completionCount]);

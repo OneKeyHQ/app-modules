@@ -55,6 +55,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var lastTouchX: CGFloat = 0
   private var touchStartTime: CFTimeInterval = 0
   private var hasDragged = false
+  private var hasSelectedValue = false
   private let tapMoveThreshold: CGFloat = 8
   // A tap only snaps when it's quick. Holding longer (without dragging) is a
   // long-press and does nothing — matching the competitor's tap window.
@@ -63,6 +64,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // bubble stays up for this long before fading. Drags still hide on release.
   private let tapBubbleLinger: TimeInterval = 0.8
   private var bubbleHideWork: DispatchWorkItem?
+  private var pendingTapBubble = false
   // Segment node the thumb currently sits on (-1 = none). Drives the halo +
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
@@ -93,16 +95,15 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var sliderHeight: Double = 4 { didSet { scheduleLayout() } }
   var disabled: Bool = false {
     didSet {
-      view.alpha = disabled ? 0.5 : 1
-      view.isUserInteractionEnabled = !disabled
       if disabled {
+        pendingTapBubble = false
+        cancelInteraction()
         control.accessibilityTraits.insert(.notEnabled)
       } else {
         control.accessibilityTraits.remove(.notEnabled)
       }
-      // UIKit may not deliver the end of a touch to a view that stopped
-      // accepting interaction, so end an active drag here.
-      if disabled { cancelInteraction() }
+      view.alpha = disabled ? 0.5 : 1
+      view.isUserInteractionEnabled = !disabled
     }
   }
   var sliderAccessibilityLabel: String = "" {
@@ -117,7 +118,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
         // setBubbleVisible is gated on showBubble, so clear a visible or
         // lingering bubble here or it would stay on screen.
         hideBubbleNow()
-      } else if isDragging, !(snapTapsActive && !hasDragged) {
+      } else if isDragging, hasSelectedValue {
         // A drag already under way shows its bubble again; a snap-mode tap
         // candidate stays hidden until it becomes a drag or lands.
         setBubbleVisible(true)
@@ -215,6 +216,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     control.onTouchMoved = { [weak self] x in self?.handleTouchMoved(x) }
     control.onTouchEnded = { [weak self] in self?.handleTouchEnded(cancelled: false) }
     control.onTouchCancelled = { [weak self] in self?.handleTouchEnded(cancelled: true) }
+    control.onDetach = { [weak self] in self?.hideBubbleNow() }
     control.onAccessibilityStep = { [weak self] forward in self?.handleAccessibilityStep(forward: forward) }
     control.accessibilityValueProvider = { [weak self] in self?.currentValue.formatted() }
   }
@@ -451,11 +453,12 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // drag, so a tap never jumps to the raw touch point first. The bubble
     // waits too, and a previous tap's bubble is hidden: either would show the
     // old value.
-    if snapTapsActive {
-      setBubbleVisible(false)
-    } else {
+    hasSelectedValue = !snapTapsActive
+    if hasSelectedValue {
       setBubbleVisible(true)
       commitInteractionValue(valueFromX(x))
+    } else {
+      hideBubbleNow()
     }
     lastHapticBucket = hapticBucket(currentValue)
   }
@@ -468,6 +471,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     }
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
+    hasSelectedValue = true
     if showBubble, bubbleLayer.opacity == 0 { setBubbleVisible(true) }
     stepTicksArmed = true
     commitInteractionValue(valueFromX(x))
@@ -483,7 +487,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
-    setBubbleVisible(false)
+    hideBubbleNow()
     control.unlockAncestorGestures()
     onSlideComplete?(interactionId, currentValue)
   }
@@ -496,21 +500,18 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // past tapMaxDuration without dragging) does nothing. A drag keeps its
     // free value. Only a real release lingers the bubble; a system cancel
     // hides it like the end of a drag.
-    var isTap = !hasDragged && !cancelled
-    if snapTapsActive, !hasDragged {
-      let pressDuration = CACurrentMediaTime() - touchStartTime
-      if pressDuration <= tapMaxDuration {
-        commitInteractionValue(snapValueToNearestMark(valueFromX(lastTouchX)))
-      } else {
-        // Long press in snap mode changes nothing, so there is no value to show.
-        isTap = false
-      }
+    let releasedWithoutDrag = !hasDragged && !cancelled
+    if releasedWithoutDrag, !hasSelectedValue, snapTapsActive,
+       CACurrentMediaTime() - touchStartTime <= tapMaxDuration {
+      hasSelectedValue = true
+      commitInteractionValue(snapValueToNearestMark(valueFromX(lastTouchX)))
     }
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
-    if isTap {
-      lingerThenHideBubble()
+    if releasedWithoutDrag, hasSelectedValue, showBubble {
+      hideBubbleNow()
+      pendingTapBubble = true
     } else {
       setBubbleVisible(false)
     }
@@ -600,7 +601,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   func setValue(value: Double, interactionId: Double) throws {
     DispatchQueue.main.async { [weak self] in
       guard let self, !self.isDragging, self.interactionId == interactionId else { return }
+      let acceptedTap = self.pendingTapBubble && value == self.currentValue
+      self.pendingTapBubble = false
       self.syncToValue(value)
+      if acceptedTap { self.lingerThenHideBubble() }
     }
   }
 
@@ -618,6 +622,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
   /// Removes the bubble at once, without a fade.
   private func hideBubbleNow() {
+    pendingTapBubble = false
     cancelBubbleHide()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -647,6 +652,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
 
   private func setBubbleVisible(_ visible: Bool) {
+    pendingTapBubble = false
     cancelBubbleHide()
     guard showBubble else { return }
     CATransaction.begin()

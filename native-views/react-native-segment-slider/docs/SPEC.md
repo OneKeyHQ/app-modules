@@ -84,24 +84,22 @@ at the Nitro entry and takes precedence over the Web `browser` field.
 - `disabled` dims the view and prevents interaction (default false).
 - `showBubble` displays the rounded value followed by `%` during interaction
   (native default true). It does not change the value or callback behavior.
-  The bubble fades in and out over 150 ms. A drag hides it on release. A tap
-  (a release without a drag) keeps it visible for 800 ms after release, showing
-  the value the tap landed on, then fades it; a new press cancels that pending
-  fade. A press the system cancels is not a tap and hides the bubble like the
-  end of a drag. In `snapTapToSegment` mode the bubble stays hidden while a
-  press is still a tap candidate (it would show the old value), including a
-  previous tap's lingering bubble, and appears once the press becomes a drag or
-  the tap lands; a long press that changes nothing shows no bubble. A move
-  that starts updating the value shows the bubble even if snapping was turned
-  off or the marks were removed after the press began. A drag ended by
-  `disabled` hides it at once, and keyboard or accessibility changes do not show
-  it. The lingering bubble belongs to its tap. The controlled value committed
-  with the release, including updates from `onSlideComplete`, determines whether
-  the tap can linger. If it differs from the tap's value, the bubble is removed
-  before the controlled value is drawn. A later controlled value change or
-  keyboard or accessibility adjustment also removes the bubble. Turning
-  `showBubble` off hides a lingering bubble. Turning it on during a drag shows
-  the drag's bubble.
+  The bubble fades in and out over 150 ms. A drag fades on release or system
+  cancellation. Disabling an active drag hides the bubble immediately, before
+  the controlled value is reapplied. Keyboard and accessibility changes do
+  not show the bubble.
+  A press that is waiting to snap hides any prior bubble immediately and
+  stays hidden until the press selects a value through movement or a valid
+  tap. A selection counts even if it leaves the value unchanged. Changing
+  the snap setting or removing the marks does not itself make a selection.
+  A cancelled press never commits a deferred snap, and still completes once.
+  After a tap selects a value, the bubble stays up for 800 ms from controlled
+  acceptance and then fades. The value committed with the release, including
+  changes from `onSlideComplete`, must match the tap's value. A different
+  controlled value is drawn with the bubble hidden. A new press cancels a
+  pending tap bubble or fade. A later value change, keyboard or accessibility
+  adjustment, or turning `showBubble` off clears a lingering bubble. Turning
+  `showBubble` on during a press shows the bubble once it has selected a value.
 - `centerOrigin` fills from zero instead of the left edge (default false).
 - `snapTapToSegment` snaps quick taps to marks while drags stay continuous
   (default false). It has no effect without marks. On Web a press on a mark
@@ -128,14 +126,17 @@ completion callback reports its ID and final value to JS. The UI thread
 applies a value update only while idle and only if its ID matches the most
 recent interaction, so a delayed update cannot alter or interrupt a newer
 interaction. On completion, JS reconciles the reported value in a layout
-effect, after React commits the controlled value for that interaction. This
-lets a parent accept the value in `onSlideComplete` without queuing a sync
-with the previous value.
+effect, after React commits the controlled value for that interaction. JS
+sends that value with `setValue` even if it matches the final native value.
+The first valid update consumes the native tap's pending bubble. If the
+values match, the UI thread starts the linger. A newer interaction, disabling
+the view, or hiding the bubble clears the pending tap.
 
 The iOS control temporarily disables ancestor pan gestures during a touch and
 restores them on completion, cancellation or detachment.
-Android prevents parent touch interception during interaction. Layer/paint work
-stays native; no new bridge calls or resources are required for bubble layout.
+Android prevents parent touch interception during interaction. Layer and paint
+work stays native. Completion requires one controlled value sync per
+interaction, with no additional calls during movement.
 The caller controls the number of marks and must leave vertical room above the
 track for a 20-point bubble and its 8-point gap.
 

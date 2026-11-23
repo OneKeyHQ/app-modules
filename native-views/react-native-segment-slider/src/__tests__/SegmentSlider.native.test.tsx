@@ -56,17 +56,18 @@ it('applies a value the parent changed during the drag once it ends', () => {
   expect(onSlideComplete).toHaveBeenCalledTimes(1);
 });
 
-it('does not push the echoed drag value back after the drag', () => {
+it('confirms an already committed value once with the completed interaction ID', () => {
   const { node, rerender } = setup();
   act(() => viewProps.onSlideStart());
   act(() => viewProps.onChange(60));
   rerender({ value: 60 });
   act(() => viewProps.onSlideComplete(1, 60));
-  expect(node.setValue).not.toHaveBeenCalled();
+  rerender({ value: 60 });
+  expect(node.setValue.mock.calls).toEqual([[60, 1]]);
 });
 
 it.each([
-  [25, []],
+  [25, [[25, 1]]],
   [40, [[40, 1]]],
   [0, [[0, 1]]],
 ])('syncs only the value committed at completion (%i)', (accepted, writes) => {

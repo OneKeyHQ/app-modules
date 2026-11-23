@@ -204,7 +204,11 @@ enum BubbleLayoutTests {
     var completions = 0
     slider.onChange = { changes.append($0) }
     slider.onSlideStart = { starts += 1 }
-    slider.onSlideComplete = { _, _ in completions += 1 }
+    var lastCompletedId: Double = 0
+    slider.onSlideComplete = { id, _ in
+      completions += 1
+      lastCompletedId = id
+    }
     slider.snapTapToSegment = true
     control.onTouchBegan?(160)
     for value: Double in [0, 50, 100] {
@@ -223,7 +227,10 @@ enum BubbleLayoutTests {
     control.onTouchEnded?()
     verify(slider, value: 25, label: "tap snap")
     check(changes.last == 25, "tap no longer snaps to segment")
-    check(bubble.opacity == 1, "bubble hidden right after a tap")
+    check(bubble.opacity == 0, "bubble appeared before controlled acceptance")
+    try slider.setValue(value: 25, interactionId: lastCompletedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "bubble hidden after the tap was accepted")
     try await Task.sleep(nanoseconds: 400_000_000)
     check(bubble.opacity == 1, "bubble hidden before the tap linger ends")
     try await Task.sleep(nanoseconds: 600_000_000)
@@ -242,15 +249,27 @@ enum BubbleLayoutTests {
     // A new snap press hides the previous tap's bubble until it lands.
     control.onTouchBegan?(12 + 0.3 * 296)
     control.onTouchEnded?()
-    check(bubble.opacity == 1, "bubble hidden right after a second tap")
+    try slider.setValue(value: 25, interactionId: lastCompletedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "bubble hidden after accepting a tap on the same value")
     control.onTouchBegan?(12 + 0.8 * 296)
-    check(bubble.opacity == 0, "pending snap press kept the previous tap bubble")
+    check(bubble.opacity == 0 && bubble.animation(forKey: "opacity") == nil,
+          "pending snap press faded the previous tap bubble")
+    let previousId = lastCompletedId
     control.onTouchEnded?()
-    check(bubble.opacity == 1, "bubble hidden after the follow-up tap landed")
+    try slider.setValue(value: 75, interactionId: previousId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 0, "a stale control update confirmed the follow-up tap")
+    try slider.setValue(value: 75, interactionId: lastCompletedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "bubble hidden after the follow-up tap was accepted")
     // A system cancel is not a tap: no linger, one completion.
     let completionsBeforeCancel = completions
+    let changesBeforeCancel = changes
     control.onTouchBegan?(12 + 0.3 * 296)
     control.onTouchCancelled?()
+    check(changes == changesBeforeCancel, "cancelled press changed the selected value")
+    verify(slider, value: 75, label: "cancelled deferred snap")
     check(bubble.opacity == 0, "cancelled press lingered the bubble")
     check(completions == completionsBeforeCancel + 1, "cancelled press completions changed")
     slider.snapTapToSegment = false
@@ -270,6 +289,12 @@ enum BubbleLayoutTests {
     let ownedText: CATextLayer = layer(owned, "bubbleTextLayer")
     ownedControl.onTouchBegan?(12 + 0.3 * 296)
     ownedControl.onTouchEnded?()
+    try owned.setValue(value: 40, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 0, "a clamped tap showed a bubble")
+    verify(owned, value: 40, label: "controlled clamp")
+    ownedControl.onTouchBegan?(12 + 0.3 * 296)
+    ownedControl.onTouchEnded?()
     try owned.setValue(value: 25, interactionId: ownedId)
     await flushQueuedValueSync()
     check(ownedBubble.opacity == 1 && ownedText.string as? String == "25%",
@@ -279,6 +304,8 @@ enum BubbleLayoutTests {
     check(ownedBubble.opacity == 0, "controlled update kept the tap bubble")
     ownedControl.onTouchBegan?(12 + 0.3 * 296)
     ownedControl.onTouchEnded?()
+    try owned.setValue(value: 25, interactionId: ownedId)
+    await flushQueuedValueSync()
     check(ownedBubble.opacity == 1, "bubble hidden after a tap")
     ownedControl.accessibilityIncrement()
     check(ownedBubble.opacity == 0, "accessibility step kept the tap bubble")
@@ -294,6 +321,20 @@ enum BubbleLayoutTests {
     check(toggledBubble.opacity == 1, "showBubble enabled mid-drag stayed hidden")
     toggledControl.onTouchEnded?()
     check(toggledBubble.opacity == 0, "drag bubble lingered after enabling showBubble")
+    let disabledDrag = makeSlider(width: 320, value: 0)
+    var disabledCompletions = 0
+    disabledDrag.onSlideComplete = { _, _ in disabledCompletions += 1 }
+    let disabledControl = sliderControl(for: disabledDrag)
+    let disabledBubble: CALayer = layer(disabledDrag, "bubbleLayer")
+    disabledControl.onTouchBegan?(12 + 0.2 * 296)
+    disabledControl.onTouchMoved?(12 + 0.6 * 296)
+    check(disabledBubble.opacity == 1, "bubble hidden before disabling the drag")
+    disabledDrag.disabled = true
+    check(disabledBubble.opacity == 0 && disabledBubble.animation(forKey: "opacity") == nil,
+          "disabling an active drag faded the bubble")
+    disabledControl.onTouchEnded?()
+    check(disabledCompletions == 1, "disabling the drag did not complete it exactly once")
+
     for removeMarks in [false, true] {
       let slider = makeSlider(width: 320, value: 0)
       slider.snapTapToSegment = true
@@ -301,13 +342,31 @@ enum BubbleLayoutTests {
       let bubble: CALayer = layer(slider, "bubbleLayer")
       let text: CATextLayer = layer(slider, "bubbleTextLayer")
       let setting = removeMarks ? "removing marks" : "disabling snap"
-      control.onTouchBegan?(12 + 0.3 * 296)
-      check(bubble.opacity == 0, "\(setting): pending press showed the bubble")
-      if removeMarks {
-        slider.segments = 0
-      } else {
-        slider.snapTapToSegment = false
+      var completedId: Double = 0
+      var emitted: [Double] = []
+      slider.onChange = { emitted.append($0) }
+      slider.onSlideComplete = { id, _ in completedId = id }
+      func changeSnapSettings() {
+        if removeMarks {
+          slider.segments = 0
+        } else {
+          slider.snapTapToSegment = false
+        }
       }
+      control.onTouchBegan?(12 + 0.3 * 296)
+      changeSnapSettings()
+      slider.showBubble = false
+      slider.showBubble = true
+      check(bubble.opacity == 0, "\(setting): pending press showed the bubble")
+      control.onTouchEnded?()
+      try slider.setValue(value: 0, interactionId: completedId)
+      await flushQueuedValueSync()
+      check(bubble.opacity == 0 && emitted.isEmpty, "\(setting): a stationary press selected a value")
+
+      slider.segments = 4
+      slider.snapTapToSegment = true
+      control.onTouchBegan?(12 + 0.3 * 296)
+      changeSnapSettings()
       control.onTouchMoved?(12 + 0.6 * 296)
       check(bubble.opacity == 1 && text.string as? String == "60%",
             "\(setting): continuous move did not show its value")

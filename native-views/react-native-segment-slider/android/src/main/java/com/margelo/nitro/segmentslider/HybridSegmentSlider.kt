@@ -90,6 +90,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private var touchStartX = 0f
   private var lastTouchX = 0f
   private var hasDragged = false
+  private var hasSelectedValue = false
   private val tapMoveThresholdPx = 8f * density
   // A tap only snaps when it's quick. Holding longer (without dragging) is a
   // long-press and does nothing — matching the competitor's tap window.
@@ -98,6 +99,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // bubble stays up for this long before fading. Drags still hide on release.
   private val tapBubbleLingerMs = 800L
   // Bubble opacity (0..1), animated so it fades like iOS instead of popping.
+  private var pendingTapBubble = false
   private var bubbleAlpha = 0f
   private var bubbleAlphaTarget = 0f
   private var bubbleAlphaAnimator: ValueAnimator? = null
@@ -176,6 +178,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     }
 
     override fun onDetachedFromWindow() {
+      hideBubbleNow()
       cancelAccessibilityUpdate()
       super.onDetachedFromWindow()
     }
@@ -199,11 +202,12 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
           // a drag, so a tap never jumps to the raw touch point first. The
           // bubble waits too, and a previous tap's bubble is hidden: either
           // would show the old value.
-          if (snapTapsActive) {
-            setBubbleVisible(false)
-          } else {
+          hasSelectedValue = !snapTapsActive
+          if (hasSelectedValue) {
             setBubbleVisible(true)
             commitDragValue(valueFromX(event.x))
+          } else {
+            hideBubbleNow()
           }
           lastHapticBucket = hapticBucket(currentValue)
           parent?.requestDisallowInterceptTouchEvent(true)
@@ -217,6 +221,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
             }
             // Still a tap candidate in snap mode → keep the thumb put.
             if (!(snapTapsActive && !hasDragged)) {
+              hasSelectedValue = true
               if (showBubble && bubbleAlphaTarget == 0f) setBubbleVisible(true)
               stepTicksArmed = true
               commitDragValue(valueFromX(event.x))
@@ -232,18 +237,21 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
             // press (held past tapMaxDurationMs without dragging) does nothing.
             // A drag keeps its free value. Only a real release lingers the
             // bubble; a system cancel hides it like the end of a drag.
-            var lingers = !hasDragged && event.actionMasked == MotionEvent.ACTION_UP
-            if (snapTapsActive && !hasDragged) {
-              if ((event.eventTime - event.downTime) <= tapMaxDurationMs) {
-                commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
-              } else {
-                // Long press in snap mode changes nothing, so there is no value to show.
-                lingers = false
-              }
+            val releasedWithoutDrag = !hasDragged && event.actionMasked == MotionEvent.ACTION_UP
+            if (releasedWithoutDrag && !hasSelectedValue && snapTapsActive &&
+              event.eventTime - event.downTime <= tapMaxDurationMs
+            ) {
+              hasSelectedValue = true
+              commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
             }
             hoverMarkIndex = -1
             animateThumbScale(1f)
-            if (lingers) lingerThenHideBubble() else setBubbleVisible(false)
+            if (releasedWithoutDrag && hasSelectedValue && showBubble) {
+              hideBubbleNow()
+              pendingTapBubble = true
+            } else {
+              setBubbleVisible(false)
+            }
             view.invalidate()
             onSlideComplete?.invoke(interactionId, currentValue)
           }
@@ -305,11 +313,12 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) {
       field = v
+      if (v) {
+        pendingTapBubble = false
+        cancelInteraction()
+      }
       view.alpha = if (v) 0.5f else 1f
       view.isEnabled = !v
-      // Touch events stop reaching onTouchEvent once disabled, so end an
-      // active drag here.
-      if (v) cancelInteraction()
       invalidateIfAlive()
     }
 
@@ -326,7 +335,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       if (!v) {
         // Drop a visible or lingering bubble so re-enabling never resurrects it.
         hideBubbleNow()
-      } else if (isDragging && !(snapTapsActive && !hasDragged)) {
+      } else if (isDragging && hasSelectedValue) {
         // A drag already under way shows its bubble again; a snap-mode tap
         // candidate stays hidden until it becomes a drag or lands.
         setBubbleVisible(true)
@@ -401,7 +410,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   override fun setValue(value: Double, interactionId: Double) {
     view.post {
       if (!isDisposed && !isDragging && this.interactionId == interactionId) {
+        val acceptedTap = pendingTapBubble && value == currentValue
+        pendingTapBubble = false
         syncToValue(value)
+        if (acceptedTap) lingerThenHideBubble()
       }
     }
   }
@@ -551,7 +563,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     stepTicksArmed = false
     hoverMarkIndex = -1
     animateThumbScale(1f)
-    setBubbleVisible(false)
+    hideBubbleNow()
     view.parent?.requestDisallowInterceptTouchEvent(false)
     view.invalidate()
     onSlideComplete?.invoke(interactionId, currentValue)
@@ -597,6 +609,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   /// Removes the bubble at once, without a fade.
   private fun hideBubbleNow() {
+    pendingTapBubble = false
     cancelBubbleHide()
     bubbleAlphaAnimator?.cancel()
     bubbleAlpha = 0f
@@ -619,6 +632,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   }
 
   private fun setBubbleVisible(visible: Boolean) {
+    pendingTapBubble = false
     cancelBubbleHide()
     if (isDisposed) return
     val target = if (visible && showBubble) 1f else 0f

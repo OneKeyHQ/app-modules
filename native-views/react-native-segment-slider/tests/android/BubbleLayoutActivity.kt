@@ -137,11 +137,9 @@ class BubbleLayoutActivity : Activity() {
     }
   }
 
-  // A tap keeps the bubble up for 800 ms (showing the landed value); a snap-mode
-  // tap candidate shows no bubble; a drag or a system cancel hides it on
-  // release; unrelated value updates end a tap's bubble. Checks the drawn
-  // bubble, so a replacement implementation without the same private fields
-  // still reports each case.
+  // A confirmed tap keeps the bubble up for 800 ms. Deferred and cancelled
+  // taps stay hidden. Inspect the rendered bubble so a replacement
+  // implementation without the same private fields still reports each case.
   private fun runTapLingerCases(root: FrameLayout, done: () -> Unit) {
     val slider = HybridSegmentSlider(ThemedReactContext(this)).apply {
       segments = 4.0; defaultValue = 0.0; showBubble = true; snapTapToSegment = true
@@ -150,16 +148,24 @@ class BubbleLayoutActivity : Activity() {
     val changes = mutableListOf<Double>()
     var completions = 0
     var lastId = 0.0
+    var completedValue = 0.0
     slider.onChange = { changes.add(it) }
-    slider.onSlideComplete = { id, _ -> completions++; lastId = id }
+    slider.onSlideComplete = { id, value ->
+      completions++
+      lastId = id
+      completedValue = value
+    }
     root.addView(slider.view, FrameLayout.LayoutParams(px(320), px(24)))
     slider.view.layout(0, 0, px(320), px(24))
     val inset = 12f * density
     fun x(fraction: Float) = inset + fraction * (slider.view.width - 2 * inset)
     fun press(action: Int, fraction: Float, elapsedMs: Long? = null) =
       touch(slider, action, x(fraction), elapsedMs)
+    fun confirmTap() = slider.setValue(completedValue, lastId)
     var completionsBeforeCancel = 0
+    var changesBeforeCancel = 0
     var changesBeforeHold = 0
+    var completionsBeforeDisable = 0
     runSteps(listOf(
       0L to {
         press(MotionEvent.ACTION_DOWN, 0.3f)
@@ -169,21 +175,33 @@ class BubbleLayoutActivity : Activity() {
         press(MotionEvent.ACTION_UP, 0.3f, elapsedMs = 100L)
         check(changes.lastOrNull() == 25.0, "tap no longer snaps to segment")
       },
-      300L to { check(bubbleDrawn(slider), "bubble hidden right after a tap") },
+      300L to {
+        check(!bubbleDrawn(slider), "bubble appeared before controlled acceptance")
+        confirmTap()
+      },
+      300L to { check(bubbleDrawn(slider), "bubble hidden after the tap was accepted") },
       300L to { check(bubbleDrawn(slider), "bubble hidden before the tap linger ends") },
       600L to { check(!bubbleDrawn(slider), "bubble still visible after the tap linger") },
       // A new snap press hides the previous tap's bubble until it lands.
       0L to {
         press(MotionEvent.ACTION_DOWN, 0.3f)
         press(MotionEvent.ACTION_UP, 0.3f)
+        confirmTap()
       },
       300L to {
-        check(bubbleDrawn(slider), "bubble hidden right after a second tap")
+        check(bubbleDrawn(slider), "bubble hidden after accepting a tap on the same value")
         press(MotionEvent.ACTION_DOWN, 0.8f)
+        check(!bubbleDrawn(slider), "new snap press faded the previous tap bubble")
       },
       300L to {
         check(!bubbleDrawn(slider), "pending snap press kept the previous tap bubble")
+        val previousId = lastId
         press(MotionEvent.ACTION_UP, 0.8f, elapsedMs = 200L)
+        slider.setValue(75.0, previousId)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "stale control update confirmed the follow-up tap")
+        confirmTap()
       },
       300L to {
         check(bubbleDrawn(slider), "bubble hidden after the follow-up tap landed")
@@ -209,8 +227,11 @@ class BubbleLayoutActivity : Activity() {
       // A system cancel is not a tap: no linger, one completion.
       0L to {
         completionsBeforeCancel = completions
+        changesBeforeCancel = changes.size
         press(MotionEvent.ACTION_DOWN, 0.3f)
         press(MotionEvent.ACTION_CANCEL, 0.3f)
+        check(changes.size == changesBeforeCancel && completedValue == 60.0,
+          "cancelled press changed the selected value")
       },
       300L to {
         check(!bubbleDrawn(slider), "cancelled press lingered the bubble")
@@ -225,10 +246,15 @@ class BubbleLayoutActivity : Activity() {
       300L to {
         check(!bubbleDrawn(slider), "cancelled plain press lingered the bubble")
         slider.snapTapToSegment = true
-        // The lingering bubble belongs to its tap.
         press(MotionEvent.ACTION_DOWN, 0.3f)
         press(MotionEvent.ACTION_UP, 0.3f)
-        slider.setValue(25.0, lastId)
+        slider.setValue(40.0, lastId)
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "a clamped tap showed a bubble")
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_UP, 0.3f)
+        confirmTap()
       },
       300L to {
         check(bubbleDrawn(slider), "accepting the tap value ended its linger")
@@ -238,6 +264,7 @@ class BubbleLayoutActivity : Activity() {
         check(!bubbleDrawn(slider), "controlled update kept the tap bubble")
         press(MotionEvent.ACTION_DOWN, 0.3f)
         press(MotionEvent.ACTION_UP, 0.3f)
+        confirmTap()
       },
       300L to {
         check(bubbleDrawn(slider), "bubble hidden after a tap")
@@ -285,6 +312,33 @@ class BubbleLayoutActivity : Activity() {
       },
       300L to {
         check(!bubbleDrawn(slider), "drag bubble lingered after removing marks")
+        slider.segments = 4.0
+        slider.snapTapToSegment = true
+        changesBeforeHold = changes.size
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        slider.snapTapToSegment = false
+        slider.showBubble = false
+        slider.showBubble = true
+      },
+      200L to {
+        check(!bubbleDrawn(slider), "changing snap settings showed the unselected value")
+        press(MotionEvent.ACTION_UP, 0.3f, elapsedMs = 100L)
+        check(changes.size == changesBeforeHold, "stationary press selected a value")
+        confirmTap()
+      },
+      300L to {
+        check(!bubbleDrawn(slider), "stationary press lingered after snapping was disabled")
+        completionsBeforeDisable = completions
+        press(MotionEvent.ACTION_DOWN, 0.3f)
+        press(MotionEvent.ACTION_MOVE, 0.6f)
+      },
+      300L to {
+        check(bubbleDrawn(slider), "bubble hidden before disabling the drag")
+        slider.disabled = true
+        check(!bubbleDrawn(slider), "disabling an active drag faded the bubble")
+        press(MotionEvent.ACTION_UP, 0.6f)
+        check(completions == completionsBeforeDisable + 1,
+          "disabling the drag did not complete it exactly once")
         root.removeView(slider.view)
         slider.dispose()
       }

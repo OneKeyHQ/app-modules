@@ -100,10 +100,11 @@ final class SegmentSliderUIView: UIControl {
   var onTouchBegan: ((CGFloat) -> Void)?
   /// Touch moved to x (points, view coordinates).
   var onTouchMoved: ((CGFloat) -> Void)?
-  /// Touch ended or was cancelled.
+  /// Touch ended normally.
   var onTouchEnded: (() -> Void)?
   /// A touch the system cancelled; it never counts as a tap.
   var onTouchCancelled: (() -> Void)?
+  var onDetach: (() -> Void)?
   var onAccessibilityStep: ((Bool) -> Void)?
   var accessibilityValueProvider: (() -> String?)?
 
@@ -194,6 +195,7 @@ final class SegmentSliderUIView: UIControl {
     super.willMove(toWindow: newWindow)
     if newWindow == nil {
       unlockAncestorGestures()
+      onDetach?()
     }
   }
 

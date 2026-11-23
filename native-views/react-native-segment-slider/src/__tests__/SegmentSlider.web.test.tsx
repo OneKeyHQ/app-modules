@@ -241,6 +241,34 @@ describe('bubble after a tap', () => {
     expect(bubbleOpacity()).toBe('0');
   });
 
+  it.each([{ snapTapToSegment: false }, { segments: 0 }])(
+    'keeps a deferred press hidden after changing the snap settings (%j)',
+    (next) => {
+      const onSlideComplete = jest.fn();
+      const { slider, onChange, rerender } = render({
+        value: 0,
+        snapTapToSegment: true,
+        onSlideComplete,
+      });
+      pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+      rerender(next);
+      expect(bubbleOpacity()).toBe('0');
+      pointer(slider, 'pointerup', TRACK_LEFT + 60);
+      expect(bubbleOpacity()).toBe('0');
+      expect(thumb().style.left).toBe('0%');
+      expect(onChange).not.toHaveBeenCalled();
+      expect(onSlideComplete).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('lingers when a snap selects the current value without emitting a change', () => {
+    const { slider, onChange } = render({ value: 25, snapTapToSegment: true });
+    pointer(slider, 'pointerdown', TRACK_LEFT + 60);
+    pointer(slider, 'pointerup', TRACK_LEFT + 60);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(bubbleOpacity()).toBe('1');
+  });
+
   it('does not linger after a cancelled press', () => {
     const onSlideComplete = jest.fn();
     const { slider } = render({ value: 0, onSlideComplete });
@@ -447,11 +475,15 @@ it('cancels an active drag when the slider becomes disabled', () => {
     onSlideComplete,
   });
   pointer(slider, 'pointerdown', TRACK_LEFT + 20);
+  pointer(slider, 'pointermove', TRACK_LEFT + 100);
+  expect(bubbleOpacity()).toBe('1');
   rerender({ value: 10, disabled: true, onSlideComplete });
+  expect(bubbleOpacity()).toBe('0');
+  expect(thumb().style.left).toBe('10%');
   expect(onSlideComplete).toHaveBeenCalledTimes(1);
   pointer(slider, 'pointermove', TRACK_LEFT + 150);
   pointer(slider, 'pointerup', TRACK_LEFT + 150);
-  expect(onChange.mock.calls.map(([v]) => v)).toEqual([10]);
+  expect(onChange.mock.calls.map(([v]) => v)).toEqual([10, 50]);
   expect(onSlideComplete).toHaveBeenCalledTimes(1);
 });
 
