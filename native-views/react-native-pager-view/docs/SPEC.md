@@ -821,7 +821,8 @@ baseline and corrected builds; that existing NativeScroller case remains open.
 
 Status: implemented. Runtime verified on 2026-11-23 in the OneKey app on an
 Android 16 emulator (API 36): the cases listed at the end of this section.
-A page change during the motion, a scroller nested inside the owner, a snapping
+A short padded page, a page-top command during the content fling, Android 9, a
+page change during the motion, a scroller nested inside the owner, a snapping
 ScrollView, a header resized mid-flight and a smooth-mode switch during the
 motion have source and JVM coverage only.
 
@@ -863,7 +864,10 @@ release velocity covers under the owner's deceleration (React Native's
 - The content moves only on a collapse with T > D - C, and only when it can
   still scroll down. The coordinator then starts the owner's fling, inside the
   release callback itself, at the fastest speed whose travel fits T - (D - C).
-  It calls the owner's `fling` at most this once per release.
+  It calls the owner's `fling` at most this once per release. Room to scroll is
+  measured against the owner's viewport, its height less its padding, as the
+  platform measures it; `canScrollVertically` leaves the padding out, and the
+  coordinator's own bottom inset on a React Native owner is such padding.
 - Every carried release is consumed, so the owner starts no fling of its own.
 
 The two shares add up to T, short of it by less than the travel one step of
@@ -874,6 +878,12 @@ delayed, restarted or topped up, so one release produces its ordinary momentum
 sequence once: for React Native, one `onMomentumScrollBegin` and one
 `onMomentumScrollEnd`, the end arriving after the content has stopped. When the
 content's share is small the header can still be finishing its collapse then.
+
+On Android 9 (API 28) React Native replaces the sign of every ScrollView fling
+with the direction of the last content scroll it recorded. When the header took
+the whole drag, that record can point the other way. Before it starts the
+content's fling there, the coordinator scrolls a React Native owner one pixel in
+the release direction, inside the content's share, so the record agrees.
 
 The coordinator owns the header motion on the UI thread, one frame callback at a
 time, with no JavaScript callbacks. Its fling is unbounded; the header range is
@@ -887,24 +897,36 @@ nothing is read from the fling after it has finished. The motion ends:
   the latest D instead, because the header may not rest partly collapsed there;
   this covers a header that grew after the content was flung.
 - When the content leaves its top under an expansion, which stops where it is.
-- At a touch-down on the pager, when the release moved the header alone, the
-  way a touch stops a flinging list. A collapse whose release also flung the
-  content is not stopped by the touch-down, which stops only the content, so
-  the header does not rest partly collapsed above it. While the content is
-  still reporting movement under the new touch, the existing alignment of a
-  positive ScrollView offset completes the collapse at once. Otherwise the
-  collapse runs on, and the first vertical drag delta ends it before that delta
-  is applied: at D when the content is still away from its top, where it is
-  otherwise. The drag meets no motion that could work against it.
+- At a touch-down on the pager, before the event is dispatched to the page: at
+  D when the content is away from its top, where it is otherwise. This is the
+  alignment the coordinator already applies to a positive ScrollView offset
+  under a touch, moved ahead of the event. The header never moves while a
+  pointer is down. A platform ScrollView reads touch coordinates in its own
+  frame and compensates only for parent movement reported through nested
+  scrolling, so a header moving under a pointer would reach it as finger travel
+  it did not have, whatever direction the finger really moves.
 - In place, when an accepted page-top or partial header command arrives, when
   the coordinator releases the observed owner (a horizontal transition, a page
   change, a replaced owner), when `nativeSmoothHeaderScrollEnabled` turns off,
   and on detach. Releasing the owner cancels at that moment and not on the next
   frame, since a page change and its return can both happen between two frames.
+  A page-top or partial header command also ends the owner's running fling
+  before it places the content, because `scrollTo` alone leaves a platform
+  fling alive to carry the content away on the next frame.
 
 While the motion runs the header is not reported as settled at the top. Its end,
 other than by releasing the owner or detach, publishes the header offset the way
-the end of a nested scroll does. The motion itself does not write body memory B.
+the end of a nested scroll does.
+
+The header motion does not write body memory B. The content fling of a carried
+release does: it runs outside a nested scroll, but it is the user's own
+scrolling, so the owner's observer records B from it as it does under a touch,
+until the next touch-down, an accepted command, turning smooth mode off, or the
+release of the owner. A page left after such a fling is restored where the
+fling ended. The observer's alignment of a positive offset waits while the
+header motion of that release is still running, since that motion is already
+collapsing the header. An ordinary content fling of a platform ScrollView, one
+the coordinator did not start, still leaves B at the release offset as before.
 
 The caller's side is unchanged: a platform ScrollView joins nested scrolling only
 when asked to (React Native: `nestedScrollEnabled`). Without it no nested
@@ -926,58 +948,69 @@ divergences from RecyclerView:
 
 iOS and Web derive the header from the content offset and are unchanged.
 
-The focused JVM regression `CollapsiblePagerHeaderFlingTest.kt` covers which
-releases are carried, the content's share and the speed that fits it, the total
-travel at every release speed on both sides of the end of the header, a fling
-that finishes in one late frame, a weak release, a header range that grows or
-shrinks mid-flight, an expansion and content that leaves its top under one, the
-offset a drag takes over at, and extreme travel. Runtime acceptance requires,
+The focused JVM regression `CollapsiblePagerHeaderFlingTest.kt` runs in the
+native workflow. It covers which releases are carried, the content's share and
+the speed that fits it, the total travel at every release speed on both sides of
+the end of the header, a fling that finishes in one late frame, a weak release,
+a header range that grows or shrinks mid-flight, an expansion and content that
+leaves its top under one, the offset a touch-down leaves, the room below a short
+padded page, and extreme travel. Runtime acceptance requires,
 on a React Native ScrollView page with nested scrolling enabled and momentum
 listeners attached: an upward flick that ends with the header partly collapsed
 (collapses fully, the content travels the remainder, one momentum begin and
 end), a weak upward release (header only, stays where it stops, one begin and
 end), a downward release with the content at its top and the header partly
-revealed (expands fully, one begin and end), a touch and a drag during a
-collapse that flung the content, a page change during the motion, a release on
-a scroller nested inside the owner, a smooth-mode switch during the motion, and
-an unchanged RecyclerView page in the same pager. Source and JVM checks are not
-runtime acceptance.
+revealed (expands fully, one begin and end), B following the content fling to
+its end, a touch-down during each kind of motion followed by a vertical drag
+and by a horizontal one, a short page that can still scroll by its padding, a
+page-top command during the content fling, a page change during the motion, a
+release on a scroller nested inside the owner, a smooth-mode switch during the
+motion, the same on Android 9, and an unchanged RecyclerView page in the same
+pager. Source and JVM checks are not runtime acceptance.
 
-The 2026-11-23 run used the Receive selector's network list (FlashList, a React
+The 2026-11-23 runs used the Receive selector's network list (FlashList, a React
 Native ScrollView) beside its token list (NativeList) with a 116 px header, and
 read the coordinator's log, the header position and the list's momentum
 callbacks. Gestures with a second touch were injected as timed pointer events.
 
 - Upward releases past the end of the header, as C at release, velocity, T,
-  then header travel plus content travel: 43 px, 4175 px/s, 1141 px, 73 + 1068;
-  70, 2534, 479, 46 + 433; 52, 1727, 246, 64 + 182; 71, 1326, 155, 45 + 110;
-  83, 1313, 153, 33 + 120; 71, 1311, 152, 45 + 107; 66, 1115, 115, 50 + 65.
-  Every sum equals T and every header ended at 116 px. Before this section the
-  first flick left the header half collapsed.
-- Upward releases that end on the header: 49 px, 407 px/s, T = 20 px, stopped
-  at 69 px; 33, 276, 10, stopped at 43; 0, 1114, 115, header only. The content
+  then header travel plus content travel: 0 px, 1514 px/s, 196 px, 116 + 80;
+  43, 4175, 1141, 73 + 1068; 70, 2534, 479, 46 + 433; 52, 1727, 246, 64 + 182;
+  71, 1326, 155, 45 + 110; 83, 1313, 153, 33 + 120; 71, 1311, 152, 45 + 107;
+  66, 1115, 115, 50 + 65. Every sum equals T and every header ended at 116 px.
+  Before this section the same flicks left the header partly collapsed. All
+  but the first were measured before the touch-down rule below replaced an
+  earlier one; the split itself has not changed since.
+- B followed the content fling: after the 196 px release it was written on
+  eleven frames and ended at 80 px, where the content stopped. After a fling
+  caught by a touch it held the caught offset (29, 38, 43, 100 and 261 px).
+- Upward releases that end on the header: 10 px, 479 px/s, T = 26 px, stopped
+  at 36 px; 49, 407, 20, stopped at 69; 33, 276, 10, stopped at 43. The content
   stayed at its top in each.
-- Downward releases with the content at its top: 67 px at -4787 px/s and 59 px
-  at -957 px/s both expanded the header to 0.
+- Downward releases with the content at its top: 70 px at -1492 px/s and 67 px
+  at -4787 px/s both expanded the header to 0.
 - Each release above produced drag begin, drag end, momentum begin and momentum
   end once, in that order.
-- A touch-down during a header-only collapse stopped it in place, at 26, 41 and
-  69 px.
-- A touch-down during a collapse that had flung the content: with the content
-  still moving (released at 1434 px/s, T = 178 px, touched at C = 49 px) the
-  positive-offset alignment completed the collapse on the next frame and the
-  content stopped where it was caught, 25 px down. With the content's 9 px
-  share already spent (1169 px/s, T = 125 px, touched at C = 88 px) the
-  collapse ran on to 107 px, the first drag delta ended it at 116 px, and the
-  downward drag then returned the content to its top and expanded the header
-  with nothing moving against it. A second run gave 88, 106 and 116 px.
+- A touch-down during a header-only collapse stopped it in place, at 2 and
+  75 px, and a horizontal move after it left the header there.
+- A touch-down during a collapse that had flung the content took the header to
+  116 px before the event was dispatched, from 68, 81, 102 and 110 px. The
+  owner received that touch with the header already collapsed, the
+  positive-offset alignment did not fire, and the content stopped where it was
+  caught. A horizontal move after it changed neither the header nor the content
+  (38 px before and after). A 60 px downward drag after it returned the content
+  from 46 px to its top and expanded the header to 102 px, and its release
+  expanded it on to 64 px; nothing moved against the drag. A touch-down that
+  arrived before the content's first frame found the content at its top and
+  stopped the header where it was, at 29 px.
 - The token list and the Home pager (RecyclerView owners) were not carried and
-  collapsed through their own fling as before, 0 to 116 px and 0 to 767 px.
+  moved the header through their own fling as before, 0 to 116 px and, on a
+  224 px flick, 0 to 209 px of 767.
 
 The selector changes pages only through the segment inside the collapsing
-header and has no nested or snapping scroller, so those cases were not
-reachable there.
-
+header, issues no page-top command and has no nested or snapping scroller, and
+its search results could not be sized into a short padded page, so those cases
+were not reachable there.
 
 ## Superseded Android indicator placement
 

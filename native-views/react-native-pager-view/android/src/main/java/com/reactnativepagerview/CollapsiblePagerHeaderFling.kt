@@ -90,10 +90,10 @@ internal fun collapsiblePagerHeaderFlingStep(
 }
 
 /**
- * Where a drag finds the header when it takes over a running motion: fully
+ * Where a touch-down leaves the header when it ends a running motion: fully
  * collapsed above moved content, where it is otherwise.
  */
-internal fun collapsiblePagerHeaderFlingOffsetUnderDrag(
+internal fun collapsiblePagerHeaderFlingOffsetAtTouch(
   headerOffset: Int,
   headerRange: Int,
   direction: Int,
@@ -101,4 +101,21 @@ internal fun collapsiblePagerHeaderFlingOffsetUnderDrag(
 ): Int {
   val range = headerRange.coerceAtLeast(0)
   return if (direction > 0 && contentAwayFromTop) range else headerOffset.coerceIn(0, range)
+}
+
+/**
+ * How far a platform ScrollView can still scroll down. Its viewport is its
+ * height less its padding, which `canScrollVertically` leaves out: a page a
+ * little shorter than the view can still scroll by its bottom padding.
+ */
+internal fun collapsiblePagerScrollViewRoomBelow(
+  scrollY: Int,
+  contentHeight: Int,
+  viewHeight: Int,
+  paddingTop: Int,
+  paddingBottom: Int,
+): Int {
+  val viewport = viewHeight.toLong() - paddingTop - paddingBottom
+  val range = (contentHeight.toLong() - viewport).coerceAtLeast(0L)
+  return (range - scrollY).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 }

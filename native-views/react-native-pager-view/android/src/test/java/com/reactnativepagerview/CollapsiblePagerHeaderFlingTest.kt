@@ -149,19 +149,39 @@ fun main() {
   step = collapsiblePagerHeaderFlingStep(100, range, -1, Int.MIN_VALUE, finished = false, contentAwayFromTop = false)
   check(step == CollapsiblePagerHeaderFlingStep(0, ended = true))
 
-  // A drag that takes over a running collapse finds the header fully collapsed
-  // above moved content, and where it is when the content is back at its top.
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(110, range, 1, contentAwayFromTop = true) == range)
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(110, range, 1, contentAwayFromTop = false) == 110)
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(110, 150, 1, contentAwayFromTop = true) == 150)
-  // An expansion is left where the drag finds it.
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(30, range, -1, contentAwayFromTop = true) == 30)
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(30, range, -1, contentAwayFromTop = false) == 30)
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(130, range, 1, contentAwayFromTop = false) == range)
-  check(collapsiblePagerHeaderFlingOffsetUnderDrag(40, 0, 1, contentAwayFromTop = true) == 0)
+  // A touch-down that ends a running collapse leaves the header fully collapsed
+  // above moved content, and where it is when the content is at its top.
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(110, range, 1, contentAwayFromTop = true) == range)
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(88, range, 1, contentAwayFromTop = true) == range)
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(110, range, 1, contentAwayFromTop = false) == 110)
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(110, 150, 1, contentAwayFromTop = true) == 150)
+  // An expansion stops where the touch finds it.
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(30, range, -1, contentAwayFromTop = true) == 30)
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(30, range, -1, contentAwayFromTop = false) == 30)
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(130, range, 1, contentAwayFromTop = false) == range)
+  check(collapsiblePagerHeaderFlingOffsetAtTouch(40, 0, 1, contentAwayFromTop = true) == 0)
+
+  // Room left below the content. The viewport is the view less its padding, so
+  // a page 100 px shorter than a 2000 px view with 268 px of bottom padding can
+  // still scroll 168 px, where `canScrollVertically(1)` reports none.
+  check(collapsiblePagerScrollViewRoomBelow(0, 1900, 2000, 0, 268) == 168)
+  check(collapsiblePagerScrollViewRoomBelow(100, 1900, 2000, 0, 268) == 68)
+  check(collapsiblePagerScrollViewRoomBelow(168, 1900, 2000, 0, 268) == 0)
+  // Top padding narrows the viewport the same way.
+  check(collapsiblePagerScrollViewRoomBelow(0, 1900, 2000, 268, 0) == 168)
+  // Content that fits its viewport cannot scroll, nor can a view without content.
+  check(collapsiblePagerScrollViewRoomBelow(0, 1732, 2000, 0, 268) == 0)
+  check(collapsiblePagerScrollViewRoomBelow(0, 1500, 2000, 0, 268) == 0)
+  check(collapsiblePagerScrollViewRoomBelow(0, 0, 2000, 0, 268) == 0)
+  // A long page, and an offset past the end or above the top.
+  check(collapsiblePagerScrollViewRoomBelow(0, 9000, 2000, 0, 268) == 7268)
+  check(collapsiblePagerScrollViewRoomBelow(7300, 9000, 2000, 0, 268) == 0)
+  check(collapsiblePagerScrollViewRoomBelow(-40, 1900, 2000, 0, 268) == 208)
+  check(collapsiblePagerScrollViewRoomBelow(Int.MIN_VALUE, Int.MAX_VALUE, 0, 0, 0) == Int.MAX_VALUE)
+  check(collapsiblePagerScrollViewRoomBelow(Int.MAX_VALUE, 0, Int.MAX_VALUE, Int.MIN_VALUE, Int.MIN_VALUE) == 0)
 
   println(
     "Collapsible pager header fling: eligible releases, content share on both sides of the header end, " +
-      "finished frame, weak release, grown and shrunk range, expansion, drag take-over and bounds passed",
+      "finished frame, weak release, grown and shrunk range, expansion, touch-down, room below and bounds passed",
   )
 }

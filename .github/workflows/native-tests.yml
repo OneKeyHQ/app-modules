@@ -444,6 +444,16 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
           java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
           grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+      - name: Run pager header fling regression
+        working-directory: native-views/react-native-pager-view
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/reactnativepagerview/CollapsiblePagerHeaderFling.kt \
+            android/src/test/java/com/reactnativepagerview/CollapsiblePagerHeaderFlingTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/pager-header-fling-tests.jar"
+          java -jar "$RUNNER_TEMP/pager-header-fling-tests.jar" | tee "$RUNNER_TEMP/pager-header-fling-tests.log"
+          grep -Eq '^Collapsible pager header fling: .+ passed$' "$RUNNER_TEMP/pager-header-fling-tests.log"
       - name: Run picker error privacy regression
         working-directory: native-modules/react-native-image-crop-picker
         shell: bash
