@@ -20,7 +20,7 @@ const expectedSchemes = [
   "react-native-native-list-Unit-Tests", "PerpDepthBar-Unit-Tests", "ReactNativeBundleCrypto-Unit-Tests",
   "ReactNativeImageCropPicker-Unit-Tests", "ReactNativeCaptureProtection-Unit-Tests",
   "ReactNativeDeviceUtils-Unit-Tests",
-  "ReactNativePhotoLibrary-Unit-Tests", "ReactNativeJpush-Unit-Tests",
+  "ReactNativePhotoLibrary-Unit-Tests", "ReactNativeJpush-Unit-Tests", "QrScanner-Unit-Tests",
   "react-native-bottom-tabs-Unit-Tests",
 ];
 

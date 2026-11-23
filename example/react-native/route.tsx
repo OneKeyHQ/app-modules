@@ -40,6 +40,7 @@ import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { ScrollEdgeTestPage } from './pages/ScrollEdgeTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
+import { QrScannerTestPage } from './pages/QrScannerTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { PerpDepthBarTestPage } from './pages/PerpDepthBarTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
@@ -112,6 +113,7 @@ export type RootStackParamList = {
   JPush: undefined;
   ScrollGuard: undefined;
   SegmentSlider: undefined;
+  QrScanner: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
   BottomTabs: undefined;
@@ -353,6 +355,12 @@ const modules: {
     description:
       'Prevent parent PagerView from intercepting child ScrollView gestures',
     icon: '🛡️',
+  },
+  {
+    screen: 'QrScanner',
+    name: 'QR Scanner',
+    description: 'Camera QR scanning, image decoding and BC-UR assembly',
+    icon: '🔳',
   },
   {
     screen: 'SegmentSlider',
@@ -769,6 +777,11 @@ export function AppNavigator() {
         name="ScrollGuard"
         component={ScrollGuardTestPage}
         options={{ title: 'Scroll Guard' }}
+      />
+      <Stack.Screen
+        name="QrScanner"
+        component={QrScannerTestPage}
+        options={{ title: 'QR Scanner' }}
       />
       <Stack.Screen
         name="SegmentSlider"

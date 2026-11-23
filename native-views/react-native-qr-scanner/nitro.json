@@ -1,0 +1,27 @@
+{
+  "cxxNamespace": [
+    "qrscanner"
+  ],
+  "ios": {
+    "iosModuleName": "QrScanner"
+  },
+  "android": {
+    "androidNamespace": [
+      "qrscanner"
+    ],
+    "androidCxxLibName": "qrscanner"
+  },
+  "autolinking": {
+    "QrScanner": {
+      "swift": "HybridQrScanner",
+      "kotlin": "HybridQrScanner"
+    },
+    "QrImageDecoder": {
+      "swift": "HybridQrImageDecoder",
+      "kotlin": "HybridQrImageDecoder"
+    }
+  },
+  "ignorePaths": [
+    "node_modules"
+  ]
+}
