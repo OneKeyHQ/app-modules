@@ -348,12 +348,12 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   MUST NOT change the key window or a surviving first responder. Removing the
   key window restores the highest-ranked desired-visible, attached, non-closing
   eligible entry in the same scene, then the original app window if it is
-  still attached to that scene. When neither target exists, preserve any
-  different window that is key in the scene after release or retirement.
-  If the scene has no key window or the exiting overlay still holds key,
-  use a visible normal-level app window in the same scene that has a root
-  controller and can become key. Overlay windows are excluded. This handoff
-  also happens while the exiting window is retained for touches.
+  still attached to that scene. When neither target exists, preserve the key
+  ownership of an app or system window after release or retirement. If the
+  scene has no key window or UIKit gives key to an ineligible overlay, use an
+  available visible normal-level app window in the same scene with a root
+  controller and the ability to become key. This fallback also handles an
+  exiting overlay that remains key while it is retained for touches.
   Eligible entries are effectively blocking (system sheets always block) or
   contain a first responder. Passive toast/debug entries need a first responder.
   Keyboard restoration may finish after dismissal completion; callers/tests
@@ -834,6 +834,9 @@ Automated (P0):
   The two-app-window check verifies that, without an eligible overlay or
   attached original host, synchronous release preserves the key window UIKit
   restored even when another app window is the first fallback candidate.
+  When UIKit restores key to a still-visible closing overlay during release,
+  a separate check verifies the app window takes key while the closing overlay
+  stays attached.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.

@@ -360,8 +360,7 @@ final class NativeOverlayWindowManager: NSObject {
     let wasKey = entry.window.isKeyWindow
     let scene = entry.window.windowScene
     scenes[sceneKey]?[ownerKey] = nil
-    let remaining = scenes[sceneKey] ?? [:]
-    if remaining.isEmpty { scenes[sceneKey] = nil }
+    if scenes[sceneKey]?.isEmpty == true { scenes[sceneKey] = nil }
     if hasActiveTouches(for: entry.host) || Self.interactiveCoordinator(in: entry.host.window) != nil {
       // Keep the routing context until this host's delivered touches and UIKit interactions finish.
       let retirement = RetiredWindow(window: entry.window, host: entry.host)
@@ -372,6 +371,7 @@ final class NativeOverlayWindowManager: NSObject {
       release(entry.window)
     }
     removeUnusedTouchObservers()
+    let remaining = scenes[sceneKey] ?? [:]
     reorder(remaining)
     guard wasKey, let scene,
           scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive else { return }
@@ -383,8 +383,8 @@ final class NativeOverlayWindowManager: NSObject {
       target.makeKey()
       return
     }
-    // UIKit may have restored key ownership during release.
-    if let keyWindow = scene.keyWindow, keyWindow !== entry.window { return }
+    // Eligible overlays were considered above. UIKit can restore a closing overlay during release.
+    if let keyWindow = scene.keyWindow, !(keyWindow is NativeOverlayPassthroughWindow) { return }
     Self.fallbackAppWindow(in: scene)?.makeKey()
   }
 

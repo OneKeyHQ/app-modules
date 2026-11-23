@@ -29,6 +29,14 @@ private final class KeyCountingWindow: UIWindow {
   override func becomeKey() { keyAcquisitions += 1; super.becomeKey() }
 }
 
+@MainActor private final class SceneKeyObserver: NSObject {
+  private(set) weak var keyWindow: UIWindow?
+
+  @objc func windowDidBecomeKey(_ notification: Notification) {
+    keyWindow = (notification.object as? UIWindow)?.windowScene?.keyWindow
+  }
+}
+
 private final class TransitionRoot: UIViewController {
   var activeCoordinator: UIViewControllerTransitionCoordinator?
   override var transitionCoordinator: UIViewControllerTransitionCoordinator? { activeCoordinator }
@@ -865,6 +873,35 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   alternateApp.windowScene = nil
   app.makeKey()
   passed.append("released-key-window-preserves-uikit-restoration")
+
+  let closingOwner = Owner()
+  let closingEntry = touchManager.window(for: closingOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  closingEntry.makeKey()
+  try require(scene.keyWindow === closingEntry, "the overlay was key before it began closing")
+  let closingHandoffHost = UIWindow(windowScene: scene)
+  closingHandoffHost.rootViewController = UIViewController()
+  let closingHandoffOwner = Owner()
+  let closingHandoffEntry = touchManager.window(for: closingHandoffOwner, level: .modal,
+    stackOrder: 2, blocking: true, appWindow: closingHandoffHost)!
+  closingHandoffEntry.makeKey()
+  touchManager.setClosing(true, window: closingEntry)
+  closingHandoffHost.windowScene = nil
+  try require(scene.keyWindow === closingHandoffEntry && !closingEntry.isHidden &&
+    closingEntry.windowScene === scene, "the previous key overlay is closing but still visible")
+
+  let closingKeyObserver = SceneKeyObserver()
+  let notifications = NotificationCenter.default
+  notifications.addObserver(closingKeyObserver, selector: #selector(SceneKeyObserver.windowDidBecomeKey(_:)),
+    name: UIWindow.didBecomeKeyNotification, object: closingEntry)
+  touchManager.entryRemoved(from: closingHandoffEntry)
+  notifications.removeObserver(closingKeyObserver)
+  try require(closingHandoffEntry.windowScene == nil && closingKeyObserver.keyWindow === closingEntry,
+    "UIKit restores key to the visible closing overlay during synchronous release")
+  try require(scene.keyWindow === app && closingEntry.windowScene === scene && !closingEntry.isHidden,
+    "the app becomes key while the closing overlay remains visible")
+  touchManager.entryRemoved(from: closingEntry)
+  passed.append("released-key-window-skips-closing-overlay")
 
   let retiringHost = KeyCountingWindow(windowScene: scene)
   retiringHost.rootViewController = UIViewController()
