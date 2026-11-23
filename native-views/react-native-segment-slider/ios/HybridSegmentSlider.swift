@@ -55,10 +55,16 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var lastTouchX: CGFloat = 0
   private var touchStartTime: CFTimeInterval = 0
   private var hasDragged = false
+  private var hasSelectedValue = false
   private let tapMoveThreshold: CGFloat = 8
   // A tap only snaps when it's quick. Holding longer (without dragging) is a
   // long-press and does nothing — matching the competitor's tap window.
   private let tapMaxDuration: CFTimeInterval = 0.3
+  // A tap's press is ~100ms, too short to read the bubble, so after a tap the
+  // bubble stays up for this long before fading. Drags still hide on release.
+  private let tapBubbleLinger: TimeInterval = 0.8
+  private var bubbleHideWork: DispatchWorkItem?
+  private var pendingTapBubble = false
   // Segment node the thumb currently sits on (-1 = none). Drives the halo +
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
@@ -89,16 +95,15 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var sliderHeight: Double = 4 { didSet { scheduleLayout() } }
   var disabled: Bool = false {
     didSet {
-      view.alpha = disabled ? 0.5 : 1
-      view.isUserInteractionEnabled = !disabled
       if disabled {
+        pendingTapBubble = false
+        cancelInteraction()
         control.accessibilityTraits.insert(.notEnabled)
       } else {
         control.accessibilityTraits.remove(.notEnabled)
       }
-      // UIKit may not deliver the end of a touch to a view that stopped
-      // accepting interaction, so end an active drag here.
-      if disabled { cancelInteraction() }
+      view.alpha = disabled ? 0.5 : 1
+      view.isUserInteractionEnabled = !disabled
     }
   }
   var sliderAccessibilityLabel: String = "" {
@@ -107,7 +112,20 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     }
   }
 
-  var showBubble: Bool = true { didSet { scheduleLayout() } }
+  var showBubble: Bool = true {
+    didSet {
+      if !showBubble {
+        // setBubbleVisible is gated on showBubble, so clear a visible or
+        // lingering bubble here or it would stay on screen.
+        hideBubbleNow()
+      } else if isDragging, hasSelectedValue {
+        // A drag already under way shows its bubble again; a snap-mode tap
+        // candidate stays hidden until it becomes a drag or lands.
+        setBubbleVisible(true)
+      }
+      scheduleLayout()
+    }
+  }
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.
   var snapTapToSegment: Bool = false
@@ -198,7 +216,9 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     control.onLayout = { [weak self] in self?.performLayout() }
     control.onTouchBegan = { [weak self] x in self?.handleTouchBegan(x) }
     control.onTouchMoved = { [weak self] x in self?.handleTouchMoved(x) }
-    control.onTouchEnded = { [weak self] in self?.handleTouchEnded() }
+    control.onTouchEnded = { [weak self] in self?.handleTouchEnded(cancelled: false) }
+    control.onTouchCancelled = { [weak self] in self?.handleTouchEnded(cancelled: true) }
+    control.onDetach = { [weak self] in self?.hideBubbleNow() }
     control.onAccessibilityStep = { [weak self] forward in self?.handleAccessibilityStep(forward: forward) }
     control.accessibilityValueProvider = { [weak self] in self?.currentValue.formatted() }
   }
@@ -433,11 +453,16 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if hapticFeedbackEnabled && hapticStep > 0 { stepHaptic.prepare() }
     onSlideStart?()
     animateThumbScale(activeThumbScale)
-    setBubbleVisible(true)
     // Tap-snap mode: defer any value change until we know this is a tap or a
-    // drag, so a tap never jumps to the raw touch point first.
-    if !snapTapsActive {
+    // drag, so a tap never jumps to the raw touch point first. The bubble
+    // waits too, and a previous tap's bubble is hidden: either would show the
+    // old value.
+    hasSelectedValue = !snapTapsActive
+    if hasSelectedValue {
+      setBubbleVisible(true)
       commitInteractionValue(valueFromX(x))
+    } else {
+      hideBubbleNow()
     }
     lastHapticBucket = hapticBucket(currentValue)
   }
@@ -450,6 +475,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     }
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
+    hasSelectedValue = true
+    if showBubble, bubbleLayer.opacity == 0 { setBubbleVisible(true) }
     stepTicksArmed = true
     commitInteractionValue(valueFromX(x))
   }
@@ -464,28 +491,28 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
-    setBubbleVisible(false)
+    hideBubbleNow()
     control.unlockAncestorGestures()
     onSlideComplete?(interactionId, currentValue)
   }
 
-  private func handleTouchEnded() {
+  private func handleTouchEnded(cancelled: Bool) {
     guard isDragging else { return }
     isDragging = false
-    // A quick tap (no drag) lands directly on the nearest segment node in a
-    // single move — no detour through the raw touch point. A long press (held
-    // past tapMaxDuration without dragging) does nothing. A drag keeps its
-    // free value.
-    if snapTapsActive, !hasDragged {
-      let pressDuration = CACurrentMediaTime() - touchStartTime
-      if pressDuration <= tapMaxDuration {
-        commitInteractionValue(snapValueToNearestMark(valueFromX(lastTouchX)))
-      }
+    let shouldSnap = snapTapsActive
+    let isTap = !hasDragged && !cancelled &&
+      (!shouldSnap || CACurrentMediaTime() - touchStartTime <= tapMaxDuration)
+    if isTap, shouldSnap {
+      // Snapping may replace a value already shown during a continuous press.
+      if hasSelectedValue { hideBubbleNow() }
+      hasSelectedValue = true
+      commitInteractionValue(snapValueToNearestMark(valueFromX(lastTouchX)))
     }
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
     setBubbleVisible(false)
+    pendingTapBubble = isTap && hasSelectedValue && showBubble
     onSlideComplete?(interactionId, currentValue)
   }
 
@@ -494,6 +521,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     let next = forward ? currentValue.rounded(.down) + 1 : currentValue.rounded(.up) - 1
     guard next >= min.rounded(.up), next <= max.rounded(.down), next != currentValue else { return }
 
+    dropIdleBubble()
     interactionId += 1
     onSlideStart?()
     commitInteractionValue(next)
@@ -515,6 +543,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       hoverMarkIndex = -1
       setHalo(visible: false, index: 0)
     }
+    // A tap's lingering bubble shows that tap's value; an unrelated update ends it.
+    if v != currentValue { dropIdleBubble() }
     currentValue = v
     lastEmitted = v
     applyVisual(v)
@@ -569,7 +599,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   func setValue(value: Double, interactionId: Double) throws {
     DispatchQueue.main.async { [weak self] in
       guard let self, !self.isDragging, self.interactionId == interactionId else { return }
+      let acceptedTap = self.pendingTapBubble && value == self.currentValue
+      self.pendingTapBubble = false
       self.syncToValue(value)
+      if acceptedTap { self.lingerThenHideBubble() }
     }
   }
 
@@ -580,11 +613,62 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     CATransaction.commit()
   }
 
-  private func setBubbleVisible(_ visible: Bool) {
-    guard showBubble else { return }
+  private func cancelBubbleHide() {
+    bubbleHideWork?.cancel()
+    bubbleHideWork = nil
+  }
+
+  /// Removes the bubble at once, without a fade.
+  private func hideBubbleNow() {
+    pendingTapBubble = false
+    cancelBubbleHide()
     CATransaction.begin()
-    CATransaction.setAnimationDuration(0.15)
-    bubbleLayer.opacity = visible ? 1 : 0
+    CATransaction.setDisableActions(true)
+    bubbleLayer.removeAnimation(forKey: "opacity")
+    bubbleLayer.opacity = 0
+    CATransaction.commit()
+  }
+
+  /// An idle bubble belongs to the tap that showed it (lingering or fading).
+  /// Remove it before another value is drawn so it never shows that value.
+  private func dropIdleBubble() {
+    if !isDragging { hideBubbleNow() }
+  }
+
+  /// Shows the bubble (with the value the tap landed on) and fades it out
+  /// after `tapBubbleLinger`. A new touch cancels the pending fade.
+  private func lingerThenHideBubble() {
+    guard showBubble else { return }
+    setBubbleVisible(true)
+    let work = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.bubbleHideWork = nil
+      self.setBubbleVisible(false)
+    }
+    bubbleHideWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + tapBubbleLinger, execute: work)
+  }
+
+  private func setBubbleVisible(_ visible: Bool) {
+    pendingTapBubble = false
+    cancelBubbleHide()
+    let target: Float = visible ? 1 : 0
+    guard showBubble, bubbleLayer.opacity != target else { return }
+    // Acceptance can reverse the release fade while the model opacity is zero.
+    let currentOpacity = bubbleLayer.presentation()?.opacity ?? bubbleLayer.opacity
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    bubbleLayer.opacity = target
+    if currentOpacity == target {
+      bubbleLayer.removeAnimation(forKey: "opacity")
+    } else {
+      let fade = CABasicAnimation(keyPath: "opacity")
+      fade.fromValue = currentOpacity
+      fade.toValue = target
+      fade.duration = 0.15
+      fade.timingFunction = CAMediaTimingFunction(name: .default)
+      bubbleLayer.add(fade, forKey: "opacity")
+    }
     CATransaction.commit()
   }
 }

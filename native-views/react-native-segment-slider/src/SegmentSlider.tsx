@@ -1,4 +1,11 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ComponentProps, ComponentType } from 'react';
 
 import { StyleSheet } from 'react-native';
@@ -85,6 +92,8 @@ function SegmentSliderComponent({
   // True between onSlideStart/onSlideComplete; gates the value sync.
   const draggingRef = useRef(false);
   const lastCompletedInteractionIdRef = useRef(0);
+  const pendingCompletionRef = useRef(false);
+  const [completionCount, setCompletionCount] = useState(0);
 
   const sliderRef = useRef<ISegmentSliderHybridRef | null>(null);
   const hybridRef = useMemo(
@@ -101,6 +110,7 @@ function SegmentSliderComponent({
         // delivers onSlideComplete, so clear the flag here.
         draggingRef.current = false;
         lastCompletedInteractionIdRef.current = 0;
+        pendingCompletionRef.current = false;
         // `defaultValue` only captures the first value; a rebuilt native view
         // (remount, Fabric recycling) may sit at a stale position. Push the
         // latest value unconditionally — `setValue` is idempotent.
@@ -128,18 +138,18 @@ function SegmentSliderComponent({
 
   const handleSlideComplete = useCallback(
     (interactionId: number, finalValue: number) => {
-      draggingRef.current = false;
       lastCompletedInteractionIdRef.current = interactionId;
       // Native reports the actual value because an earlier sync could have
       // arrived during a newer gesture and been dropped.
       lastValueRef.current = finalValue;
-      const node = sliderRef.current;
-      const acceptedValue = latestValueRef.current;
-      if (node && acceptedValue !== finalValue) {
-        lastValueRef.current = acceptedValue;
-        node.setValue(acceptedValue, interactionId);
+      try {
+        onSlideComplete?.();
+      } finally {
+        draggingRef.current = false;
+        // The tap bubble waits for the controlled value committed by React.
+        pendingCompletionRef.current = true;
+        setCompletionCount((count) => count + 1);
       }
-      onSlideComplete?.();
     },
     [onSlideComplete]
   );
@@ -147,15 +157,16 @@ function SegmentSliderComponent({
   useLayoutEffect(() => {
     latestValueRef.current = value;
     if (draggingRef.current) return;
-    if (value === lastValueRef.current) return;
+    if (!pendingCompletionRef.current && value === lastValueRef.current) return;
     const node = sliderRef.current;
     if (!node) {
       // Leave lastValueRef stale so the hybridRef callback pushes this value.
       return;
     }
+    pendingCompletionRef.current = false;
     lastValueRef.current = value;
     node.setValue(value, lastCompletedInteractionIdRef.current);
-  }, [value]);
+  }, [value, completionCount]);
 
   return (
     <SegmentSliderNativeView

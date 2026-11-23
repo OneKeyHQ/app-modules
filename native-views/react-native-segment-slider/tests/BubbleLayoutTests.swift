@@ -75,6 +75,36 @@ enum BubbleLayoutTests {
   }
 
   @MainActor
+  static func verifyTapBubbleTransitions() async throws {
+    let slider = makeSlider(width: 320, value: 0)
+    let control = sliderControl(for: slider)
+    let bubble: CALayer = layer(slider, "bubbleLayer")
+    let x = 12 + 0.3 * 296
+    var completedId: Double = 0
+    var changes: [Double] = []
+    slider.onChange = { changes.append($0) }
+    slider.onSlideComplete = { id, _ in completedId = id }
+
+    control.onTouchBegan?(x)
+    check(bubble.opacity == 1, "plain press bubble did not show")
+    control.onTouchEnded?()
+    check(bubble.opacity == 0, "plain tap did not target zero opacity before acceptance")
+    try slider.setValue(value: 30, interactionId: completedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "accepting a plain tap did not restore the bubble")
+
+    control.onTouchBegan?(x)
+    slider.snapTapToSegment = true
+    control.onTouchEnded?()
+    check(changes == [30, 25], "enabling snapping did not snap the quick release")
+    check(bubble.opacity == 0 && bubble.animation(forKey: "opacity") == nil,
+          "release snap animated an unconfirmed bubble")
+    try slider.setValue(value: 25, interactionId: completedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "accepting the release snap did not show the bubble")
+  }
+
+  @MainActor
   static func verifyDelayedValueSync() async throws {
     let slider = makeSlider(width: 320, value: 0)
     let control = sliderControl(for: slider)
@@ -204,7 +234,11 @@ enum BubbleLayoutTests {
     var completions = 0
     slider.onChange = { changes.append($0) }
     slider.onSlideStart = { starts += 1 }
-    slider.onSlideComplete = { _, _ in completions += 1 }
+    var lastCompletedId: Double = 0
+    slider.onSlideComplete = { id, _ in
+      completions += 1
+      lastCompletedId = id
+    }
     slider.snapTapToSegment = true
     control.onTouchBegan?(160)
     for value: Double in [0, 50, 100] {
@@ -219,9 +253,157 @@ enum BubbleLayoutTests {
     check(starts == 1 && completions == 1, "interaction callbacks changed")
     check(bubble.opacity == 0, "bubble not hidden after completion")
     control.onTouchBegan?(12 + 0.3 * 296)
+    check(bubble.opacity == 0, "snap tap candidate shows the old value")
     control.onTouchEnded?()
     verify(slider, value: 25, label: "tap snap")
     check(changes.last == 25, "tap no longer snaps to segment")
+    check(bubble.opacity == 0, "bubble appeared before controlled acceptance")
+    try slider.setValue(value: 25, interactionId: lastCompletedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "bubble hidden after the tap was accepted")
+    try await Task.sleep(nanoseconds: 400_000_000)
+    check(bubble.opacity == 1, "bubble hidden before the tap linger ends")
+    try await Task.sleep(nanoseconds: 600_000_000)
+    check(bubble.opacity == 0, "bubble still visible after the tap linger")
+    // A drag that follows a tap hides on release and cancels the linger.
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchEnded?()
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchMoved?(12 + 0.6 * 296)
+    check(bubble.opacity == 1, "bubble hidden during drag")
+    control.onTouchEnded?()
+    check(bubble.opacity == 0, "bubble lingers after a drag")
+    slider.showBubble = false
+    slider.showBubble = true
+    check(bubble.opacity == 0, "re-enabling showBubble resurrected the bubble")
+    // A new snap press hides the previous tap's bubble until it lands.
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchEnded?()
+    try slider.setValue(value: 25, interactionId: lastCompletedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "bubble hidden after accepting a tap on the same value")
+    control.onTouchBegan?(12 + 0.8 * 296)
+    check(bubble.opacity == 0 && bubble.animation(forKey: "opacity") == nil,
+          "pending snap press faded the previous tap bubble")
+    let previousId = lastCompletedId
+    control.onTouchEnded?()
+    try slider.setValue(value: 75, interactionId: previousId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 0, "a stale control update confirmed the follow-up tap")
+    try slider.setValue(value: 75, interactionId: lastCompletedId)
+    await flushQueuedValueSync()
+    check(bubble.opacity == 1, "bubble hidden after the follow-up tap was accepted")
+    // A system cancel is not a tap: no linger, one completion.
+    let completionsBeforeCancel = completions
+    let changesBeforeCancel = changes
+    control.onTouchBegan?(12 + 0.3 * 296)
+    control.onTouchCancelled?()
+    check(changes == changesBeforeCancel, "cancelled press changed the selected value")
+    verify(slider, value: 75, label: "cancelled deferred snap")
+    check(bubble.opacity == 0, "cancelled press lingered the bubble")
+    check(completions == completionsBeforeCancel + 1, "cancelled press completions changed")
+    slider.snapTapToSegment = false
+    control.onTouchBegan?(12 + 0.5 * 296)
+    check(bubble.opacity == 1, "plain press hid the bubble")
+    control.onTouchCancelled?()
+    check(bubble.opacity == 0, "cancelled plain press lingered the bubble")
+    slider.snapTapToSegment = true
+
+    // The lingering bubble belongs to its tap: unrelated value updates end it.
+    let owned = makeSlider(width: 320, value: 0)
+    owned.snapTapToSegment = true
+    var ownedId: Double = 0
+    owned.onSlideComplete = { id, _ in ownedId = id }
+    let ownedControl = sliderControl(for: owned)
+    let ownedBubble: CALayer = layer(owned, "bubbleLayer")
+    let ownedText: CATextLayer = layer(owned, "bubbleTextLayer")
+    ownedControl.onTouchBegan?(12 + 0.3 * 296)
+    ownedControl.onTouchEnded?()
+    try owned.setValue(value: 40, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 0, "a clamped tap showed a bubble")
+    verify(owned, value: 40, label: "controlled clamp")
+    ownedControl.onTouchBegan?(12 + 0.3 * 296)
+    ownedControl.onTouchEnded?()
+    try owned.setValue(value: 25, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 1 && ownedText.string as? String == "25%",
+          "accepting the tap value ended its linger")
+    try owned.setValue(value: 60, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 0, "controlled update kept the tap bubble")
+    ownedControl.onTouchBegan?(12 + 0.3 * 296)
+    ownedControl.onTouchEnded?()
+    try owned.setValue(value: 25, interactionId: ownedId)
+    await flushQueuedValueSync()
+    check(ownedBubble.opacity == 1, "bubble hidden after a tap")
+    ownedControl.accessibilityIncrement()
+    check(ownedBubble.opacity == 0, "accessibility step kept the tap bubble")
+
+    // Turning showBubble on during a drag shows the drag's bubble.
+    let toggled = makeSlider(width: 320, value: 0)
+    toggled.showBubble = false
+    let toggledControl = sliderControl(for: toggled)
+    let toggledBubble: CALayer = layer(toggled, "bubbleLayer")
+    toggledControl.onTouchBegan?(12 + 0.2 * 296)
+    toggledControl.onTouchMoved?(12 + 0.5 * 296)
+    toggled.showBubble = true
+    check(toggledBubble.opacity == 1, "showBubble enabled mid-drag stayed hidden")
+    toggledControl.onTouchEnded?()
+    check(toggledBubble.opacity == 0, "drag bubble lingered after enabling showBubble")
+    let disabledDrag = makeSlider(width: 320, value: 0)
+    var disabledCompletions = 0
+    disabledDrag.onSlideComplete = { _, _ in disabledCompletions += 1 }
+    let disabledControl = sliderControl(for: disabledDrag)
+    let disabledBubble: CALayer = layer(disabledDrag, "bubbleLayer")
+    disabledControl.onTouchBegan?(12 + 0.2 * 296)
+    disabledControl.onTouchMoved?(12 + 0.6 * 296)
+    check(disabledBubble.opacity == 1, "bubble hidden before disabling the drag")
+    disabledDrag.disabled = true
+    check(disabledBubble.opacity == 0 && disabledBubble.animation(forKey: "opacity") == nil,
+          "disabling an active drag faded the bubble")
+    disabledControl.onTouchEnded?()
+    check(disabledCompletions == 1, "disabling the drag did not complete it exactly once")
+
+    for removeMarks in [false, true] {
+      let slider = makeSlider(width: 320, value: 0)
+      slider.snapTapToSegment = true
+      let control = sliderControl(for: slider)
+      let bubble: CALayer = layer(slider, "bubbleLayer")
+      let text: CATextLayer = layer(slider, "bubbleTextLayer")
+      let setting = removeMarks ? "removing marks" : "disabling snap"
+      var completedId: Double = 0
+      var emitted: [Double] = []
+      slider.onChange = { emitted.append($0) }
+      slider.onSlideComplete = { id, _ in completedId = id }
+      func changeSnapSettings() {
+        if removeMarks {
+          slider.segments = 0
+        } else {
+          slider.snapTapToSegment = false
+        }
+      }
+      control.onTouchBegan?(12 + 0.3 * 296)
+      changeSnapSettings()
+      slider.showBubble = false
+      slider.showBubble = true
+      check(bubble.opacity == 0, "\(setting): pending press showed the bubble")
+      control.onTouchEnded?()
+      try slider.setValue(value: 0, interactionId: completedId)
+      await flushQueuedValueSync()
+      check(bubble.opacity == 0 && emitted.isEmpty, "\(setting): a stationary press selected a value")
+
+      slider.segments = 4
+      slider.snapTapToSegment = true
+      control.onTouchBegan?(12 + 0.3 * 296)
+      changeSnapSettings()
+      control.onTouchMoved?(12 + 0.6 * 296)
+      check(bubble.opacity == 1 && text.string as? String == "60%",
+            "\(setting): continuous move did not show its value")
+      control.onTouchEnded?()
+      check(bubble.opacity == 0, "\(setting): drag bubble lingered")
+    }
+
     for (x, value): (CGFloat, Double) in [(0, 0), (320, 100)] {
       control.onTouchBegan?(x)
       control.onTouchEnded?()
@@ -302,6 +484,7 @@ enum BubbleLayoutTests {
     boundedControl.onTouchEnded?()
     check(boundChanges == [10, 1], "fractional bound values: \(boundChanges)")
 
+    try await verifyTapBubbleTransitions()
     try await verifyDelayedValueSync()
     try await verifyAccessibilityAdjustments()
 
