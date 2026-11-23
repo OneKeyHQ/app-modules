@@ -24,7 +24,9 @@ private final class TypedTouch: UITouch {
 
 private final class KeyCountingWindow: UIWindow {
   var keyActivations = 0
+  var keyAcquisitions = 0
   override func makeKey() { keyActivations += 1; super.makeKey() }
+  override func becomeKey() { keyAcquisitions += 1; super.becomeKey() }
 }
 
 private final class TransitionRoot: UIViewController {
@@ -834,6 +836,35 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
     "removal cannot restore key to a host outside the entry scene")
   detachedHost.rootViewController = nil
   passed.append("entry-removal-host-scene-focus-boundary")
+
+  let alternateApp = KeyCountingWindow(windowScene: scene)
+  alternateApp.rootViewController = UIViewController()
+  alternateApp.makeKeyAndVisible()
+  try require(scene.keyWindow === alternateApp, "alternate app window starts as key")
+  let releasedHost = UIWindow(windowScene: scene)
+  releasedHost.rootViewController = UIViewController()
+  let releasedOwner = Owner()
+  let releasedEntry = touchManager.window(for: releasedOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: releasedHost)!
+  releasedEntry.makeKey()
+  releasedHost.windowScene = nil
+  let alternateActivations = alternateApp.keyActivations
+  let alternateAcquisitions = alternateApp.keyAcquisitions
+  try require(scene.keyWindow === releasedEntry &&
+    scene.windows.first(where: {
+      $0.windowLevel == .normal && !$0.isHidden && $0.alpha > 0 &&
+        $0.rootViewController != nil && $0.canBecomeKey
+    }) === app, "removing the key overlay would select the first app window as fallback")
+  touchManager.entryRemoved(from: releasedEntry)
+  try require(releasedEntry.windowScene == nil && alternateApp.keyAcquisitions > alternateAcquisitions,
+    "synchronous release lets UIKit restore the alternate app window")
+  try require(scene.keyWindow === alternateApp && alternateApp.keyActivations == alternateActivations,
+    "fallback preserves the app window UIKit restored")
+  alternateApp.isHidden = true
+  alternateApp.rootViewController = nil
+  alternateApp.windowScene = nil
+  app.makeKey()
+  passed.append("released-key-window-preserves-uikit-restoration")
 
   let retiringHost = KeyCountingWindow(windowScene: scene)
   retiringHost.rootViewController = UIViewController()

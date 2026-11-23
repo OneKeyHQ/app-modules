@@ -379,7 +379,13 @@ final class NativeOverlayWindowManager: NSObject {
       .max { Self.ordered($0, before: $1) }
     let appWindow = entry.host.window
     let attachedAppWindow = appWindow?.windowScene === scene ? appWindow : nil
-    (next?.window ?? attachedAppWindow ?? Self.fallbackAppWindow(in: scene))?.makeKey()
+    if let target = next?.window ?? attachedAppWindow {
+      target.makeKey()
+      return
+    }
+    // UIKit may have restored key ownership during release.
+    if let keyWindow = scene.keyWindow, keyWindow !== entry.window { return }
+    Self.fallbackAppWindow(in: scene)?.makeKey()
   }
 
   func restoreFocus(_ responder: UIView, in window: UIWindow) -> Bool {
