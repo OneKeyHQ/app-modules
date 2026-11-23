@@ -250,7 +250,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var headerFlingKey: String? = null
   private var headerFlingGeneration = -1
   private var headerFlingTravel = 0
-  private var headerFlingJoinsContent = false
+  private var headerFlingDirection = 0
+  private var headerFlingMovesContent = false
   private val headerFlingFrame = Runnable { stepHeaderFling() }
   private var nativeGestureStarted = false
   private var pressCancelled = false
@@ -1638,6 +1639,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun detachNativeScrollerObserver(recordOffset: Boolean) {
     cancelPagerTop()
+    // The motion belongs to this observation. Checking the owner per frame is
+    // not enough: a page change and its return can both fit between two frames.
+    cancelHeaderFling(notify = false)
     val scroller = observedNativeScroller
     val listener = observedNativeScrollerListener
     offsetDiag("scrollview-detach-save-before-record=$recordOffset", scroller, observedNativeScrollerKey ?: currentPageKey())
@@ -2324,7 +2328,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
-        // A new touch stops the header the way it stops a flinging list.
+        // A new touch stops a header-only motion the way it stops a flinging list.
         cancelHeaderFling(byTouch = true)
         headerDownEvent?.recycle()
         headerDownEvent = null
@@ -2474,6 +2478,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   override fun onNestedPreScroll(target: View, dx: Int, dy: Int, consumed: IntArray, type: Int) {
     if (!isCurrentPageTarget(target)) return
+    if (type == ViewCompat.TYPE_TOUCH && dy != 0) settleHeaderFlingUnderDrag()
     // OneKey patch: consume only the distance the short-page header can actually move.
     val maximumOffset = maximumHeaderOffset()
     // if (dy > 0 && headerOffsetPx < headerHeightPx) {
@@ -2562,32 +2567,60 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       !isAttachedToWindow || !owner.isAttachedToWindow ||
       pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || transitionHeaderOffsets != null ||
       syntheticPageRestore || pagerTopRequest != null) return false
-    // A refresh wrapper forwards a release as its own, which hides who was flung.
-    if (target !== owner) return false
+    // Only a release of the owner's own drag is carried. A refresh wrapper
+    // forwards a release as its own, and the owner does the same for a scroller
+    // nested inside it, so neither says whose content was flung or where it is.
+    if (target !== owner || owner.nestedScrollAxes != ViewCompat.SCROLL_AXIS_NONE) return false
     val direction = collapsiblePagerHeaderFlingDirection(
       headerOffsetPx, headerHeightPx, velocityY, owner.canScrollVertically(-1),
     )
     if (direction == 0) return false
     cancelHeaderFling()
+    // The header and the content share one release, so both follow the owner's
+    // own deceleration.
+    val friction = (owner as? ReactScrollView)
+      ?.let { 1f - it.reactScrollViewScrollState.decelerationRate }
+      ?.takeIf { it > 0f && it.isFinite() }
+      ?: ViewConfiguration.getScrollFriction()
+    headerFlingScroller.setFriction(friction)
+    val velocity = velocityY.roundToInt()
+    val reach = headerFlingReach(velocity)
+    // The header takes the release first; content that can move gets the rest.
+    val contentVelocity = if (owner.canScrollVertically(1)) {
+      collapsiblePagerHeaderFlingContentVelocity(
+        velocity,
+        collapsiblePagerHeaderFlingContentTravel(headerOffsetPx, headerHeightPx, direction, reach),
+        ::headerFlingReach,
+      )
+    } else {
+      0
+    }
     // Unbounded travel: the header range is applied per frame.
-    headerFlingScroller.fling(0, 0, 0, velocityY.roundToInt(), 0, 0, Int.MIN_VALUE, Int.MAX_VALUE)
-    val joinsContent = collapsiblePagerHeaderFlingJoinsContent(
-      headerOffsetPx, headerHeightPx, direction, headerFlingScroller.finalY,
-    )
+    headerFlingReach(velocity)
     headerFlingOwner = WeakReference(owner)
     headerFlingKey = key
     headerFlingGeneration = attachmentGeneration
     headerFlingTravel = 0
-    headerFlingJoinsContent = joinsContent
+    headerFlingDirection = direction
+    headerFlingMovesContent = contentVelocity > 0
     updateHeaderSettledState(forceBusy = true)
     postOnAnimation(headerFlingFrame)
     log(
-      "header-fling-begin inner=$selectedPage key=$key direction=$direction " +
-        "velocity=${velocityY.roundToInt()} headerOffset=$headerOffsetPx joinsContent=$joinsContent",
+      "header-fling-begin inner=$selectedPage key=$key direction=$direction velocity=$velocity " +
+        "headerOffset=$headerOffsetPx reach=$reach contentVelocity=$contentVelocity",
     )
-    // Left unconsumed, the scroller starts its own fling now and the header
-    // collapses beside it; nothing is handed back to the scroller later.
-    return !joinsContent
+    // Started inside the release itself, so the owner sees one fling and one
+    // momentum run; it is never delayed, restarted or topped up afterwards.
+    if (contentVelocity > 0) owner.fling(contentVelocity)
+    return true
+  }
+
+  /** Starts the header fling at `velocity` and returns the signed travel it can cover. */
+  private fun headerFlingReach(velocity: Int): Int {
+    // An unfinished fling would add its speed to the next one.
+    headerFlingScroller.forceFinished(true)
+    headerFlingScroller.fling(0, 0, 0, velocity, 0, 0, Int.MIN_VALUE, Int.MAX_VALUE)
+    return headerFlingScroller.finalY
   }
 
   private fun stepHeaderFling() {
@@ -2604,23 +2637,40 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     headerFlingScroller.computeScrollOffset()
     val travelled = headerFlingScroller.currY
     val step = collapsiblePagerHeaderFlingStep(
-      headerOffsetPx, headerHeightPx, travelled - headerFlingTravel, headerFlingScroller.isFinished,
+      headerOffsetPx, headerHeightPx, headerFlingDirection, travelled - headerFlingTravel,
+      headerFlingScroller.isFinished, owner.canScrollVertically(-1),
     )
     headerFlingTravel = travelled
     setHeaderOffset(step.offset)
     if (step.ended) cancelHeaderFling() else postOnAnimation(headerFlingFrame)
   }
 
+  /** The first vertical drag delta after a touch-down that let a collapse run on. */
+  private fun settleHeaderFlingUnderDrag() {
+    if (headerFlingOwner == null) return
+    val owner = headerFlingOwner?.get()
+    if (owner != null && owner === observedNativeScroller && headerFlingKey == currentPageKey()) {
+      val offset = collapsiblePagerHeaderFlingOffsetUnderDrag(
+        headerOffsetPx, headerHeightPx, headerFlingDirection, owner.canScrollVertically(-1),
+      )
+      log("header-fling-drag-takeover inner=$selectedPage headerOffset=$headerOffsetPx settled=$offset")
+      setHeaderOffset(offset)
+    }
+    cancelHeaderFling()
+  }
+
   private fun cancelHeaderFling(notify: Boolean = true, byTouch: Boolean = false) {
     if (headerFlingOwner == null) return
-    // The content is already flinging under this collapse; stopping the header
-    // alone would leave it partly collapsed over moved content.
-    if (byTouch && headerFlingJoinsContent) return
+    // The content already moved under this collapse; a header stopped by the
+    // touch-down alone would sit partly collapsed above it. The collapse runs
+    // on until it ends or the touch turns into a drag.
+    if (byTouch && headerFlingMovesContent) return
     removeCallbacks(headerFlingFrame)
     headerFlingScroller.forceFinished(true)
     headerFlingOwner = null
     headerFlingKey = null
-    headerFlingJoinsContent = false
+    headerFlingDirection = 0
+    headerFlingMovesContent = false
     if (!notify) return
     updateHeaderSettledState()
     onHeaderOffsetChanged?.invoke()
