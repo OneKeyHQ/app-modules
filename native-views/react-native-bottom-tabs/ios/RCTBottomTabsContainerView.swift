@@ -20,21 +20,29 @@ import React
   )
 }
 
-/// Root view of one tab's view controller. It sizes the hosted React scene to
-/// its own bounds on every layout pass instead of autoresizing it.
-/// Autoresizing applies the change in bounds: a tab view controller's view
-/// starts at screen size, Fabric sizes the scene to the narrower container
-/// (an iPad split pane), and the first resize to that pane width then
-/// subtracted the difference again, leaving the scene 0 points wide. Its
-/// content still drew but no longer received touches.
+/// Root view of one tab's view controller. It hosts the React scene but never
+/// writes the scene's frame: Fabric owns it, including any per-route
+/// `getSceneStyle` offset or size.
+///
+/// The scene used to autoresize with this view. Autoresizing applies the change
+/// in bounds on top of the frame Fabric set: a tab view controller's view
+/// starts at screen size, Fabric sizes the scene to the narrower container (an
+/// iPad split pane), and the first resize to the pane width subtracted the
+/// difference again, leaving the scene 0 points wide. Its content still drew
+/// but no longer received touches. The scene now has no autoresizing mask, and
+/// the container reports the selected page's size to JS so Fabric lays the
+/// scene out at the page size (it differs from the container when the iPad
+/// sidebar takes part of the width).
 final class BottomTabsPageView: UIView {
-  weak var hostedView: UIView?
+  var onSizeChange: ((BottomTabsPageView) -> Void)?
+  private var lastSize: CGSize = .zero
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    if let hostedView, hostedView.superview === self, hostedView.frame != bounds {
-      hostedView.frame = bounds
-    }
+    let size = bounds.size
+    guard size != lastSize else { return }
+    lastSize = size
+    onSizeChange?(self)
   }
 }
 
@@ -168,6 +176,7 @@ class RCTBottomTabsContainerView: UIView {
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: BottomTabsPageViewController] = [:]
+  private var isHandlingLayout = false
   private var pendingIconUpdates = Set<Int>()
   private var isIconUpdateScheduled = false
   // Vertical tab bar (iPhone Duo side strip): last reported placement and the
@@ -549,8 +558,34 @@ class RCTBottomTabsContainerView: UIView {
 
     setupTabBarControllerIfNeeded()
     tabBarController?.view.frame = bounds
-    onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
+    // Settle the selected page's frame first so the size reported below is
+    // the current one, not the page's size before this pass.
+    isHandlingLayout = true
+    tabBarController?.view.layoutIfNeeded()
+    isHandlingLayout = false
+    emitSceneLayout()
     scheduleSideAccessoryLayout()
+  }
+
+  /// Reports the size React lays every tab scene out at: the selected page's
+  /// bounds (narrower than the container when the iPad sidebar is shown), or
+  /// the container's bounds until that page is in the window.
+  private func emitSceneLayout() {
+    var size = bounds.size
+    if let page = tabBarController?.selectedViewController?.viewIfLoaded,
+       page.window != nil,
+       page.bounds.width > 0, page.bounds.height > 0 {
+      size = page.bounds.size
+    }
+    guard size.width > 0 && size.height > 0 else { return }
+    onNativeLayout?(["width": Double(size.width), "height": Double(size.height)])
+  }
+
+  private func pageDidChangeSize(_ page: BottomTabsPageView) {
+    // handleLayout emits once after its own layout pass.
+    guard !isHandlingLayout,
+          page === tabBarController?.selectedViewController?.viewIfLoaded else { return }
+    emitSceneLayout()
   }
 
   private func setupTabBarControllerIfNeeded() {
@@ -623,13 +658,13 @@ class RCTBottomTabsContainerView: UIView {
           vc.view.addSubview(childView)
           // Neither Auto Layout constraints (they conflict with the frames
           // Fabric sets on later mounts) nor autoresizing (it applies bounds
-          // deltas to a frame Fabric already set): BottomTabsPageView sizes
-          // the scene to its bounds on every layout pass.
+          // deltas to a frame Fabric already set): the frame stays Fabric's.
           childView.translatesAutoresizingMaskIntoConstraints = true
           childView.autoresizingMask = []
-          childView.frame = vc.view.bounds
         }
-        vc.pageView.hostedView = childView
+      }
+      vc.pageView.onSizeChange = { [weak self] page in
+        self?.pageDidChangeSize(page)
       }
 
       // Configure tab bar item
