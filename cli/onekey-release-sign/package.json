@@ -1,0 +1,51 @@
+{
+  "name": "@onekeyfe/onekey-release-sign",
+  "version": "0.1.0",
+  "description": "Multi-signature OpenPGP/YubiKey CLI and library for OneKey OTA and full-release artifact signing, RFC 4880 .asc merging, and threshold verification.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "onekey-release-sign": "./bin/onekey-release-sign.mjs"
+  },
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "docs/SPEC.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --test test/*.test.mjs && npm pack --dry-run"
+  },
+  "keywords": [
+    "onekey",
+    "yubikey",
+    "openpgp",
+    "gpg",
+    "multisig",
+    "release-signing",
+    "supply-chain"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "cli/onekey-release-sign"
+  },
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/cli/onekey-release-sign#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}
