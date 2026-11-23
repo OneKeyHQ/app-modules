@@ -664,6 +664,24 @@ fun main() {
         BundleDiffReconstruction.unzipFile(zipWithRootEntry.path, rootEntryOutput.path, JvmBundleFileSystem)
         expect(File(rootEntryOutput, "payload").readText() == "content", "extraction accepts a ZIP root directory entry")
 
+        val zipWithDirectoryPayload = File(tempRoot, "directory-payload.zip")
+        java.util.zip.ZipOutputStream(zipWithDirectoryPayload.outputStream()).use { output ->
+            output.putNextEntry(java.util.zip.ZipEntry("assets/"))
+            output.write(ByteArray(8))
+            output.closeEntry()
+        }
+        val directoryPayloadOutput = File(tempRoot, "directory-payload")
+        val directoryPayloadError = runCatching {
+            BundleDiffReconstruction.unzipFile(
+                zipWithDirectoryPayload.path,
+                directoryPayloadOutput.path,
+                JvmBundleFileSystem,
+                maxUncompressedBytes = 16,
+            )
+        }.exceptionOrNull()
+        expect(directoryPayloadError is SecurityException, "extraction rejects payloads even on directory entries")
+        expect(!File(directoryPayloadOutput, "assets").exists(), "directory payload fails before materialization")
+
         val symlinkOutput = File(tempRoot, "with-symlink").apply { mkdir() }
         val missingTarget = File(symlinkOutput, "missing")
         Files.createSymbolicLink(File(symlinkOutput, "payload").toPath(), missingTarget.toPath())

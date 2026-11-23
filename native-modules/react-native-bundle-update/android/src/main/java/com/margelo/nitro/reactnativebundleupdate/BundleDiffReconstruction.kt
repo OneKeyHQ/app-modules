@@ -176,6 +176,9 @@ internal object BundleDiffReconstruction {
                         }
                     }
                 } else {
+                    if (zipIn.read() != -1) {
+                        throw SecurityException("Zip directory entry contains payload data")
+                    }
                     outFile.mkdirs()
                 }
                 zipIn.closeEntry()

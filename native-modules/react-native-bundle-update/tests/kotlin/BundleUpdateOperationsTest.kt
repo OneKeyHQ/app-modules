@@ -59,5 +59,12 @@ fun main() {
     } finally {
         worker.shutdownNow()
     }
+    fun record(version: String) = mapOf("appVersion" to "6.8.0", "bundleVersion" to version, "signature" to version)
+    val (afterB, evictedByB) = planFallbackBundles(listOf("B", "C", "D").map(::record), "6.8.0", "B", record("A"))
+    expect(afterB == listOf("C", "D", "A").map(::record), "activating oldest fallback retains the previous active release")
+    expect(evictedByB.isEmpty(), "activating oldest fallback cannot evict its files")
+    val (afterE, evictedByE) = planFallbackBundles(afterB, "6.8.0", "E", record("B"))
+    expect(afterE == listOf("D", "A", "B").map(::record), "next activation records the latest active bundle")
+    expect(evictedByE == listOf(record("C")), "only the oldest retained release is evicted")
     println("BundleUpdateOperations: $assertions assertions passed")
 }

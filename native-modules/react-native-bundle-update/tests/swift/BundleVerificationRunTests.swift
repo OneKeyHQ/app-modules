@@ -26,4 +26,18 @@ final class BundleVerificationRunTests: XCTestCase {
         XCTAssertFalse(run.wasCancelledByClear)
         run.finish()
     }
+
+    func testFallbackActivationRemovesTargetBeforeEviction() {
+        func record(_ version: String) -> [String: String] {
+            ["appVersion": "6.8.0", "bundleVersion": version, "signature": version]
+        }
+        let existing = ["B", "C", "D"].map(record)
+        let afterB = planFallbackBundles(existing, activeAppVersion: "6.8.0", activeBundleVersion: "B", previous: record("A"))
+        XCTAssertEqual(afterB.retained, ["C", "D", "A"].map(record))
+        XCTAssertTrue(afterB.evicted.isEmpty)
+
+        let afterE = planFallbackBundles(afterB.retained, activeAppVersion: "6.8.0", activeBundleVersion: "E", previous: record("B"))
+        XCTAssertEqual(afterE.retained, ["D", "A", "B"].map(record))
+        XCTAssertEqual(afterE.evicted, [record("C")])
+    }
 }

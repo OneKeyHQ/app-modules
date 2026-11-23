@@ -10,6 +10,7 @@ import UIKit
 // Public static store for AppDelegate access (called before JS starts)
 @objcMembers
 public class BundleUpdateStore: NSObject {
+    fileprivate static let activationLock = NSLock()
     private static let bundlePrefsKey = "currentBundleVersion"
     private static let nativeVersionKey = "nativeVersion"
     private static let nativeBuildNumberKey = "nativeBuildNumber"
@@ -135,8 +136,17 @@ public class BundleUpdateStore: NSObject {
     }
 
     public static func setCurrentBundleVersion(_ version: String) {
-        UserDefaults.standard.set(version, forKey: bundlePrefsKey)
-        UserDefaults.standard.synchronize()
+        activationLock.withLock {
+            UserDefaults.standard.set(version, forKey: bundlePrefsKey)
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    fileprivate static func isInstalled(appVersion: String, bundleVersion: String) -> Bool {
+        currentBundleVersion() == "\(appVersion)-\(bundleVersion)" ||
+            readFallbackUpdateBundleDataFile().contains {
+                $0["appVersion"] == appVersion && $0["bundleVersion"] == bundleVersion
+            }
     }
 
     public static func currentBundleDir() -> String? {
@@ -338,6 +348,10 @@ public class BundleUpdateStore: NSObject {
     /// Only handles the happy path (status=pending, bundle exists, env matches).
     /// All complex logic (retry, download, error handling) remains in JS layer.
     public static func processPreLaunchPendingTask() {
+        activationLock.withLock { applyPreLaunchPendingTask() }
+    }
+
+    private static func applyPreLaunchPendingTask() {
         guard !didProcessPreLaunchTask else { return }
         didProcessPreLaunchTask = true
 
@@ -1355,6 +1369,29 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         try process.queue.sync { try run.publish(publish) }
     }
 
+    private func publishASC(
+        _ run: BundleVerificationRun,
+        appVersion: String,
+        bundleVersion: String,
+        promote: Bool,
+        _ publish: () throws -> Void
+    ) throws {
+        try BundleUpdateStore.activationLock.withLock {
+            try publishVerification(run) {
+                if promote && BundleUpdateStore.isInstalled(appVersion: appVersion, bundleVersion: bundleVersion) {
+                    throw BundleUpdateError(.incompatible, .verifyASC)
+                }
+                try publish()
+            }
+        }
+    }
+
+    private func activationPromise(_ work: @escaping () throws -> Void) -> Promise<Void> {
+        updatePromise(step: .install) {
+            try BundleUpdateStore.activationLock.withLock(work)
+        }
+    }
+
     private func releaseVerificationSlot(_ key: String, run: BundleVerificationRun) {
         process.queue.sync {
             if process.activeVerifications[key] === run {
@@ -2228,7 +2265,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
 
         let folderName = "\(appVersion)-\(bundleVersion)"
-        try publishVerification(verificationContext) {
+        try publishASC(verificationContext, appVersion: appVersion, bundleVersion: bundleVersion, promote: !isInstalled) {
             if !isInstalled {
                 try BundleCryptoCore.safeRename(fromPath: stagingDir, toPath: destination)
             }
@@ -2395,7 +2432,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 diffSha256: diffSha256,
                 signature: signature
             )
-            try publishVerification(verificationContext) {
+            try publishASC(verificationContext, appVersion: appVersion, bundleVersion: bundleVersion, promote: promote) {
                 guard BundleDiffReconstruction.writeDescriptor(verifiedDescriptor, toPath: diffMetaPath) else {
                     throw BundleUpdateError(.storage, .verifyASC)
                 }
@@ -2440,7 +2477,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         do {
             try fm.createDirectory(atPath: stagingParent, withIntermediateDirectories: true)
         } catch {
-            throw BundleDiffReconstructionError.fallbackRequired("diff staging directory creation failed: \(error)")
+            throw BundleUpdateError(.storage, .verifyASC)
         }
         let extraction = BundleDiffZipExtractor.extract(
             archivePath: diffFilePath,
@@ -2456,6 +2493,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
         case .securityRejected:
             throw BundleDiffReconstructionError.securityRejected("diff ZIP exceeds extraction limits or contains an unsafe path")
+        case .storageError:
+            throw BundleUpdateError(.storage, .verifyASC)
         default:
             throw BundleDiffReconstructionError.fallbackRequired("diff ZIP extraction failed (\(extraction.rawValue))")
         }
@@ -2599,10 +2638,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let diffMetaPath = (diffDir as NSString).appendingPathComponent("\(folderName)\(BundleDiffReconstruction.diffMetaExtension)")
             let resolvedDiffPath = (diffFilePath as NSString).resolvingSymlinksInPath
 
-            let isInstalled = BundleUpdateStore.currentBundleVersion() == folderName ||
-                BundleUpdateStore.readFallbackUpdateBundleDataFile().contains {
-                    $0["appVersion"] == appVersion && $0["bundleVersion"] == bundleVersion
-                }
+            let isInstalled = BundleUpdateStore.activationLock.withLock {
+                BundleUpdateStore.isInstalled(appVersion: appVersion, bundleVersion: bundleVersion)
+            }
             let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
             let resolvedDestination = (destination as NSString).resolvingSymlinksInPath
             let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
@@ -2944,7 +2982,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         // commits so a same-version reinstall (or any reader that re-cached
         // pre-commit data inside the race window) can't leave stale entries.
         BundleUpdateStore.invalidateValidatedBundleInfoCache()
-        return updatePromise(step: .install) {
+        return activationPromise {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let signature = params.signature
@@ -2965,10 +3003,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             OneKeyLog.info("BundleUpdate", "installBundle: GPG check: skipGPG=\(skipGPG)")
 
             let folderName = "\(appVersion)-\(bundleVersion)"
-            let currentFolderName = BundleUpdateStore.currentBundleVersion()
-            let previousActiveBundleVersion = currentFolderName
-            OneKeyLog.info("BundleUpdate", "installBundle: target=\(folderName), current=\(currentFolderName ?? "nil")")
-
             // Verify bundle directory confinement and existence
             let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
             let resolvedBundleDir = (bundleDirPath as NSString).resolvingSymlinksInPath
@@ -3018,6 +3052,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw BundleUpdateError(.incompatible, .install)
             }
 
+            let currentFolderName = BundleUpdateStore.currentBundleVersion()
             if !signature.isEmpty {
                 BundleUpdateStore.writeSignatureFile(folderName, signature: signature)
             }
@@ -3029,41 +3064,35 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             BundleUpdateStore.setNativeBuildNumber(currentBuildNumber)
             ud.synchronize()
 
-            // Manage fallback data
-            var fallbackData = BundleUpdateStore.readFallbackUpdateBundleDataFile()
-
-            if let current = currentFolderName,
+            var previous: [String: String]?
+            if let current = currentFolderName, current != folderName,
                let curBundleVersion = BundleUpdateStore.bundleVersion(inFolder: current, appVersion: currentNativeVersion) {
                 let curSignature = BundleUpdateStore.readSignatureFile(current)
                 if !curSignature.isEmpty {
-                    fallbackData.append([
+                    previous = [
                         "appVersion": currentNativeVersion,
                         "bundleVersion": curBundleVersion,
                         "signature": curSignature
-                    ])
+                    ]
                 }
             }
 
-            // Keep max 3 fallback entries
-            if fallbackData.count > 3 {
-                let shifted = fallbackData.removeFirst()
-                if let shiftApp = shifted["appVersion"], let shiftBundle = shifted["bundleVersion"] {
-                    let dirName = "\(shiftApp)-\(shiftBundle)"
-                    if dirName != previousActiveBundleVersion &&
-                        shiftBundle != previousActiveBundleVersion &&
-                        dirName != folderName {
-                        BundleUpdateStore.deleteSignatureFile(dirName)
-                        let oldPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(dirName)
-                        if FileManager.default.fileExists(atPath: oldPath) {
-                            try? FileManager.default.removeItem(atPath: oldPath)
-                        }
-                    } else {
-                        OneKeyLog.info("BundleUpdate", "installBundle: skipping disk deletion of evicted fallback \(dirName) because it is still in use")
-                    }
-                }
-            }
-
+            let (fallbackData, evicted) = planFallbackBundles(
+                BundleUpdateStore.readFallbackUpdateBundleDataFile(),
+                activeAppVersion: appVersion,
+                activeBundleVersion: bundleVersion,
+                previous: previous
+            )
             BundleUpdateStore.writeFallbackUpdateBundleDataFile(fallbackData)
+            for entry in evicted {
+                guard let shiftApp = entry["appVersion"], let shiftBundle = entry["bundleVersion"] else { continue }
+                let dirName = "\(shiftApp)-\(shiftBundle)"
+                if dirName != currentFolderName && dirName != folderName {
+                    BundleUpdateStore.deleteSignatureFile(dirName)
+                    let oldPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(dirName)
+                    try? FileManager.default.removeItem(atPath: oldPath)
+                }
+            }
             ud.synchronize()
 
             // Second invalidate: closes the race window between the up-front
@@ -3338,7 +3367,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func setCurrentUpdateBundleData(params: BundleSwitchParams) throws -> Promise<Void> {
         BundleUpdateStore.invalidateValidatedBundleInfoCache()
-        return updatePromise(step: .install) {
+        return activationPromise {
             guard params.appVersion.isSafeVersionString, params.bundleVersion.isSafeVersionString else {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: invalid version string format: appVersion=\(params.appVersion), bundleVersion=\(params.bundleVersion)")
                 throw BundleUpdateError(.invalidArgument, .install)

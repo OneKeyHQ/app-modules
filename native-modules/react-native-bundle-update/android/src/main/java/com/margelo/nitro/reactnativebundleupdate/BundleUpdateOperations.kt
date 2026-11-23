@@ -73,3 +73,21 @@ internal class BundleUpdateOperations {
         }
     }
 }
+
+internal fun planFallbackBundles(
+    entries: List<Map<String, String>>,
+    activeAppVersion: String,
+    activeBundleVersion: String,
+    previous: Map<String, String>?,
+): Pair<List<Map<String, String>>, List<Map<String, String>>> {
+    fun identity(entry: Map<String, String>) = entry["appVersion"] to entry["bundleVersion"]
+
+    val active = activeAppVersion to activeBundleVersion
+    val previousIdentity = previous?.let(::identity)
+    val history = entries.filterNot { identity(it) == active || identity(it) == previousIdentity }
+    val updated = if (previous != null && previousIdentity != active) history + previous else history
+    val retained = updated.takeLast(3)
+    val retainedIdentities = retained.map(::identity).toSet()
+    val evicted = updated.dropLast(retained.size).filterNot { identity(it) in retainedIdentities }
+    return retained to evicted
+}

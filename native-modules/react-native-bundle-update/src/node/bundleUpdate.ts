@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import AdmZip from 'adm-zip';
 import semver from 'semver';
 import { ArchiveSizeError, hashArchive } from '@onekeyfe/react-native-range-downloader/node';
@@ -1186,14 +1187,16 @@ export class BundleUpdateNode {
       // adm-zip does not cap inflation when the advertised size is zero.
       if (!entry.isDirectory && entrySize === 0) {
         const compressed = entry.getCompressedData();
-        const canonicalEmptyDeflate =
-          entry.header.method === 8 &&
-          compressed.length === 2 &&
-          compressed[0] === 0x03 &&
-          compressed[1] === 0x00;
-        const storedEmpty =
-          entry.header.method === 0 && compressed.length === 0;
-        if (!canonicalEmptyDeflate && !storedEmpty) {
+        let validEmpty = entry.header.method === 0 && compressed.length === 0;
+        if (entry.header.method === 8) {
+          try {
+            validEmpty =
+              inflateRawSync(compressed, { maxOutputLength: 1 }).length === 0;
+          } catch {
+            validEmpty = false;
+          }
+        }
+        if (!validEmpty) {
           throw createUpdateError({
             code: EUpdateErrorCode.securityRejected,
             step,
@@ -2673,7 +2676,7 @@ export class BundleUpdateNode {
 
   async clearDownload() {
     try {
-      await this.clearDownloadInternal();
+      await this.clearManagedFiles({ downloads: true, extracted: false });
     } catch (error) {
       throw wrapBundleError(error, 'cleanup');
     }
@@ -2700,31 +2703,33 @@ export class BundleUpdateNode {
     }
   }
 
-  private async clearDownloadInternal(clearExtract = false) {
-    const pending = this.cacheClearPromise;
-    if (pending && !clearExtract) return pending;
+  private async clearManagedFiles(
+    { downloads, extracted }: { downloads: boolean; extracted: boolean },
+    onCleared?: () => void
+  ) {
     // Publish the barrier before cancellation callbacks can start another run.
-    const clear = (
-      pending ??
-      Promise.resolve().then(async () => {
-        const downloads = [...this.inflightDownloads.values()];
+    const previousClear = this.cacheClearPromise?.catch(() => undefined);
+    const clear = (previousClear ?? Promise.resolve())
+      .then(async () => {
+        const activeDownloads = [...this.inflightDownloads.values()];
         const verifications = [
           ...this.activeVerifications.values(),
           ...this.activePackageVerifications,
         ];
-        for (const operation of [...downloads, ...verifications]) {
+        const operations = [...activeDownloads, ...verifications];
+        for (const operation of operations) {
           operation.controller.abort();
         }
-        await Promise.allSettled([
-          ...downloads.map(({ run }) => run),
-          ...verifications.map(({ run }) => run),
-        ]);
-        fs.rmSync(this.getDownloadDir(), { recursive: true, force: true });
-        this.cleanupDiffStagingDirs();
-      })
-    )
-      .then(() => {
-        if (clearExtract) this.removeBundleExtract();
+        await Promise.allSettled(operations.map(({ run }) => run));
+        if (downloads) {
+          fs.rmSync(this.getDownloadDir(), { recursive: true, force: true });
+        }
+        if (extracted) {
+          this.removeBundleExtract();
+        } else {
+          this.cleanupDiffStagingDirs();
+        }
+        onCleared?.();
       })
       .finally(() => {
         if (this.cacheClearPromise === clear)
@@ -2813,7 +2818,11 @@ export class BundleUpdateNode {
   }
 
   async clearBundleExtract() {
-    this.removeBundleExtract();
+    try {
+      await this.clearManagedFiles({ downloads: false, extracted: true });
+    } catch (error) {
+      throw wrapBundleError(error, 'cleanup');
+    }
   }
 
   private removeBundleExtract() {
@@ -2833,7 +2842,7 @@ export class BundleUpdateNode {
 
   async clearBundle() {
     try {
-      await this.clearDownloadInternal(true);
+      await this.clearManagedFiles({ downloads: true, extracted: true });
     } catch (error) {
       throw wrapBundleError(error, 'cleanup');
     }
@@ -2857,9 +2866,11 @@ export class BundleUpdateNode {
 
   async clearAllJSBundleData() {
     try {
-      await this.clearDownloadInternal(true);
-      this.diffFallbackTargets.clear();
-      this.options.store.clearUpdateBundleData();
+      await this.clearManagedFiles({ downloads: true, extracted: true }, () => {
+        this.diffFallbackTargets.clear();
+        this.options.store.clearUpdateBundleData();
+        this.options.store.setFallbackUpdateBundleData([]);
+      });
       return await new Promise<{ success: boolean; message: string }>(
         (resolve) => {
           setTimeout(() => {

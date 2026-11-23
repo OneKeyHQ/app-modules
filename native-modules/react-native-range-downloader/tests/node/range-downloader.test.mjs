@@ -281,6 +281,47 @@ test('cancelling a single stream retains the bytes for a later Range request', a
   assert.deepEqual(readFileSync(targetPath), data);
 });
 
+test('single-stream HTTP 416 discards a rejected resume even when the validator matches', async (t) => {
+  const data = Buffer.from('resume rejected at the saved offset');
+  const targetPath = join(scratch(t), 'rejected-resume.bin');
+  const controller = new AbortController();
+  const prefix = data.subarray(0, 8);
+  const options = {
+    url: binaryUrl,
+    targetPath,
+    identity: 'rejected-resume',
+    expectedSha256: sha256(data),
+    expectedBytes: data.length,
+  };
+  await assert.rejects(downloadNodeFile({
+    ...options,
+    signal: controller.signal,
+    onProgress: ({ transferred }) => {
+      if (transferred === prefix.length) controller.abort();
+    },
+    async transport(url, headers) {
+      if (headers.Range === 'bytes=0-0') return rangeResponse(url, data, 0, 0);
+      return response(url, 200, prefix, { 'content-length': String(data.length), etag: '"fixture"' });
+    },
+  }), { code: 'CANCELLED' });
+
+  const transfers = [];
+  await downloadNodeFile({
+    ...options,
+    async transport(url, headers) {
+      if (headers.Range === 'bytes=0-0') return rangeResponse(url, data, 0, 0);
+      transfers.push(headers.Range);
+      if (headers.Range) {
+        assert.equal(headers['If-Range'], '"fixture"');
+        return response(url, 416, Buffer.alloc(0), { 'retry-after': '0' });
+      }
+      return response(url, 200, data);
+    },
+  });
+  assert.deepEqual(transfers, [`bytes=${prefix.length}-`, undefined]);
+  assert.deepEqual(readFileSync(targetPath), data);
+});
+
 test('the firmware store retains its download constraints and reader/cache lifecycle', async (t) => {
   const data = Buffer.from('firmware fixture');
   const requests = [];

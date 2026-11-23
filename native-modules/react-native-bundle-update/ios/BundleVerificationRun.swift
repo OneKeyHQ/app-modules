@@ -59,3 +59,27 @@ final class BundleVerificationRun: @unchecked Sendable {
         }
     }
 }
+
+func planFallbackBundles(
+    _ entries: [[String: String]],
+    activeAppVersion: String,
+    activeBundleVersion: String,
+    previous: [String: String]?
+) -> (retained: [[String: String]], evicted: [[String: String]]) {
+    func matches(_ entry: [String: String], _ other: [String: String]) -> Bool {
+        entry["appVersion"] == other["appVersion"] && entry["bundleVersion"] == other["bundleVersion"]
+    }
+
+    let active = ["appVersion": activeAppVersion, "bundleVersion": activeBundleVersion]
+    var updated = entries.filter { entry in
+        !matches(entry, active) && !(previous.map { matches(entry, $0) } ?? false)
+    }
+    if let previous, !matches(previous, active) {
+        updated.append(previous)
+    }
+    let retained = Array(updated.suffix(3))
+    let evicted = updated.dropLast(retained.count).filter { entry in
+        !retained.contains { matches(entry, $0) }
+    }
+    return (retained, evicted)
+}

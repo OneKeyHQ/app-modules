@@ -819,15 +819,18 @@ async function single(
     ...(offset ? { Range: `bytes=${offset}-` } : {}),
     ...(offset && isStrongEtag(knownEtag) ? { 'If-Range': knownEtag } : {}),
   };
-  const { response } = await get(
-    opts.url,
-    headers,
-    opts.signal,
-    0,
-    opts.transport
-  );
-  const status = response.statusCode ?? 0;
-  if (status !== 200 && status !== 206) throw rejectedResponse(response);
+  let response: IResponse['response'];
+  try {
+    ({ response } = await get(opts.url, headers, opts.signal, 0, opts.transport));
+    const status = response.statusCode ?? 0;
+    if (status !== 200 && status !== 206) throw rejectedResponse(response);
+  } catch (error) {
+    if (offset && classifyNodeError(error).httpStatus === 416) {
+      discard(partial, manifestPath);
+    }
+    throw error;
+  }
+  const status = response.statusCode;
   const responseEtag = response.headers.etag;
   const contentLength = Number(response.headers['content-length'] ?? 0);
   if (status === 206) {
@@ -932,7 +935,6 @@ async function singleWithRetry(
         throw classifyNodeError(error);
       await waitForRetry(retryDelay(error, retry), opts.signal);
       if (updateError.httpStatus === 416) {
-        // Revalidate the object before readManifest decides to keep/reset bytes.
         info = await probeWithRetry(opts);
       }
     }

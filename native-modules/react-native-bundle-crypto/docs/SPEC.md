@@ -20,6 +20,10 @@ Each `DirHashEntry.relativePath` passed to `verifyDirAgainstHashes` must name a 
 
 ## Lifecycle, platform behavior, and resource limits
 
+Android directory and subtree verification share the same regular-file and
+manifest-completeness checks. Subtree metadata uses the caller-supplied
+bundle-relative prefix.
+
 The verification and file operations are synchronous inside each native core; the Nitro wrappers return promises for the asynchronous API methods. No long-lived request state is retained by the core. File hashing streams input rather than loading entire files into memory. Android uses BouncyCastle for PGP verification and Java `MessageDigest`; iOS uses Gopenpgp and CommonCrypto. Both platforms use the same embedded public key and directory-path boundary. The caller must separately limit downloaded data and decide how to handle failed verification.
 
 Android path checks and filesystem moves support API 24 and later.

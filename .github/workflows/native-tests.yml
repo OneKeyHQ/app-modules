@@ -431,6 +431,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
             android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleVerificationPath.kt \
+            ../react-native-bundle-crypto/android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleDirectoryVerification.kt \
             ../react-native-bundle-crypto/android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleFileSystem.kt \
             ../react-native-bundle-crypto/android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/JvmBundleFileSystem.kt \
             tests/kotlin/BundleVerificationPathTest.kt \

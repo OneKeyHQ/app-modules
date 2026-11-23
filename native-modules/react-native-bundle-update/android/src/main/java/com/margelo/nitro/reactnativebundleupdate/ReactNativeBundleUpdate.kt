@@ -7,6 +7,7 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.margelo.nitro.reactnativebundlecrypto.verifyBundleDirectory
 import com.margelo.nitro.reactnativebundlecrypto.AndroidBundleFileSystem
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
 import com.margelo.nitro.reactnativebundlecrypto.BundleFileSystemException
@@ -78,6 +79,14 @@ private fun bundleUpdateError(error: Exception, step: String): BundleUpdateError
 
 // Public static store for CustomReactNativeHost access (called before JS starts)
 object BundleUpdateStoreAndroid {
+    internal val activationLock = Any()
+
+    internal fun isInstalled(context: Context, appVersion: String, bundleVersion: String): Boolean =
+        getCurrentBundleVersion(context) == "$appVersion-$bundleVersion" ||
+            readFallbackUpdateBundleDataFile(context).any {
+                it["appVersion"] == appVersion && it["bundleVersion"] == bundleVersion
+            }
+
     private const val PREFS_NAME = "BundleUpdatePrefs"
     internal const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
@@ -303,7 +312,11 @@ object BundleUpdateStoreAndroid {
         }
     }
 
-    fun processPreLaunchPendingTask(context: Context) {
+    fun processPreLaunchPendingTask(context: Context) = synchronized(activationLock) {
+        applyPreLaunchPendingTask(context)
+    }
+
+    private fun applyPreLaunchPendingTask(context: Context) {
         if (didProcessPreLaunchTask) return
         didProcessPreLaunchTask = true
         try {
@@ -689,17 +702,17 @@ object BundleUpdateStoreAndroid {
             return false
         }
 
-        return verifyExtractedFiles(dir, dir, getFileMetadataEntries(metadata), "bundle-verify")
+        return verifyExtractedFiles(dir, getFileMetadataEntries(metadata), "bundle-verify")
     }
 
     private fun verifyExtractedFiles(
-        root: File,
         subtree: File,
         metadata: Map<String, String>,
         logPrefix: String,
-    ): Boolean = verifyBundleFiles(
-        root = root,
-        subtree = subtree,
+        bundleRelativePrefix: String = "",
+    ): Boolean = verifyBundleDirectory(
+        directory = subtree,
+        bundleRelativePrefix = bundleRelativePrefix,
         metadata = metadata,
         fileSystem = AndroidBundleFileSystem,
         verifyHash = { file, expected ->
@@ -1076,7 +1089,7 @@ object BundleUpdateStoreAndroid {
             return true
         }
 
-        return verifyExtractedFiles(File(bundleDir), webEmbedRoot, webEmbedEntries, "web-embed-verify")
+        return verifyExtractedFiles(webEmbedRoot, webEmbedEntries, "web-embed-verify", "web-embed/")
     }
 
     /**
@@ -2087,10 +2100,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val diffMetaFile = File(diffDir, "$folderName${BundleDiffReconstruction.DIFF_META_EXTENSION}")
                 val resolvedFullPath = resolveManagedFile(downloadDir, fullFile, "verifyASC")
 
-                val isInstalled = BundleUpdateStoreAndroid.getCurrentBundleVersion(context) == folderName ||
-                    BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context).any {
-                        it["appVersion"] == appVersion && it["bundleVersion"] == bundleVersion
-                    }
+                val isInstalled = synchronized(BundleUpdateStoreAndroid.activationLock) {
+                    BundleUpdateStoreAndroid.isInstalled(context, appVersion, bundleVersion)
+                }
                 val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
                 val destinationDir = File(bundleDir, folderName)
                 resolveManagedFile(bundleDir, destinationDir, "verifyASC")
@@ -2116,7 +2128,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         skipGPG = skipGPG,
                         operation = operation,
                     )
-                    operations.publish(operation) {
+                    publishASC(operation, context, release, promote = !isInstalled) {
                         if (!isInstalled) {
                             BundleCryptoCore.safeRename(stagingPath, destinationDir.absolutePath)
                         }
@@ -2210,7 +2222,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                             skipGPG = skipGPG,
                             operation = operation,
                         )
-                        operations.publish(operation) {
+                        publishASC(operation, context, release, promote = !isInstalled) {
                             if (!skipGPG && !BundleDiffReconstruction.writeDescriptor(
                                     matchingDescriptor.copy(signature = signature), diffMetaFile, AndroidBundleFileSystem,
                                 )
@@ -2266,6 +2278,25 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
         }
+    }
+
+    private fun publishASC(
+        operation: BundleUpdateOperations.Operation,
+        context: Context,
+        release: ReleaseIdentity,
+        promote: Boolean,
+        publish: () -> Unit,
+    ) = synchronized(BundleUpdateStoreAndroid.activationLock) {
+        operations.publish(operation) {
+            if (promote && BundleUpdateStoreAndroid.isInstalled(context, release.appVersion, release.bundleVersion)) {
+                throw BundleUpdateError("INCOMPATIBLE", "verifyASC")
+            }
+            publish()
+        }
+    }
+
+    private fun activationPromise(work: () -> Unit): Promise<Unit> = updatePromise("install") {
+        synchronized(BundleUpdateStoreAndroid.activationLock, work)
     }
 
     private fun resolveManagedFile(root: File, file: File, step: String): String =
@@ -2423,7 +2454,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         // commits so a same-version reinstall (or any reader that re-cached
         // pre-commit data inside the race window) can't leave stale entries.
         BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
-        return updatePromise("install") {
+        return activationPromise {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
@@ -2440,12 +2471,6 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "installBundle: GPG check: skipGPG=$skipGPG")
 
             val folderName = "$appVersion-$bundleVersion"
-            val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
-            val previousActiveBundleVersion = currentFolderName?.let {
-                BundleUpdateStoreAndroid.bundleVersionInFolder(it, appVersion)
-            }
-            OneKeyLog.info("BundleUpdate", "installBundle: target=$folderName, current=$currentFolderName")
-
             // Verify bundle directory exists and is canonically confined inside getBundleDir(context)
             val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
@@ -2490,6 +2515,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw BundleUpdateError("INCOMPATIBLE", "install")
             }
 
+            val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
             val currentSignature = if (currentFolderName != null) BundleUpdateStoreAndroid.readSignatureFile(context, currentFolderName) else ""
 
             BundleUpdateStoreAndroid.setCurrentBundleVersionAndSignature(context, folderName, signature)
@@ -2500,40 +2526,30 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             // Manage fallback data
             try {
-                val fallbackData = BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context)
-
-                if (!currentFolderName.isNullOrEmpty()) {
-                    val curBundleVersion = BundleUpdateStoreAndroid.bundleVersionInFolder(currentFolderName, appVersion)
-                    if (curBundleVersion != null) {
-                        if (currentSignature.isNotEmpty()) {
-                            fallbackData.add(mutableMapOf(
-                                "appVersion" to appVersion,
-                                "bundleVersion" to curBundleVersion,
-                                "signature" to currentSignature
-                            ))
-                        }
-                    }
+                val previousVersion = currentFolderName?.let {
+                    BundleUpdateStoreAndroid.bundleVersionInFolder(it, appVersion)
                 }
-
-                if (fallbackData.size > 3) {
-                    val removedBundle = fallbackData.removeAt(0)
-                    val shiftApp = removedBundle["appVersion"]
-                    val shiftBundle = removedBundle["bundleVersion"]
-                    if (shiftApp != null && shiftBundle != null) {
-                        val shiftFolderName = "$shiftApp-$shiftBundle"
-                        if (shiftBundle != previousActiveBundleVersion && shiftFolderName != currentFolderName) {
-                            val oldDir = File(BundleUpdateStoreAndroid.getBundleDir(context), shiftFolderName)
-                            if (oldDir.exists()) {
-                                BundleUpdateStoreAndroid.deleteDir(oldDir)
-                            }
-                            BundleUpdateStoreAndroid.deleteSignatureFile(context, shiftFolderName)
-                        } else {
-                            OneKeyLog.info("BundleUpdate", "installBundle: skipping disk deletion of active bundle $shiftFolderName during eviction")
-                        }
-                    }
+                val previous = if (currentFolderName != folderName && previousVersion != null && currentSignature.isNotEmpty()) {
+                    mapOf("appVersion" to appVersion, "bundleVersion" to previousVersion, "signature" to currentSignature)
+                } else {
+                    null
                 }
-
+                val (fallbackData, evicted) = planFallbackBundles(
+                    BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context), appVersion, bundleVersion, previous,
+                )
                 BundleUpdateStoreAndroid.writeFallbackUpdateBundleDataFile(fallbackData, context)
+                for (entry in evicted) {
+                    val shiftApp = entry["appVersion"] ?: continue
+                    val shiftBundle = entry["bundleVersion"] ?: continue
+                    val shiftFolderName = "$shiftApp-$shiftBundle"
+                    if (shiftFolderName != folderName && shiftFolderName != currentFolderName) {
+                        val oldDir = File(BundleUpdateStoreAndroid.getBundleDir(context), shiftFolderName)
+                        if (oldDir.exists()) {
+                            BundleUpdateStoreAndroid.deleteDir(oldDir)
+                        }
+                        BundleUpdateStoreAndroid.deleteSignatureFile(context, shiftFolderName)
+                    }
+                }
                 OneKeyLog.info("BundleUpdate", "installBundle: completed successfully, installed version=$folderName, fallbackCount=${fallbackData.size}")
             } catch (e: Exception) {
                 OneKeyLog.error("BundleUpdate", "installBundle: fallbackUpdateBundleData error: ${e.message}")
@@ -2804,7 +2820,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun setCurrentUpdateBundleData(params: BundleSwitchParams): Promise<Unit> {
         BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
-        return updatePromise("install") {
+        return activationPromise {
             if (!isSafeVersionString(params.appVersion) || !isSafeVersionString(params.bundleVersion)) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: invalid version string format: appVersion=${params.appVersion}, bundleVersion=${params.bundleVersion}")
                 throw BundleUpdateError("INVALID_ARGUMENT", "install")

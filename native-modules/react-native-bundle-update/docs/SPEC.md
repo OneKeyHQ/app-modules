@@ -50,7 +50,11 @@ exists, the downloader verifies it and reuses or replaces it before returning
 a full download result. Archive and verification operations
 track cancellation until settled so cleanup waits before removing their files.
 Full and diff ASC runs verify uninstalled bundles in per-run staging directories
-and check cancellation before publishing the verified bundle.
+and check cancellation before publishing the verified bundle. Extract-only
+cleanup uses the same cancellation and admission barrier and preserves archives.
+Clearing all JS bundle data removes the active and fallback records after
+filesystem cleanup succeeds. Empty deflated files are accepted when bounded
+inflation yields zero bytes.
 The package verification ordering and release-record requirements below also
 apply to Desktop. Persisted descriptors allow full fallback to resume across Node
 instances. The Node package tests exercise the shipped entry points, signed
@@ -280,13 +284,19 @@ appear in the manifest and pass its hash check. Every manifest path must
 correspond to a regular file whose hash was verified. Installation and every
 bundle switch, including a pre-launch pending switch, recheck every extracted file
 against signed metadata immediately before changing the active bundle. Routine
-startup retains its entry-bundle-only hot-path check. Existing cancellation,
-resume, cleanup, and fallback ownership remain with the native module.
+startup retains its entry-bundle-only hot-path check.
+On mobile, activation and ASC publication share a process-wide guard across
+both JS runtimes. An ASC run that staged a new tree rejects promotion with
+`INCOMPATIBLE` if the target is now active or retained. Installs read active
+and fallback state inside the guard and commit rollback history in activation
+order. The new active bundle is removed from rollback history before eviction.
+Cancellation, resume, cleanup, and fallback ownership remain with the native module.
 Extracted-file verification derives each metadata key from the directory it
 actually walks and MUST NOT depend on the string form a caller used to name that
 directory: the same tree may be reachable through a symlinked and a resolved
 path, and Android `context.filesDir` can itself be symlinked, so mixing the two
 forms produced absolute-path keys and rejected every file on affected devices.
+Android uses the crypto core traversal for both the full tree and web-embed.
 The walked directory MUST resolve to the managed bundle directory for the
 supplied identity, and a file that cannot be expressed relative to it MUST fail
 closed with a local diagnostic rather than be looked up by an absolute path.
@@ -324,6 +334,9 @@ ZIP download and uncompressed payload limits remain 512 MiB, and the
 extraction entry limit remains 4,096. The updater and its Range Downloader
 peer are released together so the native byte-limit contract is present.
 Android and iOS diff extraction enforce the limits during extraction.
+Android rejects directory entries carrying payload bytes. iOS diff staging
+I/O failures report `STORAGE_ERROR` and preserve the downloaded diff and its
+descriptor for retry.
 On iOS, diff extraction counts ZIP entries before processing them and counts
 implicit directories before creating them. It checks declared payload sizes
 and checks actual decompressed bytes before each write. An overrun returns

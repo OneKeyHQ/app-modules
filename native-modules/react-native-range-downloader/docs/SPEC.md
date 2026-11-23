@@ -43,8 +43,9 @@ retain their meaning across ESM and CommonJS. An HTTP status is accepted only
 for `HTTP_ERROR` and feeds the same bounded retry policy. In a segmented
 transfer, a returned or thrown HTTP 416 triggers a bounded metadata re-probe.
 The refreshed URL, size, and validator govern the next transfer and resume
-decision. The bundle updater keeps its existing public download entry and
-translates errors at its boundary.
+decision. A resumed single-stream request rejected with HTTP 416 discards
+its partial and manifest before retrying from byte zero. The bundle updater
+keeps its existing public download entry and translates errors at its boundary.
 The range package does not depend on the bundle updater.
 
 `FirmwareArtifactNode` owns the Desktop firmware cache. Its constructor takes

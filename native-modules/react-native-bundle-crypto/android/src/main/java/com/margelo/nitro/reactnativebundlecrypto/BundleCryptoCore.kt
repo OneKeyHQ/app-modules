@@ -530,7 +530,8 @@ object BundleCryptoCore {
       OneKeyLog.error("BundleCrypto", "[bundle-verify] dir not found: $dirPath")
       return false
     }
-    val rootPrefix = try { dir.canonicalPath.trimEnd(File.separatorChar) + File.separator } catch (_: IOException) { return false }
+    val canonicalDir = try { dir.canonicalFile } catch (_: IOException) { return false }
+    val rootPrefix = canonicalDir.path.trimEnd(File.separatorChar) + File.separator
     val remaining = HashMap<String, String>()
     for (entry in entries) {
       if (entry.relativePath.isEmpty() || File(entry.relativePath).isAbsolute) return false
@@ -539,44 +540,15 @@ object BundleCryptoCore {
       if (remaining.put(entry.relativePath, entry.sha256) != null) return false
     }
 
-    val verified = walkRegularFiles(dir, dir, fileSystem) { file, relativePath ->
-      val expected = remaining[relativePath]
-      if (expected == null && isUnlistedExemptFile(file, relativePath)) {
-        return@walkRegularFiles true
-      }
-      val actual = if (expected == null) null else calculateSHA256(file.absolutePath).sha256
-      if (expected == null || actual == null || !secureCompare(expected, actual)) {
-        OneKeyLog.error("BundleCrypto", "[bundle-verify] missing hash or SHA256 mismatch for $relativePath")
-        return@walkRegularFiles false
-      }
-      remaining.remove(relativePath)
-      true
-    }
-    if (verified && remaining.isNotEmpty()) {
-      OneKeyLog.error("BundleCrypto", "[bundle-verify] no verified file for metadata entry: ${remaining.keys.first()}")
-    }
-    return verified && remaining.isEmpty()
-  }
-
-  private fun isUnlistedExemptFile(file: File, relativePath: String): Boolean =
-    relativePath == "metadata.json" || file.name == ".DS_Store"
-
-  private fun walkRegularFiles(
-    root: File,
-    directory: File,
-    fileSystem: BundleFileSystem,
-    visit: (File, String) -> Boolean,
-  ): Boolean {
-    val files = directory.listFiles() ?: return false
-    for (file in files) {
-      val type = try { fileSystem.lstat(file)?.type } catch (_: IOException) { return false }
-      when (type) {
-        BundleFileType.DIRECTORY -> if (!walkRegularFiles(root, file, fileSystem, visit)) return false
-        BundleFileType.REGULAR -> if (!visit(file, file.relativeTo(root).invariantSeparatorsPath)) return false
-        else -> return false
-      }
-    }
-    return true
+    return verifyBundleDirectory(
+      directory = canonicalDir,
+      metadata = remaining,
+      fileSystem = fileSystem,
+      verifyHash = { file, expected ->
+        calculateSHA256(file.absolutePath).sha256?.let { secureCompare(expected, it) } ?: false
+      },
+      logError = { OneKeyLog.error("BundleCrypto", "[bundle-verify] $it") },
+    )
   }
 
   // MARK: - Hash every regular payload file. Throws if the walk or a hash fails.
@@ -586,8 +558,8 @@ object BundleCryptoCore {
     val dir = File(dirPath)
     if (!dir.exists() || !dir.isDirectory) return emptyList()
     val results = ArrayList<DirHash>()
-    val hashed = walkRegularFiles(dir, dir, fileSystem) { file, relativePath ->
-      if (!isUnlistedExemptFile(file, relativePath)) {
+    val hashed = walkRegularBundleFiles(dir, "", fileSystem) { file, relativePath ->
+      if (!isUnlistedBundleControlFile(file, relativePath)) {
         val sha256 = calculateSHA256(file.absolutePath).sha256
           ?: throw Exception("HASH_FAILED:$relativePath")
         results.add(DirHash(relativePath, sha256))

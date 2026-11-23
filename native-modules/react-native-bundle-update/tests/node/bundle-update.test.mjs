@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
+import { deflateRawSync } from 'node:zlib';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -1091,11 +1092,65 @@ test('retryable HTTP errors preserve the partial diff for the next download', as
   assert.equal(result.diffDownloadUrl, diffDownloadUrl);
 });
 
+test('extract-only cleanup cancels ASC before it can publish and retains the archive', async (t) => {
+  const f = await fixture(t);
+  const client = f.makeClient();
+  const result = await client.downloadBundle({ ...f.params, diffDownloadUrl: undefined });
+  const archive = join(client.getDownloadDir(), `${outputName}.zip`);
+  let announceHash;
+  const hashing = new Promise((resolve) => { announceHash = resolve; });
+  const originalRead = fs.createReadStream;
+  const reader = t.mock.method(fs, 'createReadStream', (filePath, options) => {
+    if (filePath !== archive) return originalRead(filePath, options);
+    const stream = new Readable({ read() {}, signal: options.signal });
+    announceHash(stream);
+    return stream;
+  });
+
+  const verification = assert.rejects(client.verifyBundleASC(result), hasCode('CANCELLED', 'verifyASC'));
+  const stream = await hashing;
+  await client.clearBundleExtract();
+  await verification;
+  assert.equal(stream.destroyed, true);
+  assert.equal(existsSync(f.bundleDir), false);
+  assert.equal(existsSync(archive), true);
+
+  reader.mock.restore();
+  await client.verifyBundleASC(result);
+  assert.equal(existsSync(f.bundleDir), true);
+});
+
+test('a signed full bundle accepts an empty asset encoded as a stored deflate block', async (t) => {
+  const f = await fixture(t);
+  const client = f.makeClient();
+  const metadata = JSON.stringify({ 'empty.txt': hash('sha512', Buffer.alloc(0)) });
+  const archive = new AdmZip();
+  archive.addFile('metadata.json', Buffer.from(metadata));
+  const entry = archive.addFile('build/empty.txt', Buffer.alloc(0));
+  const compressed = deflateRawSync(Buffer.alloc(0), { level: 0 });
+  assert.equal(compressed.length, 5);
+  entry.header.method = 8;
+  entry.header.compressedSize = compressed.length;
+  entry.getCompressedData = () => compressed;
+  const bytes = archive.toBuffer();
+  writeFileSync(join(client.getDownloadDir(), `${outputName}.zip`), bytes);
+
+  await client.verifyBundleASC({
+    latestVersion: appVersion,
+    bundleVersion,
+    sha256: hash('sha256', bytes),
+    signature: await signDigest('metadata.json', metadata),
+  });
+  assert.equal(readFileSync(join(f.bundleDir, 'build/empty.txt')).length, 0);
+});
+
 test('explicit extract cleanup reports a storage failure before clearing the active bundle', async (t) => {
   const f = await fixture(t);
   const client = f.makeClient();
   const active = { appVersion, bundleVersion, signature: f.params.signature };
   f.store.setUpdateBundleData(active);
+  const retained = [{ ...active, bundleVersion: "41" }];
+  f.store.setFallbackUpdateBundleData(retained);
   mkdirSync(f.bundleDir, { recursive: true });
   const originalRemove = fs.rmSync;
   const rm = t.mock.method(fs, 'rmSync', (target, options) => {
@@ -1111,11 +1166,13 @@ test('explicit extract cleanup reports a storage failure before clearing the act
   await assert.rejects(client.clearBundle(), storageFailure);
   await assert.rejects(client.clearAllJSBundleData(), storageFailure);
   assert.deepEqual(f.getInstalled(), active);
+  assert.deepEqual(await client.getFallbackUpdateBundleData(), retained);
   assert.equal(existsSync(f.bundleDir), true);
   rm.mock.restore();
   await client.clearAllJSBundleData();
   assert.equal(existsSync(f.bundleDir), false);
   assert.equal(f.getInstalled(), undefined);
+  assert.deepEqual(await client.getFallbackUpdateBundleData(), []);
 });
 
 test('installs and commits the fallback list when evicted-directory cleanup fails', async (t) => {
