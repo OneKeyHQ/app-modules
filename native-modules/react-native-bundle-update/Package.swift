@@ -8,13 +8,19 @@ let package = Package(
         .target(
             name: "BundleStorageSchemaPolicy",
             path: "ios",
-            exclude: ["ReactNativeBundleUpdate.swift", "BundleDiffReconstruction.swift", "BundleVerificationRun.swift"],
+            exclude: [
+                "ReactNativeBundleUpdate.swift", "BundleDiffReconstruction.swift", "BundleVerificationRun.swift",
+                "BundleDiffZipExtractor.h", "BundleDiffZipExtractor.mm", "tests",
+            ],
             sources: ["BundleStorageSchemaPolicy.swift"]
         ),
         .target(
             name: "BundleDiffReconstruction",
             path: "ios",
-            exclude: ["ReactNativeBundleUpdate.swift", "BundleStorageSchemaPolicy.swift"],
+            exclude: [
+                "ReactNativeBundleUpdate.swift", "BundleStorageSchemaPolicy.swift",
+                "BundleDiffZipExtractor.h", "BundleDiffZipExtractor.mm", "tests",
+            ],
             sources: ["BundleDiffReconstruction.swift", "BundleVerificationRun.swift"]
         ),
         .testTarget(

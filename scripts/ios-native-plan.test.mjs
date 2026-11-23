@@ -18,7 +18,7 @@ const groups = { "ios-native": "ui", "device-utils-store": "services" };
 const expectedSchemes = [
   "react-native-pager-view-Unit-Tests", "OneKeyTextInput-Unit-Tests", "OneKeyImage-Unit-Tests",
   "react-native-native-list-Unit-Tests", "PerpDepthBar-Unit-Tests", "ReactNativeBundleCrypto-Unit-Tests",
-  "ReactNativeImageCropPicker-Unit-Tests", "ReactNativeCaptureProtection-Unit-Tests",
+  "ReactNativeBundleUpdate-Unit-Tests", "ReactNativeImageCropPicker-Unit-Tests", "ReactNativeCaptureProtection-Unit-Tests",
   "ReactNativeDeviceUtils-Unit-Tests",
   "ReactNativePhotoLibrary-Unit-Tests", "ReactNativeJpush-Unit-Tests",
   "react-native-bottom-tabs-Unit-Tests",

@@ -2435,17 +2435,29 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         BundleDiffReconstruction.retainStagingDirectory(stagingDir)
         defer { BundleDiffReconstruction.releaseStagingDirectory(stagingDir) }
 
-        // b. Extract .diff.zip into isolated staging directory with full zip safety checks
+        // b. Bound decompressed output while extracting into the per-run staging directory.
+        let stagingParent = (stagingDir as NSString).deletingLastPathComponent
         do {
-            let stagingParent = (stagingDir as NSString).deletingLastPathComponent
-            if !fm.fileExists(atPath: stagingParent) {
-                try fm.createDirectory(atPath: stagingParent, withIntermediateDirectories: true)
-            }
-            try extractZipWithSafetyChecks(zipPath: diffFilePath, to: stagingDir, step: .verifyASC)
-        } catch let err as BundleUpdateError where err.code == .security {
-            throw err
+            try fm.createDirectory(atPath: stagingParent, withIntermediateDirectories: true)
         } catch {
-            throw BundleDiffReconstructionError.fallbackRequired("diff zip extraction failed: \(error)")
+            throw BundleDiffReconstructionError.fallbackRequired("diff staging directory creation failed: \(error)")
+        }
+        let extraction = BundleDiffZipExtractor.extract(
+            archivePath: diffFilePath,
+            destination: stagingDir,
+            maxBytes: BundleDiffReconstruction.maxBundleUncompressedBytes,
+            maxEntries: UInt(BundleDiffReconstruction.maxBundleEntries)
+        )
+        switch extraction {
+        case .success:
+            guard BundleCryptoCore.validateExtractedPathSafety(stagingDir) else {
+                try? fm.removeItem(atPath: stagingDir)
+                throw BundleDiffReconstructionError.securityRejected("unsafe diff staging path")
+            }
+        case .securityRejected:
+            throw BundleDiffReconstructionError.securityRejected("diff ZIP exceeds extraction limits or contains an unsafe path")
+        default:
+            throw BundleDiffReconstructionError.fallbackRequired("diff ZIP extraction failed (\(extraction.rawValue))")
         }
 
         if verificationContext.wasCancelledByClear {

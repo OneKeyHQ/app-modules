@@ -40,8 +40,11 @@ publication. Its default transport uses Node HTTPS. Callers may inject a
 transport, which can report structured `NodeRangeDownloadError` failures.
 Known download error codes and integer HTTP statuses from 100 through 599
 retain their meaning across ESM and CommonJS. An HTTP status is accepted only
-for `HTTP_ERROR` and feeds the same bounded retry policy. The bundle updater
-keeps its existing public download entry and translates errors at its boundary.
+for `HTTP_ERROR` and feeds the same bounded retry policy. In a segmented
+transfer, a returned or thrown HTTP 416 triggers a bounded metadata re-probe.
+The refreshed URL, size, and validator govern the next transfer and resume
+decision. The bundle updater keeps its existing public download entry and
+translates errors at its boundary.
 The range package does not depend on the bundle updater.
 
 `FirmwareArtifactNode` owns the Desktop firmware cache. Its constructor takes

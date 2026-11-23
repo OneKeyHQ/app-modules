@@ -323,10 +323,13 @@ A failed rename leaves the prior record in place.
 ZIP download and uncompressed payload limits remain 512 MiB, and the
 extraction entry limit remains 4,096. The updater and its Range Downloader
 peer are released together so the native byte-limit contract is present.
-iOS enumerates extracted entries after
-extraction; Android counts entries during extraction. The extracted-path
-constraints remain in force. Failure rejects the Promise; neither platform
-falls back to a caller-provided path.
+Android and iOS diff extraction enforce the limits during extraction.
+On iOS, diff extraction counts ZIP entries before processing them and counts
+implicit directories before creating them. It checks declared payload sizes
+and checks actual decompressed bytes before each write. An overrun returns
+`SECURITY_REJECTED` and discards the staging directory. The iOS full-ZIP path
+enumerates extracted entries after extraction. The extracted-path constraints
+remain in force. Path validation failures reject the Promise on both platforms.
 
 ## Native bundle protocol
 

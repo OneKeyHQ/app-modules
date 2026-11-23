@@ -14,18 +14,23 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/react-native-bundle-update.git", :tag => "#{s.version}" }
 
   s.source_files = [
-    "ios/**/*.{swift}",
-    "ios/**/*.{m,mm}",
+    "ios/*.swift",
+    "ios/*.{h,m,mm}",
     "cpp/**/*.{hpp,cpp}",
   ]
+
+  s.public_header_files = "ios/BundleDiffZipExtractor.h"
+  s.pod_target_xcconfig = {
+    'HEADER_SEARCH_PATHS' => '"$(PODS_ROOT)/SSZipArchive/SSZipArchive/minizip"',
+  }
 
   # When ONEKEY_ALLOW_SKIP_GPG_VERIFICATION env var is set to a non-empty, non-'false' value,
   # enable the ALLOW_SKIP_GPG_VERIFICATION Swift compilation condition.
   # Without this flag, all skip-GPG code paths are compiled out (dead code elimination).
   if ENV['ONEKEY_ALLOW_SKIP_GPG_VERIFICATION'] && ENV['ONEKEY_ALLOW_SKIP_GPG_VERIFICATION'] != '' && ENV['ONEKEY_ALLOW_SKIP_GPG_VERIFICATION'] != 'false'
-    s.pod_target_xcconfig = {
+    s.pod_target_xcconfig = s.pod_target_xcconfig.merge(
       'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => '$(inherited) ALLOW_SKIP_GPG_VERIFICATION'
-    }
+    )
   end
 
   s.dependency 'React-jsi'
@@ -50,4 +55,8 @@ Pod::Spec.new do |s|
   add_nitrogen_files(s)
 
   install_modules_dependencies(s)
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+  end
 end

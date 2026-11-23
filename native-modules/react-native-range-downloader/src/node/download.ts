@@ -617,10 +617,6 @@ async function downloadPart(
         opts.transport
       );
       const status = response.statusCode ?? 0;
-      if (status === 416) {
-        const error = rejectedResponse(response);
-        throw new RangeFallback('HTTP 416', true, error.retryAfter);
-      }
       if (status !== 200 && status !== 206) throw rejectedResponse(response);
       const range = contentRange(response.headers['content-range']);
       if (
@@ -664,14 +660,18 @@ async function downloadPart(
         /* ignore manifest flush errors during unwind */
       }
       if (error instanceof RangeFallback) throw error;
+      const updateError = classifyNodeError(error);
+      if (updateError.httpStatus === 416) {
+        const retryAfter =
+          updateError instanceof DownloadHttpError ? updateError.retryAfter : null;
+        throw new RangeFallback('HTTP 416', true, retryAfter);
+      }
       if (
         opts.signal?.aborted ||
         retry === MAX_RETRIES ||
-        !isRetryableRangeDownloadError(
-          classifyNodeError(error)
-        )
+        !isRetryableRangeDownloadError(updateError)
       )
-        throw classifyNodeError(error);
+        throw updateError;
       await waitForRetry(retryDelay(error, retry), opts.signal);
     }
   }

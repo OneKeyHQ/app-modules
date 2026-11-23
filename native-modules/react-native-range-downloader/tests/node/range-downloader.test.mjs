@@ -88,6 +88,55 @@ test('Node downloads retry HTTP 503 errors from a transport using the other entr
   }
 });
 
+test('parallel HTTP 416 re-probes when the transport throws from the other module format', async (t) => {
+  const commonjs = require(`${packageName}/node`);
+  const data = Buffer.alloc(3 * 1024 * 1024, 7);
+  const oldUrl = 'https://downloads.example.test/stale.bin';
+  const newUrl = 'https://downloads.example.test/current.bin';
+
+  for (const [format, download, TransportError] of [
+    ['esm', downloadNodeFile, commonjs.NodeRangeDownloadError],
+    ['commonjs', commonjs.downloadNodeFile, NodeRangeDownloadError],
+  ]) {
+    const targetPath = join(scratch(t), `${format}.bin`);
+    let probes = 0;
+    let staleRequests = 0;
+    let currentRequests = 0;
+    await download({
+      url: binaryUrl,
+      targetPath,
+      identity: format,
+      expectedSha256: sha256(data),
+      async transport(url, headers) {
+        if (headers.Range === 'bytes=0-0') {
+          probes += 1;
+          if (probes === 1) {
+            return response(oldUrl, 206, Buffer.of(0), {
+              'content-range': `bytes 0-0/${data.length + 8}`,
+              etag: '"stale"',
+            });
+          }
+          return rangeResponse(newUrl, data, 0, 0);
+        }
+        if (url === oldUrl) {
+          staleRequests += 1;
+          assert.equal(headers['If-Range'], '"stale"');
+          throw new TransportError(NodeRangeDownloadCode.httpError, 416);
+        }
+        assert.equal(url, newUrl);
+        assert.equal(headers['If-Range'], '"fixture"');
+        currentRequests += 1;
+        const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(headers.Range);
+        return rangeResponse(url, data, Number(start), Number(end));
+      },
+    });
+    assert.equal(probes, 2);
+    assert.equal(staleRequests, 8);
+    assert.equal(currentRequests, 8);
+    assert.deepEqual(readFileSync(targetPath), data);
+  }
+});
+
 test('structured errors preserve known codes and only valid numeric HTTP statuses', () => {
   const commonjs = require(`${packageName}/node`);
   const foreign = new commonjs.NodeRangeDownloadError(NodeRangeDownloadCode.httpError, 404);

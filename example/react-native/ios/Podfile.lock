@@ -2586,6 +2586,36 @@ PODS:
     - ReactNativeRangeDownloader (= 6.8.0-1)
     - SSZipArchive (>= 2.5.4)
     - Yoga
+  - ReactNativeBundleUpdate/Tests (6.8.0-1):
+    - hermes-engine
+    - MMKV (= 2.4.0)
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeBundleCrypto (= 6.8.0-1)
+    - ReactNativeDependencies
+    - ReactNativeNativeLogger
+    - ReactNativeRangeDownloader (= 6.8.0-1)
+    - SSZipArchive (>= 2.5.4)
+    - Yoga
   - ReactNativeCaptureProtection (6.8.0-1):
     - hermes-engine
     - NitroModules
@@ -3407,6 +3437,7 @@ DEPENDENCIES:
   - "ReactNativeBundleCrypto (from `../../../node_modules/@onekeyfe/react-native-bundle-crypto`)"
   - "ReactNativeBundleCrypto/Tests (from `../../../node_modules/@onekeyfe/react-native-bundle-crypto`)"
   - "ReactNativeBundleUpdate (from `../../../node_modules/@onekeyfe/react-native-bundle-update`)"
+  - "ReactNativeBundleUpdate/Tests (from `../../../node_modules/@onekeyfe/react-native-bundle-update`)"
   - "ReactNativeCaptureProtection (from `../../../node_modules/@onekeyfe/react-native-capture-protection`)"
   - "ReactNativeCaptureProtection/Tests (from `../../../node_modules/@onekeyfe/react-native-capture-protection`)"
   - "ReactNativeCheckBiometricAuthChanged (from `../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed`)"
@@ -3833,7 +3864,7 @@ SPEC CHECKSUMS:
   ReactCommon: 145a14b942b19fc2fe38927f261955ada56978aa
   ReactNativeAppUpdate: 84781f0c39397b50502471aa69979742292f762f
   ReactNativeBundleCrypto: 866bc82b4732b3765089e34e036dd5d4ea9c7eaa
-  ReactNativeBundleUpdate: a137ff29e601822d5639f0a5513dc6b6701ff5fe
+  ReactNativeBundleUpdate: e5e6a861f54ca13f2d2e8cba0b00deecc9169dea
   ReactNativeCaptureProtection: ac103d5f2311fc6cb7412b49ebdc821b845bf97a
   ReactNativeCheckBiometricAuthChanged: 9028250455b331bd52a29bf8223ffd29c158e60f
   ReactNativeDependencies: d3b7423ba1e52525e42085c8470109abde583d2e
@@ -3863,6 +3894,6 @@ SPEC CHECKSUMS:
   TcpSocket: 594d9445e411909f63f240adf470049a41fba3e0
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
-PODFILE CHECKSUM: c7f3b90ba943c39e2be7416febb9c2ee8d51aa35
+PODFILE CHECKSUM: 9b4cc6d825f2042aba5e64a0950af83cb97be0dd
 
 COCOAPODS: 1.16.2

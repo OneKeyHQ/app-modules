@@ -23,6 +23,7 @@ const plans = {
       "OneKeyTextInput-Unit-Tests",
       "PerpDepthBar-Unit-Tests",
       "ReactNativeBundleCrypto-Unit-Tests",
+      "ReactNativeBundleUpdate-Unit-Tests",
       "ReactNativeImageCropPicker-Unit-Tests",
       "ReactNativeCaptureProtection-Unit-Tests",
       "ReactNativeDeviceUtils-Unit-Tests",
