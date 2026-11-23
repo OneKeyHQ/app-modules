@@ -3080,7 +3080,7 @@ __metadata:
     react-native: "patch:react-native@npm%3A0.88.0#~/.yarn/patches/react-native-npm-0.88.0-60c6201dd2.patch"
     react-native-mmkv: "npm:4.3.2"
     react-native-nitro-modules: "npm:0.37.0"
-    react-native-safe-area-context: "npm:^5.5.2"
+    react-native-safe-area-context: "npm:5.10.1"
     react-native-screens: "npm:4.30.0"
     react-native-web: "npm:0.21.2"
     react-test-renderer: "npm:19.3.0"
@@ -13289,13 +13289,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-safe-area-context@npm:^5.5.2":
-  version: 5.6.2
-  resolution: "react-native-safe-area-context@npm:5.6.2"
+"react-native-safe-area-context@npm:5.10.1":
+  version: 5.10.1
+  resolution: "react-native-safe-area-context@npm:5.10.1"
   peerDependencies:
     react: "*"
     react-native: "*"
-  checksum: 10/880d87ee60119321b366eef2c151ecefe14f5bc0d39cf5cfbfb167684e571d3dae2600ee19b9bc8521f5726eb285abecaa7aafb1a3b213529dafbac24703d302
+  checksum: 10/832537389e03bf2705de77ec2eff9400be543b5b244c0a74723ef678894d4c43def97a55e80c1d575fae3a0c7c6f30085dc90c8c216a2a74ee888c128b16e244
   languageName: node
   linkType: hard
 
