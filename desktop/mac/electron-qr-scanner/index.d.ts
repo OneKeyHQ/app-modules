@@ -13,6 +13,8 @@ export interface QrScannerError extends Error {
 export interface DecodeImageOptions {
   /** Images above this many pixels are downscaled first. Default 12 MP, capped at 50 MP. */
   maxPixels?: number;
+  /** Diagnostics and tests only: limit the engines. Default: Vision, then ZXing-C++. */
+  engines?: ("vision" | "zxing")[];
 }
 
 /** Raw text of the first QR symbol in a local image file, or null. */

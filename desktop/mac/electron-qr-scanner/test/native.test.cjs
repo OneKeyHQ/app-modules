@@ -29,6 +29,33 @@ test("decodes the BTCPay lightning invoice image", { skip: !nativeMac }, async (
   }
 });
 
+test("ZXing-C++ fallback decodes on its own", { skip: !nativeMac }, async () => {
+  const payload = readFileSync(fixture("lightning-payload.txt"), "utf8");
+  for (const name of [
+    "lightning-clean.png",
+    "lightning-btcpay-dark.png",
+    "lightning-inverted.png",
+    "lightning-exif-rotated.jpg",
+  ]) {
+    assert.equal(await api.decodeImage(fixture(name), { engines: ["zxing"] }), payload, name);
+  }
+  assert.equal(await api.decodeImage(fixture("no-qr.png"), { engines: ["zxing"] }), null);
+});
+
+test("Vision alone and engine validation", { skip: !nativeMac }, async () => {
+  const payload = readFileSync(fixture("lightning-payload.txt"), "utf8");
+  assert.equal(
+    await api.decodeImage(fixture("lightning-btcpay-dark.png"), { engines: ["vision"] }),
+    payload,
+  );
+  await assert.rejects(api.decodeImage(fixture("lightning-clean.png"), { engines: ["mlkit"] }), {
+    code: "decoder-unavailable",
+  });
+  await assert.rejects(api.decodeImage(fixture("lightning-clean.png"), { engines: [] }), {
+    code: "decoder-unavailable",
+  });
+});
+
 test("returns null for an image without a code", { skip: !nativeMac }, async () => {
   assert.equal(await api.decodeImage(fixture("no-qr.png")), null);
 });

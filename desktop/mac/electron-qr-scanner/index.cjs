@@ -39,7 +39,8 @@ async function decodeImage(path, options = {}) {
     throw errorWithCode("invalid-image", "path must be a non-empty string");
   }
   try {
-    return await binding().decodeImage(path, options.maxPixels);
+    // `engines` is for diagnostics and tests; default is Vision then ZXing-C++.
+    return await binding().decodeImage(path, options.maxPixels, options.engines);
   } catch (error) {
     throw toCodedError(error);
   }

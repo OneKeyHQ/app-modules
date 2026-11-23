@@ -12,13 +12,20 @@ public typealias OqsFrameCallback = @convention(c) (
   UnsafeMutableRawPointer?, Int64, UnsafeMutableRawPointer, Int32, Int32, Int64
 ) -> Void
 
-private let imagePipeline = QrImageDecodingPipeline(engines: [VisionQrEngine()])
+/// Engine bitmask shared with src/lib.rs: 1 Vision, 2 ZXing-C++.
+private func makePipeline(engines: Int32) -> QrImageDecodingPipeline {
+  var list: [QrImageEngine] = []
+  if engines & 1 != 0 { list.append(VisionQrEngine()) }
+  if engines & 2 != 0 { list.append(ZXingQrEngine()) }
+  return QrImageDecodingPipeline(engines: list)
+}
+private var pipelines: [Int32: QrImageDecodingPipeline] = [:]
 private let imageLock = NSLock()
 
 /// 1: found (outText set), 0: no code, -1: error (outError set, "<code>: <reason>").
 @_cdecl("oqs_decode_image")
 public func oqs_decode_image(
-  _ path: UnsafePointer<CChar>, _ maxPixels: Int64,
+  _ path: UnsafePointer<CChar>, _ maxPixels: Int64, _ engines: Int32,
   _ outText: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
   _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
 ) -> Int32 {
@@ -26,8 +33,10 @@ public func oqs_decode_image(
   // One decode at a time: each holds several full-size bitmaps.
   imageLock.lock()
   defer { imageLock.unlock() }
+  let pipeline = pipelines[engines] ?? makePipeline(engines: engines)
+  pipelines[engines] = pipeline
   do {
-    guard let hit = try imagePipeline.decode(url: url, maxPixels: Int(maxPixels)) else {
+    guard let hit = try pipeline.decode(url: url, maxPixels: Int(maxPixels)) else {
       return 0
     }
     outText.pointee = strdup(hit.text)

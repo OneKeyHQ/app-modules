@@ -8,7 +8,12 @@ const SHARED_SWIFT: &[&str] = &[
     "../../../native-views/react-native-qr-scanner/ios/QrImageDecodingPipeline.swift",
     "../../../native-views/react-native-qr-scanner/ios/QrFrameTextGate.swift",
 ];
-const LOCAL_SWIFT: &[&str] = &["swift/QrCapture.swift", "swift/Bridge.swift"];
+const LOCAL_SWIFT: &[&str] = &[
+    "swift/QrCapture.swift",
+    "swift/ZXingEngine.swift",
+    "swift/Bridge.swift",
+];
+const BRIDGING_HEADER: &str = "swift/ZXingBridge.h";
 const MACOS_MIN: &str = "12.0";
 
 fn xcrun(args: &[&str]) -> String {
@@ -36,6 +41,7 @@ fn main() {
         .chain(LOCAL_SWIFT)
         .map(|path| manifest.join(path))
         .collect();
+    println!("cargo:rerun-if-changed={}", manifest.join(BRIDGING_HEADER).display());
     for source in &sources {
         assert!(source.exists(), "missing Swift source {}", source.display());
         println!("cargo:rerun-if-changed={}", source.display());
@@ -49,6 +55,8 @@ fn main() {
         .args(["-module-name", "OneKeyQrScanner"])
         .args(["-target", &format!("{arch}-apple-macos{MACOS_MIN}")])
         .args(["-sdk", &sdk])
+        .arg("-import-objc-header")
+        .arg(manifest.join(BRIDGING_HEADER))
         .arg("-o")
         .arg(&library)
         .args(&sources)

@@ -19,6 +19,7 @@ extern "C" {
     fn oqs_decode_image(
         path: *const c_char,
         max_pixels: i64,
+        engines: i32,
         out_text: *mut *mut c_char,
         out_error: *mut *mut c_char,
     ) -> i32;
@@ -45,9 +46,62 @@ unsafe fn take_string(value: *mut c_char) -> String {
     text
 }
 
+/// Engine bitmask shared with swift/Bridge.swift.
+const ENGINE_VISION: i32 = 1;
+const ENGINE_ZXING: i32 = 2;
+
+/// ZXing-C++ fallback, called from the Swift image pipeline. `rgba` is a
+/// tightly packed width * height * 4 buffer. Returns 1 and a string to free
+/// with `oqs_zxing_free` when a QR code is found, 0 otherwise.
+#[no_mangle]
+pub extern "C" fn oqs_zxing_decode(
+    rgba: *const u8,
+    width: i32,
+    height: i32,
+    out_text: *mut *mut c_char,
+) -> i32 {
+    if rgba.is_null() || width <= 0 || height <= 0 || out_text.is_null() {
+        return 0;
+    }
+    let length = width as usize * height as usize * 4;
+    let pixels = unsafe { std::slice::from_raw_parts(rgba, length) };
+    let Ok(image) = zxingcpp::ImageView::from_slice(pixels, width, height, zxingcpp::ImageFormat::RGBA)
+    else {
+        return 0;
+    };
+    let reader = zxingcpp::read()
+        .formats([zxingcpp::BarcodeFormat::QRCode])
+        .try_harder(true)
+        .try_rotate(true)
+        // The pipeline has its own inverted pass.
+        .try_invert(false)
+        .max_number_of_symbols(1);
+    let Ok(barcodes) = reader.from(image) else {
+        return 0;
+    };
+    let Some(text) = barcodes.iter().map(|b| b.text()).find(|t| !t.is_empty()) else {
+        return 0;
+    };
+    match CString::new(text) {
+        Ok(text) => {
+            unsafe { *out_text = text.into_raw() };
+            1
+        }
+        Err(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn oqs_zxing_free(text: *mut c_char) {
+    if !text.is_null() {
+        drop(unsafe { CString::from_raw(text) });
+    }
+}
+
 pub struct DecodeImageTask {
     path: CString,
     max_pixels: i64,
+    engines: i32,
 }
 
 impl Task for DecodeImageTask {
@@ -58,7 +112,9 @@ impl Task for DecodeImageTask {
         let mut text: *mut c_char = ptr::null_mut();
         let mut error: *mut c_char = ptr::null_mut();
         let status =
-            unsafe { oqs_decode_image(self.path.as_ptr(), self.max_pixels, &mut text, &mut error) };
+            unsafe {
+            oqs_decode_image(self.path.as_ptr(), self.max_pixels, self.engines, &mut text, &mut error)
+        };
         match status {
             1 => Ok(Some(unsafe { take_string(text) })),
             0 => Ok(None),
@@ -72,9 +128,36 @@ impl Task for DecodeImageTask {
     }
 }
 
-/// Raw text of the first QR symbol in a local image, or null.
+/// Raw text of the first QR symbol in a local image, or null. `engines`
+/// (diagnostics and tests) limits the engines: "vision" and/or "zxing".
 #[napi]
-pub fn decode_image(path: String, max_pixels: Option<f64>) -> Result<AsyncTask<DecodeImageTask>> {
+pub fn decode_image(
+    path: String,
+    max_pixels: Option<f64>,
+    engines: Option<Vec<String>>,
+) -> Result<AsyncTask<DecodeImageTask>> {
+    let engines = match engines {
+        None => ENGINE_VISION | ENGINE_ZXING,
+        Some(names) => {
+            let mut mask = 0;
+            for name in names {
+                mask |= match name.as_str() {
+                    "vision" => ENGINE_VISION,
+                    "zxing" => ENGINE_ZXING,
+                    other => {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            format!("decoder-unavailable: unknown engine {other}"),
+                        ))
+                    }
+                };
+            }
+            if mask == 0 {
+                return Err(Error::new(Status::InvalidArg, "decoder-unavailable: no engine"));
+            }
+            mask
+        }
+    };
     let max_pixels = match max_pixels {
         None => DEFAULT_MAX_PIXELS,
         Some(value) if value.is_finite() && value >= 1.0 => (value as i64).min(MAX_PIXELS_CEILING),
@@ -87,7 +170,7 @@ pub fn decode_image(path: String, max_pixels: Option<f64>) -> Result<AsyncTask<D
     };
     let path = CString::new(path)
         .map_err(|_| Error::new(Status::InvalidArg, "invalid-image: path contains NUL"))?;
-    Ok(AsyncTask::new(DecodeImageTask { path, max_pixels }))
+    Ok(AsyncTask::new(DecodeImageTask { path, max_pixels, engines }))
 }
 
 #[napi(object)]

@@ -31,6 +31,16 @@ compiled unchanged, so both platforms decode and filter identically:
 
 Minimum macOS 12. The Swift runtime comes from the OS (`/usr/lib/swift`).
 
+ZXing-C++ (the image fallback) comes from the Rust `zxing-cpp` crate
+`=0.5.3` with the `bundled` feature, which builds the C++ library with CMake
+(CMake is required to build the module). Rust exports `oqs_zxing_decode` /
+`oqs_zxing_free`; Swift reaches them through `swift/ZXingBridge.h`
+(`-import-objc-header`) and wraps them as the `zxing` engine
+(`swift/ZXingEngine.swift`), which renders each image into the packed RGBA
+buffer the reader expects. The crate also compiles ZXing's writers (its build
+script enables them); the module grew from 0.54 MB to 1.30 MB (arm64,
+stripped).
+
 ## 3. API
 
 ```ts
@@ -55,8 +65,11 @@ from an older generation or arriving after `dispose` are released by the JS
 wrapper without being delivered. Preview is emitted before detection on the
 analysis queue, so preview rate is bounded by detection time per frame.
 
-- `decodeImage`: passes `original`, `padded`, `grayscale`, `inverted` with
-  Vision (same pipeline as iOS). `maxPixels` default 12 MP, capped at 50 MP.
+- `decodeImage`: passes `original`, `padded`, `grayscale`, `inverted`, Vision
+  then ZXing-C++ within each pass (same pipeline and order as iOS).
+  `options.engines` (`["vision"]`, `["zxing"]`) limits the engines for
+  diagnostics and tests; unknown or empty lists reject with
+  `decoder-unavailable`. `maxPixels` default 12 MP, capped at 50 MP.
   Errors: `invalid-image`, `resource-limit`.
 - `createCapture`: every `start`/`stop` begins a new generation; events from
   an older generation are dropped in JS. The same text repeats at most once
@@ -78,6 +91,7 @@ the callback context only after `destroy` returns.
 
 | Contract | Check |
 | --- | --- |
+| ZXing-C++ fallback | `test/native.test.cjs`: with `engines: ["zxing"]` the clean, BTCPay, light-on-dark and EXIF-rotated fixtures decode to the exact payload and the no-QR image to `null`; Vision alone still decodes; unknown and empty engine lists reject. |
 | Image decoding | `test/native.test.cjs`: BTCPay lightning fixtures decode to the exact payload; no-QR image resolves `null`; corrupt, missing, empty path and `maxPixels: 0` reject with `invalid-image`. |
 | Animated UR through live frames | `test/native.test.cjs`: `test/fixtures/animated-ur.mp4` (2,003-byte `crypto-psbt`, 17 fragments, 51 frames at 8 fps, from `scripts/make-ur-fixture.mjs`) assembles to the expected type, size and FNV-1a in about 2.2 s. |
 | Generations and dispose | `test/native.test.cjs`: stop/start yields a newer generation, dispose is idempotent and later `start` throws. |
@@ -96,7 +110,6 @@ repository root `node_modules`; the package itself has no dependencies.
 Pending:
 
 - Real camera run (`QR_SCANNER_CAMERA=1 npm test`, or `electron test/electron.cjs --camera`) needs a person to grant camera access.
-- ZXing-C++ fallback (the design's macOS fallback); Vision only today.
 - app-monorepo integration: main-process camera lease and IPC, preload
   receiver, DeviceStage/scan-page canvas, permission flow; real-camera
   preview latency and frame rate.
