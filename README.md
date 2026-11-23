@@ -180,8 +180,12 @@ gh run rerun RUN_ID --failed --repo OneKeyHQ/app-modules
 GitHub reuses successful independent jobs from the original revision. It also
 re-runs jobs that depend on the retried job, such as `ios-xctest` when an iOS
 job is retried. For code fixes, push the new commit and use its fresh PR run.
-Use **Re-run all jobs** when diagnosing an issue that needs fresh results from
-every job on the same revision. This guidance applies to PR `native-tests` runs.
+When diagnosing an issue that needs fresh results from every job on the same
+revision, first download any Android test reports and iOS result bundles and
+logs from the failed run's **Artifacts** section, then choose **Re-run all jobs**.
+These reports are uploaded only on failure, and the previous attempt's
+artifacts may become unavailable after a rerun. This guidance applies to PR
+`native-tests` runs.
 
 ## Releases
 
