@@ -383,9 +383,7 @@ final class NativeOverlayWindowManager: NSObject {
       target.makeKey()
       return
     }
-    // Eligible overlays were considered above. UIKit can restore a closing overlay during release.
-    if let keyWindow = scene.keyWindow, !(keyWindow is NativeOverlayPassthroughWindow) { return }
-    Self.fallbackAppWindow(in: scene)?.makeKey()
+    Self.fallbackKeyWindow(in: scene)?.makeKey()
   }
 
   func restoreFocus(_ responder: UIView, in window: UIWindow) -> Bool {
@@ -412,8 +410,10 @@ final class NativeOverlayWindowManager: NSObject {
       (entry.blocking || firstResponder(in: entry.window) != nil)
   }
 
-  private static func fallbackAppWindow(in scene: UIWindowScene) -> UIWindow? {
-    scene.windows.first {
+  // The caller has already considered eligible overlays and the original host.
+  static func fallbackKeyWindow(in scene: UIWindowScene) -> UIWindow? {
+    if let keyWindow = scene.keyWindow, !(keyWindow is NativeOverlayPassthroughWindow) { return nil }
+    return scene.windows.first {
       $0.windowScene === scene && $0.windowLevel == .normal &&
         !$0.isHidden && $0.alpha > 0 && $0.rootViewController != nil &&
         $0.canBecomeKey && !($0 is NativeOverlayPassthroughWindow)

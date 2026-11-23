@@ -132,6 +132,41 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   return observer
 }
 
+@MainActor private func verifyClosingOverlayKeyHandoff(scene: UIWindowScene, app: UIWindow) throws -> Bool {
+  let manager = NativeOverlayWindowManager()
+  let closingOwner = Owner()
+  let closingEntry = manager.window(for: closingOwner, level: .modal,
+    stackOrder: 1, blocking: true, appWindow: app)!
+  closingEntry.makeKey()
+  manager.setClosing(true, window: closingEntry)
+  try require(scene.keyWindow === closingEntry && closingEntry.windowScene === scene && !closingEntry.isHidden,
+    "the closing overlay is still visible and key")
+  try require(NativeOverlayWindowManager.fallbackKeyWindow(in: scene) === app,
+    "a closing overlay holding key allows fallback to the app")
+
+  let outgoingHost = UIWindow(windowScene: scene)
+  outgoingHost.rootViewController = UIViewController()
+  let outgoingOwner = Owner()
+  let outgoingEntry = manager.window(for: outgoingOwner, level: .modal,
+    stackOrder: 2, blocking: true, appWindow: outgoingHost)!
+  outgoingEntry.makeKey()
+  outgoingHost.windowScene = nil
+  try require(scene.keyWindow === outgoingEntry, "the outgoing overlay remains key after its host detaches")
+
+  let closingKeyObserver = SceneKeyObserver()
+  let notifications = NotificationCenter.default
+  notifications.addObserver(closingKeyObserver, selector: #selector(SceneKeyObserver.windowDidBecomeKey(_:)),
+    name: UIWindow.didBecomeKeyNotification, object: closingEntry)
+  manager.entryRemoved(from: outgoingEntry)
+  notifications.removeObserver(closingKeyObserver)
+  let restoredDuringRelease = closingKeyObserver.keyWindow === closingEntry
+  try require(outgoingEntry.windowScene == nil, "the outgoing key overlay releases synchronously")
+  try require(scene.keyWindow === app && closingEntry.windowScene === scene && !closingEntry.isHidden,
+    "the app becomes key while the closing overlay remains visible")
+  manager.entryRemoved(from: closingEntry)
+  return restoredDuringRelease
+}
+
 @MainActor private func runTests(scene: UIWindowScene, app: UIWindow) async throws -> [String] {
   var passed: [String] = []
   let manager = NativeOverlayWindowManager()
@@ -874,35 +909,6 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   app.makeKey()
   passed.append("released-key-window-preserves-uikit-restoration")
 
-  let closingOwner = Owner()
-  let closingEntry = touchManager.window(for: closingOwner, level: .modal,
-    stackOrder: 1, blocking: true, appWindow: app)!
-  closingEntry.makeKey()
-  try require(scene.keyWindow === closingEntry, "the overlay was key before it began closing")
-  let closingHandoffHost = UIWindow(windowScene: scene)
-  closingHandoffHost.rootViewController = UIViewController()
-  let closingHandoffOwner = Owner()
-  let closingHandoffEntry = touchManager.window(for: closingHandoffOwner, level: .modal,
-    stackOrder: 2, blocking: true, appWindow: closingHandoffHost)!
-  closingHandoffEntry.makeKey()
-  touchManager.setClosing(true, window: closingEntry)
-  closingHandoffHost.windowScene = nil
-  try require(scene.keyWindow === closingHandoffEntry && !closingEntry.isHidden &&
-    closingEntry.windowScene === scene, "the previous key overlay is closing but still visible")
-
-  let closingKeyObserver = SceneKeyObserver()
-  let notifications = NotificationCenter.default
-  notifications.addObserver(closingKeyObserver, selector: #selector(SceneKeyObserver.windowDidBecomeKey(_:)),
-    name: UIWindow.didBecomeKeyNotification, object: closingEntry)
-  touchManager.entryRemoved(from: closingHandoffEntry)
-  notifications.removeObserver(closingKeyObserver)
-  try require(closingHandoffEntry.windowScene == nil && closingKeyObserver.keyWindow === closingEntry,
-    "UIKit restores key to the visible closing overlay during synchronous release")
-  try require(scene.keyWindow === app && closingEntry.windowScene === scene && !closingEntry.isHidden,
-    "the app becomes key while the closing overlay remains visible")
-  touchManager.entryRemoved(from: closingEntry)
-  passed.append("released-key-window-skips-closing-overlay")
-
   let retiringHost = KeyCountingWindow(windowScene: scene)
   retiringHost.rootViewController = UIViewController()
   retiringHost.makeKeyAndVisible()
@@ -991,10 +997,19 @@ final class TestScene: UIResponder, UIWindowSceneDelegate {
     guard !started, let scene = scene as? UIWindowScene, let window else { return }
     started = true
     Task { @MainActor in
-      let result: [String: Any]
-      do { result = ["outcome": "passed", "tests": try await runTests(scene: scene, app: window)] }
-      catch let failure as Failure { result = ["outcome": "failed", "failure": failure.name] }
-      catch { result = ["outcome": "failed", "failure": "unexpected test error"] }
+      var result: [String: Any] = ["iosVersion": UIDevice.current.systemVersion]
+      do {
+        result["closingOverlayRegainedKeyDuringRelease"] = try verifyClosingOverlayKeyHandoff(scene: scene, app: window)
+        let tests = try await runTests(scene: scene, app: window)
+        result["outcome"] = "passed"
+        result["tests"] = ["released-key-window-skips-closing-overlay"] + tests
+      } catch let failure as Failure {
+        result["outcome"] = "failed"
+        result["failure"] = failure.name
+      } catch {
+        result["outcome"] = "failed"
+        result["failure"] = "unexpected test error"
+      }
       let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("results.json")
       try! JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: url)
     }

@@ -834,9 +834,14 @@ Automated (P0):
   The two-app-window check verifies that, without an eligible overlay or
   attached original host, synchronous release preserves the key window UIKit
   restored even when another app window is the first fallback candidate.
-  When UIKit restores key to a still-visible closing overlay during release,
-  a separate check verifies the app window takes key while the closing overlay
-  stays attached.
+  The closing-overlay check sets the closing overlay as key to verify the
+  fallback candidate independently of UIKit's release order. It then verifies
+  that releasing a different key overlay leaves the app window key and the
+  closing overlay attached. UIKit's intermediate choice is recorded with the
+  simulator OS version and can vary without failing the check. Synchronous
+  key restoration to the closing overlay was observed on iOS 18.6 and 27.0.
+  The full iOS 18.6 run reaches the closing-overlay check and then stops at
+  the existing synthetic-touch recheck after the prior last UP.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
