@@ -614,4 +614,46 @@ final class NativeListActivityPresentationTests: XCTestCase {
     let freshTitle = try XCTUnwrap(Mirror(reflecting: fresh).children.first { $0.label == "title" }?.value as? UILabel)
     XCTAssertEqual(title.frame, freshTitle.frame, "recycled and fresh rows lay out the title the same way")
   }
+
+  // Amount labels share the stacked column's width. A short amount (hugging) must not
+  // squeeze a longer one (compression), whatever the order or number of lines.
+  func testStackedAmountsKeepTheLongestTextWhole() throws {
+    let details = NativeListActivityDetailsView()
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 2000))
+    details.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(details)
+    NSLayoutConstraint.activate([
+      details.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      details.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      details.topAnchor.constraint(equalTo: container.topAnchor),
+    ])
+    func labels(_ view: UIView) -> [UILabel] {
+      if view.isHidden { return [] }
+      return ((view as? UILabel).map { [$0] } ?? []) + view.subviews.flatMap(labels)
+    }
+    let long = ["key": "long", "text": "+123,456.78 USDT", "secondaryText": "$1"]
+    let cases: [(String, [[String: Any]])] = [
+      ("long first", [long, ["key": "short", "text": "1", "secondaryText": "$1"]]),
+      ("long last", [["key": "short", "text": "1", "secondaryText": "$1"], long]),
+      ("six lines", (0..<6).map { $0 == 3 ? long : ["key": "s\($0)", "text": "\($0)", "secondaryText": "$1"] }),
+      ("32 lines", (0..<32).map { $0 == 31 ? long : ["key": "s\($0)", "text": "\($0)", "secondaryText": "$1"] }),
+    ]
+    for (name, amounts) in cases {
+      details.bind(try NativeListItem(data: [
+        "type": "activity", "key": "tx", "title": "Receive", "description": "0xc168f7...62f46d",
+        "leading": ["kind": "icon", "name": "ArrowBottomOutline"], "hideLeading": true,
+        "amounts": amounts,
+      ]), theme: nil, fonts: NativeListFontFamilies())
+      container.setNeedsLayout()
+      container.layoutIfNeeded()
+      let column = try XCTUnwrap(details.arrangedSubviews.first as? UIStackView).arrangedSubviews[2]
+      let texts = labels(column).filter { !($0.text ?? "").isEmpty }
+      let widest = texts.map(\.intrinsicContentSize.width).max() ?? 0
+      XCTAssertEqual(column.bounds.width, widest, accuracy: 1, name)
+      for label in texts {
+        XCTAssertGreaterThanOrEqual(label.bounds.width + 0.5, label.intrinsicContentSize.width,
+          "\(name): \(label.text ?? "") is not truncated")
+      }
+    }
+  }
 }

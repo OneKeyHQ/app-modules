@@ -339,9 +339,11 @@ private final class NativeListActivityAmountView: UIStackView {
     // Stacked amounts stay at their text width (Android WRAP_CONTENT). The
     // identity column then receives the leftover row width, which is what
     // measure() already assumes. Table columns ignore this: their required
-    // widths win (OK-67497).
+    // widths win (OK-67497). Hugging stays below the labels' compression
+    // resistance (750): all amount labels share the column width, so a short
+    // label must never squeeze a longer one.
     [primary, secondary].forEach {
-      $0.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+      $0.setContentHuggingPriority(UILayoutPriority(749), for: .horizontal)
     }
     [primary, secondary].forEach(labels.addArrangedSubview)
     [visual, labels].forEach(addArrangedSubview)
