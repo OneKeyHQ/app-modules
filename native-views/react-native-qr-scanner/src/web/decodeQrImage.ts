@@ -10,6 +10,33 @@ import type { RgbaImage } from './imageOps';
 const MAX_SOURCE_PIXELS = 200_000_000;
 const MAX_PIXELS_CEILING = 50_000_000;
 
+// Two-pixel fixtures with EXIF orientation 6. Bitmap implementations differ
+// on which formats honor the tag. Probe only when an upload needs resizing.
+const ORIENTATION_PROBES = {
+  png: 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAGmVYSWZNTQAqAAAACAABARIAAwAAAAEABgAAAAAAANZnS2kAAAALSURBVHicY2AAAwAABwABsoas9AAAAABJRU5ErkJggg==',
+  webp: 'UklGRk4AAABXRUJQVlA4WAoAAAAIAAAAAQAAAAAAVlA4TA4AAAAvAQAAAAcQEf0PRET/A0VYSUYaAAAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAA=',
+};
+type OrientationFormat = keyof typeof ORIENTATION_PROBES;
+const orientationSupport = new Map<OrientationFormat, Promise<boolean>>();
+
+function appliesBitmapOrientation(format: OrientationFormat): Promise<boolean> {
+  let support = orientationSupport.get(format);
+  if (!support) {
+    const bytes = Uint8Array.from(atob(ORIENTATION_PROBES[format]), (byte) => byte.charCodeAt(0));
+    support = createImageBitmap(new Blob([bytes], { type: `image/${format}` }), {
+      imageOrientation: 'from-image',
+    }).then((bitmap) => {
+      try {
+        return bitmap.width === 1 && bitmap.height === 2;
+      } finally {
+        bitmap.close();
+      }
+    }, () => false);
+    orientationSupport.set(format, support);
+  }
+  return support;
+}
+
 async function blobToPixels(blob: Blob, maxPixels: number): Promise<RgbaImage> {
   let dimensions: Awaited<ReturnType<typeof readImageDimensions>>;
   try {
@@ -17,7 +44,7 @@ async function blobToPixels(blob: Blob, maxPixels: number): Promise<RgbaImage> {
   } catch {
     throw new QrScannerError('invalid-image', 'unreadable or unsupported image');
   }
-  const { width: sourceWidth, height: sourceHeight, swapAxes } = dimensions;
+  const { width: sourceWidth, height: sourceHeight, orientationFormat } = dimensions;
   if (sourceWidth < 1 || sourceHeight < 1) {
     throw new QrScannerError('invalid-image', 'invalid image dimensions');
   }
@@ -25,17 +52,19 @@ async function blobToPixels(blob: Blob, maxPixels: number): Promise<RgbaImage> {
     throw new QrScannerError('resource-limit', `image has ${sourceWidth}x${sourceHeight} pixels`);
   }
 
-  const orientedWidth = swapAxes ? sourceHeight : sourceWidth;
-  const orientedHeight = swapAxes ? sourceWidth : sourceHeight;
-  const size = fitToPixelBudget(orientedWidth, orientedHeight, maxPixels);
-  const options: ImageBitmapOptions = { imageOrientation: 'from-image' };
-  if (size.width !== orientedWidth || size.height !== orientedHeight) {
-    options.resizeWidth = size.width;
-    options.resizeHeight = size.height;
-    options.resizeQuality = 'high';
-  }
   let bitmap: ImageBitmap;
   try {
+    const options: ImageBitmapOptions = { imageOrientation: 'from-image' };
+    if (sourceWidth * sourceHeight > maxPixels) {
+      const swapAxes = dimensions.swapAxes &&
+        (!orientationFormat || await appliesBitmapOrientation(orientationFormat));
+      const width = swapAxes ? sourceHeight : sourceWidth;
+      const height = swapAxes ? sourceWidth : sourceHeight;
+      const size = fitToPixelBudget(width, height, maxPixels);
+      options.resizeWidth = size.width;
+      options.resizeHeight = size.height;
+      options.resizeQuality = 'high';
+    }
     bitmap = await createImageBitmap(blob, options);
   } catch {
     throw new QrScannerError('invalid-image', 'unreadable or unsupported image');

@@ -237,6 +237,18 @@ describe('createUrAssembler', () => {
     ).toMatchObject({ status: 'rejected', error: { code: 'too-large' } });
   });
 
+  it('applies the configured byte limit before word alignment', () => {
+    const cbor = cborBytes(100);
+    expect(cbor.length).toBe(102);
+    const parts = fountainParts(cbor, 34, 3);
+    const assembler = createUrAssembler({ limits: { maxRetainedBytes: 102 } });
+    expect(assembler.receive(parts[0]!).status).toBe('progress');
+    expect(assembler.receive(parts[1]!).status).toBe('progress');
+    expect(assembler.receive(parts[2]!)).toEqual({
+      status: 'complete', result: { kind: 'ur', type: 'bytes', cbor: Uint8Array.from(cbor) },
+    });
+  });
+
   it('rejects when retained parts exceed the session budget', () => {
     const parts = fountainParts(cborBytes(300), 50, 3);
     const assembler = createUrAssembler({ limits: { maxRetainedBytes: 100 } });

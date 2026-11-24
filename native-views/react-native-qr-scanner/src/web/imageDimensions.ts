@@ -2,6 +2,7 @@ interface Dimensions {
   width: number;
   height: number;
   swapAxes?: boolean;
+  orientationFormat?: 'png' | 'webp';
 }
 type Read = (offset: number, count: number) => Promise<DataView>;
 const MAX_HEADERS = 512;
@@ -75,8 +76,9 @@ async function chunkExif(read: Read, offset: number, end: number, png: boolean):
     if (type === exif) {
       return exifSwapsAxes(await read(offset + 8, Math.min(length, MAX_EXIF_BYTES)));
     }
-    // PNG eXIf is permitted on either side of IDAT.
-    if (png && type === 0x49454e44) return false;
+    // PNG metadata preceding IDAT contains the orientation. Image data can
+    // be split across arbitrarily many IDAT chunks.
+    if (png && (type === 0x49444154 || type === 0x49454e44)) return false;
     offset = next;
   }
   if (offset < end) throw new Error('too many image chunks');
@@ -96,7 +98,7 @@ async function webpDimensions(read: Read, size: number): Promise<Dimensions> {
       const height = 1 + data.getUint8(7) + data.getUint16(8, true) * 256;
       const swapAxes = (data.getUint8(0) & 0x08) !== 0 &&
         await chunkExif(read, 30, end, false);
-      return { width, height, swapAxes };
+      return { width, height, swapAxes, orientationFormat: 'webp' };
     }
     case 0x5650384c: { // VP8L
       if (length < 5) break;
@@ -134,6 +136,7 @@ export async function readImageDimensions(blob: Blob): Promise<Dimensions> {
       width: header.getUint32(8),
       height: header.getUint32(12),
       swapAxes: await chunkExif(read, 33, blob.size, true),
+      orientationFormat: 'png',
     };
   }
   if (type === 0x52494646 && signature.getUint32(8) === 0x57454250) {

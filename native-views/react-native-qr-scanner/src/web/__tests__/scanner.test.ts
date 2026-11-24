@@ -153,6 +153,58 @@ describe('createWebQrScanner camera start', () => {
     }
   });
 
+  it.each([false, true])('keeps recovery pending through the newest switch (success=%s)', async (success) => {
+    const original = fakeStream();
+    const stale = fakeStream();
+    const newest = fakeStream();
+    const recovered = fakeStream();
+    const openingStale = deferred<unknown>();
+    const openingNewest = deferred<unknown>();
+    const calls: (string | undefined)[] = [];
+    const open = jest.fn((constraints: MediaStreamConstraints) => {
+      const { deviceId } = constraints.video as MediaTrackConstraints;
+      calls.push((deviceId as { exact?: string }).exact);
+      if (calls.length === 1) return Promise.resolve(original.stream);
+      if (calls.length === 2) return openingStale.promise;
+      if (calls.length === 3) return openingNewest.promise;
+      return Promise.resolve(recovered.stream);
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true, value: { getUserMedia: open },
+    });
+    stageVideo(fakeVideo(async () => {}));
+    const video = fakeVideo(async () => {});
+    const onError = jest.fn();
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' }, onError,
+    });
+    try {
+      await scanner.start();
+      const switchB = scanner.switchCamera('camera-b');
+      while (calls.length < 2) await new Promise((resolve) => setImmediate(resolve));
+      const switchC = scanner.switchCamera('camera-c');
+      while (calls.length < 3) await new Promise((resolve) => setImmediate(resolve));
+
+      original.track.readyState = 'ended';
+      openingStale.resolve(stale.stream);
+      await switchB;
+      expect(stale.track.stop).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual(['camera-a', 'camera-b', 'camera-c']);
+
+      if (success) openingNewest.resolve(newest.stream);
+      else openingNewest.reject(Object.assign(new Error('disconnected'), { name: 'NotFoundError' }));
+      await switchC;
+
+      expect(video.srcObject).toBe(success ? newest.stream : recovered.stream);
+      expect(onError).toHaveBeenCalledTimes(success ? 0 : 1);
+      expect(calls).toEqual(success
+        ? ['camera-a', 'camera-b', 'camera-c']
+        : ['camera-a', 'camera-b', 'camera-c', 'camera-a']);
+    } finally {
+      scanner.dispose();
+    }
+  });
+
   it('maps getUserMedia errors to error codes', async () => {
     for (const [name, code] of [
       ['NotAllowedError', 'permission-denied'],

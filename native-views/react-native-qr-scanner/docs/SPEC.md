@@ -212,8 +212,10 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
   for JPEG, PNG, WebP, GIF and BMP before creating any bitmap. Invalid or
   unsupported headers reject with `invalid-image`; sources above 200 MP
   reject with `resource-limit`. Header traversal reads only required ranges,
-  with up to 512 segments or chunks. JPEG, PNG and WebP EXIF orientation
-  informs resize dimensions. The bitmap request uses a budgeted output
+  with up to 512 metadata segments or chunks. PNG metadata traversal stops
+  at the first IDAT. EXIF orientation informs resize dimensions. When sizing
+  a rotated PNG or WebP, a cached small bitmap probe accounts for whether
+  the browser applies that format’s orientation. The bitmap request uses a budgeted output
   size; internal decode allocations remain browser-dependent. The bitmap
   uses `imageOrientation: "from-image"`; the passes
   are pure functions on RGBA buffers (`src/web/imageOps.ts`); engines are a
@@ -246,7 +248,10 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   the camera pauses in the background. Missing hardware (`no-camera`) is
   checked before permission; permission is requested through React Native's
   `PermissionAwareActivity`. Overlapping views share one permission request
-  per activity. A deactivated or disposed view releases its registration.
+  per activity. The request expires after 60 s if React Native loses its
+  callback. Expiry checks the current grant and releases the shared request
+  so a later activation can start a new one. A deactivated or disposed view
+  releases its registration.
   Live decoder failures report `decoder-unavailable` at most once per
   second per binding; a failed frame is closed and analysis can continue.
   The library manifest declares `CAMERA` and
@@ -333,8 +338,10 @@ createWebQrScanner({
   its old stream and retry once. While stopped, selection is saved for
   `start()`. A newer selection supersedes pending acquisition, including a
   return to the current camera. If a stale request ends the working track,
-  the scanner releases the stale stream and reacquires the latest selection
-  once when no newer request is in flight. Each camera-change subscription
+  the scanner releases the stale stream and keeps recovery pending until the
+  newest switch settles. If that switch did not replace the ended track,
+  the scanner attempts to restore the last committed camera once. Stop and
+  disposal clear pending recovery. Each camera-change subscription
   has independent cleanup. On startup, a missing remembered ID falls back
   to the default. Cancellation prevents later permission requests and
   disposes streams that arrive late.
@@ -405,8 +412,8 @@ Frame text, pixels and CBOR never go to logs or metrics.
 2 million operation budget covers vendor index selection, sparse-to-packed
 equation reduction, and final back-substitution. Each independent equation
 occupies one pivot slot; dependent frames do not add rows. The per-session
-retention budget covers live fragment buffers, with a separate 8 MiB limit
-for packed indexes and pivot storage. Distinct sequence tracking remains
+retention budget counts the encoded bytes in live fragments. Packed indexes,
+pivot storage and word-alignment overhead share a separate internal 8 MiB limit. Distinct sequence tracking remains
 bounded separately. Camera analysis and native image decoding run off the
 UI thread.
 

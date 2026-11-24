@@ -112,9 +112,11 @@ export class FountainAssembly {
         coefficients = coefficients.slice(0, pivotWord + 1);
       }
     }
-    const indexBytes = this.indexBytes + (coefficients?.byteLength ?? 0);
+    const fragmentBytes = this.header.fragmentLength;
+    const indexBytes = this.indexBytes + (coefficients?.byteLength ?? 0) +
+      (data.byteLength - fragmentBytes);
     if (indexBytes > MAX_INDEX_BYTES ||
-        (this.rank + 1) * data.byteLength > this.maxRetainedBytes) {
+        (this.rank + 1) * fragmentBytes > this.maxRetainedBytes) {
       throw new FountainLimitError('UR parts exceed the retained size limit');
     }
     this.indexBytes = indexBytes;

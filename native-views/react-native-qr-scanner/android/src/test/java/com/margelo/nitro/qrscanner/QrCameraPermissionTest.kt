@@ -1,18 +1,29 @@
 package com.margelo.nitro.qrscanner
 
 import android.content.pm.PackageManager
+import android.os.Looper
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class QrCameraPermissionTest {
   private class Activity : PermissionAwareActivity {
     var prompts = 0
     private var reply: PermissionListener? = null
-    private var code = 0
+    var code = 0
+      private set
+    var currentGrant = PackageManager.PERMISSION_DENIED
     override fun checkPermission(permission: String, pid: Int, uid: Int) = PackageManager.PERMISSION_DENIED
-    override fun checkSelfPermission(permission: String) = PackageManager.PERMISSION_DENIED
+    override fun checkSelfPermission(permission: String) = currentGrant
     override fun shouldShowRequestPermissionRationale(permission: String) = false
 
     override fun requestPermissions(permissions: Array<String>, requestCode: Int, listener: PermissionListener?) {
@@ -21,9 +32,9 @@ class QrCameraPermissionTest {
       code = requestCode
     }
 
-    fun answer(granted: Boolean) {
+    fun answer(granted: Boolean, requestCode: Int = code): Boolean {
       val result = if (granted) PackageManager.PERMISSION_GRANTED else PackageManager.PERMISSION_DENIED
-      reply?.onRequestPermissionsResult(code, emptyArray(), intArrayOf(result))
+      return reply?.onRequestPermissionsResult(requestCode, emptyArray(), intArrayOf(result)) ?: false
     }
   }
 
@@ -43,4 +54,29 @@ class QrCameraPermissionTest {
     activity.answer(false)
     assertEquals(4 to false, results.last())
   }
+  @Test fun expiresALostCallbackAndDoesNotSettleTheNewRequestWithAnOldResult() {
+    val activity = Activity()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+    val expiredCode = activity.code
+
+    shadowOf(Looper.getMainLooper()).idleFor(60, TimeUnit.SECONDS)
+    assertEquals(listOf(false), results)
+    QrCameraPermission.request(activity) { results += it }
+    assertEquals(2, activity.prompts)
+    assertFalse(activity.answer(false, expiredCode))
+    activity.answer(true)
+    assertEquals(listOf(false, true), results)
+  }
+
+  @Test fun readsTheCurrentGrantAfterAMissingCallback() {
+    val activity = Activity()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+    activity.currentGrant = PackageManager.PERMISSION_GRANTED
+
+    shadowOf(Looper.getMainLooper()).idleFor(60, TimeUnit.SECONDS)
+    assertEquals(listOf(true), results)
+  }
+
 }

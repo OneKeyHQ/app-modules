@@ -58,6 +58,55 @@ describe('Web image dimension preflight', () => {
     await expect(readImageDimensions(blob(bytes))).resolves.toMatchObject({ width: 16, height: 24 });
   });
 
+  it('stops scanning PNG metadata before a long run of image data chunks', async () => {
+    const header = [
+      0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10,
+      0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+      0, 0, 0, 16, 0, 0, 0, 24, 8, 2, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    const idat = [0, 0, 0, 0, 0x49, 0x44, 0x41, 0x54, 0x35, 0xaf, 6, 0x1e];
+    const end = [0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+    const input = blob([...header, ...Array.from({ length: 600 }, () => idat).flat(), ...end]);
+    await expect(readImageDimensions(input)).resolves.toMatchObject({ width: 16, height: 24 });
+  });
+
+  it('keeps WebP aspect ratio when the browser ignores orientation metadata', async () => {
+    const bytes = Buffer.from(
+      'UklGRk4AAABXRUJQVlA4WAoAAAAIAAAAAQAAAAAAVlA4TA4AAAAvAQAAAAcQEf0PRET/A0VYSUYaAAAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAA=',
+      'base64'
+    );
+    // Set canvas dimensions in the fixture header. Pixel decoding is mocked.
+    bytes.writeUIntLE(799, 24, 3);
+    bytes.writeUIntLE(599, 27, 3);
+    const input = blob([...bytes]);
+    const closeProbe = jest.fn();
+    const create = jest.fn()
+      .mockResolvedValueOnce({ width: 2, height: 1, close: closeProbe })
+      .mockResolvedValue({ width: 400, height: 300, close: jest.fn() });
+    Object.assign(globalThis, {
+      createImageBitmap: create,
+      Blob: NodeBlob,
+      ImageData: class {},
+      OffscreenCanvas: jest.fn(() => ({
+        getContext: () => ({
+          drawImage: jest.fn(),
+          getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+        }),
+      })),
+      BarcodeDetector: class {
+        static async getSupportedFormats() { return ['qr_code']; }
+        async detect() { return [{ rawValue: 'test QR' }]; }
+      },
+    });
+    await expect(decodeQrImage(input, { maxPixels: 120_000 })).resolves.toBe('test QR');
+    await expect(decodeQrImage(input, { maxPixels: 120_000 })).resolves.toBe('test QR');
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(create).toHaveBeenLastCalledWith(input, {
+      imageOrientation: 'from-image', resizeWidth: 400, resizeHeight: 300, resizeQuality: 'high',
+    });
+    expect(closeProbe).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects oversized or unreadable headers before invoking createImageBitmap', async () => {
     const create = jest.fn();
     Object.assign(globalThis, { createImageBitmap: create });

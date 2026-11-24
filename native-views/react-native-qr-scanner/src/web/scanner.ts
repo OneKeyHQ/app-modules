@@ -84,6 +84,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
   const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
   let stream: MediaStream | undefined;
+  let interruptedStream: MediaStream | undefined;
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let analysing = false;
@@ -280,7 +281,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           return;
         }
         const code = cameraErrorCode(error);
-        if (previous && stream === previous && code === 'camera-busy') {
+        if (previous && stream === previous && hasLiveCamera() && code === 'camera-busy') {
           generation += 1;
           cancelSchedule();
           releaseCamera();
@@ -354,10 +355,17 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         error instanceof Error ? error.message : String(error));
     } finally {
       releaseCandidate();
-      // On single-camera WebKit, even a stale acquisition can end the
-      // selected stream. Recheck after releasing that acquisition's tracks.
-      if (reconcileAfterRelease && active && !acquisition && stream && !hasLiveCamera()) {
-        await acquireCamera(deviceId, true);
+      // A stale request can preempt the working camera while the newest
+      // request is still opening. Keep that recovery pending until it settles.
+      if (reconcileAfterRelease && active && stream && !hasLiveCamera()) {
+        interruptedStream = stream;
+      }
+      if (active && !acquisition && interruptedStream) {
+        const interrupted = interruptedStream;
+        interruptedStream = undefined;
+        if (stream === interrupted && !hasLiveCamera()) {
+          await acquireCamera(streamDeviceId, true);
+        }
       }
     }
   }
@@ -393,6 +401,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     },
     stop() {
       active = false;
+      interruptedStream = undefined;
       generation += 1;
       invalidateAcquisition();
       cancelSchedule();
