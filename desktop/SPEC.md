@@ -85,8 +85,8 @@ workflow does not access or modify consumer repositories.
 
 The cross-platform `@onekeyfe/electron-qr-scanner` preview contains macOS
 and Windows loaders and native binaries for x64 and arm64. Its npm version
-tracks the validated Electron major. The root entry selects the host
-platform and reports readiness as `onReady(generation, deviceId?, info?)`.
+tracks the validated Electron major. The CommonJS and named ESM exports at the package root select the host
+platform and report readiness as `onReady(generation, deviceId?, info?)`.
 The third argument provides Windows capture metadata when available. The
 `/mac` and `/win` entries expose the platform types and readiness signatures.
 

@@ -58,6 +58,7 @@ app.whenReady().then(async () => {
   let urStartedAt;
   let inFlight = false;
   let finished = false;
+  let restartRequired = false;
 
   const status = () => {
     const infoLine = report.readyInfo
@@ -93,6 +94,20 @@ app.whenReady().then(async () => {
     setTimeout(() => app.exit(0), 1500);
   };
 
+  const recordCaptureError = (error) => {
+    restartRequired = true;
+    report.errors.push({ code: error.code ?? "decoder-unavailable" });
+    if (api.shouldFallbackToWeb(error)) {
+      report.fallbackRecommended = true;
+    }
+    status();
+  };
+
+  const stopAfterPreviewError = () => {
+    capture.stop();
+    recordCaptureError({ code: "preview-unavailable" });
+  };
+
   const capture = api.createCapture({
     source: {
       kind: "camera",
@@ -109,13 +124,7 @@ app.whenReady().then(async () => {
       report.readyInfo = info ?? null;
       status();
     },
-    onError: (error) => {
-      report.errors.push({ code: error.code });
-      if (api.shouldFallbackToWeb(error)) {
-        report.fallbackRecommended = true;
-      }
-      status();
-    },
+    onError: recordCaptureError,
     onText: (text) => {
       if (/^ur:/i.test(text)) {
         urStartedAt ??= Date.now();
@@ -156,20 +165,12 @@ app.whenReady().then(async () => {
       } catch {
         inFlight = false;
         frame.release();
-        report.errors.push({ code: "preview-unavailable" });
-        report.fallbackRecommended = true;
-        capture.stop();
-        status();
+        stopAfterPreviewError();
         return;
       }
       sharedTexture
         .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
-        .catch(() => {
-          report.errors.push({ code: "preview-unavailable" });
-          report.fallbackRecommended = true;
-          capture.stop();
-          status();
-        })
+        .catch(stopAfterPreviewError)
         .finally(() => {
           imported.release();
           inFlight = false;
@@ -177,16 +178,26 @@ app.whenReady().then(async () => {
     },
   });
 
+  const startCapture = () => {
+    restartRequired = false;
+    try {
+      capture.start();
+    } catch (error) {
+      recordCaptureError(error);
+    }
+  };
+
   ipcMain.on("camera-select", (_event, deviceId) => {
+    if (finished) return;
     try {
       capture.setDevice(deviceId);
+      if (restartRequired) startCapture();
     } catch (error) {
-      report.errors.push({ code: error.code ?? "decoder-unavailable" });
-      status();
+      recordCaptureError(error);
     }
   });
 
-  capture.start();
+  startCapture();
   setInterval(status, 500);
   setTimeout(finish, seconds * 1000);
   win.on("closed", finish);

@@ -170,7 +170,8 @@ Verified on Windows x64 (Rust 1.100.0, MSVC 2022, Node 24.13.0, Electron
 
 Pending:
 
-- Manual camera reports contain sanitized metadata, coded errors, counts,
+- The manual camera picker starts a new capture when selecting a device after
+  a terminal error. Manual camera reports contain sanitized metadata, coded errors, counts,
   timings and UR conformance results. Camera identifiers and QR text are
   kept out of the report.
 - Real Windows webcam verification (builtin + USB cameras, switching between
