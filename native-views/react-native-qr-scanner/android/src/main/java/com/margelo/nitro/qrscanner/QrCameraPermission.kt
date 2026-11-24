@@ -6,22 +6,31 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.MainThread
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import com.facebook.react.modules.core.PermissionAwareActivity
 import java.lang.ref.WeakReference
+import java.util.UUID
 import java.util.WeakHashMap
 
-/** ReactActivityDelegate can retain only one permission listener per activity. */
+/** Shares one camera permission request per host activity. */
 @MainThread
 internal object QrCameraPermission {
   private const val FIRST_REQUEST_CODE = 0x5152
   private const val LAST_REQUEST_CODE = 0x51ff
-  private const val REQUEST_TIMEOUT_MS = 60_000L
-  private const val FOCUS_CHECK_MS = 1_000L
+  private const val FOREGROUND_TIMEOUT_MS = 60_000L
+  private const val LEGACY_MAX_WAIT_MS = 300_000L
+  private const val LEGACY_CHECK_MS = 1_000L
   private val main = Handler(Looper.getMainLooper())
   private var nextRequestCode = FIRST_REQUEST_CODE
+
   private class Request {
     val listeners = LinkedHashSet<(Boolean) -> Unit>()
+    var cleanup: (() -> Unit)? = null
   }
 
   private val pending = WeakHashMap<PermissionAwareActivity, Request>()
@@ -31,53 +40,87 @@ internal object QrCameraPermission {
     val previous = pending[activity]
     val request = previous ?: Request().also { pending[activity] = it }
     request.listeners.add(registration)
-    if (previous == null) {
-      val activityRef = WeakReference(activity)
-      val requestCode = nextRequestCode
-      nextRequestCode = if (requestCode == LAST_REQUEST_CODE) FIRST_REQUEST_CODE else requestCode + 1
-      lateinit var expiry: Runnable
-      fun finish(granted: Boolean) {
-        val owner = activityRef.get() ?: return
-        if (pending[owner] !== request) return
-        pending.remove(owner)
-        main.removeCallbacks(expiry)
-        val listeners = request.listeners.toList()
-        request.listeners.clear()
-        listeners.forEach { it(granted) }
-      }
+    if (previous == null) start(activity, request)
+    return { request.listeners.remove(registration) }
+  }
 
-      val interval = if (activity is Activity) FOCUS_CHECK_MS else REQUEST_TIMEOUT_MS
-      var focusedSince: Long? = if (activity is Activity) null else SystemClock.uptimeMillis()
-      expiry = Runnable {
-        val owner = activityRef.get() ?: return@Runnable
-        val now = SystemClock.uptimeMillis()
-        // A permission dialog owns window focus until the user answers it.
-        // Only expire a callback after the host has control again.
-        if (owner is Activity && !owner.hasWindowFocus()) {
-          focusedSince = null
-          main.postDelayed(expiry, interval)
-          return@Runnable
-        }
-        val since = focusedSince ?: now.also { focusedSince = it }
-        val remaining = REQUEST_TIMEOUT_MS - (now - since)
-        if (remaining > 0) {
-          main.postDelayed(expiry, minOf(interval, remaining))
-          return@Runnable
-        }
-        finish(owner.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-      }
-      main.postDelayed(expiry, interval)
-      try {
-        activity.requestPermissions(arrayOf(Manifest.permission.CAMERA), requestCode) { code, _, results ->
-          if (code != requestCode) return@requestPermissions false
-          finish(results.firstOrNull() == PackageManager.PERMISSION_GRANTED)
-          true
-        }
-      } catch (_: RuntimeException) {
-        finish(false)
-      }
+  private fun start(activity: PermissionAwareActivity, request: Request) {
+    val activityRef = WeakReference(activity)
+    fun finish(granted: Boolean?) {
+      val owner = activityRef.get() ?: return
+      if (pending[owner] !== request) return
+      pending.remove(owner)
+      request.cleanup?.invoke()
+      request.cleanup = null
+      val listeners = request.listeners.toList()
+      request.listeners.clear()
+      if (granted != null) listeners.forEach { it(granted) }
     }
 
-    return { request.listeners.remove(registration) }
+    try {
+      // ReactActivity's super.onRequestPermissionsResult dispatches here.
+      // Other modules can replace its delegate listener without losing ours.
+      if (activity is ActivityResultRegistryOwner && activity is LifecycleOwner) {
+        val lifecycle = activity.lifecycle
+        if (lifecycle.currentState == Lifecycle.State.DESTROYED) {
+          finish(false)
+          return
+        }
+        val observer = object : DefaultLifecycleObserver {
+          override fun onDestroy(owner: LifecycleOwner) { finish(null) }
+        }
+        val launcher = activity.activityResultRegistry.register(
+          "onekey-qr-camera-${UUID.randomUUID()}", ActivityResultContracts.RequestPermission(),
+        ) { granted -> finish(granted) }
+        request.cleanup = {
+          launcher.unregister()
+          lifecycle.removeObserver(observer)
+        }
+        lifecycle.addObserver(observer)
+        launcher.launch(Manifest.permission.CAMERA)
+      } else {
+        startLegacy(activity, activityRef, request, ::finish)
+      }
+    } catch (_: RuntimeException) {
+      finish(false)
+    }
+  }
+
+  private fun startLegacy(
+    activity: PermissionAwareActivity,
+    activityRef: WeakReference<PermissionAwareActivity>,
+    request: Request,
+    finish: (Boolean?) -> Unit,
+  ) {
+    val requestCode = nextRequestCode
+    nextRequestCode = if (requestCode == LAST_REQUEST_CODE) FIRST_REQUEST_CODE else requestCode + 1
+    val startedAt = SystemClock.uptimeMillis()
+    val interval = if (activity is Activity || activity is LifecycleOwner) LEGACY_CHECK_MS else FOREGROUND_TIMEOUT_MS
+    var foregroundSince: Long? = if (interval == FOREGROUND_TIMEOUT_MS) startedAt else null
+    lateinit var expiry: Runnable
+    expiry = Runnable {
+      val owner = activityRef.get() ?: return@Runnable
+      val lifecycle = (owner as? LifecycleOwner)?.lifecycle?.currentState
+      if (lifecycle == Lifecycle.State.DESTROYED || (owner is Activity && owner.isDestroyed)) {
+        finish(null)
+        return@Runnable
+      }
+      val now = SystemClock.uptimeMillis()
+      val inForeground = lifecycle?.isAtLeast(Lifecycle.State.RESUMED) ?: (owner !is Activity || owner.hasWindowFocus())
+      foregroundSince = if (inForeground) foregroundSince ?: now else null
+      val elapsedInForeground = foregroundSince?.let { now - it } ?: 0
+      if (elapsedInForeground >= FOREGROUND_TIMEOUT_MS || now - startedAt >= LEGACY_MAX_WAIT_MS) {
+        finish(owner.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+      } else {
+        main.postDelayed(expiry, interval)
+      }
+    }
+    request.cleanup = { main.removeCallbacks(expiry) }
+    main.postDelayed(expiry, interval)
+    activity.requestPermissions(arrayOf(Manifest.permission.CAMERA), requestCode) { code, _, results ->
+      if (code != requestCode) return@requestPermissions false
+      finish(results.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+      true
+    }
   }
 }

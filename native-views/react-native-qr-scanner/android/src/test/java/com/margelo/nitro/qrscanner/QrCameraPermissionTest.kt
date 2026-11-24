@@ -1,8 +1,16 @@
 package com.margelo.nitro.qrscanner
 
+import android.Manifest
 import android.app.Activity as AndroidActivity
 import android.content.pm.PackageManager
 import android.os.Looper
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.core.app.ActivityOptionsCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
 import org.junit.Assert.assertEquals
@@ -56,6 +64,58 @@ class QrCameraPermissionTest {
     fun allow() {
       reply?.onRequestPermissionsResult(code, emptyArray(), intArrayOf(PackageManager.PERMISSION_GRANTED))
     }
+  }
+
+  private class RegistryHost(val legacy: Activity = Activity()) :
+    PermissionAwareActivity by legacy, ActivityResultRegistryOwner, LifecycleOwner {
+    override val lifecycle = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
+    private var requestCode: Int? = null
+    var prompts = 0
+      private set
+
+    override val activityResultRegistry = object : ActivityResultRegistry() {
+      override fun <I, O> onLaunch(
+        requestCode: Int,
+        contract: ActivityResultContract<I, O>,
+        input: I,
+        options: ActivityOptionsCompat?,
+      ) {
+        assertEquals(Manifest.permission.CAMERA, input)
+        this@RegistryHost.requestCode = requestCode
+        prompts++
+      }
+    }
+
+    fun answer(granted: Boolean) {
+      activityResultRegistry.dispatchResult(checkNotNull(requestCode), granted)
+    }
+  }
+
+  @Test fun registryResultSurvivesOtherReactNativePermissionRequests() {
+    val activity = RegistryHost()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+    QrCameraPermission.request(activity) { results += it }
+
+    // Another permission uses ReactActivityDelegate's separate listener.
+    activity.legacy.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 42) { _, _, _ -> true }
+    activity.legacy.answer(false)
+    shadowOf(Looper.getMainLooper()).idleFor(6, TimeUnit.MINUTES)
+
+    assertEquals(1, activity.prompts)
+    assertEquals(emptyList<Boolean>(), results)
+    activity.answer(true)
+    assertEquals(listOf(true, true), results)
+  }
+
+  @Test fun registryDoesNotNotifyDisposedHosts() {
+    val activity = RegistryHost()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+
+    activity.lifecycle.currentState = Lifecycle.State.DESTROYED
+    activity.answer(true)
+    assertEquals(emptyList<Boolean>(), results)
   }
 
   @Test fun sharesThePromptAndFansOutToActiveViews() {
@@ -122,6 +182,14 @@ class QrCameraPermissionTest {
     looper.idleFor(60, TimeUnit.SECONDS)
     assertEquals(emptyList<Boolean>(), results)
     looper.idleFor(1, TimeUnit.SECONDS)
+    assertEquals(listOf(false), results)
+  }
+
+  @Test fun legacyDeadlineHasABackstopWhenMainWindowNeverRegainsFocus() {
+    val activity = Robolectric.buildActivity(PromptActivity::class.java).setup().get()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+    shadowOf(Looper.getMainLooper()).idleFor(5, TimeUnit.MINUTES)
     assertEquals(listOf(false), results)
   }
 

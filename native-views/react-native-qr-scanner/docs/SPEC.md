@@ -246,13 +246,13 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   `QrFrameTextGate.kt` (same rules as iOS). The view owns a `LifecycleOwner`
   that is RESUMED only while `active` and the host activity is resumed, so
   the camera pauses in the background. Missing hardware (`no-camera`) is
-  checked before permission; permission is requested through React Native's
-  `PermissionAwareActivity`. Overlapping views share one permission request
-  per activity. If React Native loses its callback, the request expires after
-  60 s with the activity in focus. Time in the system prompt or background
-  does not count. Expiry checks the current grant and releases the shared
-  request so a later activation can start a new one. A deactivated or disposed view
-  releases its registration.
+  checked before permission. Overlapping scanner views share a request per
+  activity. Activity Result Registry hosts use a dedicated result callback
+  that is independent of React Native's permission listener and modal focus.
+  Legacy `PermissionAwareActivity` hosts retain a lost-callback deadline
+  after 60 s in the foreground, with a five-minute backstop. At expiry the
+  scanner rechecks the grant and releases the shared request. Deactivation
+  releases the view's registration, and host destruction clears the request.
   Live decoder failures report `decoder-unavailable` at most once per
   second per binding; a failed frame is closed and analysis can continue.
   The library manifest declares `CAMERA` and
