@@ -207,4 +207,30 @@ final class NativeListIdentityTitleIconLayoutTests: XCTestCase {
       try autoHeight(["titleSegments": runs, "style": twoLines], width: 240), oneLine, accuracy: 0.5)
     XCTAssertGreaterThan(try autoHeight(["style": twoLines], width: 240), oneLine)
   }
+
+  // `style.title.offsetY` moves the runs as it moves a plain title, and a
+  // later row without it starts from zero again.
+  func testRunsTakeTheTitleOpticalOffset() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    window.addSubview(cell)
+    let runsLabel = try child(cell, "titleSegmentsLabel", as: NativeListTitleSegmentsLabel.self)
+    func bind(_ style: [String: Any]?) throws {
+      var row: [String: Any] = [
+        "key": "runs", "type": "identity", "title": "Wallet / Account", "height": 60,
+        "titleSegments": [["text": "Wallet", "shrink": true], ["text": " / Account"]],
+      ]
+      if let style { row["style"] = style }
+      cell.bind(item: try NativeListItem(data: row), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+
+    try bind(["title": ["offsetY": 3]])
+    XCTAssertFalse(runsLabel.isHidden)
+    XCTAssertEqual(runsLabel.offsetY, 3, accuracy: 0.01)
+
+    try bind(nil)
+    XCTAssertEqual(runsLabel.offsetY, 0, accuracy: 0.01)
+  }
 }

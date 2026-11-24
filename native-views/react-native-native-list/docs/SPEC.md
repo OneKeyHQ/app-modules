@@ -313,7 +313,8 @@ titleSegments?: readonly {
      when the cut falls exactly between two runs and that run fits in full; Web
      clips it. This divergence is accepted: callers avoid the case with
      `maxWidthRatio`. A shrinking run that gave up its whole width (rule 3) is
-     not such a cut: the runs that stay whole are drawn whole.
+     not such a cut: the runs that stay whole are drawn whole. A last visible
+     run narrower than the ellipsis is drawn whole as well, without one.
 - Development validation rejects an empty, sparse or oversized list, blank or
   oversized text (the 4096-code-unit text bound), unknown keys, tones or
   weights, a ratio outside `(0, 1]`, more than one shrinking run, `titleMatch`

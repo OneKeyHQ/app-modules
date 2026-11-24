@@ -92,9 +92,11 @@ internal class NativeListTitleSegmentsView(context: android.content.Context) :
       if (width <= 0f) return@forEachIndexed
       val shown =
         // Text after this run is hidden: one character more than fits makes
-        // the truncation show it.
+        // the truncation show it. A run too narrow for the ellipsis itself
+        // would come back empty, so it is drawn whole instead.
         if (index == overflowing)
           TextUtils.ellipsize(run.text + "\u2026", paints[index], width, TextUtils.TruncateAt.END)
+            .takeIf { it.isNotEmpty() } ?: run.text
         else if (width >= natural[index]) run.text
         else TextUtils.ellipsize(run.text, paints[index], width, TextUtils.TruncateAt.END)
       if (shown.isEmpty()) return@forEachIndexed

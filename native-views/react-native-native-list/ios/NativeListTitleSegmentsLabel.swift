@@ -21,6 +21,8 @@ final class NativeListTitleSegmentsLabel: UIView {
       setNeedsDisplay()
     }
   }
+  /// `style.title.offsetY`: moves the drawn runs, not the line they sit on.
+  var offsetY: CGFloat = 0 { didSet { setNeedsDisplay() } }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -44,6 +46,7 @@ final class NativeListTitleSegmentsLabel: UIView {
   }
 
   func reset() {
+    offsetY = 0
     configure([], spokenText: "")
   }
 
@@ -68,15 +71,20 @@ final class NativeListTitleSegmentsLabel: UIView {
     for (index, (run, width)) in zip(runs, widths).enumerated() where width > 0 {
       let paragraph = NSMutableParagraphStyle()
       paragraph.lineBreakMode = .byTruncatingTail
+      // Text after this run is hidden: one character more than fits makes the
+      // tail truncation show it. A run too narrow for the ellipsis itself is
+      // drawn whole instead.
+      let ellipsis = "\u{2026}"
+      let showsOverflow = index == overflowing
+        && width >= ceil((ellipsis as NSString).size(withAttributes: [.font: run.font]).width)
       let text = NSAttributedString(
-        // Text after this run is hidden: one character more than fits makes
-        // the tail truncation show it.
-        string: index == overflowing ? run.text + "\u{2026}" : run.text,
+        string: showsOverflow ? run.text + ellipsis : run.text,
         attributes: [.font: run.font, .foregroundColor: run.color, .paragraphStyle: paragraph])
       let height = ceil(run.font.lineHeight)
       let originX = isRightToLeft ? x - width : x
       text.draw(
-        with: CGRect(x: originX, y: (bounds.height - height) / 2, width: width, height: height),
+        with: CGRect(
+          x: originX, y: (bounds.height - height) / 2 + offsetY, width: width, height: height),
         options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
       x += isRightToLeft ? -width : width
     }

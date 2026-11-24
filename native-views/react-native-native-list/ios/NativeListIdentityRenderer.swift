@@ -590,6 +590,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     titleSegmentsLabel.lineHeight = CGFloat(
       style.dictionary("title")?.double("lineHeight", default: 24) ?? 24)
+    titleSegmentsLabel.offsetY = CGFloat(
+      style.dictionary("title")?.double("offsetY", default: 0) ?? 0)
     titleSegmentsLabel.configure(runs, spokenText: item.data.string("title"))
   }
   private func bindIdentity(
