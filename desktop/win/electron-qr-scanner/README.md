@@ -7,7 +7,7 @@ see [SPEC.md](SPEC.md) for the current contract and status.
 
 ## Build and test
 
-Requires Rust 1.88+, Visual Studio 2022 C++ Build Tools, CMake, and Node 20+.
+Requires Rust 1.88+, Visual Studio 2022 C++ Build Tools, CMake, and Node 22.12.0 or newer.
 
 ```bash
 npm run build

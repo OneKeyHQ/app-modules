@@ -16,10 +16,12 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 
+use crate::zxing_text::decode_qr_text;
+
 /// Sources above this pixel count are refused before decoding.
 pub const MAX_SOURCE_PIXELS: u64 = 200_000_000;
 /// White border added by the padded pass, as a share of the longer side.
-const PADDING_RATIO: f64 = 0.1;
+const PADDING_DIVISOR: usize = 10;
 
 struct ComGuard {
     should_uninit: bool,
@@ -53,45 +55,9 @@ impl Drop for ComGuard {
     }
 }
 
-/// Decodes one QR code from an RGBA buffer using ZXing-C++ (explicit inversion
-/// is handled by the caller's `inverted` pass).
-pub fn decode_qr_rgba(rgba: &[u8], width: i32, height: i32) -> Option<String> {
-    if width <= 0 || height <= 0 || rgba.len() < (width as usize) * (height as usize) * 4 {
-        return None;
-    }
-    let image =
-        zxingcpp::ImageView::from_slice(rgba, width, height, zxingcpp::ImageFormat::RGBA).ok()?;
-    let reader = zxingcpp::read()
-        .formats([zxingcpp::BarcodeFormat::QRCode])
-        .try_harder(true)
-        .try_rotate(true)
-        .try_invert(false)
-        .max_number_of_symbols(1);
-    let barcodes = reader.from(image).ok()?;
-    barcodes
-        .into_iter()
-        .map(|b| b.text())
-        .find(|t| !t.is_empty())
-}
-
 /// Decodes one QR code from a tightly packed 8-bit luminance buffer.
 pub fn decode_qr_luma(luma: &[u8], width: i32, height: i32, try_invert: bool) -> Option<String> {
-    if width <= 0 || height <= 0 || luma.len() < (width as usize) * (height as usize) {
-        return None;
-    }
-    let image =
-        zxingcpp::ImageView::from_slice(luma, width, height, zxingcpp::ImageFormat::Lum).ok()?;
-    let reader = zxingcpp::read()
-        .formats([zxingcpp::BarcodeFormat::QRCode])
-        .try_harder(true)
-        .try_rotate(true)
-        .try_invert(try_invert)
-        .max_number_of_symbols(1);
-    let barcodes = reader.from(image).ok()?;
-    barcodes
-        .into_iter()
-        .map(|b| b.text())
-        .find(|t| !t.is_empty())
+    decode_qr_text(luma, width, height, false, try_invert)
 }
 
 fn read_exif_orientation(frame: &IWICBitmapFrameDecode) -> u16 {
@@ -188,8 +154,10 @@ fn load_oriented_rgba(path: &str, max_pixels: u64) -> Result<(Vec<u8>, u32, u32)
     let oriented_pixels = (width as u64).saturating_mul(height as u64);
     if oriented_pixels > max_pixels {
         let scale = (max_pixels as f64 / oriented_pixels as f64).sqrt();
-        let target_w = ((width as f64) * scale).floor().max(1.0) as u32;
-        let target_h = ((height as f64) * scale).floor().max(1.0) as u32;
+        // Rounding either axis up to one pixel can exceed the budget on thin images.
+        let target_w = (((width as f64) * scale).floor().max(1.0) as u64).min(max_pixels) as u32;
+        let target_h = (((height as f64) * scale).floor().max(1.0) as u64)
+            .min(max_pixels / u64::from(target_w)) as u32;
         let scaler: IWICBitmapScaler = unsafe { factory.CreateBitmapScaler() }
             .map_err(|e| format!("decoder-unavailable: WIC scaler failed ({e:?})"))?;
         unsafe { scaler.Initialize(&source, target_w, target_h, WICBitmapInterpolationModeFant) }
@@ -227,31 +195,41 @@ fn load_oriented_rgba(path: &str, max_pixels: u64) -> Result<(Vec<u8>, u32, u32)
     let buf_size = (stride as usize)
         .checked_mul(height as usize)
         .ok_or_else(|| "resource-limit: image buffer overflow".to_owned())?;
-    let mut rgba = vec![0u8; buf_size];
+    let mut rgba = reserve_image_buffer(buf_size)?;
+    rgba.resize(buf_size, 0);
     unsafe { converter.CopyPixels(std::ptr::null(), stride, &mut rgba) }
         .map_err(|_| "invalid-image: image pixels could not be decoded".to_owned())?;
 
     Ok((rgba, width, height))
 }
 
-fn pad_rgba_white(rgba: &[u8], width: usize, height: usize) -> (Vec<u8>, usize, usize) {
-    let longer = width.max(height);
-    let margin = ((longer as f64) * PADDING_RATIO).floor().max(16.0) as usize;
-    let out_w = width + margin * 2;
-    let out_h = height + margin * 2;
-    let mut out = vec![255u8; out_w * out_h * 4];
-    for y in 0..height {
-        let src_row = &rgba[y * width * 4..(y + 1) * width * 4];
-        let dst_start = ((y + margin) * out_w + margin) * 4;
-        out[dst_start..dst_start + width * 4].copy_from_slice(src_row);
-    }
-    (out, out_w, out_h)
+fn reserve_image_buffer(len: usize) -> Result<Vec<u8>, String> {
+    let mut buffer = Vec::new();
+    buffer
+        .try_reserve_exact(len)
+        .map_err(|_| "resource-limit: image buffer allocation failed".to_owned())?;
+    Ok(buffer)
 }
 
-fn rgba_to_luma(rgba: &[u8], width: usize, height: usize, inverted: bool) -> Vec<u8> {
-    let count = width * height;
-    let mut out = Vec::with_capacity(count);
-    for px in rgba.as_chunks::<4>().0.iter().take(count) {
+fn padded_layout(
+    width: usize,
+    height: usize,
+    max_pixels: u64,
+) -> Option<(usize, usize, usize, usize)> {
+    let margin = (width.max(height) / PADDING_DIVISOR).max(16);
+    let border = margin.checked_mul(2)?;
+    let out_w = width.checked_add(border)?;
+    let out_h = height.checked_add(border)?;
+    let pixels = out_w.checked_mul(out_h)?;
+    if pixels as u64 > max_pixels {
+        return None;
+    }
+    Some((margin, out_w, out_h, pixels.checked_mul(4)?))
+}
+
+fn rgba_to_luma(rgba: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = reserve_image_buffer(rgba.len() / 4)?;
+    for px in rgba.as_chunks::<4>().0 {
         let a = px[3] as u32;
         // Composite over white so transparent PNG quiet zones stay light.
         let r = if a == 255 {
@@ -270,9 +248,9 @@ fn rgba_to_luma(rgba: &[u8], width: usize, height: usize, inverted: bool) -> Vec
             (px[2] as u32 * a + 255 * (255 - a)) / 255
         };
         let luma = ((77 * r + 150 * g + 29 * b) >> 8) as u8;
-        out.push(if inverted { 255 - luma } else { luma });
+        out.push(luma);
     }
-    out
+    Ok(out)
 }
 
 /// Runs the cross-platform 4-pass image decoding pipeline (`original`,
@@ -283,27 +261,52 @@ pub fn decode_image_file(path: &str, max_pixels: u64) -> Result<Option<String>, 
     let h = height as usize;
 
     // Pass 1: original
-    if let Some(text) = decode_qr_rgba(&rgba, width as i32, height as i32) {
+    if let Some(text) = decode_qr_text(&rgba, width as i32, height as i32, true, false) {
         return Ok(Some(text));
     }
 
     // Pass 2: padded white quiet zone (handles edge-to-edge / no-margin codes)
-    let (padded, pw, ph) = pad_rgba_white(&rgba, w, h);
-    if let Some(text) = decode_qr_rgba(&padded, pw as i32, ph as i32) {
-        return Ok(Some(text));
+    if let Some((margin, pw, ph, bytes)) = padded_layout(w, h, max_pixels) {
+        let mut padded = reserve_image_buffer(bytes)?;
+        padded.resize(bytes, 255);
+        for (y, row) in rgba.chunks_exact(w * 4).enumerate() {
+            let start = ((y + margin) * pw + margin) * 4;
+            padded[start..start + row.len()].copy_from_slice(row);
+        }
+        if let Some(text) = decode_qr_text(&padded, pw as i32, ph as i32, true, false) {
+            return Ok(Some(text));
+        }
     }
 
     // Pass 3: grayscale
-    let gray = rgba_to_luma(&rgba, w, h, false);
+    let mut gray = rgba_to_luma(&rgba)?;
+    drop(rgba);
     if let Some(text) = decode_qr_luma(&gray, width as i32, height as i32, false) {
         return Ok(Some(text));
     }
 
     // Pass 4: inverted grayscale (handles light-on-dark QR codes)
-    let inv = rgba_to_luma(&rgba, w, h, true);
-    if let Some(text) = decode_qr_luma(&inv, width as i32, height as i32, false) {
+    for pixel in &mut gray {
+        *pixel = 255 - *pixel;
+    }
+    if let Some(text) = decode_qr_luma(&gray, width as i32, height as i32, false) {
         return Ok(Some(text));
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::padded_layout;
+
+    #[test]
+    fn padded_pass_respects_the_pixel_budget() {
+        let budget = 12_000_000;
+        assert_eq!(padded_layout(1, 1_000_000, budget), None);
+        assert_eq!(padded_layout(519, 23_094, budget), None);
+        assert_eq!(padded_layout(usize::MAX, 1, budget), None);
+        assert_eq!(padded_layout(64, 64, 9_215), None);
+        assert_eq!(padded_layout(64, 64, 9_216), Some((16, 96, 96, 36_864)));
+    }
 }

@@ -4,6 +4,7 @@ mod capture;
 mod d3d11_preview;
 mod frame_gate;
 mod image_decode;
+mod zxing_text;
 
 use std::sync::Arc;
 
@@ -342,7 +343,7 @@ impl NativeCapture {
     }
 
     #[napi]
-    pub fn start(&self) -> Result<()> {
+    pub fn start(&self) -> Result<i64> {
         let Some(ctrl) = self.controller.as_ref() else {
             return Err(Error::new(
                 Status::GenericFailure,
@@ -361,7 +362,7 @@ impl NativeCapture {
     }
 
     #[napi]
-    pub fn set_device(&self, device_id: Option<String>) -> Result<()> {
+    pub fn set_device(&self, device_id: Option<String>) -> Result<Option<i64>> {
         let Some(ctrl) = self.controller.as_ref() else {
             return Err(Error::new(
                 Status::GenericFailure,

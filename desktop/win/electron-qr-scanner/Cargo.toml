@@ -12,8 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "=3.16.3", default-features = false, features = ["napi8", "dyn-symbols"] }
 napi-derive = "=3.7.2"
-# QR reader: builds ZXing-C++ from bundled sources (needs CMake + MSVC).
-zxing-cpp = { version = "=0.5.3", default-features = false, features = ["bundled"] }
+# Pin the C++ sources and test bindings. The local CMake build adds the text shim.
+zxing-cpp = { version = "=0.5.3", default-features = false }
 windows-core = "=0.62.2"
 windows = { version = "=0.62.2", features = [
     "Win32_Foundation",
@@ -31,7 +31,9 @@ windows = { version = "=0.62.2", features = [
 ] }
 
 [build-dependencies]
+cmake = "0.1.50"
 napi-build = "=2.7.0"
+serde_json = "1"
 
 [profile.release]
 lto = true

@@ -18,8 +18,8 @@ use windows::Win32::Media::MediaFoundation::{
     MFVideoFormat_I420, MFVideoFormat_MJPG, MFVideoFormat_NV12, MFVideoFormat_RGB24,
     MFVideoFormat_RGB32, MFVideoFormat_YUY2, MFSTARTUP_LITE, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
     MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
-    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, MF_MT_DEFAULT_STRIDE,
-    MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
+    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, MF_E_NOT_AVAILABLE,
+    MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
     MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED, MF_SOURCE_READERF_ENDOFSTREAM,
     MF_SOURCE_READER_ALL_STREAMS, MF_SOURCE_READER_ASYNC_CALLBACK,
     MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_VERSION,
@@ -602,23 +602,26 @@ impl FocusControlHandle {
         if self
             .last_detect_at
             .is_some_and(|t| now.saturating_duration_since(t) >= FOCUS_UNLOCK_TIMEOUT)
+            && self.restore_auto().is_err()
         {
-            self.restore_auto();
+            // Retry on a later frame without hammering the camera driver.
+            self.last_detect_at = Some(now);
         }
     }
 
-    fn restore_auto(&mut self) {
+    fn restore_auto(&mut self) -> windows::core::Result<()> {
         if self.locked && self.auto_focus_supported {
-            let _ = unsafe {
+            unsafe {
                 self.control.Set(
                     CameraControl_Focus.0,
                     self.default_focus,
                     CameraControl_Flags_Auto.0,
                 )
-            };
+            }?;
         }
         self.locked = false;
         self.last_detect_at = None;
+        Ok(())
     }
 }
 
@@ -628,7 +631,6 @@ fn map_mf_error(hr: HRESULT) -> &'static str {
     const ERROR_GEN_FAILURE_HR: HRESULT = HRESULT(0x8007_001Fu32 as i32);
     const MF_E_VIDEO_RECORDING_DEVICE_INVALIDATED_HR: HRESULT = HRESULT(0xC00D_3EA2u32 as i32);
     const MF_E_HW_MFT_FAILED_START_STREAMING_HR: HRESULT = HRESULT(0xC00D_3704u32 as i32);
-    const MF_E_NOT_AVAILABLE_HR: HRESULT = HRESULT(0xC00D_36D3u32 as i32);
 
     if hr == E_ACCESSDENIED {
         "permission-denied"
@@ -637,7 +639,7 @@ fn map_mf_error(hr: HRESULT) -> &'static str {
         || hr == ERROR_GEN_FAILURE_HR
         || hr == MF_E_VIDEO_RECORDING_DEVICE_INVALIDATED_HR
         || hr == MF_E_HW_MFT_FAILED_START_STREAMING_HR
-        || hr == MF_E_NOT_AVAILABLE_HR
+        || hr == MF_E_NOT_AVAILABLE
     {
         "camera-busy"
     } else {
@@ -1189,7 +1191,12 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     let clear_focus_handle = |fc: &Arc<Mutex<Option<FocusControlHandle>>>| {
         if let Ok(mut guard) = fc.lock() {
             if let Some(mut handle) = guard.take() {
-                handle.restore_auto();
+                if let Err(error) = handle.restore_auto() {
+                    eprintln!(
+                        "Windows QR scanner: failed to restore Auto focus ({:#010x})",
+                        error.code().0
+                    );
+                }
             }
         }
     };
@@ -1266,8 +1273,8 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     let layout = match configure_camera_media_type(&reader, opts.preferred_resolution) {
         Ok(l) => l,
         Err(msg) => {
-            drop(reader);
             clear_focus_handle(&focus_control);
+            drop(reader);
             let _ = unsafe { media_source.Shutdown() };
             let (code, reason) = split_coded_error(&msg);
             emit_err(code, reason);
@@ -1295,8 +1302,8 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         if let Ok(mut r) = shared.reader.lock() {
             *r = None;
         }
-        drop(reader);
         clear_focus_handle(&focus_control);
+        drop(reader);
         let _ = unsafe { media_source.Shutdown() };
         emit_err(
             map_mf_error(err.code()),
@@ -1337,8 +1344,8 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
             count = next;
         }
     }
-    drop(reader);
     clear_focus_handle(&focus_control);
+    drop(reader);
     let _ = unsafe { media_source.Shutdown() };
 }
 
@@ -1722,7 +1729,7 @@ impl CaptureController {
         }
     }
 
-    pub fn start(&self) -> Result<(), String> {
+    pub fn start(&self) -> Result<i64, String> {
         if self.disposed.load(Ordering::Acquire) {
             return Err("decoder-unavailable: The capture was disposed".to_owned());
         }
@@ -1774,7 +1781,7 @@ impl CaptureController {
                 thread: handle,
             });
         }
-        Ok(())
+        Ok(next_gen)
     }
 
     pub fn stop(&self) {
@@ -1799,7 +1806,7 @@ impl CaptureController {
         }
     }
 
-    pub fn set_device(&self, device_id: Option<String>) -> Result<(), String> {
+    pub fn set_device(&self, device_id: Option<String>) -> Result<Option<i64>, String> {
         if self.disposed.load(Ordering::Acquire) {
             return Err("decoder-unavailable: The capture was disposed".to_owned());
         }
@@ -1824,9 +1831,10 @@ impl CaptureController {
             }
         }
         if was_running {
-            self.start()?;
+            self.start().map(Some)
+        } else {
+            Ok(None)
         }
-        Ok(())
     }
 
     pub fn release_frame(&self, token: i64) {
@@ -1871,6 +1879,17 @@ impl Drop for CaptureController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maps_media_foundation_availability_to_camera_busy() {
+        use windows::Win32::Media::MediaFoundation::MF_E_UNSUPPORTED_RATE_TRANSITION;
+
+        assert_eq!(map_mf_error(MF_E_NOT_AVAILABLE), "camera-busy");
+        assert_eq!(
+            map_mf_error(MF_E_UNSUPPORTED_RATE_TRANSITION),
+            "decoder-unavailable"
+        );
+    }
 
     #[test]
     fn prefers_uncompressed_720p_over_mjpg_and_low_fps_1080p() {

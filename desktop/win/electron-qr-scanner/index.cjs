@@ -119,8 +119,7 @@ function normalizeReadyInfo(info) {
 
 /**
  * Starts reporting raw QR text from a Windows camera or a video file. Events
- * from an older capture generation are dropped; nothing is delivered after
- * dispose().
+ * are delivered only for the capture generation selected by the wrapper.
  */
 function createCapture(options) {
   const {
@@ -155,10 +154,9 @@ function createCapture(options) {
   let hasCustomDeviceId =
     source.kind === "camera" && typeof source.deviceId === "string" && source.deviceId.length > 0;
 
-  let latestGeneration = 0;
+  let activeGeneration = null;
   let disposed = false;
   let startedAt = null;
-  let running = false;
   let native;
 
   const emitDiagnostic = (payload) => {
@@ -169,6 +167,8 @@ function createCapture(options) {
       // Diagnostic logging must never break scanning or leak preview frames.
     }
   };
+
+  const accepts = (event) => !disposed && event.generation === activeGeneration;
 
   try {
     native = new (binding().NativeCapture)(
@@ -190,7 +190,7 @@ function createCapture(options) {
             released = true;
             native.releaseFrame(event.token);
           };
-          if (disposed || event.generation < latestGeneration) {
+          if (!accepts(event)) {
             release();
             return;
           }
@@ -208,8 +208,7 @@ function createCapture(options) {
           }
           return;
         }
-        if (disposed || event.generation < latestGeneration) return;
-        latestGeneration = event.generation;
+        if (!accepts(event)) return;
         switch (event.kind) {
           case "ready": {
             const info = normalizeReadyInfo(event.info);
@@ -230,7 +229,7 @@ function createCapture(options) {
               autoFocusSupported: info?.autoFocusSupported ?? false,
               exposureSupported: info?.exposureSupported ?? false,
             });
-            onReady?.(event.generation, info, event.info?.deviceId);
+            if (accepts(event)) onReady?.(event.generation, info, event.info?.deviceId);
             break;
           }
           case "text":
@@ -247,7 +246,7 @@ function createCapture(options) {
               code,
               fallbackToWeb: shouldFallbackToWeb(coded),
             });
-            onError?.(coded, event.generation);
+            if (accepts(event)) onError?.(coded, event.generation);
             break;
           }
           default:
@@ -270,9 +269,8 @@ function createCapture(options) {
 
   const readStats = () => (disposed ? { ...EMPTY_STATS } : native.stats());
 
-  const emitStopDiagnostic = (reason, snapshot, lentAfterStop) => {
-    if (!running) return;
-    running = false;
+  const emitStopDiagnostic = (reason, generation, snapshot, lentAfterStop) => {
+    if (generation === null) return;
     const durationMs = startedAt === null ? 0 : Math.max(0, Date.now() - startedAt);
     startedAt = null;
     emitDiagnostic({
@@ -280,7 +278,7 @@ function createCapture(options) {
       level: "info",
       backend: "windows-native",
       reason,
-      generation: latestGeneration,
+      generation,
       durationMs,
       framesCaptured: snapshot.framesCaptured,
       previewFramesEmitted: snapshot.previewFramesEmitted,
@@ -295,9 +293,11 @@ function createCapture(options) {
   return {
     start() {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
+      const previousGeneration = activeGeneration;
+      activeGeneration = null;
       try {
+        activeGeneration = native.start();
         startedAt = Date.now();
-        running = true;
         emitDiagnostic({
           event: "start",
           level: "info",
@@ -312,15 +312,13 @@ function createCapture(options) {
             : {}),
           withPreview,
         });
-        native.start();
       } catch (error) {
-        running = false;
         const coded = toCodedError(error);
         emitDiagnostic({
           event: "error",
           level: "warn",
           backend: "windows-native",
-          generation: latestGeneration,
+          generation: previousGeneration ?? 0,
           code: coded.code,
           fallbackToWeb: shouldFallbackToWeb(coded),
         });
@@ -329,8 +327,10 @@ function createCapture(options) {
     },
     stop() {
       if (disposed) return;
+      const generation = activeGeneration;
+      activeGeneration = null;
       native.stop();
-      emitStopDiagnostic("stop", native.stats(), native.lentFrames());
+      emitStopDiagnostic("stop", generation, native.stats(), native.lentFrames());
     },
     setDevice(deviceId) {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
@@ -338,19 +338,20 @@ function createCapture(options) {
         throw errorWithCode("decoder-unavailable", "setDevice is only supported for camera sources");
       }
       const normalized = typeof deviceId === "string" && deviceId.length > 0 ? deviceId : undefined;
+      activeGeneration = null;
+      try {
+        activeGeneration = native.setDevice(normalized) ?? null;
+      } catch (error) {
+        throw toCodedError(error);
+      }
       hasCustomDeviceId = normalized !== undefined;
+      if (activeGeneration !== null) startedAt = Date.now();
       emitDiagnostic({
         event: "switch-device",
         level: "info",
         backend: "windows-native",
         hasCustomDeviceId,
       });
-      if (running) startedAt = Date.now();
-      try {
-        native.setDevice(normalized);
-      } catch (error) {
-        throw toCodedError(error);
-      }
     },
     /** Preview frames currently held by the consumer (at most 3). */
     lentFrames() {
@@ -363,9 +364,11 @@ function createCapture(options) {
     dispose() {
       if (disposed) return;
       const snapshot = native.stats();
+      const generation = activeGeneration;
+      activeGeneration = null;
       disposed = true;
       native.dispose();
-      emitStopDiagnostic("dispose", snapshot, 0);
+      emitStopDiagnostic("dispose", generation, snapshot, 0);
     },
   };
 }

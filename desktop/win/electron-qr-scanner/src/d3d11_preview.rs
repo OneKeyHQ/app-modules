@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use windows::core::Interface;
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::core::{Interface, HRESULT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, S_OK, WAIT_ABANDONED, WAIT_TIMEOUT};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0,
     D3D_FEATURE_LEVEL_11_1,
@@ -164,10 +164,18 @@ impl PreviewPool {
 
         // Acquire keyed mutex if present, upload pixels, flush, and release before lending.
         if let Some(km) = slot.keyed_mutex.as_ref() {
-            let hr = unsafe { km.AcquireSync(0, 100) };
-            if hr.is_err() {
-                // Skip this preview frame rather than stalling capture.
+            // windows-rs maps nonnegative HRESULTs to Ok, including wait statuses.
+            let hr = unsafe { (km.vtable().AcquireSync)(km.as_raw(), 0, 100) };
+            if hr == HRESULT(WAIT_TIMEOUT.0 as i32) {
                 return Ok(None);
+            }
+            if hr == HRESULT(WAIT_ABANDONED.0 as i32) {
+                // Remove the idle slot so the next lend creates a fresh surface.
+                guard.slots.swap_remove(slot_index);
+                return Ok(None);
+            }
+            if hr != S_OK {
+                return Err(format!("preview-unavailable: AcquireSync failed ({hr:?})"));
             }
         }
 
@@ -184,7 +192,12 @@ impl PreviewPool {
         }
 
         if let Some(km) = slot.keyed_mutex.as_ref() {
-            let _ = unsafe { km.ReleaseSync(0) };
+            if let Err(error) = unsafe { km.ReleaseSync(0) } {
+                guard.slots.swap_remove(slot_index);
+                return Err(format!(
+                    "preview-unavailable: ReleaseSync failed ({error:?})"
+                ));
+            }
         }
 
         let handle_bytes = (slot.nt_handle.0 as usize).to_ne_bytes().to_vec();

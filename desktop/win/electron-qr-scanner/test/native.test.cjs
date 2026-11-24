@@ -31,6 +31,11 @@ test("decodes BTCPay lightning fixtures through the 4-pass WIC + ZXing pipeline"
   }
 });
 
+test("preserves embedded NUL in image QR text", { skip: !nativeWin }, async () => {
+  const path = join(videoFixturesDir, "embedded-nul.png");
+  assert.equal(await api.decodeImage(path), "before\0after");
+});
+
 test("engines option accepts zxing and rejects unknown or empty lists", { skip: !nativeWin }, async () => {
   const payload = readFileSync(fixture("lightning-payload.txt"), "utf8");
   assert.equal(

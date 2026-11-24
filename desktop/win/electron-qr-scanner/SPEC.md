@@ -26,14 +26,15 @@ The npm package stays dependency-free, like the other desktop modules.
 
 ## 2. Structure
 
-Pure Rust (`napi-rs 3`, `windows = "=0.62.2"`, `zxing-cpp = "=0.5.3"` bundled
-with CMake + MSVC):
+Rust (`napi-rs 3`, `windows = "=0.62.2"`) with `zxing-cpp = "=0.5.3"`
+bundled via CMake and MSVC:
 
 - `src/lib.rs`: N-API bindings (`decodeImage`, `listCameras`, `NativeCapture`)
   and `ThreadsafeFunction` event bridge.
 - `src/image_decode.rs`: WIC image loading, EXIF orientation normalization,
   pixel budget downscaling, and the 4-pass QR decoding pipeline (`original`,
-  `padded`, `grayscale`, `inverted`).
+  `padded`, `grayscale`, `inverted`). `src/zxing_text.cpp` reads the plain
+  ZXing UTF-8 result with its length for both image and capture decoding.
 - `src/frame_gate.rs`: Generation tracking and 1-second repeat throttle for
   identical QR texts, passing distinct texts (such as animated BC-UR parts)
   immediately.
@@ -81,9 +82,10 @@ createCapture(options?: {
   buffer for `sharedTexture.importSharedTexture({ textureInfo: { pixelFormat:
   "bgra", codedSize, handle: { ntHandle } } })`. The consumer calls `release()`
   from Electron's `allReferencesReleased`. While all 3 slots are out, new
-  preview frames are skipped while QR decoding continues. Frames from an older
-  generation or arriving after `dispose()` are released by `index.cjs` without
-  being delivered.
+  preview frames are skipped while QR decoding continues. A keyed mutex timeout
+  skips that frame, and abandonment discards the surface so the pool replaces
+  it on the next lend. The wrapper releases queued frames from inactive
+  generations without delivering them.
 - **Camera enumeration, switching, resolution & focus**: `listCameras()` returns
   Media Foundation video capture devices (`id` = symbolic link, `name` = friendly
   name, `isDefault: true` for index 0). `{ kind: "camera" }` opens the default
@@ -102,9 +104,9 @@ createCapture(options?: {
   failures), and unexpected GPU/runtime errors, and `false` for
   `permission-denied`, `no-camera`, `camera-busy`, `invalid-image`, and
   `resource-limit`. When D3D11 shared-texture creation fails, native capture
-  emits `preview-unavailable` and stops immediately; calling `stop()` /
-  `dispose()` guarantees the Windows camera handle is closed and
-  `lentFrames() === 0` before the app falls back to
+  emits `preview-unavailable` and stops immediately. Both `stop()` and
+  `dispose()` wait for the Windows camera handle to close. `dispose()` also
+  clears the preview pool before the app falls back to
   `@onekeyfe/react-native-qr-scanner/web` with a new capture generation in the
   same BC-UR session.
 - **Privacy-safe local diagnostics (`onDiagnostic` / `stats()`)**: emits
@@ -117,8 +119,12 @@ createCapture(options?: {
   Designed to plug directly into OneKey Desktop's local `electron-log/main`
   (`onDiagnostic: (e) => logger[e.level]("[qr-scanner] " + e.event, e)`).
 - **`decodeImage`**: passes `original`, `padded`, `grayscale`, `inverted` with
-  ZXing-C++. `maxPixels` defaults to 12 MP (ceiling 50 MP); sources above 200 MP
-  reject with `resource-limit`. `options.engines` accepts `["zxing"]`; unknown
+  ZXing-C++. `maxPixels` defaults to 12 MP (ceiling 50 MP) and bounds the
+  normalized image and padded retry. Padding that exceeds the budget is skipped
+  and the grayscale and inverted passes still run. Sources above 200 MP or
+  scanner-owned image buffer allocation failures reject with `resource-limit`.
+  Image and capture text preserve GS1 group separators, embedded NULs, and
+  ZXing character-set decoding. `options.engines` accepts `["zxing"]`; unknown
   or empty lists reject with `decoder-unavailable`.
 - **Error codes**: `permission-denied`, `no-camera`, `camera-busy`,
   `decoder-unavailable`, `preview-unavailable`, `invalid-image`,
@@ -131,10 +137,13 @@ createCapture(options?: {
   for video files).
 - QR decoding runs on a dedicated worker thread fed by a 1-slot replaceable
   mailbox so camera capture and preview never stall on dense frames.
-- `stop()` invalidates the generation, halts callbacks, flushes/drops the
-  reader, restores Auto focus if locked, calls `IMFMediaSource::Shutdown()`,
-  and joins the session thread so camera hardware is released before `stop()`
-  returns.
+- `start()` and camera switches synchronously select the generation accepted
+  by the JS wrapper. `stop()` clears it so queued events cannot reach capture
+  callbacks. Camera teardown halts sample requests, flushes the reader, waits
+  up to 2 seconds for active callbacks, and attempts to restore Auto focus
+  before releasing the reader and shutting down the media source. A failed
+  focus restore logs only the HRESULT. `stop()` joins the session thread
+  before returning.
 - `dispose()` is idempotent, clears the event emitter synchronously, stops any
   active capture, joins the decode worker, and closes all D3D11 NT handles.
 
