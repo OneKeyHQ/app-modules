@@ -65,11 +65,13 @@ createCapture(options?: {
   onError?(error: Error & { code: QrScannerErrorCode }, generation: number): void;
   onEnded?(generation: number): void;
   onFrame?(frame: { ntHandle: Buffer; width: number; height: number; generation: number; release(): void }): void;
+  onDiagnostic?(event: QrScannerDiagnosticEvent): void;
 }): {
   start(): void;
   stop(): void;
   setDevice(deviceId?: string | null): void;
   lentFrames(): number;
+  stats(): CaptureStats;
   dispose(): void;
 };
 ```
@@ -104,6 +106,15 @@ createCapture(options?: {
   `lentFrames() === 0` before the app falls back to
   `@onekeyfe/react-native-qr-scanner/web` with a new capture generation in the
   same BC-UR session.
+- **Privacy-safe local diagnostics (`onDiagnostic` / `stats()`)**: emits
+  low-frequency lifecycle events (`start`, `ready`, `switch-device`, `error`,
+  `stop`) containing only counts, timings, negotiated format/capabilities
+  (`cameraCount`, `cameraIndex`, `isDefaultCamera`, `width`, `height`, `fps`,
+  `subtype`, `focusSupported`, `autoFocusSupported`, `exposureSupported`),
+  `code`, and `fallbackToWeb`. Raw `deviceId` symbolic links, `camera.name`,
+  local file paths, raw pixels, and QR/BC-UR payload text are never emitted.
+  Designed to plug directly into OneKey Desktop's local `electron-log/main`
+  (`onDiagnostic: (e) => logger[e.level]("[qr-scanner] " + e.event, e)`).
 - **`decodeImage`**: passes `original`, `padded`, `grayscale`, `inverted` with
   ZXing-C++. `maxPixels` defaults to 12 MP (ceiling 50 MP); sources above 200 MP
   reject with `resource-limit`. `options.engines` accepts `["zxing"]`; unknown
@@ -138,7 +149,7 @@ Verified on Windows x64 (Rust 1.100.0, MSVC 2022, Node 24.13.0, Electron
 | Code quality | `cargo fmt --check`, `cargo clippy --locked -- -D warnings`, `npm run test:types` (`tsc --strict`), `node scripts/check-package.mjs` (PE x64 header check). |
 | Image decoding | `test/native.test.cjs`: BTCPay lightning fixtures (`clean`, `btcpay-dark`, `inverted`, `exif-rotated`) decode to the exact 461-char payload through the 4-pass WIC + ZXing-C++ pipeline; `no-qr.png` resolves `null`; `corrupt.png`, missing path, empty path and `maxPixels: 0` reject with `invalid-image`; `engines` accepts `["zxing"]` and rejects unknown or empty lists with `decoder-unavailable`. |
 | Camera enumeration, switching & fallback | `test/native.test.cjs`: `listCameras()` returns `{ id, name, isDefault }[]`; `setDevice` rejects on file sources with `decoder-unavailable`; unknown `deviceId` reports `no-camera`; invalid `preferredResolution` rejects; `shouldFallbackToWeb` classifies fallback-eligible (`preview-unavailable`, `decoder-unavailable`, uncoded GPU errors) vs non-fallback codes; `QR_SCANNER_CAMERA=1` cleanly reports `no-camera` when no webcam is attached. |
-| Animated UR & ready info | `test/native.test.cjs`: `animated-ur.mp4` (2,003-byte `crypto-psbt`, 17 fragments, 51 frames at 8 fps) emits `onReady(generation, info)` and assembles via Media Foundation + ZXing-C++ to the exact type, size and FNV-1a (`07a5e3d7`) in ~2.14 s. |
+| Animated UR, ready info & diagnostics | `test/native.test.cjs`: `animated-ur.mp4` (2,003-byte `crypto-psbt`, 17 fragments, 51 frames at 8 fps) emits `onReady(generation, info)`, assembles via Media Foundation + ZXing-C++ to the exact type, size and FNV-1a (`07a5e3d7`) in ~2.11 s, and emits `start` → `ready` → `stop` diagnostics verified free of file paths, QR payloads, and custom `deviceId` strings. |
 | Generations and dispose | `test/native.test.cjs`: `stop()` / `start()` delivers a newer generation, `dispose()` is idempotent and silences callbacks, and subsequent `start()` / `setDevice()` throw `decoder-unavailable`. |
 | Electron runtime | `test/electron.cjs` on Electron 44.5.1 (main process): image decode, error code, `listCameras`, and animated UR assembly all pass. |
 | Preview path, leak check & fallback teardown | `test/preview.cjs` on Electron 44.5.1 with a sandboxed, context-isolated preload (`test/preview-preload.cjs`): D3D11 shared BGRA NT handles → `importSharedTexture` → `sendSharedTexture` → `setSharedTextureReceiver` → `<canvas>`. 32/32 primary frames + 20 frames across 10 open/close cycles drawn (52 total, 0 skipped), `maxLent <= 3`, `lentFrames() === 0` after every stop, simulated `preview-unavailable` triggers clean `dispose()` with 0 leaked slots and 0 post-fallback events, captured page confirms QR dark/light pixels (`dark: 1823`, `light: 2544`), and animated UR completes concurrently. |

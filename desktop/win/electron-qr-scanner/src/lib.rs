@@ -13,8 +13,8 @@ use napi::{Env, Error, Result, Status, Task};
 use napi_derive::napi;
 
 use crate::capture::{
-    CameraDeviceInfo, CaptureController, CaptureEvent, CaptureReadyInfo, PreferredResolution,
-    SourceConfig,
+    CameraDeviceInfo, CaptureController, CaptureEvent, CaptureReadyInfo, CaptureStatsSnapshot,
+    PreferredResolution, SourceConfig,
 };
 use crate::image_decode::decode_image_file;
 
@@ -130,6 +130,9 @@ pub struct JsCaptureReadyInfo {
     pub height: u32,
     pub fps: f64,
     pub subtype: String,
+    pub camera_count: u32,
+    pub camera_index: Option<u32>,
+    pub is_default_camera: bool,
     pub focus_supported: bool,
     pub auto_focus_supported: bool,
     pub exposure_supported: bool,
@@ -142,9 +145,35 @@ impl From<CaptureReadyInfo> for JsCaptureReadyInfo {
             height: info.height,
             fps: info.fps,
             subtype: info.subtype,
+            camera_count: info.camera_count,
+            camera_index: info.camera_index,
+            is_default_camera: info.is_default_camera,
             focus_supported: info.focus_supported,
             auto_focus_supported: info.auto_focus_supported,
             exposure_supported: info.exposure_supported,
+        }
+    }
+}
+
+#[napi(object)]
+pub struct JsCaptureStats {
+    pub frames_captured: f64,
+    pub preview_frames_emitted: f64,
+    pub preview_frames_skipped: f64,
+    pub decode_attempts: f64,
+    pub decode_hits: f64,
+    pub max_lent: u32,
+}
+
+impl From<CaptureStatsSnapshot> for JsCaptureStats {
+    fn from(stats: CaptureStatsSnapshot) -> Self {
+        Self {
+            frames_captured: stats.frames_captured as f64,
+            preview_frames_emitted: stats.preview_frames_emitted as f64,
+            preview_frames_skipped: stats.preview_frames_skipped as f64,
+            decode_attempts: stats.decode_attempts as f64,
+            decode_hits: stats.decode_hits as f64,
+            max_lent: stats.max_lent,
         }
     }
 }
@@ -353,6 +382,14 @@ impl NativeCapture {
         self.controller
             .as_ref()
             .map_or(0, |ctrl| ctrl.lent_frames() as u32)
+    }
+
+    #[napi]
+    pub fn stats(&self) -> JsCaptureStats {
+        self.controller
+            .as_ref()
+            .map_or_else(CaptureStatsSnapshot::default, |ctrl| ctrl.stats())
+            .into()
     }
 
     #[napi]

@@ -52,6 +52,7 @@ app.whenReady().then(async () => {
     readyMs: null,
     readyInfo: null,
     fallbackRecommended: false,
+    diagnostics: [],
     errors: [],
     drawn: 0,
     maxLent: 0,
@@ -106,6 +107,10 @@ app.whenReady().then(async () => {
       deviceId: activeDeviceId,
       preferredResolution,
       lockFocusOnDetect,
+    },
+    onDiagnostic: (evt) => {
+      report.diagnostics.push(evt);
+      console.log(`[qr-scanner] ${evt.event}`, JSON.stringify(evt));
     },
     onReady: (_generation, info) => {
       report.readyMs ??= Date.now() - started;

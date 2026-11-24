@@ -36,12 +36,14 @@ app.whenReady().then(async () => {
     let maxLent = 0;
     let sent = 0;
     let skipped = 0;
+    const diagnostics = [];
     const decoder = new URDecoder();
     let urDone = false;
     let capture;
     const done = new Promise((resolve, reject) => {
       capture = api.createCapture({
         source: { kind: "file", path: join(videoFixtures, "animated-ur.mp4"), loop: true },
+        onDiagnostic: (evt) => diagnostics.push(evt),
         onText: (text) => {
           if (urDone) return;
           decoder.receivePart(text.toLowerCase());
@@ -201,6 +203,10 @@ app.whenReady().then(async () => {
     assert.equal(lentAfterStop, 0);
     assert.equal(fallbackTriggered, true);
     assert.equal(eventsAfterFallback, 0);
+    const stopDiag = diagnostics.find((d) => d.event === "stop");
+    assert.ok(stopDiag && stopDiag.previewFramesEmitted >= 10, "missing stop preview diagnostic");
+    assert.ok(stopDiag.maxLent <= 3, `diagnostic maxLent=${stopDiag.maxLent}`);
+    assert.equal(stopDiag.lentAfterStop, 0);
     assert.ok(dark > 50 && light > 50, "canvas does not show a QR code");
     assert.ok(urDone, `animated UR did not complete (${animated.fragments} fragments)`);
     app.exit(0);

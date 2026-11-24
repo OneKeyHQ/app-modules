@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -55,9 +55,59 @@ pub struct CaptureReadyInfo {
     pub height: u32,
     pub fps: f64,
     pub subtype: String,
+    pub camera_count: u32,
+    pub camera_index: Option<u32>,
+    pub is_default_camera: bool,
     pub focus_supported: bool,
     pub auto_focus_supported: bool,
     pub exposure_supported: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CaptureStatsSnapshot {
+    pub frames_captured: u64,
+    pub preview_frames_emitted: u64,
+    pub preview_frames_skipped: u64,
+    pub decode_attempts: u64,
+    pub decode_hits: u64,
+    pub max_lent: u32,
+}
+
+#[derive(Default)]
+struct CaptureStats {
+    frames_captured: AtomicU64,
+    preview_frames_emitted: AtomicU64,
+    preview_frames_skipped: AtomicU64,
+    decode_attempts: AtomicU64,
+    decode_hits: AtomicU64,
+    max_lent: AtomicU32,
+}
+
+impl CaptureStats {
+    fn reset(&self) {
+        self.frames_captured.store(0, Ordering::Relaxed);
+        self.preview_frames_emitted.store(0, Ordering::Relaxed);
+        self.preview_frames_skipped.store(0, Ordering::Relaxed);
+        self.decode_attempts.store(0, Ordering::Relaxed);
+        self.decode_hits.store(0, Ordering::Relaxed);
+        self.max_lent.store(0, Ordering::Relaxed);
+    }
+
+    fn record_lent(&self, lent: usize) {
+        let lent = lent as u32;
+        let _ = self.max_lent.fetch_max(lent, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> CaptureStatsSnapshot {
+        CaptureStatsSnapshot {
+            frames_captured: self.frames_captured.load(Ordering::Relaxed),
+            preview_frames_emitted: self.preview_frames_emitted.load(Ordering::Relaxed),
+            preview_frames_skipped: self.preview_frames_skipped.load(Ordering::Relaxed),
+            decode_attempts: self.decode_attempts.load(Ordering::Relaxed),
+            decode_hits: self.decode_hits.load(Ordering::Relaxed),
+            max_lent: self.max_lent.load(Ordering::Relaxed),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -766,6 +816,8 @@ struct AsyncCameraShared {
     active: AtomicBool,
     ready_emitted: AtomicBool,
     layout: Mutex<FrameLayout>,
+    camera_count: u32,
+    camera_index: u32,
     caps: CameraHardwareCaps,
     reader: Mutex<Option<SendReader>>,
     in_callback: Mutex<usize>,
@@ -774,6 +826,7 @@ struct AsyncCameraShared {
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
+    stats: Arc<CaptureStats>,
     current_gen: Arc<AtomicI64>,
 }
 
@@ -889,24 +942,34 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
             if let Some(layout) = layout {
                 let need_bgra = self.shared.preview.is_some();
                 if let Some((luma, bgra)) = extract_rgb32_frame(sample, layout, need_bgra) {
+                    self.shared
+                        .stats
+                        .frames_captured
+                        .fetch_add(1, Ordering::Relaxed);
+                    let make_ready_info = || CaptureReadyInfo {
+                        width: layout.width,
+                        height: layout.height,
+                        fps: layout.fps,
+                        subtype: layout.subtype.to_owned(),
+                        camera_count: self.shared.camera_count,
+                        camera_index: Some(self.shared.camera_index),
+                        is_default_camera: self.shared.camera_index == 0,
+                        focus_supported: self.shared.caps.focus_supported,
+                        auto_focus_supported: self.shared.caps.auto_focus_supported,
+                        exposure_supported: self.shared.caps.exposure_supported,
+                    };
                     if let (Some(pool), Some(bgra_bytes)) = (self.shared.preview.as_ref(), bgra) {
                         match pool.lend(&bgra_bytes, layout.width, layout.height) {
                             Ok(Some(lent)) => {
+                                self.shared
+                                    .stats
+                                    .preview_frames_emitted
+                                    .fetch_add(1, Ordering::Relaxed);
+                                self.shared.stats.record_lent(pool.lent_count());
                                 if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
                                     self.shared.emit(CaptureEvent::Ready {
                                         generation: self.shared.generation,
-                                        info: CaptureReadyInfo {
-                                            width: layout.width,
-                                            height: layout.height,
-                                            fps: layout.fps,
-                                            subtype: layout.subtype.to_owned(),
-                                            focus_supported: self.shared.caps.focus_supported,
-                                            auto_focus_supported: self
-                                                .shared
-                                                .caps
-                                                .auto_focus_supported,
-                                            exposure_supported: self.shared.caps.exposure_supported,
-                                        },
+                                        info: make_ready_info(),
                                     });
                                 }
                                 self.shared.emit(CaptureEvent::Frame {
@@ -918,21 +981,14 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                                 });
                             }
                             Ok(None) => {
+                                self.shared
+                                    .stats
+                                    .preview_frames_skipped
+                                    .fetch_add(1, Ordering::Relaxed);
                                 if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
                                     self.shared.emit(CaptureEvent::Ready {
                                         generation: self.shared.generation,
-                                        info: CaptureReadyInfo {
-                                            width: layout.width,
-                                            height: layout.height,
-                                            fps: layout.fps,
-                                            subtype: layout.subtype.to_owned(),
-                                            focus_supported: self.shared.caps.focus_supported,
-                                            auto_focus_supported: self
-                                                .shared
-                                                .caps
-                                                .auto_focus_supported,
-                                            exposure_supported: self.shared.caps.exposure_supported,
-                                        },
+                                        info: make_ready_info(),
                                     });
                                 }
                             }
@@ -951,15 +1007,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                     } else if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
                         self.shared.emit(CaptureEvent::Ready {
                             generation: self.shared.generation,
-                            info: CaptureReadyInfo {
-                                width: layout.width,
-                                height: layout.height,
-                                fps: layout.fps,
-                                subtype: layout.subtype.to_owned(),
-                                focus_supported: self.shared.caps.focus_supported,
-                                auto_focus_supported: self.shared.caps.auto_focus_supported,
-                                exposure_supported: self.shared.caps.exposure_supported,
-                            },
+                            info: make_ready_info(),
                         });
                     }
                     self.shared.mailbox.push(PendingFrame {
@@ -1024,6 +1072,7 @@ struct SessionContext {
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
     focus_control: Arc<Mutex<Option<FocusControlHandle>>>,
+    stats: Arc<CaptureStats>,
     current_gen: Arc<AtomicI64>,
 }
 
@@ -1041,6 +1090,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         mailbox,
         emitter,
         focus_control,
+        stats,
         current_gen,
     } = ctx;
     let emit_err = |code: &'static str, message: String| {
@@ -1077,23 +1127,24 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         return;
     }
 
-    let selected = if let Some(ref wanted) = opts.device_id {
+    let camera_count = activates.len() as u32;
+    let (camera_index, selected) = if let Some(ref wanted) = opts.device_id {
         let mut found = None;
-        for activate in activates {
+        for (idx, activate) in activates.into_iter().enumerate() {
             if let Ok(attrs) = activate.cast::<IMFAttributes>() {
                 if let Some(sym) = read_allocated_string(
                     &attrs,
                     &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
                 ) {
                     if sym.eq_ignore_ascii_case(wanted) {
-                        found = Some(activate);
+                        found = Some((idx as u32, activate));
                         break;
                     }
                 }
             }
         }
         match found {
-            Some(act) => act,
+            Some(pair) => pair,
             None => {
                 emit_err(
                     "no-camera",
@@ -1103,7 +1154,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
             }
         }
     } else {
-        activates.into_iter().next().unwrap()
+        (0u32, activates.into_iter().next().unwrap())
     };
 
     let media_source: IMFMediaSource = match unsafe { selected.ActivateObject() } {
@@ -1142,6 +1193,8 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
             fps: 0.0,
             subtype: "unknown",
         }),
+        camera_count,
+        camera_index,
         caps: hw_caps,
         reader: Mutex::new(None),
         in_callback: Mutex::new(0),
@@ -1150,6 +1203,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         preview,
         mailbox,
         emitter: Arc::clone(&emitter),
+        stats,
         current_gen: Arc::clone(&current_gen),
     });
 
@@ -1282,6 +1336,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         preview,
         mailbox,
         emitter,
+        stats,
         current_gen,
         ..
     } = ctx;
@@ -1473,11 +1528,15 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
 
             let need_bgra = preview.is_some();
             if let Some((luma, bgra)) = extract_rgb32_frame(&sample, layout, need_bgra) {
+                stats.frames_captured.fetch_add(1, Ordering::Relaxed);
                 let ready_info = CaptureReadyInfo {
                     width: layout.width,
                     height: layout.height,
                     fps: layout.fps,
                     subtype: layout.subtype.to_owned(),
+                    camera_count: 0,
+                    camera_index: None,
+                    is_default_camera: false,
                     focus_supported: false,
                     auto_focus_supported: false,
                     exposure_supported: false,
@@ -1485,6 +1544,8 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
                 if let (Some(pool), Some(bgra_bytes)) = (preview.as_ref(), bgra) {
                     match pool.lend(&bgra_bytes, layout.width, layout.height) {
                         Ok(Some(lent)) => {
+                            stats.preview_frames_emitted.fetch_add(1, Ordering::Relaxed);
+                            stats.record_lent(pool.lent_count());
                             if !ready_emitted {
                                 ready_emitted = true;
                                 emit(CaptureEvent::Ready {
@@ -1501,6 +1562,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
                             });
                         }
                         Ok(None) => {
+                            stats.preview_frames_skipped.fetch_add(1, Ordering::Relaxed);
                             if !ready_emitted {
                                 ready_emitted = true;
                                 emit(CaptureEvent::Ready {
@@ -1567,6 +1629,7 @@ pub struct CaptureController {
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
     focus_control: Arc<Mutex<Option<FocusControlHandle>>>,
+    stats: Arc<CaptureStats>,
     session: Mutex<Option<ActiveSession>>,
     decode_thread: Mutex<Option<JoinHandle<()>>>,
 }
@@ -1582,10 +1645,12 @@ impl CaptureController {
         let mailbox = Arc::new(DecodeMailbox::new());
         let emitter_arc = Arc::new(Mutex::new(Some(emitter)));
         let focus_control: Arc<Mutex<Option<FocusControlHandle>>> = Arc::new(Mutex::new(None));
+        let stats = Arc::new(CaptureStats::default());
 
         let decode_mailbox = Arc::clone(&mailbox);
         let decode_emitter = Arc::clone(&emitter_arc);
         let decode_focus = Arc::clone(&focus_control);
+        let decode_stats = Arc::clone(&stats);
         let decode_gen = Arc::clone(&generation);
         let decode_thread = thread::Builder::new()
             .name("qr-decode".to_owned())
@@ -1597,6 +1662,7 @@ impl CaptureController {
                     if decode_gen.load(Ordering::Acquire) != frame.generation {
                         continue;
                     }
+                    decode_stats.decode_attempts.fetch_add(1, Ordering::Relaxed);
                     let now = Instant::now();
                     if let Some(text) =
                         decode_qr_luma(&frame.luma, frame.width as i32, frame.height as i32, true)
@@ -1610,6 +1676,7 @@ impl CaptureController {
                             }
                         }
                         if gate.accept(frame.generation, &text, now) {
+                            decode_stats.decode_hits.fetch_add(1, Ordering::Relaxed);
                             let cb = decode_emitter.lock().ok().and_then(|g| g.clone());
                             if let Some(cb) = cb {
                                 cb(CaptureEvent::Text {
@@ -1635,6 +1702,7 @@ impl CaptureController {
             mailbox,
             emitter: emitter_arc,
             focus_control,
+            stats,
             session: Mutex::new(None),
             decode_thread: Mutex::new(Some(decode_thread)),
         }
@@ -1646,6 +1714,7 @@ impl CaptureController {
         }
         // Stop any running session cleanly before starting a new generation.
         self.stop_inner();
+        self.stats.reset();
 
         let next_gen = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let source = self
@@ -1662,6 +1731,7 @@ impl CaptureController {
             mailbox: Arc::clone(&self.mailbox),
             emitter: Arc::clone(&self.emitter),
             focus_control: Arc::clone(&self.focus_control),
+            stats: Arc::clone(&self.stats),
             current_gen: Arc::clone(&self.generation),
         };
 
@@ -1753,6 +1823,10 @@ impl CaptureController {
 
     pub fn lent_frames(&self) -> usize {
         self.preview.as_ref().map_or(0, |p| p.lent_count())
+    }
+
+    pub fn stats(&self) -> CaptureStatsSnapshot {
+        self.stats.snapshot()
     }
 
     pub fn dispose(&self) {

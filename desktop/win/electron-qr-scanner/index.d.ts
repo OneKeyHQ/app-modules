@@ -44,6 +44,12 @@ export interface CaptureReadyInfo {
   fps: number;
   /** Negotiated native video subtype (e.g. "NV12", "YUY2", "MJPG", "RGB32"). */
   subtype: string;
+  /** Total Windows cameras enumerated when opening this session (0 for file sources). */
+  cameraCount: number;
+  /** Zero-based index of the opened camera (null for file sources). Never exposes raw deviceId/name. */
+  cameraIndex: number | null;
+  /** True when the default camera (index 0) was opened. */
+  isDefaultCamera: boolean;
   /** True when the camera exposes hardware focus control (false on fixed-focus webcams). */
   focusSupported: boolean;
   /** True when the camera supports hardware auto-focus. */
@@ -51,6 +57,78 @@ export interface CaptureReadyInfo {
   /** True when the camera exposes hardware exposure control. */
   exposureSupported: boolean;
 }
+
+export interface CaptureStats {
+  framesCaptured: number;
+  previewFramesEmitted: number;
+  previewFramesSkipped: number;
+  decodeAttempts: number;
+  decodeHits: number;
+  maxLent: number;
+}
+
+/**
+ * Privacy-safe structured lifecycle events safe to forward directly to
+ * OneKey's local logger (`electron-log/main`). Never contains raw `deviceId`,
+ * `camera.name`, local file paths, pixel data, or QR/BC-UR payload text.
+ */
+export type QrScannerDiagnosticEvent =
+  | {
+      event: "start";
+      level: "info";
+      backend: "windows-native";
+      sourceKind: "camera" | "file";
+      preferredResolution?: PreferredResolution;
+      lockFocusOnDetect?: boolean;
+      hasCustomDeviceId?: boolean;
+      withPreview: boolean;
+    }
+  | {
+      event: "ready";
+      level: "info";
+      backend: "windows-native";
+      generation: number;
+      readyMs: number;
+      cameraCount: number;
+      cameraIndex: number | null;
+      isDefaultCamera: boolean;
+      width: number;
+      height: number;
+      fps: number;
+      subtype: string;
+      focusSupported: boolean;
+      autoFocusSupported: boolean;
+      exposureSupported: boolean;
+    }
+  | {
+      event: "switch-device";
+      level: "info";
+      backend: "windows-native";
+      hasCustomDeviceId: boolean;
+    }
+  | {
+      event: "error";
+      level: "warn";
+      backend: "windows-native";
+      generation: number;
+      code: QrScannerErrorCode;
+      fallbackToWeb: boolean;
+    }
+  | {
+      event: "stop";
+      level: "info";
+      backend: "windows-native";
+      reason: "stop" | "dispose";
+      generation: number;
+      durationMs: number;
+      framesCaptured: number;
+      previewFramesEmitted: number;
+      previewFramesSkipped: number;
+      decodeAttempts: number;
+      decodeHits: number;
+      maxLent: number;
+      lentAfterStop: number;
+    };
 
 export type CaptureSource =
   | {
@@ -83,6 +161,11 @@ export interface CaptureOptions {
    * newer frames are skipped while all are out.
    */
   onFrame?: (frame: QrPreviewFrame) => void;
+  /**
+   * Privacy-safe lifecycle diagnostics (`start`, `ready`, `switch-device`,
+   * `error`, `stop`) suitable for writing to OneKey's local log files.
+   */
+  onDiagnostic?: (event: QrScannerDiagnosticEvent) => void;
 }
 
 export interface QrPreviewFrame {
@@ -106,6 +189,8 @@ export interface QrCapture {
   setDevice(deviceId?: string | null): void;
   /** Preview frames currently held by the consumer (at most 3). */
   lentFrames(): number;
+  /** Current session counters (privacy-safe). */
+  stats(): CaptureStats;
   /** Idempotent; no callback runs after it returns. */
   dispose(): void;
 }
