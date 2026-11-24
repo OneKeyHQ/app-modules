@@ -101,6 +101,8 @@ export function resolveIOSOverlayExit(
   overrides: IOverlayAnimation | undefined,
   animation: IResolvedOverlayAnimation
 ): IResolvedOverlayAnimation {
+  // The iOS host removes both views when the card exits. Keep the original
+  // card timing for a custom backdrop so it retains its dismissal window.
   if (
     presentation !== 'center' ||
     overrides?.enter ||

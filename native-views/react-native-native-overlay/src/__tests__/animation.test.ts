@@ -131,31 +131,33 @@ describe('buildTransitionKeyframes', () => {
 });
 
 describe('resolveIOSOverlayExit', () => {
-  it('uses one timed curve for the opaque center card and backdrop', () => {
-    const animation = resolveOverlayAnimation(
-      'center',
-      undefined,
-      NATIVE_MOTION_PRESETS
-    );
-    const closing = resolveIOSOverlayExit('center', undefined, animation);
-    expect(closing.enter).toBe(animation.enter);
-    expect(closing.exit).toMatchObject({
-      type: 'scale',
-      scale: 0.9,
-      fade: false,
-      motion: {
-        type: 'timing',
-        timing: { durationMs: 150, easing: [0.42, 0, 1, 1] },
-      },
-    });
-    expect(closing.backdrop.motion).toBe(closing.exit.motion);
-    expect(animation.backdrop.motion).toBe(NATIVE_MOTION_PRESETS.quick);
-  });
+  it.each([undefined, { backdrop: {} }])(
+    'uses one timed curve for the opaque center card and backdrop with %j',
+    (override) => {
+      const animation = resolveOverlayAnimation(
+        'center',
+        override,
+        NATIVE_MOTION_PRESETS
+      );
+      const closing = resolveIOSOverlayExit('center', override, animation);
+      expect(closing.enter).toBe(animation.enter);
+      expect(closing.exit).toMatchObject({
+        type: 'scale',
+        scale: 0.9,
+        fade: false,
+        motion: {
+          type: 'timing',
+          timing: { durationMs: 150, easing: [0.42, 0, 1, 1] },
+        },
+      });
+      expect(closing.backdrop.motion).toBe(closing.exit.motion);
+      expect(animation.backdrop.motion).toBe(NATIVE_MOTION_PRESETS.quick);
+    }
+  );
 
   const overrides: IOverlayAnimation[] = [
     { enter: { type: 'scale', scale: 0.85 } },
     { exit: { type: 'fade' } },
-    { backdrop: { motion: 'fast' } },
   ];
 
   it.each(overrides)('respects caller overrides %j', (override) => {
@@ -167,6 +169,23 @@ describe('resolveIOSOverlayExit', () => {
     expect(resolveIOSOverlayExit('center', override, animation)).toBe(
       animation
     );
+  });
+
+  it('keeps the opaque quick card exit with a backdrop-only motion override', () => {
+    const override: IOverlayAnimation = { backdrop: { motion: 'slow' } };
+    const animation = resolveOverlayAnimation(
+      'center',
+      override,
+      NATIVE_MOTION_PRESETS
+    );
+    const closing = resolveIOSOverlayExit('center', override, animation);
+    expect(closing.exit).toEqual({
+      type: 'scale',
+      scale: 0.96,
+      fade: false,
+      motion: NATIVE_MOTION_PRESETS.quick,
+    });
+    expect(closing.backdrop.motion).toBe(NATIVE_MOTION_PRESETS.slow);
   });
 
   it('keeps the sheet animation', () => {
