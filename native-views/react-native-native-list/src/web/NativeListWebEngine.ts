@@ -278,6 +278,7 @@ type PendingScroll =
       kind: 'index';
       index: number;
       scroll: NormalizedPositionScroll;
+      behavior: ScrollBehavior;
     }>
   | Readonly<{ kind: 'offset'; offset: number; animated: boolean }>
   | Readonly<{ kind: 'end'; animated: boolean }>;
@@ -305,6 +306,8 @@ type PointerReorderState = {
   }>;
   previewOffsetX?: number;
   previewOffsetY?: number;
+  handoff?: { index: number; scrollOffset: number; itemCenter: number };
+  restoringKeyboardOrder?: boolean;
   longPressTimer?: number;
   activatedAt?: number;
   active: boolean;
@@ -853,6 +856,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-reorderable="true"]:focus-visible>:is(.ok-native-list-row,.ok-native-list-wallet-group),
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
 :where(.ok-native-list-root[data-native-list-reorder-activation="handle"]) .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:default}
@@ -2479,6 +2483,8 @@ export class NativeListWebEngine {
     const nextCapabilities = validated.capabilities;
     if (
       this.pointerReorder?.active ||
+      this.pointerReorder?.restoringKeyboardOrder ||
+      this.keyboardReorder ||
       capabilities?.reorderable !== nextCapabilities?.reorderable ||
       (capabilities?.reorderActivation ?? 'row') !==
         (nextCapabilities?.reorderActivation ?? 'row')
@@ -2589,12 +2595,75 @@ export class NativeListWebEngine {
       (event as PointerEvent).pointerType !== 'touch'
     )
       return;
+    if (
+      event.type === 'wheel' &&
+      this.keyboardReorder &&
+      this.wheelReachesScrollOwner(event as WheelEvent)
+    ) {
+      this.cancelKeyboardReorder(false);
+    }
     this.structuralScrollInterrupted = true;
     if (this.structuralPrefixTransition) {
       this.cancelStructuralAnimation();
       this.recomputeLayout();
     }
   };
+
+  private wheelReachesScrollOwner(event: WheelEvent) {
+    if (event.defaultPrevented || event.ctrlKey) return false;
+    const view = this.document.defaultView;
+    if (!view) return true;
+    const horizontal =
+      event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+    const delta = horizontal ? event.deltaX || event.deltaY : event.deltaY;
+    for (const target of event.composedPath()) {
+      if (target === event.currentTarget) break;
+      if (!(target instanceof view.HTMLElement)) continue;
+      const offset = horizontal ? target.scrollLeft : target.scrollTop;
+      const scrollRange = horizontal
+        ? target.scrollWidth - target.clientWidth
+        : target.scrollHeight - target.clientHeight;
+      if (scrollRange <= 0) continue;
+      const style = view.getComputedStyle(target);
+      const negativeOffset = this.hasNegativeScrollOffsets(style, horizontal);
+      const minOffset = negativeOffset ? -scrollRange : 0;
+      const maxOffset = negativeOffset ? 0 : scrollRange;
+      const overflow =
+        (horizontal ? style.overflowX : style.overflowY) || style.overflow;
+      if (overflow !== 'auto' && overflow !== 'scroll') continue;
+      const overscroll = horizontal
+        ? style.overscrollBehaviorX
+        : style.overscrollBehaviorY;
+      if (
+        overscroll === 'contain' ||
+        overscroll === 'none' ||
+        (delta < 0 ? offset > minOffset : offset < maxOffset)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private hasNegativeScrollOffsets(
+    style: CSSStyleDeclaration,
+    horizontal: boolean
+  ): boolean {
+    const { writingMode, direction, display, flexDirection, flexWrap } = style;
+    const horizontalWritingMode =
+      !writingMode || writingMode === 'horizontal-tb';
+    const inlineAxis = horizontal === horizontalWritingMode;
+    const negative = inlineAxis
+      ? (direction === 'rtl') !== (writingMode === 'sideways-lr')
+      : horizontal && writingMode.endsWith('-rl');
+    const isFlexMainAxis = inlineAxis !== flexDirection.startsWith('column');
+    const reversedFlex =
+      (display === 'flex' || display === 'inline-flex') &&
+      (isFlexMainAxis
+        ? flexDirection.endsWith('-reverse')
+        : flexWrap === 'wrap-reverse');
+    return negative !== reversedFlex;
+  }
 
   private updateStructuralTailWindow() {
     const tail = this.structuralTail;
@@ -2959,7 +3028,7 @@ export class NativeListWebEngine {
           (next.capabilities?.reorderActivation !== 'handle' ||
             hasWebReorderHandle(source));
       if (!canContinue) {
-        if (pointer) this.cancelPointerReorder(false);
+        this.cancelPointerReorder(false);
         if (keyboard) {
           this.keyboardReorder = undefined;
           this.updateReorderVisualState();
@@ -3035,19 +3104,23 @@ export class NativeListWebEngine {
     this.renderFooter();
   }
 
-  scrollToIndex(index: number, scroll: NormalizedPositionScroll) {
+  scrollToIndex(
+    index: number,
+    scroll: NormalizedPositionScroll,
+    behavior: ScrollBehavior = scroll.animated ? 'smooth' : 'auto'
+  ) {
     if (index < 0 || index >= this.rows.length) {
       this.emitScrollFailure(index, 'index-out-of-range');
       return;
     }
     this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
-      this.pendingScroll = { kind: 'index', index, scroll };
+      this.pendingScroll = { kind: 'index', index, scroll, behavior };
       return;
     }
     const item = this.layout.items[index];
     if (!item) {
-      this.pendingScroll = { kind: 'index', index, scroll };
+      this.pendingScroll = { kind: 'index', index, scroll, behavior };
       return;
     }
     const viewportLength = this.viewportLength();
@@ -3063,7 +3136,7 @@ export class NativeListWebEngine {
       viewPosition: scroll.viewPosition,
       viewOffset: scroll.viewOffset,
     });
-    this.scrollToAbsoluteOffset(offset, scroll.animated);
+    this.scrollToAbsoluteOffset(offset, behavior);
   }
 
   scrollToKey(key: string, scroll: NormalizedPositionScroll) {
@@ -3080,8 +3153,11 @@ export class NativeListWebEngine {
     }
     if (this.externalScrollHost) {
       const geometry = this.externalGeometry();
-      this.writeExternalOffset(geometry.containerOrigin + offset, animated);
-    } else this.scrollToAbsoluteOffset(offset, animated);
+      this.writeExternalOffset(
+        geometry.containerOrigin + offset,
+        animated ? 'smooth' : 'auto'
+      );
+    } else this.scrollToAbsoluteOffset(offset, animated ? 'smooth' : 'auto');
   }
 
   scrollToEnd(animated: boolean) {
@@ -3094,12 +3170,12 @@ export class NativeListWebEngine {
       const geometry = this.externalGeometry();
       this.writeExternalOffset(
         geometry.end - this.externalScrollHost.clientHeight,
-        animated
+        animated ? 'smooth' : 'auto'
       );
     } else
       this.scrollToAbsoluteOffset(
         Math.max(0, this.contentLength() - this.viewportLength()),
-        animated
+        animated ? 'smooth' : 'auto'
       );
   }
 
@@ -3422,7 +3498,7 @@ export class NativeListWebEngine {
     this.root.style.height = value;
   }
 
-  private recomputeLayout = () => {
+  private recomputeLayout = (revealIndex?: number) => {
     if (this.destroyed) return;
     if (
       this.structuralPrefixTransition &&
@@ -3526,7 +3602,21 @@ export class NativeListWebEngine {
       this.viewport.scrollLeft = 0;
       this.viewport.scrollTop = 0;
     }
-    this.renderWindow();
+    if (revealIndex !== undefined) {
+      // Mount against the destination offset, even on hosts with smooth scrolling.
+      this.pendingScroll = undefined;
+      this.scrollToIndex(
+        revealIndex,
+        {
+          animated: false,
+          alignment: 'nearest',
+          viewPosition: 0,
+          viewOffset: 0,
+        },
+        'instant'
+      );
+    }
+    this.renderWindow(revealIndex);
     this.performPendingScroll();
   };
 
@@ -3589,7 +3679,7 @@ export class NativeListWebEngine {
     });
   }
 
-  private renderWindow() {
+  private renderWindow(revealIndex?: number) {
     this.updateAvatarWindow();
     const viewportLength = this.viewportLength();
     const visible =
@@ -3602,6 +3692,11 @@ export class NativeListWebEngine {
             this.virtualizationEnabled,
             viewportLength * OVERSCAN_VIEWPORTS
           );
+    const keyboardSource = this.keyboardReorder?.sourceKey;
+    if (keyboardSource && !visible.some(({ key }) => key === keyboardSource)) {
+      this.cancelKeyboardReorder(false);
+      return;
+    }
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
       const nextRow = this.rows[index];
@@ -3638,7 +3733,6 @@ export class NativeListWebEngine {
         this.content.appendChild(element);
       }
       this.positionElement(element, layoutItem);
-      setData(element, 'nativeListReorderable', this.isReorderable(row));
       const signature = webRowRenderSignature(row);
       if (
         element.dataset.nativeListRowKey !== row.key ||
@@ -3646,6 +3740,8 @@ export class NativeListWebEngine {
       ) {
         this.renderElement(element, layoutItem.index, row);
         element.dataset.renderSignature = signature;
+      } else {
+        this.updateRowReorderability(element, layoutItem.index, row);
       }
     });
     let measuredHeightChanged = false;
@@ -3672,7 +3768,7 @@ export class NativeListWebEngine {
       }
     });
     if (measuredHeightChanged) {
-      this.recomputeLayout();
+      this.recomputeLayout(revealIndex);
       return;
     }
     this.updateVisibleSelection();
@@ -3685,6 +3781,29 @@ export class NativeListWebEngine {
       'translate3d(' + String(item.x) + 'px,' + String(item.y) + 'px,0)';
     element.style.width = String(item.width) + 'px';
     element.style.height = String(item.height) + 'px';
+  }
+
+  private updateRowReorderability(
+    element: HTMLElement,
+    index: number,
+    row: RowModel
+  ) {
+    const reorderable =
+      this.snapshot.rows[index] === row && this.isReorderable(row);
+    setData(element, 'nativeListReorderable', reorderable);
+    if (isRowPressEnabled(row) || this.canStartKeyboardReorder(element)) {
+      if (element.tabIndex !== 0) element.tabIndex = 0;
+    } else {
+      element.removeAttribute('tabindex');
+    }
+  }
+
+  private canStartKeyboardReorder(element: HTMLElement) {
+    return (
+      element.dataset.nativeListReorderable === 'true' &&
+      (this.snapshot.capabilities?.reorderActivation !== 'handle' ||
+        element.querySelector('[data-native-list-reorder-handle]') !== null)
+    );
   }
 
   private renderElement(
@@ -3721,7 +3840,6 @@ export class NativeListWebEngine {
       (row.style?.container?.opacity ?? row.opacity ?? 1) *
         (row.disabled ? 0.5 : 1)
     );
-    setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
       'nativeListDragging',
@@ -3741,11 +3859,6 @@ export class NativeListWebEngine {
       'aria-label',
       row.accessibilityLabel ?? this.rowLabel(row)
     );
-    if (isRowPressEnabled(row)) {
-      element.tabIndex = 0;
-    } else {
-      element.removeAttribute('tabindex');
-    }
     element.draggable = false;
     const context = {
       document: this.document,
@@ -3779,6 +3892,7 @@ export class NativeListWebEngine {
     // Template and presentation defaults must precede caller overrides.
     applyRowStyle(body, row);
     if (body.parentElement !== element) element.replaceChildren(body);
+    this.updateRowReorderability(element, overlay ? -1 : index, row);
     if (
       row.type === 'market' &&
       row.diagnostics?.imageBindActionKey &&
@@ -4363,7 +4477,7 @@ export class NativeListWebEngine {
     this.recomputeLayout();
   };
 
-  private writeExternalOffset(rawOffset: number, animated: boolean) {
+  private writeExternalOffset(rawOffset: number, behavior: ScrollBehavior) {
     this.externalGeometryCache = undefined;
     const host = this.externalScrollHost!;
     const scrollTo: (options: ScrollToOptions) => void =
@@ -4374,17 +4488,17 @@ export class NativeListWebEngine {
         0,
         Math.min(host.scrollHeight - host.clientHeight, rawOffset)
       ),
-      behavior: animated ? 'smooth' : 'auto',
+      behavior,
     });
     this.scheduleFrame();
   }
 
-  private scrollToAbsoluteOffset(offset: number, animated: boolean) {
+  private scrollToAbsoluteOffset(offset: number, behavior: ScrollBehavior) {
     if (this.externalScrollHost) {
       const geometry = this.externalGeometry();
       this.writeExternalOffset(
         geometry.origin + offset - this.externalStickyInset,
-        animated
+        behavior
       );
       return;
     }
@@ -4400,8 +4514,8 @@ export class NativeListWebEngine {
         );
     this.viewport.scrollTo(
       this.layout.horizontal
-        ? { left: rawOffset, top: 0, behavior: animated ? 'smooth' : 'auto' }
-        : { left: 0, top: rawOffset, behavior: animated ? 'smooth' : 'auto' }
+        ? { left: rawOffset, top: 0, behavior }
+        : { left: 0, top: rawOffset, behavior }
     );
     this.scheduleFrame();
   }
@@ -4411,7 +4525,7 @@ export class NativeListWebEngine {
     if (!pending || !this.canScroll()) return;
     this.pendingScroll = undefined;
     if (pending.kind === 'index')
-      this.scrollToIndex(pending.index, pending.scroll);
+      this.scrollToIndex(pending.index, pending.scroll, pending.behavior);
     else if (pending.kind === 'offset')
       this.scrollToOffset(pending.offset, pending.animated);
     else this.scrollToEnd(pending.animated);
@@ -5035,29 +5149,8 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
-    if (
-      (event.key === 'Enter' || event.key === ' ') &&
-      event.target instanceof HTMLElement &&
-      event.target.matches('[role="button"][data-native-list-hover-action]')
-    ) {
-      event.preventDefault();
-      if (
-        this.actionAnchor?.actionElement !== event.target ||
-        !this.actionAnchor.open
-      )
-        this.emitHoverAction(event.target);
-      return;
-    }
-    // OneKey patch: non-button title help supports keyboard activation.
-    if (
-      (event.key === 'Enter' || event.key === ' ') &&
-      event.target instanceof HTMLElement &&
-      event.target.matches('[role="button"][data-native-list-action]')
-    ) {
-      event.preventDefault();
-      event.target.click();
-      return;
-    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
     if (event.key === 'Escape') {
       if (this.pointerReorder?.active) {
         event.preventDefault();
@@ -5069,6 +5162,46 @@ export class NativeListWebEngine {
         this.cancelKeyboardReorder();
         return;
       }
+    }
+    const rowElement = target.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    if (
+      this.keyboardReorder &&
+      (event.key === 'Tab' ||
+        target.dataset.nativeListRowKey !== this.keyboardReorder.sourceKey)
+    ) {
+      const bindingEpoch = rowElement?.dataset.nativeListBindingEpoch;
+      this.cancelKeyboardReorder(false);
+      if (event.key === 'Tab') return;
+      if (
+        !this.root.contains(target) ||
+        rowElement?.dataset.nativeListBindingEpoch !== bindingEpoch
+      ) {
+        event.preventDefault();
+        return;
+      }
+    }
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      target.matches('[role="button"][data-native-list-hover-action]')
+    ) {
+      event.preventDefault();
+      if (
+        this.actionAnchor?.actionElement !== target ||
+        !this.actionAnchor.open
+      )
+        this.emitHoverAction(target);
+      return;
+    }
+    // OneKey patch: non-button title help supports keyboard activation.
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      target.matches('[role="button"][data-native-list-action]')
+    ) {
+      event.preventDefault();
+      target.click();
+      return;
     }
     if (
       this.keyboardReorder &&
@@ -5087,30 +5220,21 @@ export class NativeListWebEngine {
       return;
     }
     if (event.key !== 'Enter' && event.key !== ' ') return;
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
     if (target.matches('button')) return;
-    const row = this.rowAtElement(target.closest('[data-native-list-row-key]'));
+    const row = this.rowAtElement(rowElement);
     if (!row) return;
     event.preventDefault();
-    const hasHandle = target
-      .closest('[data-native-list-row-key]')
-      ?.querySelector('[data-native-list-reorder-handle]');
     if (
       event.key === ' ' &&
-      this.isReorderable(row) &&
-      (this.keyboardReorder ||
-        this.snapshot.capabilities?.reorderActivation !== 'handle' ||
-        hasHandle)
+      target === rowElement &&
+      !this.pointerReorder?.active &&
+      this.canStartKeyboardReorder(target)
     ) {
       if (this.keyboardReorder) this.finishKeyboardReorder();
       else this.startKeyboardReorder(row);
       return;
     }
-    this.handleRowPress(
-      row,
-      target.closest<HTMLElement>('[data-native-list-row-key]') ?? undefined
-    );
+    this.handleRowPress(row, rowElement ?? undefined);
   };
 
   private startKeyboardReorder(row: RowModel) {
@@ -5137,17 +5261,13 @@ export class NativeListWebEngine {
       from.sectionKey !== to.sectionKey
     )
       return;
+    this.cancelPendingPointerReorder();
     const rows = moveWebReorderRow(this.snapshot.rows, fromIndex, toIndex);
-    this.remapMountedRows(rows);
-    this.setSnapshot({ ...this.snapshot, rows }, this.selectedKeys);
-    this.updateReorderVisualState();
-    this.scrollToIndex(toIndex, {
-      animated: false,
-      alignment: 'nearest',
-      viewPosition: 0,
-      viewOffset: 0,
-    });
-    this.focusMountedRow(state.sourceKey);
+    this.setReorderRows(rows, toIndex);
+    if (this.keyboardReorder === state) {
+      this.updateReorderVisualState();
+      this.focusMountedRow(state.sourceKey);
+    }
   }
 
   private finishKeyboardReorder() {
@@ -5163,17 +5283,25 @@ export class NativeListWebEngine {
     if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
   }
 
-  private cancelKeyboardReorder() {
+  private cancelKeyboardReorder(restoreFocus = true, revealIndex?: number) {
     const state = this.keyboardReorder;
     if (!state) return;
     this.keyboardReorder = undefined;
-    this.remapMountedRows(state.originalRows);
-    this.setSnapshot(
-      { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
-      this.selectedKeys
-    );
+    this.cancelPendingPointerReorder();
+    const rows = cancelWebReorderRows(state.originalRows);
+    this.setReorderRows(rows, revealIndex);
     this.updateReorderVisualState();
-    this.focusMountedRow(state.sourceKey);
+    if (restoreFocus && this.snapshot.rows === rows)
+      this.focusMountedRow(state.sourceKey);
+  }
+
+  private setReorderRows(rows: readonly RowModel[], revealIndex?: number) {
+    this.cancelMarketPointer();
+    this.pressedHelpElement = undefined;
+    this.remapMountedRows(rows);
+    this.snapshot = { ...this.snapshot, rows };
+    this.rows = rows;
+    this.recomputeLayout(revealIndex);
   }
 
   private focusMountedRow(key: string) {
@@ -5360,7 +5488,6 @@ export class NativeListWebEngine {
   private handleReorderPointerDown = (event: PointerEvent) => {
     if (
       this.pointerReorder ||
-      this.keyboardReorder ||
       event.isPrimary === false ||
       (event.pointerType === 'mouse' && event.button !== 0)
     ) {
@@ -5448,34 +5575,65 @@ export class NativeListWebEngine {
     );
   }
 
-  private activatePointerReorder(state: PointerReorderState) {
-    if (this.pointerReorder !== state) return;
-    const rowIndex = this.snapshot.rows.findIndex(
+  private pointerReorderSourceIndex(state: PointerReorderState): number {
+    const index = this.snapshot.rows.findIndex(
       (row) => row.key === state.sourceKey
     );
-    const source = this.mounted.get(rowIndex);
+    const element = this.mounted.get(index);
     if (
-      !source ||
+      !element ||
       !this.canStartPointerReorder(state, this.snapshot) ||
-      (state.handle && !source.contains(state.handle))
+      (state.handle && !element.contains(state.handle))
     ) {
+      return -1;
+    }
+    return index;
+  }
+
+  private activatePointerReorder(state: PointerReorderState) {
+    if (this.pointerReorder !== state) return;
+    let sourceIndex = this.pointerReorderSourceIndex(state);
+    const keyboard = this.keyboardReorder;
+    const restoredIndex = keyboard
+      ? keyboard.originalRows.findIndex((row) => row.key === state.sourceKey)
+      : sourceIndex;
+    if (sourceIndex < 0 || restoredIndex < 0) {
       this.cancelPointerReorder(false);
       return;
     }
     this.clearReorderLongPress(state);
-    state.currentIndex = rowIndex;
-    state.originalRows = this.snapshot.rows;
-    state.workingRows = [...this.snapshot.rows];
-    state.active = true;
     this.reorderClickPointers.set(state.pointerId, {
       suppress: true,
       pressTarget: this.reorderClickPointers.get(state.pointerId)?.pressTarget,
     });
     this.cancelMarketPointer();
+    if (keyboard) {
+      // Capture the pressed row at its visible position before restoring order.
+      state.currentIndex = sourceIndex;
+      state.workingRows = [...this.snapshot.rows];
+      state.restoringKeyboardOrder = true;
+      this.showReorderPreview(state);
+      if (this.pointerReorder !== state) return;
+      this.cancelKeyboardReorder(false, restoredIndex);
+      if (this.pointerReorder !== state) return;
+      sourceIndex = this.pointerReorderSourceIndex(state);
+      if (sourceIndex < 0) {
+        this.cancelPointerReorder(false);
+        return;
+      }
+      state.restoringKeyboardOrder = false;
+    }
+    state.currentIndex = sourceIndex;
+    state.originalRows = this.snapshot.rows;
+    state.workingRows = [...this.snapshot.rows];
+    state.active = true;
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
-    this.showReorderPreview(state);
+    if (!keyboard) {
+      this.showReorderPreview(state);
+      if (this.pointerReorder !== state) return;
+    }
     if (
       state.workingRows[state.currentIndex]?.type === 'walletGroup' &&
       this.reorderCompactKey !== state.sourceKey
@@ -5484,7 +5642,21 @@ export class NativeListWebEngine {
       this.mounted.forEach((element) =>
         setData(element, 'nativeListAnimateReorder', true)
       );
-      this.recomputeLayout();
+      this.recomputeLayout(keyboard ? sourceIndex : undefined);
+      if (this.pointerReorder !== state) return;
+    }
+    if (keyboard) {
+      const item = this.layout.items[sourceIndex];
+      if (item) {
+        state.handoff = {
+          index: sourceIndex,
+          scrollOffset: this.currentOffset(),
+          itemCenter:
+            (itemStart(item, this.layout.horizontal) +
+              itemEnd(item, this.layout.horizontal)) /
+            2,
+        };
+      }
     }
     this.updateReorderVisualState();
     this.scheduleReorderAutoScroll();
@@ -5571,7 +5743,7 @@ export class NativeListWebEngine {
 
   private setCurrentOffset(offset: number) {
     if (this.externalScrollHost) {
-      this.scrollToAbsoluteOffset(offset, false);
+      this.scrollToAbsoluteOffset(offset, 'auto');
       return;
     }
     const maximum = Math.max(0, this.contentLength() - this.viewportLength());
@@ -5588,6 +5760,7 @@ export class NativeListWebEngine {
 
   private showReorderPreview(state: PointerReorderState) {
     this.hideReorderPreview();
+    if (this.pointerReorder !== state) return;
     const source = [...this.mounted.values()].find(
       (element) => element.dataset.nativeListRowKey === state.sourceKey
     );
@@ -5791,7 +5964,7 @@ export class NativeListWebEngine {
     this.reorderMoveFrame = undefined;
   }
 
-  private reorderIndexAtPointer(
+  private reorderPointerCoordinate(
     state: PointerReorderState,
     clientX: number,
     clientY: number
@@ -5800,7 +5973,27 @@ export class NativeListWebEngine {
     const local = this.layout.horizontal
       ? Math.max(0, Math.min(Math.max(0, rect.width - 1), clientX - rect.left))
       : Math.max(0, Math.min(Math.max(0, rect.height - 1), clientY - rect.top));
-    const coordinate = this.currentOffset() + local;
+    return this.currentOffset() + local;
+  }
+
+  private reorderIndexAtPointer(
+    state: PointerReorderState,
+    clientX: number,
+    clientY: number
+  ): number {
+    const handoff = state.handoff;
+    let coordinate: number;
+    if (handoff) {
+      const pointerDelta = this.layout.horizontal
+        ? clientX - state.startX
+        : clientY - state.startY;
+      const displacement =
+        pointerDelta + (this.currentOffset() - handoff.scrollOffset);
+      if (displacement === 0) return handoff.index;
+      coordinate = handoff.itemCenter + displacement;
+    } else {
+      coordinate = this.reorderPointerCoordinate(state, clientX, clientY);
+    }
     const centerAt = (index: number) => {
       const item = this.layout.items[index];
       return item
@@ -5835,6 +6028,7 @@ export class NativeListWebEngine {
     const to = state.workingRows[toIndex];
     if (
       !from ||
+      from.key !== state.sourceKey ||
       !to ||
       fromIndex === toIndex ||
       !this.isReorderable(from) ||
@@ -5890,6 +6084,8 @@ export class NativeListWebEngine {
     if (!state?.active) return 0;
     const rect = state.viewportRect ?? this.reorderViewportRect();
     const point = this.layout.horizontal ? state.clientX : state.clientY;
+    const pressPoint = this.layout.horizontal ? state.startX : state.startY;
+    if (state.handoff && point === pressPoint) return 0;
     const start = this.layout.horizontal ? rect.left : rect.top;
     const end = this.layout.horizontal ? rect.right : rect.bottom;
     return webReorderAutoScrollVelocity(
@@ -5941,6 +6137,7 @@ export class NativeListWebEngine {
 
   private completePointerReorder(state: PointerReorderState) {
     this.flushReorderMove(state);
+    if (this.pointerReorder !== state) return;
     const finalRows = this.snapshot.rows;
     const reorderEvent = webReorderEventForRows(
       state.originalRows,
@@ -5971,21 +6168,23 @@ export class NativeListWebEngine {
     this.reorderAutoScrollFrame = undefined;
   }
 
+  private cancelPendingPointerReorder() {
+    const pointer = this.pointerReorder;
+    if (pointer && !pointer.active && !pointer.restoringKeyboardOrder)
+      this.cancelPointerReorder(false);
+  }
+
   private cancelPointerReorder(restore: boolean) {
     const state = this.pointerReorder;
     if (!state) return;
     this.clearReorderLongPress(state);
-    this.releaseReorderPointer(state);
     this.pointerReorder = undefined;
+    if (!state.active && !state.restoringKeyboardOrder) return;
+    this.releaseReorderPointer(state);
     this.stopReorderMove();
     this.stopReorderAutoScroll();
-    if (state.active && restore) {
-      this.remapMountedRows(state.originalRows);
-      this.setSnapshot(
-        { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
-        this.selectedKeys
-      );
-    }
+    if (state.active && restore)
+      this.setReorderRows(cancelWebReorderRows(state.originalRows));
     if (state.active && restore) this.animateReorderPreviewToCurrent(state);
     else this.hideReorderPreview();
     this.updateReorderVisualState();
@@ -6009,9 +6208,10 @@ export class NativeListWebEngine {
   }
 
   private updateReorderVisualState() {
-    const sourceKey = this.pointerReorder?.active
+    const pointerSourceKey = this.pointerReorder?.active
       ? this.pointerReorder.sourceKey
-      : this.keyboardReorder?.sourceKey ?? this.reorderSettlingKey;
+      : this.reorderSettlingKey;
+    const sourceKey = this.keyboardReorder?.sourceKey ?? pointerSourceKey;
     setData(this.root, 'nativeListDragging', Boolean(sourceKey));
     if (this.reorderMovementTimer !== undefined) {
       this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
@@ -6034,7 +6234,11 @@ export class NativeListWebEngine {
         'nativeListReorderExpanding',
         element.dataset.nativeListRowKey === this.reorderExpandingKey
       );
-      setData(element, 'nativeListDragging', dragging);
+      setData(
+        element,
+        'nativeListDragging',
+        element.dataset.nativeListRowKey === pointerSourceKey
+      );
       if (dragging) element.setAttribute('aria-grabbed', 'true');
       else element.removeAttribute('aria-grabbed');
     });
