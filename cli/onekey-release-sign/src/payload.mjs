@@ -187,12 +187,19 @@ export function inspectReleasePayload(plainBody, options = {}) {
     .filter(Boolean);
   const entries = [];
   for (const line of lines) {
-    const match = /^([a-fA-F0-9]{64})[ \t]+\*?(.+)$/u.exec(line);
-    if (!match) {
+    const digestField = line.slice(0, 64);
+    let filenameStart = 64;
+    while (line[filenameStart] === ' ' || line[filenameStart] === '\t') {
+      filenameStart += 1;
+    }
+    if (!/^[a-fA-F0-9]{64}$/u.test(digestField) || filenameStart === 64 || filenameStart === line.length) {
       throw new Error(`Invalid SHA256SUMS line (expected "<64-hex-sha256>  <filename>"): ${line}`);
     }
-    const digest = match[1].toLowerCase();
-    const rawName = match[2];
+    if (line[filenameStart] === '*' && filenameStart + 1 < line.length) {
+      filenameStart += 1;
+    }
+    const digest = digestField.toLowerCase();
+    const rawName = line.slice(filenameStart);
     assertSafeReleaseFileName(rawName);
     entries.push({ sha256: digest, fileName: rawName });
   }
