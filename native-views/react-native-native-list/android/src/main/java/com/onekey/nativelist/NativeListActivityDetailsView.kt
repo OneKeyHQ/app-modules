@@ -22,7 +22,10 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   var leadingOverhangs = false
     private set
   private val identity = LinearLayout(context).apply { orientation = VERTICAL }
-  private val titleLine = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+  // Packs the title at its intrinsic width so badges follow the text (OK-67497).
+  private val titleLine = PackedTitleLineLayout(context).apply {
+    orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; packsChildrenAtStart = true
+  }
   private val title = NativeListTextView(context)
   private val description = NativeListTextView(context)
   private val status = NativeListTextView(context)
@@ -124,6 +127,14 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
       label.background = GradientDrawable().apply { setColor((ink and 0x00ffffff) or 0x19000000); cornerRadius = dp(4).toFloat() }
       titleLine.addView(label, LayoutParams(-2, -2).apply { marginStart = if (style.has("titleBadgeGap")) px(style.optDouble("titleBadgeGap")) else dp(4) })
       badges.add(label)
+    }
+    // PackedTitleLineLayout rewrites the title's params and cap only while badges follow it.
+    // Without badges, restore the fresh-row state so the title keeps the whole line and its
+    // `alignment` (center/end) behaves the same on a recycled row as on a new one.
+    if (badges.isEmpty()) {
+      (title.layoutParams as LayoutParams).apply { width = 0; weight = 1f }
+      title.maxWidth = Int.MAX_VALUE
+      title.requestLayout()
     }
     val amountData = data.optJSONArray("amounts")
     val count = amountData?.length() ?: 0
