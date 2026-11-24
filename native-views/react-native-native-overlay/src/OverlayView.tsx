@@ -13,6 +13,7 @@ import {
 import NativeOverlay from './NativeOverlayNativeComponent';
 import { OverlayLevelProvider } from './OverlayLevelContext';
 import { isBlockingLevel } from './OverlayLevels';
+import { resolveIOSOverlayExit } from './animation/resolveAnimation';
 import { resolveContentSize } from './contentSize';
 import { resolveSheetWidth } from './sheetWidth';
 import { useOverlayController } from './useOverlayController';
@@ -74,6 +75,7 @@ export function OverlayView(props: IOverlayViewProps) {
     level = 'modal',
     presentation = 'center',
     backdrop,
+    animation: animationOverrides,
     blocking,
     dismissOnBackPress,
     sheet,
@@ -156,7 +158,16 @@ export function OverlayView(props: IOverlayViewProps) {
     setMeasuredSheetHeight(event.nativeEvent.layout.height);
   }, []);
 
-  const animationConfig = useMemo(() => JSON.stringify(animation), [animation]);
+  // Send the exit curve in the same native update as visible=false.
+  const animationConfig = useMemo(
+    () =>
+      JSON.stringify(
+        Platform.OS === 'ios' && !presented
+          ? resolveIOSOverlayExit(presentation, animationOverrides, animation)
+          : animation
+      ),
+    [animation, animationOverrides, presentation, presented]
+  );
   const isBlocking = blocking ?? isBlockingLevel(level);
 
   const onDismissed = useCallback(() => onHostDismissed(), [onHostDismissed]);

@@ -212,7 +212,7 @@ visible)`, `removePage(ownerKey)`.
 | Presentation | Enter                                                                              | Exit                                                            | Backdrop      |
 | ------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------- |
 | sheet        | slide from bottom, `quick`                                                         | same as enter                                                   | fade, `quick` |
-| center       | scale 0.85 + fade, `quick`                                                         | scale 0.96 without fade, `quick`                                | fade, `quick` |
+| center       | scale 0.85 + fade, `quick`                                                         | iOS: scale 0.90 without fade, 150 ms ease-in. Android and Web: scale 0.96 without fade, `quick` | fade on the default exit curve while closing on iOS, `quick` otherwise |
 | toast        | slide from top + fade, `toastSlide` (native 300 ms quad in-out, web 400 ms ease)   | same as enter                                                   | none          |
 | fullscreen   | fade, `quick`                                                                      | same as enter                                                   | none          |
 | anchored     | scale 0.95 + fade from the resolved anchor placement, `popoverQuick`               | same as enter                                                   | fade          |
@@ -224,11 +224,13 @@ visible)`, `removePage(ownerKey)`.
   readable through the card for the whole transition, which consumers reported
   as a doubled render right after closing a dialog (OK-66647, desktop, 120 fps
   recording: the card reached ~20–30 % opacity while the list rows behind
-  stayed opaque). The default exit therefore shrinks the card from scale 1 to
-  0.96 with `fade: false`; the host unmounts it when the exit completes.
-  `fade: false` is honoured by all three renderers (`hidesOpacity` on iOS and
-  Android, `hiddenKeyframe` on Web), and the backdrop still fades on the same
-  clock. A fade-free exit also starts from full opacity: when it interrupts a
+  stayed opaque). The host keeps the card opaque and unmounts it when the
+  exit completes. On iOS, the default card and backdrop use the same 150 ms
+  ease-in curve for exit, so the card continues to shrink until both leave
+  together (OK-67749). The iOS enter still uses the default spring. An
+  explicitly supplied enter, exit or backdrop motion keeps its existing
+  resolution. Android and Web keep their existing exit curves.
+  A fade-free exit also starts from full opacity: when it interrupts a
   still-running fade-in, the partly transparent surface is snapped back to
   alpha 1 before the scale-out begins, so a rapid close cannot show the
   content behind the card either. That interruption is covered by
