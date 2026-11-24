@@ -236,11 +236,15 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 - `onError` receives camera errors as `QrScannerError` and terminal UR errors
   (`too-large`, `invalid-payload`, `resource-limit`) as `ScanError`.
 - `onReady` (iOS) fires when the capture session reports running, which can be
-  slightly before the first frame is on screen. The iOS preview follows
-  its own window scene's interface orientation on first layout, after a
-  camera input change, and when the window lays out after rotating.
-  Rotating the preview keeps the current capture generation, decoder,
-  and scan session.
+  slightly before the first frame is on screen. The built-in camera preview
+  follows its window scene's interface orientation on attachment, after a
+  camera input change, and whenever the scene's effective geometry changes.
+  This includes a 180° rotation and fixed-size previews whose bounds stay
+  the same. On iOS 15, preview orientation is refreshed on layout and on
+  device-orientation notifications. An external camera uses its native
+  orientation (0°). Each input switch applies the orientation for the newly
+  connected device. Rotating the preview keeps the current capture
+  generation, decoder, and scan session.
 - Camera error codes: `no-camera` (checked before any permission prompt),
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
 - iOS requests camera access when it is undetermined. Apps must declare
@@ -490,8 +494,10 @@ Still required:
   none), including an animated UR played on a screen; completion time and
   parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
   pod.
-- iPad: verify the live preview when first opened in landscape and when
-  rotating between portrait and landscape with the scanner open.
+- iPad: verify the live preview on landscape entry, on a 180° flip and
+  while rotating a fixed-size scanner between portrait and landscape.
+  Verify switching in both directions between the built-in camera and an
+  upright stationary USB camera.
 - iOS and Android devices: tap to focus, pinch zoom, and (iPhone 13 Pro and
   later) the automatic switch to the ultra-wide lens for close codes.
 - Android: live preview content and live detection on a device (the

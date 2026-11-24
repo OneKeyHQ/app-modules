@@ -7,11 +7,26 @@ import XCTest
 final class QrCameraControlTests: XCTestCase {
   @MainActor
   func testPreviewRotationMatchesInterfaceOrientation() {
-    XCTAssertEqual(QrPreviewView.rotationAngle(for: .portrait), 90)
-    XCTAssertEqual(QrPreviewView.rotationAngle(for: .portraitUpsideDown), 270)
-    XCTAssertEqual(QrPreviewView.rotationAngle(for: .landscapeLeft), 180)
-    XCTAssertEqual(QrPreviewView.rotationAngle(for: .landscapeRight), 0)
-    XCTAssertNil(QrPreviewView.rotationAngle(for: .unknown))
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .portrait, isExternalCamera: false), 90)
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .portraitUpsideDown, isExternalCamera: false), 270)
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .landscapeLeft, isExternalCamera: false), 180)
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .landscapeRight, isExternalCamera: false), 0)
+    XCTAssertNil(QrPreviewView.rotationAngle(for: .unknown, isExternalCamera: false))
+  }
+
+  @MainActor
+  func testExternalCameraUsesNativeOrientationAfterSwitchingInputs() {
+    let angles = [false, true, false].map { isExternalCamera in
+      QrPreviewView.rotationAngle(for: .portrait, isExternalCamera: isExternalCamera)
+    }
+    XCTAssertEqual(angles, [90, 0, 90])
+
+    let orientations: [UIInterfaceOrientation] = [
+      .landscapeLeft, .landscapeRight, .portraitUpsideDown, .unknown,
+    ]
+    for orientation in orientations {
+      XCTAssertEqual(QrPreviewView.rotationAngle(for: orientation, isExternalCamera: true), 0)
+    }
   }
 
   func testVirtualDevicesArePreferredOverTheWideLens() {

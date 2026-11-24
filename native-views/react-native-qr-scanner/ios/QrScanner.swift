@@ -10,6 +10,8 @@ final class QrPreviewView: UIView {
     layer as! AVCaptureVideoPreviewLayer
   }
 
+  private var sceneGeometryObservation: NSKeyValueObservation?
+
   private let focusIndicator: UIView = {
     let view = UIView(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
     view.layer.borderColor = UIColor.white.cgColor
@@ -25,16 +27,48 @@ final class QrPreviewView: UIView {
     backgroundColor = .black
     previewLayer.videoGravity = .resizeAspectFill
     addSubview(focusIndicator)
+    if #unavailable(iOS 16.0) {
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(legacyOrientationDidChange(_:)),
+        name: UIDevice.orientationDidChangeNotification, object: nil)
+      UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+    }
+  }
+
+  deinit {
+    if #unavailable(iOS 16.0) {
+      NotificationCenter.default.removeObserver(self)
+      DispatchQueue.main.async {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+      }
+    }
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
+    if #available(iOS 16.0, *) {
+      // A scene can rotate without changing this view's bounds.
+      sceneGeometryObservation = window?.windowScene?.observe(\.effectiveGeometry) {
+        [weak self] _, _ in
+        self?.scheduleOrientationUpdate()
+      }
+    }
     updateCaptureOrientation()
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    updateCaptureOrientation()
+    if #unavailable(iOS 16.0) { updateCaptureOrientation() }
+  }
+
+  @objc private nonisolated func legacyOrientationDidChange(_: Notification) {
+    scheduleOrientationUpdate()
+  }
+
+  private nonisolated func scheduleOrientationUpdate() {
+    DispatchQueue.main.async { [weak self] in
+      self?.updateCaptureOrientation()
+    }
   }
 
   func updateCaptureOrientation() {
@@ -46,7 +80,10 @@ final class QrPreviewView: UIView {
       orientation = scene.interfaceOrientation
     }
     if #available(iOS 17.0, *) {
-      guard let angle = Self.rotationAngle(for: orientation),
+      let videoPort = connection.inputPorts.first { $0.mediaType == .video }
+      guard let input = videoPort?.input as? AVCaptureDeviceInput,
+        let angle = Self.rotationAngle(
+          for: orientation, isExternalCamera: input.device.deviceType == .external),
         connection.videoRotationAngle != angle,
         connection.isVideoRotationAngleSupported(angle)
       else { return }
@@ -59,7 +96,11 @@ final class QrPreviewView: UIView {
     }
   }
 
-  static func rotationAngle(for orientation: UIInterfaceOrientation) -> CGFloat? {
+  static func rotationAngle(
+    for orientation: UIInterfaceOrientation, isExternalCamera: Bool
+  ) -> CGFloat? {
+    // Reset to the camera's native orientation after switching from a built-in input.
+    if isExternalCamera { return 0 }
     switch orientation {
     case .portrait: return 90
     case .portraitUpsideDown: return 270
