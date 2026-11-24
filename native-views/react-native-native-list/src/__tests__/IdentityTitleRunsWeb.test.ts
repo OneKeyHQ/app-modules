@@ -173,6 +173,7 @@ describe('Web identity title segments', () => {
             fontWeight: 'bold',
             fontSize: 18,
             lines: 2,
+            offsetY: 3,
           },
         },
       })
@@ -190,6 +191,11 @@ describe('Web identity title segments', () => {
     // A run without its own tone and weight takes the title's.
     expect(runs[3]?.style.color).toBe('');
     expect(runs[3]?.style.fontWeight).toBe('');
+    // The optical offset moves the runs without touching the layout.
+    expect(
+      body.querySelector<HTMLElement>('.ok-native-list-identity-title-runs')
+        ?.style.transform
+    ).toBe('translateY(3px)');
     // Still one line of runs.
     expect(title?.style.display).toBe('flex');
     expect(title?.style.webkitLineClamp ?? '').toBe('');

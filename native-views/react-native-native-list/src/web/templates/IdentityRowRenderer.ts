@@ -760,6 +760,13 @@ function applyTitleStyleToRuns(
       : 'proportional-nums';
   if (style.letterSpacing !== undefined)
     slot.style.letterSpacing = String(style.letterSpacing) + 'px';
+  // Paint only, as for a plain title: the line keeps its place in the layout.
+  if (style.offsetY !== undefined) {
+    const runs = slot.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-runs'
+    );
+    if (runs) runs.style.transform = `translateY(${style.offsetY}px)`;
+  }
 }
 type Views = {
   visual?: {
