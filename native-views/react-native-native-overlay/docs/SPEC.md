@@ -1389,6 +1389,33 @@ only React piece is `OverlayToastHost`, which attaches the renderer.
   Pressing one does not dismiss the toast.
 - `show` with an id that is on screen updates that card and restarts its
   lifetime; `update` redraws it (theme or layout change) without restarting.
+- A message icon may use `kind: 'status'` with `status` set to `success`,
+  `error`, `warning`, `info`, or `loading`. The caller supplies `color`
+  for the glyph, `backgroundColor` for its rounded tile, and `size` for
+  the tile edge. The centered glyph occupies half the tile edge. The optional
+  message `statusIcon` takes precedence over `icon`. Callers can supply both
+  so older renderers still show the fallback `icon`.
+- A status tile fades and settles into place near the end of the card
+  entrance. Its glyph pops independently with a small overshoot.
+  Success draws one continuous check from the short leg to the long leg.
+  Error draws two simultaneous diagonals from their upper ends.
+  Warning and info draw downward stems and reveal their stationary dots
+  with the glyph pop. Loading rotates a ring with a dimmer track and a
+  brighter quarter arc.
+- Showing success or error under the same id as a message loading status
+  keeps the card and tile in place. Once the loading glyph is visible, it
+  fades and shrinks from its current state for about 140 ms. The tile
+  interpolates its background color and bumps once, and the result glyph
+  pops and draws after the outgoing glyph's departure. If the loading
+  glyph has yet to appear, the result appears without waiting for either
+  departure or the rest of the card entrance.
+- A redraw or theme change with the same generation and status preserves
+  the tile and any in-flight glyph motion. Dismissal cancels status motion.
+  Reduced motion shows the full resting glyph and tile immediately, with a
+  static loading ring, following `respectReducedMotion`. Named icons,
+  custom spinners, images, notification badges, and action icons retain
+  their existing renderer behavior. A status icon used in a badge or action
+  uses its resting appearance.
 - A toast leaves the list when its renderer reports `close`, after the exit.
   With no renderer attached a dismissal removes it at once. At most 20 toasts
   are kept; older ones are dropped without animation.
@@ -1407,6 +1434,9 @@ with two string props (`toasts`, `config`: JSON) and one direct event
 level window from `NativeOverlayWindowManager`, Android in a layer at the
 bottom of the host's `toast` level container, so custom toast entries stay
 above them. Web has no bridge: the DOM renderer subscribes to the store.
+The JSON serializer attaches the shared status glyph recipe to every status
+icon. Web and both native renderers use the same 24-unit centerlines, dot,
+stroke widths, and loading ring geometry.
 
 Named icons come from `@onekeyfe/react-native-image`'s native registry,
 reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
@@ -1418,19 +1448,61 @@ Web draws an SVG `<use>` of the `href` the caller supplies.
 
 ### Platform behaviour
 
-Each platform keeps the look and motion of the renderer it replaced.
+All platforms adopt the shared RareUI-inspired concentric geometry (`10` card
+padding, `36` status tile, `11` tile/inline-action radius, `21` card radius)
+and unified spring motion (`card` stiffness/damping `460/36`, `tile` `620/50`,
+`glyph` `920/40`, exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`).
 
 | Behaviour | Web | iOS / Android |
 | --- | --- | --- |
 | Position | Per toast or toaster; default bottom-right | Always top-centre |
-| Stack | Newest in front, 3 visible. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Oldest at the top, newest under it, 8 pt apart, all visible |
-| Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
-| Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
-| `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
-| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed; resuming continues the remaining time |
-| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
-| Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
+| Stack | Newest in front, 3 visible, `10 px` gap, depth scale `1 - 0.05 * i` with back bodies faded. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Newest in front, 3 visible, `10 pt/dp` peek, depth scale `1 - 0.05 * i` with collapsed back heights matched to front card and back bodies faded (`240 ms`). Tap stack to expand; an outside tap passes through and collapses the stack. |
+| Card | `356 px` wide, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding, `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
+| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` (collapsed back exit scales to `0.92`) |
+| Message status entrance & settle | Tile at `110 ms` (`620/50` spring), glyph pop at `155 ms` (`920/40` spring), `180 ms` stroke draw at `210 ms` (~`390 ms` total); settle crossfades text/actions over `160 ms` `cubic-bezier(0.2, 0, 0, 1)` (`translateY 3 -> 0`) | Same spring parameters, stroke draw, tile bump/tint, and `160 ms` content crossfade (`CASpringAnimation` on iOS, analytical spring step response on Android) |
+| `close` reported | `200 ms` after the exit starts | `220 ms` after the exit starts |
+| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed or the stack is expanded; resuming continues the remaining time |
+| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up on front card (or any card when expanded); 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far; settle-back uses the card spring |
+| Top obstruction | Inline `top` on top groups, 220 ms | Cards translate within the full-window touch stage, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
+
+A single eligible message action stays inline when its measured width, icon
+and spacing leave at least 96 px/pt/dp for the text column. A smaller text
+column is allowed when the lower action would be clipped by a configured
+content height cap and the measured inline row fits within the cap. Other
+eligible actions use the lower row. Inline buttons use an 11-unit radius.
+Lower-row buttons use the caller's radius. Disabled actions keep their configured opacity
+through settlement.
+
+Native collapsed back cards accept taps in their visible bounds to expand
+the stack. Movement past the drag threshold does not expand a back card.
+An active swipe is cancelled when the card loses swipe eligibility. The
+front card exposes an accessibility action to expand a collapsed stack. On
+iOS the expansion control is a separate accessibility element alongside the
+front card's visible text, links and action buttons. Its focus frame uses
+the visible part of the status icon or badge, or the card's leading inset
+if the icon or badge is absent or fully clipped. Removing a toast clears
+its press and timer before synchronizing survivors.
+
+The Web close control stays keyboard- and screen-reader-accessible on
+visible toasts on touch browsers. The hidden control is transparent to
+pointer input. Cards beyond the display limit are excluded from focus and
+the accessibility tree until they become visible. While the stack is
+collapsed, the hidden bodies of back cards are also excluded. After the
+stack layout updates, focus inside a newly collapsed body moves to its
+visible shell if focus has stayed with the toast. The shell keeps its
+close button accessible. Enabling Reduce Motion
+finalizes mounted status animations and keeps loading rings static.
+Restoring motion resumes the loading ring. iOS action buttons use
+color-only press feedback while motion reduction is active.
+
+On Web, the card, tile and glyph springs are generated from the shared
+`TOAST_MOTION` spring definitions via `springToCssLinear`. Stroke reveal and
+the result tile bump (`[1, 1.07, 1]` over `260 ms`) use
+`cubic-bezier(0, 0, 0.58, 1)`, the outgoing glyph uses `90 ms`
+`cubic-bezier(0.42, 0, 1, 1)`, and tile/glyph colors transition over `140 ms`
+with `cubic-bezier(0.4, 0, 0.2, 1)`. The status loading ring completes one
+turn every `850 ms` on every platform.
 
 On Web, the card captures the pointer after recognizing a swipe. Ordinary
 clicks and taps activate the pressable row, buttons, or links through their
@@ -1451,13 +1523,21 @@ Divergences from the renderers replaced:
 
 ### Verification
 
+- The shared toast geometry was checked with the same specs in Chromium,
+  in a UIKit harness on iPhone 16 (iOS 26.0), and through the Fabric toaster
+  host on Pixel 7 (Android API 35). The cases cover light and dark card
+  styling, inline and lower-row action placement, and the expanded stack.
+  The native harnesses exercise their respective renderers in isolation
+  from the OneKey app.
 - Web: `src/__tests__/overlayToast.web.test.ts` covers the store and the DOM
   renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
   dark, wide light) matched the previous renderer's card boxes, text line
   rects, icon and button boxes and computed styles within 0.5 px.
 - Web pointer regression: `tests/browser/overlayToast.test.cjs` exercises
   browser-generated mouse clicks, touch taps, mixed input, and swipes in
-  Chromium. Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
+  Chromium. Status motion checks in the suite cover ordered entrance, stroke
+  direction, same-id settlement, redraw, cancellation, and reduced motion.
+  Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
   Make `esbuild` and `playwright-core` available via `NODE_PATH` or the local
   install, and set `CHROMIUM_EXECUTABLE_PATH` if using a system Chrome.
 - iOS: built into app-monorepo and run on an iPhone 17 Pro simulator (iOS
