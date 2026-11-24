@@ -31,6 +31,7 @@ export async function listWebCameras(): Promise<QrCameraInfo[]> {
 export function subscribeWebCameraChanges(listener: () => void): () => void {
   const mediaDevices = navigator.mediaDevices;
   if (!mediaDevices?.addEventListener) return () => {};
-  mediaDevices.addEventListener('devicechange', listener);
-  return () => mediaDevices.removeEventListener('devicechange', listener);
+  const registration = () => listener();
+  mediaDevices.addEventListener('devicechange', registration);
+  return () => mediaDevices.removeEventListener('devicechange', registration);
 }

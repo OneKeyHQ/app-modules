@@ -100,13 +100,15 @@ function zxingUnavailable(error: unknown): QrScannerError {
  * One worker, requests answered in order. A worker that errors is dropped;
  * the next request starts a fresh one.
  */
+const WORKER_DEADLINE_MS = 10_000;
+
 class ZXingWorkerClient {
   private worker: ZXingWorkerLike;
   private nextId = 1;
   private pending = new Map<number, (response: ZXingWorkerResponse) => void>();
   private ready: Promise<void>;
+  private deadlines = new Set<(reason: string) => void>();
   broken = false;
-  private terminated = false;
 
   constructor(create: () => ZXingWorkerLike, loadWasm: () => Promise<ArrayBuffer>) {
     this.worker = create();
@@ -116,23 +118,44 @@ class ZXingWorkerClient {
     };
     this.worker.onerror = () => this.fail('zxing worker crashed');
     this.worker.onmessageerror = () => this.fail('zxing worker response could not be read');
-    this.ready = Promise.resolve()
+    const initialize = Promise.resolve()
       .then(loadWasm)
       .then(async (wasm) => {
+        if (this.broken) return;
         // The loader may cache its ArrayBuffer. Transfer only our own copy.
         const bytes = wasm.slice(0);
         await this.request({ id: 0, type: 'init', wasm: bytes }, [bytes]);
-      })
+      });
+    this.ready = this.withDeadline(initialize, 'zxing worker initialization timed out')
       .catch((error: unknown) => {
         this.dispose();
         throw error;
       });
   }
 
+  private withDeadline<T>(operation: Promise<T>, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    let cancel: (reason: string) => void;
+    const settled = new Promise<T>((resolve, reject) => {
+      cancel = (reason) => reject(new Error(reason));
+      this.deadlines.add(cancel);
+      timer = setTimeout(() => this.fail(message), WORKER_DEADLINE_MS);
+      void operation.then(resolve, reject);
+    });
+    return settled.finally(() => {
+      clearTimeout(timer);
+      this.deadlines.delete(cancel);
+    });
+  }
+
   private fail(message: string) {
+    if (this.broken) return;
     this.broken = true;
+    for (const cancel of this.deadlines) cancel(message);
+    this.deadlines.clear();
     for (const resolve of this.pending.values()) resolve({ id: 0, ok: false, error: message });
     this.pending.clear();
+    this.worker.terminate();
   }
 
   private request(
@@ -161,17 +184,17 @@ class ZXingWorkerClient {
     await this.ready;
     // The same image feeds several passes and engines; send a copy.
     const data = image.data.slice();
-    return this.request(
-      { id: 0, type: 'decode', data, width: image.width, height: image.height },
-      [data.buffer]
+    return this.withDeadline(
+      this.request(
+        { id: 0, type: 'decode', data, width: image.width, height: image.height },
+        [data.buffer]
+      ),
+      'zxing worker decode timed out'
     );
   }
 
   dispose() {
-    if (this.terminated) return;
-    this.terminated = true;
     this.fail('zxing worker disposed');
-    this.worker.terminate();
   }
 }
 
@@ -206,5 +229,6 @@ export async function getEngines(): Promise<QrImageEngine[]> {
   nativeDetector ??= createNativeEngine();
   const native = await nativeDetector;
   if (native) return config.loadZXingWasm ? [native, zxingEngine] : [native];
+  requireLoader();
   return [zxingEngine];
 }

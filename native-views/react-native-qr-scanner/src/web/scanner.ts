@@ -244,6 +244,8 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     const isCurrent = () => acquisition === attempt;
     let candidate: MediaStream | undefined;
     let preview: HTMLVideoElement | undefined;
+    let requestedMedia = false;
+    let reconcileAfterRelease = false;
     function releaseCandidate() {
       if (!candidate) return;
       if (preview?.srcObject === candidate) preview.srcObject = null;
@@ -257,20 +259,26 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new QrScannerError('no-camera', 'getUserMedia is not available');
       }
-      const open = (id?: string) => navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          deviceId: id ? { exact: id } : undefined,
-          facingMode: id ? undefined : { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
+      const open = (id?: string) => {
+        requestedMedia = true;
+        return navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            deviceId: id ? { exact: id } : undefined,
+            facingMode: id ? undefined : { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+      };
       const previous = stream;
       try {
         candidate = await open(requestedId);
       } catch (error) {
-        if (!isCurrent()) return;
+        if (!isCurrent()) {
+          reconcileAfterRelease = true;
+          return;
+        }
         const code = cameraErrorCode(error);
         if (previous && stream === previous && code === 'camera-busy') {
           generation += 1;
@@ -284,7 +292,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           throw error;
         }
       }
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        reconcileAfterRelease = true;
+        return;
+      }
 
       // A separate video validates the candidate while the working preview
       // keeps rendering and analysing its own stream.
@@ -305,7 +316,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
             };
           }),
         ]);
-        if (!isCurrent()) return;
+        if (!isCurrent()) {
+          reconcileAfterRelease = true;
+          return;
+        }
         if (!started) throw new QrScannerError('camera-busy', 'The camera produced no frames');
       } finally {
         clearTimeout(timeout);
@@ -330,13 +344,21 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       }
       startAnalysis(nextEngines);
     } catch (error) {
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        reconcileAfterRelease = requestedMedia;
+        return;
+      }
       acquisition = undefined;
       releaseCandidate();
       fail(error instanceof QrScannerError ? error.code : cameraErrorCode(error),
         error instanceof Error ? error.message : String(error));
     } finally {
       releaseCandidate();
+      // On single-camera WebKit, even a stale acquisition can end the
+      // selected stream. Recheck after releasing that acquisition's tracks.
+      if (reconcileAfterRelease && active && !acquisition && stream && !hasLiveCamera()) {
+        await acquireCamera(deviceId, true);
+      }
     }
   }
 

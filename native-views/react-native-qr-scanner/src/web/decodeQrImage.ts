@@ -1,6 +1,7 @@
 import { DEFAULT_MAX_IMAGE_PIXELS } from '../decodeQrImage.constants';
 import { QrScannerError } from '../errors';
 import { getEngines } from './engines';
+import { readImageDimensions } from './imageDimensions';
 import { decodePixels, fitToPixelBudget } from './imageOps';
 
 import type { RgbaImage } from './imageOps';
@@ -10,19 +11,36 @@ const MAX_SOURCE_PIXELS = 200_000_000;
 const MAX_PIXELS_CEILING = 50_000_000;
 
 async function blobToPixels(blob: Blob, maxPixels: number): Promise<RgbaImage> {
+  let dimensions: Awaited<ReturnType<typeof readImageDimensions>>;
+  try {
+    dimensions = await readImageDimensions(blob);
+  } catch {
+    throw new QrScannerError('invalid-image', 'unreadable or unsupported image');
+  }
+  const { width: sourceWidth, height: sourceHeight, swapAxes } = dimensions;
+  if (sourceWidth < 1 || sourceHeight < 1) {
+    throw new QrScannerError('invalid-image', 'invalid image dimensions');
+  }
+  if (sourceWidth > MAX_SOURCE_PIXELS / sourceHeight) {
+    throw new QrScannerError('resource-limit', `image has ${sourceWidth}x${sourceHeight} pixels`);
+  }
+
+  const orientedWidth = swapAxes ? sourceHeight : sourceWidth;
+  const orientedHeight = swapAxes ? sourceWidth : sourceHeight;
+  const size = fitToPixelBudget(orientedWidth, orientedHeight, maxPixels);
+  const options: ImageBitmapOptions = { imageOrientation: 'from-image' };
+  if (size.width !== orientedWidth || size.height !== orientedHeight) {
+    options.resizeWidth = size.width;
+    options.resizeHeight = size.height;
+    options.resizeQuality = 'high';
+  }
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+    bitmap = await createImageBitmap(blob, options);
   } catch {
     throw new QrScannerError('invalid-image', 'unreadable or unsupported image');
   }
   try {
-    if (bitmap.width * bitmap.height > MAX_SOURCE_PIXELS) {
-      throw new QrScannerError(
-        'resource-limit',
-        `image has ${bitmap.width}x${bitmap.height} pixels`
-      );
-    }
     const { width, height } = fitToPixelBudget(bitmap.width, bitmap.height, maxPixels);
     const canvas =
       typeof OffscreenCanvas === 'function'

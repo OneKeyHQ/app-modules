@@ -19,12 +19,15 @@ beforeAll(() => {
   };
 });
 
-afterEach(() => configureWebQrScanner({}));
+afterEach(() => {
+  configureWebQrScanner({});
+  jest.useRealTimers();
+});
 
 const image = () => ({ data: new Uint8ClampedArray(16), width: 2, height: 2 });
 
 /** Runs the real worker handler in-process, like a Worker would. */
-function inProcessWorker(options: { crashOnDecode?: boolean } = {}) {
+function inProcessWorker(options: { crashOnDecode?: boolean; silent?: ZXingWorkerRequest['type'] } = {}) {
   const handle = createZXingWorkerHandler();
   const sent: { message: ZXingWorkerRequest; transfer?: Transferable[] }[] = [];
   const worker: ZXingWorkerLike = {
@@ -33,6 +36,7 @@ function inProcessWorker(options: { crashOnDecode?: boolean } = {}) {
     terminate: jest.fn(),
     postMessage(message, transfer) {
       sent.push({ message, transfer });
+      if (options.silent === message.type) return;
       if (options.crashOnDecode && message.type === 'decode') {
         setTimeout(() => worker.onerror?.(Object.assign(new Event('error'), { message: 'boom', filename: '', lineno: 0, colno: 0, error: null })));
         return;
@@ -99,6 +103,40 @@ describe('worker-backed zxing engine', () => {
     await expect(zxingEngine.decode(image())).resolves.toBe('from-zxing');
     expect(loadZXingWasm).toHaveBeenCalledTimes(2);
     expect(failed.worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['init', 'decode'] as const)('replaces a Worker that stops answering %s requests', async (silent) => {
+    jest.useFakeTimers();
+    const failed = inProcessWorker({ silent });
+    const healthy = inProcessWorker();
+    const createZXingWorker = jest.fn()
+      .mockReturnValueOnce(failed.worker)
+      .mockReturnValueOnce(healthy.worker);
+    configureWebQrScanner({ loadZXingWasm: async () => new ArrayBuffer(8), createZXingWorker });
+    const pending = [zxingEngine.decode(image()), zxingEngine.decode(image())].map((promise) =>
+      expect(promise).rejects.toMatchObject({ code: 'decoder-unavailable', message: expect.stringContaining('timed out') })
+    );
+    await jest.advanceTimersByTimeAsync(10_000);
+    await Promise.all(pending);
+    expect(failed.worker.terminate).toHaveBeenCalledTimes(1);
+    await expect(zxingEngine.decode(image())).resolves.toBe('from-zxing');
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('includes the WASM loader in the initialization deadline', async () => {
+    jest.useFakeTimers();
+    const worker = inProcessWorker();
+    configureWebQrScanner({
+      loadZXingWasm: () => new Promise(() => {}),
+      createZXingWorker: () => worker.worker,
+    });
+    const pending = expect(zxingEngine.decode(image())).rejects.toMatchObject({
+      code: 'decoder-unavailable', message: expect.stringContaining('initialization timed out'),
+    });
+    await jest.advanceTimersByTimeAsync(10_000);
+    await pending;
+    expect(worker.sent).toEqual([]);
+    expect(worker.worker.terminate).toHaveBeenCalledTimes(1);
   });
 
   it('turns a crashed worker into decoder-unavailable and starts a new one next time', async () => {

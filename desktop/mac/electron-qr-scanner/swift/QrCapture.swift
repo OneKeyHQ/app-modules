@@ -11,10 +11,18 @@ enum QrCaptureEventKind: Int32 {
   case ended = 3
 }
 
+enum QrCaptureTermination {
+  case eof
+  case failure(code: String, message: String)
+}
+
 /// Supplies BGRA frames to the controller on its analysis queue.
 protocol QrFrameSource: AnyObject {
   /// Starts delivering frames; returns an error code and message on failure.
-  func start(deliver: @escaping (CVPixelBuffer) -> Void, ended: @escaping () -> Void)
+  func start(
+    deliver: @escaping (CVPixelBuffer) -> Void,
+    terminated: @escaping (QrCaptureTermination) -> Void
+  )
     -> (code: String, message: String)?
   func stop()
 }
@@ -26,6 +34,7 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   private let queue: DispatchQueue
   private let deviceId: String?
   private var deliver: ((CVPixelBuffer) -> Void)?
+  private var observers: [NSObjectProtocol] = []
 
   init(queue: DispatchQueue, deviceId: String?) {
     self.queue = queue
@@ -61,14 +70,17 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
     }
   }
 
-  func start(deliver: @escaping (CVPixelBuffer) -> Void, ended: @escaping () -> Void)
+  func start(
+    deliver: @escaping (CVPixelBuffer) -> Void,
+    terminated: @escaping (QrCaptureTermination) -> Void
+  )
     -> (code: String, message: String)?
   {
+    guard let device = Self.device(id: deviceId) else {
+      return ("no-camera", "No camera is available")
+    }
     self.deliver = deliver
     do {
-      guard let device = Self.device(id: deviceId) else {
-        return ("no-camera", "No camera is available")
-      }
       session.beginConfiguration()
       defer { session.commitConfiguration() }
       if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
@@ -93,11 +105,36 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
       }
       session.addOutput(output)
     }
+    let center = NotificationCenter.default
+    observers = [
+      center.addObserver(
+        forName: AVCaptureDevice.wasDisconnectedNotification, object: device, queue: nil
+      ) { _ in
+        terminated(.failure(code: "no-camera", message: "The camera disconnected"))
+      },
+      center.addObserver(
+        forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil
+      ) { note in
+        let error = note.userInfo?[AVCaptureSessionErrorKey] as? Error
+        terminated(.failure(code: "camera-busy", message: error?.localizedDescription ?? "The camera stopped"))
+      },
+      center.addObserver(
+        forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil
+      ) { _ in
+        terminated(.failure(code: "camera-busy", message: "The camera was interrupted"))
+      },
+    ]
     session.startRunning()
-    return session.isRunning ? nil : ("camera-busy", "The camera could not start")
+    guard session.isRunning else {
+      stop()
+      return ("camera-busy", "The camera could not start")
+    }
+    return nil
   }
 
   func stop() {
+    observers.forEach { NotificationCenter.default.removeObserver($0) }
+    observers.removeAll()
     if session.isRunning { session.stopRunning() }
   }
 
@@ -126,7 +163,10 @@ final class QrFileSource: QrFrameSource {
     self.queue = queue
   }
 
-  func start(deliver: @escaping (CVPixelBuffer) -> Void, ended: @escaping () -> Void)
+  func start(
+    deliver: @escaping (CVPixelBuffer) -> Void,
+    terminated: @escaping (QrCaptureTermination) -> Void
+  )
     -> (code: String, message: String)?
   {
     let asset = AVURLAsset(url: url)
@@ -136,9 +176,13 @@ final class QrFileSource: QrFrameSource {
     queue.async { [weak self] in
       guard let self else { return }
       repeat {
-        guard self.readOnce(asset: asset, deliver: deliver) else { break }
-      } while self.loop && !self.isStopped
-      if !self.isStopped { ended() }
+        guard let outcome = self.readOnce(asset: asset, deliver: deliver), !self.isStopped else {
+          return
+        }
+        if case .eof = outcome, self.loop { continue }
+        terminated(outcome)
+        return
+      } while !self.isStopped
     }
     return nil
   }
@@ -156,11 +200,13 @@ final class QrFileSource: QrFrameSource {
     return stopped
   }
 
-  /// Reads the file once; false when it could not be read or was stopped.
-  private func readOnce(asset: AVURLAsset, deliver: (CVPixelBuffer) -> Void) -> Bool {
+  /// Returns nil when the caller explicitly stops playback.
+  private func readOnce(
+    asset: AVURLAsset, deliver: (CVPixelBuffer) -> Void
+  ) -> QrCaptureTermination? {
     guard let track = asset.tracks(withMediaType: .video).first,
       let reader = try? AVAssetReader(asset: asset)
-    else { return false }
+    else { return .failure(code: "invalid-image", message: "The video could not be read") }
     let output = AVAssetReaderTrackOutput(
       track: track,
       outputSettings: [
@@ -169,9 +215,14 @@ final class QrFileSource: QrFrameSource {
         kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
       ])
     output.alwaysCopiesSampleData = false
-    guard reader.canAdd(output) else { return false }
+    guard reader.canAdd(output) else {
+      return .failure(code: "decoder-unavailable", message: "The video output could not be added")
+    }
     reader.add(output)
-    guard reader.startReading() else { return false }
+    guard reader.startReading() else {
+      return .failure(code: "invalid-image", message: "The video reader could not start")
+    }
+    defer { reader.cancelReading() }
     let startedAt = ProcessInfo.processInfo.systemUptime
     var firstPts: Double?
     while !isStopped, let sample = output.copyNextSampleBuffer() {
@@ -186,9 +237,9 @@ final class QrFileSource: QrFrameSource {
       guard !isStopped else { break }
       if let buffer = CMSampleBufferGetImageBuffer(sample) { deliver(buffer) }
     }
-    let completed = reader.status == .completed
-    reader.cancelReading()
-    return completed && firstPts != nil && !isStopped
+    if isStopped { return nil }
+    if reader.status == .completed, firstPts != nil { return .eof }
+    return .failure(code: "invalid-image", message: "The video reader stopped before end of file")
   }
 }
 
@@ -348,11 +399,16 @@ final class QrCaptureController {
         self?.preview(buffer, generation: generation)
         self?.analyze(buffer, generation: generation)
       },
-      ended: { [weak self] in
+      terminated: { [weak self] outcome in
         self?.sessionQueue.async { [weak self] in
-          guard let self, self.gate.currentGeneration == generation else { return }
+          guard let self, self.source != nil, self.gate.currentGeneration == generation else { return }
           self.stopOnQueue()
-          self.emit(.ended, "", "", generation)
+          switch outcome {
+          case .eof:
+            self.emit(.ended, "", "", generation)
+          case .failure(let code, let message):
+            self.emit(.error, code, message, generation)
+          }
         }
       })
     {

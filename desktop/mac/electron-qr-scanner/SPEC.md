@@ -76,10 +76,15 @@ analysis queue, so preview rate is bounded by detection time per frame.
 - `createCapture`: every `start`/`stop` begins a new generation; events from
   a stopped or superseded generation are dropped in JS, including queued
   callbacks. Each file playback run cancels independently and EOF permits
-  restarting. QR text crosses the native bridge as length-delimited UTF-8.
+  restarting. Camera disconnection, capture interruption/runtime errors
+  and asynchronous file-reader failures stop the affected generation and
+  report `onError`. Only normal non-looping EOF reports `onEnded`. Both
+  outcomes allow the caller to start again, and explicit stop suppresses
+  queued terminal events. QR text crosses the native bridge as
+  length-delimited UTF-8.
   ZXing preserves embedded NULs. macOS Vision can truncate a QR payload at an
-  embedded NUL before this bridge sees it, including with the live engine. The same text repeats at most once
-  per second; new text (each part of an animated code) passes at once.
+  embedded NUL before this bridge sees it, including with the live engine.
+  The same text repeats at most once per second; new text passes at once.
   `dispose()` is idempotent and no callback runs after it returns.
 - `listCameras` lists without opening a camera or asking for permission:
   the built-in camera (`front`), then USB and Continuity cameras

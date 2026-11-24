@@ -115,7 +115,7 @@ export interface FountainHeader {
  * Reads `[seqNum, seqLen, messageLen, checksum, fragment]`. The input has
  * passed `assertBoundedCbor`, so every declared length fits in it.
  */
-function readFountainHeader(input: Uint8Array): FountainHeader {
+function readFountainHeader(input: Uint8Array): FountainHeader & { fragmentOffset: number } {
   let offset = 0;
   const readHead = (expectedMajor: number): number => {
     const initial = input[offset]!;
@@ -135,17 +135,17 @@ function readFountainHeader(input: Uint8Array): FountainHeader {
   const messageLength = readHead(0);
   const checksum = readHead(0);
   const fragmentLength = readHead(2);
-  return { seqNum, seqLength, messageLength, checksum, fragmentLength };
+  return { seqNum, seqLength, messageLength, checksum, fragmentLength, fragmentOffset: offset };
 }
 
 export type ParsedUrPart =
   | { verdict: 'malformed' }
   | { verdict: 'too-large'; type: string; header?: FountainHeader }
   | { verdict: 'single'; type: string; payload: Uint8Array }
-  | { verdict: 'part'; type: string; header: FountainHeader };
+  | { verdict: 'part'; type: string; header: FountainHeader; fragment: Uint8Array };
 
 const UR_PART_PATTERN =
-  /^ur:([a-z0-9-]+)\/(?:(\d{1,9})-(\d{1,9})\/)?([a-z]+)$/;
+  /^ur:([a-z0-9-]+)\/(?:(\d{1,10})-(\d{1,9})\/)?([a-z]+)$/;
 
 /**
  * Judges one UR part (already trimmed and lower-cased) before the fountain
@@ -175,7 +175,7 @@ export function parseUrPart(part: string, limits: UrLimits): ParsedUrPart {
     }
     return { verdict: 'single', type: type!, payload };
   }
-  let header: FountainHeader;
+  let header: ReturnType<typeof readFountainHeader>;
   try {
     // A fountain part is one frame, not the message; its own size is bounded
     // by what a QR symbol can hold, and the message size by its header below.
@@ -193,6 +193,8 @@ export function parseUrPart(part: string, limits: UrLimits): ParsedUrPart {
     header.seqNum !== Number(textSeqNum) ||
     header.seqLength !== Number(textSeqLength) ||
     header.seqNum < 1 ||
+    header.seqNum > 0xffff_ffff ||
+    header.checksum > 0xffff_ffff ||
     header.fragmentLength < 1 ||
     header.messageLength < 1 ||
     header.seqLength !== Math.ceil(header.messageLength / header.fragmentLength)
@@ -205,7 +207,7 @@ export function parseUrPart(part: string, limits: UrLimits): ParsedUrPart {
   ) {
     return { verdict: 'too-large', type: type!, header };
   }
-  return { verdict: 'part', type: type!, header };
+  return { verdict: 'part', type: type!, header, fragment: payload.subarray(header.fragmentOffset) };
 }
 
 function hexToBytes(hex: string): Uint8Array {

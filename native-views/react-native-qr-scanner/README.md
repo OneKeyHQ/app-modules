@@ -70,6 +70,7 @@ configureWebQrScanner({
 
 const scanner = createWebQrScanner({ video, mode: 'auto', onResult });
 await scanner.start();
+// Accepts JPEG, PNG, WebP, GIF and BMP.
 const text = await decodeQrImage(fileFromInput); // string | null
 ```
 

@@ -1,7 +1,10 @@
-import { UR, URDecoder, UREncoder } from '@ngraveio/bc-ur';
+import { UR, UREncoder } from '@ngraveio/bc-ur';
+import * as urUtils from '@ngraveio/bc-ur/dist/utils.js';
 
 import { createUrAssembler } from '../assembler';
 import { DEFAULT_UR_LIMITS } from '../limits';
+
+const actualCrc = urUtils.getCRC;
 
 // A definite-length CBOR byte string of `length` bytes.
 function cborBytes(length: number, seed = 1): Buffer {
@@ -164,23 +167,62 @@ describe('createUrAssembler', () => {
     });
   });
 
-  it('ends the session when the fountain decoder reports a checksum failure', () => {
-    const [part] = fountainParts(cborBytes(200), 50, 1);
-    const checksum = jest.spyOn(URDecoder.prototype, 'isError').mockReturnValueOnce(true);
+  it('ends the session when the assembled message fails its checksum', () => {
+    const cbor = cborBytes(200);
+    const parts = fountainParts(cbor, 50, 5);
+    const assembler = createUrAssembler();
+    // Leave each input frame valid and simulate a mismatched message CRC.
+    const checksum = jest.spyOn(urUtils, 'getCRC').mockImplementation((message) =>
+      message.length === cbor.length ? -1 : actualCrc(message)
+    );
     try {
-      const assembler = createUrAssembler();
-      expect(assembler.receive(part!)).toMatchObject({
+      for (const part of parts.slice(0, -1)) expect(assembler.receive(part).status).toBe('progress');
+      expect(assembler.receive(parts[parts.length - 1]!)).toMatchObject({
         status: 'rejected', error: { code: 'invalid-payload' },
       });
-      expect(assembler.receive(part!)).toEqual({ status: 'ignored', reason: 'finished' });
+      expect(assembler.receive(parts[0]!)).toEqual({ status: 'ignored', reason: 'finished' });
     } finally {
       checksum.mockRestore();
     }
   });
 
-  it('bounds work even when size limits admit a large fragment count', () => {
-    const [part] = fountainParts(cborBytes(18_000), 10, 1);
-    expect(createUrAssembler().receive(part!)).toMatchObject({
+  it.each([
+    { bytes: 11_997, fragmentBytes: 120, originals: 100, acceptFirst: false },
+    { bytes: 60_000, fragmentBytes: 300, originals: 201, acceptFirst: true },
+  ])('recovers a $originals-fragment message after missing original frames', (fixture) => {
+    const cbor = cborBytes(fixture.bytes, 7);
+    const encoder = new UREncoder(new UR(cbor, 'bytes'), fixture.fragmentBytes);
+    expect(encoder.fragmentsLength).toBe(fixture.originals);
+    const assembler = createUrAssembler();
+    for (let index = 0; index < fixture.originals; index++) {
+      const part = encoder.nextPart();
+      if (index === 0 && fixture.acceptFirst) expect(assembler.receive(part).status).toBe('progress');
+    }
+    for (let index = 0; index < 600; index++) {
+      const result = assembler.receive(encoder.nextPart());
+      if (result.status !== 'progress') {
+        expect(result).toEqual({
+          status: 'complete', result: { kind: 'ur', type: 'bytes', cbor: Uint8Array.from(cbor) },
+        });
+        return;
+      }
+    }
+    throw new Error('expected the mixed stream to complete');
+  });
+
+  it.each([1_000_000_000, 0xffff_ffff])('accepts an unsigned 32-bit sequence number of %i', (sequence) => {
+    const encoder = new UREncoder(new UR(cborBytes(40), 'bytes'), 12, sequence - 1);
+    const part = encoder.nextPart();
+    expect(part).toContain(`/${sequence}-`);
+    expect(createUrAssembler().receive(part).status).toBe('progress');
+  });
+
+  it('bounds mixed-frame work while keeping original-frame decoding available', () => {
+    const ur = new UR(cborBytes(18_000), 'bytes');
+    const encoder = new UREncoder(ur, 10);
+    expect(createUrAssembler().receive(encoder.nextPart()).status).toBe('progress');
+    const mixed = new UREncoder(ur, 10, encoder.fragmentsLength);
+    expect(createUrAssembler().receive(mixed.nextPart())).toMatchObject({
       status: 'rejected', error: { code: 'resource-limit' },
     });
   });

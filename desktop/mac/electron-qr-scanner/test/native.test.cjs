@@ -161,6 +161,35 @@ test("a non-looping playback can restart after EOF", { skip: !nativeMac, timeout
   }
 });
 
+test("a video read failure reports an error and lets capture restart", {
+  skip: !nativeMac, timeout: 5_000,
+}, async () => {
+  const ready = [];
+  const failures = [];
+  let capture;
+  try {
+    await new Promise((resolve, reject) => {
+      capture = api.createCapture({
+        // A complete video header with interrupted media data.
+        source: { kind: "file", path: join(__dirname, "fixtures/interrupted-video.mp4") },
+        onReady: (generation) => ready.push(generation),
+        onEnded: () => reject(new Error("Reader failure was reported as normal EOF")),
+        onError: (error, generation) => {
+          failures.push({ code: error.code, generation });
+          if (failures.length === 1) capture.start();
+          else resolve();
+        },
+      });
+      capture.start();
+    });
+    assert.equal(ready.length, 2);
+    assert.ok(ready[1] > ready[0]);
+    assert.deepEqual(failures, ready.map((generation) => ({ code: "invalid-image", generation })));
+  } finally {
+    capture?.dispose();
+  }
+});
+
 test("a missing video file reports an error", { skip: !nativeMac }, async () => {
   const error = await new Promise((resolve) => {
     const capture = api.createCapture({

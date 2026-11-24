@@ -6,6 +6,7 @@ import BackgroundThread
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
+  weak var window: UIWindow?
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
@@ -56,6 +57,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     let window = UIWindow(windowScene: windowScene)
     self.window = window
+    appDelegate.window = window
     factory.startReactNative(withModuleName: "example", in: window, launchOptions: nil)
+  }
+
+  func sceneDidDisconnect(_ scene: UIScene) {
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate,
+      appDelegate.window === window
+    else { return }
+    appDelegate.window = nil
   }
 }

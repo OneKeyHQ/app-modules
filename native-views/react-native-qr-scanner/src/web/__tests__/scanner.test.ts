@@ -103,6 +103,56 @@ describe('createWebQrScanner camera start', () => {
     expect(open).toHaveBeenCalledTimes(1);
   });
 
+  it('reports a missing decoder before requesting camera access', async () => {
+    configureWebQrScanner({ disableNativeDetector: true });
+    setGetUserMedia(async () => fakeStream().stream);
+    const onError = jest.fn();
+    const onReady = jest.fn();
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto', onError, onReady });
+    await scanner.start();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'decoder-unavailable' }));
+    expect(onReady).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reacquires a selection preempted by a stale WebKit open (stopped=%s)', async (stopped) => {
+    const original = fakeStream();
+    const stale = fakeStream();
+    const recovered = fakeStream();
+    const openingStale = deferred<unknown>();
+    const calls: (string | undefined)[] = [];
+    const open = jest.fn((constraints: MediaStreamConstraints) => {
+      const { deviceId } = constraints.video as MediaTrackConstraints;
+      calls.push((deviceId as { exact?: string }).exact);
+      if (calls.length === 1) return Promise.resolve(original.stream);
+      if (calls.length === 2) return openingStale.promise;
+      return Promise.resolve(recovered.stream);
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true, value: { getUserMedia: open },
+    });
+    stageVideo(fakeVideo(async () => {}));
+    const video = fakeVideo(async () => {});
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' },
+    });
+    try {
+      await scanner.start();
+      const switching = scanner.switchCamera('camera-b');
+      while (calls.length < 2) await new Promise((resolve) => setImmediate(resolve));
+      await scanner.switchCamera('camera-a');
+      if (stopped) scanner.stop();
+      original.track.readyState = 'ended';
+      openingStale.resolve(stale.stream);
+      await switching;
+      expect(stale.track.stop).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual(stopped ? ['camera-a', 'camera-b'] : ['camera-a', 'camera-b', 'camera-a']);
+      expect(video.srcObject).toBe(stopped ? null : recovered.stream);
+    } finally {
+      scanner.dispose();
+    }
+  });
+
   it('maps getUserMedia errors to error codes', async () => {
     for (const [name, code] of [
       ['NotAllowedError', 'permission-denied'],

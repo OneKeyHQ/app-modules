@@ -50,7 +50,7 @@ import java.util.concurrent.TimeUnit
 @DoNotStrip
 class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), LifecycleOwner {
   private companion object {
-    const val PERMISSION_REQUEST_CODE = 0x5152
+    const val DECODE_ERROR_INTERVAL_MS = 1_000L
     const val FOCUS_INDICATOR_DP = 72
     // A tapped focus point is held this long, then CameraX returns to
     // continuous focus over the whole frame.
@@ -128,7 +128,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   private var pinchGeneration: Int? = null
   private var shouldRun = false
   private var starting = false
-  private var permissionPending = false
+  private class PermissionWait(var cancel: (() -> Unit)? = null)
+  private var permissionWait: PermissionWait? = null
+  private var permissionDenied = false
+  private var lastDecodeFailureAt: Long? = null
   private var hostLifecycle: Lifecycle? = null
   private var running = false
   private var hostResumed = true
@@ -137,6 +140,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     when (event) {
       Lifecycle.Event.ON_RESUME -> { hostResumed = true; start() }
       Lifecycle.Event.ON_PAUSE -> { hostResumed = false; stop() }
+      Lifecycle.Event.ON_DESTROY -> dispose()
       else -> Unit
     }
   }
@@ -236,7 +240,11 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       requestedCameraId = requested
       this.shouldRun = shouldRun
       when {
-        !shouldRun -> stop()
+        !shouldRun -> {
+          cancelPermissionWait()
+          permissionDenied = false
+          stop()
+        }
         running -> switchCameraIfNeeded()
         changed -> start()
       }
@@ -274,6 +282,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       if (dropped) return@post
       dropped = true
       callbacks = CaptureCallbacks()
+      cancelPermissionWait()
       stop()
       hostLifecycle?.removeObserver(hostObserver)
       hostLifecycle = null
@@ -292,8 +301,13 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     callbacks.error?.invoke(code, message, generation.toDouble())
   }
 
+  private fun cancelPermissionWait() {
+    permissionWait?.cancel?.invoke()
+    permissionWait = null
+  }
+
   private fun start() {
-    if (running || dropped || !shouldRun || !hostResumed || starting || permissionPending) return
+    if (running || dropped || !shouldRun || !hostResumed || starting || permissionWait != null) return
     val generation = gate.nextGeneration()
     // Check for hardware first: a device without a camera must not prompt.
     if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
@@ -308,19 +322,21 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
         emitError("permission-denied", "Camera access is not allowed", generation)
         return
       }
-      permissionPending = true
-      activity.requestPermissions(arrayOf(Manifest.permission.CAMERA), PERMISSION_REQUEST_CODE) { code, _, results ->
-        if (code != PERMISSION_REQUEST_CODE) return@requestPermissions false
+      if (permissionDenied) return
+      val wait = PermissionWait()
+      permissionWait = wait
+      wait.cancel = QrCameraPermission.request(activity) { granted ->
         main.post {
-          permissionPending = false
+          if (permissionWait !== wait) return@post
+          permissionWait = null
           if (!shouldRun || dropped) return@post
-          if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+          if (granted) {
             start()
           } else {
+            permissionDenied = true
             emitError("permission-denied", "Camera access was denied", gate.currentGeneration)
           }
         }
-        true
       }
       return
     }
@@ -364,6 +380,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       )
       .build()
     analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy, generation) }
+    lastDecodeFailureAt = null
     val bound = try {
       provider.bindToLifecycle(this, selector, preview, analysis)
     } catch (error: Exception) {
@@ -429,6 +446,17 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     if (useCases.isNotEmpty()) cameraProvider?.unbind(*useCases.toTypedArray())
   }
 
+  private fun reportDecodeFailure(generation: Int) {
+    main.post {
+      if (!running || gate.currentGeneration != generation) return@post
+      val now = SystemClock.elapsedRealtime()
+      val last = lastDecodeFailureAt
+      if (last != null && now - last < DECODE_ERROR_INTERVAL_MS) return@post
+      lastDecodeFailureAt = now
+      emitError("decoder-unavailable", "The camera QR decoder could not read a frame", generation)
+    }
+  }
+
   /** Runs on the analysis executor; KEEP_ONLY_LATEST keeps one frame in flight. */
   @OptIn(ExperimentalGetImage::class)
   private fun analyze(proxy: ImageProxy, generation: Int) {
@@ -438,8 +466,15 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       return
     }
     val frameCallback = callbacks.frame
-    val input = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
-    scanner.process(input)
+    val task = try {
+      val input = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
+      scanner.process(input)
+    } catch (_: RuntimeException) {
+      proxy.close()
+      reportDecodeFailure(generation)
+      return
+    }
+    task
       .addOnSuccessListener(analysisExecutor) { barcodes ->
         val texts = barcodes.mapNotNull { it.rawValue }
         if (texts.isEmpty()) return@addOnSuccessListener
@@ -449,6 +484,9 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
           for (report in reports) frameCallback?.invoke(report.text, report.generation.toDouble())
         }
       }
-      .addOnCompleteListener(analysisExecutor) { proxy.close() }
+      .addOnCompleteListener(analysisExecutor) { result ->
+        proxy.close()
+        if (!result.isSuccessful && !result.isCanceled) reportDecodeFailure(generation)
+      }
   }
 }

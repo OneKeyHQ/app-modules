@@ -39,7 +39,8 @@ when it lands:
 ### Dependencies
 
 `./ur` uses `@ngraveio/bc-ur` `1.1.13` (pinned; the version app-monorepo ships)
-for bytewords and fountain decoding, so assembly matches production behavior.
+for Bytewords, fountain index selection and CRC32. The SDK solves fountain
+equations in bounded storage and preserves the vendor encoder’s wire format.
 That library needs a global `Buffer`, and its `assert` dependency reads
 `process` when loaded; OneKey runtimes provide both (a plain browser page
 needs polyfills). The React Native example installs Buffer before loading its
@@ -157,7 +158,9 @@ of:
 
 Rules:
 
-- Frame text is trimmed; UR parts are compared lower-cased.
+- Frame text is trimmed; UR parts are compared lower-cased. A multipart
+  sequence number is a positive unsigned 32-bit integer and must match its
+  CBOR header.
 - `static` mode returns any non-empty frame text as `text`, UR or not.
 - `auto` mode returns non-UR text as `text` and assembles UR parts.
 - `ur` mode ignores non-UR text (`not-ur`) unless `allowPlainText` is true.
@@ -205,8 +208,14 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
   armeabi-v7a only; on other ABIs its library does not load and ML Kit is
   used alone. `content://` URIs are not accepted (`invalid-image`).
 - Web (`./web`): `decodeQrImage(blob: Blob, options?)` with the same budget,
-  limits, errors and pass order. Orientation comes from
-  `createImageBitmap(blob, { imageOrientation: "from-image" })`; the passes
+  limits, errors and pass order. The Web entry preflights raster headers
+  for JPEG, PNG, WebP, GIF and BMP before creating any bitmap. Invalid or
+  unsupported headers reject with `invalid-image`; sources above 200 MP
+  reject with `resource-limit`. Header traversal reads only required ranges,
+  with up to 512 segments or chunks. JPEG, PNG and WebP EXIF orientation
+  informs resize dimensions. The bitmap request uses a budgeted output
+  size; internal decode allocations remain browser-dependent. The bitmap
+  uses `imageOrientation: "from-image"`; the passes
   are pure functions on RGBA buffers (`src/web/imageOps.ts`); engines are a
   QR-capable native `BarcodeDetector` first, then zxing-wasm when configured.
 
@@ -236,7 +245,11 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   that is RESUMED only while `active` and the host activity is resumed, so
   the camera pauses in the background. Missing hardware (`no-camera`) is
   checked before permission; permission is requested through React Native's
-  `PermissionAwareActivity`. The library manifest declares `CAMERA` and
+  `PermissionAwareActivity`. Overlapping views share one permission request
+  per activity. A deactivated or disposed view releases its registration.
+  Live decoder failures report `decoder-unavailable` at most once per
+  second per binding; a failed frame is closed and analysis can continue.
+  The library manifest declares `CAMERA` and
   optional camera, autofocus and camera.any features. Android readiness
   follows the first streaming preview state and capture errors are reported
   for the active binding. Stopping unbinds only this view’s use cases.
@@ -294,13 +307,17 @@ createWebQrScanner({
 - Errors: `NotAllowedError`/`SecurityError` → `permission-denied`,
   `NotFoundError`/`OverconstrainedError` → `no-camera`,
   `NotReadableError`/`AbortError` → `camera-busy`, others and engine failures
-  → `decoder-unavailable`. Results from a stopped generation are dropped.
+  → `decoder-unavailable`. Without an available native detector or a WASM
+  loader, startup reports `decoder-unavailable` before camera access. Results
+  from a stopped generation are dropped.
 - zxing runs on the page thread by default. With
   `configureWebQrScanner({ createZXingWorker })` it runs in a Worker built
   from the `./web/zxing-worker` entry: one worker, requests answered in order,
   pixels copied before transfer (the same image feeds several passes), and a
   crashed worker is replaced on the next request (`decoder-unavailable` for
-  the failed one). The callers create the Worker because worker URLs are
+  the failed one). Worker initialization (including the loader) and each
+  decode have a 10 s deadline. Expiry terminates the worker and rejects
+  outstanding requests. The callers create the Worker because worker URLs are
   bundler-specific.
 - `onFrameText(text)` reports raw decoded text before assembly. Repeats use
   a monotonic 1 s interval, and a different text passes immediately. If
@@ -315,9 +332,12 @@ createWebQrScanner({
   the cameras can coexist. On a busy error, the current request may release
   its old stream and retry once. While stopped, selection is saved for
   `start()`. A newer selection supersedes pending acquisition, including a
-  return to the current camera. Ended streams can be reacquired. On startup,
-  a missing remembered ID falls back to the default. Cancellation prevents
-  later permission requests and disposes any stream that arrives late.
+  return to the current camera. If a stale request ends the working track,
+  the scanner releases the stale stream and reacquires the latest selection
+  once when no newer request is in flight. Each camera-change subscription
+  has independent cleanup. On startup, a missing remembered ID falls back
+  to the default. Cancellation prevents later permission requests and
+  disposes streams that arrive late.
 - A camera whose track delivers no frame within `firstFrameTimeoutMs`
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
@@ -381,13 +401,18 @@ Frame text, pixels and CBOR never go to logs or metrics.
 
 ## 8. Performance and resource budget
 
-`./ur` per-frame cost is bounded by the part-count and retained-byte limits
-above, a fixed 8 MiB estimated index budget (8 bytes per slot), and a fixed
-2 million estimated operations per frame. The estimate accounts for the
-completion index comparison, mixed-part shuffle, cascading reductions and
-fragment XORs in bc-ur 1.1.13. Larger caller-configured limits remain subject
-to these fixed budgets. Camera analysis and native image decoding
-run off the UI thread.
+`./ur` bounds synchronous fountain work per admitted frame. The fixed
+2 million operation budget covers vendor index selection, sparse-to-packed
+equation reduction, and final back-substitution. Each independent equation
+occupies one pivot slot; dependent frames do not add rows. The per-session
+retention budget covers live fragment buffers, with a separate 8 MiB limit
+for packed indexes and pivot storage. Distinct sequence tracking remains
+bounded separately. Camera analysis and native image decoding run off the
+UI thread.
+
+Acceptance covers the full original byte sequence of a 100-part message
+when only mixed frames are seen, and a 201-part, 60 KB message when the
+camera sees one original frame followed by mixed frames.
 
 ## 9. Conformance and acceptance
 

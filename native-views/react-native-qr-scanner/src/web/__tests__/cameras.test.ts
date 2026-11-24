@@ -30,14 +30,20 @@ describe('web cameras', () => {
     ]);
   });
 
-  it('subscribes to devicechange', () => {
-    const addEventListener = jest.fn();
-    const removeEventListener = jest.fn();
-    setMediaDevices({ addEventListener, removeEventListener });
+  it('gives duplicate listener subscriptions independent cleanup', () => {
+    const mediaDevices = new EventTarget();
+    setMediaDevices(mediaDevices);
     const listener = jest.fn();
-    const unsubscribe = subscribeWebCameraChanges(listener);
-    expect(addEventListener).toHaveBeenCalledWith('devicechange', listener);
-    unsubscribe();
-    expect(removeEventListener).toHaveBeenCalledWith('devicechange', listener);
+    const unsubscribeFirst = subscribeWebCameraChanges(listener);
+    const unsubscribeSecond = subscribeWebCameraChanges(listener);
+    mediaDevices.dispatchEvent(new Event('devicechange'));
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribeFirst();
+    unsubscribeFirst();
+    mediaDevices.dispatchEvent(new Event('devicechange'));
+    expect(listener).toHaveBeenCalledTimes(3);
+    unsubscribeSecond();
+    mediaDevices.dispatchEvent(new Event('devicechange'));
+    expect(listener).toHaveBeenCalledTimes(3);
   });
 });
