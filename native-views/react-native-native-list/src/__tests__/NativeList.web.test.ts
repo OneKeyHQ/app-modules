@@ -8170,7 +8170,7 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 
-  it.each(['Tab', 'snapshot'] as const)(
+  it.each(['Tab', 'snapshot', 'row patch'] as const)(
     'cancels the pointer handoff when %s supersedes the keyboard layout',
     (interruption) => {
       jest.useFakeTimers();
@@ -8193,12 +8193,18 @@ describe('NativeList web handle reorder and host icons', () => {
           )!;
           engine.updateCallbacks({ onReorder });
 
-          if (interruption === 'snapshot') {
+          if (interruption !== 'Tab') {
             onVisibleRangeChanged.mockImplementationOnce(() => {
-              engine.applySnapshot({
-                ...originalSnapshot,
-                rows: [handleRows[0]!, handleRows[2]!],
-              });
+              if (interruption === 'row patch') {
+                engine.applyPatches([
+                  { type: 'identity', key: 'b', changes: { disabled: true } },
+                ]);
+              } else {
+                engine.applySnapshot({
+                  ...originalSnapshot,
+                  rows: [handleRows[0]!, handleRows[2]!],
+                });
+              }
             });
             engine.updateCallbacks({ onReorder, onVisibleRangeChanged });
           }
@@ -8224,6 +8230,13 @@ describe('NativeList web handle reorder and host icons', () => {
               ['a', 'c']
             );
           } else {
+            if (interruption === 'row patch') {
+              expect(onVisibleRangeChanged).toHaveBeenCalled();
+              expect(engine.currentSnapshot().rows[1]).toMatchObject({
+                key: 'b',
+                disabled: true,
+              });
+            }
             expect(rowElement('a').dataset.nativeListRowIndex).toBe('0');
             expect(rowElement('b').dataset.nativeListRowIndex).toBe('1');
           }
@@ -8362,41 +8375,50 @@ describe('NativeList web handle reorder and host icons', () => {
     }
   });
 
-  it('keeps a keyboard reorder while an RTL vertical-lr sidecar scrolls right', () => {
-    const { document, host, engine, rowElement, keyDown } = mount('handle');
-    try {
-      withElement(document, () => {
-        const viewport = host.querySelector<HTMLElement>(
-          '.ok-native-list-viewport'
-        )!;
-        viewport.scrollTo = jest.fn();
-        const sidecar = document.createElement('div');
-        sidecar.style.writingMode = 'vertical-lr';
-        sidecar.style.direction = 'rtl';
-        sidecar.style.overflowX = 'auto';
-        Object.defineProperties(sidecar, {
-          clientWidth: { value: 200 },
-          scrollWidth: { value: 400 },
+  it.each([
+    { writingMode: 'vertical-lr', direction: 'rtl', wrap: 'nowrap' },
+    { writingMode: 'vertical-rl', direction: 'ltr', wrap: 'wrap-reverse' },
+  ])(
+    'keeps keyboard sorting when a $writingMode $direction $wrap sidecar scrolls',
+    ({ writingMode, direction, wrap }) => {
+      const { document, host, engine, rowElement, keyDown } = mount('handle');
+      try {
+        withElement(document, () => {
+          const viewport = host.querySelector<HTMLElement>(
+            '.ok-native-list-viewport'
+          )!;
+          viewport.scrollTo = jest.fn();
+          const sidecar = document.createElement('div');
+          sidecar.style.writingMode = writingMode;
+          sidecar.style.direction = direction;
+          sidecar.style.display = 'flex';
+          sidecar.style.flexDirection = 'row';
+          sidecar.style.flexWrap = wrap;
+          sidecar.style.overflowX = 'auto';
+          Object.defineProperties(sidecar, {
+            clientWidth: { value: 200 },
+            scrollWidth: { value: 400 },
+          });
+          sidecar.scrollLeft = 100;
+          viewport.appendChild(sidecar);
+          const source = rowElement('a');
+          source.focus();
+          keyDown(' ');
+          keyDown('ArrowDown');
+          sidecar.dispatchEvent(
+            new document.defaultView!.WheelEvent('wheel', {
+              bubbles: true,
+              deltaX: 60,
+            })
+          );
+          expect(source.dataset.nativeListRowIndex).toBe('1');
+          expect(source.getAttribute('aria-grabbed')).toBe('true');
         });
-        sidecar.scrollLeft = 100;
-        viewport.appendChild(sidecar);
-        const source = rowElement('a');
-        source.focus();
-        keyDown(' ');
-        keyDown('ArrowDown');
-        sidecar.dispatchEvent(
-          new document.defaultView!.WheelEvent('wheel', {
-            bubbles: true,
-            deltaX: 60,
-          })
-        );
-        expect(source.dataset.nativeListRowIndex).toBe('1');
-        expect(source.getAttribute('aria-grabbed')).toBe('true');
-      });
-    } finally {
-      engine.destroy();
+      } finally {
+        engine.destroy();
+      }
     }
-  });
+  );
 
   it('preserves a focused row action when sorting is disabled or enabled', () => {
     const action: RowModel = {

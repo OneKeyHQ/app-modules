@@ -2649,16 +2649,19 @@ export class NativeListWebEngine {
     style: CSSStyleDeclaration,
     horizontal: boolean
   ): boolean {
-    const { writingMode, direction, display, flexDirection } = style;
+    const { writingMode, direction, display, flexDirection, flexWrap } = style;
     const horizontalWritingMode =
       !writingMode || writingMode === 'horizontal-tb';
     const inlineAxis = horizontal === horizontalWritingMode;
     const negative = inlineAxis
       ? (direction === 'rtl') !== (writingMode === 'sideways-lr')
       : horizontal && writingMode.endsWith('-rl');
+    const isFlexMainAxis = inlineAxis !== flexDirection.startsWith('column');
     const reversedFlex =
       (display === 'flex' || display === 'inline-flex') &&
-      flexDirection === (inlineAxis ? 'row-reverse' : 'column-reverse');
+      (isFlexMainAxis
+        ? flexDirection.endsWith('-reverse')
+        : flexWrap === 'wrap-reverse');
     return negative !== reversedFlex;
   }
 
@@ -5613,12 +5616,12 @@ export class NativeListWebEngine {
       if (this.pointerReorder !== state) return;
       this.cancelKeyboardReorder(false, restoredIndex);
       if (this.pointerReorder !== state) return;
-      state.restoringKeyboardOrder = false;
       sourceIndex = this.pointerReorderSourceIndex(state);
       if (sourceIndex < 0) {
         this.cancelPointerReorder(false);
         return;
       }
+      state.restoringKeyboardOrder = false;
     }
     state.currentIndex = sourceIndex;
     state.originalRows = this.snapshot.rows;
