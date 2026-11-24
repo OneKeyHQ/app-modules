@@ -10,6 +10,10 @@ final class QrPreviewView: UIView {
     layer as! AVCaptureVideoPreviewLayer
   }
 
+  private var sceneGeometryObservation: NSKeyValueObservation?
+  private var legacyOrientationTimer: Timer?
+  private var captureRunning = false
+
   private let focusIndicator: UIView = {
     let view = UIView(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
     view.layer.borderColor = UIColor.white.cgColor
@@ -25,6 +29,110 @@ final class QrPreviewView: UIView {
     backgroundColor = .black
     previewLayer.videoGravity = .resizeAspectFill
     addSubview(focusIndicator)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if #available(iOS 16.0, *) {
+      // A scene can rotate without changing this view's bounds.
+      sceneGeometryObservation = window?.windowScene?.observe(\.effectiveGeometry) {
+        [weak self] _, _ in
+        self?.scheduleOrientationUpdate()
+      }
+    } else {
+      updateLegacyOrientationTimer()
+    }
+    updateCaptureOrientation()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if #unavailable(iOS 16.0) { updateCaptureOrientation() }
+  }
+
+  func setCaptureRunning(_ running: Bool) {
+    captureRunning = running
+    updateLegacyOrientationTimer()
+  }
+
+  private func updateLegacyOrientationTimer() {
+    if #available(iOS 16.0, *) { return }
+    guard captureRunning, window?.windowScene != nil else {
+      legacyOrientationTimer?.invalidate()
+      legacyOrientationTimer = nil
+      return
+    }
+    guard legacyOrientationTimer == nil else { return }
+    // A rotation can commit after the device notification and leave our bounds unchanged.
+    let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] timer in
+      guard let self else {
+        timer.invalidate()
+        return
+      }
+      MainActor.assumeIsolated {
+        self.updateCaptureOrientation()
+      }
+    }
+    timer.tolerance = 0.02
+    RunLoop.main.add(timer, forMode: .common)
+    legacyOrientationTimer = timer
+  }
+
+  private nonisolated func scheduleOrientationUpdate() {
+    DispatchQueue.main.async { [weak self] in
+      self?.updateCaptureOrientation()
+    }
+  }
+
+  func updateCaptureOrientation() {
+    guard let scene = window?.windowScene, let connection = previewLayer.connection else { return }
+    let orientation: UIInterfaceOrientation
+    if #available(iOS 16.0, *) {
+      orientation = scene.effectiveGeometry.interfaceOrientation
+    } else {
+      orientation = scene.interfaceOrientation
+    }
+    let captureOrientation = Self.videoOrientation(for: orientation)
+    if #available(iOS 17.0, *) {
+      let videoPort = connection.inputPorts.first { $0.mediaType == .video }
+      guard let input = videoPort?.input as? AVCaptureDeviceInput else { return }
+      if input.device.deviceType == .external {
+        applyRotationAngle(0, to: connection)
+        return
+      }
+      #if compiler(>=6.4) && !targetEnvironment(macCatalyst)
+      if #available(iOS 27.0, *) {
+        guard let captureOrientation else { return }
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: input.device, previewLayer: nil)
+        let angle = coordinator.videoRotationAngleRelative(toDeviceOrientation: captureOrientation)
+        applyRotationAngle(angle, to: connection)
+        return
+      }
+      #endif
+    }
+    // The typed orientation lets AVFoundation handle the built-in camera on older systems/SDKs.
+    if let captureOrientation, connection.isVideoOrientationSupported,
+      connection.videoOrientation != captureOrientation
+    {
+      connection.videoOrientation = captureOrientation
+    }
+  }
+
+  @available(iOS 17.0, *)
+  private func applyRotationAngle(_ angle: CGFloat, to connection: AVCaptureConnection) {
+    guard connection.videoRotationAngle != angle, connection.isVideoRotationAngleSupported(angle)
+    else { return }
+    connection.videoRotationAngle = angle
+  }
+
+  static func videoOrientation(for orientation: UIInterfaceOrientation) -> AVCaptureVideoOrientation? {
+    switch orientation {
+    case .portrait: return .portrait
+    case .portraitUpsideDown: return .portraitUpsideDown
+    case .landscapeLeft: return .landscapeLeft
+    case .landscapeRight: return .landscapeRight
+    default: return nil
+    }
   }
 
   /// Shows the tap-to-focus box at `point` and fades it out.
@@ -73,7 +181,15 @@ class HybridQrScanner: HybridQrScannerSpec {
   private var permissionPending = false
   private var output: AVCaptureMetadataOutput?
   private var metadataDelegate: MetadataDelegate?
-  private var running = false
+  private var running = false {
+    didSet {
+      if #available(iOS 16.0, *) { return }
+      guard running != oldValue else { return }
+      DispatchQueue.main.async { [weak previewView, running] in
+        previewView?.setCaptureRunning(running)
+      }
+    }
+  }
   /// The configured input device. Owned by `sessionQueue`.
   private var device: AVCaptureDevice?
   private var input: AVCaptureDeviceInput?
@@ -218,14 +334,19 @@ class HybridQrScanner: HybridQrScannerSpec {
     if let input { session.removeInput(input) }
     var installed = false
     defer {
+      var restoredInput = false
       if !installed {
         if session.outputs.contains(newOutput) { session.removeOutput(newOutput) }
         if session.inputs.contains(newInput) { session.removeInput(newInput) }
         session.sessionPreset = oldPreset
-        if let input, session.canAddInput(input) { session.addInput(input) }
+        if let input, session.canAddInput(input) {
+          session.addInput(input)
+          restoredInput = true
+        }
         if let output, session.canAddOutput(output) { session.addOutput(output) }
       }
       session.commitConfiguration()
+      if installed || restoredInput { updatePreviewOrientation() }
     }
 
     let presets: [AVCaptureSession.Preset] = [.hd1920x1080, .hd1280x720, .high, .medium, .low, .inputPriority]
@@ -276,6 +397,12 @@ class HybridQrScanner: HybridQrScannerSpec {
     _ = nextGeneration()
     setCapturing(true)
     captureProps.ready?(Double(generation))
+  }
+
+  private func updatePreviewOrientation() {
+    DispatchQueue.main.async { [weak previewView] in
+      previewView?.updateCaptureOrientation()
+    }
   }
 
   private func observeSubjectArea(of device: AVCaptureDevice) {
