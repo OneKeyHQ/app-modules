@@ -508,6 +508,58 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - QrScanner (6.8.0-1):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+    - zxing-cpp (= 2.2.0)
+  - QrScanner/Tests (6.8.0-1):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+    - zxing-cpp (= 2.2.0)
   - RCT-Folly (2024.11.18.00):
     - RCT-Folly/Default (= 2024.11.18.00)
     - ReactNativeDependencies
@@ -2015,7 +2067,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-safe-area-context (5.6.2):
+  - react-native-safe-area-context (5.10.1):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2029,8 +2081,8 @@ PODS:
     - React-graphics
     - React-ImageManager
     - React-jsi
-    - react-native-safe-area-context/common (= 5.6.2)
-    - react-native-safe-area-context/fabric (= 5.6.2)
+    - react-native-safe-area-context/common (= 5.10.1)
+    - react-native-safe-area-context/fabric (= 5.10.1)
     - React-NativeModulesApple
     - React-RCTFabric
     - React-renderercss
@@ -2040,7 +2092,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-safe-area-context/common (5.6.2):
+  - react-native-safe-area-context/common (5.10.1):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2063,7 +2115,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-safe-area-context/fabric (5.6.2):
+  - react-native-safe-area-context/fabric (5.10.1):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3079,7 +3131,7 @@ PODS:
     - ReactNativeDependencies
     - SSZipArchive (>= 2.5.4)
     - Yoga
-  - RNScreens (4.24.0):
+  - RNScreens (4.30.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3102,9 +3154,9 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNScreens/common (= 4.24.0)
+    - RNScreens/common (= 4.30.0)
     - Yoga
-  - RNScreens/common (4.24.0):
+  - RNScreens/common (4.30.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3288,6 +3340,11 @@ PODS:
     - Yoga
   - Yoga (0.0.0):
     - React-Core-prebuilt
+  - zxing-cpp (2.2.0):
+    - zxing-cpp/Wrapper (= 2.2.0)
+  - zxing-cpp/Core (2.2.0)
+  - zxing-cpp/Wrapper (2.2.0):
+    - zxing-cpp/Core
 
 DEPENDENCIES:
   - "AesCrypto (from `../../../node_modules/@onekeyfe/react-native-aes-crypto`)"
@@ -3319,6 +3376,8 @@ DEPENDENCIES:
   - "PerpDepthBar (from `../../../node_modules/@onekeyfe/react-native-perp-depth-bar`)"
   - "PerpDepthBar/Tests (from `../../../node_modules/@onekeyfe/react-native-perp-depth-bar`)"
   - "Ping (from `../../../node_modules/@onekeyfe/react-native-ping`)"
+  - "QrScanner (from `../../../node_modules/@onekeyfe/react-native-qr-scanner`)"
+  - "QrScanner/Tests (from `../../../node_modules/@onekeyfe/react-native-qr-scanner`)"
   - RCT-Folly (from `build/rndeps-facades/RCT-Folly`)
   - RCTDeprecation (from `build/rncore-facades/RCTDeprecation`)
   - RCTRequired (from `build/rncore-facades/RCTRequired`)
@@ -3439,6 +3498,7 @@ DEPENDENCIES:
   - "SplitBundleLoader (from `../../../node_modules/@onekeyfe/react-native-split-bundle-loader`)"
   - "TcpSocket (from `../../../node_modules/@onekeyfe/react-native-tcp-socket`)"
   - Yoga (from `build/rncore-facades/Yoga`)
+  - zxing-cpp (= 2.2.0)
 
 SPEC REPOS:
   https://github.com/aliyun/aliyun-specs.git:
@@ -3452,6 +3512,7 @@ SPEC REPOS:
     - SDWebImageSVGCoder
     - SDWebImageWebPCoder
     - SSZipArchive
+    - zxing-cpp
 
 EXTERNAL SOURCES:
   AesCrypto:
@@ -3505,6 +3566,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@onekeyfe/react-native-perp-depth-bar"
   Ping:
     :path: "../../../node_modules/@onekeyfe/react-native-ping"
+  QrScanner:
+    :path: "../../../node_modules/@onekeyfe/react-native-qr-scanner"
   RCT-Folly:
     :path: build/rndeps-facades/RCT-Folly
   RCTDeprecation:
@@ -3751,6 +3814,7 @@ SPEC CHECKSUMS:
   Pbkdf2: 2e56741061d4e896cfcf5ec948d2590574e1e23a
   PerpDepthBar: 0035f7298c67880c9caea8c7e63db0a9313be4c2
   Ping: 23f64839afda9f589ad00e73f6c7b744e9aebb67
+  QrScanner: bf5062774037e8b6fd05b9b07053e134be2a0129
   RCT-Folly: 82921e585c0400eda46fac1068297aa9dfb035e4
   RCTDeprecation: e134f2a2c096a6450f5fcbbe949531f913a2ff04
   RCTRequired: f1a68295837ee8f91e112ed1b5694d12e7ff1784
@@ -3794,7 +3858,7 @@ SPEC CHECKSUMS:
   react-native-bottom-tabs: c9469a411860250e478492ffa52bf4f51017e7ea
   react-native-native-list: 971d458d75f7620456c0497a31bb23a06d232e50
   react-native-pager-view: 52e5d8362444248024881aa35a573a0fca46e133
-  react-native-safe-area-context: 839ca66874035361e526a8bcb1bfe7c2076c5c0d
+  react-native-safe-area-context: b1c9f15a36e597e9cef4c5526e209ef2645bc2e0
   React-NativeModulesApple: 52f3def085f129de1307e3eb78e26729ff70f421
   React-networking: 1e6441349ac72bfd4f7a79c300c3dd76993a7058
   React-oscompat: e64123dd8199f9e99cede19fa542c3da3445481e
@@ -3849,7 +3913,7 @@ SPEC CHECKSUMS:
   ReactNativeRangeDownloader: 0ac48a52390fce920d441f9791d17d71e73ce0fb
   ReactNativeSplashScreen: 3b0fff80c90fabb4ce36216d9f260567cd993cdf
   ReactNativeZipArchive: 569565269ebe4b8274323861392997b4b6a1ab62
-  RNScreens: f14ec3511b8d5de5a3b2f4fe9abcab3adc4726a6
+  RNScreens: 6d0d3b7819284dbf9f222899eb819f069fce4b8b
   ScrollGuard: 61e4f28e7f3cd22b94eb0ef430b4ac629707c3cb
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageSVGCoder: 15a300a97ec1c8ac958f009c02220ac0402e936c
@@ -3862,7 +3926,8 @@ SPEC CHECKSUMS:
   SSZipArchive: c69881e8ac5521f0e622291387add5f60f30f3c4
   TcpSocket: 594d9445e411909f63f240adf470049a41fba3e0
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
+  zxing-cpp: 7486c8459df40d8f6a5453cc1ec35e67b10cd25a
 
-PODFILE CHECKSUM: c7f3b90ba943c39e2be7416febb9c2ee8d51aa35
+PODFILE CHECKSUM: e45190958c75ef8b6dd9bee802b31d8b3d64d0f8
 
 COCOAPODS: 1.16.2

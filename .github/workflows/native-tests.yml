@@ -510,6 +510,7 @@ jobs:
               :onekeyfe_react-native-native-list:testDebugUnitTest \
               :onekeyfe_react-native-native-overlay:testDebugUnitTest \
               :onekeyfe_react-native-text-input:testDebugUnitTest \
+              :onekeyfe_react-native-qr-scanner:testDebugUnitTest \
               :onekeyfe_react-native-bottom-tabs:compileReleaseKotlin \
               :onekeyfe_react-native-capture-protection:assembleDebug \
               :onekeyfe_react-native-device-utils:assembleDebug \

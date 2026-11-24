@@ -1,0 +1,44 @@
+{
+  "name": "@onekeyfe/electron-qr-scanner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "macOS camera QR capture and image decoding for Electron (AVFoundation + Vision)",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.cjs",
+    "index.d.ts",
+    "electron-qr-scanner.darwin-arm64.node",
+    "electron-qr-scanner.darwin-x64.node"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.cjs",
+    "test:electron": "electron test/electron.cjs",
+    "test:preview": "electron test/preview.cjs",
+    "test:camera": "electron test/camera-live.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "desktop/mac/electron-qr-scanner"
+  },
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

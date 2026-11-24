@@ -1,0 +1,25 @@
+[package]
+name = "electron-qr-scanner"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "=3.14.2", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi-derive = "=3.6.12"
+# Fallback image decoder: builds ZXing-C++ from bundled sources (needs CMake).
+zxing-cpp = { version = "=0.5.3", default-features = false, features = ["bundled"] }
+
+[build-dependencies]
+napi-build = "=2.6.0"
+
+[profile.release]
+lto = true
+# Stripped by scripts/build.mjs with Xcode strip: rustc's strip step can leave
+# a misaligned string table that macOS 27 dyld refuses to load.
+strip = false

@@ -23,6 +23,7 @@ const plans = {
       "ReactNativeDeviceUtils-Unit-Tests",
       "ReactNativePhotoLibrary-Unit-Tests",
       "ReactNativeJpush-Unit-Tests",
+      "QrScanner-Unit-Tests",
     ],
   },
 };

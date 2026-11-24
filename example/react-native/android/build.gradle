@@ -19,3 +19,13 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Build every Android library with the app's NDK, like Expo's root plugin
+// does in app-monorepo. Without this AGP uses its default NDK for modules,
+// and code built against a newer libc++ fails to load against React Native's
+// libc++_shared.so (e.g. missing __cxa_init_primary_exception).
+subprojects { project ->
+  project.plugins.withId("com.android.library") {
+    project.android.ndkVersion = rootProject.ext.ndkVersion
+  }
+}

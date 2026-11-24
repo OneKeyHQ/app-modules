@@ -43,6 +43,9 @@ target 'example' do
   pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
   pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
 
+  # QrScanner is a Swift pod over zxing-cpp; same static-library rule.
+  pod 'zxing-cpp', '2.2.0', :modular_headers => true
+
   # CocoaPods does not install test specs unless they are requested explicitly.
   pod 'ReactNativeDeviceUtils', :path => '../../../node_modules/@onekeyfe/react-native-device-utils', :testspecs => ['Tests']
   pod 'OneKeyImage', :path => '../../../node_modules/@onekeyfe/react-native-image', :testspecs => ['Tests']
@@ -56,6 +59,7 @@ target 'example' do
   pod 'ReactNativePhotoLibrary', :path => '../../../node_modules/@onekeyfe/react-native-photo-library', :testspecs => ['Tests']
   pod 'ReactNativeImageCropPicker', :path => '../../../node_modules/@onekeyfe/react-native-image-crop-picker', :testspecs => ['Tests']
   pod 'ReactNativeJpush', :path => '../../../node_modules/@onekeyfe/react-native-jpush', :testspecs => ['Tests']
+  pod 'QrScanner', :path => '../../../node_modules/@onekeyfe/react-native-qr-scanner', :testspecs => ['Tests']
 
   script_phase :name => 'Bundle SDK icon fixtures',
     :execution_position => :after_compile,
@@ -99,6 +103,9 @@ SH
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |build_config|
         build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = minimum_ios_version
+        # zxing-cpp includes its own headers by bare name ("Point.h"); the
+        # project-wide header map resolves those to React-graphics' headers.
+        build_config.build_settings['USE_HEADERMAP'] = 'NO' if target.name == 'zxing-cpp'
       end
     end
 

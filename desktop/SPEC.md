@@ -7,7 +7,8 @@ These modules are not root Yarn workspaces and never participate in mobile
 version bumps, mobile npm publishing, or mobile dependency synchronization.
 The first Windows module is `electron-windows-hello`, published as
 `@onekeyfe/electron-windows-hello`; macOS and Linux have
-no release jobs or modules yet.
+no release jobs or released modules yet. `mac/electron-qr-scanner` is in
+development and not listed in `release.json` (see its SPEC).
 
 ## Version and validation baseline
 
