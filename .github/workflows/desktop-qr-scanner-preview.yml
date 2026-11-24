@@ -51,14 +51,16 @@ jobs:
           rustup override set "$RUST_TOOLCHAIN"
           npm ci --ignore-scripts --no-audit --no-fund
           node node_modules/electron/install.js
-      - name: Build and exercise native QR decoding and shared-texture preview
+      - name: Build and exercise native QR decoding
         run: |
           cargo fmt --check
           cargo test --release --locked --target "$BUILD_TARGET"
           npm run build -- "$BUILD_TARGET"
           npm test
           npm run test:electron
-          npm run test:preview
+      - name: Check shared-texture frames on a sandboxed canvas
+        timeout-minutes: 3
+        run: npm run test:preview
       - name: Attest the native binary
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
