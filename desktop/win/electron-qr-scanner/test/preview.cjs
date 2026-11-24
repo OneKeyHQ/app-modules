@@ -146,6 +146,39 @@ app.whenReady().then(async () => {
       cycleCapture.dispose();
     }
 
+    // Simulated preview failure -> clean teardown for Web fallback.
+    let fallbackTriggered = false;
+    let eventsAfterFallback = 0;
+    const fallbackDone = new Promise((resolve) => {
+      let failedOnce = false;
+      const fallbackCapture = api.createCapture({
+        source: { kind: "file", path: join(videoFixtures, "animated-ur.mp4"), loop: true },
+        onFrame: (frame) => {
+          if (failedOnce) {
+            eventsAfterFallback += 1;
+            frame.release();
+            return;
+          }
+          failedOnce = true;
+          try {
+            throw Object.assign(new Error("simulated GPU importSharedTexture failure"), {
+              code: "preview-unavailable",
+            });
+          } catch (err) {
+            frame.release();
+            if (api.shouldFallbackToWeb(err)) {
+              fallbackTriggered = true;
+              fallbackCapture.dispose();
+              assert.equal(fallbackCapture.lentFrames(), 0);
+              setTimeout(resolve, 200);
+            }
+          }
+        },
+      });
+      fallbackCapture.start();
+    });
+    await fallbackDone;
+
     const report = {
       sent,
       drawn,
@@ -154,6 +187,8 @@ app.whenReady().then(async () => {
       lentAfterStop,
       maxLentAcrossCycles,
       cycleFramesSent,
+      fallbackTriggered,
+      eventsAfterFallback,
       dark,
       light,
       urDone,
@@ -164,6 +199,8 @@ app.whenReady().then(async () => {
     assert.ok(cycleFramesSent >= 20, `only ${cycleFramesSent} cycle frames sent`);
     assert.ok(maxLentAcrossCycles >= 1 && maxLentAcrossCycles <= 3, `lent ${maxLentAcrossCycles} frames across cycles`);
     assert.equal(lentAfterStop, 0);
+    assert.equal(fallbackTriggered, true);
+    assert.equal(eventsAfterFallback, 0);
     assert.ok(dark > 50 && light > 50, "canvas does not show a QR code");
     assert.ok(urDone, `animated UR did not complete (${animated.fragments} fragments)`);
     app.exit(0);

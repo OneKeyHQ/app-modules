@@ -275,7 +275,7 @@ impl PreviewPoolInner {
                     Some(&mut context),
                 )
             }
-            .map_err(|e| format!("decoder-unavailable: D3D11CreateDevice failed ({e:?})"))?;
+            .map_err(|e| format!("preview-unavailable: D3D11CreateDevice failed ({e:?})"))?;
         }
         self.device = device;
         self.context = context;
@@ -319,10 +319,10 @@ fn create_shared_slot(
         use_keyed_mutex = false;
         let desc_no_mutex = make_desc(false);
         unsafe { device.CreateTexture2D(&desc_no_mutex, None, Some(&mut texture)) }
-            .map_err(|e| format!("decoder-unavailable: CreateTexture2D failed ({e:?})"))?;
+            .map_err(|e| format!("preview-unavailable: CreateTexture2D failed ({e:?})"))?;
     }
     let texture =
-        texture.ok_or_else(|| "decoder-unavailable: CreateTexture2D returned null".to_owned())?;
+        texture.ok_or_else(|| "preview-unavailable: CreateTexture2D returned null".to_owned())?;
 
     let keyed_mutex = if use_keyed_mutex {
         texture.cast::<IDXGIKeyedMutex>().ok()
@@ -331,7 +331,7 @@ fn create_shared_slot(
     };
 
     let resource1: IDXGIResource1 = texture.cast().map_err(|e| {
-        format!("decoder-unavailable: QueryInterface IDXGIResource1 failed ({e:?})")
+        format!("preview-unavailable: QueryInterface IDXGIResource1 failed ({e:?})")
     })?;
 
     let access = if keyed_mutex.is_some() {
@@ -340,7 +340,7 @@ fn create_shared_slot(
         DXGI_SHARED_RESOURCE_READ.0
     };
     let nt_handle = unsafe { resource1.CreateSharedHandle(None, access, None) }
-        .map_err(|e| format!("decoder-unavailable: CreateSharedHandle failed ({e:?})"))?;
+        .map_err(|e| format!("preview-unavailable: CreateSharedHandle failed ({e:?})"))?;
 
     Ok(SharedSlot {
         texture,

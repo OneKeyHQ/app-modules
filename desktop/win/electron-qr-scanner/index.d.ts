@@ -3,6 +3,7 @@ export type QrScannerErrorCode =
   | "no-camera"
   | "camera-busy"
   | "decoder-unavailable"
+  | "preview-unavailable"
   | "invalid-image"
   | "resource-limit";
 
@@ -32,14 +33,44 @@ export interface CameraDevice {
 /** Enumerates available Windows video capture devices. Returns an empty array when none are attached. */
 export function listCameras(): Promise<CameraDevice[]>;
 
+export type PreferredResolution = "720p" | "1080p";
+
+export interface CaptureReadyInfo {
+  /** Actual negotiated frame width in pixels. */
+  width: number;
+  /** Actual negotiated frame height in pixels. */
+  height: number;
+  /** Actual negotiated frame rate (0 when unknown, e.g. variable-rate files). */
+  fps: number;
+  /** Negotiated native video subtype (e.g. "NV12", "YUY2", "MJPG", "RGB32"). */
+  subtype: string;
+  /** True when the camera exposes hardware focus control (false on fixed-focus webcams). */
+  focusSupported: boolean;
+  /** True when the camera supports hardware auto-focus. */
+  autoFocusSupported: boolean;
+  /** True when the camera exposes hardware exposure control. */
+  exposureSupported: boolean;
+}
+
 export type CaptureSource =
-  | { kind: "camera"; deviceId?: string }
+  | {
+      kind: "camera";
+      deviceId?: string;
+      /** Preferred camera resolution tier. Default: "720p". */
+      preferredResolution?: PreferredResolution;
+      /**
+       * Temporarily lock focus at the current lens position while QR codes are
+       * decoding (preventing AF hunting on animated BC-UR) and automatically
+       * return to Auto after 1.5 s without detections. Default: false.
+       */
+      lockFocusOnDetect?: boolean;
+    }
   /** Frames from a local video file, paced by presentation time. For tests. */
   | { kind: "file"; path: string; loop?: boolean };
 
 export interface CaptureOptions {
   source?: CaptureSource;
-  onReady?: (generation: number) => void;
+  onReady?: (generation: number, info?: CaptureReadyInfo) => void;
   /** Each distinct QR text; the same text repeats at most once per second. */
   onText?: (text: string, generation: number) => void;
   onError?: (error: QrScannerError, generation: number) => void;
@@ -80,3 +111,14 @@ export interface QrCapture {
 }
 
 export function createCapture(options?: CaptureOptions): QrCapture;
+
+/**
+ * Returns true when an error from the native Windows backend or Electron
+ * `sharedTexture` path should trigger fallback to the Web QR scanner backend
+ * (`@onekeyfe/react-native-qr-scanner/web`) after stopping/disposing the native
+ * capture so the camera handle is released.
+ *
+ * Returns false for `permission-denied`, `no-camera`, `camera-busy`,
+ * `invalid-image`, and `resource-limit`.
+ */
+export function shouldFallbackToWeb(error: unknown): boolean;

@@ -6,14 +6,18 @@ use std::time::{Duration, Instant};
 
 use windows::core::{implement, Interface, GUID, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{E_ACCESSDENIED, RPC_E_CHANGED_MODE};
+use windows::Win32::Media::DirectShow::{
+    CameraControl_Exposure, CameraControl_Flags_Auto, CameraControl_Flags_Manual,
+    CameraControl_Focus, IAMCameraControl,
+};
 use windows::Win32::Media::MediaFoundation::{
     IMF2DBuffer, IMFActivate, IMFAttributes, IMFMediaBuffer, IMFMediaSource, IMFMediaType,
     IMFSample, IMFSourceReader, IMFSourceReaderCallback, IMFSourceReaderCallback_Impl,
     MFCreateAttributes, MFCreateMediaType, MFCreateSourceReaderFromMediaSource,
     MFCreateSourceReaderFromURL, MFEnumDeviceSources, MFMediaType_Video, MFShutdown, MFStartup,
-    MFVideoFormat_MJPG, MFVideoFormat_NV12, MFVideoFormat_RGB32, MFVideoFormat_YUY2,
-    MFSTARTUP_LITE, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
-    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
+    MFVideoFormat_I420, MFVideoFormat_MJPG, MFVideoFormat_NV12, MFVideoFormat_RGB24,
+    MFVideoFormat_RGB32, MFVideoFormat_YUY2, MFSTARTUP_LITE, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
     MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, MF_MT_DEFAULT_STRIDE,
     MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
     MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED, MF_SOURCE_READERF_ENDOFSTREAM,
@@ -29,6 +33,15 @@ use crate::d3d11_preview::PreviewPool;
 use crate::frame_gate::FrameTextGate;
 use crate::image_decode::decode_qr_luma;
 
+/// Duration without QR hits before a locked manual focus is released back to Auto.
+const FOCUS_UNLOCK_TIMEOUT: Duration = Duration::from_millis(1500);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreferredResolution {
+    P720,
+    P1080,
+}
+
 #[derive(Clone, Debug)]
 pub struct CameraDeviceInfo {
     pub id: String,
@@ -37,14 +50,33 @@ pub struct CameraDeviceInfo {
 }
 
 #[derive(Clone, Debug)]
+pub struct CaptureReadyInfo {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub subtype: String,
+    pub focus_supported: bool,
+    pub auto_focus_supported: bool,
+    pub exposure_supported: bool,
+}
+
+#[derive(Clone, Debug)]
 pub enum SourceConfig {
-    Camera { device_id: Option<String> },
-    File { path: String, loop_file: bool },
+    Camera {
+        device_id: Option<String>,
+        preferred_resolution: PreferredResolution,
+        lock_focus_on_detect: bool,
+    },
+    File {
+        path: String,
+        loop_file: bool,
+    },
 }
 
 pub enum CaptureEvent {
     Ready {
         generation: i64,
+        info: CaptureReadyInfo,
     },
     Text {
         text: String,
@@ -69,31 +101,50 @@ pub enum CaptureEvent {
 
 type EventEmitter = Arc<dyn Fn(CaptureEvent) + Send + Sync>;
 
+struct ComMtaGuard {
+    should_uninit: bool,
+}
+
+impl ComMtaGuard {
+    fn init() -> Result<Self, String> {
+        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        if hr.is_ok() {
+            Ok(Self {
+                should_uninit: true,
+            })
+        } else if hr == RPC_E_CHANGED_MODE {
+            Ok(Self {
+                should_uninit: false,
+            })
+        } else {
+            Err(format!(
+                "decoder-unavailable: CoInitializeEx failed ({hr:?})"
+            ))
+        }
+    }
+}
+
+impl Drop for ComMtaGuard {
+    fn drop(&mut self) {
+        if self.should_uninit {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
 struct MfGuard {
-    com_uninit: bool,
+    _com: ComMtaGuard,
     mf_started: bool,
 }
 
 impl MfGuard {
     fn init() -> Result<Self, String> {
-        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-        let com_uninit = if hr.is_ok() {
-            true
-        } else if hr == RPC_E_CHANGED_MODE {
-            false
-        } else {
-            return Err(format!(
-                "decoder-unavailable: CoInitializeEx failed ({hr:?})"
-            ));
-        };
+        let com = ComMtaGuard::init()?;
         if let Err(err) = unsafe { MFStartup(MF_VERSION, MFSTARTUP_LITE) } {
-            if com_uninit {
-                unsafe { CoUninitialize() };
-            }
             return Err(format!("decoder-unavailable: MFStartup failed ({err:?})"));
         }
         Ok(Self {
-            com_uninit,
+            _com: com,
             mf_started: true,
         })
     }
@@ -105,9 +156,6 @@ impl Drop for MfGuard {
             unsafe {
                 let _ = MFShutdown();
             }
-        }
-        if self.com_uninit {
-            unsafe { CoUninitialize() };
         }
     }
 }
@@ -201,14 +249,50 @@ fn pack_u64_pair(hi: u32, lo: u32) -> u64 {
     ((hi as u64) << 32) | (lo as u64)
 }
 
+fn subtype_name(guid: GUID) -> &'static str {
+    if guid == MFVideoFormat_NV12 {
+        "NV12"
+    } else if guid == MFVideoFormat_YUY2 {
+        "YUY2"
+    } else if guid == MFVideoFormat_MJPG {
+        "MJPG"
+    } else if guid == MFVideoFormat_RGB32 {
+        "RGB32"
+    } else if guid == MFVideoFormat_RGB24 {
+        "RGB24"
+    } else if guid == MFVideoFormat_I420 {
+        "I420"
+    } else {
+        "unknown"
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct FrameLayout {
     width: u32,
     height: u32,
     default_stride: i32,
+    fps: f64,
+    subtype: &'static str,
 }
 
-fn query_frame_layout(reader: &IMFSourceReader) -> Result<FrameLayout, String> {
+fn read_fps(mt: &IMFMediaType) -> f64 {
+    unsafe { mt.GetUINT64(&MF_MT_FRAME_RATE) }
+        .map(|r| {
+            let (num, den) = unpack_u64_pair(r);
+            if den == 0 {
+                0.0
+            } else {
+                num as f64 / den as f64
+            }
+        })
+        .unwrap_or(0.0)
+}
+
+fn query_frame_layout(
+    reader: &IMFSourceReader,
+    native_subtype: Option<&'static str>,
+) -> Result<FrameLayout, String> {
     let mt: IMFMediaType =
         unsafe { reader.GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32) }
             .map_err(|e| format!("decoder-unavailable: GetCurrentMediaType failed ({e:?})"))?;
@@ -222,16 +306,71 @@ fn query_frame_layout(reader: &IMFSourceReader) -> Result<FrameLayout, String> {
     let default_stride = unsafe { mt.GetUINT32(&MF_MT_DEFAULT_STRIDE) }
         .map(|v| v as i32)
         .unwrap_or((width as i32) * 4);
+    let fps = read_fps(&mt);
+    let subtype = native_subtype.unwrap_or_else(|| {
+        unsafe { mt.GetGUID(&MF_MT_SUBTYPE) }
+            .map(subtype_name)
+            .unwrap_or("unknown")
+    });
     Ok(FrameLayout {
         width,
         height,
         default_stride,
+        fps,
+        subtype,
     })
 }
 
-fn configure_camera_media_type(reader: &IMFSourceReader) -> Result<FrameLayout, String> {
-    // Score native modes to pick a crisp ~720p@30fps stream (preferring NV12/YUY2/MJPG).
-    let mut best_native: Option<(i64, u32, u32, IMFMediaType)> = None;
+fn score_native_mode(
+    w: u32,
+    h: u32,
+    fps: f64,
+    subtype: GUID,
+    preferred: PreferredResolution,
+) -> i64 {
+    let mut score: i64 = 0;
+    let (target_w, target_h) = match preferred {
+        PreferredResolution::P720 => (1280i64, 720i64),
+        PreferredResolution::P1080 => (1920i64, 1080i64),
+    };
+    if w as i64 == target_w && h as i64 == target_h {
+        score += 10_000;
+    } else if (w == 1280 && h == 720) || (w == 1920 && h == 1080) {
+        score += 7_000;
+    } else if w >= 640 && h >= 480 {
+        score += 5_000 - ((w as i64 - target_w).abs() + (h as i64 - target_h).abs());
+    } else {
+        score += 1_000;
+    }
+
+    // High frame rate is essential for ~100 ms animated BC-UR frames; penalize
+    // low-fps modes strongly so 1080p@5fps loses to 720p@30fps.
+    if fps >= 25.0 {
+        score += 4_000;
+    } else if fps >= 15.0 {
+        score += 1_500;
+    } else {
+        score -= 6_000;
+    }
+
+    // Prefer uncompressed NV12/YUY2 over lossy MJPG at equal fps to avoid JPEG
+    // ringing artifacts on dense QR modules.
+    if subtype == MFVideoFormat_NV12
+        || subtype == MFVideoFormat_YUY2
+        || subtype == MFVideoFormat_I420
+    {
+        score += 1_000;
+    } else if subtype == MFVideoFormat_MJPG {
+        score += 300;
+    }
+    score
+}
+
+fn configure_camera_media_type(
+    reader: &IMFSourceReader,
+    preferred: PreferredResolution,
+) -> Result<FrameLayout, String> {
+    let mut best_native: Option<(i64, u32, u32, &'static str, IMFMediaType)> = None;
     let stream_idx = MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
 
     for idx in 0u32..128 {
@@ -245,48 +384,15 @@ fn configure_camera_media_type(reader: &IMFSourceReader) -> Result<FrameLayout, 
         if w < 320 || h < 240 {
             continue;
         }
-        let fps = unsafe { mt.GetUINT64(&MF_MT_FRAME_RATE) }
-            .map(|r| {
-                let (num, den) = unpack_u64_pair(r);
-                if den == 0 {
-                    0.0
-                } else {
-                    num as f64 / den as f64
-                }
-            })
-            .unwrap_or(0.0);
+        let fps = read_fps(&mt);
         let subtype = unsafe { mt.GetGUID(&MF_MT_SUBTYPE) }.unwrap_or_default();
-
-        // Prefer ~720p (1280x720) at >= 24fps; penalize very low fps (< 15).
-        let mut score: i64 = 0;
-        if w == 1280 && h == 720 {
-            score += 10_000;
-        } else if w == 1920 && h == 1080 {
-            score += 7_000;
-        } else if w >= 640 && h >= 480 {
-            score += 5_000 - ((w as i64 - 1280).abs() + (h as i64 - 720).abs());
-        } else {
-            score += 1_000;
-        }
-        if fps >= 25.0 {
-            score += 3_000;
-        } else if fps >= 15.0 {
-            score += 1_500;
-        } else {
-            score -= 5_000;
-        }
-        if subtype == MFVideoFormat_NV12
-            || subtype == MFVideoFormat_YUY2
-            || subtype == MFVideoFormat_MJPG
-        {
-            score += 500;
-        }
+        let score = score_native_mode(w, h, fps, subtype, preferred);
         if best_native.as_ref().is_none_or(|b| score > b.0) {
-            best_native = Some((score, w, h, mt));
+            best_native = Some((score, w, h, subtype_name(subtype), mt));
         }
     }
 
-    if let Some((_, w, h, native_mt)) = best_native {
+    if let Some((_, w, h, native_sub, native_mt)) = best_native {
         let _ = unsafe { reader.SetCurrentMediaType(stream_idx, None, &native_mt) };
         let rgb_mt: IMFMediaType = unsafe { MFCreateMediaType() }
             .map_err(|e| format!("decoder-unavailable: MFCreateMediaType failed ({e:?})"))?;
@@ -294,7 +400,7 @@ fn configure_camera_media_type(reader: &IMFSourceReader) -> Result<FrameLayout, 
         let _ = unsafe { rgb_mt.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32) };
         let _ = unsafe { rgb_mt.SetUINT64(&MF_MT_FRAME_SIZE, pack_u64_pair(w, h)) };
         if unsafe { reader.SetCurrentMediaType(stream_idx, None, &rgb_mt) }.is_ok() {
-            return query_frame_layout(reader);
+            return query_frame_layout(reader, Some(native_sub));
         }
     }
 
@@ -308,7 +414,161 @@ fn configure_camera_media_type(reader: &IMFSourceReader) -> Result<FrameLayout, 
     unsafe { reader.SetCurrentMediaType(stream_idx, None, &rgb_mt) }
         .map_err(|e| map_mf_error_string(e.code(), "SetCurrentMediaType(RGB32)"))?;
 
-    query_frame_layout(reader)
+    query_frame_layout(reader, None)
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CameraHardwareCaps {
+    focus_supported: bool,
+    auto_focus_supported: bool,
+    manual_focus_supported: bool,
+    default_focus: i32,
+    exposure_supported: bool,
+}
+
+struct FocusControlHandle {
+    control: IAMCameraControl,
+    generation: i64,
+    lock_on_detect: bool,
+    auto_focus_supported: bool,
+    manual_focus_supported: bool,
+    default_focus: i32,
+    locked: bool,
+    last_detect_at: Option<Instant>,
+}
+
+// Accessed exclusively behind a Mutex on COM MTA threads.
+unsafe impl Send for FocusControlHandle {}
+
+impl FocusControlHandle {
+    fn probe_and_init(
+        media_source: &IMFMediaSource,
+        generation: i64,
+        lock_on_detect: bool,
+    ) -> (CameraHardwareCaps, Option<Self>) {
+        let Ok(control) = media_source.cast::<IAMCameraControl>() else {
+            return (CameraHardwareCaps::default(), None);
+        };
+
+        let mut caps = CameraHardwareCaps::default();
+        let (mut min_v, mut max_v, mut step_v, mut def_v, mut flags_v) = (0, 0, 0, 0, 0);
+        if unsafe {
+            control.GetRange(
+                CameraControl_Focus.0,
+                &mut min_v,
+                &mut max_v,
+                &mut step_v,
+                &mut def_v,
+                &mut flags_v,
+            )
+        }
+        .is_ok()
+        {
+            caps.focus_supported = true;
+            caps.auto_focus_supported = (flags_v & CameraControl_Flags_Auto.0) != 0;
+            caps.manual_focus_supported = (flags_v & CameraControl_Flags_Manual.0) != 0;
+            caps.default_focus = def_v;
+            // Ensure stale manual focus left by another app is reset to Auto.
+            if caps.auto_focus_supported {
+                let _ = unsafe {
+                    control.Set(CameraControl_Focus.0, def_v, CameraControl_Flags_Auto.0)
+                };
+            }
+        }
+
+        let (mut emin, mut emax, mut estep, mut edef, mut eflags) = (0, 0, 0, 0, 0);
+        if unsafe {
+            control.GetRange(
+                CameraControl_Exposure.0,
+                &mut emin,
+                &mut emax,
+                &mut estep,
+                &mut edef,
+                &mut eflags,
+            )
+        }
+        .is_ok()
+        {
+            caps.exposure_supported = true;
+        }
+
+        let handle = if caps.auto_focus_supported && caps.manual_focus_supported {
+            Some(Self {
+                control,
+                generation,
+                lock_on_detect,
+                auto_focus_supported: caps.auto_focus_supported,
+                manual_focus_supported: caps.manual_focus_supported,
+                default_focus: caps.default_focus,
+                locked: false,
+                last_detect_at: None,
+            })
+        } else {
+            None
+        };
+        (caps, handle)
+    }
+
+    /// Locks focus at the current lens position on QR hit to prevent AF hunting
+    /// during animated BC-UR playback.
+    fn on_qr_detected(&mut self, generation: i64, now: Instant) {
+        if !self.lock_on_detect
+            || self.generation != generation
+            || !self.manual_focus_supported
+            || !self.auto_focus_supported
+        {
+            return;
+        }
+        self.last_detect_at = Some(now);
+        if self.locked {
+            return;
+        }
+        let mut current_val = self.default_focus;
+        let mut current_flags = 0;
+        if unsafe {
+            self.control
+                .Get(CameraControl_Focus.0, &mut current_val, &mut current_flags)
+        }
+        .is_ok()
+            && unsafe {
+                self.control.Set(
+                    CameraControl_Focus.0,
+                    current_val,
+                    CameraControl_Flags_Manual.0,
+                )
+            }
+            .is_ok()
+        {
+            self.locked = true;
+        }
+    }
+
+    /// Unlocks focus back to Auto if no QR has been seen for `FOCUS_UNLOCK_TIMEOUT`.
+    fn on_frame_without_qr(&mut self, generation: i64, now: Instant) {
+        if !self.locked || self.generation != generation {
+            return;
+        }
+        if self
+            .last_detect_at
+            .is_some_and(|t| now.saturating_duration_since(t) >= FOCUS_UNLOCK_TIMEOUT)
+        {
+            self.restore_auto();
+        }
+    }
+
+    fn restore_auto(&mut self) {
+        if self.locked && self.auto_focus_supported {
+            let _ = unsafe {
+                self.control.Set(
+                    CameraControl_Focus.0,
+                    self.default_focus,
+                    CameraControl_Flags_Auto.0,
+                )
+            };
+        }
+        self.locked = false;
+        self.last_detect_at = None;
+    }
 }
 
 fn map_mf_error(hr: HRESULT) -> &'static str {
@@ -506,6 +766,7 @@ struct AsyncCameraShared {
     active: AtomicBool,
     ready_emitted: AtomicBool,
     layout: Mutex<FrameLayout>,
+    caps: CameraHardwareCaps,
     reader: Mutex<Option<SendReader>>,
     in_callback: Mutex<usize>,
     in_callback_cvar: Condvar,
@@ -604,7 +865,8 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                 .ok()
                 .and_then(|g| g.as_ref().map(|r| r.0.clone()));
             if let Some(reader) = reader_opt {
-                if let Ok(new_layout) = query_frame_layout(&reader) {
+                let prev_sub = self.shared.layout.lock().ok().map(|l| l.subtype);
+                if let Ok(new_layout) = query_frame_layout(&reader, prev_sub) {
                     if let Ok(mut layout) = self.shared.layout.lock() {
                         *layout = new_layout;
                     }
@@ -627,22 +889,78 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
             if let Some(layout) = layout {
                 let need_bgra = self.shared.preview.is_some();
                 if let Some((luma, bgra)) = extract_rgb32_frame(sample, layout, need_bgra) {
-                    if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
+                    if let (Some(pool), Some(bgra_bytes)) = (self.shared.preview.as_ref(), bgra) {
+                        match pool.lend(&bgra_bytes, layout.width, layout.height) {
+                            Ok(Some(lent)) => {
+                                if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
+                                    self.shared.emit(CaptureEvent::Ready {
+                                        generation: self.shared.generation,
+                                        info: CaptureReadyInfo {
+                                            width: layout.width,
+                                            height: layout.height,
+                                            fps: layout.fps,
+                                            subtype: layout.subtype.to_owned(),
+                                            focus_supported: self.shared.caps.focus_supported,
+                                            auto_focus_supported: self
+                                                .shared
+                                                .caps
+                                                .auto_focus_supported,
+                                            exposure_supported: self.shared.caps.exposure_supported,
+                                        },
+                                    });
+                                }
+                                self.shared.emit(CaptureEvent::Frame {
+                                    token: lent.token,
+                                    nt_handle: lent.nt_handle_bytes,
+                                    width: lent.width,
+                                    height: lent.height,
+                                    generation: self.shared.generation,
+                                });
+                            }
+                            Ok(None) => {
+                                if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
+                                    self.shared.emit(CaptureEvent::Ready {
+                                        generation: self.shared.generation,
+                                        info: CaptureReadyInfo {
+                                            width: layout.width,
+                                            height: layout.height,
+                                            fps: layout.fps,
+                                            subtype: layout.subtype.to_owned(),
+                                            focus_supported: self.shared.caps.focus_supported,
+                                            auto_focus_supported: self
+                                                .shared
+                                                .caps
+                                                .auto_focus_supported,
+                                            exposure_supported: self.shared.caps.exposure_supported,
+                                        },
+                                    });
+                                }
+                            }
+                            Err(msg) => {
+                                // Stop camera immediately so Web fallback can acquire it.
+                                let (code, reason) = split_coded_error(&msg);
+                                self.shared.emit(CaptureEvent::Error {
+                                    code,
+                                    message: reason,
+                                    generation: self.shared.generation,
+                                });
+                                self.shared.signal_stop();
+                                return Ok(());
+                            }
+                        }
+                    } else if !self.shared.ready_emitted.swap(true, Ordering::AcqRel) {
                         self.shared.emit(CaptureEvent::Ready {
                             generation: self.shared.generation,
+                            info: CaptureReadyInfo {
+                                width: layout.width,
+                                height: layout.height,
+                                fps: layout.fps,
+                                subtype: layout.subtype.to_owned(),
+                                focus_supported: self.shared.caps.focus_supported,
+                                auto_focus_supported: self.shared.caps.auto_focus_supported,
+                                exposure_supported: self.shared.caps.exposure_supported,
+                            },
                         });
-                    }
-                    if let (Some(pool), Some(bgra_bytes)) = (self.shared.preview.as_ref(), bgra) {
-                        if let Ok(Some(lent)) = pool.lend(&bgra_bytes, layout.width, layout.height)
-                        {
-                            self.shared.emit(CaptureEvent::Frame {
-                                token: lent.token,
-                                nt_handle: lent.nt_handle_bytes,
-                                width: lent.width,
-                                height: lent.height,
-                                generation: self.shared.generation,
-                            });
-                        }
                     }
                     self.shared.mailbox.push(PendingFrame {
                         luma,
@@ -705,16 +1023,24 @@ struct SessionContext {
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
+    focus_control: Arc<Mutex<Option<FocusControlHandle>>>,
     current_gen: Arc<AtomicI64>,
 }
 
-fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
+struct CameraSessionOptions {
+    device_id: Option<String>,
+    preferred_resolution: PreferredResolution,
+    lock_focus_on_detect: bool,
+}
+
+fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     let SessionContext {
         generation,
         stop_signal,
         preview,
         mailbox,
         emitter,
+        focus_control,
         current_gen,
     } = ctx;
     let emit_err = |code: &'static str, message: String| {
@@ -751,7 +1077,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
         return;
     }
 
-    let selected = if let Some(ref wanted) = device_id {
+    let selected = if let Some(ref wanted) = opts.device_id {
         let mut found = None;
         for activate in activates {
             if let Ok(attrs) = activate.cast::<IMFAttributes>() {
@@ -791,6 +1117,20 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
         }
     };
 
+    let (hw_caps, focus_handle) =
+        FocusControlHandle::probe_and_init(&media_source, generation, opts.lock_focus_on_detect);
+    if let Ok(mut guard) = focus_control.lock() {
+        *guard = focus_handle;
+    }
+
+    let clear_focus_handle = |fc: &Arc<Mutex<Option<FocusControlHandle>>>| {
+        if let Ok(mut guard) = fc.lock() {
+            if let Some(mut handle) = guard.take() {
+                handle.restore_auto();
+            }
+        }
+    };
+
     let shared = Arc::new(AsyncCameraShared {
         generation,
         active: AtomicBool::new(true),
@@ -799,7 +1139,10 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
             width: 0,
             height: 0,
             default_stride: 0,
+            fps: 0.0,
+            subtype: "unknown",
         }),
+        caps: hw_caps,
         reader: Mutex::new(None),
         in_callback: Mutex::new(0),
         in_callback_cvar: Condvar::new(),
@@ -817,6 +1160,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
 
     let mut reader_attrs: Option<IMFAttributes> = None;
     if let Err(err) = unsafe { MFCreateAttributes(&mut reader_attrs, 2) } {
+        clear_focus_handle(&focus_control);
         let _ = unsafe { media_source.Shutdown() };
         emit_err(
             "decoder-unavailable",
@@ -829,6 +1173,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
     if let Err(err) =
         unsafe { reader_attrs.SetUnknown(&MF_SOURCE_READER_ASYNC_CALLBACK, &callback) }
     {
+        clear_focus_handle(&focus_control);
         let _ = unsafe { media_source.Shutdown() };
         emit_err(
             "decoder-unavailable",
@@ -841,6 +1186,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
     {
         Ok(r) => r,
         Err(err) => {
+            clear_focus_handle(&focus_control);
             let _ = unsafe { media_source.Shutdown() };
             emit_err(
                 map_mf_error(err.code()),
@@ -850,10 +1196,11 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
         }
     };
 
-    let layout = match configure_camera_media_type(&reader) {
+    let layout = match configure_camera_media_type(&reader, opts.preferred_resolution) {
         Ok(l) => l,
         Err(msg) => {
             drop(reader);
+            clear_focus_handle(&focus_control);
             let _ = unsafe { media_source.Shutdown() };
             let (code, reason) = split_coded_error(&msg);
             emit_err(code, reason);
@@ -882,6 +1229,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
             *r = None;
         }
         drop(reader);
+        clear_focus_handle(&focus_control);
         let _ = unsafe { media_source.Shutdown() };
         emit_err(
             map_mf_error(err.code()),
@@ -890,7 +1238,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
         return;
     }
 
-    // Wait until stop(), dispose(), or a fatal stream error.
+    // Wait until stop(), dispose(), or a fatal stream/preview error.
     let (lock, cvar) = &*stop_signal;
     if let Ok(mut stopped) = lock.lock() {
         while !*stopped && current_gen.load(Ordering::Acquire) == generation {
@@ -902,7 +1250,8 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
     }
 
     // Teardown: halt new sample requests, flush, wait for in-flight callback,
-    // drop reader, and shut down the media source to release camera hardware.
+    // restore Auto focus, drop reader, and shut down the media source to
+    // release camera hardware immediately (including before Web fallback).
     shared.active.store(false, Ordering::Release);
     if let Ok(mut r) = shared.reader.lock() {
         *r = None;
@@ -922,6 +1271,7 @@ fn run_camera_session(ctx: SessionContext, device_id: Option<String>) {
         }
     }
     drop(reader);
+    clear_focus_handle(&focus_control);
     let _ = unsafe { media_source.Shutdown() };
 }
 
@@ -933,6 +1283,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         mailbox,
         emitter,
         current_gen,
+        ..
     } = ctx;
     let emit = |event: CaptureEvent| {
         if current_gen.load(Ordering::Acquire) != generation {
@@ -1039,7 +1390,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         return;
     }
 
-    let mut layout = match query_frame_layout(&reader) {
+    let mut layout = match query_frame_layout(&reader, None) {
         Ok(l) => l,
         Err(_) => {
             emit(CaptureEvent::Error {
@@ -1079,7 +1430,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         }
 
         if (flags & (MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED.0 as u32)) != 0 {
-            if let Ok(new_layout) = query_frame_layout(&reader) {
+            if let Ok(new_layout) = query_frame_layout(&reader, None) {
                 layout = new_layout;
             }
         }
@@ -1122,20 +1473,58 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
 
             let need_bgra = preview.is_some();
             if let Some((luma, bgra)) = extract_rgb32_frame(&sample, layout, need_bgra) {
-                if !ready_emitted {
-                    ready_emitted = true;
-                    emit(CaptureEvent::Ready { generation });
-                }
+                let ready_info = CaptureReadyInfo {
+                    width: layout.width,
+                    height: layout.height,
+                    fps: layout.fps,
+                    subtype: layout.subtype.to_owned(),
+                    focus_supported: false,
+                    auto_focus_supported: false,
+                    exposure_supported: false,
+                };
                 if let (Some(pool), Some(bgra_bytes)) = (preview.as_ref(), bgra) {
-                    if let Ok(Some(lent)) = pool.lend(&bgra_bytes, layout.width, layout.height) {
-                        emit(CaptureEvent::Frame {
-                            token: lent.token,
-                            nt_handle: lent.nt_handle_bytes,
-                            width: lent.width,
-                            height: lent.height,
-                            generation,
-                        });
+                    match pool.lend(&bgra_bytes, layout.width, layout.height) {
+                        Ok(Some(lent)) => {
+                            if !ready_emitted {
+                                ready_emitted = true;
+                                emit(CaptureEvent::Ready {
+                                    generation,
+                                    info: ready_info,
+                                });
+                            }
+                            emit(CaptureEvent::Frame {
+                                token: lent.token,
+                                nt_handle: lent.nt_handle_bytes,
+                                width: lent.width,
+                                height: lent.height,
+                                generation,
+                            });
+                        }
+                        Ok(None) => {
+                            if !ready_emitted {
+                                ready_emitted = true;
+                                emit(CaptureEvent::Ready {
+                                    generation,
+                                    info: ready_info,
+                                });
+                            }
+                        }
+                        Err(msg) => {
+                            let (code, reason) = split_coded_error(&msg);
+                            emit(CaptureEvent::Error {
+                                code,
+                                message: reason,
+                                generation,
+                            });
+                            return;
+                        }
                     }
+                } else if !ready_emitted {
+                    ready_emitted = true;
+                    emit(CaptureEvent::Ready {
+                        generation,
+                        info: ready_info,
+                    });
                 }
                 mailbox.push(PendingFrame {
                     luma,
@@ -1154,6 +1543,7 @@ fn split_coded_error(msg: &str) -> (&'static str, String) {
             "permission-denied" => "permission-denied",
             "no-camera" => "no-camera",
             "camera-busy" => "camera-busy",
+            "preview-unavailable" => "preview-unavailable",
             "invalid-image" => "invalid-image",
             "resource-limit" => "resource-limit",
             _ => "decoder-unavailable",
@@ -1176,6 +1566,7 @@ pub struct CaptureController {
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
+    focus_control: Arc<Mutex<Option<FocusControlHandle>>>,
     session: Mutex<Option<ActiveSession>>,
     decode_thread: Mutex<Option<JoinHandle<()>>>,
 }
@@ -1190,25 +1581,35 @@ impl CaptureController {
         };
         let mailbox = Arc::new(DecodeMailbox::new());
         let emitter_arc = Arc::new(Mutex::new(Some(emitter)));
+        let focus_control: Arc<Mutex<Option<FocusControlHandle>>> = Arc::new(Mutex::new(None));
 
         let decode_mailbox = Arc::clone(&mailbox);
         let decode_emitter = Arc::clone(&emitter_arc);
+        let decode_focus = Arc::clone(&focus_control);
         let decode_gen = Arc::clone(&generation);
         let decode_thread = thread::Builder::new()
             .name("qr-decode".to_owned())
             .spawn(move || {
+                // COM MTA so optional IAMCameraControl focus lock calls are safe.
+                let _com = ComMtaGuard::init().ok();
                 let mut gate = FrameTextGate::default_gate();
                 while let Some(frame) = decode_mailbox.take() {
                     if decode_gen.load(Ordering::Acquire) != frame.generation {
                         continue;
                     }
+                    let now = Instant::now();
                     if let Some(text) =
                         decode_qr_luma(&frame.luma, frame.width as i32, frame.height as i32, true)
                     {
                         if decode_gen.load(Ordering::Acquire) != frame.generation {
                             continue;
                         }
-                        if gate.accept(frame.generation, &text, Instant::now()) {
+                        if let Ok(mut fc) = decode_focus.lock() {
+                            if let Some(handle) = fc.as_mut() {
+                                handle.on_qr_detected(frame.generation, now);
+                            }
+                        }
+                        if gate.accept(frame.generation, &text, now) {
                             let cb = decode_emitter.lock().ok().and_then(|g| g.clone());
                             if let Some(cb) = cb {
                                 cb(CaptureEvent::Text {
@@ -1216,6 +1617,10 @@ impl CaptureController {
                                     generation: frame.generation,
                                 });
                             }
+                        }
+                    } else if let Ok(mut fc) = decode_focus.lock() {
+                        if let Some(handle) = fc.as_mut() {
+                            handle.on_frame_without_qr(frame.generation, now);
                         }
                     }
                 }
@@ -1229,6 +1634,7 @@ impl CaptureController {
             preview,
             mailbox,
             emitter: emitter_arc,
+            focus_control,
             session: Mutex::new(None),
             decode_thread: Mutex::new(Some(decode_thread)),
         }
@@ -1255,13 +1661,25 @@ impl CaptureController {
             preview: self.preview.clone(),
             mailbox: Arc::clone(&self.mailbox),
             emitter: Arc::clone(&self.emitter),
+            focus_control: Arc::clone(&self.focus_control),
             current_gen: Arc::clone(&self.generation),
         };
 
         let handle = thread::Builder::new()
             .name(format!("qr-capture-{next_gen}"))
             .spawn(move || match source {
-                SourceConfig::Camera { device_id } => run_camera_session(ctx, device_id),
+                SourceConfig::Camera {
+                    device_id,
+                    preferred_resolution,
+                    lock_focus_on_detect,
+                } => run_camera_session(
+                    ctx,
+                    CameraSessionOptions {
+                        device_id,
+                        preferred_resolution,
+                        lock_focus_on_detect,
+                    },
+                ),
                 SourceConfig::File { path, loop_file } => run_file_session(ctx, path, loop_file),
             })
             .map_err(|e| format!("decoder-unavailable: failed to spawn capture thread ({e})"))?;
@@ -1308,7 +1726,9 @@ impl CaptureController {
                 .lock()
                 .map_err(|_| "decoder-unavailable: source lock poisoned".to_owned())?;
             match &mut *src {
-                SourceConfig::Camera { device_id: slot } => {
+                SourceConfig::Camera {
+                    device_id: slot, ..
+                } => {
                     *slot = device_id;
                 }
                 SourceConfig::File { .. } => {
@@ -1357,5 +1777,53 @@ impl CaptureController {
 impl Drop for CaptureController {
     fn drop(&mut self) {
         self.dispose();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefers_uncompressed_720p_over_mjpg_and_low_fps_1080p() {
+        let nv12_720_30 = score_native_mode(
+            1280,
+            720,
+            30.0,
+            MFVideoFormat_NV12,
+            PreferredResolution::P720,
+        );
+        let mjpg_720_30 = score_native_mode(
+            1280,
+            720,
+            30.0,
+            MFVideoFormat_MJPG,
+            PreferredResolution::P720,
+        );
+        let nv12_1080_10 = score_native_mode(
+            1920,
+            1080,
+            10.0,
+            MFVideoFormat_NV12,
+            PreferredResolution::P1080,
+        );
+        let nv12_720_30_when_1080 = score_native_mode(
+            1280,
+            720,
+            30.0,
+            MFVideoFormat_NV12,
+            PreferredResolution::P1080,
+        );
+        let nv12_1080_30_when_1080 = score_native_mode(
+            1920,
+            1080,
+            30.0,
+            MFVideoFormat_NV12,
+            PreferredResolution::P1080,
+        );
+
+        assert!(nv12_720_30 > mjpg_720_30);
+        assert!(nv12_720_30_when_1080 > nv12_1080_10);
+        assert!(nv12_1080_30_when_1080 > nv12_720_30_when_1080);
     }
 }

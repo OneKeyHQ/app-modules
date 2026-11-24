@@ -5,6 +5,15 @@ const ERROR_CODES = new Set([
   "no-camera",
   "camera-busy",
   "decoder-unavailable",
+  "preview-unavailable",
+  "invalid-image",
+  "resource-limit",
+]);
+
+const NON_FALLBACK_CODES = new Set([
+  "permission-denied",
+  "no-camera",
+  "camera-busy",
   "invalid-image",
   "resource-limit",
 ]);
@@ -22,16 +31,41 @@ function binding() {
       "electron-qr-scanner requires Windows x64 or arm64",
     );
   }
-  nativeBinding ??= require(`./electron-qr-scanner.win32-${process.arch}-msvc.node`);
+  if (!nativeBinding) {
+    try {
+      nativeBinding = require(`./electron-qr-scanner.win32-${process.arch}-msvc.node`);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw errorWithCode(
+        "decoder-unavailable",
+        `Failed to load native Windows QR scanner binary: ${reason}`,
+      );
+    }
+  }
   return nativeBinding;
 }
 
 /** Native errors carry "<code>: <reason>" in the message. */
 function toCodedError(error) {
+  if (error && typeof error === "object" && typeof error.code === "string" && ERROR_CODES.has(error.code)) {
+    return error;
+  }
   const message = error instanceof Error ? error.message : String(error);
   const match = /^([a-z-]+):\s*(.*)$/s.exec(message);
   if (match && ERROR_CODES.has(match[1])) return errorWithCode(match[1], match[2]);
   return errorWithCode("decoder-unavailable", message);
+}
+
+/**
+ * Decides whether the app should stop/dispose the native Windows capture and
+ * fall back once to `@onekeyfe/react-native-qr-scanner/web`.
+ */
+function shouldFallbackToWeb(error) {
+  if (!error) return false;
+  const code =
+    typeof error === "object" && typeof error.code === "string" ? error.code : undefined;
+  if (code && NON_FALLBACK_CODES.has(code)) return false;
+  return true;
 }
 
 async function decodeImage(path, options = {}) {
@@ -64,18 +98,36 @@ function createCapture(options) {
   if (source.kind !== "camera" && source.kind !== "file") {
     throw errorWithCode("decoder-unavailable", `Unknown source: ${source.kind}`);
   }
+  if (
+    source.kind === "camera" &&
+    source.preferredResolution !== undefined &&
+    source.preferredResolution !== "720p" &&
+    source.preferredResolution !== "1080p"
+  ) {
+    throw errorWithCode(
+      "decoder-unavailable",
+      `Unsupported preferredResolution: ${source.preferredResolution}`,
+    );
+  }
   let latestGeneration = 0;
   let disposed = false;
   let native;
   try {
     native = new (binding().NativeCapture)(
-      source.kind,
-      source.kind === "file" ? source.path : undefined,
-      source.kind === "file" ? Boolean(source.loop) : undefined,
-      source.kind === "camera" && typeof source.deviceId === "string" && source.deviceId.length > 0
-        ? source.deviceId
-        : undefined,
-      typeof onFrame === "function",
+      {
+        sourceKind: source.kind,
+        filePath: source.kind === "file" ? source.path : undefined,
+        loopFile: source.kind === "file" ? Boolean(source.loop) : undefined,
+        deviceId:
+          source.kind === "camera" &&
+          typeof source.deviceId === "string" &&
+          source.deviceId.length > 0
+            ? source.deviceId
+            : undefined,
+        preferredResolution: source.kind === "camera" ? source.preferredResolution : undefined,
+        lockFocusOnDetect: source.kind === "camera" ? Boolean(source.lockFocusOnDetect) : undefined,
+        withPreview: typeof onFrame === "function",
+      },
       (event) => {
         if (event.kind === "frame") {
           // Every lent frame must go back to the pool, delivered or not.
@@ -107,7 +159,7 @@ function createCapture(options) {
         latestGeneration = event.generation;
         switch (event.kind) {
           case "ready":
-            onReady?.(event.generation);
+            onReady?.(event.generation, event.info);
             break;
           case "text":
             onText?.(event.text, event.generation);
@@ -165,4 +217,4 @@ function createCapture(options) {
   };
 }
 
-module.exports = { decodeImage, listCameras, createCapture };
+module.exports = { decodeImage, listCameras, createCapture, shouldFallbackToWeb };

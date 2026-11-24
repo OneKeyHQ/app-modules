@@ -12,7 +12,10 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{Env, Error, Result, Status, Task};
 use napi_derive::napi;
 
-use crate::capture::{CameraDeviceInfo, CaptureController, CaptureEvent, SourceConfig};
+use crate::capture::{
+    CameraDeviceInfo, CaptureController, CaptureEvent, CaptureReadyInfo, PreferredResolution,
+    SourceConfig,
+};
 use crate::image_decode::decode_image_file;
 
 /// Hard ceiling on the caller's `maxPixels`.
@@ -122,9 +125,35 @@ pub fn list_cameras() -> AsyncTask<ListCamerasTask> {
 }
 
 #[napi(object)]
+pub struct JsCaptureReadyInfo {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub subtype: String,
+    pub focus_supported: bool,
+    pub auto_focus_supported: bool,
+    pub exposure_supported: bool,
+}
+
+impl From<CaptureReadyInfo> for JsCaptureReadyInfo {
+    fn from(info: CaptureReadyInfo) -> Self {
+        Self {
+            width: info.width,
+            height: info.height,
+            fps: info.fps,
+            subtype: info.subtype,
+            focus_supported: info.focus_supported,
+            auto_focus_supported: info.auto_focus_supported,
+            exposure_supported: info.exposure_supported,
+        }
+    }
+}
+
+#[napi(object)]
 pub struct JsCaptureEvent {
     pub kind: String,
     pub generation: i64,
+    pub info: Option<JsCaptureReadyInfo>,
     pub text: Option<String>,
     pub code: Option<String>,
     pub message: Option<String>,
@@ -136,9 +165,10 @@ pub struct JsCaptureEvent {
 
 fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
     match event {
-        CaptureEvent::Ready { generation } => JsCaptureEvent {
+        CaptureEvent::Ready { generation, info } => JsCaptureEvent {
             kind: "ready".to_owned(),
             generation,
+            info: Some(info.into()),
             text: None,
             code: None,
             message: None,
@@ -150,6 +180,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         CaptureEvent::Text { text, generation } => JsCaptureEvent {
             kind: "text".to_owned(),
             generation,
+            info: None,
             text: Some(text),
             code: None,
             message: None,
@@ -165,6 +196,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         } => JsCaptureEvent {
             kind: "error".to_owned(),
             generation,
+            info: None,
             text: None,
             code: Some(code.to_owned()),
             message: Some(message),
@@ -176,6 +208,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         CaptureEvent::Ended { generation } => JsCaptureEvent {
             kind: "ended".to_owned(),
             generation,
+            info: None,
             text: None,
             code: None,
             message: None,
@@ -193,6 +226,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         } => JsCaptureEvent {
             kind: "frame".to_owned(),
             generation,
+            info: None,
             text: None,
             code: None,
             message: None,
@@ -204,6 +238,17 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
     }
 }
 
+#[napi(object)]
+pub struct NativeCaptureOptions {
+    pub source_kind: String,
+    pub file_path: Option<String>,
+    pub loop_file: Option<bool>,
+    pub device_id: Option<String>,
+    pub preferred_resolution: Option<String>,
+    pub lock_focus_on_detect: Option<bool>,
+    pub with_preview: bool,
+}
+
 #[napi]
 pub struct NativeCapture {
     controller: Option<Arc<CaptureController>>,
@@ -213,22 +258,33 @@ pub struct NativeCapture {
 impl NativeCapture {
     #[napi(constructor)]
     pub fn new(
-        source_kind: String,
-        file_path: Option<String>,
-        loop_file: Option<bool>,
-        device_id: Option<String>,
-        with_preview: bool,
+        options: NativeCaptureOptions,
         callback: Function<JsCaptureEvent, ()>,
     ) -> Result<Self> {
-        let source = match source_kind.as_str() {
-            "camera" => SourceConfig::Camera { device_id },
-            "file" => {
-                let path = file_path.unwrap_or_default();
-                SourceConfig::File {
-                    path,
-                    loop_file: loop_file.unwrap_or(false),
+        let source = match options.source_kind.as_str() {
+            "camera" => {
+                let preferred_resolution = match options.preferred_resolution.as_deref() {
+                    None | Some("720p") => PreferredResolution::P720,
+                    Some("1080p") => PreferredResolution::P1080,
+                    Some(other) => {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            format!(
+                                "decoder-unavailable: unsupported preferredResolution: {other}"
+                            ),
+                        ));
+                    }
+                };
+                SourceConfig::Camera {
+                    device_id: options.device_id,
+                    preferred_resolution,
+                    lock_focus_on_detect: options.lock_focus_on_detect.unwrap_or(false),
                 }
             }
+            "file" => SourceConfig::File {
+                path: options.file_path.unwrap_or_default(),
+                loop_file: options.loop_file.unwrap_or(false),
+            },
             other => {
                 return Err(Error::new(
                     Status::InvalidArg,
@@ -242,7 +298,7 @@ impl NativeCapture {
 
         let controller = Arc::new(CaptureController::new(
             source,
-            with_preview,
+            options.with_preview,
             Arc::new(move |event: CaptureEvent| {
                 let js_event = to_js_event(event);
                 let _ = tsfn.call(js_event, ThreadsafeFunctionCallMode::NonBlocking);
