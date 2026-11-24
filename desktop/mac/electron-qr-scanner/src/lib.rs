@@ -24,6 +24,7 @@ extern "C" {
         out_error: *mut *mut c_char,
     ) -> i32;
     fn oqs_free_string(value: *mut c_char);
+    fn oqs_list_cameras() -> *mut c_char;
     fn oqs_capture_create(
         context: *mut c_void,
         callback: EventCallback,
@@ -255,6 +256,20 @@ extern "C" fn on_event(
     tsfn.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
 }
 
+/// JSON array of `{ id, position, label }`; `index.cjs` parses it.
+#[napi]
+pub fn list_cameras() -> String {
+    unsafe {
+        let raw = oqs_list_cameras();
+        if raw.is_null() {
+            return "[]".to_string();
+        }
+        let json = CStr::from_ptr(raw).to_string_lossy().into_owned();
+        oqs_free_string(raw);
+        json
+    }
+}
+
 #[napi]
 pub struct NativeCapture {
     handle: *mut c_void,
@@ -263,7 +278,7 @@ pub struct NativeCapture {
 
 #[napi]
 impl NativeCapture {
-    /// `source`: "camera" or "file" (with `path`).
+    /// `source`: "camera" (`path`: optional device id) or "file" (with `path`).
     #[napi(constructor)]
     pub fn new(
         source: String,
@@ -273,7 +288,12 @@ impl NativeCapture {
         callback: EventTsfn,
     ) -> Result<Self> {
         let (kind, path) = match source.as_str() {
-            "camera" => (0, None),
+            "camera" => (
+                0,
+                path.map(CString::new)
+                    .transpose()
+                    .map_err(|_| Error::new(Status::InvalidArg, "deviceId contains NUL"))?,
+            ),
             "file" => {
                 let path = path
                     .ok_or_else(|| Error::new(Status::InvalidArg, "A file source needs a path"))?;

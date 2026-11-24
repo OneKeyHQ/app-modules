@@ -1,12 +1,18 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
   QrScanner,
   decodeQrImage,
+  listCameras,
+  subscribeCameraChanges,
   toQrScannerError,
 } from '@onekeyfe/react-native-qr-scanner';
-import type { ScanMode, ScanResult } from '@onekeyfe/react-native-qr-scanner';
+import type {
+  QrCameraInfo,
+  ScanMode,
+  ScanResult,
+} from '@onekeyfe/react-native-qr-scanner';
 
 import ImageCropPicker, {
   ImageCropPickerError,
@@ -41,6 +47,24 @@ export function QrScannerTestPage() {
   const [progress, setProgress] = useState(0);
   const [startedAt, setStartedAt] = useState<number | undefined>();
   const [liveLog, setLiveLog] = useState<string[]>([]);
+  const [cameras, setCameras] = useState<QrCameraInfo[]>([]);
+  const [cameraId, setCameraId] = useState<string | undefined>();
+
+  useEffect(() => {
+    const refresh = () => {
+      listCameras()
+        .then((list) => {
+          setCameras(list);
+          console.log(`[QrScannerTestPage] cameras ${JSON.stringify(list)}`);
+        })
+        .catch((error: unknown) => {
+          setCameras([]);
+          console.warn(`[QrScannerTestPage] listCameras failed: ${String(error)}`);
+        });
+    };
+    refresh();
+    return subscribeCameraChanges(refresh);
+  }, []);
 
   const log = useCallback((line: string) => {
     setLiveLog((lines) => [line, ...lines].slice(0, 8));
@@ -126,6 +150,23 @@ export function QrScannerTestPage() {
           <Text>new session</Text>
         </Pressable>
       </View>
+      <View style={styles.row}>
+        {cameras.map((camera) => (
+          <Pressable
+            key={camera.id}
+            testID={`qr-camera-${camera.position}`}
+            style={[styles.chip, camera.id === cameraId && styles.chipActive]}
+            onPress={() => {
+              setCameraId(camera.id);
+              log(`camera ${camera.position} ${camera.id}`);
+            }}
+          >
+            <Text style={camera.id === cameraId ? styles.chipTextActive : undefined}>
+              {camera.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <Pressable
         testID="qr-live-toggle"
         style={styles.button}
@@ -137,6 +178,7 @@ export function QrScannerTestPage() {
         <QrScanner
           style={StyleSheet.absoluteFill}
           active={active}
+          cameraId={cameraId}
           mode={mode}
           sessionKey={sessionKey}
           onReady={() => log('ready')}

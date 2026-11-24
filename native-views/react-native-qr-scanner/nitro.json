@@ -19,6 +19,10 @@
     "QrImageDecoder": {
       "swift": "HybridQrImageDecoder",
       "kotlin": "HybridQrImageDecoder"
+    },
+    "QrCameraList": {
+      "swift": "HybridQrCameraList",
+      "kotlin": "HybridQrCameraList"
     }
   },
   "ignorePaths": [

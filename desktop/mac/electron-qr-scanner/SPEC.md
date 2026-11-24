@@ -46,13 +46,14 @@ stripped).
 ```ts
 decodeImage(path: string, options?: { maxPixels?: number }): Promise<string | null>;
 createCapture(options?: {
-  source?: { kind: "camera" } | { kind: "file"; path: string; loop?: boolean };
+  source?: { kind: "camera"; deviceId?: string } | { kind: "file"; path: string; loop?: boolean };
   onReady?(generation: number): void;
   onText?(text: string, generation: number): void;
   onError?(error: Error & { code: QrScannerErrorCode }, generation: number): void;
   onEnded?(generation: number): void;
   onFrame?(frame: { ioSurface: Buffer; width: number; height: number; generation: number; release(): void }): void;
 }): { start(): void; stop(): void; lentFrames(): number; dispose(): void };
+listCameras(): { id: string; position: "front" | "external"; label: string }[];
 ```
 
 Preview (`onFrame`, opt-in): each frame is a BGRA, IOSurface-backed
@@ -75,7 +76,12 @@ analysis queue, so preview rate is bounded by detection time per frame.
   an older generation are dropped in JS. The same text repeats at most once
   per second; new text (each part of an animated code) passes at once.
   `dispose()` is idempotent and no callback runs after it returns.
-- Camera: the default video device at 720p, BGRA, late frames discarded so
+- `listCameras` lists without opening a camera or asking for permission:
+  the built-in camera (`front`), then USB and Continuity cameras
+  (`external`; `.external`/`.continuityCamera` on macOS 14+,
+  `.externalUnknown` before). Switching cameras is a new capture with
+  `source.deviceId`; an id that is no longer connected uses the default.
+- Camera: the chosen (else default) video device at 720p, BGRA, late frames discarded so
   at most one frame is in analysis. Missing hardware is reported as
   `no-camera` before any permission request. Error codes: `no-camera`,
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
@@ -95,6 +101,7 @@ the callback context only after `destroy` returns.
 | Image decoding | `test/native.test.cjs`: BTCPay lightning fixtures decode to the exact payload; no-QR image resolves `null`; corrupt, missing, empty path and `maxPixels: 0` reject with `invalid-image`. |
 | Animated UR through live frames | `test/native.test.cjs`: `test/fixtures/animated-ur.mp4` (2,003-byte `crypto-psbt`, 17 fragments, 51 frames at 8 fps, from `scripts/make-ur-fixture.mjs`) assembles to the expected type, size and FNV-1a in about 2.2 s. |
 | Generations and dispose | `test/native.test.cjs`: stop/start yields a newer generation, dispose is idempotent and later `start` throws. |
+| Camera list | `test/native.test.cjs`: `listCameras` returns unique ids with `front`/`external` positions; a camera capture with an unknown `deviceId` is created and disposed. On this MacBook Pro it lists the built-in camera and a Continuity Camera iPhone. |
 | Electron runtime | `test/electron.cjs` on Electron 44.5.1 (main process): image decode, error code, animated UR. |
 | Real camera (manual) | `test/camera-live.cjs` (`npm run test:camera`, or `open -n -W -a Electron.app --args test/camera-live.cjs --out report.json` so macOS asks Electron for camera access): MacBook Pro camera, Electron 44.5.1, animated UR shown on an iPhone held 20-30 cm away. Camera ready 1.45 s; 285 preview frames drawn through `sharedTexture` (~23 fps); `crypto-psbt` 2,003 bytes assembled in 4.23 s from the first part with 25 distinct parts, FNV-1a matching; at most 1 slot lent, 0 after dispose; no errors. Static codes not exercised in that run. |
 | Preview path | `test/preview.cjs` on Electron 44.5.1 with a sandboxed, context-isolated preload (`test/preview-preload.cjs`): frames from the animated video go through `importSharedTexture` → `sendSharedTexture` → `setSharedTextureReceiver` → canvas. 32-33 of 32-33 frames drawn in 4 s at 8 fps, none skipped, at most 1 slot lent, 0 after stop; the captured page shows the QR (dark and light pixels); the animated UR completes at the same time. |

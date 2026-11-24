@@ -235,6 +235,20 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   checked before permission; permission is requested through React Native's
   `PermissionAwareActivity`. The library manifest declares `CAMERA` and
   `android.hardware.camera.any` (not required).
+- Camera choice (Implemented): `listCameras()` returns `QrCameraInfo`
+  (`id`, `position: back | front | external`, `label`): one back camera
+  (on iOS the virtual device), one front camera, then external cameras
+  (iPadOS 17+ `.external`; Android `LENS_FACING_EXTERNAL`), deduplicated.
+  `subscribeCameraChanges` reports connects and disconnects (iOS
+  `wasConnected`/`wasDisconnected`; Android a changed camera id set from
+  `CameraManager.AvailabilityCallback`, which also fires when another app
+  opens a camera). The `cameraId` prop picks the camera; unset or
+  disconnected uses the back camera. Changing it while active swaps the
+  input (iOS, inside one configuration, without stopping the session) or
+  rebinds CameraX (Android) in a new capture generation with a new
+  `onReady`; the JS scan session, and so collected UR parts, stays. iOS
+  falls back to the default when the camera in use is unplugged. The front
+  preview is mirrored by the platform; detection reads unmirrored frames.
 - Camera and gestures (Implemented; matches the camera-kit 17 behavior the
   app had before):
   - iOS picks the back virtual device first (`builtInTripleCamera`, then
@@ -287,6 +301,14 @@ createWebQrScanner({
   scan session, under the native frame gate's rule: the same text again only
   after 1 s, new text (the next UR part) at once, reset on each `start()`.
   Callers that assemble UR themselves use it instead of `onResult`.
+- `listWebCameras()` (labels are empty until camera access was granted;
+  those entries are named "Camera N", and `position` is guessed from the
+  label), `subscribeWebCameraChanges()` (`devicechange`), and
+  `scanner.switchCamera(deviceId?)`: opens the new camera before stopping
+  the old one so the preview does not go black; on `NotReadableError`
+  (devices that open one camera at a time) it releases the old one and
+  retries. The scan session is kept. While stopped it records the choice
+  for the next `start()`.
 - A camera whose track delivers no frame within `firstFrameTimeoutMs`
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
@@ -359,6 +381,7 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 
 | iOS image pipeline at runtime | `ios/QrImageDecodingPipeline.swift`, `ios/HybridQrImageDecoder.swift`, `ios/QrZXingReader.mm` | `QrScanner-Unit-Tests` (`ios/tests/`, fixtures in `ios/tests/fixtures/`), 9 tests passing on the iOS 27.2 simulator (iPad Air 13-inch M4; 20 in the whole `QrScanner-Unit-Tests` target with the gate and camera-control suites). Vision + ZXing decode the real expired BTCPay invoice payload (461 chars) from clean, BTCPay-dark (no QR margin, page padding, center icon), inverted and EXIF-rotated fixtures; ZXing alone decodes clean and inverted codes, proving it is linked; no-QR image resolves `nil`; corrupt and missing files throw `invalid-image`; fake engines prove pass order, stop-at-first-hit, platform-before-fallback and the `maxPixels` downscale. Also in the CI `services` group (`scripts/ios-native-plan.mjs`). |
 | Camera selection and zoom | `ios/QrCameraControl.swift`, `android/.../QrCameraZoom.kt` | `ios/tests/QrCameraControlTests.swift` (5 XCTests: device preference order, 1x factor for triple, dual-wide, wide-first and physical devices, clamp to device range and the 8x cap) and `QrCameraZoomTest.kt` (3 Robolectric tests). Android emulator (Pixel 7, API 35), example app: tapping the live preview logs CameraX `startFocusAndMetering: updating 3A regions & triggering AF` and draws the focus box at the tap point. Pinch is not exercised at runtime (no multi-touch injection); the iOS gestures need a device (simulators have no camera). |
+| Camera list and switching | `src/cameras.ts`, `ios/HybridQrCameraList.swift`, `android/.../HybridQrCameraList.kt`, `QrCameraCatalog.kt`, `src/web/cameras.ts`, `src/web/scanner.ts` | jest: one native listener shared and cleared after the last unsubscribe; web label positions, unlabeled entries, `devicechange`; web switching opens the new camera before stopping the old, retries after release on `NotReadableError`, records the choice while stopped. XCTest: list dedupe. Robolectric `QrCameraCatalogTest` (3). Android emulator (API 35, emulated back and front cameras), example app: `listCameras` returns `[{id:"0",position:"back"},{id:"1",position:"front"}]`; switching while active closes camera 0 and opens camera 1 (`Opened CameraId-1 in 11 ms`), and back again (12.6 ms), one active client each time, `onReady` per switch. iOS switching needs a device. |
 | Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
 | Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
@@ -366,7 +389,7 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests (14 with `QrCameraZoomTest`): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
 | Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
-| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. 44 jest tests in total. |
+| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. 52 jest tests in total. |
 | Web real camera | test harness `?camera=live` in the user's Chrome 157 (launched normally), MacBook Pro camera, codes shown on an iPhone | Camera ready in 498 ms at 1280x720 @ 30 fps; native BarcodeDetector; animated `crypto-psbt` (2,003 bytes) assembled in 2.86 s with matching FNV-1a; 211 static results (lightning invoice and `bitcoin:` URI) all matching their expected payloads (compared on the first 70 characters); track `ended` after stop. |
 | Web in other engines and the extension CSP | harness via Playwright 1.58 | Chrome 156 Worker mode: images exact (5-26 ms), animated UR 2.4 s, one worker. WebKit 26.0 (Safari's engine; no BarcodeDetector, so zxing automatically): page thread and Worker, images exact, animated UR ~2.4 s. MV3 extension with OneKey's production CSP (`script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`): page thread and Worker, images exact, animated UR 2.4-2.6 s, no CSP violations. Real camera: Chrome 157 sees "MacBook Pro Camera" and getUserMedia returns a live 640x480 track, but no frames reached the `<video>` when launched from this automation (OS capture permission of the launching process); the SDK now reports `camera-busy` and releases the camera in that case. The built-in browser pane blocks capture, which verified `permission-denied`. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |

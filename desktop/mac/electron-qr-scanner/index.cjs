@@ -61,7 +61,7 @@ function createCapture(options) {
   let disposed = false;
   const native = new (binding().NativeCapture)(
     source.kind,
-    source.kind === "file" ? source.path : undefined,
+    source.kind === "file" ? source.path : source.deviceId,
     source.kind === "file" ? Boolean(source.loop) : undefined,
     typeof onFrame === "function",
     (event) => {
@@ -134,4 +134,12 @@ function createCapture(options) {
   };
 }
 
-module.exports = { decodeImage, createCapture };
+/**
+ * Cameras on this Mac: the built-in camera ("front") and USB or Continuity
+ * cameras ("external"). Pass an id as `source.deviceId`.
+ */
+function listCameras() {
+  return JSON.parse(binding().listCameras());
+}
+
+module.exports = { decodeImage, createCapture, listCameras };

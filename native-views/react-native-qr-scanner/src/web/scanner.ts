@@ -37,6 +37,13 @@ export interface WebQrScannerOptions {
 
 export interface WebQrScanner {
   start(): Promise<void>;
+  /**
+   * Moves a camera source to another device (`listWebCameras()` id; unset
+   * means the default back-facing camera). Keeps the scan session, so UR
+   * parts collected so far still count. While stopped it only records the
+   * choice for the next `start()`.
+   */
+  switchCamera(deviceId?: string): Promise<void>;
   /** Stops analysis (and the camera, for a camera source); keeps UR parts. */
   stop(): void;
   /** Starts a new scan session: drops collected UR parts. */
@@ -81,6 +88,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let frameIndex = 0;
   let canvas: HTMLCanvasElement | OffscreenCanvas | undefined;
   let engines: QrImageEngine[] = [];
+  let deviceId = source.kind === 'camera' ? source.deviceId : undefined;
   let lastFrameText: string | undefined;
   let lastFrameTextAt = 0;
 
@@ -205,15 +213,26 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           return;
         }
         try {
-          const next = await navigator.mediaDevices.getUserMedia({
+          const constraints: MediaStreamConstraints = {
             audio: false,
             video: {
-              deviceId: source.deviceId ? { exact: source.deviceId } : undefined,
-              facingMode: source.deviceId ? undefined : { ideal: 'environment' },
+              deviceId: deviceId ? { exact: deviceId } : undefined,
+              facingMode: deviceId ? undefined : { ideal: 'environment' },
               width: { ideal: 1280 },
               height: { ideal: 720 },
             },
-          });
+          };
+          let next: MediaStream;
+          try {
+            // The current camera stays on until the next one delivers, so a
+            // switch does not flash black.
+            next = await navigator.mediaDevices.getUserMedia(constraints);
+          } catch (error) {
+            // Some devices open one camera at a time: release, then retry.
+            if (!stream || cameraErrorCode(error) !== 'camera-busy') throw error;
+            releaseCamera();
+            next = await navigator.mediaDevices.getUserMedia(constraints);
+          }
           if (runGeneration !== generation || disposed) {
             next.getTracks().forEach((track) => track.stop());
             return;
@@ -251,6 +270,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       lastFrameText = undefined;
       handlers.onReady?.();
       schedule(runGeneration);
+    },
+    async switchCamera(nextDeviceId?: string) {
+      deviceId = nextDeviceId;
+      if (disposed || source.kind !== 'camera' || !stream) return;
+      await this.start();
     },
     stop() {
       generation += 1;

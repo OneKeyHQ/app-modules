@@ -54,4 +54,12 @@ final class QrCameraControlTests: XCTestCase {
     // A device whose maximum is below the cap.
     XCTAssertEqual(QrCameraControl.clampZoom(10, minFactor: 1, maxFactor: 4, wideFactor: 1), 4)
   }
+
+  func testCameraListDropsRepeatedIdsKeepingTheFirst() {
+    let cameras = QrCameraControl.uniqueById(
+      [("back", "back"), ("front", "front"), ("back", "external"), ("usb", "external")],
+      id: { $0 })
+    XCTAssertEqual(cameras.map(\.0), ["back", "front", "usb"])
+    XCTAssertEqual(cameras.map(\.1), ["back", "front", "external"])
+  }
 }

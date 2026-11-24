@@ -139,4 +139,73 @@ describe('createWebQrScanner camera start', () => {
       'ur:a/2-2/y',
     ]);
   });
+
+  it('switches cameras without dropping the old one first', async () => {
+    const first = fakeStream();
+    const second = fakeStream();
+    const order: string[] = [];
+    first.track.stop.mockImplementation(() => order.push('stop first'));
+    let opened = 0;
+    const getUserMedia = jest.fn(async (constraints: MediaStreamConstraints) => {
+      const video = constraints.video as MediaTrackConstraints;
+      order.push(`open ${(video.deviceId as { exact?: string } | undefined)?.exact ?? 'default'}`);
+      opened += 1;
+      return opened === 1 ? first.stream : second.stream;
+    });
+    Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    const video = fakeVideo(async () => {});
+    const onReady = jest.fn();
+    const scanner = createWebQrScanner({ video, mode: 'auto', onReady });
+    await scanner.start();
+    await scanner.switchCamera('cam-b');
+    expect(order).toEqual(['open default', 'open cam-b', 'stop first']);
+    expect(video.srcObject).toBe(second.stream);
+    expect(onReady).toHaveBeenCalledTimes(2);
+    scanner.dispose();
+  });
+
+  it('releases the current camera and retries when only one can be open', async () => {
+    const first = fakeStream();
+    const second = fakeStream();
+    let calls = 0;
+    const getUserMedia = jest.fn(async () => {
+      calls += 1;
+      if (calls === 1) return first.stream;
+      if (calls === 2) throw Object.assign(new Error('busy'), { name: 'NotReadableError' });
+      return second.stream;
+    });
+    Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    const video = fakeVideo(async () => {});
+    const onError = jest.fn();
+    const scanner = createWebQrScanner({ video, mode: 'auto', onError });
+    await scanner.start();
+    await scanner.switchCamera('cam-b');
+    expect(first.track.stop).toHaveBeenCalled();
+    expect(getUserMedia).toHaveBeenCalledTimes(3);
+    expect(video.srcObject).toBe(second.stream);
+    expect(onError).not.toHaveBeenCalled();
+    scanner.dispose();
+  });
+
+  it('only records the camera while stopped', async () => {
+    const getUserMedia = jest.fn(async () => fakeStream().stream);
+    Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.switchCamera('cam-b');
+    expect(getUserMedia).not.toHaveBeenCalled();
+    await scanner.start();
+    const video = (getUserMedia.mock.calls[0] as unknown as [MediaStreamConstraints])[0]
+      .video as MediaTrackConstraints;
+    expect(video.deviceId).toEqual({ exact: 'cam-b' });
+    scanner.dispose();
+  });
 });

@@ -20,6 +20,11 @@ export const QrScannerView = getHostComponent<QrScannerProps, QrScannerMethods>(
 export interface QrScannerComponentProps {
   /** Runs the camera. */
   active: boolean;
+  /**
+   * `QrCameraInfo.id` from `listCameras()`. Unset or disconnected uses the
+   * back camera. Switching keeps the scan session (collected UR parts).
+   */
+  cameraId?: string;
   mode: ScanMode;
   allowPlainText?: boolean;
   limits?: Partial<UrLimits>;
@@ -44,6 +49,7 @@ export interface QrScannerComponentProps {
  */
 export function QrScanner({
   active,
+  cameraId,
   mode,
   allowPlainText,
   limits,
@@ -105,5 +111,7 @@ export function QrScanner({
     [session]
   );
 
-  return <QrScannerView style={style} active={active} {...nativeCallbacks} />;
+  return (
+    <QrScannerView style={style} active={active} cameraId={cameraId} {...nativeCallbacks} />
+  );
 }

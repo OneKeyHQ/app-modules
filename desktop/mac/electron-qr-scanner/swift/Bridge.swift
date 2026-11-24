@@ -50,12 +50,24 @@ public func oqs_decode_image(
   }
 }
 
+/// JSON array of {id, position, label}; free with oqs_free_string.
+@_cdecl("oqs_list_cameras")
+public func oqs_list_cameras() -> UnsafeMutablePointer<CChar>? {
+  let cameras = QrCameraSource.availableCameras().map {
+    ["id": $0.id, "position": $0.position, "label": $0.label]
+  }
+  guard let data = try? JSONSerialization.data(withJSONObject: cameras),
+    let json = String(data: data, encoding: .utf8)
+  else { return strdup("[]") }
+  return strdup(json)
+}
+
 @_cdecl("oqs_free_string")
 public func oqs_free_string(_ value: UnsafeMutablePointer<CChar>?) {
   free(value)
 }
 
-/// sourceKind 0: camera, 1: video file at `path`. `frameCallback` is optional;
+/// sourceKind 0: camera (`path`: optional device id), 1: video file at `path`. `frameCallback` is optional;
 /// when set, every lent frame must be returned with oqs_capture_release_frame.
 @_cdecl("oqs_capture_create")
 public func oqs_capture_create(
@@ -70,7 +82,8 @@ public func oqs_capture_create(
       if sourceKind == 1, let filePath {
         return QrFileSource(url: URL(fileURLWithPath: filePath), loop: loop, queue: queue)
       }
-      return QrCameraSource(queue: queue, deviceId: nil)
+      // For a camera, `path` carries the optional device id.
+      return QrCameraSource(queue: queue, deviceId: filePath)
     },
     emit: { kind, a, b, generation in
       a.withCString { first in

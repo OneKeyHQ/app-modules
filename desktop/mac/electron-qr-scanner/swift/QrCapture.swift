@@ -34,8 +34,28 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   }
 
   static func device(id: String?) -> AVCaptureDevice? {
-    if let id, let device = AVCaptureDevice(uniqueID: id) { return device }
+    if let id, let device = AVCaptureDevice(uniqueID: id), device.isConnected { return device }
     return AVCaptureDevice.default(for: .video)
+  }
+
+  /// Cameras for the picker: the built-in camera faces the user ("front");
+  /// USB and Continuity cameras are "external".
+  static func availableCameras() -> [(id: String, position: String, label: String)] {
+    let types: [AVCaptureDevice.DeviceType]
+    if #available(macOS 14.0, *) {
+      types = [.builtInWideAngleCamera, .external, .continuityCamera]
+    } else {
+      types = [.builtInWideAngleCamera, .externalUnknown]
+    }
+    let devices = AVCaptureDevice.DiscoverySession(
+      deviceTypes: types, mediaType: .video, position: .unspecified
+    ).devices
+    var seen = Set<String>()
+    return devices.compactMap { device in
+      guard seen.insert(device.uniqueID).inserted else { return nil }
+      let position = device.deviceType == .builtInWideAngleCamera ? "front" : "external"
+      return (device.uniqueID, position, device.localizedName)
+    }
   }
 
   func start(deliver: @escaping (CVPixelBuffer) -> Void, ended: @escaping () -> Void)

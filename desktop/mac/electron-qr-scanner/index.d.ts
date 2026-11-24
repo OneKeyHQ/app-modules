@@ -21,7 +21,8 @@ export interface DecodeImageOptions {
 export function decodeImage(path: string, options?: DecodeImageOptions): Promise<string | null>;
 
 export type CaptureSource =
-  | { kind: "camera" }
+  /** `deviceId` from listCameras(); unset or disconnected uses the default camera. */
+  | { kind: "camera"; deviceId?: string }
   /** Frames from a local video file, paced by presentation time. For tests. */
   | { kind: "file"; path: string; loop?: boolean };
 
@@ -62,3 +63,13 @@ export interface QrCapture {
 }
 
 export function createCapture(options?: CaptureOptions): QrCapture;
+
+export interface QrCameraInfo {
+  id: string;
+  /** The built-in camera faces the user; USB and Continuity cameras are external. */
+  position: "front" | "external";
+  label: string;
+}
+
+/** Cameras the capture can use. Switching means a new capture with `deviceId`. */
+export function listCameras(): QrCameraInfo[];

@@ -1,4 +1,6 @@
 export { QrScanner, QrScannerView } from './QrScanner';
+export { listCameras, subscribeCameraChanges } from './cameras';
+export type { QrCameraInfo, QrCameraPosition } from './cameras';
 export type { QrScannerComponentProps } from './QrScanner';
 export { DEFAULT_MAX_IMAGE_PIXELS, decodeQrImage } from './decodeQrImage';
 export type { DecodeQrImageOptions } from './decodeQrImage';

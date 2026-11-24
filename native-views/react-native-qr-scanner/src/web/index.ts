@@ -4,6 +4,12 @@ export { configureWebQrScanner } from './engines';
 export type { WebQrScannerConfig } from './engines';
 export { decodeQrImage } from './decodeQrImage';
 export { createWebQrScanner } from './scanner';
+export {
+  cameraPositionFromLabel,
+  listWebCameras,
+  subscribeWebCameraChanges,
+} from './cameras';
+export type { QrCameraInfo, QrCameraPosition } from './cameras';
 export type { WebQrScanner, WebQrScannerOptions, WebScanSource } from './scanner';
 export { DEFAULT_MAX_IMAGE_PIXELS } from '../decodeQrImage.constants';
 export { QrScannerError, toQrScannerError } from '../errors';

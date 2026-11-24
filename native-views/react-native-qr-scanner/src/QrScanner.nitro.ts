@@ -15,6 +15,12 @@ export interface QrScannerProps extends HybridViewProps {
    * camera. Each false -> true starts a new capture generation.
    */
   active: boolean;
+  /**
+   * `QrCameraInfo.id` of the camera to use. Unset, or an id that is no longer
+   * connected, uses the default (back) camera. Changing it while active
+   * switches cameras in a new capture generation.
+   */
+  cameraId?: string;
   /** The first frame of a capture generation reached the preview. */
   onReady?: (generation: number) => void;
   /**

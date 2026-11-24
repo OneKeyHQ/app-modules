@@ -52,6 +52,7 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   // Props
   var active: Bool = false
+  var cameraId: String?
   var onReady: ((Double) -> Void)?
   var onFrameText: ((String, Double) -> Void)?
   var onError: ((String, String, Double) -> Void)?
@@ -64,6 +65,10 @@ class HybridQrScanner: HybridQrScannerSpec {
   private var running = false
   /// The configured input device. Owned by `sessionQueue`.
   private var device: AVCaptureDevice?
+  private var input: AVCaptureDeviceInput?
+  /// Last `cameraId` prop value. Owned by `sessionQueue`.
+  private var requestedCameraId: String?
+  private var subjectAreaObserver: NSObjectProtocol?
   /// Zoom factor when the current pinch began. Owned by `sessionQueue`.
   private var pinchStartZoom: CGFloat = 1
   private lazy var gestureHandler = GestureHandler(owner: self)
@@ -87,9 +92,17 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   func afterUpdate() {
     let shouldRun = active
+    let cameraId = cameraId
     sessionQueue.async { [weak self] in
       guard let self else { return }
-      if shouldRun { self.start() } else { self.stop() }
+      self.requestedCameraId = cameraId
+      if !shouldRun {
+        self.stop()
+      } else if self.running {
+        self.switchCameraIfNeeded()
+      } else {
+        self.start()
+      }
     }
   }
 
@@ -106,7 +119,7 @@ class HybridQrScanner: HybridQrScannerSpec {
     guard !running else { return }
     let currentGeneration = nextGeneration()
     // Check for hardware first: a device without a camera must not prompt.
-    guard QrCameraControl.preferredBackCamera() != nil else {
+    guard QrCameraControl.device(forId: requestedCameraId) != nil else {
       emitError("no-camera", "No camera is available", currentGeneration)
       return
     }
@@ -139,6 +152,10 @@ class HybridQrScanner: HybridQrScannerSpec {
       }
       isConfigured = true
       addObservers()
+    } else if let error = useCamera(QrCameraControl.device(forId: requestedCameraId)) {
+      // The camera chosen while stopped differs from the configured one.
+      emitError(error.code, error.message, currentGeneration)
+      return
     }
     session.startRunning()
     running = session.isRunning
@@ -160,24 +177,14 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   private func configure() -> (code: String, message: String)? {
-    guard let device = QrCameraControl.preferredBackCamera() else {
-      return ("no-camera", "No camera is available")
-    }
     session.beginConfiguration()
     defer { session.commitConfiguration() }
     if session.canSetSessionPreset(.hd1920x1080) {
       session.sessionPreset = .hd1920x1080
     }
-    let input: AVCaptureDeviceInput
-    do {
-      input = try AVCaptureDeviceInput(device: device)
-    } catch {
-      return ("camera-busy", error.localizedDescription)
+    if let error = useCamera(QrCameraControl.device(forId: requestedCameraId)) {
+      return error
     }
-    guard session.canAddInput(input) else {
-      return ("camera-busy", "The camera input could not be added")
-    }
-    session.addInput(input)
 
     let output = AVCaptureMetadataOutput()
     guard session.canAddOutput(output) else {
@@ -189,15 +196,62 @@ class HybridQrScanner: HybridQrScannerSpec {
     }
     output.setMetadataObjectsDelegate(metadataDelegate, queue: metadataQueue)
     output.metadataObjectTypes = [.qr]
+    return nil
+  }
 
+  /// Makes `device` the session input, replacing the current one. A no-op when
+  /// it already is. Runs inside or outside a configuration block.
+  private func useCamera(_ device: AVCaptureDevice?) -> (code: String, message: String)? {
+    guard let device else { return ("no-camera", "No camera is available") }
+    if device.uniqueID == self.device?.uniqueID, input != nil { return nil }
+    let newInput: AVCaptureDeviceInput
+    do {
+      newInput = try AVCaptureDeviceInput(device: device)
+    } catch {
+      return ("camera-busy", error.localizedDescription)
+    }
+    session.beginConfiguration()
+    defer { session.commitConfiguration() }
+    if let input { session.removeInput(input) }
+    guard session.canAddInput(newInput) else {
+      if let input, session.canAddInput(input) { session.addInput(input) }
+      return ("camera-busy", "The camera input could not be added")
+    }
+    session.addInput(newInput)
+    input = newInput
+    self.device = device
     if (try? device.lockForConfiguration()) != nil {
       // Virtual devices start on their widest lens; begin at the familiar 1x.
       device.videoZoomFactor = QrCameraControl.wideAngleZoomFactor(for: device)
       Self.applyContinuousFocus(device)
       device.unlockForConfiguration()
     }
-    self.device = device
+    observeSubjectArea(of: device)
     return nil
+  }
+
+  /// Applies a changed `cameraId` (or a disconnected camera) while running:
+  /// frames of the previous camera belong to the old generation.
+  private func switchCameraIfNeeded() {
+    guard isConfigured, let target = QrCameraControl.device(forId: requestedCameraId),
+      target.uniqueID != device?.uniqueID
+    else { return }
+    let generation = nextGeneration()
+    if let error = useCamera(target) {
+      emitError(error.code, error.message, generation)
+      return
+    }
+    setCapturing(running)
+    if running { onReady?(Double(generation)) }
+  }
+
+  private func observeSubjectArea(of device: AVCaptureDevice) {
+    if let subjectAreaObserver { NotificationCenter.default.removeObserver(subjectAreaObserver) }
+    subjectAreaObserver = NotificationCenter.default.addObserver(
+      forName: AVCaptureDevice.subjectAreaDidChangeNotification, object: device, queue: nil
+    ) { [weak self] _ in
+      self?.resumeContinuousFocus()
+    }
   }
 
   /// Continuous focus and exposure over the whole frame. Caller holds the lock.
@@ -274,14 +328,17 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   private func addObservers() {
     let center = NotificationCenter.default
-    if let device {
-      observers.append(
-        center.addObserver(
-          forName: AVCaptureDevice.subjectAreaDidChangeNotification, object: device, queue: nil
-        ) { [weak self] _ in
-          self?.resumeContinuousFocus()
-        })
-    }
+    observers.append(
+      center.addObserver(
+        forName: AVCaptureDevice.wasDisconnectedNotification, object: nil, queue: nil
+      ) { [weak self] note in
+        guard let self, let gone = note.object as? AVCaptureDevice else { return }
+        self.sessionQueue.async {
+          // An unplugged external camera falls back to the default camera.
+          guard gone.uniqueID == self.device?.uniqueID else { return }
+          self.switchCameraIfNeeded()
+        }
+      })
     observers.append(
       center.addObserver(
         forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil
@@ -312,6 +369,8 @@ class HybridQrScanner: HybridQrScannerSpec {
   private func removeObservers() {
     observers.forEach { NotificationCenter.default.removeObserver($0) }
     observers.removeAll()
+    if let subjectAreaObserver { NotificationCenter.default.removeObserver(subjectAreaObserver) }
+    subjectAreaObserver = nil
   }
 
   // MARK: - Generation and events

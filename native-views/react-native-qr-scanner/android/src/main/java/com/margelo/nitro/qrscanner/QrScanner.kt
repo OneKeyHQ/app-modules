@@ -88,6 +88,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   // Props
   override var active: Boolean = false
+  override var cameraId: String? = null
   override var onReady: ((generation: Double) -> Unit)? = null
   override var onFrameText: ((text: String, generation: Double) -> Unit)? = null
   override var onError: ((code: String, message: String, generation: Double) -> Unit)? = null
@@ -106,6 +107,9 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   private var cameraProvider: ProcessCameraProvider? = null
   /** The bound camera while running. Main thread only. */
   private var camera: Camera? = null
+  /** Last `cameraId` prop value, and the id actually bound. Main thread only. */
+  private var requestedCameraId: String? = null
+  private var boundCameraId: String? = null
   private var pinchRatio = 1f
   private var running = false
   private var hostResumed = true
@@ -184,7 +188,39 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   override fun afterUpdate() {
     val shouldRun = active
-    main.post { if (shouldRun) start() else stop() }
+    val requested = cameraId
+    main.post {
+      requestedCameraId = requested
+      when {
+        !shouldRun -> stop()
+        running -> switchCameraIfNeeded()
+        else -> start()
+      }
+    }
+  }
+
+  /** Rebinds to a changed `cameraId` in a new capture generation. */
+  private fun switchCameraIfNeeded() {
+    val provider = cameraProvider ?: return
+    val target = selectorFor(provider) ?: return
+    if (target.second == boundCameraId) return
+    bind(provider, gate.nextGeneration())
+  }
+
+  /** The requested camera when connected, else back, else front. */
+  private fun selectorFor(provider: ProcessCameraProvider): Pair<CameraSelector, String>? {
+    val infos = provider.availableCameraInfos
+    val requested = requestedCameraId?.let { id -> infos.firstOrNull { HybridQrCameraList.cameraId(it) == id } }
+    val info = requested
+      ?: infos.firstOrNull { it.lensFacing == CameraSelector.LENS_FACING_BACK }
+      ?: infos.firstOrNull { it.lensFacing == CameraSelector.LENS_FACING_FRONT }
+      ?: infos.firstOrNull()
+      ?: return null
+    val id = HybridQrCameraList.cameraId(info)
+    val selector = CameraSelector.Builder()
+      .addCameraFilter { candidates -> candidates.filter { HybridQrCameraList.cameraId(it) == id } }
+      .build()
+    return selector to id
   }
 
   override fun onDropView() {
@@ -252,13 +288,9 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   }
 
   private fun bind(provider: ProcessCameraProvider, generation: Int) {
-    val selector = when {
-      provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
-      provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
-      else -> {
-        emitError("no-camera", "No camera is available", generation)
-        return
-      }
+    val (selector, selectedId) = selectorFor(provider) ?: run {
+      emitError("no-camera", "No camera is available", generation)
+      return
     }
     val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
     val analysis = ImageAnalysis.Builder()
@@ -275,6 +307,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     try {
       provider.unbindAll()
       camera = provider.bindToLifecycle(this, selector, preview, analysis)
+      boundCameraId = selectedId
     } catch (error: Exception) {
       emitError("camera-busy", error.message ?: "The camera could not start", generation)
       return
@@ -292,6 +325,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     if (!running) return
     cameraProvider?.unbindAll()
     camera = null
+    boundCameraId = null
     running = false
     syncLifecycle()
   }

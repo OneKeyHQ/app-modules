@@ -164,3 +164,24 @@ test(
     assert.ok(["ready", "permission-denied", "no-camera", "camera-busy"].includes(outcome), outcome);
   },
 );
+
+test("lists cameras without opening them", { skip: !nativeMac }, () => {
+  const cameras = api.listCameras();
+  assert.ok(Array.isArray(cameras));
+  const ids = new Set();
+  for (const camera of cameras) {
+    assert.equal(typeof camera.id, "string");
+    assert.ok(camera.id.length > 0);
+    assert.ok(["front", "external"].includes(camera.position), camera.position);
+    assert.equal(typeof camera.label, "string");
+    assert.ok(!ids.has(camera.id), "ids are unique");
+    ids.add(camera.id);
+  }
+});
+
+test("a camera source accepts a deviceId", { skip: !nativeMac }, () => {
+  // Never started, so no camera permission is involved.
+  const capture = api.createCapture({ source: { kind: "camera", deviceId: "not-connected" } });
+  capture.dispose();
+  capture.dispose();
+});

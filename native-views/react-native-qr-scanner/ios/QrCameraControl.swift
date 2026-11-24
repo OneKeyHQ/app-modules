@@ -47,6 +47,48 @@ enum QrCameraControl {
     return AVCaptureDevice.default(for: .video)
   }
 
+  static func frontCamera() -> AVCaptureDevice? {
+    AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+  }
+
+  /// USB and other external cameras (iPadOS 17 and later).
+  static func externalCameras() -> [AVCaptureDevice] {
+    guard #available(iOS 17.0, *) else { return [] }
+    return AVCaptureDevice.DiscoverySession(
+      deviceTypes: [.external], mediaType: .video, position: .unspecified
+    ).devices
+  }
+
+  /// Cameras offered to users: one back, one front, then external ones.
+  static func availableCameras() -> [(device: AVCaptureDevice, position: String)] {
+    var cameras: [(AVCaptureDevice, String)] = []
+    if let back = preferredBackCamera(), back.position == .back { cameras.append((back, "back")) }
+    if let front = frontCamera() { cameras.append((front, "front")) }
+    cameras += externalCameras().map { ($0, "external") }
+    return uniqueById(cameras)
+  }
+
+  /// The camera for `id`, or the default when `id` is unset or disconnected.
+  static func device(forId id: String?) -> AVCaptureDevice? {
+    if let id, let device = AVCaptureDevice(uniqueID: id), device.isConnected {
+      return device
+    }
+    return preferredBackCamera()
+  }
+
+  /// Drops repeated ids, keeping the first (the default camera can also be
+  /// discovered as an external one on some iPads).
+  static func uniqueById<T>(_ cameras: [(T, String)], id: (T) -> String) -> [(T, String)] {
+    var seen = Set<String>()
+    return cameras.filter { seen.insert(id($0.0)).inserted }
+  }
+
+  private static func uniqueById(_ cameras: [(AVCaptureDevice, String)])
+    -> [(device: AVCaptureDevice, position: String)]
+  {
+    uniqueById(cameras, id: { $0.uniqueID }).map { (device: $0.0, position: $0.1) }
+  }
+
   static func wideAngleZoomFactor(for device: AVCaptureDevice) -> CGFloat {
     wideAngleZoomFactor(
       constituentTypes: device.constituentDevices.map(\.deviceType),
