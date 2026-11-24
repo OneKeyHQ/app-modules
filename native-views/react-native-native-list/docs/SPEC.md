@@ -1964,7 +1964,12 @@ secondary text and subscript text segments. Segments are caller-formatted and
 never interpreted as numbers by NativeList. Omission preserves the legacy tree.
 
 `presentation: stacked` places the amount lines after the identity column and
-right-aligns them. In `table`, the identity column includes its leading visual
+right-aligns them. In stacked presentation the amount and fee columns stay at
+the width of their content (the widest amount line, including its 20pt icon);
+the identity column receives the remaining row width. That is the width measure
+uses for the description, on iOS and Android. On iOS the stacked amount column is
+capped at half the row width; amounts wider than that truncate.
+In `table`, the identity column includes its leading visual
 and gap; identity, amounts and an optional fee use stable widths in the ratio
 `1:1:0.6` after inter-column gaps. Without fee, identity and amounts split the
 remaining width equally. Amount content stays start-aligned within its column;
@@ -1973,7 +1978,14 @@ Fee text length and leading visibility cannot move the amount column. These
 native widths match the existing Web table layout. Fee supports label, primary
 and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
-tones. `descriptionActionKey` makes only the description emit that action with
+tones. The badges follow the title text directly: while badges are present the
+title line packs at its start on every platform (iOS a slack-absorbing filler at
+the end of the title line, Android `PackedTitleLineLayout`, Web flex `0 1 auto`),
+so badges never drift toward the amount column, and a long title truncates in
+front of its badges (OK-67497). On iOS and Android the title spans the line when
+there are no badges, so `style.title.alignment` keeps its effect and a recycled row
+that lost its badges lays out the title exactly like a fresh row; Web keeps its
+existing content-sized title element. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
 disabled behavior. All actions use the current host binding epoch.
 
@@ -2043,7 +2055,8 @@ legacy Activity rows without rich fields retain their existing behavior.
 
 Acceptance: 1/2/6/32 lines, changed keys/order, paired icons and network overlays,
 small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchanged
-baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
+baseline, matching NumberSizeableText), badge tone/clear, badges adjacent to
+short and truncated long titles, centered title after badges are cleared, hidden fee, disabled
 actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
 
 
