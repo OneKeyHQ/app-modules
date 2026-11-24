@@ -332,7 +332,16 @@ public class BundleUpdateStore: NSObject {
 
     // MARK: - Pre-launch pending task processing
 
-    private static var didProcessPreLaunchTask = false
+    private static let preLaunchTaskStateLock = NSLock()
+    private static var preLaunchTaskProcessed = false
+
+    private static var didProcessPreLaunchTask: Bool {
+        preLaunchTaskStateLock.withLock { preLaunchTaskProcessed }
+    }
+
+    private static func markPreLaunchTaskProcessed() {
+        preLaunchTaskStateLock.withLock { preLaunchTaskProcessed = true }
+    }
 
     private static func failPendingTask(mmkv: MMKV, taskDict: [String: Any], reason: String) {
         var updatedTask = taskDict
@@ -348,13 +357,15 @@ public class BundleUpdateStore: NSObject {
     /// Only handles the happy path (status=pending, bundle exists, env matches).
     /// All complex logic (retry, download, error handling) remains in JS layer.
     public static func processPreLaunchPendingTask() {
-        activationLock.withLock { applyPreLaunchPendingTask() }
+        guard !didProcessPreLaunchTask else { return }
+        activationLock.withLock {
+            guard !didProcessPreLaunchTask else { return }
+            applyPreLaunchPendingTask()
+            markPreLaunchTaskProcessed()
+        }
     }
 
     private static func applyPreLaunchPendingTask() {
-        guard !didProcessPreLaunchTask else { return }
-        didProcessPreLaunchTask = true
-
         do {
             // 1. Read MMKV (same pattern as isDevSettingsEnabled)
             MMKV.initialize(rootDir: nil)
@@ -953,7 +964,9 @@ public class BundleUpdateStore: NSObject {
     }
 
     public static func clearUpdateBundleData() {
-        didProcessPreLaunchTask = true
+        if !didProcessPreLaunchTask {
+            activationLock.withLock { markPreLaunchTaskProcessed() }
+        }
         invalidateValidatedBundleInfoCache()
         let bDir = bundleDir()
         let fm = FileManager.default

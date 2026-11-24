@@ -214,7 +214,9 @@ object BundleUpdateStoreAndroid {
     }
 
     fun clearUpdateBundleData(context: Context) {
-        didProcessPreLaunchTask = true
+        if (!didProcessPreLaunchTask) {
+            synchronized(activationLock) { didProcessPreLaunchTask = true }
+        }
         invalidateValidatedBundleInfoCache()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
@@ -312,13 +314,16 @@ object BundleUpdateStoreAndroid {
         }
     }
 
-    fun processPreLaunchPendingTask(context: Context) = synchronized(activationLock) {
-        applyPreLaunchPendingTask(context)
+    fun processPreLaunchPendingTask(context: Context) {
+        if (didProcessPreLaunchTask) return
+        synchronized(activationLock) {
+            if (didProcessPreLaunchTask) return
+            applyPreLaunchPendingTask(context)
+            didProcessPreLaunchTask = true
+        }
     }
 
     private fun applyPreLaunchPendingTask(context: Context) {
-        if (didProcessPreLaunchTask) return
-        didProcessPreLaunchTask = true
         try {
             // 1. Read MMKV
             MMKV.initialize(context)
@@ -406,7 +411,14 @@ object BundleUpdateStoreAndroid {
             }
 
             val metadata = parseMetadataJson(readFileContent(metadataFile))
-            if (!validateAllFilesInDir(context, bundleDirPath.absolutePath, metadata, appVersion, bundleVersion)) {
+            val verified = try {
+                validateAllFilesInDir(context, bundleDirPath.absolutePath, metadata, appVersion, bundleVersion)
+            } catch (e: BundleFileSystemException) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: unable to inspect extracted files for $folderName: ${e.message}")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Unable to inspect extracted bundle files")
+                return
+            }
+            if (!verified) {
                 OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: extracted file verification failed for $folderName")
                 failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Extracted file verification failed")
                 return
@@ -1089,7 +1101,12 @@ object BundleUpdateStoreAndroid {
             return true
         }
 
-        return verifyExtractedFiles(webEmbedRoot, webEmbedEntries, "web-embed-verify", "web-embed/")
+        return try {
+            verifyExtractedFiles(webEmbedRoot, webEmbedEntries, "web-embed-verify", "web-embed/")
+        } catch (e: BundleFileSystemException) {
+            OneKeyLog.error("BundleUpdate", "[web-embed-verify] unable to inspect extracted files: ${e.message}")
+            false
+        }
     }
 
     /**

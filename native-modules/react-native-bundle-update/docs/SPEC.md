@@ -284,7 +284,11 @@ appear in the manifest and pass its hash check. Every manifest path must
 correspond to a regular file whose hash was verified. Installation and every
 bundle switch, including a pre-launch pending switch, recheck every extracted file
 against signed metadata immediately before changing the active bundle. Routine
-startup retains its entry-bundle-only hot-path check.
+startup retains its entry-bundle-only hot-path check. The first pre-launch
+pending-task pass runs under the activation guard and publishes completion
+before concurrent bundle lookups proceed. Later lookups skip the activation
+guard for this step. If Android cannot stat an entry while verifying a
+pending switch, it records a failed task and leaves the active bundle in place.
 On mobile, activation and ASC publication share a process-wide guard across
 both JS runtimes. An ASC run that staged a new tree rejects promotion with
 `INCOMPATIBLE` if the target is now active or retained. Installs read active
@@ -297,6 +301,8 @@ directory: the same tree may be reachable through a symlinked and a resolved
 path, and Android `context.filesDir` can itself be symlinked, so mixing the two
 forms produced absolute-path keys and rejected every file on affected devices.
 Android uses the crypto core traversal for both the full tree and web-embed.
+If the web-embed walk hits a filesystem error, the path getters return an
+empty string and leave the subtree eligible for verification on a later lookup.
 The walked directory MUST resolve to the managed bundle directory for the
 supplied identity, and a file that cannot be expressed relative to it MUST fail
 closed with a local diagnostic rather than be looked up by an absolute path.
@@ -336,7 +342,8 @@ peer are released together so the native byte-limit contract is present.
 Android and iOS diff extraction enforce the limits during extraction.
 Android rejects directory entries carrying payload bytes. iOS diff staging
 I/O failures report `STORAGE_ERROR` and preserve the downloaded diff and its
-descriptor for retry.
+descriptor for retry. Duplicate or conflicting file entries in the iOS diff
+archive are invalid archive errors and trigger full ZIP fallback.
 On iOS, diff extraction counts ZIP entries before processing them and counts
 implicit directories before creating them. It checks declared payload sizes
 and checks actual decompressed bytes before each write. An overrun returns
