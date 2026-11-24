@@ -540,15 +540,20 @@ object BundleCryptoCore {
       if (remaining.put(entry.relativePath, entry.sha256) != null) return false
     }
 
-    return verifyBundleDirectory(
-      directory = canonicalDir,
-      metadata = remaining,
-      fileSystem = fileSystem,
-      verifyHash = { file, expected ->
-        calculateSHA256(file.absolutePath).sha256?.let { secureCompare(expected, it) } ?: false
-      },
-      logError = { OneKeyLog.error("BundleCrypto", "[bundle-verify] $it") },
-    )
+    return try {
+      verifyBundleDirectory(
+        directory = canonicalDir,
+        metadata = remaining,
+        fileSystem = fileSystem,
+        verifyHash = { file, expected ->
+          calculateSHA256(file.absolutePath).sha256?.let { secureCompare(expected, it) } ?: false
+        },
+        logError = { OneKeyLog.error("BundleCrypto", "[bundle-verify] $it") },
+      )
+    } catch (error: IOException) {
+      OneKeyLog.error("BundleCrypto", "[bundle-verify] filesystem read failed: ${error.javaClass.simpleName}")
+      false
+    }
   }
 
   // MARK: - Hash every regular payload file. Throws if the walk or a hash fails.

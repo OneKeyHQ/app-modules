@@ -1,10 +1,13 @@
 package com.margelo.nitro.reactnativebundlecrypto
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -42,6 +45,26 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 91Js0rQ=
 =A/Ii
 -----END PGP SIGNATURE-----"""
+
+  @Test
+  fun directoryVerificationPreservesFilesystemErrorsUntilCryptoBoundary() {
+    val bundle = temporaryFolder.newFolder()
+    val child = File(bundle, "payload")
+    child.writeText("fixture")
+    val failure = BundleFileSystemException(IOException("read failed"))
+    for (failingPath in listOf(bundle.canonicalFile, child.canonicalFile)) {
+      val fileSystem = object : BundleFileSystem by JvmBundleFileSystem {
+        override fun lstat(file: File): BundleFileStat? {
+          if (file == failingPath) throw failure
+          return JvmBundleFileSystem.lstat(file)
+        }
+      }
+      assertSame(failure, assertThrows(BundleFileSystemException::class.java) {
+        verifyBundleDirectory(bundle.canonicalFile, emptyMap(), fileSystem, { _, _ -> true }, {})
+      })
+      assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, emptyList(), fileSystem))
+    }
+  }
 
   @Test
   fun signedMetadataAcceptsReleaseKeyAndRejectsChangedBodyAndUnsignedInput() {

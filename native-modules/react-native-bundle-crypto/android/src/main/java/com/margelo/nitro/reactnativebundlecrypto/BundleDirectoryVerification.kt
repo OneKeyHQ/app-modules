@@ -1,7 +1,6 @@
 package com.margelo.nitro.reactnativebundlecrypto
 
 import java.io.File
-import java.io.IOException
 
 /** Verify the walked tree using bundle-relative manifest keys. */
 fun verifyBundleDirectory(
@@ -12,7 +11,7 @@ fun verifyBundleDirectory(
     logError: (String) -> Unit,
     bundleRelativePrefix: String = "",
 ): Boolean {
-    val rootType = try { fileSystem.lstat(directory)?.type } catch (_: IOException) { return false }
+    val rootType = fileSystem.lstat(directory)?.type
     if (rootType != BundleFileType.DIRECTORY) return false
 
     val remaining = metadata.toMutableMap()
@@ -51,7 +50,7 @@ internal fun walkRegularBundleFiles(
     val files = directory.listFiles() ?: return false
     for (file in files) {
         val relativePath = prefix + file.name
-        val type = try { fileSystem.lstat(file)?.type } catch (_: IOException) { return false }
+        val type = fileSystem.lstat(file)?.type
         when (type) {
             BundleFileType.DIRECTORY -> if (!walkRegularBundleFiles(file, "$relativePath/", fileSystem, visit)) return false
             BundleFileType.REGULAR -> if (!visit(file, relativePath)) return false
