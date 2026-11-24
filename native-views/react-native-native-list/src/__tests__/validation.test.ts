@@ -396,6 +396,8 @@ describe.each([true, false])(
           ],
           [{ text: 'a', color: '#000000' }],
           Array.from({ length: 5 }, (_, index) => ({ text: `${index}` })),
+          // A hole, which `forEach` would skip.
+          Object.assign(new Array(2), { 1: { text: 'Wallet' } }),
         ];
         for (const runs of invalidRuns) {
           const value = runs as IdentityRow['titleSegments'];
@@ -424,6 +426,23 @@ describe.each([true, false])(
             expect(
               (validate().rows[0] as IdentityRow).titleLeadingIcon
             ).toBeUndefined();
+        }
+      });
+    });
+
+    it('rejects a malformed decoration in a standalone patch in development', () => {
+      inMode(() => {
+        if (!development) return;
+        const invalidChanges: Record<string, unknown>[] = [
+          { titleSegments: [{ text: '   ' }] },
+          { titleLeadingIcon: { name: '' } },
+        ];
+        for (const changes of invalidChanges) {
+          const patches = [
+            { type: 'identity', key: 'recipient', changes },
+          ] as unknown as readonly RowPatch[];
+          expect(() => validatePatches(patches)).toThrow();
+          expect(() => serializePatches(patches)).toThrow();
         }
       });
     });

@@ -1368,7 +1368,9 @@ function assertTitleSegments(value: unknown, path: string): void {
   )
     fail(path, `must hold 1...${MAX_TITLE_SEGMENTS} segments`);
   let shrinking = 0;
-  value.forEach((item: unknown, index) => {
+  // Array.from also visits holes, so a sparse list is rejected here and the
+  // production sanitizer drops it before protocol validation walks it.
+  Array.from(value as readonly unknown[]).forEach((item, index) => {
     const segmentPath = `${path}[${index}]`;
     const segment = protocolObject(item, segmentPath);
     assertUnknownKeys(
@@ -4564,6 +4566,8 @@ function assertPatchChanges(patch: PatchValues, index: number): void {
           );
       });
       assertIdentityExtras(patch.changes, path);
+      // A null clear never reaches here; a replacement follows the row rules.
+      assertIdentityTitleRuns(patch.changes, path);
       assertText(patch.changes.subtitle, `${path}.subtitle`);
       assertText(patch.changes.tertiary, `${path}.tertiary`);
       if (
