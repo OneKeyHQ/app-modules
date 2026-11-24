@@ -7,8 +7,10 @@ Multi-signature OpenPGP/YubiKey CLI and zero-dependency Node.js library for sign
 Two or more release signers on separate machines sign the exact same canonical payload with their own YubiKey OpenPGP keys (`gpg --clearsign --digest-algo SHA256`). `onekey-release-sign merge` validates and packs their OpenPGP Signature Packets (`Tag 2`, type `0x01`, `SHA-256/384/512`) into **one standard RFC 4880 `.asc` file**:
 
 - Zero API/filename changes (`jsBundle.signature` stays one string; `<installer>.SHA256SUMS.asc` stays one file).
-- 100% compatible with standard `gpg --verify`, Desktop `openpgp.js`, Android `BouncyCastle`, and iOS `Gopenpgp`.
+- 100% compatible with standard `gpg --verify` and `openpgp.js` multi-key verification.
 - Verification deduplicates strictly by **Primary Key Fingerprint**, preventing duplicate-signature or primary+subkey bypasses.
+
+> **Compatibility note for shipped clients**: Currently shipped Android (`BundleCryptoCore.kt` `signatureList[0]`) and Desktop (`result[0]`) verifiers check only the **first** signature packet against the legacy embedded OneKey release key. Independently keyed multi-signature `.asc` files produced by this CLI are **release-gate / server-side verified** until client trust-store upgrades roll out to verify `>= 2` distinct embedded YubiKey public keys on-device.
 
 ## Requirements
 
@@ -27,7 +29,7 @@ npx @onekeyfe/onekey-release-sign doctor
 ### 2. Sign independently (Signer A & Signer B on separate machines)
 
 ```sh
-# Signer A (verifies metadata.json SHA-256 before prompting YubiKey PIN + touch)
+# Signer A (validates payload & metadata.json SHA-256 on one immutable byte snapshot before invoking GPG pinentry + touch)
 onekey-release-sign sign \
   --in electron.metadata.json.info \
   --artifact metadata.json \
@@ -48,6 +50,7 @@ onekey-release-sign sign \
 onekey-release-sign merge \
   --in sig-a.asc \
   --in sig-b.asc \
+  --payload electron.metadata.json.info \
   --keyring trusted-yubikeys.asc \
   --threshold 2 \
   --artifact metadata.json \

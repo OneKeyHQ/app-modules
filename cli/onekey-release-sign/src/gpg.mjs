@@ -37,10 +37,15 @@ function buildGpgEnv(gpgHome) {
 
 /**
  * Run a GnuPG command via execFileSync (never via a shell).
+ * Error messages intentionally omit full subprocess argument lists to prevent
+ * accidental credential leakage in logs.
  * @param {string[]} args
- * @param {{ gpgHome?: string, input?: string | Buffer, gpgBin?: string, allowNonZero?: boolean }} [options]
+ * @param {{ gpgHome?: string, input?: string | Buffer, gpgBin?: string, allowNonZero?: boolean, operation?: string }} [options]
  */
-function runGpg(args, { gpgHome, input, gpgBin = 'gpg', allowNonZero = false } = {}) {
+function runGpg(
+  args,
+  { gpgHome, input, gpgBin = 'gpg', allowNonZero = false, operation = 'command' } = {},
+) {
   try {
     const stdout = execFileSync(gpgBin, args, {
       env: buildGpgEnv(gpgHome),
@@ -62,7 +67,7 @@ function runGpg(args, { gpgHome, input, gpgBin = 'gpg', allowNonZero = false } =
     }
     const stderr = String(error?.stderr ?? '').trim();
     throw new Error(
-      `gpg ${args.join(' ')} failed (exit ${error?.status ?? 'unknown'}): ${stderr || error.message}`,
+      `gpg ${operation} failed (exit ${error?.status ?? 'unknown'}): ${stderr || 'command exited with error'}`,
     );
   }
 }
@@ -72,10 +77,20 @@ function runGpg(args, { gpgHome, input, gpgBin = 'gpg', allowNonZero = false } =
  * @param {{ gpgHome?: string, gpgBin?: string, ykmanBin?: string }} [options]
  */
 export function checkDoctor({ gpgHome, gpgBin = 'gpg', ykmanBin = 'ykman' } = {}) {
-  const versionRes = runGpg(['--version'], { gpgHome, gpgBin, allowNonZero: true });
+  const versionRes = runGpg(['--version'], {
+    gpgHome,
+    gpgBin,
+    allowNonZero: true,
+    operation: 'version',
+  });
   const gpgVersion = versionRes.stdout.split('\n')[0]?.trim() || null;
 
-  const cardRes = runGpg(['--card-status'], { gpgHome, gpgBin, allowNonZero: true });
+  const cardRes = runGpg(['--card-status'], {
+    gpgHome,
+    gpgBin,
+    allowNonZero: true,
+    operation: 'card-status',
+  });
   const cardDetected = cardRes.exitCode === 0 && cardRes.stdout.includes('Application ID');
   let signatureKey = null;
   let cardSerial = null;
@@ -122,32 +137,47 @@ export function checkDoctor({ gpgHome, gpgBin = 'gpg', ykmanBin = 'ykman' } = {}
 }
 
 /**
- * Sign a payload file using `gpg --clearsign --digest-algo SHA256` (producing
- * an RFC 4880 Type 0x01 canonical text signature compatible with YubiKey PIN +
- * physical touch).
+ * Sign an in-memory payload snapshot (or file read once) using
+ * `gpg --clearsign --digest-algo SHA256`, passing the exact validated bytes to
+ * GnuPG over stdin to eliminate TOCTOU races between validation and signing.
+ *
+ * Protected keys obtain their PIN/passphrase exclusively via GnuPG pinentry
+ * (never via CLI argv).
  *
  * @param {{
- *   inputPath: string,
+ *   inputBytes?: Buffer | string,
+ *   inputPath?: string,
  *   keyId?: string,
  *   digestAlgo?: 'SHA256' | 'SHA384' | 'SHA512',
  *   gpgHome?: string,
  *   gpgBin?: string,
  *   batch?: boolean,
- *   passphrase?: string,
  * }} options
  */
 export function signCleartext({
+  inputBytes,
   inputPath,
   keyId,
   digestAlgo = 'SHA256',
   gpgHome,
   gpgBin = 'gpg',
   batch = false,
-  passphrase,
 }) {
   if (!['SHA256', 'SHA384', 'SHA512'].includes(digestAlgo)) {
     throw new Error(`Unsupported digest algorithm: ${digestAlgo}`);
   }
+  const snapshot =
+    inputBytes !== undefined
+      ? Buffer.isBuffer(inputBytes)
+        ? inputBytes
+        : Buffer.from(String(inputBytes), 'utf8')
+      : inputPath
+        ? fs.readFileSync(inputPath)
+        : null;
+  if (!snapshot || snapshot.length === 0) {
+    throw new Error('Cannot sign an empty payload');
+  }
+
   const args = [
     '--clearsign',
     '--armor',
@@ -161,14 +191,15 @@ export function signCleartext({
     args.push('--local-user', keyId);
   }
   if (batch) {
-    args.push('--batch', '--yes', '--pinentry-mode', 'loopback');
-    if (passphrase !== undefined) {
-      args.push('--passphrase', passphrase);
-    }
+    args.push('--batch', '--yes');
   }
-  args.push(inputPath);
 
-  const res = runGpg(args, { gpgHome, gpgBin });
+  const res = runGpg(args, {
+    gpgHome,
+    gpgBin,
+    input: snapshot,
+    operation: 'clearsign',
+  });
   // Validate the generated signature strictly conforms to RFC 4880 Type 0x01.
   const parsed = parseCleartextSignedMessage(res.stdout);
   return {
@@ -244,6 +275,7 @@ function createIsolatedGpgHome() {
  *   threshold?: number,
  *   allowedFingerprints?: string[],
  *   artifactPath?: string,
+ *   artifactPaths?: string[],
  *   gpgBin?: string,
  * }} options
  */
@@ -254,6 +286,7 @@ export function verifyMultisigCleartext({
   threshold = 2,
   allowedFingerprints = [],
   artifactPath,
+  artifactPaths = [],
   gpgBin = 'gpg',
 }) {
   if (!Number.isInteger(threshold) || threshold < 1) {
@@ -271,28 +304,41 @@ export function verifyMultisigCleartext({
   // 1. Strict RFC 4880 structural & packet validation before invoking gpg.
   const parsed = parseCleartextSignedMessage(signedText);
 
-  // 2. Inspect & optionally bind payload against local artifact SHA-256.
-  const payloadInfo = inspectReleasePayload(parsed.plainBody, { artifactPath });
+  // 2. Inspect & bind payload against every supplied local artifact SHA-256.
+  const payloadInfo = inspectReleasePayload(parsed.plainBody, {
+    artifactPath,
+    artifactPaths,
+  });
 
   // 3. Verify cryptographically in an isolated temporary GNUPGHOME (0700).
   const tmpHome = createIsolatedGpgHome();
   try {
     for (const file of keyringFiles) {
-      runGpg(['--batch', '--import', file], { gpgHome: tmpHome, gpgBin });
+      runGpg(['--batch', '--import', file], {
+        gpgHome: tmpHome,
+        gpgBin,
+        operation: 'import',
+      });
     }
     for (let i = 0; i < keyringTexts.length; i += 1) {
       const keyFile = path.join(tmpHome, `key-${i}.asc`);
       fs.writeFileSync(keyFile, keyringTexts[i], { mode: 0o600 });
-      runGpg(['--batch', '--import', keyFile], { gpgHome: tmpHome, gpgBin });
+      runGpg(['--batch', '--import', keyFile], {
+        gpgHome: tmpHome,
+        gpgBin,
+        operation: 'import',
+      });
     }
 
     const msgFile = path.join(tmpHome, 'message.asc');
     fs.writeFileSync(msgFile, signedText, { mode: 0o600 });
 
-    const verifyRes = runGpg(
-      ['--batch', '--status-fd=1', '--verify', msgFile],
-      { gpgHome: tmpHome, gpgBin, allowNonZero: true },
-    );
+    const verifyRes = runGpg(['--batch', '--status-fd=1', '--verify', msgFile], {
+      gpgHome: tmpHome,
+      gpgBin,
+      allowNonZero: true,
+      operation: 'verify',
+    });
     const { validSignatures, invalidSignatures } = parseGpgVerifyStatus(verifyRes.stdout);
 
     // Reject if any cryptographic signature in the message was tampered/revoked/expired.

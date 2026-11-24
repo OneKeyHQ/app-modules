@@ -78,12 +78,13 @@ export function encodeArmor(label, bytes, headers = {}) {
 }
 
 /**
- * Decode an RFC 4880 ASCII Armor block and verify its CRC-24 checksum.
+ * Decode an RFC 4880 ASCII Armor block and verify its mandatory CRC-24 checksum.
  * @param {string} armoredText
  * @param {string} [expectedLabel]
+ * @param {{ requireCrc?: boolean }} [options]
  * @returns {{ label: string, headers: Record<string, string>, bytes: Buffer }}
  */
-export function decodeArmor(armoredText, expectedLabel) {
+export function decodeArmor(armoredText, expectedLabel, { requireCrc = true } = {}) {
   const lines = armoredText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   const beginIndices = [];
   const endIndices = [];
@@ -149,6 +150,8 @@ export function decodeArmor(armoredText, expectedLabel) {
       throw new Error('Invalid CRC-24 length in ASCII armor');
     }
     expectedCrc = (crcBytes[0] << 16) | (crcBytes[1] << 8) | crcBytes[2];
+  } else if (requireCrc) {
+    throw new Error('Missing mandatory CRC-24 checksum line in ASCII armor');
   }
 
   const b64Payload = bodyLines.join('');
@@ -173,8 +176,8 @@ export function decodeArmor(armoredText, expectedLabel) {
 }
 
 /**
- * Canonicalize cleartext body per RFC 4880 Section 7.1 (dash-unescape, strip
- * trailing spaces/tabs per line, join with CRLF).
+ * Canonicalize an already-armored cleartext body per RFC 4880 Section 7.1
+ * (dash-unescape, strip trailing spaces/tabs per line, join with CRLF).
  * @param {string} rawBody
  * @returns {string}
  */
@@ -185,6 +188,25 @@ export function canonicalizeCleartextBody(rawBody) {
       const unescaped = line.startsWith('- ') ? line.slice(2) : line;
       return unescaped.replace(/[ \t]+$/u, '');
     })
+    .join('\r\n');
+}
+
+/**
+ * Canonicalize an unarmored plaintext file into the exact RFC 4880 Section 7.1
+ * cleartext form that `gpg --clearsign` signs: strip one framing-equivalent
+ * terminal line ending if present, strip trailing spaces/tabs per line, and
+ * join with CRLF (without dash-unescaping raw plaintext).
+ * @param {string} plainText
+ * @returns {string}
+ */
+export function canonicalizePlaintextForClearsign(plainText) {
+  let normalized = plainText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (normalized.endsWith('\n')) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/u, ''))
     .join('\r\n');
 }
 
@@ -310,7 +332,7 @@ export function parseSignaturePackets(binary) {
     const signatureType = buf[bodyStart + 1];
     if (signatureType !== SIG_TYPE_CANONICAL_TEXT) {
       throw new Error(
-        `Expected canonical text signature (0x01), got 0x${signatureType.toString(16).padStart(2, '0')}. Sign with "gpg --clearsign" or "gpg --detach-sign --textmode".`,
+        `Expected canonical text signature (0x01), got 0x${signatureType.toString(16).padStart(2, '0')}. Sign with "gpg --clearsign".`,
       );
     }
     const pubKeyAlgo = buf[bodyStart + 2];
@@ -347,7 +369,8 @@ export function parseSignaturePackets(binary) {
 
 /**
  * Strictly parse an RFC 4880 Cleartext Signed Message.
- * Rejects multiple signed blocks, weak hash headers, and non-signature packets.
+ * Rejects multiple signed blocks, weak hash headers, missing CRC-24 checksum,
+ * and non-signature packets.
  * @param {string} signedText
  */
 export function parseCleartextSignedMessage(signedText) {
@@ -417,7 +440,7 @@ export function parseCleartextSignedMessage(signedText) {
   const rawBody = lines.slice(blankIdx + 1, sigStartIdx).join('\n');
   const canonicalBody = canonicalizeCleartextBody(rawBody);
   const signatureBlock = lines.slice(sigStartIdx, sigEndIdx + 1).join('\n');
-  const decodedSig = decodeArmor(signatureBlock, 'PGP SIGNATURE');
+  const decodedSig = decodeArmor(signatureBlock, 'PGP SIGNATURE', { requireCrc: true });
   const packets = parseSignaturePackets(decodedSig.bytes);
 
   return {
@@ -431,9 +454,12 @@ export function parseCleartextSignedMessage(signedText) {
 }
 
 /**
- * Merge 2+ individually signed PGP cleartext messages (or detached text-mode
- * signatures with `expectedBody`) into ONE standard RFC 4880 Cleartext Signed
- * Message containing all signature packets in a single armor block.
+ * Merge 2+ individually clear-signed PGP messages (`gpg --clearsign`) into ONE
+ * standard RFC 4880 Cleartext Signed Message containing all signature packets
+ * in a single armor block.
+ *
+ * Detached signature blocks without an embedded cleartext body are rejected so
+ * every merged input undergoes canonical body equality verification.
  *
  * @param {string[]} signedInputs
  * @param {{ expectedBody?: string, minSignatures?: number }} [options]
@@ -450,15 +476,13 @@ export function mergeCleartextSignatures(
   { expectedBody, minSignatures = 2 } = {},
 ) {
   if (!Array.isArray(signedInputs) || signedInputs.length === 0) {
-    throw new Error('At least one signed input is required');
+    throw new Error('At least one clear-signed input is required');
   }
 
   let referenceCanonical =
-    expectedBody !== undefined ? canonicalizeCleartextBody(expectedBody) : null;
+    expectedBody !== undefined ? canonicalizePlaintextForClearsign(expectedBody) : null;
   let referencePlain =
-    expectedBody !== undefined
-      ? expectedBody.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-      : null;
+    referenceCanonical !== null ? referenceCanonical.replace(/\r\n/g, '\n') : null;
 
   const collectedPackets = [];
   const seenDigests = new Set();
@@ -469,34 +493,23 @@ export function mergeCleartextSignatures(
     if (typeof input !== 'string' || !input.trim()) {
       throw new Error(`Signed input #${idx + 1} is empty`);
     }
-
-    let packets;
-    if (input.includes(SIGNED_MSG_BEGIN)) {
-      const parsed = parseCleartextSignedMessage(input);
-      if (referenceCanonical === null) {
-        referenceCanonical = parsed.canonicalBody;
-        referencePlain = parsed.plainBody;
-      } else if (parsed.canonicalBody !== referenceCanonical) {
-        throw new Error(
-          `Signed input #${idx + 1} has a different payload body; all signers must sign the exact same canonical payload`,
-        );
-      }
-      packets = parsed.packets;
-    } else if (input.includes(SIG_BEGIN)) {
-      if (referenceCanonical === null) {
-        throw new Error(
-          `Signed input #${idx + 1} is a detached signature; provide expectedBody or at least one cleartext-signed input`,
-        );
-      }
-      const decoded = decodeArmor(input, 'PGP SIGNATURE');
-      packets = parseSignaturePackets(decoded.bytes);
-    } else {
+    if (!input.includes(SIGNED_MSG_BEGIN)) {
       throw new Error(
-        `Signed input #${idx + 1} is neither a PGP SIGNED MESSAGE nor a PGP SIGNATURE`,
+        `Signed input #${idx + 1} must be a clear-signed PGP SIGNED MESSAGE (detached signatures without an embedded body are not accepted for merge)`,
       );
     }
 
-    for (const pkt of packets) {
+    const parsed = parseCleartextSignedMessage(input);
+    if (referenceCanonical === null) {
+      referenceCanonical = parsed.canonicalBody;
+      referencePlain = parsed.plainBody;
+    } else if (parsed.canonicalBody !== referenceCanonical) {
+      throw new Error(
+        `Signed input #${idx + 1} has a different payload body; all signers must sign the exact same canonical payload`,
+      );
+    }
+
+    for (const pkt of parsed.packets) {
       if (seenDigests.has(pkt.packetDigest)) {
         throw new Error(
           `Duplicate signature packet detected in input #${idx + 1}; each signer must provide a distinct signature`,

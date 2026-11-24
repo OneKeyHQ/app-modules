@@ -2,6 +2,7 @@ export {
   ALLOWED_HASH_ALGORITHMS,
   ALLOWED_HASH_NAMES,
   canonicalizeCleartextBody,
+  canonicalizePlaintextForClearsign,
   crc24,
   dashEscapeCleartextBody,
   decodeArmor,
@@ -13,6 +14,7 @@ export {
 } from './openpgp.mjs';
 
 export {
+  assertSafeReleaseFileName,
   createSha256SumsPayload,
   inspectReleasePayload,
   sha256File,

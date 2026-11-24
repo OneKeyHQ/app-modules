@@ -30,7 +30,7 @@ Commands:
   checksum    Generate canonical <sha256>  <filename> SHA256SUMS payload
   inspect     Inspect metadata.json.info, SHA256SUMS, or signed .asc file
   sign        Verify payload/artifact locally and clearsign with GPG/YubiKey
-  merge       Merge 2+ signed .asc files into ONE RFC 4880 multi-sig .asc
+  merge       Merge 2+ clear-signed .asc files into ONE RFC 4880 multi-sig .asc
   verify      Verify multi-sig .asc against explicit keyring & threshold
 
 Examples:
@@ -56,8 +56,46 @@ const BOOLEAN_FLAGS = new Set([
   'batch',
 ]);
 
+const ALLOWED_OPTIONS_BY_COMMAND = {
+  doctor: new Set(['gpg-home', 'json', 'help']),
+  checksum: new Set(['artifact', 'out', 'json', 'help']),
+  inspect: new Set(['in', 'artifact', 'json', 'help']),
+  sign: new Set([
+    'in',
+    'artifact',
+    'key',
+    'digest-algo',
+    'out',
+    'gpg-home',
+    'batch',
+    'json',
+    'help',
+  ]),
+  merge: new Set([
+    'in',
+    'payload',
+    'keyring',
+    'threshold',
+    'allow-fingerprint',
+    'artifact',
+    'out',
+    'json',
+    'help',
+  ]),
+  verify: new Set([
+    'in',
+    'keyring',
+    'threshold',
+    'allow-fingerprint',
+    'artifact',
+    'json',
+    'help',
+  ]),
+};
+
 /**
  * Parse CLI arguments without external dependencies.
+ * Rejects malformed or duplicate non-repeatable flags.
  * @param {string[]} argv
  */
 export function parseArgs(argv) {
@@ -80,6 +118,9 @@ export function parseArgs(argv) {
     }
     const eqIdx = token.indexOf('=');
     const key = eqIdx >= 0 ? token.slice(2, eqIdx) : token.slice(2);
+    if (!key) {
+      throw new Error(`Invalid option token "${token}"`);
+    }
     if (BOOLEAN_FLAGS.has(key)) {
       options[key] = eqIdx >= 0 ? token.slice(eqIdx + 1) !== 'false' : true;
       continue;
@@ -88,7 +129,7 @@ export function parseArgs(argv) {
     if (eqIdx >= 0) {
       value = token.slice(eqIdx + 1);
     } else {
-      if (i + 1 >= argv.length) {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
         throw new Error(`Missing value for option --${key}`);
       }
       value = argv[i + 1];
@@ -100,6 +141,9 @@ export function parseArgs(argv) {
       }
       options[key].push(value);
     } else {
+      if (Object.prototype.hasOwnProperty.call(options, key)) {
+        throw new Error(`Option --${key} may only be specified once`);
+      }
       options[key] = value;
     }
   }
@@ -109,6 +153,31 @@ export function parseArgs(argv) {
     restPositionals: positionals.slice(1),
     options,
   };
+}
+
+function validateCommandOptions(command, options, restPositionals, { maxPositionals = 0 } = {}) {
+  const allowed = ALLOWED_OPTIONS_BY_COMMAND[command];
+  for (const key of Object.keys(options)) {
+    if (!allowed.has(key)) {
+      throw new Error(`Unknown option --${key} for command "${command}"`);
+    }
+  }
+  if (restPositionals.length > maxPositionals) {
+    throw new Error(
+      `Unexpected positional argument(s) for "${command}": ${restPositionals.slice(maxPositionals).join(' ')}`,
+    );
+  }
+}
+
+function resolveSingleInput(options, restPositionals, command) {
+  if (options.in && options.in.length > 1) {
+    throw new Error(`Command "${command}" accepts only one --in file, got ${options.in.length}`);
+  }
+  if (options.in && options.in.length === 1 && restPositionals.length > 0) {
+    throw new Error(`Command "${command}" received both --in and a positional input path`);
+  }
+  const inputPath = options.in?.[0] ?? restPositionals[0];
+  return requireOption(inputPath, 'in');
 }
 
 function writeAtomic(filePath, content) {
@@ -150,9 +219,14 @@ export function runCli(argv) {
       return { exitCode: 0, stdout: USAGE, stderr: '' };
     }
 
+    if (!Object.prototype.hasOwnProperty.call(ALLOWED_OPTIONS_BY_COMMAND, command)) {
+      throw new Error(`Unknown command "${command}". Run "onekey-release-sign --help" for usage.`);
+    }
+
     const gpgHome = options['gpg-home'];
 
     if (command === 'doctor') {
+      validateCommandOptions(command, options, restPositionals, { maxPositionals: 0 });
       const report = checkDoctor({ gpgHome });
       const stdout = options.json
         ? `${JSON.stringify(report, null, 2)}\n`
@@ -165,6 +239,7 @@ export function runCli(argv) {
     }
 
     if (command === 'checksum') {
+      validateCommandOptions(command, options, restPositionals, { maxPositionals: 0 });
       const artifacts = requireOption(options.artifact, 'artifact');
       const { content, entries } = createSha256SumsPayload(artifacts);
       if (options.out) {
@@ -179,10 +254,10 @@ export function runCli(argv) {
     }
 
     if (command === 'inspect') {
-      const inputPath = options.in?.[0] ?? restPositionals[0];
-      requireOption(inputPath, 'in');
+      validateCommandOptions(command, options, restPositionals, { maxPositionals: 1 });
+      const inputPath = resolveSingleInput(options, restPositionals, command);
       const raw = fs.readFileSync(inputPath, 'utf8');
-      const artifactPath = options.artifact?.[0];
+      const artifactPaths = options.artifact ?? [];
 
       let isSigned = false;
       let packetCount = 0;
@@ -196,7 +271,7 @@ export function runCli(argv) {
         plainBody = parsed.plainBody;
       }
 
-      const payload = inspectReleasePayload(plainBody, { artifactPath });
+      const payload = inspectReleasePayload(plainBody, { artifactPaths });
       const summary = {
         file: inputPath,
         signed: isSigned,
@@ -204,28 +279,26 @@ export function runCli(argv) {
         hashes,
         payload,
       };
-      const stdout = options.json
-        ? `${JSON.stringify(summary, null, 2)}\n`
-        : `${JSON.stringify(summary, null, 2)}\n`;
-      return { exitCode: 0, stdout, stderr: '' };
+      return { exitCode: 0, stdout: `${JSON.stringify(summary, null, 2)}\n`, stderr: '' };
     }
 
     if (command === 'sign') {
-      const inputPath = options.in?.[0] ?? restPositionals[0];
-      requireOption(inputPath, 'in');
-      const rawBody = fs.readFileSync(inputPath, 'utf8');
-      const artifactPath = options.artifact?.[0];
-      // Verify payload schema & optional artifact SHA-256 BEFORE invoking YubiKey.
-      const payload = inspectReleasePayload(rawBody, { artifactPath });
+      validateCommandOptions(command, options, restPositionals, { maxPositionals: 1 });
+      const inputPath = resolveSingleInput(options, restPositionals, command);
+      // Read ONE immutable byte snapshot, validate it against all supplied
+      // artifacts, then pipe those exact bytes to GnuPG via stdin (no TOCTOU).
+      const inputSnapshot = fs.readFileSync(inputPath);
+      const rawBody = inputSnapshot.toString('utf8');
+      const artifactPaths = options.artifact ?? [];
+      const payload = inspectReleasePayload(rawBody, { artifactPaths });
 
       const digestAlgo = (options['digest-algo'] ?? 'SHA256').toUpperCase();
       const signed = signCleartext({
-        inputPath,
+        inputBytes: inputSnapshot,
         keyId: options.key,
         digestAlgo,
         gpgHome,
         batch: Boolean(options.batch),
-        passphrase: options.passphrase,
       });
 
       if (options.out) {
@@ -250,6 +323,7 @@ export function runCli(argv) {
     }
 
     if (command === 'merge') {
+      validateCommandOptions(command, options, restPositionals, { maxPositionals: 0 });
       const inputs = requireOption(options.in, 'in');
       const threshold = parseThreshold(options.threshold, 2);
       const signedTexts = inputs.map((filePath) => fs.readFileSync(filePath, 'utf8'));
@@ -262,7 +336,7 @@ export function runCli(argv) {
         minSignatures: threshold,
       });
 
-      const artifactPath = options.artifact?.[0];
+      const artifactPaths = options.artifact ?? [];
       let verification = null;
       if (options.keyring && options.keyring.length > 0) {
         verification = verifyMultisigCleartext({
@@ -270,11 +344,13 @@ export function runCli(argv) {
           keyringFiles: options.keyring,
           threshold,
           allowedFingerprints: options['allow-fingerprint'] ?? [],
-          artifactPath,
+          artifactPaths,
         });
       } else {
-        // Still validate payload schema & artifact binding even without keyring.
-        inspectReleasePayload(merged.plainBody, { artifactPath });
+        if (options['allow-fingerprint'] && options['allow-fingerprint'].length > 0) {
+          throw new Error('--allow-fingerprint requires --keyring during merge');
+        }
+        inspectReleasePayload(merged.plainBody, { artifactPaths });
       }
 
       if (options.out) {
@@ -300,19 +376,19 @@ export function runCli(argv) {
     }
 
     if (command === 'verify') {
-      const inputPath = options.in?.[0] ?? restPositionals[0];
-      requireOption(inputPath, 'in');
+      validateCommandOptions(command, options, restPositionals, { maxPositionals: 1 });
+      const inputPath = resolveSingleInput(options, restPositionals, command);
       const keyrings = requireOption(options.keyring, 'keyring');
       const threshold = parseThreshold(options.threshold, 2);
       const signedText = fs.readFileSync(inputPath, 'utf8');
-      const artifactPath = options.artifact?.[0];
+      const artifactPaths = options.artifact ?? [];
 
       const result = verifyMultisigCleartext({
         signedText,
         keyringFiles: keyrings,
         threshold,
         allowedFingerprints: options['allow-fingerprint'] ?? [],
-        artifactPath,
+        artifactPaths,
       });
 
       const stdout = options.json
@@ -320,12 +396,10 @@ export function runCli(argv) {
         : [
             `OK: Verified ${result.uniqueSignerCount} distinct trusted signer(s) (threshold=${result.threshold})`,
             ...result.primaryFingerprints.map((fpr, idx) => `  Signer ${idx + 1}: ${fpr}`),
-            result.payload.artifactCheck
-              ? `  Artifact: ${result.payload.artifactCheck.fileName} (sha256=${result.payload.artifactCheck.sha256})`
-              : null,
-          ]
-            .filter(Boolean)
-            .join('\n') + '\n';
+            ...result.payload.artifactChecks.map(
+              (check) => `  Artifact: ${check.fileName} (sha256=${check.sha256})`,
+            ),
+          ].join('\n') + '\n';
       return { exitCode: 0, stdout, stderr: '' };
     }
 

@@ -10,7 +10,11 @@ import {
   verifyMultisigCleartext,
 } from '../src/gpg.mjs';
 import { mergeCleartextSignatures } from '../src/openpgp.mjs';
-import { createSha256SumsPayload, sha256File } from '../src/payload.mjs';
+import {
+  createSha256SumsPayload,
+  inspectReleasePayload,
+  sha256File,
+} from '../src/payload.mjs';
 
 function runGpgInHome(gpgHome, args, input) {
   return execFileSync('gpg', args, {
@@ -105,8 +109,7 @@ test('End-to-end 2-of-3 GPG multisig merge and verify for OTA metadata.json.info
     );
     const metadataSha256 = sha256File(metadataJsonPath);
     const metadataInfoPath = path.join(tmpRoot, 'electron.metadata.json.info');
-    fs.writeFileSync(
-      metadataInfoPath,
+    const metadataInfoContent =
       JSON.stringify(
         {
           fileName: 'metadata.json',
@@ -120,9 +123,8 @@ test('End-to-end 2-of-3 GPG multisig merge and verify for OTA metadata.json.info
         },
         null,
         2,
-      ) + '\n',
-      'utf8',
-    );
+      ) + '\n';
+    fs.writeFileSync(metadataInfoPath, metadataInfoContent, 'utf8');
 
     // 3. Signer A and Signer B sign independently
     const sigA = signCleartext({
@@ -138,8 +140,10 @@ test('End-to-end 2-of-3 GPG multisig merge and verify for OTA metadata.json.info
       batch: true,
     });
 
-    // 4. Merge into ONE standard RFC 4880 .asc file
-    const merged = mergeCleartextSignatures([sigA.armored, sigB.armored]);
+    // 4. Merge into ONE standard RFC 4880 .asc file, passing the original newline-terminated payload!
+    const merged = mergeCleartextSignatures([sigA.armored, sigB.armored], {
+      expectedBody: metadataInfoContent,
+    });
     assert.equal(merged.packetCount, 2);
 
     // 5. Verify with threshold=2 + artifact binding
@@ -242,11 +246,13 @@ test('End-to-end 2-of-3 GPG multisig merge and verify for OTA metadata.json.info
       /Artifact SHA-256 mismatch/,
     );
 
-    // 12. Full-release SHA256SUMS.asc end-to-end flow
-    const installerPath = path.join(tmpRoot, 'OneKey-Wallet-6.8.0-mac-arm64.zip');
-    fs.writeFileSync(installerPath, 'fake-installer-binary-content-v6.8.0', 'utf8');
-    const sums = createSha256SumsPayload([installerPath]);
-    const sumsPath = path.join(tmpRoot, 'OneKey-Wallet-6.8.0-mac-arm64.zip.SHA256SUMS');
+    // 12. Full-release multi-artifact SHA256SUMS.asc end-to-end flow (including --payload round-trip)
+    const installerMac = path.join(tmpRoot, 'OneKey-Wallet-6.8.0-mac-arm64.zip');
+    const installerApk = path.join(tmpRoot, 'OneKey-Wallet-6.8.0-android.apk');
+    fs.writeFileSync(installerMac, 'fake-installer-mac-v6.8.0', 'utf8');
+    fs.writeFileSync(installerApk, 'fake-installer-apk-v6.8.0', 'utf8');
+    const sums = createSha256SumsPayload([installerMac, installerApk]);
+    const sumsPath = path.join(tmpRoot, 'SHA256SUMS');
     fs.writeFileSync(sumsPath, sums.content, 'utf8');
 
     const sumSigA = signCleartext({
@@ -261,17 +267,44 @@ test('End-to-end 2-of-3 GPG multisig merge and verify for OTA metadata.json.info
       gpgHome,
       batch: true,
     });
-    const sumMerged = mergeCleartextSignatures([sumSigA.armored, sumSigB.armored]);
+    const sumMerged = mergeCleartextSignatures([sumSigA.armored, sumSigB.armored], {
+      expectedBody: sums.content,
+    });
     const sumVerified = verifyMultisigCleartext({
       signedText: sumMerged.armored,
       keyringFiles: [trustedRingFile],
       threshold: 2,
-      artifactPath: installerPath,
+      artifactPaths: [installerMac, installerApk],
     });
     assert.equal(sumVerified.valid, true);
     assert.equal(sumVerified.uniqueSignerCount, 2);
     assert.equal(sumVerified.payload.kind, 'sha256sums');
-    assert.equal(sumVerified.payload.artifactCheck.matched, true);
+    assert.equal(sumVerified.payload.artifactChecks.length, 2);
+
+    // Tampering ONLY the 2nd artifact MUST fail verification when both are passed
+    fs.writeFileSync(installerApk, 'tampered-apk-v6.8.0', 'utf8');
+    assert.throws(
+      () =>
+        verifyMultisigCleartext({
+          signedText: sumMerged.armored,
+          keyringFiles: [trustedRingFile],
+          threshold: 2,
+          artifactPaths: [installerMac, installerApk],
+        }),
+      /Artifact SHA-256 mismatch for OneKey-Wallet-6.8.0-android.apk/,
+    );
+
+    // 13. Filename rule consistency: spaces in artifact names rejected at both generation and parsing
+    const spaceFile = path.join(tmpRoot, 'OneKey Wallet 6.8.0.zip');
+    fs.writeFileSync(spaceFile, 'binary-data', 'utf8');
+    assert.throws(
+      () => createSha256SumsPayload([spaceFile]),
+      /Unsupported release artifact filename/,
+    );
+    assert.throws(
+      () => inspectReleasePayload(`${'a'.repeat(64)}  OneKey Wallet 6.8.0.zip\n`),
+      /Unsupported release artifact filename/,
+    );
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

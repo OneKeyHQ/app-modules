@@ -6,6 +6,30 @@ const HEX64_RE = /^[a-f0-9]{64}$/u;
 const ALLOWED_APP_TYPES = new Set(['electron', 'ios', 'android']);
 
 /**
+ * Validate a release artifact basename against the shared rule supported by
+ * OneKey's downstream Desktop/iOS/Android SHA256SUMS verifiers (no path
+ * separators, no traversal, no whitespace, no control characters).
+ * @param {string} fileName
+ */
+export function assertSafeReleaseFileName(fileName) {
+  if (
+    typeof fileName !== 'string' ||
+    !fileName ||
+    fileName === '.' ||
+    fileName === '..' ||
+    fileName.includes('..') ||
+    fileName.includes('/') ||
+    fileName.includes('\\') ||
+    /\s/u.test(fileName) ||
+    /[\x00-\x1f\x7f]/u.test(fileName)
+  ) {
+    throw new Error(
+      `Unsupported release artifact filename "${String(fileName)}": filenames must be single-segment basenames without spaces, path separators, or control characters`,
+    );
+  }
+}
+
+/**
  * Compute lowercase hex SHA-256 digest of a file using streaming reads.
  * @param {string} filePath
  * @returns {string}
@@ -36,7 +60,7 @@ export function sha256File(filePath) {
 }
 
 /**
- * Generate a canonical SHA256SUMS line for one or more full-release artifacts.
+ * Generate a canonical SHA256SUMS payload for one or more full-release artifacts.
  * @param {string[]} artifactPaths
  * @returns {{ content: string, entries: Array<{ fileName: string, sha256: string, path: string }> }}
  */
@@ -48,9 +72,7 @@ export function createSha256SumsPayload(artifactPaths) {
   const seenNames = new Set();
   for (const artifactPath of artifactPaths) {
     const fileName = path.basename(artifactPath);
-    if (!fileName || fileName === '.' || fileName === '..') {
-      throw new Error(`Unsafe artifact filename: ${artifactPath}`);
-    }
+    assertSafeReleaseFileName(fileName);
     if (seenNames.has(fileName)) {
       throw new Error(`Duplicate artifact filename in checksum list: ${fileName}`);
     }
@@ -62,18 +84,31 @@ export function createSha256SumsPayload(artifactPaths) {
   return { content, entries };
 }
 
+function normalizeArtifactPaths({ artifactPath, artifactPaths } = {}) {
+  const paths = [];
+  if (Array.isArray(artifactPaths)) {
+    paths.push(...artifactPaths);
+  }
+  if (artifactPath) {
+    paths.push(artifactPath);
+  }
+  return paths;
+}
+
 /**
  * Parse and validate an unsigned OneKey release payload (`metadata.json.info`
- * JSON or `SHA256SUMS` text) and optionally verify it against a local artifact.
+ * JSON or `SHA256SUMS` text) and verify every supplied local artifact path.
  *
  * @param {string} plainBody
- * @param {{ artifactPath?: string }} [options]
+ * @param {{ artifactPath?: string, artifactPaths?: string[] }} [options]
  */
-export function inspectReleasePayload(plainBody, { artifactPath } = {}) {
+export function inspectReleasePayload(plainBody, options = {}) {
   const trimmed = plainBody.trim();
   if (!trimmed) {
     throw new Error('Release payload body is empty');
   }
+
+  const allArtifactPaths = normalizeArtifactPaths(options);
 
   if (trimmed.startsWith('{')) {
     let parsed;
@@ -107,20 +142,27 @@ export function inspectReleasePayload(plainBody, { artifactPath } = {}) {
       throw new Error('Missing bundleVersion in metadata.json.info');
     }
 
-    let artifactCheck = null;
-    if (artifactPath) {
-      const actualSha256 = sha256File(artifactPath);
+    if (allArtifactPaths.length > 1) {
+      throw new Error(
+        `metadata.json.info binds a single metadata.json artifact, but ${allArtifactPaths.length} --artifact flags were provided`,
+      );
+    }
+
+    const artifactChecks = [];
+    if (allArtifactPaths.length === 1) {
+      const targetPath = allArtifactPaths[0];
+      const actualSha256 = sha256File(targetPath);
       if (actualSha256 !== sha256) {
         throw new Error(
-          `Artifact SHA-256 mismatch for ${artifactPath}: expected ${sha256}, actual ${actualSha256}`,
+          `Artifact SHA-256 mismatch for ${targetPath}: expected ${sha256}, actual ${actualSha256}`,
         );
       }
-      artifactCheck = {
-        path: artifactPath,
-        fileName: path.basename(artifactPath),
+      artifactChecks.push({
+        path: targetPath,
+        fileName: path.basename(targetPath),
         sha256: actualSha256,
         matched: true,
-      };
+      });
     }
 
     return {
@@ -133,38 +175,41 @@ export function inspectReleasePayload(plainBody, { artifactPath } = {}) {
       appType: parsed.appType,
       size: parsed.size ?? null,
       generatedAt: parsed.generatedAt ?? null,
-      artifactCheck,
+      artifactCheck: artifactChecks[0] ?? null,
+      artifactChecks,
     };
   }
 
-  // Otherwise parse as SHA256SUMS format: "<64-hex>  <filename>"
+  // Otherwise parse as SHA256SUMS format: "<64-hex>  [*]<filename>"
   const lines = trimmed
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter(Boolean);
   const entries = [];
   for (const line of lines) {
-    const tokens = line.split(/\s+/u);
-    if (tokens.length < 2) {
-      throw new Error(`Invalid SHA256SUMS line (expected "<sha256>  <filename>"): ${line}`);
+    const match = /^([a-fA-F0-9]{64})[ \t]+\*?(.+)$/u.exec(line);
+    if (!match) {
+      throw new Error(`Invalid SHA256SUMS line (expected "<64-hex-sha256>  <filename>"): ${line}`);
     }
-    const digest = tokens[0].toLowerCase();
-    if (!HEX64_RE.test(digest)) {
-      throw new Error(`Invalid SHA-256 hex digest in SHA256SUMS line: ${line}`);
-    }
-    const rawName = tokens[1].replace(/^\*/u, '');
-    if (rawName.includes('..') || rawName.includes('/') || rawName.includes('\\')) {
-      throw new Error(`Unsafe path in SHA256SUMS filename: ${rawName}`);
-    }
+    const digest = match[1].toLowerCase();
+    const rawName = match[2];
+    assertSafeReleaseFileName(rawName);
     entries.push({ sha256: digest, fileName: rawName });
   }
   if (entries.length === 0) {
     throw new Error('No checksum entries found in SHA256SUMS payload');
   }
 
-  let artifactCheck = null;
-  if (artifactPath) {
-    const targetName = path.basename(artifactPath);
+  const artifactChecks = [];
+  const seenTargets = new Set();
+  for (const targetPath of allArtifactPaths) {
+    const targetName = path.basename(targetPath);
+    assertSafeReleaseFileName(targetName);
+    if (seenTargets.has(targetName)) {
+      throw new Error(`Duplicate --artifact filename provided: ${targetName}`);
+    }
+    seenTargets.add(targetName);
+
     const matching = entries.filter((entry) => entry.fileName === targetName);
     if (matching.length === 0) {
       throw new Error(
@@ -176,23 +221,24 @@ export function inspectReleasePayload(plainBody, { artifactPath } = {}) {
       throw new Error(`Conflicting SHA-256 entries for "${targetName}" in SHA256SUMS`);
     }
     const expectedSha256 = matching[0].sha256;
-    const actualSha256 = sha256File(artifactPath);
+    const actualSha256 = sha256File(targetPath);
     if (actualSha256 !== expectedSha256) {
       throw new Error(
         `Artifact SHA-256 mismatch for ${targetName}: expected ${expectedSha256}, actual ${actualSha256}`,
       );
     }
-    artifactCheck = {
-      path: artifactPath,
+    artifactChecks.push({
+      path: targetPath,
       fileName: targetName,
       sha256: actualSha256,
       matched: true,
-    };
+    });
   }
 
   return {
     kind: 'sha256sums',
     entries,
-    artifactCheck,
+    artifactCheck: artifactChecks[0] ?? null,
+    artifactChecks,
   };
 }
