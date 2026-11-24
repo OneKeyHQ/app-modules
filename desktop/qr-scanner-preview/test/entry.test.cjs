@@ -73,7 +73,9 @@ test("packaged root supports named ESM imports on both platforms", (t) => {
       exports.decodeImage = () => ${JSON.stringify(platform)};
       exports.listCameras = () => [];
       exports.createCapture = () => ({});
-    `);
+    ` + (platform === "win32"
+      ? 'exports.shouldFallbackToWeb = (error) => error.code === "preview-unavailable";'
+      : ""));
   }
   for (const file of ["package.json", "index.cjs"]) {
     copyFileSync(join(staged, file), join(pkg, file));
@@ -84,7 +86,12 @@ test("packaged root supports named ESM imports on both platforms", (t) => {
     assert.equal(decodeImage(), process.platform);
     assert.deepEqual(listCameras(), []);
     assert.deepEqual(createCapture(), {});
-    assert.equal(shouldFallbackToWeb, undefined);
+    if (process.platform === "win32") {
+      assert.equal(shouldFallbackToWeb({ code: "preview-unavailable" }), true);
+      assert.equal(shouldFallbackToWeb({ code: "no-camera" }), false);
+    } else {
+      assert.equal(shouldFallbackToWeb, undefined);
+    }
   `);
 
   for (const platform of ["darwin", "win32"]) {
