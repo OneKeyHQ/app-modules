@@ -234,7 +234,7 @@ meaning is defined in the [catalog](ROW_TEMPLATES.md).
 
 Every text role listed below accepts the same `NativeListTextStyle`:
 `token`, `fontSize`, `fontWeight`, `color`, `lineHeight`, `lines`, `truncate`,
-`alignment`, `verticalAlignment`, `offsetY`.
+`alignment`, `verticalAlignment`, `offsetY`, `letterSpacing`, `tabularNumbers`.
 Weights are `regular | medium | semibold | bold`; line counts are `1 | 2 | 3`;
 `start | center | end` alignment follows layout direction on all three
 platforms (`end` is the left edge in RTL). Colors must be
@@ -285,6 +285,10 @@ content; `lineGap` separates content text rows (primary/secondary per data colum
 for activity, the native failure label or rich title badges; Web has no activity
 badge target);
 `trailingGap` separates trailing values/controls (title/badge to status for rail).
+For identity those are the trailing accessories: a `valuePair` is one accessory,
+so the gap sits between it and its neighbours and never between its two lines,
+on every platform. For activity the gap separates `primaryAmount` from
+`secondaryAmount`.
 `walletGroup` padding applies only to the group; it never cascades into members.
 Composite metric-card `lineGap` separates heading/metric blocks and dividers; it
 does not change the typography or inner label/value gap of each metric.
@@ -359,6 +363,8 @@ style: {
 | `alignment` | Horizontal `start / center / end` inside the text region, respecting direction |
 | `verticalAlignment` | `top / center / bottom` for the complete text block inside its allocated text region; no effect without spare height |
 | `offsetY` | `-8…8` logical units of optical translation; does not change measurement, sibling spacing or hit areas |
+| `letterSpacing` | `-4…10` logical units between glyphs. iOS sets `.kern`, so an explicit `0` also turns off pair kerning, matching React Native `letterSpacing: 0`; Android converts to em of the current text size and adds `'kern' 0`, matching React Native text there too; Web sets CSS `letter-spacing`. Omission keeps each platform's existing tracking |
+| `tabularNumbers` | `true` draws equal-width digits, as the App's `SizableText` does by default: iOS swaps each run to the monospaced-number font feature, Android sets `tnum`, Web sets `font-variant-numeric: tabular-nums`. `false` explicitly selects proportional digits. Omission keeps each template's current digits, including selector defaults |
 
 Single-line text does not wrap; explicit CR/LF line breaks become spaces (CRLF is
 one break). Multi-line text wraps naturally, preserves explicit breaks, and
@@ -535,6 +541,9 @@ defaults applied when `style` is absent.
 | image radius | 10 | 10 | dp(10) | 10px **=** |
 | tile radius | 16 | 16 | 16 | 16px **=** |
 | network badge | 14 | 14×14, r7 | dp(14), circle | 14px, r50% **=** |
+| placeholder glyph | 28% of width, max 44 | CAShapeLayer | Canvas path | inline SVG **=** |
+| loading sheen | 60% wide, -12°, 1.6s | CAKeyframeAnimation | `postInvalidateOnAnimation` | CSS keyframes **=** |
+| failed hatch | 1 / 7, 135°, 4.5% | CAShapeLayer + radial mask | `saveLayer` + `DST_IN` | repeating gradient + mask **=** |
 
 ### metricCard
 
@@ -562,6 +571,10 @@ model fields, whatever the renderer's internal view names are.
 | `history` | `$bodySm` | 12 semibold / 16, tracking 0.8 | sp(12) semibold / dp(16), tracking 0.8 | 12px / 16px **=** |
 | table layout | `$bodyXs` | 11 regular / 14 | sp(11) regular / dp(14) | — |
 | `value` | `$bodyLg` | 16 / 24 | sp(16) medium / dp(24) | 14px / 20px / 500 **≠** |
+
+Android history titles keep their default tracking when `style.title` omits
+`letterSpacing`. Web network selector success badges inherit tabular numerals
+from the section, independently of explicit digit styles on the title or value.
 
 ### action
 

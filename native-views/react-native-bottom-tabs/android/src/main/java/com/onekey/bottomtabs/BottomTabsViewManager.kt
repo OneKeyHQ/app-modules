@@ -35,8 +35,8 @@ class BottomTabsViewManager(context: ReactApplicationContext) :
       eventDispatcher?.dispatchEvent(PageSelectedEvent(surfaceId, view.id, key))
     }
 
-    view.onTabDoublePressedListener = { key ->
-      eventDispatcher?.dispatchEvent(TabDoublePressEvent(surfaceId, view.id, key))
+    view.onTabDoublePressedListener = { key, didScrollToTop ->
+      eventDispatcher?.dispatchEvent(TabDoublePressEvent(surfaceId, view.id, key, didScrollToTop))
     }
 
     view.onNativeLayoutListener = { width, height ->
@@ -207,9 +207,10 @@ class BottomTabsViewManager(context: ReactApplicationContext) :
   }
 
   // iOS-only props (no-ops on Android)
-  // selectedIcons feeds UITabBarItem.selectedImage on iOS; Android keeps
-  // swapping the icon in JS via the focusedKey-driven `icons` array.
-  override fun setSelectedIcons(view: BottomTabsView?, value: ReadableArray?) {}
+  override fun setSelectedIcons(view: BottomTabsView?, value: ReadableArray?) {
+    if (view != null)
+      view.setSelectedIcons(value)
+  }
   override fun setTranslucent(view: BottomTabsView?, value: Boolean) {}
   override fun setSidebarAdaptable(view: BottomTabsView?, value: Boolean) {}
   override fun setScrollEdgeAppearance(view: BottomTabsView?, value: String?) {}

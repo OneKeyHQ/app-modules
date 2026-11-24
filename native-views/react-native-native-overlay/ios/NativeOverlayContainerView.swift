@@ -1,6 +1,22 @@
 import React
 import UIKit
 
+final class NativeOverlayPageSheetPan: UIPanGestureRecognizer {
+  var dismissalAllowed = false {
+    didSet { updateAvailability() }
+  }
+  private var reorderSuppressions = 0
+
+  @objc func setOneKeyNativeListReorderSuppressed(_ suppressed: NSNumber) {
+    reorderSuppressions = max(0, reorderSuppressions + (suppressed.boolValue ? 1 : -1))
+    updateAvailability()
+  }
+
+  private func updateAvailability() {
+    isEnabled = dismissalAllowed && reorderSuppressions == 0
+  }
+}
+
 /// One overlay inside a level window: backdrop plus the reparented content.
 final class NativeOverlayEntryView: UIView {
   let backdropView = UIView()
@@ -22,7 +38,7 @@ final class NativeOverlayEntryView: UIView {
   /// Page scope cannot use UIKit sheets (they always cover the window), so a
   /// page sheet is this entry's content view pinned to the bottom.
   private(set) var pageSheetHeight: CGFloat?
-  private var pageSheetPan: UIPanGestureRecognizer?
+  private var pageSheetPan: NativeOverlayPageSheetPan?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -93,12 +109,12 @@ final class NativeOverlayEntryView: UIView {
     contentView.clipsToBounds = true
     contentView.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
     layoutPageSheet()
-    if draggable, pageSheetPan == nil {
-      let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePageSheetPan(_:)))
+    if pageSheetPan == nil {
+      let pan = NativeOverlayPageSheetPan(target: self, action: #selector(handlePageSheetPan(_:)))
       contentView.addGestureRecognizer(pan)
       pageSheetPan = pan
     }
-    pageSheetPan?.isEnabled = draggable
+    pageSheetPan?.dismissalAllowed = draggable
   }
 
   /// Layout changed (rotation, page sheet height); the owner re-reports
@@ -470,6 +486,12 @@ final class NativeOverlayEntryView: UIView {
       contentExtent: entry.contentExtent(),
       bounds: entry.bounds
     )
+    // A fade-free exit does not animate alpha. If the fade-in was interrupted,
+    // the card would otherwise stay partly transparent and show the content
+    // behind it for the whole scale-out (OK-66647).
+    if !transition.hidesOpacity {
+      entry.contentView.alpha = 1
+    }
     let contentAnimator = transition.motion.makeAnimator()
     contentAnimator.addAnimations {
       if transition.hidesOpacity {

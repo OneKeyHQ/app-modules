@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-get-random-values",
-  "version": "6.7.0-26",
+  "version": "6.8.0-1",
   "description": "react-native-get-random-values",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -94,6 +94,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
+    "@onekeyfe/react-native-native-logger": "*",
     "expo": "*",
     "react": "*",
     "react-native": "*",

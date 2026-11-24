@@ -14,6 +14,7 @@ function run(command, args) {
 // Only external Android/Nitro/SLF4J/logback declarations are adapters. The entire
 // production logger, including formatting and all redaction rules, is compiled unchanged.
 const stubs = {
+  Clock: 'package android.os\nobject SystemClock { fun elapsedRealtime():Long=error("Unexpected clock access") }',
   Context: 'package android.content\nclass Context { val cacheDir:java.io.File get()=error("Unexpected cache IO") }',
   Nitro: 'package com.margelo.nitro\nobject NitroModules { val applicationContext:android.content.Context? get()=error("Unexpected cache IO") }',
   Log: `package android.util
@@ -64,7 +65,8 @@ try {
     const swift = join(output, 'main.swift');
     writeFileSync(swift, readFileSync(join(logger, 'ios/OneKeyLog.swift'), 'utf8') + readFileSync(join(__dirname, 'logger/Format.swift'), 'utf8'));
     run('xcrun', ['swiftc', '-I', output, '-L', output, '-lCocoaLumberjack', '-Xlinker', '-rpath', '-Xlinker', output,
-      swift, '-o', join(output, 'swift-format')]);
+      swift, join(logger, '../react-native-sni-connect/ios/SniConnectLog.swift'),
+      '-o', join(output, 'swift-format')]);
     console.log(run(join(output, 'swift-format'), [iosMessages]));
   }
   if (mode !== '--swift') {
@@ -73,6 +75,7 @@ try {
     });
     const jar = join(output, 'kotlin-format.jar');
     run('kotlinc', [...declarations, join(logger, 'android/src/main/java/com/margelo/nitro/nativelogger/OneKeyLog.kt'),
+      join(logger, '../react-native-sni-connect/android/src/main/java/com/sniconnect/SniConnectLogger.kt'),
       join(__dirname, 'logger/Format.kt'), '-nowarn', '-include-runtime', '-d', jar]);
     console.log(run('java', ['-jar', jar, jniMessages]));
   }

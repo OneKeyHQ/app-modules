@@ -486,11 +486,16 @@ enum OneKeyImageCoderRegistry {
 
 enum OneKeyImagePipeline {
   static let downloader = SDWebImageDownloader(config: nil)
-  static let manager = SDWebImageManager(cache: SDImageCache.shared, loader: downloader)
+  static let cache: SDImageCache = {
+    let cache = SDImageCache.shared
+    cache.config.maxDiskSize = 320 * 1024 * 1024
+    return cache
+  }()
+  static let manager = SDWebImageManager(cache: cache, loader: downloader)
 
   static func makeIsolatedManager() -> SDWebImageManager {
     SDWebImageManager(
-      cache: SDImageCache.shared,
+      cache: cache,
       loader: SDWebImageDownloader(config: nil)
     )
   }
@@ -766,6 +771,15 @@ enum OneKeyImageRequestContext {
     if let thumbnailPixelSize {
       for (key, value) in thumbnailOptions(pixelSize: thumbnailPixelSize) {
         context[key] = value
+      }
+      if let url,
+        let scheme = url.scheme?.lowercased(),
+        ["http", "https", "file"].contains(scheme)
+      {
+        let scale = SDImageScaleFactorForKey(url.absoluteString)
+        if scale.isFinite, scale > 1 {
+          context[.imageScaleFactor] = NSNumber(value: Double(scale))
+        }
       }
     }
 

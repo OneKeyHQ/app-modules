@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-bundle-update",
-  "version": "6.7.0-26",
+  "version": "6.8.0-1",
   "description": "Native JavaScript bundle download, verification and version management for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -90,6 +90,9 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
+    "@onekeyfe/react-native-bundle-crypto": "*",
+    "@onekeyfe/react-native-native-logger": "*",
+    "@onekeyfe/react-native-range-downloader": "*",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

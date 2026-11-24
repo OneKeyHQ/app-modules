@@ -784,50 +784,16 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       )
     }
   }
-  private func selectorTabularFont(_ font: UIFont) -> UIFont {
-    var settings =
-      font.fontDescriptor.fontAttributes[.featureSettings] as? [[UIFontDescriptor.FeatureKey: Int]]
-      ?? []
-    settings.removeAll { $0[.type] == kNumberSpacingType }
-    settings.append([.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector])
-    return UIFont(
-      descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]),
-      size: font.pointSize)
-  }
-  private func selectorTabularText(_ original: NSAttributedString) -> NSAttributedString {
-    let result = NSMutableAttributedString(attributedString: original)
-    // OneKey patch: body typography explicitly supplies letterSpacing=0 in Tamagui.
-    result.addAttribute(.kern, value: 0, range: NSRange(location: 0, length: result.length))
-    original.enumerateAttribute(.font, in: NSRange(location: 0, length: original.length)) {
-      value, range, _ in
-      if let font = value as? UIFont {
-        result.addAttribute(.font, value: self.selectorTabularFont(font), range: range)
-      }
-    }
-    return result
-  }
   private func applySelectorTypography(_ item: NativeListItem) {
-    guard
-      ["accountSelector", "networkSelector", "walletSidebar"].contains(
-        item.data.string("presentation"))
-    else { return }
-    func visit(_ view: UIView) {
-      if let button = view as? UIButton {
-        if let original = button.attributedTitle(for: .normal) {
-          selectorTypographyRestorers.append { button.setAttributedTitle(original, for: .normal) }
-          button.setAttributedTitle(selectorTabularText(original), for: .normal)
-        }
-      } else if let label = view as? UILabel, let font = label.font {
-        let original = label.attributedText
-        selectorTypographyRestorers.append {
-          label.font = font
-          label.attributedText = original
-        }
-        label.font = selectorTabularFont(font)
-        if let original { label.attributedText = selectorTabularText(original) }
-      }
-      for child in view.subviews { visit(child) }
+    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(
+      item.data.string("presentation")
+    ) else { return }
+    let style = item.data.dictionary("style") ?? [:]
+    selectorTypographyRestorers = NativeListTextStyles.applySelectorDefaults(in: contentView) { view in
+      if view === titleLabel { return style.dictionary("title") }
+      if view === subtitleLabel { return style.dictionary("subtitle") }
+      if view === accessoryButtons[0] { return style.dictionary("value") }
+      return nil
     }
-    visit(contentView)
   }
 }

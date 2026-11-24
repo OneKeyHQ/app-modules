@@ -40,6 +40,9 @@ FOUNDATION_EXPORT NSString *const JCOREPolicyDidChangeNotification;
 @property (nonatomic, assign, readonly) NSUInteger policyGeneration;
 @property (nonatomic, assign, readonly) BOOL policyAllowsPush;
 - (BOOL)allowsPolicyGeneration:(NSUInteger)generation;
+- (void)resumePushLocally;
+- (BOOL)hasPendingPushResumeForAppKey:(NSString *)appKey;
+- (void)acknowledgePushResumeForAppKey:(NSString *)appKey policyGeneration:(NSUInteger)generation;
 @property (nonatomic, assign) BOOL debugEnabled;
 @property (nonatomic, assign) BOOL logOff;
 @property (nonatomic, assign) BOOL localLogEnabled;
@@ -68,6 +71,7 @@ FOUNDATION_EXPORT NSString *const JCOREPolicyDidChangeNotification;
 // Persisted SIS resolution state
 @property (nonatomic, copy, readonly) NSArray<NSString *> *ips;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *sslIps;
+@property (nonatomic, assign, readonly) BOOL cachedSslIpsRequireTls;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *sisIps;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *httpReportAddresses;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *httpsReportAddresses;
@@ -99,6 +103,12 @@ FOUNDATION_EXPORT NSString *const JCOREPolicyDidChangeNotification;
 - (void)resetRegistration;
 
 - (void)updateWithSisDictionary:(NSDictionary *)sisDict;
+- (BOOL)commitSisDictionary:(NSDictionary *)sisDict
+                  addresses:(NSArray<NSString *> *)addresses
+                  udpServer:(nullable NSString *)udpServer
+                  customSis:(BOOL)customSis
+                     appKey:(NSString *)appKey
+           policyGeneration:(NSUInteger)generation;
 - (void)addFailedIp:(NSString *)ipPort;
 - (void)clearFailedIps;
 - (void)addLastSuccessSisIp:(NSString *)ipPort;

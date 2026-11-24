@@ -49,7 +49,8 @@ public final class OneKeyMediaPreviewCache {
   init(namespace: String = "onekey-media-preview-v1") {
     let config = SDImageCacheConfig()
     config.maxMemoryCost = 16 * 1024 * 1024; config.maxMemoryCount = 64
-    config.maxDiskSize = 64 * 1024 * 1024; config.maxDiskAge = 30 * 24 * 60 * 60
+    config.maxDiskSize = 128 * 1024 * 1024; config.maxDiskAge = 30 * 24 * 60 * 60
+    config.diskCacheExpireType = .accessDate
     cache = SDImageCache(namespace: namespace, diskCacheDirectory: nil, config: config)
   }
   static func storageKey(uri: String, headers: [String: String], edge: Int, fit: String) -> String {
@@ -83,17 +84,24 @@ public final class OneKeyMediaPreviewCache {
     let lookup = DispatchWorkItem { [weak self, weak flight] in
       guard let self, let flight, flight.lookupWorkItem?.isCancelled == false else { return }
       var image: UIImage?
-      if self.permitsDisk(policy), let path = self.cache.cachePath(forKey: storageKey),
-        let file = FileHandle(forReadingAtPath: path) {
-        defer { try? file.close() }
-        if let data = try? file.read(upToCount: 8 * 1024 * 1024 + 1), data.count <= 8 * 1024 * 1024,
-          let source = CGImageSourceCreateWithData(data as CFData, nil),
-          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-          let width = properties[kCGImagePropertyPixelWidth] as? Int,
-          let height = properties[kCGImagePropertyPixelHeight] as? Int,
-          (1...1024).contains(width), (1...1024).contains(height) {
-          let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-          image = CGImageSourceCreateImageAtIndex(source, 0, options).map { UIImage(cgImage: $0) }
+      if self.permitsDisk(policy), let path = self.cache.cachePath(forKey: storageKey) {
+        let url = URL(fileURLWithPath: path)
+        let accessDate = try? url.resourceValues(forKeys: [.contentAccessDateKey]).contentAccessDate
+        if let accessDate, accessDate > Date().addingTimeInterval(-self.cache.config.maxDiskAge),
+          let file = FileHandle(forReadingAtPath: path) {
+          defer { try? file.close() }
+          if let data = try? file.read(upToCount: 8 * 1024 * 1024 + 1), data.count <= 8 * 1024 * 1024,
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            (1...1024).contains(width), (1...1024).contains(height) {
+            let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+            image = CGImageSourceCreateImageAtIndex(source, 0, options).map { UIImage(cgImage: $0) }
+          }
+          if image != nil {
+            try? (url as NSURL).setResourceValue(Date(), forKey: .contentAccessDateKey)
+          }
         }
         if image == nil { self.cache.removeImageFromDisk(forKey: storageKey) }
       }

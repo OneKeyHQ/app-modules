@@ -3,6 +3,34 @@ import XCTest
 
 final class SniConnectValidationTests: XCTestCase {
 
+  func testUploadProgressKeepsMonotonicCountWithinBodyLength() {
+    let progress = SniConnectUploadProgress()
+    XCTAssertEqual(progress.snapshot(), ["bytesSent": 0, "totalBytes": 0])
+    progress.setTotal(10)
+    progress.record(4)
+    progress.record(1) // Delayed or lower transport callbacks cannot move it backward.
+    XCTAssertEqual(progress.snapshot(), ["bytesSent": 4, "totalBytes": 10])
+    progress.record(20)
+    XCTAssertEqual(progress.snapshot(), ["bytesSent": 10, "totalBytes": 10])
+  }
+
+  func testUnexpectedResolverHostIsLoggedInPlaintextAndStillRejected() throws {
+    let registry = SniConnectPinnedResolverRegistry()
+    let resolverClass: AnyClass = try registry.resolverClass(hostname: "example.com", ip: "93.184.216.34") {
+      NSObject.self
+    }
+    var messages: [String] = []
+    let previousSink = SniConnectCoreDiagnostics.warnSink
+    SniConnectCoreDiagnostics.warnSink = { messages.append($0) }
+    defer { SniConnectCoreDiagnostics.warnSink = previousSink }
+
+    XCTAssertNil(registry.resolve(domain: "Unexpected.example.com", resolverClass: resolverClass))
+    XCTAssertEqual(messages.count, 1)
+    XCTAssertTrue(messages[0].contains("requestedHost=unexpected.example.com"))
+    XCTAssertTrue(messages[0].contains("result=fail_closed"))
+    XCTAssertFalse(messages[0].contains("requestedHostHash="))
+  }
+
   func testSessionWithoutForwardingDataDelegateAllowsResponse() {
     switch SniConnectSessionDelegatePolicy.responseDispositionWithoutForwardingDelegate {
     case .allow:

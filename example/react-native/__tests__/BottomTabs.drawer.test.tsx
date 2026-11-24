@@ -1,5 +1,11 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 
 jest.mock(
@@ -25,11 +31,63 @@ jest.mock(
 
 import BottomTabs from '../../../native-views/react-native-bottom-tabs/src/BottomTabs';
 import DrawerWeb from '../../../native-views/react-native-bottom-tabs/src/BottomTabsDrawerNativeComponent.web';
+import NativeBottomTabs from '../../../native-views/react-native-bottom-tabs/src/BottomTabsNativeComponent';
 import { useBottomTabBarHeight } from '../../../native-views/react-native-bottom-tabs/src/utils/useBottomTabBarHeight';
 
 function HeightProbe() {
   return <Text testID="tab-height-probe">{useBottomTabBarHeight()}</Text>;
 }
+
+describe('iOS tab scene sizing', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+  afterEach(async () => {
+    await act(() => renderer?.unmount());
+  });
+
+  it.each(['native', 'custom'])(
+    'sizes every scene to the page with a %s bar',
+    async bar => {
+      await act(() => {
+        renderer = ReactTestRenderer.create(
+          <BottomTabs
+            navigationState={{
+              index: 0,
+              routes: [{ key: 'home' }, { key: 'styled' }, { key: 'lazy' }],
+            }}
+            getLazy={({ route }) => route.key === 'lazy'}
+            getSceneStyle={({ route }) =>
+              route.key === 'styled' ? { left: 24, width: 320 } : undefined
+            }
+            renderScene={() => <View />}
+            renderLazyPlaceholder={() => <View />}
+            onIndexChange={() => {}}
+            tabBar={bar === 'custom' ? () => <View /> : undefined}
+            tabBarHidden={false}
+          />,
+        );
+      });
+      const tabs = renderer!.root.findByType(NativeBottomTabs);
+      const sceneStyles = () =>
+        React.Children.toArray(tabs.props.children).map(scene =>
+          StyleSheet.flatten(
+            (scene as React.ReactElement<{ style: StyleProp<ViewStyle> }>).props
+              .style,
+          ),
+        );
+
+      expect(sceneStyles()[2]).toMatchObject({ width: '100%', height: '100%' });
+      await act(() => {
+        tabs.props.onNativeLayout({ nativeEvent: { width: 510, height: 640 } });
+      });
+      expect(sceneStyles()).toEqual([
+        { position: 'absolute', width: 510, height: 640 },
+        { position: 'absolute', left: 24, width: 320, height: 640 },
+        { position: 'absolute', width: 510, height: 640 },
+      ]);
+    },
+  );
+});
 
 describe('native drawer slots', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
@@ -72,7 +130,7 @@ describe('native drawer slots', () => {
     expect(drawer.props.enabled).toBe(false);
   });
 
-  it('forwards only the settled boolean, with native progress absent from the API', async () => {
+  it('forwards only the settled boolean, with native progress off unless requested', async () => {
     const onChange = jest.fn();
     await act(() => {
       renderer = ReactTestRenderer.create(
@@ -90,9 +148,52 @@ describe('native drawer slots', () => {
     const drawer = renderer!.root.findByType('NativeDrawer' as any);
     expect(drawer.props.hapticFeedbackEnabled).toBe(true);
     expect(drawer.props.swipeEnabled).toBe(true);
+    // The menu slot lays out at the native drawer width.
+    expect(
+      StyleSheet.flatten((drawer.children[0] as any).props.style).width,
+    ).toBe('80%');
+    expect(drawer.props.progressEventsEnabled).toBe(false);
+    expect(drawer.props.onDrawerProgress).toBeUndefined();
+    expect(drawer.props.colorScheme).toBeUndefined();
     act(() => drawer.props.onDrawerOpenChange({ nativeEvent: { open: true } }));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('passes progress handlers, a replacement host and the color scheme to native as is', async () => {
+    const onProgress = jest.fn();
+    const renderScene = jest.fn(() => <View />);
+    const enabledByCommit: boolean[] = [];
+    const Host = (
+      props: React.PropsWithChildren<{ progressEventsEnabled?: boolean }>,
+    ) => {
+      enabledByCommit.push(!!props.progressEventsEnabled);
+      return <View testID="drawer-host">{props.children}</View>;
+    };
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <BottomTabs
+          navigationState={{ index: 0, routes: [{ key: 'home' }] }}
+          renderScene={renderScene}
+          onIndexChange={() => {}}
+          renderDrawerContent={menu}
+          onDrawerProgress={onProgress}
+          drawerHostComponent={Host as any}
+          drawerColorScheme="dark"
+        />,
+      );
+    });
+    expect(renderer!.root.findAllByType('NativeDrawer' as any)).toHaveLength(0);
+    const host = renderer!.root.findByType(Host);
+    // Off during the mount commit, so native's current-position event is
+    // sent once the host and its handler are attached.
+    expect(enabledByCommit).toEqual([false, true]);
+    expect(host.props.progressEventsEnabled).toBe(true);
+    // That second commit re-renders only the host, not the tabs.
+    expect(renderScene).toHaveBeenCalledTimes(1);
+    expect(host.props.onDrawerProgress).toBe(onProgress);
+    expect(host.props.colorScheme).toBe('dark');
+    expect(renderer!.root.findByProps({ testID: 'menu-content' })).toBeTruthy();
   });
 
   it('Web omits the menu and returns only the foreground', async () => {

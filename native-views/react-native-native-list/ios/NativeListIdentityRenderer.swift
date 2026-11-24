@@ -40,8 +40,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     } else if descriptors.count == 2,
       descriptors[0].string("kind") == "icon",
       descriptors[0].string("name") == "PencilOutline",
-      descriptors[1].string("kind") == "icon",
-      descriptors[1].string("name") == "DragOutline"
+      (descriptors[1].string("kind") == "icon"
+        && descriptors[1].string("name") == "DragOutline")
+        || descriptors[1].string("kind") == "drag"
     {
       stack.axis = .horizontal
       stack.alignment = .center
@@ -55,6 +56,11 @@ final class NativeListIdentityCell: NativeListRendererCell {
       runCount: item.data.dictionaries("titleSegments").count,
       matchCount: item.data.dictionaries("titleMatch").count)
   }
+
+  private static func collapsesTrailing(_ item: NativeListItem, descriptors: [[String: Any]]) -> Bool {
+    descriptors.isEmpty && item.data.bool("collapseEmptyTrailing")
+  }
+
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
     fonts: NativeListFontFamilies
@@ -76,11 +82,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
       trailing.bind(
         item, descriptors: accessories, theme: theme, style: style,
         defaultSpacing: trailing.spacing, checkboxState: { _, _, fallback in fallback }, fonts: fonts)
-      trailing.isHidden = false
-      let trailingSize = trailing.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+      let collapsed = collapsesTrailing(item, descriptors: accessories)
+      let trailingSize = collapsed ? .zero
+        : trailing.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
       let rightInset = style["horizontalPadding"] != nil
         ? horizontalPadding : trailing.endInset ?? horizontalPadding
-      let contentGap = trailing.contentGap ?? 12
+      let contentGap = collapsed ? 0 : trailing.contentGap ?? 12
       let textWidth = max(1,
         width - horizontalPadding - rightInset - imageWidth - leadingGap
           - trailingSize.width - contentGap)
@@ -321,10 +328,11 @@ final class NativeListIdentityCell: NativeListRendererCell {
     leadingWidth.constant = 40
     leadingHeight.constant = 40
     visual.glyphSize = 18
+    let leadingDescriptor = item.data.dictionary("leading")
     visual.bitmapBorderWidth =
-      item.data.dictionary("leading")?.string("borderColor").isEmpty == false
-      && item.data.dictionary("leading")?.string("borderStyle") != "dashed"
-      ? 1 : 0
+      leadingDescriptor?.string("borderColor").isEmpty == false
+      && leadingDescriptor?.string("borderStyle") != "dashed"
+      ? nativeListBorderWidth(leadingDescriptor?["borderWidth"]) : 0
     fallbackLabel.attributedText = nil
     fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     trailingStack.reset()
@@ -685,13 +693,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
       leadingActionButton.alpha = leadingActionButton.isEnabled ? 1 : 0.4
       leadingActionKey = leadingAction.string("actionKey")
       root.addArrangedSubview(leadingActionButton)
-      // ListItem.IconButton is a medium tertiary button: its 36-point frame
-      // carries m=-7. The collection already contributes ListItem's outer
-      // mx=8, so move the frame 7 points into that inset and reduce only the
-      // following gap by 7. This preserves the source button, avatar and text
-      // positions without shrinking the 24-point SVG glyph or its hit target.
-      leftInset = 5
-      root.setCustomSpacing(5, after: leadingActionButton)
+      // ListItem.IconButton is a medium tertiary button: p=6 plus a 1-point
+      // border makes a 38-point frame with m=-7, so its glyph sits exactly on
+      // a 24-point slot at the 12-point padding and the avatar starts at 48.
+      // This 36-point frame centers the same glyph with a 6-point inset and
+      // 6-point following gap, keeping the 24-point SVG and its hit target.
+      leftInset = 6
+      root.setCustomSpacing(6, after: leadingActionButton)
     }
     addLeading(item.data.dictionary("leading"), key: item.key)
     // OneKey patch: custom network initials match LetterAvatar size 32.
@@ -884,7 +892,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       defaultSpacing: trailingStack.spacing, checkboxState: checkboxState, fonts: fonts)
     // Legacy kept the (possibly empty) trailing stack arranged, so the text column always
     // ends 12 points before the trailing edge inset.
-    trailingStack.isHidden = false
+    trailingStack.isHidden = Self.collapsesTrailing(item, descriptors: accessories)
     if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
     if let inset = trailingStack.endInset { rightInset = -inset }
     if accessories.count == 1,
@@ -917,51 +925,22 @@ final class NativeListIdentityCell: NativeListRendererCell {
     default: return nativeListColor(theme, "primaryText", "#202020")
     }
   }
-  private func selectorTabularFont(_ font: UIFont) -> UIFont {
-    var settings =
-      font.fontDescriptor.fontAttributes[.featureSettings] as? [[UIFontDescriptor.FeatureKey: Int]]
-      ?? []
-    settings.removeAll { $0[.type] == kNumberSpacingType }
-    settings.append([.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector])
-    return UIFont(
-      descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]),
-      size: font.pointSize)
-  }
-  private func selectorTabularText(_ original: NSAttributedString) -> NSAttributedString {
-    let result = NSMutableAttributedString(attributedString: original)
-    // OneKey patch: body typography explicitly supplies letterSpacing=0 in Tamagui.
-    result.addAttribute(.kern, value: 0, range: NSRange(location: 0, length: result.length))
-    original.enumerateAttribute(.font, in: NSRange(location: 0, length: original.length)) {
-      value, range, _ in
-      if let font = value as? UIFont {
-        result.addAttribute(.font, value: self.selectorTabularFont(font), range: range)
-      }
-    }
-    return result
-  }
   private func applySelectorTypography(_ item: NativeListItem) {
-    guard
-      ["accountSelector", "networkSelector", "walletSidebar"].contains(
-        item.data.string("presentation"))
-    else { return }
-    func visit(_ view: UIView) {
-      if let button = view as? UIButton {
-        if let original = button.attributedTitle(for: .normal) {
-          selectorTypographyRestorers.append { button.setAttributedTitle(original, for: .normal) }
-          button.setAttributedTitle(selectorTabularText(original), for: .normal)
-        }
-      } else if let label = view as? UILabel, let font = label.font {
-        let original = label.attributedText
-        selectorTypographyRestorers.append {
-          label.font = font
-          label.attributedText = original
-        }
-        label.font = selectorTabularFont(font)
-        if let original { label.attributedText = selectorTabularText(original) }
+    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(
+      item.data.string("presentation")
+    ) else { return }
+    let style = item.data.dictionary("style") ?? [:]
+    selectorTypographyRestorers = NativeListTextStyles.applySelectorDefaults(in: contentView) { view in
+      if view === titleLabel { return style.dictionary("title") }
+      if view === subtitleLabel || semanticSubtitleLabels.contains(where: { $0 === view }) {
+        return style.dictionary("subtitle")
       }
-      for child in view.subviews { visit(child) }
+      if view === tertiaryLabel { return style.dictionary("tertiary") }
+      if view === badgeLabel || semanticBadgeLabels.contains(where: { $0 === view }) {
+        return style.dictionary("badge")
+      }
+      return trailingStack.explicitTextStyle(for: view, style: style)
     }
-    visit(contentView)
   }
   private func setLineHeight(
     _ label: UILabel,

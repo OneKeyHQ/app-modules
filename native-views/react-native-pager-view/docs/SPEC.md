@@ -164,6 +164,40 @@ diagnostic compilation and strict-input installation are separate build evidence
 Market's equal-height secondary display-owner change is an independent consumer
 companion, not a new SDK public guarantee or JS/native same-frame contract.
 
+### iOS 27 pinned stand-in transition edges
+
+Status: Implemented; iOS 27 simulator runtime verified for Wallet Home Spot ↔ History.
+
+While a local smooth Hard pager's sticky header is pinned (`headerOffset >= headerHeight`),
+every page participating in a horizontal transition keeps the Hard material behind the
+fixed overlay and sticky header. An incoming page whose vertical list cannot render that
+material itself — not mounted yet, not in the pager's window, laid out below the bars, or
+resting at its top edge — receives a stand-in: an empty, noninteractive `UIScrollView`
+placed at the page's origin in the container, sized to the overlay + sticky boundary and
+offset past its top edge, with owned transparent top/sticky element hosts bound to it.
+The stand-in draws only UIKit's Hard material; it carries no snapshot of header or page
+content, and the page itself stays masked above the boundary. A page whose own list is
+scrolled past its top and covers the bars keeps using its own temporary interactions.
+When the header is not pinned no stand-in is created and the page keeps the previous
+temporary interaction on its own list. The stand-in and its hosts live in the pager
+container, so every scroll-edge mask update recomputes their frames from the current page
+origin, page width and overlay + sticky boundary; they are hidden while that geometry is
+empty. Release, completion and recycle
+remove the stand-in with its owned hosts.
+
+The fixed boundary separator covers stay in place for the whole transition, falling back to
+the shared overlay and sticky hosts while no settled owner exists, so the Hard dividing line
+does not flash between detach and reattach. On completion the settled page's normal owner is
+attached before the previous transition owner's interactions are removed on the next run
+loop. When a drag returns to its source and the source's adopted interaction still targets
+the settled list on the shared overlay host, that interaction becomes the settled owner
+again instead of being replaced, so the source keeps its material after cancellation.
+
+Verified on an iOS 27 simulator: repeated half-drag cancellations followed by a full
+Spot → History → Spot swipe, with frame-by-frame checks showing no black band, no hairline
+flash and no header content above the boundary. Perps/DeFi/NFT pages and non-pinned
+horizontal drags were not exercised at runtime.
+
 ### iOS 27 external-overlay interactive ownership
 
 Status: Implemented in iOS source; runtime acceptance is reported separately.
@@ -192,6 +226,13 @@ completion of that anchor restoration.
 When C = D, selection restores the destination's saved B. When C < D, effectiveB
 is zero while the previous saved B remains suspended. Horizontal selection by
 tap, swipe or an existing programmatic command MUST preserve C throughout.
+
+On iOS, a fresh page with no saved body offset and fully expanded shared header
+aligns its raw offset to the newly applied negative top inset even while viewport
+or content size is zero. The full restore remains pending until geometry is ready.
+Deferred identity release and pages with retained body/header offsets keep their
+existing restoration path. This prevents painting a new list at raw offset zero
+before its first content measurement; it does not gate business-data insertion.
 
 Alignment, prefetch, replacement, inset changes and pending restoration MUST NOT
 commit new B. Actual consumed vertical scrolling takes over the visible body
@@ -263,6 +304,22 @@ new target is established. Same-target commands also take over old reading
 intent. Real vertical consumption, a newer valid command, or owner detachment
 releases the target. Existing NativeList and NativeScroller public coordinates
 are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
+
+On Android, `CollapsiblePagerHost.tryScrollToTop(target, animated)` and
+`isAwayFromPageTop()` are public and kept from minification because
+`react-native-bottom-tabs` calls them by name on a tab double press, as neither
+package depends on the other. `tryScrollToTop` returns true only after the
+existing page-top command accepts a stable, attached current owner; invalid
+targets, horizontal transitions, restoration and missing/stale owners return
+false without queueing a command. Acceptance does not mean animation completion.
+`isAwayFromPageTop` is true while the header offset is above zero, whatever the
+body offset. iOS exposes the same `tryScrollToTop:animated:` Boolean result and
+`isAwayFromPageTop` selector. Renaming either breaks that caller silently.
+The existing Fabric `scrollToTop` command remains void on both platforms and
+uses the same acceptance path; JavaScript commands and public refs are unchanged.
+BottomTabs and Pager native sources must ship together for this entry point.
+The acceptance-returning entry point is implemented in source; runtime
+acceptance during horizontal transitions and owner loss remains pending.
 
 ## Current-page partial header command
 
@@ -1038,6 +1095,24 @@ Status: implemented and verified by production-native UIKit regressions on
 iOS 27.1 for footer insertion, explicit-sibling priority and nested-pager
 delegation. Full App and physical-device visual acceptance are reported separately.
 
+A NativeOverlay host is a discovery boundary on iOS as well. Overlay content
+(popover, sheet, dialog) stays mounted inside its host view until the overlay
+window presents it, and the host can sit anywhere in a page's subtree, including
+beside the page's NativeList. Scroll views inside a host belong to the overlay:
+they MUST NOT be resolved as the page's vertical scroll owner or receive its
+insets, logical offsets or shared header. Without this boundary a staged sheet's
+Fabric scroll view outranks a NativeList sibling, takes the collapsed-header
+offset, and the sheet opens scrolled past its content. The host is recognised by
+its component class; discovery is unchanged when the overlay package is absent,
+and a scroll view outside a host keeps its existing priority. Android owner
+discovery is not changed by this boundary.
+
+Status: implemented on iOS. Verified in the OneKey app on an iPhone SE (3rd
+generation) simulator, iOS 26.5: with the Home header collapsed, a popover opened
+from the History list showed an empty body before this boundary and its content
+from the first frame after it. A UIKit regression covers the boundary; Android
+was not inspected beyond the absence of the symptom.
+
 When the active scroll owner is removed before its replacement becomes usable,
 the pager MUST retain bounded recovery (at most 12 retries per recovery round,
 spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT
@@ -1054,7 +1129,11 @@ header attachment remain deferred until selection settles. Cancelling the drag
 on the same page MUST retain the reopened recovery round. Empty transactions,
 removals and inserts outside the current page MUST NOT reopen the budget. Owned
 `NativeScroller` and `NativeList` hosts additionally emit push readiness
-notifications when their scroll views attach and obtain positive bounds so late
+notifications when their vertical scroll views attach and obtain positive bounds
+and resolve as the page's eligible vertical scroll owner so initial first-layout
+attachment (while a coalesced slot/layout reconcile is still pending on the main
+queue or a verified vertical `NativeList` becomes ready before the current page
+has an observed owner) and late
 replacements recover immediately even without another Fabric insertion or after
 the retry budget expires; static pages with neither an unready scroll host nor a
 released scroll owner do not schedule retry timers.
@@ -1483,3 +1562,47 @@ commit checks passed 9/9; unrelated postinstall noble patch and Web notification
 external-image warnings remain separately recorded. Alpha.445 failed Pod
 integration and was not reused. SDK iOS CI ran on iOS 26.5: iOS-27-only incoming
 lifecycle cases remained skipped; no local SDK UIKit execution is claimed.
+
+## Pill tabs and centered content band
+
+`nativeTabBar.style.variant` also accepts `"pill"` on iOS, Android and Web. It
+lets wide/desktop consumers replace a JS pill tab bar with the native one, so
+every platform draws Home tabs from the same config.
+
+- Items keep intrinsic-width labels (medium face, `fontSize` default 16) with
+  `itemPaddingHorizontal` on each side (default 14; text keeps 10, underline and
+  segmented keep 8). Each item is `height - 2 * contentPaddingVertical` tall and
+  vertically inset by `contentPaddingVertical`.
+- One rounded background (`indicatorColor`, radius = half its height) sits
+  behind the selected item and follows pager progress. Between two items, the
+  leading edge eases out and the trailing edge eases in, so the pill stretches
+  toward the target before it contracts. Label colors blend from
+  `inactiveTextColor` to `activeTextColor` with the same progress rules as the
+  text variant. With `controlled: true`, programmatic page changes drive the same
+  progress animation as the text variant does.
+- Pill geometry is always taken from the current item frames (iOS and Android
+  layout passes; Web reads live button boxes on every sync and observes item and
+  list resizes). No size is cached per index, so items that only move when the
+  item list changes still get their own offset and width.
+- Web only: unselected items use `itemHoverBackgroundColor` and
+  `itemPressedBackgroundColor` for hover / pressed feedback. When the pill
+  changes target without pager progress (Web pages switch instantly), it moves
+  with a 220 ms CSS transition; it does not animate on first placement.
+  Native items have no hover or pressed fill.
+
+`style.contentMaxWidth` (all variants, all three platforms) caps the width of the
+tab row together with the toolbar slot and centers that band in the bar. The bar
+background still covers the full width. Values that are missing, not positive,
+or at least the bar width leave the existing full-width layout unchanged.
+
+`style.indicatorAnimationEnabled` (pill only, default true) turns the motion
+off. When false, the pill sits on the selected item (controlled `selectedKey`,
+otherwise the rounded pager position) on every update, label colors switch
+between active and inactive without blending, the Web CSS transition is
+skipped, and programmatic page changes no longer drive progress frames for the
+tab bar. Swiping the pages still moves the pages; only the tab bar snaps.
+
+`itemPaddingHorizontal`, `itemHoverBackgroundColor`, `itemPressedBackgroundColor`,
+`contentMaxWidth` and `indicatorAnimationEnabled` travel to native code inside the existing
+`nativeTabBarConfig` JSON (colors through `processColor`), so the codegen props
+and native component schema stay the same. Existing variants keep their defaults.

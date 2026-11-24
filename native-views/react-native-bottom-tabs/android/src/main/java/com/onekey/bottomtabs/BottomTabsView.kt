@@ -9,6 +9,7 @@ import androidx.appcompat.view.ContextThemeWrapper
 import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.Outline
+import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -31,12 +32,16 @@ import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.animation.doOnEnd
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.forEach
 import androidx.core.view.forEachIndexed
+import androidx.core.widget.NestedScrollView
+import androidx.recyclerview.widget.RecyclerView
 import coil3.ImageLoader
 import coil3.asDrawable
 import coil3.request.ImageRequest
@@ -157,12 +162,13 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingRoot = object : FrameLayout(context) {
     override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
       if (child === floatingBar && usesBottomBlur) {
+        val translationY = floatingBar.translationY.roundToInt()
         drawBlurBackdrop(
           canvas,
           floatingBar.left,
-          floatingBar.top,
+          floatingBar.top + translationY,
           floatingBar.right,
-          floatingBar.bottom,
+          floatingBar.bottom + translationY,
           floatingBar.height / 2f,
         ) { recording ->
           super.drawChild(recording, layoutHolder, drawingTime)
@@ -177,7 +183,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingIndicatorDrawable = GradientDrawable()
 
   var onTabSelectedListener: ((key: String) -> Unit)? = null
-  var onTabDoublePressedListener: ((key: String) -> Unit)? = null
+  var onTabDoublePressedListener: ((key: String, didScrollToTop: Boolean) -> Unit)? = null
   var onNativeLayoutListener: ((width: Double, height: Double) -> Unit)? = null
   var onTabBarMeasuredListener: ((height: Int) -> Unit)? = null
   var disablePageAnimations = false
@@ -195,8 +201,10 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     }
   var items: MutableList<TabInfo> = mutableListOf()
   private val iconSources: MutableMap<Int, ImageSource> = mutableMapOf()
+  private val selectedIconSources: MutableMap<Int, ImageSource> = mutableMapOf()
   private val drawableCache: MutableMap<ImageSource, Drawable> = mutableMapOf()
   private val iconRequestTokens: MutableMap<Int, Any> = mutableMapOf()
+  private val selectedIconRequestTokens: MutableMap<Int, Any> = mutableMapOf()
 
   private var isLayoutEnqueued = false
   private var selectedItem: String? = null
@@ -227,6 +235,8 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private var floatingStretch = 0f
   private var floatingLiftAnimator: ValueAnimator? = null
   private var floatingSlideAnimator: ValueAnimator? = null
+  private var floatingSlideTargetX = Float.NaN
+  private var floatingVisibilityCallback: Choreographer.FrameCallback? = null
   private var floatingTouchView: View? = null
   private var floatingTouchItemId = View.NO_ID
   private var floatingCandidateItemId = View.NO_ID
@@ -242,6 +252,10 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingBarLocationOnScreen = IntArray(2)
   private var lastPressedItemId = View.NO_ID
   private var lastPressedTime = 0L
+  // Looked up by name: the pager lives in a package this one does not depend on.
+  private val collapsiblePagerClass: Class<*>? by lazy {
+    runCatching { Class.forName("com.reactnativepagerview.CollapsiblePagerHost") }.getOrNull()
+  }
   private var defaultLabelTextSizes: Pair<Float, Float>? = null
   private var barTintColor: Int? = null
   private var activeIndicatorColor: ColorStateList? = null
@@ -279,7 +293,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
   private val usesBottomBlur: Boolean
     get() = androidBottomBlurEnabled && Build.VERSION.SDK_INT >= 31 &&
-      isHardwareAccelerated && !isTabBarHidden
+      isHardwareAccelerated && (!isTabBarHidden || floatingVisibilityCallback != null)
 
   init {
     orientation = VERTICAL
@@ -333,7 +347,70 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     (view.parent as? ViewGroup)?.removeView(view)
   }
 
+  private fun cancelFloatingVisibilityAnimation() {
+    val callback = floatingVisibilityCallback ?: return
+    floatingVisibilityCallback = null
+    Choreographer.getInstance().removeFrameCallback(callback)
+  }
+
+  private fun getFloatingBarSlideOffset(): Float {
+    val params = floatingBar.layoutParams as? FrameLayout.LayoutParams
+    val barHeightPx = floatingBar.height.takeIf { it > 0 } ?: dp(FloatingTabBarMetrics.BAR_HEIGHT)
+    val bottomMarginPx = params?.bottomMargin
+      ?: (maxOf(floatingBottomInset, dp(FloatingTabBarMetrics.BAR_MIN_BOTTOM_GAP)) +
+        dp(FloatingTabBarMetrics.BAR_BOTTOM_EXTRA))
+    return (barHeightPx + bottomMarginPx + dp(4f)).toFloat()
+  }
+
+  private fun animateFloatingVisibility(fromY: Float, toY: Float, hiding: Boolean) {
+    cancelFloatingVisibilityAnimation()
+    if (Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()) {
+      floatingBar.translationY = 0f
+      floatingBar.visibility = if (hiding) GONE else VISIBLE
+      updateBlurAppearance()
+      floatingRoot.invalidate()
+      return
+    }
+    val durationMs = 140f
+    val maxFrameStepMs = 24f
+    val interpolator = DecelerateInterpolator(if (hiding) 1.2f else 1.4f)
+    var elapsedMs = 0f
+    var lastFrameTimeNanos = -1L
+    val callback = object : Choreographer.FrameCallback {
+      override fun doFrame(frameTimeNanos: Long) {
+        if (floatingVisibilityCallback !== this) return
+        val deltaMs = if (lastFrameTimeNanos < 0L) {
+          16f
+        } else {
+          ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000f).coerceIn(1f, maxFrameStepMs)
+        }
+        lastFrameTimeNanos = frameTimeNanos
+        elapsedMs = (elapsedMs + deltaMs).coerceAtMost(durationMs)
+        val fraction = interpolator.getInterpolation((elapsedMs / durationMs).coerceIn(0f, 1f))
+        floatingBar.translationY = fromY + (toY - fromY) * fraction
+        floatingRoot.invalidate()
+        if (elapsedMs < durationMs) {
+          Choreographer.getInstance().postFrameCallback(this)
+        } else {
+          floatingVisibilityCallback = null
+          if (hiding && isTabBarHidden) {
+            floatingBar.translationY = 0f
+            floatingBar.visibility = GONE
+            updateBlurAppearance()
+          } else if (!hiding && !isTabBarHidden) {
+            floatingBar.translationY = 0f
+          }
+          floatingRoot.invalidate()
+        }
+      }
+    }
+    floatingVisibilityCallback = callback
+    Choreographer.getInstance().postFrameCallback(callback)
+  }
+
   private fun detachTabBarViews() {
+    cancelFloatingVisibilityAnimation()
+    floatingBar.translationY = 0f
     releaseBottomBlur()
     removeFromParent(layoutHolder)
     removeFromParent(bottomNavigation)
@@ -466,11 +543,16 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       return
     }
     bottomNavigation.itemIconSize = size
-    // Icons are rasterized at the icon size, so reload them for the new size.
+    // Icons are rasterized at the icon size: drop cached and in-flight requests,
+    // then reload each item's currently active source at the new size.
     drawableCache.clear()
-    iconSources.forEach { (index, source) ->
+    iconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+    iconRequestTokens.clear()
+    selectedIconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+    selectedIconRequestTokens.clear()
+    items.indices.forEach { index ->
       bottomNavigation.menu.findItem(index)?.let { menuItem ->
-        getDrawable(index, source) { menuItem.icon = it }
+        applyMenuItemIcon(index, menuItem)
       }
     }
   }
@@ -579,7 +661,20 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       1f + (FloatingTabBarMetrics.LENS_SCALE_Y - 1f) * floatingLift - floatingStretch * 0.4f
   }
 
+  private val floatingLiftSettle = Runnable {
+    if (floatingTouchItemId == View.NO_ID) {
+      animateFloatingLift(0f)
+    }
+  }
+
+  private fun cancelFloatingSlideAnimator() {
+    floatingSlideAnimator?.cancel()
+    floatingSlideAnimator = null
+    floatingSlideTargetX = Float.NaN
+  }
+
   private fun animateFloatingLift(target: Float) {
+    floatingBar.removeCallbacks(floatingLiftSettle)
     floatingLiftAnimator?.cancel()
     val start = floatingLift
     if (start == target) {
@@ -588,8 +683,15 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     }
     val lifting = target > start
     floatingLiftAnimator = ValueAnimator.ofFloat(start, target).apply {
-      duration = if (lifting) 320L else 460L
-      interpolator = SpringInterpolator(dampingRatio = if (lifting) 0.6f else 0.72f)
+      duration = if (lifting) {
+        FloatingTabBarMetrics.LIFT_UP_DURATION_MS
+      } else {
+        FloatingTabBarMetrics.LIFT_SETTLE_DURATION_MS
+      }
+      interpolator = SpringInterpolator(
+        dampingRatio = if (lifting) 0.72f else 0.8f,
+        angularFrequency = if (lifting) 9f else 7.8f,
+      )
       addUpdateListener {
         floatingLift = it.animatedValue as Float
         applyFloatingIndicatorState()
@@ -598,8 +700,40 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     }
   }
 
-  private fun animateFloatingIndicatorTo(targetX: Float, durationMs: Long = 440L) {
-    floatingSlideAnimator?.cancel()
+  private fun scheduleFloatingLiftSettle(cancelled: Boolean) {
+    floatingBar.removeCallbacks(floatingLiftSettle)
+    if (cancelled) {
+      animateFloatingLift(0f)
+      return
+    }
+    val slideAnimator = floatingSlideAnimator
+    if (slideAnimator != null && slideAnimator.isRunning) {
+      val remainingFraction = (1f - slideAnimator.animatedFraction).coerceIn(0f, 1f)
+      val delayMs = (FloatingTabBarMetrics.LIFT_HOLD_DURING_SLIDE_MS * remainingFraction)
+        .roundToInt()
+        .toLong()
+      if (delayMs > 16L) {
+        floatingBar.postDelayed(floatingLiftSettle, delayMs)
+        return
+      }
+    }
+    animateFloatingLift(0f)
+  }
+
+  private fun animateFloatingIndicatorTo(
+    targetX: Float,
+    durationMs: Long = FloatingTabBarMetrics.SLIDE_DURATION_MS,
+  ) {
+    val activeAnimator = floatingSlideAnimator
+    if (
+      activeAnimator != null &&
+      activeAnimator.isRunning &&
+      !floatingSlideTargetX.isNaN() &&
+      abs(floatingSlideTargetX - targetX) < 0.5f
+    ) {
+      return
+    }
+    cancelFloatingSlideAnimator()
     val startX = floatingIndicator.x
     if (abs(targetX - startX) < 0.5f) {
       floatingIndicator.x = targetX
@@ -608,23 +742,39 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       return
     }
     var previousX = startX
-    floatingSlideAnimator = ValueAnimator.ofFloat(startX, targetX).apply {
+    var previousTimeMs = SystemClock.uptimeMillis()
+    floatingSlideTargetX = targetX
+    val animator = ValueAnimator.ofFloat(startX, targetX)
+    floatingSlideAnimator = animator
+    animator.apply {
       duration = durationMs
-      interpolator = SpringInterpolator(dampingRatio = 0.74f)
+      interpolator = SpringInterpolator(
+        dampingRatio = FloatingTabBarMetrics.SLIDE_SPRING_DAMPING,
+        angularFrequency = FloatingTabBarMetrics.SLIDE_SPRING_FREQUENCY,
+      )
       addUpdateListener {
+        val nowMs = SystemClock.uptimeMillis()
+        val elapsedMs = (nowMs - previousTimeMs).coerceIn(4L, 32L).toFloat()
+        previousTimeMs = nowMs
         val x = it.animatedValue as Float
         val frameDelta = abs(x - previousX)
         previousX = x
         floatingIndicator.x = x
-        // The capsule stretches along the travel direction, like a liquid drop.
-        val rawStretch = (frameDelta / floatingIndicator.width.coerceAtLeast(1) * 1.6f)
+        // Normalize velocity to a 16ms reference step so 60Hz and 120Hz displays
+        // produce identical liquid stretch during the spring slide.
+        val normalizedStepDelta = frameDelta * (16f / elapsedMs)
+        val rawStretch = (normalizedStepDelta / floatingIndicator.width.coerceAtLeast(1) * 1.4f)
           .coerceAtMost(FloatingTabBarMetrics.LENS_MAX_STRETCH)
-        floatingStretch = floatingStretch * 0.5f + rawStretch * 0.5f
+        floatingStretch = floatingStretch * 0.62f + rawStretch * 0.38f
         applyFloatingIndicatorState()
       }
       doOnEnd {
-        floatingStretch = 0f
-        applyFloatingIndicatorState()
+        if (floatingSlideAnimator === animator) {
+          floatingSlideAnimator = null
+          floatingSlideTargetX = Float.NaN
+          floatingStretch = 0f
+          applyFloatingIndicatorState()
+        }
       }
       start()
     }
@@ -653,11 +803,29 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     val targetX = getFloatingItemX(selectedIndex) ?: return
     floatingIndicator.visibility = VISIBLE
 
-    if (!animate || !floatingIndicatorPositioned) {
-      floatingSlideAnimator?.cancel()
+    if (!floatingIndicatorPositioned) {
+      cancelFloatingSlideAnimator()
       floatingIndicator.x = targetX
       floatingStretch = 0f
       floatingIndicatorPositioned = true
+      applyFloatingIndicatorState()
+      return
+    }
+    val activeAnimator = floatingSlideAnimator
+    if (
+      activeAnimator != null &&
+      activeAnimator.isRunning &&
+      !floatingSlideTargetX.isNaN() &&
+      abs(floatingSlideTargetX - targetX) < 0.5f
+    ) {
+      // Keep an in-flight slide to the same target running smoothly even when
+      // a late layout/item sync arrives with animate = false.
+      return
+    }
+    if (!animate) {
+      cancelFloatingSlideAnimator()
+      floatingIndicator.x = targetX
+      floatingStretch = 0f
       applyFloatingIndicatorState()
       return
     }
@@ -791,7 +959,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     updateFloatingIndicatorWidth(itemView.width)
     floatingIndicator.visibility = VISIBLE
     if (floatingIndicatorPositioned) {
-      animateFloatingIndicatorTo(targetX, durationMs = 320L)
+      animateFloatingIndicatorTo(targetX, durationMs = FloatingTabBarMetrics.SLIDE_DURATION_MS)
     } else {
       floatingIndicator.x = targetX
       floatingIndicatorPositioned = true
@@ -827,7 +995,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     val targetStretch = (velocityDpPerMs * 0.06f).coerceAtMost(FloatingTabBarMetrics.LENS_MAX_STRETCH)
     floatingStretch = floatingStretch * 0.6f + targetStretch * 0.4f
 
-    floatingSlideAnimator?.cancel()
+    cancelFloatingSlideAnimator()
     floatingIndicator.x = centerX - halfWidth
     applyFloatingIndicatorState()
     floatingBar.removeCallbacks(floatingStretchDecay)
@@ -864,7 +1032,6 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     val wasDragging = floatingDragging
     clearFloatingTouchTracking()
     setFloatingItemMagnified(View.NO_ID)
-    animateFloatingLift(0f)
 
     if (!cancelled && requestedItemId != View.NO_ID) {
       if (!wasDragging) {
@@ -878,6 +1045,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     // Settles on the selected tab, which is the old one for cancelled or
     // preventsDefault presses.
     updateFloatingIndicator(animate = true)
+    scheduleFloatingLiftSettle(cancelled = cancelled || wasDragging)
   }
 
   private fun clearFloatingTouchTracking() {
@@ -892,8 +1060,9 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
   private fun resetFloatingGesture() {
     clearFloatingTouchTracking()
+    floatingBar.removeCallbacks(floatingLiftSettle)
     floatingLiftAnimator?.cancel()
-    floatingSlideAnimator?.cancel()
+    cancelFloatingSlideAnimator()
     floatingLift = 0f
     floatingStretch = 0f
     items.indices.forEach { itemId ->
@@ -1042,6 +1211,11 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   override fun onDetachedFromWindow() {
+    cancelFloatingVisibilityAnimation()
+    floatingBar.translationY = 0f
+    if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
+      floatingBar.visibility = if (isTabBarHidden) GONE else VISIBLE
+    }
     releaseBottomBlur()
     super.onDetachedFromWindow()
   }
@@ -1109,7 +1283,13 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private fun setSelectedIndex(itemId: Int) {
     val selectionChanged = bottomNavigation.selectedItemId != itemId
     bottomNavigation.selectedItemId = itemId
-    if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
+    if (selectionChanged) {
+      updateMenuItemIconsForSelection()
+    }
+    if (
+      androidTabBarStyle == AndroidTabBarStyle.FLOATING &&
+      (selectionChanged || !floatingIndicatorPositioned)
+    ) {
       post { updateFloatingIndicator(animate = selectionChanged) }
     }
     if (disablePageAnimations) {
@@ -1177,12 +1357,89 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       now - lastPressedTime <= ViewConfiguration.getDoubleTapTimeout()
     ) {
       lastPressedItemId = View.NO_ID
-      onTabDoublePressedListener?.invoke(key)
+      val listener = onTabDoublePressedListener ?: return
+      val didScrollToTop = scrollSelectedTabToTop(key) ?: return
+      listener(key, didScrollToTop)
       return
     }
     lastPressedItemId = itemId
     lastPressedTime = now
   }
+
+  /**
+   * Animates every visible vertical scroller of the selected tab back to its
+   * top. Returns false when all of them were already there, which tells JS the
+   * double press may leave the page instead. A rejected pager request with no
+   * accepted scroll returns null instead of implying that the page is at top.
+   */
+  private fun scrollSelectedTabToTop(pressedKey: String): Boolean? {
+    if (pressedKey != selectedItem) return false
+    val scrollers = mutableListOf<View>()
+    val pagers = mutableListOf<View>()
+    collectScrolledViews(layoutHolder, scrollers, pagers)
+    scrollers.forEach { view ->
+      when (view) {
+        is RecyclerView -> view.smoothScrollToPosition(0)
+        is NestedScrollView -> view.smoothScrollTo(view.scrollX, 0)
+        is ScrollView -> view.smoothScrollTo(view.scrollX, 0)
+      }
+    }
+    var didScrollToTop = scrollers.isNotEmpty()
+    var rejectedPagerRequest = false
+    pagers.forEach { pager ->
+      if (scrollPagerToTop(pager)) didScrollToTop = true
+      else rejectedPagerRequest = true
+    }
+    return when {
+      didScrollToTop -> true
+      rejectedPagerRequest -> null
+      else -> false
+    }
+  }
+
+  private fun collectScrolledViews(
+    view: View,
+    scrollers: MutableList<View>,
+    pagers: MutableList<View>,
+  ) {
+    // Hidden tabs and pager siblings stay attached without being on screen.
+    if (!view.isShown || !view.getGlobalVisibleRect(Rect())) return
+    if (collapsiblePagerClass?.isInstance(view) == true) {
+      // The pager keeps header state for its pages, so moving one of its
+      // scrollers directly leaves the header out of sync. It scrolls itself.
+      val pagerScrollers = mutableListOf<View>()
+      val nestedPagers = mutableListOf<View>()
+      (view as ViewGroup).forEach { child ->
+        collectScrolledViews(child, pagerScrollers, nestedPagers)
+      }
+      if (pagerScrollers.isNotEmpty() || nestedPagers.isNotEmpty() || isPagerAwayFromTop(view)) {
+        pagers.add(view)
+      }
+      return
+    }
+    if (
+      (view is RecyclerView || view is NestedScrollView || view is ScrollView) &&
+      view.canScrollVertically(-1)
+    ) {
+      scrollers.add(view)
+    }
+    if (view is ViewGroup) {
+      view.forEach { child -> collectScrolledViews(child, scrollers, pagers) }
+    }
+  }
+
+  private fun isPagerAwayFromTop(pager: View): Boolean =
+    runCatching { pager.javaClass.getMethod("isAwayFromPageTop").invoke(pager) as Boolean }
+      .onFailure { Log.w("BottomTabs", "Unable to read the collapsible pager top state", it) }
+      .getOrDefault(false)
+
+  private fun scrollPagerToTop(pager: View): Boolean =
+    runCatching {
+      pager.javaClass
+        .getMethod("tryScrollToTop", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+        .invoke(pager, 0, true) as Boolean
+    }.onFailure { Log.w("BottomTabs", "Unable to scroll the collapsible pager to top", it) }
+      .getOrDefault(false)
 
   fun setIgnoreBottomInsets(ignore: Boolean) {
     ignoreBottomInsets = ignore
@@ -1224,23 +1481,61 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   fun setTabBarHidden(isHidden: Boolean) {
+    if (isTabBarHidden == isHidden) {
+      return
+    }
     isTabBarHidden = isHidden
     if (isHidden) {
       resetFloatingGesture()
     }
-    if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
-      floatingBar.visibility = if (isHidden) GONE else VISIBLE
-      bottomNavigation.visibility = VISIBLE
-    } else {
-      bottomNavigation.visibility = if (isHidden) GONE else VISIBLE
+    val shouldAnimateFloating =
+      androidTabBarStyle == AndroidTabBarStyle.FLOATING &&
+        isAttachedToWindow &&
+        width > 0 &&
+        height > 0
+
+    cancelFloatingVisibilityAnimation()
+
+    if (!shouldAnimateFloating) {
+      floatingBar.translationY = 0f
+      if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
+        floatingBar.visibility = if (isHidden) GONE else VISIBLE
+        bottomNavigation.visibility = VISIBLE
+      } else {
+        bottomNavigation.visibility = if (isHidden) GONE else VISIBLE
+      }
+      updateBlurAppearance()
+      requestLayout()
+      floatingRoot.invalidate()
+      invalidate()
+      if (!isHidden) post { updateFloatingIndicator(animate = false) }
+      return
     }
 
+    val slideOffset = getFloatingBarSlideOffset()
+    bottomNavigation.visibility = VISIBLE
+    if (isHidden) {
+      val startY = if (floatingBar.visibility == VISIBLE) floatingBar.translationY else slideOffset
+      floatingBar.visibility = VISIBLE
+      floatingBar.translationY = startY
+      animateFloatingVisibility(startY, slideOffset, hiding = true)
+      updateBlurAppearance()
+      requestLayout()
+      floatingRoot.invalidate()
+      invalidate()
+      return
+    }
+
+    val wasGone = floatingBar.visibility != VISIBLE
+    val startY = if (wasGone) slideOffset else floatingBar.translationY
+    floatingBar.visibility = VISIBLE
+    floatingBar.translationY = startY
+    animateFloatingVisibility(startY, 0f, hiding = false)
     updateBlurAppearance()
     requestLayout()
     floatingRoot.invalidate()
     invalidate()
-    if (!isHidden) post { updateFloatingIndicator(animate = false) }
-
+    post { updateFloatingIndicator(animate = false) }
   }
 
   fun updateItems(items: MutableList<TabInfo>) {
@@ -1256,11 +1551,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       }
 
       menuItem.isVisible = !item.hidden
-      if (iconSources.containsKey(index)) {
-        getDrawable(index, iconSources[index]!!) {
-          menuItem.icon = it
-        }
-      }
+      applyMenuItemIcon(index, menuItem)
 
       if (item.badge?.isNotEmpty() == true) {
         val badge = bottomNavigation.getOrCreateBadge(index)
@@ -1280,7 +1571,9 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
         val itemView = bottomNavigation.findViewById<View>(menuItem.itemId)
         itemView?.let { view ->
           view.setOnClickListener {
-            onTabSelected(menuItem)
+            if (!isTabBarHidden) {
+              onTabSelected(menuItem)
+            }
           }
           view.setOnTouchListener { touchedView, event ->
             handleFloatingTabTouch(touchedView, menuItem, event)
@@ -1310,6 +1603,49 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     return bottomNavigation.menu.findItem(index) ?: bottomNavigation.menu.add(0, index, 0, title)
   }
 
+  private fun isItemSelected(index: Int): Boolean {
+    val selectedKey = selectedItem
+    return if (selectedKey != null) {
+      items.getOrNull(index)?.key == selectedKey
+    } else {
+      bottomNavigation.selectedItemId == index
+    }
+  }
+
+  private fun activeIconSourceForIndex(index: Int): Pair<ImageSource, Boolean>? {
+    val selected = isItemSelected(index)
+    if (selected) {
+      selectedIconSources[index]?.let { return it to true }
+    }
+    iconSources[index]?.let { return it to false }
+    selectedIconSources[index]?.let { return it to true }
+    return null
+  }
+
+  private fun applyMenuItemIcon(index: Int, menuItem: MenuItem) {
+    val (source, isSelectedSource) = activeIconSourceForIndex(index) ?: return
+    drawableCache[source]?.let { cached ->
+      if (menuItem.icon !== cached) {
+        menuItem.icon = cached
+      }
+      return
+    }
+    loadDrawable(index, source, isSelectedSource) { drawable ->
+      val currentSource = activeIconSourceForIndex(index)?.first
+      if (currentSource == source && drawable != null) {
+        menuItem.icon = drawable
+      }
+    }
+  }
+
+  private fun updateMenuItemIconsForSelection() {
+    items.indices.forEach { index ->
+      bottomNavigation.menu.findItem(index)?.let { menuItem ->
+        applyMenuItemIcon(index, menuItem)
+      }
+    }
+  }
+
   fun setIcons(icons: ReadableArray?) {
     if (icons == null || icons.size() == 0) {
       return
@@ -1325,10 +1661,38 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       val imageSource = ImageSource(context, uri)
       this.iconSources[idx] = imageSource
 
-      // Update existing item if exists.
-      bottomNavigation.menu.findItem(idx)?.let { menuItem ->
-        getDrawable(idx, imageSource) {
-          menuItem.icon = it
+      loadDrawable(idx, imageSource, isSelectedIcon = false) {
+        bottomNavigation.menu.findItem(idx)?.let { menuItem ->
+          applyMenuItemIcon(idx, menuItem)
+        }
+      }
+    }
+  }
+
+  fun setSelectedIcons(icons: ReadableArray?) {
+    if (icons == null || icons.size() == 0) {
+      selectedIconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+      selectedIconRequestTokens.clear()
+      selectedIconSources.clear()
+      updateMenuItemIconsForSelection()
+      return
+    }
+
+    for (idx in 0 until icons.size()) {
+      val source = icons.getMap(idx)
+      val uri = source?.getString("uri")
+      if (uri.isNullOrEmpty()) {
+        selectedIconSources.remove(idx)
+        continue
+      }
+
+      val imageSource = ImageSource(context, uri)
+      this.selectedIconSources[idx] = imageSource
+
+      // Pre-warm the selected icon into drawableCache so tab switches swap synchronously.
+      loadDrawable(idx, imageSource, isSelectedIcon = true) {
+        bottomNavigation.menu.findItem(idx)?.let { menuItem ->
+          applyMenuItemIcon(idx, menuItem)
         }
       }
     }
@@ -1359,8 +1723,15 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   @SuppressLint("CheckResult")
-  private fun getDrawable(index: Int, imageSource: ImageSource, onDrawableReady: (Drawable?) -> Unit) {
-    iconRequestTokens.remove(index)?.let { OneKeyNamedSVG.cancel(it) }
+  private fun loadDrawable(
+    index: Int,
+    imageSource: ImageSource,
+    isSelectedIcon: Boolean,
+    onDrawableReady: (Drawable?) -> Unit,
+  ) {
+    val tokenMap = if (isSelectedIcon) selectedIconRequestTokens else iconRequestTokens
+    val sourceMap = if (isSelectedIcon) selectedIconSources else iconSources
+    tokenMap.remove(index)?.let { OneKeyNamedSVG.cancel(it) }
     drawableCache[imageSource]?.let {
       onDrawableReady(it)
       return
@@ -1373,7 +1744,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
         return
       }
       val token = Any()
-      iconRequestTokens[index] = token
+      tokenMap[index] = token
       val iconSizePx = bottomNavigation.itemIconSize.coerceAtLeast(1)
       val density = resources.displayMetrics.density
       OneKeyNamedSVG.request(
@@ -1385,24 +1756,24 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
         height = iconSizePx,
         scale = density,
       ) { bitmap ->
-        if (iconRequestTokens[index] !== token) {
+        if (tokenMap[index] !== token) {
           return@request
         }
-        iconRequestTokens.remove(index)
+        tokenMap.remove(index)
         if (bitmap == null) {
           onDrawableReady(null)
           return@request
         }
         val stateDrawable = BitmapDrawable(context.resources, bitmap)
         drawableCache[imageSource] = stateDrawable
-        if (iconSources[index] == imageSource) {
+        if (sourceMap[index] == imageSource) {
           onDrawableReady(stateDrawable)
         }
       }
       return
     }
     val token = Any()
-    iconRequestTokens[index] = token
+    tokenMap[index] = token
     val iconSizePx = bottomNavigation.itemIconSize
     val request = ImageRequest.Builder(context)
       .data(imageSource.getUri(context))
@@ -1411,13 +1782,13 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       .precision(Precision.EXACT)
       .target { drawable ->
         post {
-          if (iconRequestTokens[index] !== token) {
+          if (tokenMap[index] !== token) {
             return@post
           }
-          iconRequestTokens.remove(index)
+          tokenMap.remove(index)
           val stateDrawable = drawable.asDrawable(context.resources)
           drawableCache[imageSource] = stateDrawable
-          if (iconSources[index] == imageSource) {
+          if (sourceMap[index] == imageSource) {
             onDrawableReady(stateDrawable)
           }
         }
@@ -1491,6 +1862,8 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   fun onDropViewInstance() {
     iconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
     iconRequestTokens.clear()
+    selectedIconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+    selectedIconRequestTokens.clear()
     androidBottomBlurEnabled = false
     updateBlurAppearance()
     releaseBottomBlur()

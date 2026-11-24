@@ -617,7 +617,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
                 pointerEvents={slotState.disclosurePresent ? 'auto' : 'none'}
                 style={
                   slotState.disclosurePresent
-                    ? undefined
+                    ? { marginHorizontal: -padding }
                     : collapsedExpandedContentStyle
                 }
               >

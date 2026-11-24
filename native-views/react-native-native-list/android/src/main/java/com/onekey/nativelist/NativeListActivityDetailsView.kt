@@ -78,9 +78,9 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     return parseNativeListColor(theme?.optString(key, fallback) ?: fallback)
   }
   private fun text(label: NativeListTextView, value: String, style: JSONObject?, size: Float,
-                   ink: Int, line: Int, weight: String = "regular", lines: Int = 1) {
-    NativeListResolvedText.resolve(context, fonts, value, style, size, weight, ink, line, lines, sourceScale).bind(label)
-  }
+                   ink: Int, line: Int, weight: String = "regular", lines: Int = 1): NativeListResolvedText =
+    NativeListResolvedText.resolve(context, fonts, value, style, size, weight, ink, line, lines, sourceScale)
+      .also { it.bind(label) }
   fun bind(item: NativeListItem, theme: JSONObject?, sourceScale: Boolean) {
     this.sourceScale = sourceScale
     val data = item.json
@@ -98,12 +98,20 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     setClipping(nativeListActivityHostClips(leadingOverhangs))
     amounts.layoutParams = if (table) LayoutParams(0, -2, 1f).apply { marginStart = gap } else LayoutParams(-2, -2).apply { marginStart = gap }
     text(title, data.optString("title"), style.optJSONObject("title"), 16f, color("primary", theme), 24, "medium")
-    text(description, data.optString("description"), style.optJSONObject("description"), 14f, color("secondary", theme), 20, lines = 2)
+    val descriptionText = text(description, data.optString("description"), style.optJSONObject("description"), 14f, color("secondary", theme), 20, lines = 2)
     text(status, data.optString("status"), style.optJSONObject("status"), 12f, color("secondary", theme), 16)
     description.setOnClickListener(null)
     val descriptionKey = data.optString("descriptionActionKey")
-    description.isClickable = descriptionKey.isNotEmpty()
-    if (descriptionKey.isNotEmpty()) description.setOnClickListener { onAction?.invoke(descriptionKey, description, "description", 0) }
+    // The view spans the identity column, so with an action only its text from
+    // the caller's `descriptionActionStart` on takes touches. The start is
+    // never read out of the string, and one at the end leaves no action.
+    val actionStart =
+      if (descriptionKey.isEmpty()) null
+      else descriptionText.displayOffset(data.optLong("descriptionActionStart"), data.optString("description"))
+    val hasActionText = actionStart != null && actionStart < descriptionText.text.length
+    description.touchableTextStart = actionStart
+    description.isClickable = hasActionText
+    if (hasActionText) description.setOnClickListener { onAction?.invoke(descriptionKey, description, "description", 0) }
     for (view in listOf(description, status)) (view.layoutParams as LayoutParams).topMargin = if (style.has("lineGap")) px(style.optDouble("lineGap")) else 0
     badges.forEach(titleLine::removeView); badges.clear()
     val badgeData = data.optJSONArray("badges")
@@ -172,6 +180,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   }
   fun recycle() {
     visual.recycle(); visual.visibility = VISIBLE; amountViews.forEach { it.recycle() }; description.setOnClickListener(null); actions.removeAllViews()
+    description.touchableTextStart = null
     leadingOverhangs = false
     setClipping(true)
   }

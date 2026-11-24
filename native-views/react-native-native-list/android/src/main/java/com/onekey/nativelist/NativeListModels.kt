@@ -62,6 +62,66 @@ internal fun nativeListLeadingVisualOverhangsFrame(
  */
 internal fun nativeListActivityHostClips(leadingOverhangs: Boolean): Boolean = !leadingOverhangs
 
+/** A one-line text view shows each line break of its text as one space. */
+internal fun nativeListFoldLineBreaks(text: String): String = text.replace(Regex("\\r\\n|[\\r\\n]"), " ")
+
+/**
+ * Offset into the displayed text for [sourceOffset], a UTF-16 offset into the
+ * caller's [source], kept within the text. Folding line breaks
+ * ([nativeListFoldLineBreaks]) moves every offset after a CRLF. The offset is a
+ * Long because JSON carries any safe integer; narrowing it first would wrap a
+ * value past Int range instead of clamping it to the end.
+ */
+internal fun nativeListDisplayOffset(source: String, sourceOffset: Long, foldsLineBreaks: Boolean): Int {
+  val clamped = sourceOffset.coerceIn(0L, source.length.toLong()).toInt()
+  return if (foldsLineBreaks) nativeListFoldLineBreaks(source.substring(0, clamped)).length else clamped
+}
+
+/** A horizontal run of laid-out text on one line, in view coordinates. */
+internal data class NativeListTextRun(val left: Float, val right: Float)
+
+/**
+ * One laid-out line of a text view, in view coordinates: its vertical extent,
+ * the runs of [touchable] text and the runs of [plain] text before it. A line
+ * holds one run of each, or several where mixed-direction text puts plain text
+ * between touchable text.
+ */
+internal data class NativeListTextLine(
+  val top: Float,
+  val bottom: Float,
+  val touchable: List<NativeListTextRun>,
+  val plain: List<NativeListTextRun> = emptyList(),
+)
+
+internal data class NativeListTouchRegion(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+  fun contains(x: Float, y: Float): Boolean = x in left..right && y in top..bottom
+}
+
+/** Runs are read back from pixel regions, so neighbours can be a pixel apart. */
+private const val TEXT_RUN_EDGE = 1f
+
+/**
+ * Parts of a stretched text view that take touches: every run of touchable
+ * text, widened by [slop] into blank space only. The widening stops at plain
+ * text on the same line, so text before the touchable text never takes the
+ * touch, however narrow it is. Touches outside the regions fall through to the
+ * row behind the view (OK-67219).
+ */
+internal fun nativeListTouchableTextRegions(
+  lines: List<NativeListTextLine>,
+  slop: Float,
+): List<NativeListTouchRegion> = lines.flatMap { line ->
+  line.touchable.map { run ->
+    var left = run.left - slop
+    var right = run.right + slop
+    for (other in line.plain) {
+      if (other.right <= run.left + TEXT_RUN_EDGE) left = maxOf(left, other.right)
+      if (other.left >= run.right - TEXT_RUN_EDGE) right = minOf(right, other.left)
+    }
+    NativeListTouchRegion(left, line.top, right, line.bottom)
+  }
+}
+
 internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
 
 /** Side of one member of an Activity token pair inside a [frame]-unit box (24 in 40). */
@@ -137,7 +197,8 @@ internal fun nativeListIdentityTrailingIsHorizontal(
       first.actionKey.isEmpty()) ||
     (kinds == listOf("icon", "icon") &&
       first.name == "PencilOutline" &&
-      second.name == "DragOutline")
+      second.name == "DragOutline") ||
+    (kinds == listOf("icon", "drag") && first.name == "PencilOutline")
 }
 
 internal fun resolveNativeListSelectorBackgroundColor(
@@ -270,6 +331,8 @@ internal data class NativeListConfig(
   val rowPressToggles: Boolean,
   val selectedKeys: LinkedHashSet<String>,
   val reorderable: Boolean,
+  /** `handle` starts a reorder only from a long press on a trailing `drag` accessory. */
+  val reorderFromHandleOnly: Boolean = false,
   val pullToRefresh: Boolean,
   val refreshTriggerDistance: Double? = null,
   val refreshing: Boolean,
@@ -317,6 +380,9 @@ internal data class NativeListConfig(
       val layout = root.getJSONObject("layout")
       val selection = root.optJSONObject("selection")
       val capabilities = root.optJSONObject("capabilities")
+      val reorderActivation = capabilities?.opt("reorderActivation")
+      require(reorderActivation == null || reorderActivation == "row" ||
+        reorderActivation == "handle") { "Invalid reorderActivation" }
       val sectionIndex = capabilities?.optJSONObject("sectionIndex")
       val rowArray = root.getJSONArray("rows")
       val items = ArrayList<NativeListItem>(rowArray.length())
@@ -350,6 +416,7 @@ internal data class NativeListConfig(
         rowPressToggles = selection?.optBoolean("rowPressToggles", false) ?: false,
         selectedKeys = selectedKeys,
         reorderable = capabilities?.optBoolean("reorderable", false) ?: false,
+        reorderFromHandleOnly = reorderActivation == "handle",
         pullToRefresh = capabilities?.optBoolean("pullToRefresh", false) ?: false,
         refreshTriggerDistance = capabilities?.optDouble("refreshTriggerDistance")?.takeIf { it.isFinite() && it > 0 },
         refreshing = capabilities?.optBoolean("refreshing", false) ?: false,

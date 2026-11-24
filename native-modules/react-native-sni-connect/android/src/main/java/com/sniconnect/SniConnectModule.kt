@@ -24,6 +24,7 @@ import okio.Buffer
 import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.net.ConnectException
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.URI
@@ -40,14 +41,28 @@ import javax.net.ssl.SSLPeerUnverifiedException
 
 private const val TAG = "SniConnect"
 
+/**
+ * Classifies a request-phase failure for the JS-facing error code. The result
+ * is not yet replay-safe: callers MUST pass it through
+ * [gateReplaySensitiveFailureCode] with the logical request's transmission
+ * evidence.
+ */
 internal fun classifySniFailureCode(error: Throwable): String {
   if (hasCause(error, SSLPeerUnverifiedException::class.java) ||
     hasCause(error, CertificateException::class.java)
   ) {
     return "SNI_CERT_FAILED"
   }
-  if (hasCause(error, UnknownHostException::class.java)) {
+  // The pinned resolver never performs system DNS, so this is a destination
+  // escape and stays fail-closed instead of becoming a transient DNS failure.
+  if (hasCause(error, SniPinnedDestinationViolationException::class.java)) {
     return "SNI_SECURITY_POLICY_FAILED"
+  }
+  if (hasCause(error, UnknownHostException::class.java)) {
+    return "SNI_DNS_FAILED"
+  }
+  if (hasCause(error, ConnectException::class.java)) {
+    return "SNI_CONNECTION_REFUSED"
   }
   if (hasCause(error, InterruptedIOException::class.java)) {
     return "SNI_REQUEST_TIMEOUT"
@@ -57,6 +72,23 @@ internal fun classifySniFailureCode(error: Throwable): String {
   }
   return "SNI_REQUEST_FAILED"
 }
+
+/**
+ * OkHttp can recover and retry inside one logical request. A final connect
+ * failure only proves no request was transmitted when no attempt ever started
+ * sending request headers; after a started attempt the outcome is ambiguous, so
+ * the pre-write code must not authorize a caller replay. Bodyless methods (for
+ * example `DELETE`) are covered by the same request-level evidence.
+ */
+internal fun gateReplaySensitiveFailureCode(
+  code: String,
+  requestTransmissionStarted: Boolean,
+): String =
+  if (code == "SNI_CONNECTION_REFUSED" && requestTransmissionStarted) {
+    "SNI_REQUEST_FAILED"
+  } else {
+    code
+  }
 
 internal fun classifySniResponseFailureCode(
   error: Throwable,
@@ -119,7 +151,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           SniConnectLogger.event(
             "sni_cache_evict",
             "hostname" to eldest.key.hostname,
-            "ipHash" to SniConnectLogger.shortHash(eldest.key.ip),
+            "ip" to eldest.key.ip,
             "cacheSize" to size,
             "limit" to MAX_CLIENTS,
             "reason" to "max_cached_clients",
@@ -133,6 +165,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private class ManagedRequest(
     val call: Call,
     val settled: AtomicBoolean,
+    val uploadProgress: UploadProgress?,
   ) {
     lateinit var admissionTicket: SniConnectRequestAdmission.Ticket
     private val explicitlyCancelled = AtomicBoolean(false)
@@ -149,6 +182,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
 
     fun wasExplicitlyCancelled(): Boolean = explicitlyCancelled.get()
+  }
+
+  private class UploadProgress {
+    private var bytesSent = 0L
+    private var totalBytes = 0L
+
+    @Synchronized
+    fun record(sent: Long, total: Long) {
+      totalBytes = total
+      bytesSent = maxOf(bytesSent, sent.coerceIn(0, total))
+    }
+
+    @Synchronized
+    fun snapshot(): Pair<Long, Long> = bytesSent to totalBytes
   }
 
   // Cancellation ownership is per module, so cancelAllRequests only affects its RN runtime.
@@ -211,6 +258,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
+  override fun getUploadProgress(requestId: String, promise: Promise) {
+    val progress = synchronized(activeCallsLock) {
+      activeCalls[requestId]?.takeUnless { it.settled.get() }?.uploadProgress
+    }
+    val snapshot = progress?.snapshot()
+    promise.resolve(snapshot?.let { (sent, total) ->
+      Arguments.createMap().apply {
+        putDouble("bytesSent", sent.toDouble())
+        putDouble("totalBytes", total.toDouble())
+      }
+    })
+  }
+
+  @ReactMethod
   override fun cancelRequest(requestId: String, promise: Promise) {
     val request = synchronized(activeCallsLock) {
       activeCalls.remove(requestId)
@@ -220,7 +281,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.info(
         SniConnectLogger.event(
           "sni_cancel",
-          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "requestId" to requestId,
           "success" to true,
         ),
       )
@@ -229,7 +290,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.warn(
         SniConnectLogger.event(
           "sni_cancel",
-          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "requestId" to requestId,
           "success" to false,
         ),
       )
@@ -302,10 +363,18 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private fun performRequest(config: RequestConfig, promise: Promise) {
     val startedAtMs = android.os.SystemClock.elapsedRealtime()
     val startedAtNanos = System.nanoTime()
+    // Shared by every OkHttp attempt of this logical request. The client's
+    // EventListener marks it once any attempt starts sending request headers.
+    val requestTransmission = SniRequestTransmissionState()
+    val uploadProgress = if (config.bodyFile != null && config.requestId != null) {
+      UploadProgress()
+    } else {
+      null
+    }
     var registeredRequest: ManagedRequest? = null
     try {
       val client = getOrCreateClient(config)
-      val request = buildRequest(config)
+      val request = buildRequest(config, requestTransmission, uploadProgress)
       val call = client.newCall(request)
       val settled = AtomicBoolean(false)
       lateinit var managedRequest: ManagedRequest
@@ -313,9 +382,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.info(
         SniConnectLogger.event(
           "sni_request_start",
-          "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+          "requestId" to config.requestId,
           "hostname" to config.hostname.lowercase(Locale.US),
-          "ipHash" to SniConnectLogger.shortHash(config.ip),
+          "ip" to config.ip,
           "ipFamily" to SniConnectLogger.ipFamily(config.ip),
           "method" to config.method,
           "timeoutMs" to config.timeoutMillis,
@@ -334,16 +403,19 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           if (managedRequest.wasExplicitlyCancelled()) {
             promise.reject("SNI_CANCELLED", "Request cancelled", null)
           } else {
-            val code = classifySniFailureCode(e)
+            val code = gateReplaySensitiveFailureCode(
+              classifySniFailureCode(e),
+              requestTransmission.hasRequestTransmissionStarted(),
+            )
             SniConnectLogger.error(
               SniConnectLogger.event(
                 "sni_request_result",
                 "result" to "error",
                 "code" to code,
                 "nativeErrorClass" to e.javaClass.simpleName,
-                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "requestId" to config.requestId,
                 "hostname" to config.hostname.lowercase(Locale.US),
-                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ip" to config.ip,
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
@@ -363,9 +435,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "sni_request_result",
                 "result" to "response",
                 "status" to currentResponse.code,
-                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "requestId" to config.requestId,
                 "hostname" to config.hostname.lowercase(Locale.US),
-                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ip" to config.ip,
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
@@ -410,9 +482,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "result" to "error",
                 "code" to code,
                 "nativeErrorClass" to error.javaClass.simpleName,
-                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "requestId" to config.requestId,
                 "hostname" to config.hostname.lowercase(Locale.US),
-                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ip" to config.ip,
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
@@ -455,7 +527,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           }
         },
       )
-      managedRequest = ManagedRequest(call, settled).apply {
+      managedRequest = ManagedRequest(call, settled, uploadProgress).apply {
         this.admissionTicket = admissionTicket
       }
       registerRequest(config.requestId, managedRequest)
@@ -477,9 +549,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           "result" to "error",
           "code" to code,
           "nativeErrorClass" to error.javaClass.simpleName,
-          "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+          "requestId" to config.requestId,
           "hostname" to config.hostname.lowercase(Locale.US),
-          "ipHash" to SniConnectLogger.shortHash(config.ip),
+          "ip" to config.ip,
           "ipFamily" to SniConnectLogger.ipFamily(config.ip),
           "method" to config.method,
           "timeoutMs" to config.timeoutMillis,
@@ -513,7 +585,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       SniConnectLogger.warn(
         SniConnectLogger.event(
           "sni_duplicate_request_id",
-          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "requestId" to requestId,
           "action" to "cancel_previous",
         ),
       )
@@ -574,7 +646,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         SniConnectLogger.event(
           "sni_transport_config",
           "hostname" to key.hostname,
-          "ipHash" to SniConnectLogger.shortHash(key.ip),
+          "ip" to key.ip,
           "ipFamily" to SniConnectLogger.ipFamily(key.ip),
           "proxyMode" to "no_proxy",
           "pinnedResolver" to true,
@@ -591,9 +663,16 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
    * Build the request. Always `https://<hostname><path>` on the implicit port 443 —
    * `path` has been validated as relative, so scheme/host/port cannot be overridden.
    */
-  private fun buildRequest(config: RequestConfig): Request {
+  private fun buildRequest(
+    config: RequestConfig,
+    requestTransmission: SniRequestTransmissionState,
+    uploadProgress: UploadProgress?,
+  ): Request {
     val url = "https://${config.hostname}${config.path}"
     val builder = Request.Builder().url(url)
+    // The transport's EventListener reads this tag on every OkHttp attempt,
+    // including bodyless methods that never write a request body.
+    builder.tag(SniRequestTransmissionState::class.java, requestTransmission)
 
     config.headers.forEach { (key, value) ->
       builder.addHeader(key, value)
@@ -607,7 +686,11 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       ?.value
       ?.toMediaTypeOrNull()
     // Enforce the body bound when OkHttp consumes the file, after admission.
-    val requestBody = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
+    val requestBody = config.bodyFile?.let {
+      SniUploadFileRequestBody(it, mediaType) { sent, total ->
+        uploadProgress?.record(sent, total)
+      }.also { body -> uploadProgress?.record(0, body.contentLength()) }
+    }
       ?: config.body?.toRequestBody(mediaType)
 
     when (method) {

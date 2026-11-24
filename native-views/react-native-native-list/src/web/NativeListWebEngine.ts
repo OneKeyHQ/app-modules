@@ -97,6 +97,7 @@ export const WEB_REORDER_ANIMATION = {
 } as const;
 
 const REORDER_TOUCH_LONG_PRESS_MS = 120;
+const REORDER_CLICK_GRACE_MS = 500;
 const MARKET_LONG_PRESS_MS = 800;
 const MARKET_MOVE_CANCEL_PX = 10;
 const REORDER_MOUSE_MOVE_THRESHOLD_PX = 5;
@@ -277,6 +278,7 @@ type PendingScroll =
       kind: 'index';
       index: number;
       scroll: NormalizedPositionScroll;
+      behavior: ScrollBehavior;
     }>
   | Readonly<{ kind: 'offset'; offset: number; animated: boolean }>
   | Readonly<{ kind: 'end'; animated: boolean }>;
@@ -285,6 +287,8 @@ type PointerReorderState = {
   pointerId: number;
   pointerType: string;
   sourceKey: string;
+  memberKey?: string;
+  handle?: HTMLElement;
   currentIndex: number;
   startX: number;
   startY: number;
@@ -302,10 +306,24 @@ type PointerReorderState = {
   }>;
   previewOffsetX?: number;
   previewOffsetY?: number;
+  handoff?: { index: number; scrollOffset: number; itemCenter: number };
+  restoringKeyboardOrder?: boolean;
   longPressTimer?: number;
   activatedAt?: number;
   active: boolean;
 };
+
+type ReorderClickPointer = Readonly<{
+  suppress: boolean;
+  pressTarget?: Element;
+  release?: Readonly<{
+    target: Element | undefined;
+    clientX: number;
+    clientY: number;
+    pointerType: string;
+    timer: number;
+  }>;
+}>;
 
 type KeyboardReorderState = {
   sourceKey: string;
@@ -324,6 +342,15 @@ export function isWebRowReorderable(
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
+  );
+}
+
+function hasWebReorderHandle(row: RowModel): boolean {
+  if (row.type === 'walletGroup')
+    return [row.parent, ...row.children].some(hasWebReorderHandle);
+  return (
+    'trailing' in row &&
+    row.trailing?.some((accessory) => accessory.kind === 'drag') === true
   );
 }
 
@@ -416,6 +443,15 @@ export function hasExceededWebReorderMouseThreshold(
 function effectiveRows(snapshot: NativeListSnapshot): readonly RowModel[] {
   if (snapshot.rows.length > 0) return snapshot.rows;
   return snapshot.emptyState ? [snapshot.emptyState] : [];
+}
+
+function isDarkBackground(color: string | undefined) {
+  const rgb = color ? /^#([0-9a-f]{6})/i.exec(color)?.[1] : undefined;
+  if (!rgb) return false;
+  const red = Number.parseInt(rgb.slice(0, 2), 16);
+  const green = Number.parseInt(rgb.slice(2, 4), 16);
+  const blue = Number.parseInt(rgb.slice(4, 6), 16);
+  return red * 299 + green * 587 + blue * 114 < 128_000;
 }
 
 function resolvedTheme(snapshot: NativeListSnapshot): NativeListTheme {
@@ -820,8 +856,11 @@ export const WEB_LIST_CSS = `
 .ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-reorderable="true"]:focus-visible>:is(.ok-native-list-row,.ok-native-list-wallet-group),
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
+:where(.ok-native-list-root[data-native-list-reorder-activation="handle"]) .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:default}
+.ok-native-list-item[data-native-list-reorderable="true"] [data-native-list-reorder-handle]{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
 .ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-pressed)}
@@ -842,6 +881,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
 .ok-native-list-trailing-button{appearance:none;box-sizing:border-box;flex:0 0 auto;padding:4px 10px;border:1px solid transparent;border-radius:9999px;background:var(--nl-button-bg,var(--nl-strong));color:var(--nl-button-text,var(--nl-primary));font:500 14px/20px var(--nl-font-medium);white-space:nowrap;cursor:default}.ok-native-list-trailing-button:hover:not(:disabled){background:var(--nl-button-hover,var(--nl-strong))}.ok-native-list-trailing-button:active:not(:disabled){background:var(--nl-button-pressed,var(--nl-pressed))}.ok-native-list-trailing-button:focus-visible{outline:2px solid var(--nl-button-focus,var(--nl-accent))}.ok-native-list-trailing-button:disabled{opacity:.4;cursor:default}
 .ok-native-list-icon-button.ok-native-list-tertiary-icon{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:6px;border:1px solid transparent;border-radius:9999px;color:var(--nl-icon-subdued);background:transparent}.ok-native-list-icon-button.ok-native-list-tertiary-icon:hover:not(:disabled){background:var(--nl-hover)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:active:not(:disabled){background:var(--nl-pressed)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:disabled{opacity:.4;cursor:default}
+.ok-native-list-action-glyph{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center}
 .ok-native-list-icon-button.ok-native-list-tertiary-icon:focus-visible:not(:disabled){outline:2px solid var(--nl-accent)}
 .ok-native-list-identity-title-icon{flex:0 0 20px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;color:var(--nl-icon);font-size:20px}.ok-native-list-identity-title-leading-icon{flex:0 0 16px;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:16px}.ok-native-list-identity-title-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}
@@ -852,7 +892,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-image-skeleton{position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:ok-native-list-skeleton-light 1.5s linear infinite alternate}.ok-native-list-image-skeleton[data-dark="true"]{animation-name:ok-native-list-skeleton-dark}@keyframes ok-native-list-skeleton-light{0%{background-color:#fafafa}100%{background-color:#cdcdcd}}@keyframes ok-native-list-skeleton-dark{0%{background-color:#111111}100%{background-color:#333333}}@media(prefers-reduced-motion:reduce){.ok-native-list-image-skeleton{animation:none;background-color:var(--nl-strong)}}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
 .ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;cursor:pointer;font-family:var(--nl-font-medium)}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
 .ok-native-list-icon-button.ok-native-list-decorative-refresh{min-width:16px;width:16px;height:16px}
-.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium);font-variant-numeric:inherit}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
 .ok-native-list-identity-row .ok-native-list-badge[data-tone="neutral"]{height:20px;box-sizing:border-box;padding:2px 8px;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:500;font-family:var(--nl-font-medium)}
 .ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-bold)}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px;letter-spacing:0.8px}.ok-native-list-section-value{margin-left:auto}
 .ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent);font-family:var(--nl-font-semibold)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
@@ -860,7 +900,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}
 .ok-native-list-system{justify-content:center;padding:8px 12px;background:var(--nl-bg);color:var(--nl-secondary);cursor:default}.ok-native-list-system[data-variant="retry"],.ok-native-list-system[data-variant="noMatch"],.ok-native-list-system[data-variant="end"]{justify-content:flex-start}.ok-native-list-system[data-variant="retry"]{cursor:pointer}
 .ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}
-.ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-medium)}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;cursor:pointer;font:18px/20px var(--nl-font-regular)}
+.ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-medium)}.ok-native-list-media-fallback{position:absolute;inset:0;overflow:hidden;border-radius:10px;background:var(--nl-strong);color:color-mix(in srgb,var(--nl-disabled) 70%,transparent)}.ok-native-list-media-fallback::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--nl-separator) 60%,transparent);pointer-events:none}.ok-native-list-media-sheen,.ok-native-list-media-hatch,.ok-native-list-media-glyph{position:absolute;inset:0;pointer-events:none}.ok-native-list-media-glyph{display:none;align-items:center;justify-content:center}.ok-native-list-media-glyph svg{width:28%;max-width:44px;height:auto}.ok-native-list-media-fallback[data-state="loading"] .ok-native-list-media-glyph[data-glyph="loading"],.ok-native-list-media-fallback[data-state="failed"] .ok-native-list-media-glyph[data-glyph="failed"]{display:flex}.ok-native-list-media-sheen{display:none;overflow:hidden}.ok-native-list-media-fallback[data-state="loading"] .ok-native-list-media-sheen{display:block}.ok-native-list-media-sheen::before{content:"";position:absolute;top:-50%;bottom:-50%;left:0;width:60%;background:linear-gradient(100deg,transparent 0%,var(--nl-media-shine,rgba(255,255,255,.75)) 50%,transparent 100%);transform:translateX(-135%) skewX(-12deg);animation:ok-native-list-media-sweep 1.6s cubic-bezier(.4,0,.2,1) infinite;animation-delay:var(--nl-media-sweep-delay,0s)}@keyframes ok-native-list-media-sweep{0%{transform:translateX(-135%) skewX(-12deg)}70%,100%{transform:translateX(220%) skewX(-12deg)}}.ok-native-list-media-hatch{display:none;background-image:repeating-linear-gradient(135deg,color-mix(in srgb,var(--nl-primary) 4.5%,transparent) 0 1px,transparent 1px 7px);-webkit-mask-image:radial-gradient(circle at 50% 50%,transparent 0 22%,#000 70%);mask-image:radial-gradient(circle at 50% 50%,transparent 0 22%,#000 70%)}.ok-native-list-media-fallback[data-state="failed"] .ok-native-list-media-hatch{display:block}@media(prefers-reduced-motion:reduce){.ok-native-list-media-sheen::before{animation:none;transform:translateX(60%) skewX(-12deg);opacity:.6}}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;cursor:pointer;font:18px/20px var(--nl-font-regular)}
 .ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700;font-family:var(--nl-font-bold)}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600;font-family:var(--nl-font-semibold)}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
 .ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-history{background:var(--nl-selected)}
@@ -1178,7 +1218,11 @@ function paintSelectorImageBackground(
 }
 
 function applySelectorIcon(element: HTMLElement, name: string) {
-  const canonical = selectorIcons[name];
+  // Registered names keep their legacy aliases; any other name resolves
+  // through the host icon catalog, matching the iOS/Android fallback.
+  const canonical = Object.prototype.hasOwnProperty.call(selectorIcons, name)
+    ? selectorIcons[name]
+    : name;
   if (!canonical) return;
   if (canonical === 'Circle') {
     const svg = element.ownerDocument.createElementNS(
@@ -1201,7 +1245,10 @@ function applySelectorIcon(element: HTMLElement, name: string) {
     element.replaceChildren(svg);
     return;
   }
-  element.replaceChildren(createNamedIcon(element.ownerDocument, canonical));
+  const svg = createNamedIcon(element.ownerDocument, canonical);
+  // Without host artwork the element keeps its text glyph.
+  if (!svg.firstChild) return;
+  element.replaceChildren(svg);
 }
 
 function iconGlyph(name: string): string {
@@ -1311,15 +1358,8 @@ function createVisual(
         'span',
         'ok-native-list-image-skeleton'
       );
-      const background = resolvedTheme(context.snapshot).background;
-      const rgb = /^#([0-9a-f]{6})/i.exec(background)?.[1];
-      if (rgb) {
-        const red = Number.parseInt(rgb.slice(0, 2), 16);
-        const green = Number.parseInt(rgb.slice(2, 4), 16);
-        const blue = Number.parseInt(rgb.slice(4, 6), 16);
-        if (red * 299 + green * 587 + blue * 114 < 128_000)
-          skeleton.dataset.dark = 'true';
-      }
+      if (isDarkBackground(resolvedTheme(context.snapshot).background))
+        skeleton.dataset.dark = 'true';
       frame.appendChild(skeleton);
       image.addEventListener('load', () => skeleton.remove(), { once: true });
       image.addEventListener('error', () => skeleton.remove(), { once: true });
@@ -1393,6 +1433,8 @@ function createVisual(
           if (svg) {
             svg.style.width = `${fallbackIcon.size}px`;
             svg.style.height = `${fallbackIcon.size}px`;
+            // Keep the requested size inside a bordered frame, as Icon w/h does.
+            svg.style.flexShrink = '0';
           }
         }
       }
@@ -1411,8 +1453,21 @@ function createVisual(
       '2px dashed ' + (visual.borderColor ?? 'var(--nl-disabled)');
     frame.style.boxSizing = 'border-box';
   } else if ('borderColor' in visual && visual.borderColor) {
-    frame.style.border = '1px solid ' + visual.borderColor;
+    frame.style.border =
+      String(
+        'borderWidth' in visual && visual.borderWidth ? visual.borderWidth : 1
+      ) +
+      'px solid ' +
+      visual.borderColor;
     frame.style.boxSizing = 'border-box';
+    // iOS and Android inset the image by the border, as React Native's Image does.
+    const main = frame.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-visual-main'
+    );
+    if (main) {
+      main.style.width = '100%';
+      main.style.height = '100%';
+    }
   }
   if ('overlays' in visual)
     visual.overlays?.forEach((overlay) => {
@@ -1628,7 +1683,8 @@ function createIconAction(
   name: string,
   actionKey: string | undefined,
   disabled?: boolean,
-  tintColor?: string
+  tintColor?: string,
+  accessibilityLabel?: string
 ): HTMLElement {
   const element = createElement(
     context.document,
@@ -1639,7 +1695,13 @@ function createIconAction(
   if (element.tagName === 'BUTTON') {
     element.setAttribute('type', 'button');
     element.toggleAttribute('disabled', Boolean(disabled));
-    if (name === 'DotVerSolid') element.setAttribute('aria-label', '⋮');
+    element.setAttribute(
+      'aria-label',
+      accessibilityLabel || (name === 'DotVerSolid' ? '⋮' : iconGlyph(name))
+    );
+  } else if (accessibilityLabel) {
+    element.setAttribute('aria-label', accessibilityLabel);
+    element.setAttribute('role', 'img');
   }
   applySelectorIcon(element, name);
   if (actionKey) setData(element, 'nativeListAction', actionKey);
@@ -1710,8 +1772,9 @@ function createAccessory(
       context,
       accessory.name,
       accessory.actionKey,
-      accessory.disabled,
-      accessory.tintColor
+      rowDisabled || accessory.disabled,
+      accessory.tintColor,
+      accessory.accessibilityLabel
     );
     markActionAnchorSource(element, 'trailingAccessory', slot);
     if (accessory.name === 'RefreshCcwOutline' && !accessory.actionKey) {
@@ -1729,8 +1792,6 @@ function createAccessory(
       setData(element, 'nativeListHoverAction', accessory.hoverActionKey);
     if (accessory.hoverActionKey && accessory.buttonStyle === 'tertiary')
       setData(element, 'nativeListIconHelp', true);
-    if (accessory.accessibilityLabel)
-      element.setAttribute('aria-label', accessory.accessibilityLabel);
     const row = context.snapshot.rows[context.itemIndex];
     if (
       row &&
@@ -1828,6 +1889,23 @@ function createAccessory(
       break;
     case 'drag':
       element.textContent = '≡';
+      applySelectorIcon(element, 'DragOutline');
+      // iOS and Android tint the handle iconSubdued, like ListItem.IconButton.
+      element.style.color = 'var(--nl-icon-subdued)';
+      // A 24-point centered box, so the glyph does not follow the text line box.
+      Object.assign(element.style, {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '24px',
+        height: '24px',
+      });
+      if (actionKey) {
+        element.toggleAttribute('disabled', rowDisabled);
+        element.setAttribute('aria-label', '≡');
+      }
+      setData(element, 'nativeListReorderHandle', true);
+      setData(element, 'nativeListAnchorSlot', slot);
       break;
     case 'progress':
       element.textContent = String(Math.round(accessory.value * 100)) + '%';
@@ -1852,8 +1930,17 @@ function rendererPrimitives(context: RenderContext, rowDisabled: boolean) {
       name: string,
       actionKey: string | undefined,
       disabled?: boolean,
-      tintColor?: string
-    ) => createIconAction(context, name, actionKey, disabled, tintColor),
+      tintColor?: string,
+      accessibilityLabel?: string
+    ) =>
+      createIconAction(
+        context,
+        name,
+        actionKey,
+        rowDisabled || disabled,
+        tintColor,
+        accessibilityLabel
+      ),
     dispose: disposeWebImageRetries,
   };
 }
@@ -1953,7 +2040,10 @@ export class NativeListWebEngine {
   private reorderSettlingKey: string | undefined;
   private reorderCompactKey: string | undefined;
   private reorderExpandingKey: string | undefined;
-  private suppressClickUntil = 0;
+  private readonly reorderClickPointers = new Map<
+    number,
+    ReorderClickPointer
+  >();
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
@@ -2197,6 +2287,13 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.addEventListener('click', this.handleClick);
+    this.document.addEventListener('pointerdown', this.trackReorderPress, true);
+    this.document.addEventListener('pointerup', this.trackReorderRelease, true);
+    this.document.addEventListener(
+      'pointercancel',
+      this.trackReorderRelease,
+      true
+    );
     this.root.addEventListener('contextmenu', this.handleMarketContextMenu);
     this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
     this.root.addEventListener('pointermove', this.handleMarketPointerMove);
@@ -2382,6 +2479,27 @@ export class NativeListWebEngine {
   private applyValidatedSnapshot(validated: NativeListSnapshot) {
     this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('snapshot');
+    const capabilities = this.snapshot.capabilities;
+    const nextCapabilities = validated.capabilities;
+    if (
+      this.pointerReorder?.active ||
+      this.pointerReorder?.restoringKeyboardOrder ||
+      this.keyboardReorder ||
+      capabilities?.reorderable !== nextCapabilities?.reorderable ||
+      (capabilities?.reorderActivation ?? 'row') !==
+        (nextCapabilities?.reorderActivation ?? 'row')
+    ) {
+      this.cancelPointerReorder(false);
+    }
+    const keyboardSource = this.keyboardReorder?.sourceKey;
+    const preserveKeyboardFocus =
+      keyboardSource &&
+      this.document.activeElement?.getAttribute('data-native-list-row-key') ===
+        keyboardSource;
+    if (this.keyboardReorder) {
+      this.keyboardReorder = undefined;
+      this.updateReorderVisualState();
+    }
     const transition = validated.structuralTransition;
     const isNewTransition =
       transition !== undefined &&
@@ -2422,6 +2540,7 @@ export class NativeListWebEngine {
         this.cancelStructuralAnimation();
       this.setSnapshot(validated);
     }
+    if (preserveKeyboardFocus) this.focusMountedRow(keyboardSource);
     this.hasAppliedSnapshot = true;
   }
 
@@ -2476,12 +2595,75 @@ export class NativeListWebEngine {
       (event as PointerEvent).pointerType !== 'touch'
     )
       return;
+    if (
+      event.type === 'wheel' &&
+      this.keyboardReorder &&
+      this.wheelReachesScrollOwner(event as WheelEvent)
+    ) {
+      this.cancelKeyboardReorder(false);
+    }
     this.structuralScrollInterrupted = true;
     if (this.structuralPrefixTransition) {
       this.cancelStructuralAnimation();
       this.recomputeLayout();
     }
   };
+
+  private wheelReachesScrollOwner(event: WheelEvent) {
+    if (event.defaultPrevented || event.ctrlKey) return false;
+    const view = this.document.defaultView;
+    if (!view) return true;
+    const horizontal =
+      event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+    const delta = horizontal ? event.deltaX || event.deltaY : event.deltaY;
+    for (const target of event.composedPath()) {
+      if (target === event.currentTarget) break;
+      if (!(target instanceof view.HTMLElement)) continue;
+      const offset = horizontal ? target.scrollLeft : target.scrollTop;
+      const scrollRange = horizontal
+        ? target.scrollWidth - target.clientWidth
+        : target.scrollHeight - target.clientHeight;
+      if (scrollRange <= 0) continue;
+      const style = view.getComputedStyle(target);
+      const negativeOffset = this.hasNegativeScrollOffsets(style, horizontal);
+      const minOffset = negativeOffset ? -scrollRange : 0;
+      const maxOffset = negativeOffset ? 0 : scrollRange;
+      const overflow =
+        (horizontal ? style.overflowX : style.overflowY) || style.overflow;
+      if (overflow !== 'auto' && overflow !== 'scroll') continue;
+      const overscroll = horizontal
+        ? style.overscrollBehaviorX
+        : style.overscrollBehaviorY;
+      if (
+        overscroll === 'contain' ||
+        overscroll === 'none' ||
+        (delta < 0 ? offset > minOffset : offset < maxOffset)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private hasNegativeScrollOffsets(
+    style: CSSStyleDeclaration,
+    horizontal: boolean
+  ): boolean {
+    const { writingMode, direction, display, flexDirection, flexWrap } = style;
+    const horizontalWritingMode =
+      !writingMode || writingMode === 'horizontal-tb';
+    const inlineAxis = horizontal === horizontalWritingMode;
+    const negative = inlineAxis
+      ? (direction === 'rtl') !== (writingMode === 'sideways-lr')
+      : horizontal && writingMode.endsWith('-rl');
+    const isFlexMainAxis = inlineAxis !== flexDirection.startsWith('column');
+    const reversedFlex =
+      (display === 'flex' || display === 'inline-flex') &&
+      (isFlexMainAxis
+        ? flexDirection.endsWith('-reverse')
+        : flexWrap === 'wrap-reverse');
+    return negative !== reversedFlex;
+  }
 
   private updateStructuralTailWindow() {
     const tail = this.structuralTail;
@@ -2812,7 +2994,12 @@ export class NativeListWebEngine {
   }
 
   currentSnapshot(): NativeListSnapshot {
-    return this.snapshot;
+    const originalRows = this.pointerReorder?.active
+      ? this.pointerReorder.originalRows
+      : this.keyboardReorder?.originalRows;
+    return originalRows
+      ? { ...this.snapshot, rows: originalRows }
+      : this.snapshot;
   }
 
   applyPatches(patches: readonly RowPatch[]) {
@@ -2821,7 +3008,38 @@ export class NativeListWebEngine {
     );
     if (!accepted || accepted.patches.length === 0) return;
     patches = accepted.patches;
-    const next = accepted.snapshot;
+    let next = accepted.snapshot;
+    let restoredReorder = false;
+    const pointer = this.pointerReorder?.active
+      ? this.pointerReorder
+      : undefined;
+    const keyboard = this.keyboardReorder;
+    const reorder = pointer ?? keyboard;
+    if (reorder) {
+      const byKey = new Map(next.rows.map((row) => [row.key, row]));
+      reorder.originalRows = reorder.originalRows.map(
+        (row) => byKey.get(row.key) ?? row
+      );
+      const source = byKey.get(reorder.sourceKey);
+      const canContinue = pointer
+        ? this.canStartPointerReorder(pointer, next)
+        : source &&
+          isWebRowReorderable(next, source) &&
+          (next.capabilities?.reorderActivation !== 'handle' ||
+            hasWebReorderHandle(source));
+      if (!canContinue) {
+        this.cancelPointerReorder(false);
+        if (keyboard) {
+          this.keyboardReorder = undefined;
+          this.updateReorderVisualState();
+        }
+        this.remapMountedRows(reorder.originalRows);
+        next = { ...next, rows: reorder.originalRows };
+        restoredReorder = true;
+      } else if (pointer) {
+        pointer.workingRows = [...next.rows];
+      }
+    }
     const selection = new Set(this.selectedKeys);
     patches.forEach((patch) => {
       const selected =
@@ -2844,7 +3062,10 @@ export class NativeListWebEngine {
         canPatchMarketTableValues(before, after)
       );
     });
-    if (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly) {
+    if (
+      !restoredReorder &&
+      (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly)
+    ) {
       this.snapshot = next;
       this.rows = effectiveRows(next);
       this.selectedKeys = selection;
@@ -2883,19 +3104,23 @@ export class NativeListWebEngine {
     this.renderFooter();
   }
 
-  scrollToIndex(index: number, scroll: NormalizedPositionScroll) {
+  scrollToIndex(
+    index: number,
+    scroll: NormalizedPositionScroll,
+    behavior: ScrollBehavior = scroll.animated ? 'smooth' : 'auto'
+  ) {
     if (index < 0 || index >= this.rows.length) {
       this.emitScrollFailure(index, 'index-out-of-range');
       return;
     }
     this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
-      this.pendingScroll = { kind: 'index', index, scroll };
+      this.pendingScroll = { kind: 'index', index, scroll, behavior };
       return;
     }
     const item = this.layout.items[index];
     if (!item) {
-      this.pendingScroll = { kind: 'index', index, scroll };
+      this.pendingScroll = { kind: 'index', index, scroll, behavior };
       return;
     }
     const viewportLength = this.viewportLength();
@@ -2911,7 +3136,7 @@ export class NativeListWebEngine {
       viewPosition: scroll.viewPosition,
       viewOffset: scroll.viewOffset,
     });
-    this.scrollToAbsoluteOffset(offset, scroll.animated);
+    this.scrollToAbsoluteOffset(offset, behavior);
   }
 
   scrollToKey(key: string, scroll: NormalizedPositionScroll) {
@@ -2928,8 +3153,11 @@ export class NativeListWebEngine {
     }
     if (this.externalScrollHost) {
       const geometry = this.externalGeometry();
-      this.writeExternalOffset(geometry.containerOrigin + offset, animated);
-    } else this.scrollToAbsoluteOffset(offset, animated);
+      this.writeExternalOffset(
+        geometry.containerOrigin + offset,
+        animated ? 'smooth' : 'auto'
+      );
+    } else this.scrollToAbsoluteOffset(offset, animated ? 'smooth' : 'auto');
   }
 
   scrollToEnd(animated: boolean) {
@@ -2942,12 +3170,12 @@ export class NativeListWebEngine {
       const geometry = this.externalGeometry();
       this.writeExternalOffset(
         geometry.end - this.externalScrollHost.clientHeight,
-        animated
+        animated ? 'smooth' : 'auto'
       );
     } else
       this.scrollToAbsoluteOffset(
         Math.max(0, this.contentLength() - this.viewportLength()),
-        animated
+        animated ? 'smooth' : 'auto'
       );
   }
 
@@ -3046,6 +3274,23 @@ export class NativeListWebEngine {
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.removeEventListener('click', this.handleClick);
+    this.document.removeEventListener(
+      'pointerdown',
+      this.trackReorderPress,
+      true
+    );
+    this.document.removeEventListener(
+      'pointerup',
+      this.trackReorderRelease,
+      true
+    );
+    this.document.removeEventListener(
+      'pointercancel',
+      this.trackReorderRelease,
+      true
+    );
+    for (const id of this.reorderClickPointers.keys())
+      this.clearReorderClick(id);
     this.root.removeEventListener('contextmenu', this.handleMarketContextMenu);
     this.cancelMarketPointer();
     this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
@@ -3123,6 +3368,11 @@ export class NativeListWebEngine {
     this.pressedHelpElement = undefined;
     this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
+    setData(
+      this.root,
+      'nativeListReorderActivation',
+      snapshot.capabilities?.reorderActivation
+    );
     this.rows = effectiveRows(snapshot);
     this.selectedKeys =
       selectedKeys ?? selectionStateFromSnapshot(snapshot).selectedKeys;
@@ -3165,6 +3415,9 @@ export class NativeListWebEngine {
       '--nl-inverse': theme.inverseBackground,
       '--nl-inverse-text': theme.inverseText,
       '--nl-info': theme.info,
+      '--nl-media-shine': isDarkBackground(theme.background)
+        ? 'rgba(255,255,255,0.07)'
+        : 'rgba(255,255,255,0.75)',
     };
     Object.entries(values).forEach(([name, value]) => {
       if (!value) return;
@@ -3245,7 +3498,7 @@ export class NativeListWebEngine {
     this.root.style.height = value;
   }
 
-  private recomputeLayout = () => {
+  private recomputeLayout = (revealIndex?: number) => {
     if (this.destroyed) return;
     if (
       this.structuralPrefixTransition &&
@@ -3349,7 +3602,21 @@ export class NativeListWebEngine {
       this.viewport.scrollLeft = 0;
       this.viewport.scrollTop = 0;
     }
-    this.renderWindow();
+    if (revealIndex !== undefined) {
+      // Mount against the destination offset, even on hosts with smooth scrolling.
+      this.pendingScroll = undefined;
+      this.scrollToIndex(
+        revealIndex,
+        {
+          animated: false,
+          alignment: 'nearest',
+          viewPosition: 0,
+          viewOffset: 0,
+        },
+        'instant'
+      );
+    }
+    this.renderWindow(revealIndex);
     this.performPendingScroll();
   };
 
@@ -3412,7 +3679,7 @@ export class NativeListWebEngine {
     });
   }
 
-  private renderWindow() {
+  private renderWindow(revealIndex?: number) {
     this.updateAvatarWindow();
     const viewportLength = this.viewportLength();
     const visible =
@@ -3425,6 +3692,11 @@ export class NativeListWebEngine {
             this.virtualizationEnabled,
             viewportLength * OVERSCAN_VIEWPORTS
           );
+    const keyboardSource = this.keyboardReorder?.sourceKey;
+    if (keyboardSource && !visible.some(({ key }) => key === keyboardSource)) {
+      this.cancelKeyboardReorder(false);
+      return;
+    }
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
       const nextRow = this.rows[index];
@@ -3468,6 +3740,8 @@ export class NativeListWebEngine {
       ) {
         this.renderElement(element, layoutItem.index, row);
         element.dataset.renderSignature = signature;
+      } else {
+        this.updateRowReorderability(element, layoutItem.index, row);
       }
     });
     let measuredHeightChanged = false;
@@ -3494,7 +3768,7 @@ export class NativeListWebEngine {
       }
     });
     if (measuredHeightChanged) {
-      this.recomputeLayout();
+      this.recomputeLayout(revealIndex);
       return;
     }
     this.updateVisibleSelection();
@@ -3507,6 +3781,29 @@ export class NativeListWebEngine {
       'translate3d(' + String(item.x) + 'px,' + String(item.y) + 'px,0)';
     element.style.width = String(item.width) + 'px';
     element.style.height = String(item.height) + 'px';
+  }
+
+  private updateRowReorderability(
+    element: HTMLElement,
+    index: number,
+    row: RowModel
+  ) {
+    const reorderable =
+      this.snapshot.rows[index] === row && this.isReorderable(row);
+    setData(element, 'nativeListReorderable', reorderable);
+    if (isRowPressEnabled(row) || this.canStartKeyboardReorder(element)) {
+      if (element.tabIndex !== 0) element.tabIndex = 0;
+    } else {
+      element.removeAttribute('tabindex');
+    }
+  }
+
+  private canStartKeyboardReorder(element: HTMLElement) {
+    return (
+      element.dataset.nativeListReorderable === 'true' &&
+      (this.snapshot.capabilities?.reorderActivation !== 'handle' ||
+        element.querySelector('[data-native-list-reorder-handle]') !== null)
+    );
   }
 
   private renderElement(
@@ -3543,7 +3840,6 @@ export class NativeListWebEngine {
       (row.style?.container?.opacity ?? row.opacity ?? 1) *
         (row.disabled ? 0.5 : 1)
     );
-    setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
       'nativeListDragging',
@@ -3563,11 +3859,6 @@ export class NativeListWebEngine {
       'aria-label',
       row.accessibilityLabel ?? this.rowLabel(row)
     );
-    if (isRowPressEnabled(row)) {
-      element.tabIndex = 0;
-    } else {
-      element.removeAttribute('tabindex');
-    }
     element.draggable = false;
     const context = {
       document: this.document,
@@ -3601,6 +3892,7 @@ export class NativeListWebEngine {
     // Template and presentation defaults must precede caller overrides.
     applyRowStyle(body, row);
     if (body.parentElement !== element) element.replaceChildren(body);
+    this.updateRowReorderability(element, overlay ? -1 : index, row);
     if (
       row.type === 'market' &&
       row.diagnostics?.imageBindActionKey &&
@@ -4185,7 +4477,7 @@ export class NativeListWebEngine {
     this.recomputeLayout();
   };
 
-  private writeExternalOffset(rawOffset: number, animated: boolean) {
+  private writeExternalOffset(rawOffset: number, behavior: ScrollBehavior) {
     this.externalGeometryCache = undefined;
     const host = this.externalScrollHost!;
     const scrollTo: (options: ScrollToOptions) => void =
@@ -4196,17 +4488,17 @@ export class NativeListWebEngine {
         0,
         Math.min(host.scrollHeight - host.clientHeight, rawOffset)
       ),
-      behavior: animated ? 'smooth' : 'auto',
+      behavior,
     });
     this.scheduleFrame();
   }
 
-  private scrollToAbsoluteOffset(offset: number, animated: boolean) {
+  private scrollToAbsoluteOffset(offset: number, behavior: ScrollBehavior) {
     if (this.externalScrollHost) {
       const geometry = this.externalGeometry();
       this.writeExternalOffset(
         geometry.origin + offset - this.externalStickyInset,
-        animated
+        behavior
       );
       return;
     }
@@ -4222,8 +4514,8 @@ export class NativeListWebEngine {
         );
     this.viewport.scrollTo(
       this.layout.horizontal
-        ? { left: rawOffset, top: 0, behavior: animated ? 'smooth' : 'auto' }
-        : { left: 0, top: rawOffset, behavior: animated ? 'smooth' : 'auto' }
+        ? { left: rawOffset, top: 0, behavior }
+        : { left: 0, top: rawOffset, behavior }
     );
     this.scheduleFrame();
   }
@@ -4233,7 +4525,7 @@ export class NativeListWebEngine {
     if (!pending || !this.canScroll()) return;
     this.pendingScroll = undefined;
     if (pending.kind === 'index')
-      this.scrollToIndex(pending.index, pending.scroll);
+      this.scrollToIndex(pending.index, pending.scroll, pending.behavior);
     else if (pending.kind === 'offset')
       this.scrollToOffset(pending.offset, pending.animated);
     else this.scrollToEnd(pending.animated);
@@ -4323,7 +4615,10 @@ export class NativeListWebEngine {
     if (!source || !bindingEpoch || !rowElement.contains(actionElement))
       return undefined;
     this.invalidateActionAnchor('rebind');
-    const actualRect = actionElement.getBoundingClientRect();
+    const glyph = actionElement.querySelector(
+      ':scope > [data-native-list-anchor-glyph]'
+    );
+    const actualRect = (glyph ?? actionElement).getBoundingClientRect();
     const inset = Number(actionElement.dataset.nativeListAnchorInset ?? 0);
     const rect = {
       left: actualRect.left + inset,
@@ -4677,8 +4972,122 @@ export class NativeListWebEngine {
       this.invalidateActionAnchor('pointerLeave');
   };
 
-  private handleClick = (event: Event) => {
-    if (this.marketLongPressFired || Date.now() < this.suppressClickUntil) {
+  private clearReorderClick(
+    pointerId: number
+  ): ReorderClickPointer | undefined {
+    const pointer = this.reorderClickPointers.get(pointerId);
+    if (pointer?.release)
+      this.document.defaultView?.clearTimeout(pointer.release.timer);
+    this.reorderClickPointers.delete(pointerId);
+    return pointer;
+  }
+
+  private reorderClickTarget(
+    target: EventTarget | null,
+    pressTarget?: Element
+  ): Element | undefined {
+    if (!(target instanceof Element) || !this.root.contains(target))
+      return undefined;
+    let clickTarget: Element | null = target;
+    if (pressTarget && this.root.contains(pressTarget)) {
+      // An uncaptured click can target the common ancestor of two controls.
+      while (clickTarget && !clickTarget.contains(pressTarget))
+        clickTarget = clickTarget.parentElement;
+    }
+    return (
+      clickTarget?.closest(
+        '[data-native-list-action],[data-native-list-group-member-key],[data-native-list-row-key]'
+      ) ??
+      clickTarget ??
+      undefined
+    );
+  }
+
+  private trackReorderPress = (event: PointerEvent) => {
+    this.clearReorderClick(event.pointerId);
+    if (
+      event.isPrimary === false ||
+      event.button !== 0 ||
+      !(event.target instanceof Element) ||
+      !this.root.contains(event.target)
+    )
+      return;
+
+    this.reorderClickPointers.set(event.pointerId, {
+      suppress: false,
+      pressTarget: event.target,
+    });
+  };
+
+  private trackReorderRelease = (event: PointerEvent) => {
+    if (this.reorderClickPointers.size === 0) return;
+    const {
+      type,
+      pointerId,
+      clientX,
+      clientY,
+      pointerType,
+      isPrimary,
+      button,
+    } = event;
+    const pending = this.clearReorderClick(pointerId);
+    if (!pending || type !== 'pointerup' || isPrimary === false || button !== 0)
+      return;
+    const releaseTarget =
+      event.target === this.viewport &&
+      this.viewport.hasPointerCapture?.(pointerId)
+        ? this.document.elementFromPoint?.(clientX, clientY) ?? event.target
+        : event.target;
+    const target = this.reorderClickTarget(releaseTarget, pending.pressTarget);
+    if (!pending.suppress && !target) return;
+
+    // Start expiry at release so a cancelled reorder stays suppressed while held.
+    const view = this.document.defaultView;
+    if (!view) return;
+    const timer = view.setTimeout(
+      () => this.reorderClickPointers.delete(pointerId),
+      REORDER_CLICK_GRACE_MS
+    );
+    this.reorderClickPointers.set(pointerId, {
+      suppress: pending.suppress,
+      release: { target, clientX, clientY, pointerType, timer },
+    });
+  };
+
+  private legacyClickPointerId(event: MouseEvent): number | undefined {
+    // Keyboard and programmatic activations have detail 0.
+    if (!(event.detail > 0)) return undefined;
+    const target = this.reorderClickTarget(event.target);
+    if (!target) return undefined;
+    const fromTouch = (
+      event as MouseEvent & {
+        sourceCapabilities?: { firesTouchEvents: boolean } | null;
+      }
+    ).sourceCapabilities?.firesTouchEvents;
+    let match: number | undefined;
+    // A release inserts at the end of the map. Keep the latest matching release.
+    for (const [pointerId, { release }] of this.reorderClickPointers) {
+      if (
+        release?.target === target &&
+        (fromTouch === undefined ||
+          fromTouch === (release.pointerType === 'touch')) &&
+        Math.abs(release.clientX - event.clientX) <= 1 &&
+        Math.abs(release.clientY - event.clientY) <= 1
+      )
+        match = pointerId;
+    }
+    return match;
+  }
+
+  private handleClick = (event: MouseEvent) => {
+    const pointerId =
+      (event as PointerEvent).pointerId ??
+      (this.reorderClickPointers.size > 0
+        ? this.legacyClickPointerId(event)
+        : undefined);
+    const clickFromReorder =
+      pointerId !== undefined && this.clearReorderClick(pointerId)?.suppress;
+    if (this.marketLongPressFired || clickFromReorder) {
       this.marketLongPressFired = false;
       event.preventDefault();
       event.stopPropagation();
@@ -4740,29 +5149,8 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
-    if (
-      (event.key === 'Enter' || event.key === ' ') &&
-      event.target instanceof HTMLElement &&
-      event.target.matches('[role="button"][data-native-list-hover-action]')
-    ) {
-      event.preventDefault();
-      if (
-        this.actionAnchor?.actionElement !== event.target ||
-        !this.actionAnchor.open
-      )
-        this.emitHoverAction(event.target);
-      return;
-    }
-    // OneKey patch: non-button title help supports keyboard activation.
-    if (
-      (event.key === 'Enter' || event.key === ' ') &&
-      event.target instanceof HTMLElement &&
-      event.target.matches('[role="button"][data-native-list-action]')
-    ) {
-      event.preventDefault();
-      event.target.click();
-      return;
-    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
     if (event.key === 'Escape') {
       if (this.pointerReorder?.active) {
         event.preventDefault();
@@ -4774,6 +5162,46 @@ export class NativeListWebEngine {
         this.cancelKeyboardReorder();
         return;
       }
+    }
+    const rowElement = target.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    if (
+      this.keyboardReorder &&
+      (event.key === 'Tab' ||
+        target.dataset.nativeListRowKey !== this.keyboardReorder.sourceKey)
+    ) {
+      const bindingEpoch = rowElement?.dataset.nativeListBindingEpoch;
+      this.cancelKeyboardReorder(false);
+      if (event.key === 'Tab') return;
+      if (
+        !this.root.contains(target) ||
+        rowElement?.dataset.nativeListBindingEpoch !== bindingEpoch
+      ) {
+        event.preventDefault();
+        return;
+      }
+    }
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      target.matches('[role="button"][data-native-list-hover-action]')
+    ) {
+      event.preventDefault();
+      if (
+        this.actionAnchor?.actionElement !== target ||
+        !this.actionAnchor.open
+      )
+        this.emitHoverAction(target);
+      return;
+    }
+    // OneKey patch: non-button title help supports keyboard activation.
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      target.matches('[role="button"][data-native-list-action]')
+    ) {
+      event.preventDefault();
+      target.click();
+      return;
     }
     if (
       this.keyboardReorder &&
@@ -4792,21 +5220,21 @@ export class NativeListWebEngine {
       return;
     }
     if (event.key !== 'Enter' && event.key !== ' ') return;
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
     if (target.matches('button')) return;
-    const row = this.rowAtElement(target.closest('[data-native-list-row-key]'));
+    const row = this.rowAtElement(rowElement);
     if (!row) return;
     event.preventDefault();
-    if (event.key === ' ' && this.isReorderable(row)) {
+    if (
+      event.key === ' ' &&
+      target === rowElement &&
+      !this.pointerReorder?.active &&
+      this.canStartKeyboardReorder(target)
+    ) {
       if (this.keyboardReorder) this.finishKeyboardReorder();
       else this.startKeyboardReorder(row);
       return;
     }
-    this.handleRowPress(
-      row,
-      target.closest<HTMLElement>('[data-native-list-row-key]') ?? undefined
-    );
+    this.handleRowPress(row, rowElement ?? undefined);
   };
 
   private startKeyboardReorder(row: RowModel) {
@@ -4833,19 +5261,13 @@ export class NativeListWebEngine {
       from.sectionKey !== to.sectionKey
     )
       return;
+    this.cancelPendingPointerReorder();
     const rows = moveWebReorderRow(this.snapshot.rows, fromIndex, toIndex);
-    this.remapMountedRows(rows);
-    this.setSnapshot({ ...this.snapshot, rows }, this.selectedKeys);
-    this.updateReorderVisualState();
-    this.scrollToIndex(toIndex, {
-      animated: false,
-      alignment: 'nearest',
-      viewPosition: 0,
-      viewOffset: 0,
-    });
-    [...this.mounted.values()]
-      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
-      ?.focus({ preventScroll: true });
+    this.setReorderRows(rows, toIndex);
+    if (this.keyboardReorder === state) {
+      this.updateReorderVisualState();
+      this.focusMountedRow(state.sourceKey);
+    }
   }
 
   private finishKeyboardReorder() {
@@ -4861,18 +5283,30 @@ export class NativeListWebEngine {
     if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
   }
 
-  private cancelKeyboardReorder() {
+  private cancelKeyboardReorder(restoreFocus = true, revealIndex?: number) {
     const state = this.keyboardReorder;
     if (!state) return;
     this.keyboardReorder = undefined;
-    this.remapMountedRows(state.originalRows);
-    this.setSnapshot(
-      { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
-      this.selectedKeys
-    );
+    this.cancelPendingPointerReorder();
+    const rows = cancelWebReorderRows(state.originalRows);
+    this.setReorderRows(rows, revealIndex);
     this.updateReorderVisualState();
+    if (restoreFocus && this.snapshot.rows === rows)
+      this.focusMountedRow(state.sourceKey);
+  }
+
+  private setReorderRows(rows: readonly RowModel[], revealIndex?: number) {
+    this.cancelMarketPointer();
+    this.pressedHelpElement = undefined;
+    this.remapMountedRows(rows);
+    this.snapshot = { ...this.snapshot, rows };
+    this.rows = rows;
+    this.recomputeLayout(revealIndex);
+  }
+
+  private focusMountedRow(key: string) {
     [...this.mounted.values()]
-      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
+      .find((element) => element.dataset.nativeListRowKey === key)
       ?.focus({ preventScroll: true });
   }
 
@@ -5054,7 +5488,6 @@ export class NativeListWebEngine {
   private handleReorderPointerDown = (event: PointerEvent) => {
     if (
       this.pointerReorder ||
-      this.keyboardReorder ||
       event.isPrimary === false ||
       (event.pointerType === 'mouse' && event.button !== 0)
     ) {
@@ -5062,7 +5495,14 @@ export class NativeListWebEngine {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (target.closest('button,input,textarea,select,a')) return;
+    const handleMode =
+      this.snapshot.capabilities?.reorderActivation === 'handle';
+    const handle = handleMode
+      ? target.closest<HTMLElement>('[data-native-list-reorder-handle]')
+      : undefined;
+    const control = target.closest('button,input,textarea,select,a');
+    if (handleMode && !handle) return;
+    if (control && (control !== handle || control.matches(':disabled'))) return;
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-index]'
     );
@@ -5086,6 +5526,8 @@ export class NativeListWebEngine {
       pointerId: event.pointerId,
       pointerType: event.pointerType || 'mouse',
       sourceKey: row.key,
+      memberKey,
+      handle: handle ?? undefined,
       currentIndex: index,
       startX: event.clientX,
       startY: event.clientY,
@@ -5105,15 +5547,93 @@ export class NativeListWebEngine {
     }
   };
 
+  private canStartPointerReorder(
+    state: PointerReorderState,
+    snapshot: NativeListSnapshot
+  ): boolean {
+    const row = snapshot.rows.find(
+      (candidate) => candidate.key === state.sourceKey
+    );
+    if (
+      !row ||
+      !isWebRowReorderable(snapshot, row) ||
+      !canStartWebWalletGroupReorder(row, state.memberKey)
+    )
+      return false;
+    if (!state.handle) return true;
+    const handleRow =
+      row.type === 'walletGroup'
+        ? [row.parent, ...row.children].find(
+            (member) => member.key === state.memberKey
+          )
+        : row;
+    const slot = Number(state.handle.dataset.nativeListAnchorSlot);
+    return Boolean(
+      handleRow &&
+        'trailing' in handleRow &&
+        handleRow.trailing?.[slot]?.kind === 'drag'
+    );
+  }
+
+  private pointerReorderSourceIndex(state: PointerReorderState): number {
+    const index = this.snapshot.rows.findIndex(
+      (row) => row.key === state.sourceKey
+    );
+    const element = this.mounted.get(index);
+    if (
+      !element ||
+      !this.canStartPointerReorder(state, this.snapshot) ||
+      (state.handle && !element.contains(state.handle))
+    ) {
+      return -1;
+    }
+    return index;
+  }
+
   private activatePointerReorder(state: PointerReorderState) {
     if (this.pointerReorder !== state) return;
+    let sourceIndex = this.pointerReorderSourceIndex(state);
+    const keyboard = this.keyboardReorder;
+    const restoredIndex = keyboard
+      ? keyboard.originalRows.findIndex((row) => row.key === state.sourceKey)
+      : sourceIndex;
+    if (sourceIndex < 0 || restoredIndex < 0) {
+      this.cancelPointerReorder(false);
+      return;
+    }
     this.clearReorderLongPress(state);
-    state.active = true;
+    this.reorderClickPointers.set(state.pointerId, {
+      suppress: true,
+      pressTarget: this.reorderClickPointers.get(state.pointerId)?.pressTarget,
+    });
     this.cancelMarketPointer();
+    if (keyboard) {
+      // Capture the pressed row at its visible position before restoring order.
+      state.currentIndex = sourceIndex;
+      state.workingRows = [...this.snapshot.rows];
+      state.restoringKeyboardOrder = true;
+      this.showReorderPreview(state);
+      if (this.pointerReorder !== state) return;
+      this.cancelKeyboardReorder(false, restoredIndex);
+      if (this.pointerReorder !== state) return;
+      sourceIndex = this.pointerReorderSourceIndex(state);
+      if (sourceIndex < 0) {
+        this.cancelPointerReorder(false);
+        return;
+      }
+      state.restoringKeyboardOrder = false;
+    }
+    state.currentIndex = sourceIndex;
+    state.originalRows = this.snapshot.rows;
+    state.workingRows = [...this.snapshot.rows];
+    state.active = true;
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
-    this.showReorderPreview(state);
+    if (!keyboard) {
+      this.showReorderPreview(state);
+      if (this.pointerReorder !== state) return;
+    }
     if (
       state.workingRows[state.currentIndex]?.type === 'walletGroup' &&
       this.reorderCompactKey !== state.sourceKey
@@ -5122,7 +5642,21 @@ export class NativeListWebEngine {
       this.mounted.forEach((element) =>
         setData(element, 'nativeListAnimateReorder', true)
       );
-      this.recomputeLayout();
+      this.recomputeLayout(keyboard ? sourceIndex : undefined);
+      if (this.pointerReorder !== state) return;
+    }
+    if (keyboard) {
+      const item = this.layout.items[sourceIndex];
+      if (item) {
+        state.handoff = {
+          index: sourceIndex,
+          scrollOffset: this.currentOffset(),
+          itemCenter:
+            (itemStart(item, this.layout.horizontal) +
+              itemEnd(item, this.layout.horizontal)) /
+            2,
+        };
+      }
     }
     this.updateReorderVisualState();
     this.scheduleReorderAutoScroll();
@@ -5209,7 +5743,7 @@ export class NativeListWebEngine {
 
   private setCurrentOffset(offset: number) {
     if (this.externalScrollHost) {
-      this.scrollToAbsoluteOffset(offset, false);
+      this.scrollToAbsoluteOffset(offset, 'auto');
       return;
     }
     const maximum = Math.max(0, this.contentLength() - this.viewportLength());
@@ -5226,6 +5760,7 @@ export class NativeListWebEngine {
 
   private showReorderPreview(state: PointerReorderState) {
     this.hideReorderPreview();
+    if (this.pointerReorder !== state) return;
     const source = [...this.mounted.values()].find(
       (element) => element.dataset.nativeListRowKey === state.sourceKey
     );
@@ -5429,7 +5964,7 @@ export class NativeListWebEngine {
     this.reorderMoveFrame = undefined;
   }
 
-  private reorderIndexAtPointer(
+  private reorderPointerCoordinate(
     state: PointerReorderState,
     clientX: number,
     clientY: number
@@ -5438,7 +5973,27 @@ export class NativeListWebEngine {
     const local = this.layout.horizontal
       ? Math.max(0, Math.min(Math.max(0, rect.width - 1), clientX - rect.left))
       : Math.max(0, Math.min(Math.max(0, rect.height - 1), clientY - rect.top));
-    const coordinate = this.currentOffset() + local;
+    return this.currentOffset() + local;
+  }
+
+  private reorderIndexAtPointer(
+    state: PointerReorderState,
+    clientX: number,
+    clientY: number
+  ): number {
+    const handoff = state.handoff;
+    let coordinate: number;
+    if (handoff) {
+      const pointerDelta = this.layout.horizontal
+        ? clientX - state.startX
+        : clientY - state.startY;
+      const displacement =
+        pointerDelta + (this.currentOffset() - handoff.scrollOffset);
+      if (displacement === 0) return handoff.index;
+      coordinate = handoff.itemCenter + displacement;
+    } else {
+      coordinate = this.reorderPointerCoordinate(state, clientX, clientY);
+    }
     const centerAt = (index: number) => {
       const item = this.layout.items[index];
       return item
@@ -5473,6 +6028,7 @@ export class NativeListWebEngine {
     const to = state.workingRows[toIndex];
     if (
       !from ||
+      from.key !== state.sourceKey ||
       !to ||
       fromIndex === toIndex ||
       !this.isReorderable(from) ||
@@ -5528,6 +6084,8 @@ export class NativeListWebEngine {
     if (!state?.active) return 0;
     const rect = state.viewportRect ?? this.reorderViewportRect();
     const point = this.layout.horizontal ? state.clientX : state.clientY;
+    const pressPoint = this.layout.horizontal ? state.startX : state.startY;
+    if (state.handoff && point === pressPoint) return 0;
     const start = this.layout.horizontal ? rect.left : rect.top;
     const end = this.layout.horizontal ? rect.right : rect.bottom;
     return webReorderAutoScrollVelocity(
@@ -5579,6 +6137,7 @@ export class NativeListWebEngine {
 
   private completePointerReorder(state: PointerReorderState) {
     this.flushReorderMove(state);
+    if (this.pointerReorder !== state) return;
     const finalRows = this.snapshot.rows;
     const reorderEvent = webReorderEventForRows(
       state.originalRows,
@@ -5589,7 +6148,6 @@ export class NativeListWebEngine {
     this.pointerReorder = undefined;
     this.stopReorderMove();
     this.stopReorderAutoScroll();
-    this.suppressClickUntil = Date.now() + 300;
     this.updateReorderVisualState();
     if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
   }
@@ -5610,22 +6168,23 @@ export class NativeListWebEngine {
     this.reorderAutoScrollFrame = undefined;
   }
 
+  private cancelPendingPointerReorder() {
+    const pointer = this.pointerReorder;
+    if (pointer && !pointer.active && !pointer.restoringKeyboardOrder)
+      this.cancelPointerReorder(false);
+  }
+
   private cancelPointerReorder(restore: boolean) {
     const state = this.pointerReorder;
     if (!state) return;
     this.clearReorderLongPress(state);
-    this.releaseReorderPointer(state);
     this.pointerReorder = undefined;
+    if (!state.active && !state.restoringKeyboardOrder) return;
+    this.releaseReorderPointer(state);
     this.stopReorderMove();
     this.stopReorderAutoScroll();
-    if (state.active && restore) {
-      this.remapMountedRows(state.originalRows);
-      this.setSnapshot(
-        { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
-        this.selectedKeys
-      );
-      this.suppressClickUntil = Date.now() + 300;
-    }
+    if (state.active && restore)
+      this.setReorderRows(cancelWebReorderRows(state.originalRows));
     if (state.active && restore) this.animateReorderPreviewToCurrent(state);
     else this.hideReorderPreview();
     this.updateReorderVisualState();
@@ -5649,9 +6208,10 @@ export class NativeListWebEngine {
   }
 
   private updateReorderVisualState() {
-    const sourceKey = this.pointerReorder?.active
+    const pointerSourceKey = this.pointerReorder?.active
       ? this.pointerReorder.sourceKey
-      : this.keyboardReorder?.sourceKey ?? this.reorderSettlingKey;
+      : this.reorderSettlingKey;
+    const sourceKey = this.keyboardReorder?.sourceKey ?? pointerSourceKey;
     setData(this.root, 'nativeListDragging', Boolean(sourceKey));
     if (this.reorderMovementTimer !== undefined) {
       this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
@@ -5674,7 +6234,11 @@ export class NativeListWebEngine {
         'nativeListReorderExpanding',
         element.dataset.nativeListRowKey === this.reorderExpandingKey
       );
-      setData(element, 'nativeListDragging', dragging);
+      setData(
+        element,
+        'nativeListDragging',
+        element.dataset.nativeListRowKey === pointerSourceKey
+      );
       if (dragging) element.setAttribute('aria-grabbed', 'true');
       else element.removeAttribute('aria-grabbed');
     });

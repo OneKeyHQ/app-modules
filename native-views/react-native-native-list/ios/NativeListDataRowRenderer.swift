@@ -397,13 +397,13 @@ private final class NativeListTableColumnView: UIStackView {
     let primaryStyle = style.dictionary("columns") ?? [:]
     let secondaryStyle = style.dictionary("columnSecondary") ?? [:]
     func font(_ textStyle: [String: Any], size: CGFloat, weight: NativeListFontWeight) -> UIFont {
-      guard textStyle["fontSize"] != nil || textStyle["fontWeight"] != nil else {
-        return nativeListFont(ofSize: size, weight: weight, fonts: fonts)
-      }
-      return nativeListFont(
+      let baseFont = nativeListFont(
         ofSize: CGFloat(textStyle.double("fontSize", default: Double(size))),
         weight: NativeListTextStyles.marketFontWeight(
           textStyle.string("fontWeight"), fallback: weight), fonts: fonts)
+      return (textStyle["tabularNumbers"] as? Bool).map {
+        NativeListTextStyles.digitSpacingFont(baseFont, tabular: $0)
+      } ?? baseFont
     }
     func color(_ textStyle: [String: Any], _ fallback: UIColor) -> UIColor {
       (textStyle["color"] as? String).map { UIColor(nativeListHex: $0, fallback: fallback) }
@@ -443,6 +443,10 @@ private final class NativeListTableColumnView: UIStackView {
         .font: primaryFont,
         .foregroundColor: color(primaryStyle, textColor(column.string("tone"), theme: theme)),
       ])
+    if primaryStyle["letterSpacing"] != nil {
+      attributed.addAttribute(.kern, value: CGFloat(primaryStyle.double("letterSpacing")),
+        range: NSRange(location: 0, length: attributed.length))
+    }
     attributed.setAttributedString(nativeListDataSegments(attributed, column.dictionaries("textSegments")))
     let primaryLength = attributed.length
     // Every badge run is the legacy "  text " pill: both lead spaces sit inside the badge
@@ -451,7 +455,7 @@ private final class NativeListTableColumnView: UIStackView {
     // rows add no kern and stay byte-identical to legacy.
     if style["titleBadgeGap"] != nil, !badges.isEmpty, primaryLength > 0 {
       attributed.addAttribute(
-        .kern, value: CGFloat(style.double("titleBadgeGap")),
+        .kern, value: CGFloat(style.double("titleBadgeGap") + primaryStyle.double("letterSpacing")),
         range: (attributed.string as NSString).rangeOfComposedCharacterSequence(
           at: primaryLength - 1))
     }
@@ -482,6 +486,9 @@ private final class NativeListTableColumnView: UIStackView {
           secondaryStyle,
           textColor(column.string("secondaryTone", default: "secondary"), theme: theme)),
       ]
+      if secondaryStyle["letterSpacing"] != nil {
+        attributes[.kern] = CGFloat(secondaryStyle.double("letterSpacing"))
+      }
       attributes.merge(paragraph(secondaryStyle, font: secondaryFont, spacing: nil)) { $1 }
       attributed.append(NSAttributedString(string: "\n", attributes: attributes))
       attributed.append(nativeListDataSegments(

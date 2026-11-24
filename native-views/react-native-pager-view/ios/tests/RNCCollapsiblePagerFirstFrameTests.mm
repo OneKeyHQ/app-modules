@@ -1,4 +1,5 @@
 #import <XCTest/XCTest.h>
+#import <objc/runtime.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCNativeScrollerComponentView.h"
 #import <React/RCTScrollViewComponentView.h>
@@ -56,6 +57,30 @@ using namespace facebook::react;
 @end
 
 @implementation RNCCollapsiblePagerFirstFrameTests
+
+- (void)testFreshZeroGeometryAlignsOffsetBeforePendingRestoreCompletes
+{
+  RNCCollapsiblePagerViewComponentView *pager = [RNCCollapsiblePagerViewComponentView new];
+  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+  props->nativeSmoothHeaderScrollEnabled = true;
+  props->headerHeight = 120;
+  props->stickyHeaderHeight = 44;
+  props->pageKeys = "[\"fresh\"]";
+  [pager updateProps:props oldProps:nullptr];
+  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero];
+  [pager applyInsetsToScrollView:scroll pageIndex:0 restore:YES];
+  XCTAssertEqualWithAccuracy(scroll.contentInset.top, 164, 0.01);
+  XCTAssertEqualWithAccuracy(scroll.contentOffset.y, -164, 0.01);
+  XCTAssertEqualWithAccuracy(scroll.contentOffset.y + scroll.contentInset.top, 0, 0.01);
+  XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"fresh"]);
+
+  scroll.frame = CGRectMake(0, 0, 320, 600);
+  scroll.contentSize = CGSizeMake(320, 900);
+  [pager applyInsetsToScrollView:scroll pageIndex:0 restore:YES];
+  XCTAssertEqualWithAccuracy(scroll.contentOffset.y, -164, 0.01);
+  XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"fresh"]);
+  [pager prepareForRecycle];
+}
 
 - (void)testInactivePagesPrepareTheirOwnStickyInsetsBeforeSelection
 {
@@ -574,11 +599,19 @@ using namespace facebook::react;
   [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
   [source removeFromSuperview];
   [self finishMount:pager];
-  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
-  while (([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue] < 12 ||
-          (!finalRetryPending && [[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue])) &&
-         deadline.timeIntervalSinceNow > 0) {
-    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+  if (finalRetryPending) {
+    NSUInteger staleToken = [[pager valueForKey:@"scrollResolveRetryToken"] unsignedIntegerValue];
+    [pager setValue:@(staleToken + 1) forKey:@"scrollResolveRetryToken"];
+    [pager setValue:@NO forKey:@"scrollResolveRetryScheduled"];
+    [pager setValue:@11 forKey:@"scrollResolveRetryAttempt"];
+    [pager attachScrollObserverForCurrentPage];
+  } else {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:6];
+    while (([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue] < 12 ||
+            [[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]) &&
+           deadline.timeIntervalSinceNow > 0) {
+      [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
   }
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryAttempt"], @12);
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryScheduled"], @(finalRetryPending));
@@ -873,6 +906,87 @@ using namespace facebook::react;
   return component;
 }
 
+- (void)testUnmeasuredNativeListAttachesAndAlignsSynchronouslyOnFirstLayoutReadiness
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
+  [pager setValue:@293 forKey:@"headerHeight"];
+  [pager setValue:@52 forKey:@"stickyHeaderHeight"];
+  Class nativeListClass = NSClassFromString(@"HybridNativeListComponent");
+  XCTAssertNotNil(nativeListClass, @"The real NativeList test dependency must be linked");
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+
+  RCTViewComponentView *horizontalComponent = [[nativeListClass alloc] init];
+  horizontalComponent.tag = 92002;
+  horizontalComponent.frame = CGRectZero;
+  horizontalComponent.contentView.frame = CGRectZero;
+  [page.view addSubview:horizontalComponent];
+
+  RCTViewComponentView *component = [[nativeListClass alloc] init];
+  component.tag = 92003;
+  component.frame = CGRectZero;
+  component.contentView.frame = CGRectZero;
+  [page.view addSubview:component];
+  [self addTeardownBlock:^{
+    [horizontalComponent prepareForRecycle];
+    [horizontalComponent removeFromSuperview];
+    [component prepareForRecycle];
+    [component removeFromSuperview];
+  }];
+
+  UICollectionView *horizontalList = nil;
+  for (UIView *child in horizontalComponent.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      horizontalList = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(horizontalList);
+  UICollectionViewFlowLayout *horizontalLayout =
+    (UICollectionViewFlowLayout *)horizontalList.collectionViewLayout;
+  horizontalLayout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
+  horizontalList.alwaysBounceVertical = NO;
+  horizontalList.alwaysBounceHorizontal = YES;
+
+  [pager setNeedsLayout];
+  [pager layoutIfNeeded];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertFalse([[pager valueForKey:@"awaitingScrollOwnerForCurrentPage"] boolValue]);
+  XCTAssertTrue([[pager valueForKey:@"scrollReconcileScheduled"] boolValue]);
+
+  horizontalComponent.frame = CGRectMake(0, 0, 390, 120);
+  horizontalComponent.contentView.frame = horizontalComponent.bounds;
+  [horizontalComponent.contentView layoutIfNeeded];
+  [[NSNotificationCenter defaultCenter]
+    postNotificationName:@"OneKeyNativeScrollViewDidBecomeReady"
+                  object:horizontalList];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertEqualWithAccuracy(horizontalList.contentInset.top, 0, 0.01);
+  XCTAssertEqualWithAccuracy(horizontalList.contentOffset.y, 0, 0.01);
+  XCTAssertFalse(horizontalList.alwaysBounceVertical);
+
+  UICollectionView *list = nil;
+  for (UIView *child in component.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      list = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, 0, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, 0, 0.01);
+
+  component.frame = CGRectMake(0, 0, 390, 697);
+  component.contentView.frame = component.bounds;
+  [component.contentView layoutIfNeeded];
+
+  UIView *header = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqual(header.superview, list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, 345, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, -345, 0.01);
+}
+
 - (void)testNativeListFooterScrollViewCannotReplacePageOwner
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
@@ -920,6 +1034,53 @@ using namespace facebook::react;
   XCTAssertEqualWithAccuracy(list.contentInset.top, inset, 0.01);
   XCTAssertEqualWithAccuracy(list.contentOffset.y, offset, 0.01);
   XCTAssertEqualWithAccuracy(footerList.scrollView.contentInset.top, 0, 0.01);
+}
+
+// Overlay content (popover, sheet) stays mounted inside its host view until
+// the overlay window presents it, and the host can sit beside the page's list.
+// As a Fabric scroll view its scroller outranks the native list, so the pager
+// used to adopt it and apply the collapsed-header offset to it: the sheet then
+// opened scrolled past its content (OK-67220).
+- (void)testStagedOverlayScrollViewCannotReplacePageOwner
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RCTViewComponentView *component = [self addNativeListToPager:pager];
+  UICollectionView *list = nil;
+  for (UIView *child in component.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      list = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertNotNil(list);
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], list);
+
+  // The overlay package is not linked into this target; stand in for its host.
+  Class overlayHostClass = NSClassFromString(@"RCTNativeOverlayComponentView");
+  if (overlayHostClass == Nil) {
+    overlayHostClass = objc_allocateClassPair(UIView.class, "RCTNativeOverlayComponentView", 0);
+    objc_registerClassPair(overlayHostClass);
+  }
+  UIView *overlayHost = [overlayHostClass new];
+  RCTScrollViewComponentView *sheetScroller = [RCTScrollViewComponentView new];
+  sheetScroller.frame = CGRectMake(0, 0, 320, 60);
+  sheetScroller.scrollView.frame = sheetScroller.bounds;
+  sheetScroller.scrollView.contentSize = CGSizeMake(320, 60);
+  sheetScroller.scrollView.alwaysBounceHorizontal = NO;
+  [overlayHost addSubview:sheetScroller];
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+  [page.view addSubview:overlayHost];
+
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], list);
+  XCTAssertNil([pager findVerticalScrollViewInView:overlayHost]);
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqualWithAccuracy(sheetScroller.scrollView.contentOffset.y, 0, 0.01);
+
+  // The same scroll view outside an overlay host is still a page scroller.
+  [sheetScroller removeFromSuperview];
+  [page.view addSubview:sheetScroller];
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], sheetScroller.scrollView);
 }
 
 - (void)testExplicitScrollerSiblingStillPrecedesNativeList

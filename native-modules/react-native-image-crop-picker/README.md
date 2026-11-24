@@ -1,31 +1,41 @@
+<div align="center">
+
 # @onekeyfe/react-native-image-crop-picker
 
-Single photo picker and cropper for OneKey, built on [Nitro Modules](https://nitro.margelo.com/). It replaces `react-native-image-crop-picker` and keeps the part of its API that OneKey uses: `openPicker`, `openCropper`, `clean`, `cleanSingle`, and the `E_*` error codes.
+**Pick one photo and crop it with one API on iOS, Android and the web — without photo-library permission.**
 
-Picking never asks for photo library permission:
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-image-crop-picker?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-image-crop-picker)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-image-crop-picker?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Web](https://img.shields.io/badge/Web-4285F4?logo=googlechrome&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
 
-- **iOS** picks with `PHPickerViewController`, which runs out of process. `react-native-image-crop-picker` requested full photo library access first. Once a user denied it, iOS never showed the prompt again and every later `openPicker` call failed silently (OK-48227). The crop gestures come from a vendored TOCropViewController 3.2.0 `TOCropView`, with the OK-51551 rotation fix that upstream still lacks.
-- **Android** picks with the system Photo Picker (`ActivityResultContracts.PickVisualMedia`, which falls back to `ACTION_OPEN_DOCUMENT` on devices without it). The crop gestures come from uCrop `2.2.11-native`'s `UCropView`. Activity results go through the activity's `ActivityResultRegistry`, so no `ActivityEventListener` is needed.
+</div>
 
-- **Web** (browsers, Electron and browser extensions) picks with an `<input type="file">` and crops with a DOM cropper, with no Nitro or native code. Bundlers select it through the `browser` export condition (`lib/module/index.web.js`).
+A single-photo picker and cropper for OneKey, replacing the parts of
+`react-native-image-crop-picker` that OneKey uses: `openPicker`, `openCropper`,
+`clean`, `cleanSingle` and the `E_*` error codes. iOS picks with
+`PHPickerViewController`, Android with the system Photo Picker, and the browser
+with a file input, so no platform asks for photo-library permission. The cropper
+is a screen drawn by this package, identical on iOS and Android, with a DOM
+equivalent on the web. Photo saving and its authorization belong to
+`@onekeyfe/react-native-photo-library`; this package exposes no save API.
 
-All platforms show the same cropper screen, drawn by this package rather than by TOCropViewController, uCrop or a web cropper library. See [Cropper screen](#cropper-screen).
+## Features
 
-The behavioral contract and pending acceptance cases are in [docs/SPEC.md](docs/SPEC.md).
-
-## Original selection
-
-```ts
-const image = await ImageCropPicker.openPicker({ preserveOriginal: true });
-// Read the selected file before cleaning it.
-await ImageCropPicker.cleanSingle(image.path);
-```
-
-Original selection preserves the selected representation without JPEG conversion.
-Compression options are ignored unless cropping is enabled. Originals are limited
-to 64 MiB. Saving and its authorization are provided by the separate
-`@onekeyfe/react-native-photo-library`; this picker exposes neither saving nor
-photo-library permission APIs.
+- **No photo-library prompt** — picking grants access only to the selected
+  item, so a denied library permission can no longer break the picker.
+- **One shared cropper** — the same header, crop box, dimmed background,
+  rotate control and footer on iOS and Android; the same layout on the web with
+  zoom and keyboard input for mouse users.
+- **Optional cropping or original bytes** — `cropping: true` returns a JPEG at
+  the requested size; `preserveOriginal: true` copies the selected
+  representation untouched when cropping is off.
+- **Explicit cleanup** — results live in the module's temporary directory until
+  the caller runs `clean()` or `cleanSingle()`.
+- **Typed failures** — every rejection is an `ImageCropPickerError` with a
+  stable `E_*` code.
 
 ## Installation
 
@@ -33,10 +43,21 @@ photo-library permission APIs.
 yarn add @onekeyfe/react-native-image-crop-picker react-native-nitro-modules
 ```
 
-To keep existing `react-native-image-crop-picker` imports working, install it under that name with an npm alias instead: `react-native-image-crop-picker@npm:@onekeyfe/react-native-image-crop-picker`.
+Install the native peer packages this package links as well:
 
-- **iOS**: do not also install the `TOCropViewController` pod. This package compiles its own copy, and the duplicate classes would clash at link time.
-- **Android**: uCrop is only published to JitPack. Add `maven { url "https://www.jitpack.io" }` to the app's `allprojects.repositories`.
+```sh
+yarn add @onekeyfe/react-native-native-logger
+```
+
+To keep existing `react-native-image-crop-picker` imports working, install it
+under an npm alias: `react-native-image-crop-picker@npm:@onekeyfe/react-native-image-crop-picker`.
+Install the application's iOS pods and rebuild the native binary; the web entry
+needs no native code.
+
+- **iOS**: do not also install the `TOCropViewController` pod. This package
+  compiles its own copy and duplicate classes clash at link time.
+- **Android**: uCrop is published only to JitPack, so add
+  `maven { url "https://www.jitpack.io" }` to the app's `allprojects.repositories`.
 
 ## Usage
 
@@ -53,7 +74,7 @@ try {
     includeBase64: true,
     compressImageQuality: 0.8,
   });
-  // image.path is a file:// URI; image.data is base64 without a data: prefix.
+  // image.path is a file:// URI (blob: URL on the web).
 } catch (error) {
   if (error instanceof ImageCropPickerError && error.code === 'E_PICKER_CANCELLED') {
     return;
@@ -68,87 +89,65 @@ const cropped = await ImageCropPicker.openCropper({
 });
 ```
 
-`openCropper` accepts `file://` URIs, absolute paths, `http(s)://` URLs, `data:` URIs and, on Android, `content://` URIs.
+`openCropper` accepts `file://` URIs, absolute paths, `http(s)://` URLs,
+`data:` URIs and, on Android, `content://` URIs. Read or save a result before
+cleaning it; only one picker or cropper can be open per app.
 
-## Cropper screen
+## API
 
-The cropper is a full-screen page with the same layout and metrics on iOS and Android:
+| Method | Result | Platforms | Description |
+| --- | --- | :-: | --- |
+| `openPicker(options?)` | `Promise<Image>` | iOS, Android, Web | Picks one photo, optionally connected to the cropper. |
+| `openCropper({ path, ...options })` | `Promise<Image>` | iOS, Android, Web | Crops an existing image and returns a JPEG. |
+| `clean()` | `Promise<void>` | iOS, Android, Web | Deletes every file this module wrote. |
+| `cleanSingle(path)` | `Promise<void>` | iOS, Android, Web | Deletes one file returned by this module. |
+| `ImageCropPickerError` | `Error` subclass with `code` | iOS, Android, Web | Rejection type for all operations. |
+| `Image` | `{ path, size, width, height, mime, data?, cropRect?, filename? }` | iOS, Android, Web | Pick/crop result; `data` is base64 without a `data:` prefix. |
 
-- A 56 pt header with `cropperToolbarTitle` centered and a rotate button on the right. The rotate button turns the image 90° counterclockwise; `cropperRotateButtonsHidden` hides it.
-- The crop area. The crop box keeps 20 pt from every edge, and the image outside it shows the page background at 70% opacity. The rule-of-thirds grid shows while the image is moved, unless `showCropGuidelines` is `false`.
-- A footer with two capsule buttons, `cropperCancelText` and `cropperChooseText`, 50 pt tall with 10 pt between them. The confirm button shows a spinner while the image is saved.
+Cropping uses `width`/`height` as both the target size and the aspect ratio;
+`freeStyleCropEnabled` lets the box keep its own ratio and fit inside that size.
+`compressImageMaxWidth`, `compressImageMaxHeight` and `compressImageQuality`
+apply after cropping. `cropperAppearance`, `cropperToolbarTitle`,
+`cropperChooseText`, `cropperCancelText`, `cropperRotateButtonsHidden` and
+`showCropGuidelines` style the cropper. See
+[`src/ReactNativeImageCropPicker.nitro.ts`](src/ReactNativeImageCropPicker.nitro.ts)
+for every option and [`src/shared.ts`](src/shared.ts) for the full error-code list.
 
-On the web the same screen is full screen on windows narrower than 640 px or shorter than 560 px, and a centered 560 × 760 px panel (smaller when the window is) otherwise. The header, crop area, toolbar and footer are a flex column, so the buttons always stay inside the panel. The web screen adds, for mouse and keyboard users:
+## Platform support
 
-- A toolbar under the crop area: zoom out, a zoom slider, zoom in, and reset.
-- Wheel to zoom around the pointer (trackpad pinch included), double click to zoom in 2× or back out, and two-finger pinch on touch screens.
-- Keyboard: arrow keys move the image (Shift for larger steps), `+` / `-` zoom, `R` rotates, Enter confirms and Escape cancels. Focus stays inside the cropper and returns to the previous element when it closes.
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Pick one photo without library permission | ✅ PHPicker | ✅ Photo Picker | ✅ file input |
+| Interactive cropper | ✅ | ✅ | ✅ DOM |
+| `preserveOriginal` (byte-for-byte copy) | ✅ | ✅ | ✅ |
+| Native Nitro module | ✅ | ✅ | — |
+| `freeStyleCropEnabled` | ✅ | ✅ | — |
 
-`cropperAppearance` sets its colors and fonts. The optional font-family fields
-below require the app to provide these Roobert faces and own the applicable
-font license; this package contains no font files. Omit the fields to use
-platform defaults.
+## Caveats
 
-```ts
-await ImageCropPicker.openPicker({
-  width: 240,
-  height: 240,
-  cropping: true,
-  cropperToolbarTitle: 'Crop image',
-  cropperAppearance: {
-    colorScheme: 'dark',
-    backgroundColor: '#0f0f0f',
-    confirmButtonColor: '#ffffffed',
-    confirmButtonTextColor: '#000000df',
-    titleFontFamily: 'Roobert-SemiBold',
-    buttonFontFamily: 'Roobert-Medium',
-  },
-});
-```
+> [!NOTE]
+> Cancelling the cropper that `openPicker` opened returns to the photo picker on
+> iOS but rejects with `E_PICKER_CANCELLED` on Android and the web. A second
+> picker or cropper while one is open rejects with `E_PICKER_IN_PROGRESS`.
 
-| Field | Used for |
-| --- | --- |
-| `colorScheme` | `'light'` or `'dark'`. Picks the fallback palette and the status bar style. Defaults to the system appearance. |
-| `backgroundColor` | The page. The area outside the crop box is this color at 70% opacity. |
-| `titleColor` | The title and the crop box border. |
-| `iconColor` | The rotate button. |
-| `cancelButtonColor`, `cancelButtonPressedColor`, `cancelButtonTextColor` | The cancel button. |
-| `confirmButtonColor`, `confirmButtonPressedColor`, `confirmButtonTextColor` | The confirm button. |
-| `titleFontFamily`, `buttonFontFamily` | Fonts bundled with the app. iOS looks them up with `UIFont(name:)`, Android with React Native's `ReactFontManager`. On the web they are CSS font families, drawn at weight 600 and 500. |
-| `scale` | Multiplies every size, for apps that scale their UI. |
+> [!WARNING]
+> On the web, `freeStyleCropEnabled` is not implemented, `path` is a `blob:` URL
+> that `clean()` revokes, and `http(s)` sources for `openCropper` must allow CORS
+> or the crop rejects with `E_CANNOT_SAVE_IMAGE`.
 
-Colors are CSS hex strings: `#RGB`, `#RRGGBB` or `#RRGGBBAA`. Anything left out falls back to OneKey's light or dark palette.
+> [!IMPORTANT]
+> A picker result proves access to that one item only — never photo-library
+> authorization. Results are temporary files owned by the caller; do not clean a
+> file while a scan or save still reads it.
 
-## Behavior
+## References
 
-- Processed results are always JPEG. `width` and `height` set the crop aspect ratio, and the cropped image is scaled to exactly that size, so a crop box a pixel off the ratio still yields the requested dimensions. With `freeStyleCropEnabled`, the crop keeps its own aspect ratio and is scaled to fit inside `width` × `height`.
-- `compressImageMaxWidth`, `compressImageMaxHeight` and `compressImageQuality` apply after cropping. The default quality is 0.8 on iOS and 1 on Android, as in `react-native-image-crop-picker`.
-- Photos are decoded at most 4096 px on the long side, which keeps very large photos from exhausting memory. `cropRect` is reported in the original image's coordinates on iOS.
-- Results are written to `<tmp>/react-native-image-crop-picker/` on iOS and `<cache>/react-native-image-crop-picker/` on Android. `clean()` empties that directory.
-- On the web, results are JPEG blobs: `path` is a `blob:` URL, and `clean()` / `cleanSingle()` revoke the URLs this package created. The default quality is 0.8, as on iOS. `cropRect` is in the coordinates of the image as the browser decodes it (EXIF orientation applied), rotated with the crop. With `preserveOriginal`, `mime` comes from the file's leading bytes rather than `File.type`, and a file in an unrecognized format rejects `E_NO_IMAGE_DATA_FOUND`. `http(s)` images for `openCropper` must allow CORS, or the crop cannot be read back and rejects `E_CANNOT_SAVE_IMAGE`. `freeStyleCropEnabled` is not implemented on the web; the crop box keeps the `width` / `height` ratio. With `cropperCircleOverlay` the crop box is 1:1 with no frame or grid on every platform, whatever the image or target ratio.
-- Only one picker or cropper can be open at a time. A second call rejects with `E_PICKER_IN_PROGRESS`.
-- On iOS, cancelling the cropper that `openPicker` opened returns to the photo picker. On Android and the web it rejects with `E_PICKER_CANCELLED`, as does dismissing the web file chooser.
-- On Android the cropper keeps the calling activity's requested orientation, so a portrait-only app gets a portrait-only cropper.
-
-## Not supported
-
-Multiple selection, video, the camera and `includeExif` are not implemented. `mediaType`, `forceJpg` and `sortOrder` are accepted for source compatibility and ignored.
-
-## Error codes
-
-| Code | Meaning |
-| --- | --- |
-| `E_PICKER_CANCELLED` | The user closed the picker or the cropper. |
-| `E_PICKER_IN_PROGRESS` | Another picker or cropper is still open. |
-| `E_ACTIVITY_DOES_NOT_EXIST` | Android: no current activity. |
-| `E_FAILED_TO_SHOW_PICKER` | The picker or cropper could not be presented. |
-| `E_NO_IMAGE_DATA_FOUND` | The selected item could not be read as an image. |
-| `E_CROPPER_IMAGE_NOT_FOUND` | `openCropper` could not load `path`. |
-| `E_CANNOT_SAVE_IMAGE` | The result could not be written. |
-| `E_LOW_MEMORY_ERROR` | Android: out of memory while processing. |
-| `E_ERROR_WHILE_CLEANING_FILES` | `clean` or `cleanSingle` failed. |
-| `E_UNKNOWN` | Any other native error. |
+- [Package spec](docs/SPEC.md)
+- [Native interface](src/ReactNativeImageCropPicker.nitro.ts)
+- [Example page](../../example/react-native/pages/ImageCropPickerTestPage.tsx)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT. The vendored TOCropViewController in `ios/TOCropViewController` is MIT licensed by Tim Oliver; see its `LICENSE`.
+MIT. See [LICENSE](LICENSE). The vendored TOCropViewController in
+`ios/TOCropViewController` is MIT licensed by Tim Oliver; see its `LICENSE`.

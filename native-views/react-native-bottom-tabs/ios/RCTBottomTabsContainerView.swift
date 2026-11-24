@@ -20,6 +20,60 @@ import React
   )
 }
 
+/// Root view of one tab's view controller. It hosts the React scene but never
+/// writes the scene's frame: Fabric owns it, including any per-route
+/// `getSceneStyle` offset or size.
+///
+/// The scene used to autoresize with this view. Autoresizing applies the change
+/// in bounds on top of the frame Fabric set: a tab view controller's view
+/// starts at screen size, Fabric sizes the scene to the narrower container (an
+/// iPad split pane), and the first resize to the pane width subtracted the
+/// difference again, leaving the scene 0 points wide. Its content still drew
+/// but no longer received touches. The scene now has no autoresizing mask, and
+/// the container reports the selected page's size to JS so Fabric lays the
+/// scene out at the page size (it differs from the container when the iPad
+/// sidebar takes part of the width).
+final class BottomTabsPageView: UIView {
+  var onLayoutChange: ((BottomTabsPageView) -> Void)?
+  private var lastSize: CGSize = .zero
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let size = bounds.size
+    guard size != lastSize else { return }
+    lastSize = size
+    onLayoutChange?(self)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil else { return }
+    // UIKit can update the page bounds after this attachment callback.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.window != nil else { return }
+      self.onLayoutChange?(self)
+    }
+  }
+}
+
+final class BottomTabsPageViewController: UIViewController {
+  var pageView: BottomTabsPageView { view as! BottomTabsPageView }
+
+  override func loadView() {
+    let pageView = BottomTabsPageView()
+    pageView.backgroundColor = .clear
+    pageView.clipsToBounds = true
+    view = pageView
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    // A cached page can become selected without changing bounds or windows.
+    let page = pageView
+    page.onLayoutChange?(page)
+  }
+}
+
 /// Bridges to OneKeyNamedSVG.shared in OneKeyImage without importing the OneKeyImage
 /// Swift module (which transitively imports NitroModules C++ headers).
 private enum OneKeyNamedSVGLoader {
@@ -131,10 +185,17 @@ class RCTBottomTabsContainerView: UIView {
   // Double press is derived from consecutive selection requests so no extra
   // recognizer competes with the system tab bar gestures (iOS 26 drag-to-switch).
   private static let doublePressInterval: CFTimeInterval = 0.3
+  private static let scrollTopTolerance: CGFloat = 1
+  // Looked up by name: the pager lives in a package this one does not depend on.
+  private static let collapsiblePagerClass: AnyClass? =
+    NSClassFromString("RNCCollapsiblePagerViewComponentView")
   private var lastPressedTabKey: String?
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
-  private var cachedViewControllers: [String: UIViewController] = [:]
+  private var cachedViewControllers: [String: BottomTabsPageViewController] = [:]
+  private var isHandlingLayout = false
+  private var pendingIconUpdates = Set<Int>()
+  private var isIconUpdateScheduled = false
   // Vertical tab bar (iPhone Duo side strip): last reported placement and the
   // round accessory button drawn above the bar.
   private var reportedTabBarPlacement: String?
@@ -147,8 +208,11 @@ class RCTBottomTabsContainerView: UIView {
   private var selectedIconRequestTokens: [Int: NSObject] = [:]
   private var sideAccessoryRequestToken = NSObject()
   private var isSideAccessoryLayoutScheduled = false
+  private var tabBarVisibilityAnimationGeneration = 0
   private static let sideAccessorySize: CGFloat = 48
   private static let sideAccessorySpacing: CGFloat = 12
+  private static let tabBarSlideAnimationDuration: TimeInterval = 0.28
+  private static let tabBarSlideClearance: CGFloat = 12
 
   // MARK: - Props (set by Fabric ComponentView via KVC)
 
@@ -189,7 +253,10 @@ class RCTBottomTabsContainerView: UIView {
   }
 
   @objc var tabBarHidden: Bool = false {
-    didSet { updateTabBarHidden() }
+    didSet {
+      guard tabBarHidden != oldValue else { return }
+      updateTabBarHidden(animated: window != nil)
+    }
   }
 
   @objc var translucent: NSNumber? {
@@ -280,6 +347,13 @@ class RCTBottomTabsContainerView: UIView {
     }
   }
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil, tabBarController != nil {
+      updateTabBarHidden(animated: false)
+    }
+  }
+
   // MARK: - Layout
 
   override func layoutSubviews() {
@@ -343,10 +417,13 @@ class RCTBottomTabsContainerView: UIView {
     let placement = currentTabBarPlacement()
     if placement != reportedTabBarPlacement {
       reportedTabBarPlacement = placement
+      if placement != "bottom" && tbc.tabBar.transform != .identity {
+        updateTabBarHidden(animated: false)
+      }
       onTabBarPlacementChange?(["placement": placement])
       // The bar's frame follows its placement, so the height reported for the
       // previous placement is stale.
-      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
+      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.bounds.size.height)])
     }
 
     guard placement != "bottom",
@@ -498,8 +575,34 @@ class RCTBottomTabsContainerView: UIView {
 
     setupTabBarControllerIfNeeded()
     tabBarController?.view.frame = bounds
-    onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
+    // Settle the selected page's frame first so the size reported below is
+    // the current one, not the page's size before this pass.
+    isHandlingLayout = true
+    tabBarController?.view.layoutIfNeeded()
+    isHandlingLayout = false
+    emitSceneLayout()
     scheduleSideAccessoryLayout()
+  }
+
+  /// Reports the size React lays every tab scene out at: the selected page's
+  /// bounds (narrower than the container when the iPad sidebar is shown), or
+  /// the container's bounds until that page is in the window.
+  private func emitSceneLayout() {
+    var size = bounds.size
+    if let page = tabBarController?.selectedViewController?.viewIfLoaded,
+       page.window != nil,
+       page.bounds.width > 0, page.bounds.height > 0 {
+      size = page.bounds.size
+    }
+    guard size.width > 0 && size.height > 0 else { return }
+    onNativeLayout?(["width": Double(size.width), "height": Double(size.height)])
+  }
+
+  private func pageDidChangeLayout(_ page: BottomTabsPageView) {
+    // handleLayout emits once after its own layout pass.
+    guard !isHandlingLayout,
+          page === tabBarController?.selectedViewController?.viewIfLoaded else { return }
+    emitSceneLayout()
   }
 
   private func setupTabBarControllerIfNeeded() {
@@ -523,13 +626,13 @@ class RCTBottomTabsContainerView: UIView {
     rebuildViewControllers()
     updateTabBarAppearance()
     updateTintColors()
-    updateTabBarHidden()
+    updateTabBarHidden(animated: false)
     updateSidebarAdaptable()
     updateMinimizeBehavior()
 
     DispatchQueue.main.async { [weak self] in
       guard let self, let tbc = self.tabBarController else { return }
-      self.onTabBarMeasured?(["height": self.tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
+      self.onTabBarMeasured?(["height": self.tabBarHidden ? 0 : Double(tbc.tabBar.bounds.size.height)])
     }
   }
 
@@ -556,13 +659,11 @@ class RCTBottomTabsContainerView: UIView {
       usedKeys.insert(tabData.key)
 
       // Reuse cached VC or create a new one
-      let vc: UIViewController
+      let vc: BottomTabsPageViewController
       if let cached = cachedViewControllers[tabData.key] {
         vc = cached
       } else {
-        vc = UIViewController()
-        vc.view.backgroundColor = .clear
-        vc.view.clipsToBounds = true
+        vc = BottomTabsPageViewController()
         cachedViewControllers[tabData.key] = vc
       }
 
@@ -572,12 +673,15 @@ class RCTBottomTabsContainerView: UIView {
         if childView.superview !== vc.view {
           childView.removeFromSuperview()
           vc.view.addSubview(childView)
-          // Use autoresizingMask instead of Auto Layout constraints — Fabric sets
-          // frames directly and constraints conflict with that on subsequent mounts.
+          // Neither Auto Layout constraints (they conflict with the frames
+          // Fabric sets on later mounts) nor autoresizing (it applies bounds
+          // deltas to a frame Fabric already set): the frame stays Fabric's.
           childView.translatesAutoresizingMaskIntoConstraints = true
-          childView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-          childView.frame = vc.view.bounds
+          childView.autoresizingMask = []
         }
+      }
+      vc.pageView.onLayoutChange = { [weak self] page in
+        self?.pageDidChangeLayout(page)
       }
 
       // Configure tab bar item
@@ -662,6 +766,31 @@ class RCTBottomTabsContainerView: UIView {
     updateSelectedTab()
     // The platter height follows the number of visible tabs.
     scheduleSideAccessoryLayout()
+  }
+
+  private func scheduleIconUpdate(at index: Int) {
+    pendingIconUpdates.insert(index)
+    guard !isIconUpdateScheduled else { return }
+    isIconUpdateScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.isIconUpdateScheduled = false
+      let indices = self.pendingIconUpdates
+      self.pendingIconUpdates.removeAll()
+      let allItems = self.parsedItems
+      for index in indices.sorted() {
+        guard allItems.indices.contains(index),
+              let vc = self.cachedViewControllers[allItems[index].key],
+              let item = vc.tabBarItem else { continue }
+        let symbol = allItems[index].sfSymbol ?? ""
+        let fallback = symbol.isEmpty ? nil : UIImage(systemName: symbol)
+        let image = self.loadedIcons[index] ?? fallback
+        let selectedImage = self.loadedSelectedIcons[index] ?? fallback ?? image
+        // Preserve the item and controller identities while artwork arrives.
+        item.image = self.bakeTint(image, self.inactiveTintColor)
+        item.selectedImage = self.bakeTint(selectedImage, self.activeTintColor)
+      }
+    }
   }
 
   // MARK: - Selection
@@ -789,22 +918,110 @@ class RCTBottomTabsContainerView: UIView {
     }
   }
 
-  private func updateTabBarHidden() {
-    guard let tbc = tabBarController else { return }
+  private func isSystemTabBarHidden(on tbc: UITabBarController) -> Bool {
+    #if compiler(>=6.0)
+    if #available(iOS 18.0, *) {
+      return tbc.isTabBarHidden || tbc.tabBar.isHidden || tbc.tabBar.alpha == 0
+    }
+    #endif
+    return tbc.tabBar.isHidden || tbc.tabBar.alpha == 0
+  }
+
+  private func applySystemTabBarHidden(_ hidden: Bool, on tbc: UITabBarController) {
     // Keep UIKit's tab bar visibility state in sync on iOS 18+.
     #if compiler(>=6.0)
     if #available(iOS 18.0, *) {
-      tbc.setTabBarHidden(tabBarHidden, animated: false)
+      tbc.setTabBarHidden(hidden, animated: false)
     } else {
-      tbc.tabBar.isHidden = tabBarHidden
+      tbc.tabBar.isHidden = hidden
     }
     #else
-    tbc.tabBar.isHidden = tabBarHidden
+    tbc.tabBar.isHidden = hidden
     #endif
+    if !hidden {
+      tbc.tabBar.isHidden = false
+      tbc.tabBar.alpha = 1.0
+    }
+  }
+
+  private func tabBarSlideOffset(for tbc: UITabBarController) -> CGFloat {
+    max(tbc.tabBar.bounds.size.height, 62) + Self.tabBarSlideClearance
+  }
+
+  private func updateTabBarHidden(animated: Bool = false) {
+    guard let tbc = tabBarController else { return }
+    tabBarVisibilityAnimationGeneration += 1
+    let generation = tabBarVisibilityAnimationGeneration
     tbc.tabBar.isUserInteractionEnabled = !tabBarHidden
 
-    onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
+    let shouldAnimate =
+      animated &&
+      currentTabBarPlacement() == "bottom" &&
+      bounds.width > 0 &&
+      bounds.height > 0
+
+    if !shouldAnimate {
+      UIView.performWithoutAnimation {
+        tbc.tabBar.layer.removeAllAnimations()
+        tbc.tabBar.transform = .identity
+        applySystemTabBarHidden(tabBarHidden, on: tbc)
+        tbc.view.layoutIfNeeded()
+      }
+      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.bounds.size.height)])
+      scheduleSideAccessoryLayout()
+      return
+    }
+
+    if tabBarHidden {
+      // Keep UIKit's system visibility active while sliding down so layout passes
+      // triggered by concurrent navigation pushes do not snap tabBar.alpha to 0.
+      let slideOffset = tabBarSlideOffset(for: tbc)
+      onTabBarMeasured?(["height": 0.0])
+      scheduleSideAccessoryLayout()
+      UIView.animate(
+        withDuration: Self.tabBarSlideAnimationDuration,
+        delay: 0,
+        usingSpringWithDamping: 1.0,
+        initialSpringVelocity: 0,
+        options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction],
+        animations: {
+          tbc.tabBar.transform = CGAffineTransform(translationX: 0, y: slideOffset)
+        },
+        completion: { [weak self, weak tbc] _ in
+          guard let self,
+                let tbc,
+                self.tabBarVisibilityAnimationGeneration == generation,
+                self.tabBarHidden else { return }
+          UIView.performWithoutAnimation {
+            tbc.tabBar.transform = .identity
+            self.applySystemTabBarHidden(true, on: tbc)
+          }
+        }
+      )
+      return
+    }
+
+    let wasSystemHidden = isSystemTabBarHidden(on: tbc)
+    UIView.performWithoutAnimation {
+      applySystemTabBarHidden(false, on: tbc)
+      tbc.view.layoutIfNeeded()
+      if wasSystemHidden {
+        let slideOffset = tabBarSlideOffset(for: tbc)
+        tbc.tabBar.transform = CGAffineTransform(translationX: 0, y: slideOffset)
+      }
+    }
+    onTabBarMeasured?(["height": Double(tbc.tabBar.bounds.size.height)])
     scheduleSideAccessoryLayout()
+    UIView.animate(
+      withDuration: Self.tabBarSlideAnimationDuration,
+      delay: 0,
+      usingSpringWithDamping: 1.0,
+      initialSpringVelocity: 0,
+      options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction],
+      animations: {
+        tbc.tabBar.transform = .identity
+      }
+    )
   }
 
   private func updateSidebarAdaptable() {
@@ -931,7 +1148,7 @@ class RCTBottomTabsContainerView: UIView {
             scaledImage = image
           }
           self.loadedIcons[index] = scaledImage
-          self.rebuildViewControllers()
+          self.scheduleIconUpdate(at: index)
         }
         continue
       }
@@ -956,7 +1173,7 @@ class RCTBottomTabsContainerView: UIView {
           DispatchQueue.main.async {
             guard self.iconRequestTokens[index] === token else { return }
             self.loadedIcons[index] = image.resizeImageTo(size: self.iconSize)
-            self.rebuildViewControllers()
+            self.scheduleIconUpdate(at: index)
           }
         })
     }
@@ -1004,7 +1221,7 @@ class RCTBottomTabsContainerView: UIView {
             scaledImage = image
           }
           self.loadedSelectedIcons[index] = scaledImage
-          self.rebuildViewControllers()
+          self.scheduleIconUpdate(at: index)
         }
         continue
       }
@@ -1029,7 +1246,7 @@ class RCTBottomTabsContainerView: UIView {
           DispatchQueue.main.async {
             guard self.selectedIconRequestTokens[index] === token else { return }
             self.loadedSelectedIcons[index] = image.resizeImageTo(size: self.iconSize)
-            self.rebuildViewControllers()
+            self.scheduleIconUpdate(at: index)
           }
         })
     }
@@ -1058,11 +1275,124 @@ class RCTBottomTabsContainerView: UIView {
     let now = CACurrentMediaTime()
     if lastPressedTabKey == key && now - lastPressedTabTime <= Self.doublePressInterval {
       lastPressedTabKey = nil
-      onTabDoublePress?(["key": key])
+      if let onTabDoublePress,
+         let didScrollToTop = scrollSelectedTabToTop(pressedKey: key) {
+        onTabDoublePress(["key": key, "didScrollToTop": didScrollToTop])
+      }
       return
     }
     lastPressedTabKey = key
     lastPressedTabTime = now
+  }
+
+  /// Animates every visible vertical scroller of the selected tab back to its
+  /// top. Returns false when all of them were already there, which tells JS the
+  /// double press may leave the page instead. A rejected pager request with no
+  /// accepted scroll returns nil, so JS cannot mistake it for an already-top page.
+  private func scrollSelectedTabToTop(pressedKey: String) -> Bool? {
+    guard let tabBarController,
+          filteredItems[safe: tabBarController.selectedIndex]?.key == pressedKey,
+          let rootView = tabBarController.selectedViewController?.view,
+          let window = rootView.window else {
+      return false
+    }
+    var scrollViews: [UIScrollView] = []
+    var pagers: [UIView] = []
+    collectScrolledViews(in: rootView, window: window, scrollViews: &scrollViews, pagers: &pagers)
+    let nativeListScrollSelector = NSSelectorFromString("onekeyScrollToOffset:animated:")
+    for scrollView in scrollViews {
+      if let owner = scrollView.superview, owner.responds(to: nativeListScrollSelector) {
+        // NativeList must release structural-tail offset writes before scrolling.
+        typealias ScrollToOffset = @convention(c) (AnyObject, Selector, Double, Bool) -> Void
+        let scrollToOffset = unsafeBitCast(owner.method(for: nativeListScrollSelector), to: ScrollToOffset.self)
+        scrollToOffset(owner, nativeListScrollSelector, 0, true)
+        continue
+      }
+      let topOffset = -scrollView.adjustedContentInset.top
+      scrollView.setContentOffset(
+        CGPoint(x: scrollView.contentOffset.x, y: topOffset),
+        animated: true
+      )
+    }
+    var didScrollToTop = !scrollViews.isEmpty
+    var rejectedPagerRequest = false
+    for pager in pagers {
+      if scrollPagerToTop(pager) {
+        didScrollToTop = true
+      } else {
+        rejectedPagerRequest = true
+      }
+    }
+    return didScrollToTop ? true : (rejectedPagerRequest ? nil : false)
+  }
+
+  // Only content taller than its viewport can be scrolled back to the top.
+  private func isVerticallyScrollable(_ scrollView: UIScrollView) -> Bool {
+    let inset = scrollView.adjustedContentInset
+    let viewportHeight = scrollView.bounds.height - inset.top - inset.bottom
+    return scrollView.contentSize.height > viewportHeight + Self.scrollTopTolerance
+  }
+
+  private func collectScrolledViews(
+    in view: UIView,
+    window: UIWindow,
+    scrollViews: inout [UIScrollView],
+    pagers: inout [UIView]
+  ) {
+    guard !view.isHidden, view.alpha > 0.01 else { return }
+    // Pager siblings stay in the hierarchy off screen.
+    var visibleRect = view.convert(view.bounds, to: window).intersection(window.bounds)
+    var ancestor = view.superview
+    while let clippingView = ancestor {
+      if clippingView.clipsToBounds {
+        visibleRect = visibleRect.intersection(clippingView.convert(clippingView.bounds, to: window))
+      }
+      ancestor = clippingView.superview
+    }
+    guard !visibleRect.isEmpty else { return }
+    if let pagerClass = Self.collapsiblePagerClass, view.isKind(of: pagerClass) {
+      // The pager keeps header state for its pages, so moving one of its
+      // scrollers directly leaves the header out of sync. It scrolls itself.
+      var pagerScrollViews: [UIScrollView] = []
+      var nestedPagers: [UIView] = []
+      for subview in view.subviews {
+        collectScrolledViews(
+          in: subview,
+          window: window,
+          scrollViews: &pagerScrollViews,
+          pagers: &nestedPagers
+        )
+      }
+      if !pagerScrollViews.isEmpty || !nestedPagers.isEmpty || isPagerAwayFromTop(view) {
+        pagers.append(view)
+      }
+      return
+    }
+    if let scrollView = view as? UIScrollView,
+       scrollView.isScrollEnabled,
+       isVerticallyScrollable(scrollView),
+       scrollView.contentOffset.y + scrollView.adjustedContentInset.top > Self.scrollTopTolerance {
+      scrollViews.append(scrollView)
+    }
+    for subview in view.subviews {
+      collectScrolledViews(in: subview, window: window, scrollViews: &scrollViews, pagers: &pagers)
+    }
+  }
+
+  private func isPagerAwayFromTop(_ pager: UIView) -> Bool {
+    let selector = NSSelectorFromString("isAwayFromPageTop")
+    guard pager.responds(to: selector) else { return false }
+    typealias IsAwayFromPageTop = @convention(c) (AnyObject, Selector) -> Bool
+    let isAwayFromPageTop = unsafeBitCast(pager.method(for: selector), to: IsAwayFromPageTop.self)
+    return isAwayFromPageTop(pager, selector)
+  }
+
+  private func scrollPagerToTop(_ pager: UIView) -> Bool {
+    let selector = NSSelectorFromString("tryScrollToTop:animated:")
+    guard pager.responds(to: selector) else { return false }
+    typealias ScrollToTop = @convention(c) (AnyObject, Selector, Int, Bool) -> Bool
+    let scrollToTop = unsafeBitCast(pager.method(for: selector), to: ScrollToTop.self)
+    return scrollToTop(pager, selector, 0, true)
   }
 
   // MARK: - Bottom accessory placement

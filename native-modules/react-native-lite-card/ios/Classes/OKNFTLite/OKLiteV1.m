@@ -44,7 +44,7 @@
      return @{
        @"hasBackup":[NSNull null],
        @"pinRetryCount":@(_pinRTL),
-       @"isNewCard":@(_status == OKNFCLiteStatusNewCard),
+       @"isNewCard":@((BOOL)(_status == OKNFCLiteStatusNewCard)),
        @"serialNum":_SN
      };
    }

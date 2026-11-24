@@ -1,9 +1,34 @@
+<div align="center">
+
 # @onekeyfe/react-native-scroll-guard
 
-Native gesture coordination for scrollable content inside a React Native pager.
-The Nitro view helps a nested scroller retain its intended scroll gestures
-instead of allowing the parent pager to take them. It supports iOS and Android
-with separate platform implementations.
+**Keeps a nested scroller's gestures from being stolen by the surrounding pager.**
+
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-scroll-guard?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-scroll-guard)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-scroll-guard?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
+
+</div>
+
+A native wrapper that sits around scrollable content inside a pager and
+coordinates the gesture with the platform. The guarded direction stays with the
+child, and on Android the other axis is released so ancestor scrolling still
+works. It does not provide a pager, render scroll content, or emit gesture
+callbacks, and it has no Web implementation.
+
+## Features
+
+- **Direction-aware guarding** — guard `horizontal`, `vertical` or `both`; on
+  Android the unguarded axis is released so ancestor scrolling can continue.
+- **Native coordination only** — iOS attaches gesture recognizers to the found
+  child scroller, Android re-asserts touch interception rules; no JavaScript
+  frames or gesture math.
+- **No public methods or callbacks** — the wrapper is purely declarative, so
+  there is no state to synchronize with the application.
+- **Composes with existing pagers** — it wraps the scrollable content and
+  coordinates with the surrounding pager instead of replacing either one.
 
 ## Installation
 
@@ -11,11 +36,11 @@ with separate platform implementations.
 yarn add @onekeyfe/react-native-scroll-guard react-native-nitro-modules
 ```
 
-Install the application's iOS pods and rebuild the native application. The
-package requires a native Nitro view and a compatible scroll/pager hierarchy;
-it does not provide a pager or render scroll content itself.
+`react-native-nitro-modules` is a required peer dependency at the version pinned
+by the package. Install the app's iOS pods and rebuild the native application
+after adding the package; Android links through autolinking.
 
-## API
+## Usage
 
 ```tsx
 import { ScrollView, Text } from 'react-native';
@@ -31,38 +56,47 @@ import {
 </ScrollGuardView>;
 ```
 
-`direction` accepts `HORIZONTAL`, `VERTICAL` or `BOTH`, and defaults to horizontal.
-There are no additional imperative methods. The full prop definition is in
-[src/ScrollGuard.nitro.ts](src/ScrollGuard.nitro.ts).
+Place the guard between the pager and the scrollable content, and keep the
+scroll content in its own child `ScrollView`/pager view.
 
-## Platform integration
+## API
 
-On Android the native FrameLayout blocks ancestor touch interception for the
-guarded direction and lets child views process the gesture. It releases the
-unguarded direction so ancestor scrolling can continue.
+| Export | Type | Default | Description | Platforms |
+| --- | --- | --- | --- | :-: |
+| `ScrollGuardView` | component | — | Wraps scrollable content and guards the given axis. | iOS, Android |
+| `direction` | `ScrollGuardDirection` | `ScrollGuardDirection.HORIZONTAL` | `HORIZONTAL`, `VERTICAL` or `BOTH`; the string values are `horizontal`, `vertical` and `both`. | iOS, Android |
+| `ScrollGuardDirection` | enum | — | Direction constants for the `direction` prop. | iOS, Android |
 
-On iOS the native view finds an ancestor paging UIScrollView and a sibling child
-UIScrollView, then attaches gesture coordination to that child. The iOS guard
-passes hit testing through rather than acting as a touch target. A standalone
-guard outside that hierarchy has no compatible scroller to coordinate.
+The view exposes no imperative methods. See
+[`src/ScrollGuard.nitro.ts`](src/ScrollGuard.nitro.ts) for the prop definition.
 
-Place the guard according to the platform's native hierarchy and verify nested
-scrolling, page changes and ordinary taps in the actual consumer. Setting a
-direction does not establish that an arbitrary third-party pager integration is
-supported, and this package has no Web gesture implementation.
+## Platform support
 
-## Direction values and scope
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| Guard horizontal gestures | ✅ | ✅ | — |
+| Guard vertical gestures | ✅ | ✅ | — |
+| Release the unguarded axis during a gesture | — | ✅ | — |
 
-`ScrollGuardDirection.HORIZONTAL`, `.VERTICAL` and `.BOTH` have string values
-`horizontal`, `vertical` and `both`. The exported `ScrollGuardProps` describes
-the optional direction; `ScrollGuardMethods` adds no public imperative calls.
-Changing direction configures gesture coordination rather than scroll position.
+## Caveats
 
-Keep content scrolling and pager navigation in their respective components.
-This guard does not add pagination, scroll offsets or a gesture-event callback.
-Verify diagonal drags, direction changes and child interactions in the actual
-hierarchy, since ancestor interception depends on native container placement.
+> [!IMPORTANT]
+> On iOS the guard only connects when it can find an ancestor paging
+> `UIScrollView` and a sibling child `UIScrollView`. A standalone guard outside
+> that hierarchy has nothing to coordinate with.
+
+> [!NOTE]
+> Android blocks interception at its `FrameLayout` and releases the unguarded
+> direction during the gesture. Verify diagonal drags, page changes and child
+> taps in the real pager hierarchy; setting a direction does not by itself make
+> an arbitrary third-party pager integration supported.
+
+## References
+
+- [Public interface](src/ScrollGuard.nitro.ts)
+- [Example page](../../example/react-native/pages/ScrollGuardTestPage.tsx)
+- [Changelog](../../CHANGELOG.md)
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).

@@ -14,7 +14,7 @@ try {
   const sdkBuild = join(output, 'sdk');
   run('cmake', ['-S', join(root, 'sdk'), '-B', sdkBuild, '-DBUILD_TESTING=OFF']);
   run('cmake', ['--build', sdkBuild, '--parallel', '4']);
-  // Compile the actual manager, SDK bridge and LCLogger; only device/card adapters are fakes.
+  // Compile the actual manager, card classes, SDK bridge and LCLogger with fake device adapters.
   run('xcrun', ['clang++', '-fobjc-arc', '-fblocks', '-framework', 'Foundation',
     '-Wno-nullability-completeness', '-Wno-protocol', '-Wno-incomplete-implementation',
     '-I', join(__dirname, 'objc'),
@@ -22,6 +22,8 @@ try {
     ...['', '/OKNFTLite', '/OKLiteCommand', '/Utils'].flatMap((directory) =>
       ['-I', join(root, `ios/Classes${directory}`)]),
     join(root, 'ios/Classes/OKNFTLite/OKNFCManager.m'),
+    join(root, 'ios/Classes/OKNFTLite/OKLiteV1.m'),
+    join(root, 'ios/Classes/OKNFTLite/OKLiteV2.m'),
     join(root, 'ios/Classes/OKNFCBridge.mm'),
     join(root, 'ios/Classes/Utils/LCLogger.m'),
     join(root, 'ios/Classes/Utils/NSString+OKNFCHexStr.m'),

@@ -7,6 +7,7 @@ import android.animation.AnimatorListenerAdapter
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -1963,7 +1964,10 @@ class NativeListView(
   private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal, fonts)
   private var footerRendererKey = NativeListRendererKey.ACTION
   private val sectionIndexView = NativeListSectionIndexView(context, fonts)
-  private val sectionIndexPreview = TextView(context)
+  // RN touch targeting still visits invisible native children with retained bounds.
+  private val sectionIndexPreview = object : TextView(context), ReactPointerEventsView {
+    override val pointerEvents: PointerEvents = PointerEvents.NONE
+  }
   private var config: NativeListConfig? = null
   private var usesSelectorSourceScale = false
   private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal, fonts)
@@ -2177,14 +2181,6 @@ class NativeListView(
     stickyHeaderHost.visibility = GONE
     stickyHeaderHost.addView(stickyHeaderView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
     contentContainer.addView(stickyHeaderHost, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
-    contentContainer.addView(
-      sectionIndexView,
-      FrameLayout.LayoutParams(
-        sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP),
-        FrameLayout.LayoutParams.MATCH_PARENT,
-        Gravity.END,
-      ),
-    )
     sectionIndexPreview.apply {
       gravity = Gravity.CENTER
       textSize = 30f
@@ -2194,16 +2190,13 @@ class NativeListView(
       alpha = 0f
       importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
-    contentContainer.addView(
-      sectionIndexPreview,
-      FrameLayout.LayoutParams(
-        sectionIndexDp(SECTION_INDEX_PREVIEW_WIDTH_DP),
-        sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP),
-        Gravity.CENTER_VERTICAL or Gravity.END,
-      ).apply {
-        marginEnd = sectionIndexDp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
-      },
-    )
+    sectionIndexPreview.layoutParams = FrameLayout.LayoutParams(
+      sectionIndexDp(SECTION_INDEX_PREVIEW_WIDTH_DP),
+      sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP),
+      Gravity.CENTER_VERTICAL or Gravity.END,
+    ).apply {
+      marginEnd = sectionIndexDp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
+    }
     addView(contentContainer, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
     footerView.visibility = GONE
     addView(footerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -2799,6 +2792,7 @@ class NativeListView(
       previous.selectionMode != next.selectionMode ||
       previous.rowPressToggles != next.rowPressToggles ||
       previous.reorderable != next.reorderable ||
+      previous.reorderFromHandleOnly != next.reorderFromHandleOnly ||
       previous.pullToRefresh != next.pullToRefresh ||
       previous.refreshTriggerDistance != next.refreshTriggerDistance ||
       previous.refreshing != next.refreshing ||
@@ -3704,6 +3698,18 @@ class NativeListView(
   }
 
   private fun updateSectionIndexAttachment() {
+    if (sectionIndexEntries.isEmpty()) {
+      stopSectionIndexAttachmentTracking()
+      sectionIndexAttachmentHandler.removeCallbacks(sectionIndexListAttachmentRunnable)
+      sectionIndexListAttachmentScheduled = false
+      (sectionIndexView.parent as? ViewGroup)?.let { previous ->
+        previous.removeView(sectionIndexView)
+        previous.endViewTransition(sectionIndexView)
+      }
+      contentContainer.removeView(sectionIndexPreview)
+      return
+    }
+    if (sectionIndexPreview.parent == null) contentContainer.addView(sectionIndexPreview)
     val windowHost = rootView as? FrameLayout
     val canUseWindowHost = config?.sectionIndexCenteredInWindow == true &&
       sectionIndexEntries.isNotEmpty() &&
@@ -3757,6 +3763,7 @@ class NativeListView(
   }
 
   private fun scheduleSectionIndexAttachmentToList() {
+    if (sectionIndexEntries.isEmpty()) return
     if (sectionIndexView.parent === contentContainer) return
     if (sectionIndexListAttachmentScheduled) return
     sectionIndexListAttachmentScheduled = true
@@ -3764,6 +3771,7 @@ class NativeListView(
   }
 
   private fun attachSectionIndexToList() {
+    if (sectionIndexEntries.isEmpty()) return
     if (sectionIndexView.parent === contentContainer) return
     (sectionIndexView.parent as? ViewGroup)?.let { previous ->
       previous.removeView(sectionIndexView)
@@ -4531,17 +4539,34 @@ class NativeListView(
     reorderTouchHandler = handler
     val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
     reorderTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
-      private var candidate: RecyclerView.ViewHolder? = null
+      private var candidate: NativeListViewHolder? = null
+      private var candidateItem: NativeListItem? = null
+      private var candidateHandle: View? = null
+      private var candidateBindingEpoch = 0L
+      private var rawDownX = 0f
+      private var rawDownY = 0f
       private var downX = 0f
       private var downY = 0f
       private var dragStarted = false
       private val startDrag = Runnable {
         val holder = candidate ?: return@Runnable
-        val position = holder.bindingAdapterPosition
-        val item = adapter.itemAt(position) ?: return@Runnable
-        if (!item.isReorderable) return@Runnable
-        if (item.type != "walletGroup" && recyclerView.isLayoutRequested) {
+        val original = candidateItem ?: return@Runnable
+        if (original.type != "walletGroup" && recyclerView.isLayoutRequested) {
           relayoutRecyclerViewImmediately()
+        }
+        val item = adapter.itemAt(holder.bindingAdapterPosition) ?: return@Runnable
+        val acceptedIndex = acceptedKeyIndex?.get(original.key) ?: return@Runnable
+        val current = config ?: return@Runnable
+        val accepted = current.items.getOrNull(acceptedIndex) ?: return@Runnable
+        if (item.key != original.key || accepted.key != original.key || !accepted.isReorderable)
+          return@Runnable
+        val handle = candidateHandle
+        if (handle != null) {
+          val controlled = current.selectionMode == "single" || current.selectionMode == "multiple"
+          if (holder.rowView.bindingEpoch != candidateBindingEpoch ||
+            (accepted.content != original.content && !isStableSelectionUpdate(original, accepted, controlled)) ||
+            findReorderHandle(holder.itemView, rawDownX, rawDownY) !== handle
+          ) return@Runnable
         }
         dragStarted = true
         beginDrag(holder)
@@ -4556,6 +4581,8 @@ class NativeListView(
       private fun cancelPending() {
         handler.removeCallbacks(startDrag)
         candidate = null
+        candidateItem = null
+        candidateHandle = null
       }
 
       override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
@@ -4566,11 +4593,14 @@ class NativeListView(
             dragStarted = false
             downX = event.x
             downY = event.y
+            rawDownX = event.rawX
+            rawDownY = event.rawY
             val child = recyclerView.findChildViewUnder(event.x, event.y)
             candidate = child
               ?.let(recyclerView::getChildViewHolder)
               // Container-slot holders report binding position 0 in their own adapter.
-              ?.takeIf { holder -> holder is NativeListViewHolder && holder.bindingAdapter === adapter }
+              ?.let { it as? NativeListViewHolder }
+              ?.takeIf { holder -> holder.bindingAdapter === adapter }
               ?.takeIf { holder ->
                 adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
                   // OneKey patch: any wallet group member can initiate the group drag.
@@ -4580,10 +4610,14 @@ class NativeListView(
                   // item.type != "walletGroup" ||
                   // event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
                   // )
+                  candidateItem = item
+                  if (config?.reorderFromHandleOnly == true) {
+                    candidateHandle = findReorderHandle(holder.itemView, rawDownX, rawDownY)
+                    if (candidateHandle == null) return@let false
+                    candidateBindingEpoch = holder.rowView.bindingEpoch
+                  }
                   item.isReorderable &&
-                    (holder as? NativeListViewHolder)?.rowView?.canStartWalletGroupReorder(
-                      event.y - holder.itemView.top,
-                    ) != false
+                    holder.rowView.canStartWalletGroupReorder(event.y - holder.itemView.top)
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
@@ -4599,6 +4633,53 @@ class NativeListView(
       }
 
     }.also(recyclerView::addOnItemTouchListener)
+  }
+
+  /** Find the visible trailing handle whose button frame contains the initial press. */
+  private fun findReorderHandle(root: View, rawX: Float, rawY: Float): View? {
+    if (root.visibility != View.VISIBLE) return null
+    if (root.getTag(R.id.onekey_native_list_reorder_handle) == true) {
+      return root.takeIf { reorderHandleContainsScreenPoint(it, rawX, rawY) }
+    }
+    if (root is ViewGroup) {
+      for (index in 0 until root.childCount) {
+        findReorderHandle(root.getChildAt(index), rawX, rawY)?.let { return it }
+      }
+    }
+    return null
+  }
+
+  private fun reorderHandleContainsScreenPoint(handle: View, rawX: Float, rawY: Float): Boolean {
+    val localToScreen = Matrix()
+    var view = handle
+    while (true) {
+      val parent = view.parent as? View ?: break
+      localToScreen.postConcat(view.matrix)
+      localToScreen.postTranslate(
+        (view.left - parent.scrollX).toFloat(),
+        (view.top - parent.scrollY).toFloat(),
+      )
+      view = parent
+    }
+
+    // The top-level View's screen origin already includes its transform and
+    // the window offset. Subtract its mapped origin to apply the matrix once.
+    val screenOrigin = IntArray(2)
+    view.getLocationOnScreen(screenOrigin)
+    val mappedOrigin = floatArrayOf(0f, 0f)
+    view.matrix.mapPoints(mappedOrigin)
+    localToScreen.postConcat(view.matrix)
+    localToScreen.postTranslate(
+      screenOrigin[0] - mappedOrigin[0],
+      screenOrigin[1] - mappedOrigin[1],
+    )
+
+    val screenToLocal = Matrix()
+    if (!localToScreen.invert(screenToLocal)) return false
+    val point = floatArrayOf(rawX, rawY)
+    screenToLocal.mapPoints(point)
+    return point[0] >= 0f && point[0] < handle.width &&
+      point[1] >= 0f && point[1] < handle.height
   }
 
   private fun prepareDisplacedReorderAnimation(view: View, helper: ItemTouchHelper) {

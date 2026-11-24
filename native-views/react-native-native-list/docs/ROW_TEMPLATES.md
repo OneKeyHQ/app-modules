@@ -188,7 +188,10 @@ separately from source implementation in STYLE_SPEC §9.
 - **Native rich amounts:** optional `amounts` replaces the legacy two strings,
   with at most 32 unique keyed entries. Each entry supports a leading visual,
   tone, primary/secondary text and subscript segments. The title supports at
-  most four keyed badges. `descriptionActionKey` emits a description action.
+  most four keyed badges. `descriptionActionKey` emits a description action on
+  the description text from `descriptionActionStart` on (a UTF-16 offset the
+  caller supplies; default `0`, the whole text). The text before it and the
+  rest of the line stay with the row press.
   `presentation: 'table'` allocates identity (including the leading visual and
   its gap), amounts and optional fee in a stable `1:1:0.6` ratio after column
   gaps. Without fee, identity and amounts have equal widths. Amount content
@@ -261,7 +264,9 @@ stacked (phone)                     table (wide)
     view. Container, padding, image, `leadingGap` and `index` styles keep the
     legacy text layout.
   - *Web:* `secondaryLeadingText` precedes the primary text on the same line,
-    badges follow it, and secondary text is directly below.
+    badges follow it, and secondary text is directly below. An optional
+    `webLeadingBadge` on a column is a passive label at the start of that line,
+    truncated at half of the column width; iOS and Android ignore it.
   - Table layout uses the column view on every platform (Android unstyled:
     the fixed legacy column geometry above).
 - **Style isolation:** primary and secondary text use independent style targets in
@@ -298,8 +303,10 @@ stacked (phone)                     table (wide)
   supplies one or two distinct `image`/`video` candidates. It takes precedence
   over `image`; explicit `imageState: empty | error` still suppresses loading.
   A video candidate uses a muted paused native player, with no playback/controls or
-  touch target. Detail playback remains caller-owned. Failure advances once to
-  the next candidate, then displays the standard error placeholder. The same
+  touch target. Detail playback remains caller-owned. While loading the slot
+  shows a synchronized sheen placeholder; failure advances once to the next
+  candidate, then shows the hatched failed placeholder (SPEC: Media loading
+  and failure placeholders). The same
   media box and caption diagram apply; this adds no new layout region.
   Web keeps the existing `image` field and does not execute media probing.
 - **Native lifetime:** request identity includes row key, full source, fit,

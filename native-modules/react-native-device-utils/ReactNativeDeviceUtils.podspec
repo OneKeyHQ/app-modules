@@ -18,6 +18,8 @@ Pod::Spec.new do |s|
     "ios/**/*.{m,mm}",
     "cpp/**/*.{hpp,cpp}",
   ]
+  s.exclude_files = "ios/tests/**/*"
+  s.frameworks   = "AdServices"
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
@@ -27,4 +29,8 @@ Pod::Spec.new do |s|
   add_nitrogen_files(s)
 
   install_modules_dependencies(s)
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+  end
 end

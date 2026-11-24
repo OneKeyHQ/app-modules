@@ -217,6 +217,13 @@ export function OverlayView(props: IOverlayViewProps) {
         sheetBackgroundColor={
           hasSheetSurface ? 'transparent' : sheet?.backgroundColor
         }
+        // Android hosts the sheet inside the activity content view, so the JS
+        // safe-area tail below the content root is not composited there. Have
+        // native paint the padded bottom inset with the drawn surface color.
+        sheetBottomInsetColor={
+          hasSheetSurface ? sheetSurfaceBackgroundColor : undefined
+        }
+        sheetBottomInsetHorizontal={hasSheetSurface ? sheetInset : 0}
         dismissOnPanDown={sheet?.dismissOnPanDown ?? true}
         animationConfig={animationConfig}
         onPresented={onHostPresented}

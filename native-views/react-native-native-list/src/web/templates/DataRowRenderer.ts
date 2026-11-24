@@ -11,6 +11,7 @@ type ColumnViews = {
   body: HTMLElement;
   primaryLine: HTMLElement;
   primary: HTMLElement;
+  leadingBadge: HTMLElement;
   titleIcons: HTMLElement;
   badges: HTMLElement;
   secondaryLine: HTMLElement;
@@ -43,6 +44,22 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
   const style = row.style;
+  const isTokenTable =
+    row.index === undefined &&
+    !row.favorite &&
+    !row.checkbox &&
+    row.columns.length === 4 &&
+    row.columns[0]?.key === 'asset' &&
+    row.columns[1]?.key === 'balance' &&
+    row.columns[2]?.key === 'price' &&
+    row.columns[3]?.key === 'swapSpacer';
+  if (isTokenTable) {
+    // Match the legacy four equal columns, including the icon in the first.
+    body.style.display = 'grid';
+    body.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+    body.style.gap = '0';
+  }
+
   if (style?.horizontalPadding !== undefined)
     body.style.paddingInline = `${style.horizontalPadding}px`;
   if (style?.verticalPadding !== undefined)
@@ -80,6 +97,9 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
     style?.image?.height ?? 40,
     (style?.leadingGap ?? 12) - 12
   );
+  if (v.visual) v.visual.style.gridArea = isTokenTable ? '1 / 1' : '';
+  v.trailing.style.gridArea = isTokenTable ? '1 / 4' : '';
+  v.trailing.style.justifySelf = isTokenTable ? 'end' : '';
   v.columns.forEach((cell, index) => {
     const column = row.columns[index];
     cell.body.hidden = !column;
@@ -92,6 +112,15 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
     cell.body.hidden = false;
     cell.body.style.flex = String(column.weight ?? 1);
     cell.body.style.display = 'flex';
+    if (isTokenTable) {
+      cell.body.style.gridArea = `1 / ${index + 1}`;
+      if (index === 0 && v.visual) {
+        cell.body.style.marginInlineStart = `${
+          (style?.image?.width ?? 40) + (style?.leadingGap ?? 12)
+        }px`;
+      }
+    }
+
     cell.body.dataset.align = column.alignment ?? 'start';
     if (style?.lineGap !== undefined)
       cell.body.style.rowGap = `${style.lineGap}px`;
@@ -109,6 +138,45 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
       fontWeight(style?.columns?.fontWeight, 500)
     );
     if (style?.columns) primitives.textStyle(cell.primary, style.columns);
+    const leadingBadge = column.webLeadingBadge;
+    cell.leadingBadge.hidden = !leadingBadge;
+    cell.leadingBadge.style.cssText = '';
+    cell.leadingBadge.textContent = leadingBadge?.text ?? '';
+    if (leadingBadge) {
+      // The line spans the column so the badge cap is a share of the column
+      // rather than of the line's own content; justifyContent then carries
+      // the column alignment the shrink-to-fit line got from its cell.
+      cell.primaryLine.style.alignSelf = 'stretch';
+      cell.primaryLine.style.justifyContent =
+        column.alignment === 'end'
+          ? 'flex-end'
+          : column.alignment === 'center'
+          ? 'center'
+          : 'flex-start';
+      cell.primaryLine.style.gap = '8px';
+      // A long label truncates at half the column; the primary text keeps the
+      // rest and truncates after it, so neither can leave the column.
+      cell.leadingBadge.style.display = 'block';
+      cell.leadingBadge.style.boxSizing = 'border-box';
+      cell.leadingBadge.style.flexShrink = '0';
+      cell.leadingBadge.style.maxWidth = '50%';
+      cell.leadingBadge.style.overflow = 'hidden';
+      cell.leadingBadge.style.textOverflow = 'ellipsis';
+      cell.leadingBadge.style.whiteSpace = 'nowrap';
+      cell.leadingBadge.style.padding = '2px 6px';
+      cell.leadingBadge.style.borderRadius = '4px';
+      cell.leadingBadge.style.fontSize = '12px';
+      cell.leadingBadge.style.lineHeight = '16px';
+      cell.leadingBadge.style.fontWeight = '400';
+      cell.leadingBadge.style.fontFamily = 'var(--nl-font-regular)';
+      cell.leadingBadge.style.color = leadingBadge.textColor;
+      cell.leadingBadge.style.backgroundColor = leadingBadge.backgroundColor;
+      cell.leadingBadge.style.pointerEvents = 'none';
+      cell.primary.style.minWidth = '0';
+      cell.primary.style.overflow = 'hidden';
+      cell.primary.style.textOverflow = 'ellipsis';
+      cell.primary.style.whiteSpace = 'nowrap';
+    }
     cell.titleIcons.replaceChildren();
     if (column.titleIcon || column.secondaryTitleIcon) {
       cell.primary.style.minWidth = '0';
@@ -210,10 +278,16 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       'ok-native-list-data-primary'
     );
     const primary = tagSlot(createElement(document, 'span'), 'columns');
+    const leadingBadge = createElement(
+      document,
+      'span',
+      'ok-native-list-data-leading-badge'
+    );
+    leadingBadge.hidden = true;
     const titleIcons = createElement(document, 'span');
     titleIcons.style.display = 'contents';
     const badges = createElement(document, 'span');
-    primaryLine.append(primary, titleIcons, badges);
+    primaryLine.append(leadingBadge, primary, titleIcons, badges);
     const secondaryLine = createElement(
       document,
       'span',
@@ -232,6 +306,7 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       body: cell,
       primaryLine,
       primary,
+      leadingBadge,
       titleIcons,
       badges,
       secondaryLine,

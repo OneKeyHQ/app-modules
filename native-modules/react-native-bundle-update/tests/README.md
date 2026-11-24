@@ -40,6 +40,12 @@ kotlinc android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleSt
   tests/kotlin/BundleStorageSchemaPolicyTest.kt \
   -include-runtime -d /tmp/bundle-storage-schema-tests.jar
 java -jar /tmp/bundle-storage-schema-tests.jar
+
+# Same CLI requirements; exercises the extracted-file verifier path helpers.
+kotlinc android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleVerificationPath.kt \
+  tests/kotlin/BundleVerificationPathTest.kt \
+  -include-runtime -d /tmp/bundle-verification-path-tests.jar
+java -jar /tmp/bundle-verification-path-tests.jar
 ```
 
 Swift and Kotlin tests compile and execute the shipping policy sources. They
@@ -55,6 +61,14 @@ process-wide bundle cache, metadata file filtering, or a signed-OTA install.
 Calling the policy repeatedly is not a test of the production bundle cache.
 The old Node source-text assertions have been removed; matching a signature or
 call in source text cannot demonstrate that it compiles or executes correctly.
+
+`BundleVerificationPathTest` compiles the shipping `BundleVerificationPath.kt`
+helpers shared by both extracted-file verifiers. It asserts that metadata keys
+stay bundle-relative for nested and top-level files, that a trailing root
+separator and a symlinked root produce the same keys, and that a prefix-sharing
+sibling, an outside file, or the root itself is rejected instead of being looked
+up by an absolute path. It does not run the Android verifier itself, which still
+needs a device or an Android host build.
 
 Before native release, verify startup/install rejection and cached revalidation
 through the real iOS/Android bundle-update entry points. Compile legacy native

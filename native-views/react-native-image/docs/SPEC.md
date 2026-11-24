@@ -126,6 +126,15 @@ generation may mutate the view or emit terminal callbacks. Cancellation,
 recycling, and disposal invalidate previous generations and release active
 request, display, retry, safety, skeleton, and animation work.
 
+On Android, dropping a React-owned image stops callbacks and playback
+immediately. If the host is still attached and has a drawable, the host
+retains the view bounds, drawable, and its Glide resource until detachment.
+React-owned OneKeyImage hosts opt out of Fabric's Android view pool so the
+view manager cannot reset the bounds while the outgoing screen still draws
+the host. A detached image or an explicitly disposed NativeList image releases
+its resources immediately. NativeList continues to reuse its own image hosts
+and resets their clip to the default before binding another source.
+
 A cross-size preview is presentation only. It MUST NOT emit `onLoad`,
 `onError`, `onLoadEnd`, or `onDisplay`; the exact request retains callback
 ownership. An iOS exact synchronous memory hit is terminal and reports
@@ -134,6 +143,60 @@ preview, while the normal Glide request remains terminal; this is a recorded
 library-level divergence rather than a different public success result.
 
 ## 6. Cache identity and synchronous memory probe
+
+**Process disk budgets — Implemented; Android native and focused iOS runtime verified.**
+The iOS Image pipeline MUST configure the existing `SDImageCache.shared` instance
+with a 320 MiB disk-size budget before creating either its ordinary manager or
+an isolated request manager. Both manager paths retain that same cache object;
+configuration occurs once per process and does not change the global default
+configuration used by independent namespaces. Existing memory settings, access-
+date expiry and normal cleanup scheduling remain unchanged. Previously written
+entries are not synchronously purged at initialization; library cleanup may
+leave actual usage temporarily above the configured size.
+
+The component-owned disk budgets are:
+
+| Cache | iOS | Android |
+| --- | --- | --- |
+| Ordinary images | 320 MiB shared SDImageCache | 320 MiB shared Glide cache under the module conditions below |
+| Local blockie avatars | 128 MiB separate namespace | Included in the ordinary Glide cache |
+| Video preview frames | 128 MiB separate namespace | 128 MiB separate directory |
+| Combined configured budget | 576 MiB | 448 MiB |
+
+On Android, the SDK provides the 320 MiB default through Glide 5.0.5's existing
+manifest `GlideModule` discovery, before the first Glide instance is constructed.
+The module sets only `InternalCacheDiskCacheFactory`'s capacity and retains the
+ordinary cache directory. It does not declare an `AppGlideModule`, call
+`Glide.init`, use production reflection, change memory settings or replace the
+existing explicit decoder registrations. It adds no dependency or JS API.
+Glide's existing consumer rules must retain the manifest-discovered class.
+
+This is Glide's supported but deprecated legacy discovery path: it applies only
+when the host permits manifest parsing and does not exclude the module. A host's
+modern `AppGlideModule.applyOptions` runs afterwards and may override this default.
+Such hosts own their final budget; the 448 MiB total assumes the 320 MiB ordinary
+budget applies. The current OneKey App has manifest parsing enabled and no
+conflicting host options. SDK packaging validation MUST verify real merged
+metadata discovery and a fresh Glide instance's effective 320 MiB disk budget,
+not only call the module directly or assert its constant.
+
+These totals describe the Image component's native caches, not a strict App-wide
+storage quota or measured usage. Preload and rendering share the ordinary cache;
+the existing Image clear APIs continue to clear ordinary, avatar and video
+preview caches. Native instances are process-shared and are not duplicated for
+separate main/background JavaScript heaps. React Native's other image pipelines,
+HTTP/URLCache, WebView storage, bundled assets and other App targets are outside
+these totals. This change introduces no JavaScript configuration API or new
+aggregate cache manager and does not change memory/bitmap-pool/animation budgets.
+Focused iOS validation MUST exercise an isolated-manager-first request in a
+fresh process and confirm the shared 320 MiB budget without changing memory,
+age or independent-cache settings. Focused configuration checks do not substitute
+for whole-module compilation and the formal regression suite.
+The Android test APK discovers the production manifest module and its first
+Glide instance uses a 320 MiB cache in the unchanged ordinary directory; all
+four cache instrumentation cases pass. The isolated-manager-first iOS test
+fails with the preceding 250 MiB configuration and passes at 320 MiB. These
+checks do not establish consumer App deployment or new-head hosted CI results.
 
 ### 6.1 Exact identity
 
@@ -146,6 +209,15 @@ Headers are part of identity even when the URI is unchanged. TOS optimization is
 disabled for requests with custom headers so an authenticated source is not
 silently rewritten.
 
+On iOS, sized raster requests for an effective `http`, `https`, or `file`
+URL with a density marker recognized by SDWebImage decode at that image scale.
+Their `UIImage.size`, load dimensions, and `contentFit: center` display use
+logical points, including after startup prewarm. The scale comes from the
+effective request URL and is applied with or without custom headers. Unsized
+requests, 1x URLs, avatars, data URIs, and SVG's independent raster path retain
+their existing behavior. The image scale does not change the existing sized
+cache key, cache-key filter, or safety generation.
+
 There is no fixed “three sizes per image” cache contract. TOS currently has five
 layout tiers and up to two density renditions per tier. The memory-variant
 registry records the variants actually requested, with a maximum of eight hints
@@ -155,9 +227,10 @@ per family.
 
 For `memory` and `memory-disk` policies, a prop change may probe decoded memory
 synchronously on the UI thread before layout when size hints are available. No
-disk or network work is allowed in this probe. Android MUST disable Glide disk
+disk or network work is allowed in this probe (the bounded native exception for
+small local images is specified under the named-icon section). Android MUST disable Glide disk
 cache access for the probe and accept only a resource delivered synchronously
-from decoded memory.
+from decoded memory or the prewarmed/sync-decoded startup memory cache.
 
 The probe order is:
 
@@ -187,6 +260,12 @@ preview ownership. A later request for the same family may probe memory again.
 The registry is bounded to 1,024 families and eight variants per family. Family
 access is recency-ordered; new variants evict the oldest retained hints. A cache
 miss removes the stale variant immediately.
+
+On iOS, an attached image host with positive layout bounds starts its asynchronous
+request during the completed layout callback rather than deferring another main
+queue turn. Existing request signatures and generations still suppress duplicate
+loads and stale completions. No synchronous network work is introduced; the
+only synchronous disk work is the bounded small-image path specified below.
 
 ### 6.3 Native video-preview cache — Source implemented; scoped iOS validation
 
@@ -222,7 +301,7 @@ This does not verify cookie-authenticated media or complete App NFT rendering.
 Target tiers are 128, 256, 512 and 1024 pixels on the longest edge. Frames retain
 aspect ratio and normalized orientation, with at most 1,048,576 pixels. Empty
 layout waits for a valid visible size. Decoded cache retention is configured for
-16 MiB and 64 entries; disk retention uses a 64 MiB capacity budget and each
+16 MiB and 64 entries; disk retention uses a 128 MiB capacity budget and each
 encoded entry is at most 8 MiB. Displayed frames, temporary pixel buffers and
 platform player/decoder resources are additional to these cache budgets.
 iOS NSCache cost/count and SDImageCache disk-size settings are library eviction
@@ -237,9 +316,28 @@ persistence worker and the 8 MiB encoded-entry limit.
 iOS uses a dedicated SDImageCache namespace; Android uses a separate
 DiskLruCacheWrapper directory from the existing Glide dependency plus a bounded
 LruCache. Android MUST NOT reuse Glide's default disk directory or journal.
-iOS additionally configures SDImageCache's 30-day disk age; Android uses its
-capacity-based LRU without a TTL. This is an intentional library-policy
+iOS configures a 30-day disk age measured from the file's last access date,
+matching SDImageCache's access-date cleanup policy; Android uses its
+capacity-based LRU without a TTL. This is an intentional platform-policy
 difference, not a shared expiry guarantee.
+
+**iOS disk-read expiry gate — Implemented; focused simulator runtime verified.**
+Before opening or reading a preview file, the serial IO worker MUST inspect its
+last access date. A date at or before the 30-day cutoff, or an unavailable date,
+is a disk miss: remove that disk entry and continue through normal extraction,
+without delivering its pixels or treating expiry as a media failure. A valid,
+bounded, successfully decoded disk hit MUST refresh its access date, as the
+ordinary SDWebImage disk reader does. Reads retain the existing byte/decode
+limits and cancellation/generation checks. This is a disk-read freshness rule;
+it does not expire an already displayed frame or add a memory-cache TTL.
+SDWebImage's periodic cleanup alone does not enforce freshness at lookup time.
+Focused coverage MUST distinguish stale access from recent modification, and
+recent access from stale modification; the former misses and the latter hits.
+A refreshed disk entry must remain reusable without another extraction.
+The two expiry tests fail against the preceding implementation and pass with
+this gate; all six cache XCTest cases pass in the focused iOS Simulator runner
+using the production service and real SDWebImage. This is not a full module/App
+build or a new hosted-CI result.
 These adapters remain part of the existing Image clear API. clearMemory retains
 disk entries; clearDisk retains memory entries; clearAll clears both. Each
 cleared domain advances a generation and serializes clear with outstanding
@@ -626,7 +724,7 @@ icons do not acquire their internal resource name as an accessible label.
 Unknown/empty names, invalid native color, invalid/non-finite/zero layout or a decoder
 failure clear the current image while retaining the view's layout. They MUST NOT
 display the previous icon or silently substitute another artwork. There is no
-network request or disk image-cache write.
+network request; invalid requests do not write the named-icon disk cache.
 
 ### 12.3 Lifecycle, threading and resource limits
 
@@ -657,6 +755,131 @@ over-limit targets fail without allocating a raster. Concurrent decode buffers
 and currently displayed images are additional memory; the cache limit is not a
 total process-memory guarantee. Resources and cache entries are native shared
 data, not copies serialized into each JavaScript heap.
+
+On iOS, a separate `onekey-named-svg-raster-v1` disk namespace retains PNG
+rasters with a configured 128 MiB capacity and no age-based expiration. OS cache
+purging and SDWebImage size-based cleanup may evict entries. This namespace is
+independent of the URI image cache API and its budget. Source digest, pixel size,
+scale, recolor mode and relevant color/alpha inputs invalidate changed artwork.
+Only named-icon workers read/decode disk entries; a hit skips SVG parsing and
+rasterization but still delivers asynchronously to the UI thread. Invalid-size
+entries are misses. Writes and PNG encoding run on a serial utility queue; only
+results within the existing 8 MiB per-raster admission limit are persisted.
+Android also maintains a 64 MiB disk raster PNG cache under `cacheDir/onekey-named-svg-v1`
+using the same SHA-256 render-key naming and LRU pruning.
+This disk layer alone does not make a cold-process main-thread memory probe synchronous.
+
+`@onekeyfe/react-native-native-overlay` reaches the Android registry by
+reflection (`Class.forName`, then `INSTANCE`, `request` with 8 arguments and
+`cancel`) so it takes no build dependency on this package. The package's
+`consumer-rules.pro` keeps those names in minified App builds; removing or
+re-signing any of them requires updating that lookup in the same change, or
+native toast icons render blank in release builds only.
+
+On both iOS and Android, a startup prewarm closes that cold-process gap for the first screen. Named
+icon requests from both the view probe (`cachedRender`) and the callback bridge
+(`OneKeyNamedSVG.request` / `requestRender` / `OneKeyNamedSVGBridge.request`,
+including native bottom tabs) record `(name, color, pixel size, scale)` up to
+96 distinct entries and are written to `Caches/onekey-named-svg-startup-v1.json`
+(or `cacheDir/onekey-named-svg-startup-v1.json` on Android).
+On the main thread, `request` and `requestRender` also probe `cachedRender` and
+`diskRender` before queuing and invoke their completion synchronously on a hit.
+Persistence uses a 6-second quiet debounce after new entries and keeps recording
+open across pre-home screens (such as App Lock) while fewer than 8 icons have
+been seen, up to 60 seconds from the first request. Each entry carries the launch
+sequence number (`launch`) in which it was last seen; current-launch entries lead
+and earlier entries not seen for 3 launches (`startupMaxLaunchAge = 3`) are
+evicted. At the next process start an Objective-C `+load` hook on iOS and
+`OneKeyImageStartupProvider` (`ContentProvider`) on Android dispatch to a
+background queue/executor and decode that list into the decoded-raster LRU,
+normally from the raster disk namespace, before JavaScript mounts the first
+screen. The main thread never waits for it: a probe that arrives before its entry
+is ready, or while the manifest lock is held, misses and takes the asynchronous
+path as before. Stale entries are harmless because the key is rebuilt from the
+current manifest digest. The list holds icon names, colors, sizes and launch
+numbers only. The first launch after install or a purged Caches directory is not
+prewarmed.
+
+The same process-start hook starts an equivalent prewarm for `OneKeyImage` on iOS and Android. A
+rendered request that succeeds from either the active synchronous memory probe or
+the request pipeline is recorded (up to 48 distinct entries) in
+`onekey-image-startup-v1.json`, using the same 6-second quiet debounce
+(keeping recording open while fewer than 2 images have been seen, up to 60 seconds
+from the first request) and 3-launch staleness eviction (`maxLaunchAge = 3`).
+Only `memory-disk` requests without custom headers are recorded, for `http(s)`,
+`onekey-avatar`, `file` and inline `data:` sources (up to 65,536 characters,
+seeded to the disk cache on the background writer when needed). To avoid writing
+plaintext URLs, `onekey-avatar` wallet addresses, or duplicate inline base64
+payloads to disk, each persisted entry stores only the SHA-256 hash of the
+sized memory-cache key (`keyHash`), the disk cache filename (`diskFile` and
+optional `thumbDiskFile` / `rawDiskFile`), optional cache namespace (`avatar`) or
+shape flag (`round`), target pixel dimensions, image scale on iOS, and `launch`.
+Legacy plaintext entries are migrated
+on read and overwritten with hashed entries on the next flush. At the next
+process start each entry is read from the corresponding disk cache, validated
+through `OneKeyImageSafetyPolicy` / `OneKeyEncodedImageInspector`, decoded at the recorded target size
+(normalizing EXIF orientation `1..8` — including swapping source width/height for
+orientations `5..8` and applying the rotation/flip transform for JPEG `APP1 Exif`,
+WebP `EXIF`, and pre- or post-`IDAT` PNG `eXIf` metadata — restoring the display
+bitmap density on Android after `inDensity`/`inTargetDensity` downsampling, and
+applying circular cropping with matching canvas/bitmap density when `round` is set), and
+stored in the memory cache under its prewarm hash key, which the view's
+synchronous memory probe claims and displays on first hit (requests carrying
+custom headers bypass the unauthenticated prewarmed bitmap cache).
+The iOS prewarm memory identity includes both `keyHash` and resolved image
+scale. A claim succeeds only when the active request context resolves to the
+same scale as the entry. Entries written before the Retina fix may record scale
+1 for an `@2x` or `@3x` key; these must miss prewarm promotion and continue
+through the normal request path. A new observation for the same `keyHash`
+replaces that old scale entry at the next manifest flush, while an unchanged
+full identity retains its existing launch behavior. The manifest JSON format
+and disk cache keys remain unchanged.
+
+Clearing the disk cache (`clearDisk()` / `clearAll()`) advances a generation fence and
+synchronizes with the background writer so queued pre-clear startup flushes or
+local/fallback disk-cache writes cannot recreate files after clearing completes.
+The replay never touches the network. The view-side behavior is unchanged: a
+prewarmed image binds in the mount frame, anything else loads asynchronously as
+before.
+
+#### Main-thread decode of small local images (iOS and Android)
+
+This is the one exception to "UI probes may only access decoded memory" and
+"no synchronous disk work". On a memory miss the UI thread may finish the load
+itself, so the image binds in the mount frame, only when all of the following
+hold. Otherwise the request takes the asynchronous pipeline unchanged.
+
+- The bytes are already on this device: a bundled `file` source, an inline
+  `data:` source, or an entry of the disk cache (including `onekey-avatar` and
+  the named-icon raster namespace). The path never starts or waits for a
+  download; a source that is only on the network is always asynchronous.
+- `memory-disk` policy and no custom headers.
+- Encoded size at most 32 KiB, checked from file attributes before the bytes
+  are read; source dimensions at most 512 px per edge, read from the header
+  before decoding; static image; target thumbnail at most 256 px per edge.
+- Named icons: requested size at most 192 px per edge, encoded disk raster at
+  most 32 KiB (checked from file attributes before decoding on both iOS and
+  Android), the manifest already loaded, its lock uncontended, and the raster
+  present on disk. An icon that still needs SVG parsing is asynchronous.
+- A shared budget of 4 ms per 1/60 s window. Each attempt, hit or miss, is
+  charged its wall time; once the window has spent the budget, later misses in
+  it are asynchronous. The filters above bound a single decode, the budget
+  bounds a frame. `OneKeyMainThreadDecode` records `os_signpost` / `Trace` intervals and
+  per-process metrics (attempts, hits, misses, budget rejections, lock
+  contention, disk misses, limit rejections, window counts, and latency
+  percentiles).
+
+The encoded and decoded safety checks of the pipeline (including EXIF orientation
+normalization and display-density restoration on Android) run on this path too.
+The result is stored under the exact key of the view's memory probe, which is
+then repeated, so such a load reports `cacheType: memory`. The process-start
+hook loads the icon manifest even without a startup list, because every icon
+fast path needs it. Launching with `-OneKeyImageSyncDecodeDisabled YES`
+disables the path for comparison. The budget does not cover a whole first
+screen: with the startup lists removed, a cold start on the iOS simulator bound
+roughly a third to a half of the first-screen icons and images in the mount
+frame and left the rest to the next frames. The startup prewarm remains the
+primary mechanism and this path the fallback for what it misses.
 
 iOS reuses the already declared SDImageSVGCoder decoder. Android reuses the
 already declared AndroidSVG decoder. Native color substitution is restricted to

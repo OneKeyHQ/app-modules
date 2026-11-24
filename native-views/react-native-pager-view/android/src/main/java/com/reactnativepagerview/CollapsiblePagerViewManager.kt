@@ -254,7 +254,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
   @ReactProp(name = "nativeTabBarVariant")
   override fun setNativeTabBarVariant(view: CollapsiblePagerHost?, value: String?) {
     view ?: return
-    view.nativeTabBarVariant = if (value == "segmented" || value == "text") value else "underline"
+    view.nativeTabBarVariant = if (value == "segmented" || value == "text" || value == "pill") value else "underline"
     view.applyNativeHeaderStyle()
   }
 

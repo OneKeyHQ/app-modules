@@ -44,16 +44,26 @@ final class NativeListMediaVisibilityTests: XCTestCase {
 @MainActor
 final class NativeListMediaFrameCaptureTests: XCTestCase {
   func testVisibleVideoReleasesPlayerAfterCapturingFirstFrame() throws {
+    XCTAssertEqual(UIApplication.shared.applicationState, .active, "Video capture requires a foreground app host")
     let url = try writeVideo()
     defer { try? FileManager.default.removeItem(at: url) }
-    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
-    window.rootViewController = UIViewController()
-    window.isHidden = false
-    defer { window.isHidden = true }
+    let sceneWindow = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .first(where: { $0.activationState == .foregroundActive })?
+      .windows.first(where: { $0.isKeyWindow })
+    let window = try XCTUnwrap(sceneWindow ?? UIApplication.shared.delegate?.window ?? nil)
+    let rootView = try XCTUnwrap(window.rootViewController?.view)
+    XCTAssertFalse(window.isHidden, "Video capture requires a visible app window")
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    rootView.addSubview(container)
+    defer { container.removeFromSuperview() }
     let slot = NativeListMediaPreviewSlot()
+    defer { slot.recycle() }
     slot.view.frame = CGRect(x: 0, y: 0, width: 120, height: 120)
-    window.rootViewController?.view.addSubview(slot.view)
+    container.addSubview(slot.view)
     slot.view.layoutIfNeeded()
+    XCTAssertTrue(slot.view.window === window)
+    XCTAssertTrue(NativeListMediaPreviewSlot.intersectsViewport(slot.view))
 
     var loaded: Bool?
     slot.bind(["uri": url.absoluteString], key: "video", probeOrder: ["video"]) { loaded = $0 }
@@ -72,7 +82,7 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     slot.view.removeFromSuperview()
     XCTAssertTrue(slot.capturedFrame === frame, "Detaching has no replacement screen scale")
     XCTAssertEqual(slot.createdPlayerCount, playersBeforeDetach)
-    window.rootViewController?.view.addSubview(slot.view)
+    container.addSubview(slot.view)
     slot.bind(["uri": url.absoluteString], key: "video", probeOrder: ["video"])
     XCTAssertTrue(slot.capturedFrame === frame, "The same window retains the same tier")
     XCTAssertEqual(slot.createdPlayerCount, playersBeforeDetach)
@@ -89,8 +99,9 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     XCTAssertNotNil(slot.capturedFrame)
     XCTAssertEqual(slot.createdPlayerCount, coldPlayers, "Recycled row reuses the cached still")
     let second = NativeListMediaPreviewSlot()
+    defer { second.recycle() }
     second.view.frame = CGRect(x: 120, y: 0, width: 120, height: 120)
-    window.rootViewController?.view.addSubview(second.view)
+    container.addSubview(second.view)
     second.view.layoutIfNeeded()
     second.bind(["uri": url.absoluteString], key: "another-cell", probeOrder: ["video"])
     let crossCellDeadline = Date().addingTimeInterval(3)
@@ -99,7 +110,6 @@ final class NativeListMediaFrameCaptureTests: XCTestCase {
     }
     XCTAssertNotNil(second.capturedFrame)
     XCTAssertEqual(second.createdPlayerCount, 0, "A different cell uses shared cached pixels")
-    second.recycle(); slot.recycle()
   }
 
   /// A 64×48, ten-frame H.264 MP4 (generated with AVAssetWriter on macOS); the simulator

@@ -24,6 +24,14 @@ internal object FloatingTabBarMetrics {
   const val LENS_MAX_STRETCH = 0.16f
   const val ITEM_PRESSED_SCALE = 1.1f
   const val DRAG_EDGE_RESISTANCE = 0.22f
+
+  // Motion timings aligned with the iOS 26 Liquid Glass tab bar spring.
+  const val SLIDE_DURATION_MS = 520L
+  const val SLIDE_SPRING_DAMPING = 0.82f
+  const val SLIDE_SPRING_FREQUENCY = 7.5f
+  const val LIFT_UP_DURATION_MS = 220L
+  const val LIFT_SETTLE_DURATION_MS = 380L
+  const val LIFT_HOLD_DURING_SLIDE_MS = 200L
 }
 
 /**
@@ -31,20 +39,28 @@ internal object FloatingTabBarMetrics {
  * below 1 overshoots slightly before settling, matching UIKit spring motion.
  */
 internal class SpringInterpolator(
-  private val dampingRatio: Float = 0.72f,
-  private val angularFrequency: Float = 10f,
+  private val dampingRatio: Float = FloatingTabBarMetrics.SLIDE_SPRING_DAMPING,
+  private val angularFrequency: Float = FloatingTabBarMetrics.SLIDE_SPRING_FREQUENCY,
 ) : Interpolator {
   private val dampedFrequency =
     angularFrequency * sqrt(1f - dampingRatio * dampingRatio)
+  private val endValue = rawSpring(1f)
 
-  override fun getInterpolation(input: Float): Float {
-    if (input >= 1f) {
-      return 1f
-    }
+  private fun rawSpring(input: Float): Float {
     val decay = exp(-dampingRatio * angularFrequency * input)
     val phase = dampedFrequency * input
     return 1f - decay * (
       cos(phase) + (dampingRatio * angularFrequency / dampedFrequency) * sin(phase)
     )
+  }
+
+  override fun getInterpolation(input: Float): Float {
+    if (input <= 0f) {
+      return 0f
+    }
+    if (input >= 1f || endValue == 0f) {
+      return 1f
+    }
+    return rawSpring(input) / endValue
   }
 }

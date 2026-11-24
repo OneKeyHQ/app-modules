@@ -201,10 +201,26 @@ struct RNCScrollCandidateResolution {
 @property (nonatomic, assign) BOOL ownsTransitionHosts;
 @property (nonatomic, strong) UIView *ownedTopHost;
 @property (nonatomic, strong) UIView *ownedStickyHost;
+@property (nonatomic, strong) UIScrollView *standInScrollView;
 @end
 
 @implementation RNCCollapsiblePagerTransitionEdgeOwner
 @end
+
+// OneKey patch: overlay content (popover, sheet, dialog) stays mounted inside
+// its host view until the overlay window presents it, so a host can sit in a
+// page's subtree. That content is never the page's scroller: adopting its
+// scroll view applies the collapsed-header offset to it, and the sheet then
+// opens scrolled past its content.
+static BOOL RNCIsNativeOverlayHost(UIView *view)
+{
+  // Looked up by name: the overlay package is optional here. Main thread only.
+  static Class overlayHostClass = Nil;
+  if (overlayHostClass == Nil) {
+    overlayHostClass = NSClassFromString(@"RCTNativeOverlayComponentView");
+  }
+  return overlayHostClass != Nil && [view isKindOfClass:overlayHostClass];
+}
 
 static UIView *RNCScrollComponentView(UIScrollView *scrollView)
 {
@@ -492,6 +508,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   CGFloat _contentPaddingVertical;
   BOOL _segmented;
   BOOL _textVariant;
+  BOOL _pillVariant;
   NSDictionary *_config;
   RNCPagerToolbarButton *_toolbarButton;
   NSString *_toolbarKey;
@@ -677,6 +694,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   BOOL wasSegmented = _segmented;
   _segmented = [variant isEqualToString:@"segmented"];
   _textVariant = [variant isEqualToString:@"text"];
+  _pillVariant = [variant isEqualToString:@"pill"];
   _contentPaddingHorizontal = MAX(0, contentPaddingHorizontal);
   _contentPaddingVertical = MAX(0, contentPaddingVertical);
   _itemSpacing = MAX(0, itemSpacing);
@@ -749,15 +767,39 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   RNCLogNativeTabScrollBoundary(@"primary", @"end", scrollView, _scrollStartOffsetX);
 }
 
+- (CGFloat)itemPaddingHorizontal
+{
+  id value = _config[@"itemPaddingHorizontal"];
+  if ([value isKindOfClass:NSNumber.class] && std::isfinite([value doubleValue]) && [value doubleValue] >= 0) {
+    return [value doubleValue];
+  }
+  return _textVariant ? 10 : (_pillVariant ? 14 : 8);
+}
+
+// The tab row and toolbar share a centered band no wider than contentMaxWidth;
+// the bar background still covers the full width.
+- (CGRect)contentRowFrame
+{
+  CGFloat width = CGRectGetWidth(self.bounds);
+  id value = _config[@"contentMaxWidth"];
+  if ([value isKindOfClass:NSNumber.class] && std::isfinite([value doubleValue]) && [value doubleValue] > 0 &&
+      [value doubleValue] < width) {
+    CGFloat rowWidth = [value doubleValue];
+    return CGRectMake(floor((width - rowWidth) / 2), 0, rowWidth, CGRectGetHeight(self.bounds));
+  }
+  return self.bounds;
+}
+
 - (void)layoutSubviews
 {
   [super layoutSubviews];
   CGFloat reserved = _toolbarReservedWidth;
+  CGRect row = [self contentRowFrame];
   [self bringSubviewToFront:_toolbarButton];
-  _scrollView.frame = CGRectMake(_leftToRight ? 0 : reserved, 0,
-    MAX(0, CGRectGetWidth(self.bounds) - reserved), CGRectGetHeight(self.bounds));
+  _scrollView.frame = CGRectMake(CGRectGetMinX(row) + (_leftToRight ? 0 : reserved), 0,
+    MAX(0, CGRectGetWidth(row) - reserved), CGRectGetHeight(self.bounds));
   CGFloat inset = _toolbarTrailingInset - (_toolbarSize - _toolbarContentWidth) / 2;
-  _toolbarButton.frame = CGRectMake(_leftToRight ? CGRectGetWidth(self.bounds) - inset - _toolbarSize : inset,
+  _toolbarButton.frame = CGRectMake(_leftToRight ? CGRectGetMaxX(row) - inset - _toolbarSize : CGRectGetMinX(row) + inset,
     (CGRectGetHeight(self.bounds) - _toolbarSize) / 2, _toolbarSize, _toolbarSize);
   if (_segmented) {
     CGFloat width = CGRectGetWidth(_scrollView.bounds);
@@ -796,7 +838,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       UIFont *activeFont = self.activeTabFont;
       textWidth = MAX(textWidth, ceil([title sizeWithAttributes:@{NSFontAttributeName: activeFont}].width));
     }
-    CGFloat buttonWidth = MAX(44, textWidth + (_textVariant ? 20 : 16));
+    CGFloat buttonWidth = MAX(44, textWidth + 2 * self.itemPaddingHorizontal);
     [widths addObject:@(buttonWidth)];
     itemsWidth += buttonWidth;
   }
@@ -812,6 +854,14 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
     CGFloat buttonWidth = widths[index].doubleValue;
     if (!self->_leftToRight) x -= buttonWidth;
+    if (self->_pillVariant) {
+      CGFloat insetY = MIN(self->_contentPaddingVertical, self->_barHeight / 2);
+      button.frame = CGRectMake(x, insetY, buttonWidth, MAX(0, self->_barHeight - 2 * insetY));
+      [self->_indicatorFrames addObject:[NSValue valueWithCGRect:button.frame]];
+      if (self->_leftToRight) x += buttonWidth + self->_itemSpacing;
+      else x -= self->_itemSpacing;
+      return;
+    }
     button.frame = CGRectMake(x, 0, buttonWidth, self->_barHeight);
     NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
     CGFloat textWidth = ceil([title sizeWithAttributes:@{NSFontAttributeName: font}].width);
@@ -887,7 +937,14 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self updateToolbarForKey:key];
   [self setNeedsLayout];
 }
-- (BOOL)usesControlledTextProgress { return _textVariant && [_config[@"controlled"] boolValue]; }
+- (BOOL)pillAnimationDisabled
+{
+  id value = _config[@"indicatorAnimationEnabled"];
+  return _pillVariant && [value isKindOfClass:NSNumber.class] && ![value boolValue];
+}
+- (BOOL)usesControlledTextProgress {
+  return (_textVariant || (_pillVariant && !self.pillAnimationDisabled)) && [_config[@"controlled"] boolValue];
+}
 - (void)setLegacyToolbarVisible:(BOOL)visible {
   _toolbarButton.enabled = visible;
   _toolbarButton.userInteractionEnabled = visible;
@@ -1323,6 +1380,16 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   NSInteger count = _buttons.count;
   if (count == 0 || _indicatorFrames.count != count) return;
   CGFloat progress = RNCClamp(_progress, 0, count - 1);
+  BOOL snapToSelection = self.pillAnimationDisabled;
+  if (snapToSelection) {
+    // The pill and label colors jump to the selection instead of following progress.
+    NSInteger snapped = (NSInteger)round(progress);
+    if ([_config[@"controlled"] boolValue]) {
+      NSUInteger selected = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:self->_config[@"selectedKey"]]; }];
+      if (selected != NSNotFound) snapped = (NSInteger)selected;
+    }
+    progress = RNCClamp(snapped, 0, count - 1);
+  }
   NSInteger lower = (NSInteger)floor(progress);
   NSInteger upper = MIN(lower + 1, count - 1);
   CGFloat fraction = progress - lower;
@@ -1334,6 +1401,16 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     CGRectGetWidth(fromFrame) + (CGRectGetWidth(toFrame) - CGRectGetWidth(fromFrame)) * fraction,
     _segmented ? CGRectGetHeight(fromFrame) : _indicatorHeight
   );
+  if (_pillVariant) {
+    // Leading edge leads and trailing edge lags while moving between tabs.
+    CGFloat leading = 1 - (1 - fraction) * (1 - fraction);
+    CGFloat trailing = fraction * fraction;
+    BOOL forward = CGRectGetMinX(toFrame) >= CGRectGetMinX(fromFrame);
+    CGFloat left = CGRectGetMinX(fromFrame) + (CGRectGetMinX(toFrame) - CGRectGetMinX(fromFrame)) * (forward ? trailing : leading);
+    CGFloat right = CGRectGetMaxX(fromFrame) + (CGRectGetMaxX(toFrame) - CGRectGetMaxX(fromFrame)) * (forward ? leading : trailing);
+    indicatorFrame = CGRectMake(left, CGRectGetMinY(fromFrame), MAX(0, right - left), CGRectGetHeight(fromFrame));
+    _indicatorView.layer.cornerRadius = CGRectGetHeight(indicatorFrame) / 2;
+  }
   _indicatorView.frame = indicatorFrame;
   _indicatorView.hidden = _textVariant || CGRectGetHeight(indicatorFrame) <= 0;
 
@@ -1347,7 +1424,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self updateToolbarForKey:key];
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
     CGFloat emphasis = 1 - MIN(1, fabs(progress - index));
-    if ([self->_config[@"controlled"] boolValue]) {
+    if ([self->_config[@"controlled"] boolValue] && !snapToSelection) {
       emphasis = index == self->_progressSource ? 1 - self->_progressFraction : 0;
       if (index == self->_progressDestination) emphasis += self->_progressFraction;
     }
@@ -2237,6 +2314,9 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay;
 - (RNCCollapsiblePagerTransitionEdgeOwner *)borrowedPinnedStickyOwner;
 - (void)releaseProgrammaticScrollEdge:(UIScrollView *)scrollView;
+- (BOOL)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex;
+- (BOOL)layoutStandInScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner;
+- (void)layoutStandInScrollEdges;
 - (void)releaseProgrammaticScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner;
 - (void)clearProgrammaticScrollEdges;
 - (void)finishProgrammaticScrollEdges;
@@ -2808,6 +2888,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)updateScrollEdgeContentMasks
 {
+  [self layoutStandInScrollEdges];
   [self updateHardEdgeSeparatorCovers];
   BOOL enabled = _topScrollEdgeEnabled &&
     (self.hasFixedTopOverlay || _stickyHeaderView != nil) &&
@@ -3088,6 +3169,18 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     for (NSInteger pageIndex = first; pageIndex <= last; pageIndex++) {
       [self preparePageForHorizontalTransitionAtIndex:pageIndex];
       UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:pageIndex];
+      // A list that is not mounted yet, not laid out under the bars, or not
+      // scrolled past its top cannot render the edge effect behind the bars.
+      BOOL coversBars = scrollView != nil && scrollView.window == self.window &&
+        [scrollView convertPoint:CGPointZero toView:_containerView].y <=
+          [_pageControllers[pageIndex].view convertPoint:CGPointZero toView:_containerView].y + 0.5 &&
+        scrollView.contentOffset.y + scrollView.adjustedContentInset.top > 0.5;
+      // The stand-in applies only while the sticky header is pinned; otherwise
+      // keep the temporary interaction on the page's own list.
+      if (!coversBars && pageIndex != _currentIndex &&
+          [self beginStandInScrollEdgeForPageAtIndex:pageIndex]) {
+        continue;
+      }
       if (scrollView == nil || scrollView.window != self.window) continue;
       if ([_programmaticScrollEdges objectForKey:scrollView] != nil) continue;
       RNCCollapsiblePagerTransitionEdgeOwner *owner = [RNCCollapsiblePagerTransitionEdgeOwner new];
@@ -3168,6 +3261,8 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     owner.stickyInteraction.scrollView = nil;
     [owner.topMarker removeFromSuperview];
     [owner.stickyMarker removeFromSuperview];
+    [owner.standInScrollView removeFromSuperview];
+    owner.standInScrollView = nil;
     if (owner.ownsTransitionHosts) {
       [owner.ownedTopHost removeFromSuperview];
       [owner.ownedStickyHost removeFromSuperview];
@@ -3199,15 +3294,219 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (void)finishProgrammaticScrollEdges
 {
   if (_programmaticScrollEdgeOwners.count == 0) return;
+  // OneKey patch: keep the destination's transitional edge alive until the
+  // settled interaction exists, so UIKit does not fade the edge effect back in.
+  UIScrollView *settled = _observedScrollView;
+  RNCCollapsiblePagerTransitionEdgeOwner *handoff =
+    settled != nil ? [_programmaticScrollEdges objectForKey:settled] : nil;
+  if (handoff != nil) {
+    [_programmaticScrollEdges removeObjectForKey:settled];
+    [_programmaticScrollEdgeOwners removeObjectIdenticalTo:handoff];
+  }
   [self clearProgrammaticScrollEdges];
-  [self updateTopScrollEdgeForScrollView:_observedScrollView];
+  if (@available(iOS 26.0, *)) {
+    // A cancelled drag settles on the page whose settled edge was adopted.
+    // Return that interaction as-is: a second container interaction for the
+    // same scroll view and host would be torn down together with the old one.
+    if (handoff != nil && !handoff.ownsTransitionHosts && _topEdgeInteraction == nil &&
+        handoff.topHost == _topOverlayHostView &&
+        handoff.topInteraction.scrollView == settled) {
+      _topEdgeInteraction = handoff.topInteraction;
+      _topEdgeInteractionHost = handoff.topHost;
+      _topEdgeMarker = handoff.topMarker;
+      _topEdgeScrollView = settled;
+      _originalTopEdgeStyle = handoff.originalStyle;
+      if (handoff.stickyInteraction != nil && handoff.stickyHost != nil &&
+          handoff.stickyInteraction.scrollView == settled) {
+        _stickyEdgeInteraction = handoff.stickyInteraction;
+        _stickyEdgeInteractionHost = handoff.stickyHost;
+        _stickyEdgeMarker = handoff.stickyMarker;
+      } else {
+        [handoff.stickyHost removeInteraction:handoff.stickyInteraction];
+        handoff.stickyInteraction.scrollView = nil;
+        [handoff.stickyMarker removeFromSuperview];
+      }
+      if (handoff.borrowsPinnedStickyHost && !_stickyHeaderIsPinned &&
+          (_pinnedStickyHostView.superview == settled ||
+           _pinnedStickyHostView.superview == nil)) {
+        _pinnedStickyHostView.hidden = YES;
+        _pinnedStickyHostView.layer.zPosition = 0;
+        [_containerView addSubview:_pinnedStickyHostView];
+      }
+      [self updateTopScrollEdgeForScrollView:settled];
+      return;
+    }
+  }
+  [self updateTopScrollEdgeForScrollView:settled];
+  if (handoff == nil) return;
+  if (@available(iOS 26.0, *)) {
+    if (_topEdgeScrollView == settled && settled != nil) {
+      _originalTopEdgeStyle = handoff.originalStyle;
+      handoff.originalStyle = settled.topEdgeEffect.style;
+    }
+  }
+  if (handoff.borrowsPinnedStickyHost && !_stickyHeaderIsPinned &&
+      (_pinnedStickyHostView.superview == settled ||
+       _pinnedStickyHostView.superview == nil)) {
+    _pinnedStickyHostView.hidden = YES;
+    _pinnedStickyHostView.layer.zPosition = 0;
+    [_containerView addSubview:_pinnedStickyHostView];
+  }
+  handoff.borrowsPinnedStickyHost = NO;
+  // The caller reattaches the shared header in this run loop turn; drop the
+  // transitional resources on the next one, after the header is rendered.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (@available(iOS 26.0, *)) {
+      [handoff.topHost removeInteraction:handoff.topInteraction];
+      [handoff.stickyHost removeInteraction:handoff.stickyInteraction];
+      if (handoff.topInteraction.scrollView == handoff.scrollView) {
+        handoff.topInteraction.scrollView = nil;
+      }
+      if (handoff.stickyInteraction.scrollView == handoff.scrollView) {
+        handoff.stickyInteraction.scrollView = nil;
+      }
+    }
+    [handoff.topMarker removeFromSuperview];
+    [handoff.stickyMarker removeFromSuperview];
+    if (handoff.ownsTransitionHosts) {
+      [handoff.ownedTopHost removeFromSuperview];
+      [handoff.ownedStickyHost removeFromSuperview];
+    }
+  });
+}
+
+- (BOOL)beginStandInScrollEdgeForPageAtIndex:(NSInteger)pageIndex
+{
+  // OneKey patch: a page whose list is not mounted yet has no scroll view to
+  // own an edge effect, so its masked top shows the bare background. An empty
+  // stand-in scroll view resting past its top edge renders the same Hard
+  // material (the settled header is masked out under the overlay as well).
+  if (@available(iOS 27.0, *)) {
+    if (pageIndex == _currentIndex || pageIndex < 0 ||
+        pageIndex >= (NSInteger)_pageControllers.count) return NO;
+    UIView *page = _pageControllers[pageIndex].view;
+    UIView *container = page.superview;
+    if (page.window != self.window || container == nil ||
+        _stickyHeaderView == nil || _headerHeight <= 0 ||
+        _headerOffset < _headerHeight - 0.5) return NO;
+    for (RNCCollapsiblePagerTransitionEdgeOwner *existing in _programmaticScrollEdgeOwners) {
+      if (existing.page == page) return YES;
+    }
+    CGFloat boundary = self.effectiveTopOverlayHeight + self.currentStickyHeaderHeight;
+    CGFloat pageTop = [page convertPoint:CGPointZero toView:_containerView].y;
+    if (boundary - pageTop <= 0 || CGRectGetWidth(page.bounds) <= 0) return NO;
+    UIScrollView *standIn = [UIScrollView new];
+    standIn.userInteractionEnabled = NO;
+    standIn.scrollsToTop = NO;
+    standIn.showsVerticalScrollIndicator = NO;
+    standIn.showsHorizontalScrollIndicator = NO;
+    standIn.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    standIn.backgroundColor = UIColor.clearColor;
+    standIn.accessibilityElementsHidden = YES;
+    standIn.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
+    [container insertSubview:standIn aboveSubview:page];
+
+    RNCCollapsiblePagerTransitionEdgeOwner *owner = [RNCCollapsiblePagerTransitionEdgeOwner new];
+    owner.scrollView = standIn;
+    owner.page = page;
+    owner.standInScrollView = standIn;
+    owner.originalStyle = UIScrollEdgeEffectStyle.hardStyle;
+    owner.ownsTransitionHosts = YES;
+    UIView *(^host)(void) = ^UIView *(void) {
+      UIView *view = [UIView new];
+      view.userInteractionEnabled = NO;
+      view.accessibilityElementsHidden = YES;
+      [container insertSubview:view aboveSubview:standIn];
+      UILabel *marker = [UILabel new];
+      marker.frame = view.bounds;
+      marker.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      marker.text = @" ";
+      marker.textColor = UIColor.clearColor;
+      marker.backgroundColor = UIColor.clearColor;
+      marker.isAccessibilityElement = NO;
+      [view addSubview:marker];
+      return view;
+    };
+    owner.ownedTopHost = host();
+    owner.topHost = owner.ownedTopHost;
+    owner.topInteraction = [UIScrollEdgeElementContainerInteraction new];
+    owner.topInteraction.edge = UIRectEdgeTop;
+    owner.topInteraction.scrollView = standIn;
+    [owner.topHost addInteraction:owner.topInteraction];
+    owner.ownedStickyHost = host();
+    owner.stickyHost = owner.ownedStickyHost;
+    owner.stickyInteraction = [UIScrollEdgeElementContainerInteraction new];
+    owner.stickyInteraction.edge = UIRectEdgeTop;
+    owner.stickyInteraction.scrollView = standIn;
+    [owner.stickyHost addInteraction:owner.stickyInteraction];
+    if (_programmaticScrollEdges == nil) {
+      _programmaticScrollEdges = [NSMapTable weakToStrongObjectsMapTable];
+      _programmaticScrollEdgeOwners = [NSMutableArray new];
+    }
+    [self layoutStandInScrollEdgeOwner:owner];
+    [_programmaticScrollEdges setObject:owner forKey:standIn];
+    [_programmaticScrollEdgeOwners addObject:owner];
+    return YES;
+  }
+  return NO;
+}
+
+// Stand-ins live in the pager container rather than inside their page, so they
+// do not follow page or header geometry on their own. Recompute them from the
+// current page origin and overlay + sticky boundary on every layout pass.
+- (BOOL)layoutStandInScrollEdgeOwner:(RNCCollapsiblePagerTransitionEdgeOwner *)owner
+{
+  UIScrollView *standIn = owner.standInScrollView;
+  UIView *page = owner.page;
+  UIView *container = standIn.superview;
+  BOOL valid = standIn != nil && page != nil && container != nil &&
+    page.superview == container && _containerView != nil;
+  CGFloat width = valid ? CGRectGetWidth(page.bounds) : 0;
+  CGFloat height = 0;
+  CGPoint origin = CGPointZero;
+  if (valid) {
+    CGFloat boundary = self.effectiveTopOverlayHeight + self.currentStickyHeaderHeight;
+    height = boundary - [page convertPoint:CGPointZero toView:_containerView].y;
+    origin = [page convertPoint:CGPointZero toView:container];
+    valid = width > 0 && height > 0;
+  }
+  standIn.hidden = !valid;
+  owner.ownedTopHost.hidden = !valid;
+  owner.ownedStickyHost.hidden = !valid;
+  if (!valid) return NO;
+  CGRect frame = CGRectMake(origin.x, origin.y, width, height);
+  if (!CGRectEqualToRect(standIn.frame, frame)) standIn.frame = frame;
+  // Rest past the top edge so UIKit draws the edge material.
+  CGFloat scrolled = MAX(_headerHeight, 1);
+  CGSize contentSize = CGSizeMake(width, scrolled + height + 1);
+  if (!CGSizeEqualToSize(standIn.contentSize, contentSize)) standIn.contentSize = contentSize;
+  if (standIn.contentOffset.y != scrolled) standIn.contentOffset = CGPointMake(0, scrolled);
+  void (^place)(UIView *, UIView *) = ^(UIView *host, UIView *reference) {
+    if (host == nil) return;
+    CGRect hostFrame = reference != nil
+      ? [reference convertRect:reference.bounds toView:container] : CGRectZero;
+    hostFrame.origin.x = origin.x;
+    hostFrame.size.width = width;
+    if (!CGRectEqualToRect(host.frame, hostFrame)) host.frame = hostFrame;
+  };
+  place(owner.ownedTopHost, _topOverlayHostView);
+  place(owner.ownedStickyHost, _stickyHeaderView);
+  return YES;
+}
+
+- (void)layoutStandInScrollEdges
+{
+  for (RNCCollapsiblePagerTransitionEdgeOwner *owner in _programmaticScrollEdgeOwners) {
+    if (owner.standInScrollView != nil) [self layoutStandInScrollEdgeOwner:owner];
+  }
 }
 
 - (BOOL)hasProgrammaticScrollEdgeForPage:(UIView *)page
 {
   if (@available(iOS 26.0, *)) {
     for (RNCCollapsiblePagerTransitionEdgeOwner *owner in _programmaticScrollEdges.objectEnumerator) {
-      if (owner.page == page && owner.scrollView.window == self.window &&
+      if (owner.page == page && owner.standInScrollView == nil &&
+          owner.scrollView.window == self.window &&
           owner.topInteraction.scrollView == owner.scrollView) return YES;
     }
   }
@@ -3320,10 +3619,22 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)updateHardEdgeSeparatorCovers
 {
+  // OneKey patch: transitional edge owners draw the same Hard hairline while
+  // the settled interaction is detached, so keep the covers during transitions.
+  BOOL transitional = _programmaticScrollEdgeOwners.count > 0;
   BOOL enabled = _topScrollEdgeEnabled &&
     _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard &&
-    _topEdgeScrollView != nil && self.window != nil && !_isBeingRecycled;
+    (_topEdgeScrollView != nil || transitional) && self.window != nil && !_isBeingRecycled;
   if (!enabled && _topEdgeSeparatorCover == nil && _stickyEdgeSeparatorCover == nil) return;
+  BOOL transitionalSticky = NO;
+  if (transitional && _topEdgeScrollView == nil) {
+    for (RNCCollapsiblePagerTransitionEdgeOwner *owner in _programmaticScrollEdgeOwners) {
+      if (owner.stickyInteraction != nil) {
+        transitionalSticky = YES;
+        break;
+      }
+    }
+  }
   UIColor *color = nil;
   for (UIView *view = self; view != nil; view = view.superview) {
     UIColor *candidate = [view.backgroundColor resolvedColorWithTraitCollection:
@@ -3337,7 +3648,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     _topOverlayHostView.traitCollection];
   CGFloat scale = self.window.screen.scale ?: self.traitCollection.displayScale;
   CGFloat pixel = 1.0 / MAX(1, scale);
-  UIView *hosts[] = {_topEdgeInteractionHost, _stickyEdgeInteractionHost};
+  UIView *topHost = _topEdgeInteractionHost;
+  UIView *stickyHost = _stickyEdgeInteractionHost;
+  if (_topEdgeScrollView == nil && transitional) {
+    topHost = _topOverlayHostView;
+    stickyHost = transitionalSticky ? _stickyHeaderView : nil;
+  }
+  UIView *hosts[] = {topHost, stickyHost};
   CALayer *covers[] = {_topEdgeSeparatorCover, _stickyEdgeSeparatorCover};
   for (NSInteger index = 0; index < 2; index++) {
     UIView *host = hosts[index];
@@ -3360,7 +3677,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
         CGRectGetWidth(_containerView.bounds), pixel);
       cover.contentsScale = scale;
       cover.backgroundColor = color.CGColor;
-      cover.hidden = index == 0 && _stickyHeaderIsPinned;
+      cover.hidden = index == 0 && (_stickyHeaderIsPinned || transitionalSticky);
     }
     if (index == 0) _topEdgeSeparatorCover = cover;
     else _stickyEdgeSeparatorCover = cover;
@@ -4788,7 +5105,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 - (RNCScrollCandidateResolution)resolveScrollCandidateInView:(UIView *)view
 {
   RNCScrollCandidateResolution resolution;
-  if (view == nil || view == _sharedHeaderHostView) return resolution;
+  if (view == nil || view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return resolution;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     UIScrollView *nested = [(RNCCollapsiblePagerViewComponentView *)view
@@ -4879,7 +5196,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return nil;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     return [(RNCCollapsiblePagerViewComponentView *)view
@@ -4906,7 +5223,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findFabricScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view)) return nil;
   if (view != self &&
       [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
     return [(RNCCollapsiblePagerViewComponentView *)view
@@ -4929,7 +5246,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView ||
+  if (view == _sharedHeaderHostView || RNCIsNativeOverlayHost(view) ||
       ([view isKindOfClass:UIScrollView.class] &&
        [_mountingRemovedScrollViews containsObject:(UIScrollView *)view])) return nil;
   // A parent pager must follow the nested pager's active page instead of the
@@ -5776,6 +6093,10 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       restoredLogicalOffset = _headerOffset + (_headerOffset >= _headerHeight ? body : 0);
       if (_transitionPageOffsets != nil) [_transitionCompensatedPages addIndex:pageIndex];
       if (deferredReleasedIdentity || scrollView.bounds.size.height <= 0 || scrollView.contentSize.height <= 0) {
+        // Align a fresh page before content measurement while retaining its pending restore.
+        if (!deferredReleasedIdentity && saved == nil && _headerOffset == 0) {
+          [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, -next.top) animated:NO];
+        }
         [_pendingPageRestoreKeys addObject:pageKey];
         _syntheticPageRestore = previousSyntheticRestore;
         return;
@@ -5931,12 +6252,15 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     }
   }
   if (pageIndex == NSNotFound) return;
+  if ([self verticalScrollViewForPageAtIndex:pageIndex] != scrollView) return;
 
   NSString *pageKey = [self pageKeyForIndex:pageIndex];
   BOOL hasReleasedStateForPage = _releasedPageScrollStates[pageKey] != nil;
   BOOL currentPageNeedsOwner = pageIndex == _currentIndex &&
     (_awaitingScrollOwnerForCurrentPage || _needsScrollObserverReattachAfterMount ||
      hasReleasedStateForPage ||
+     (_observedScrollView == nil &&
+      (_scrollReconcileScheduled || RNCIsMountedNativeListScrollView(scrollView))) ||
      (_observedScrollView != nil &&
       [_observedScrollView isKindOfClass:UICollectionView.class] &&
       !RNCIsMountedNativeListScrollView(_observedScrollView) &&
@@ -6784,8 +7108,20 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)scrollToTop:(NSInteger)target animated:(BOOL)animated
 {
-  if (target != 0 && target != 1) return;
-  [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
+  [self tryScrollToTop:target animated:animated];
+}
+
+- (BOOL)tryScrollToTop:(NSInteger)target animated:(BOOL)animated
+{
+  if (target != 0 && target != 1) return NO;
+  return [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
+}
+
+// The header offset is stored apart from the body, so a collapsed header can sit
+// above a body that is already at its top.
+- (BOOL)isAwayFromPageTop
+{
+  return _headerOffset > 0.5;
 }
 
 - (void)scrollHeaderBy:(double)delta
@@ -6800,7 +7136,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [self scrollHeaderToOffset:MIN(MAX(offset, 0), _headerHeight) animated:NO];
 }
 
-- (void)scrollHeaderToOffset:(CGFloat)logicalTarget animated:(BOOL)animated
+- (BOOL)scrollHeaderToOffset:(CGFloat)logicalTarget animated:(BOOL)animated
 {
   [self cancelTopInsetReboundCheck];
   UIScrollView *scrollView = _observedScrollView;
@@ -6808,7 +7144,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   if (_isBeingRecycled || _transitioning || _isPagerDragging ||
       _transitionPageOffsets != nil || _syntheticPageRestore || scrollView == nil || scrollView.window == nil ||
       key == nil || ![key isEqualToString:self.currentPageKey] || _observedPageIndex != _currentIndex ||
-      _observedPageGeneration != _generation || self.window == nil) return;
+      _observedPageGeneration != _generation || self.window == nil) return NO;
   [self cancelPagerTop];
   // Old List phase2 notifications must run before the new target owns this page.
   [NSNotificationCenter.defaultCenter postNotificationName:@"OneKeyNativeListCancelScrollCommand" object:scrollView];
@@ -6838,6 +7174,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, physicalTarget) animated:animated];
   _dispatchingPagerTop = NO;
   [self finishPagerTopIfReached];
+  return YES;
 }
 
 - (void)setPage:(NSInteger)index

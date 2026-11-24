@@ -86,6 +86,9 @@ private class CollapsiblePagerHorizontalItemsView(
   private var contentPaddingVerticalPx = 0
   private var segmented = false
   private var textVariant = false
+  private var pillVariant = false
+  private var itemPaddingHorizontalDp: Double? = null
+  private var pillAnimationEnabled = true
   private var itemSpacingPx = dp(8.0)
   private var fontSize = if (showsProgressIndicator) 16.0 else 14.0
   private var fontFamily: String? = null
@@ -177,6 +180,7 @@ private class CollapsiblePagerHorizontalItemsView(
     val wasSegmented = segmented
     segmented = showsProgressIndicator && variant == "segmented"
     textVariant = showsProgressIndicator && variant == "text"
+    pillVariant = showsProgressIndicator && variant == "pill"
     itemSpacingPx = max(0, dp(itemSpacing))
     this.fontSize = max(1.0, fontSize)
     this.fontFamily = fontFamily
@@ -217,6 +221,25 @@ private class CollapsiblePagerHorizontalItemsView(
 
   fun usesTextVariant(): Boolean = textVariant
 
+  // Variants whose label colors (and pill) follow controlled pager progress.
+  fun usesProgressDrivenItems(): Boolean = textVariant || (pillVariant && pillAnimationEnabled)
+
+  fun setPillAnimationEnabled(value: Boolean) {
+    if (pillAnimationEnabled == value) return
+    pillAnimationEnabled = value
+    updatePresentation()
+  }
+
+  fun pillAnimationDisabled(): Boolean = pillVariant && !pillAnimationEnabled
+
+  fun setItemPaddingHorizontal(value: Double?) {
+    if (itemPaddingHorizontalDp == value) return
+    itemPaddingHorizontalDp = value
+    requestLayout()
+  }
+
+  private fun itemPaddingPx(): Int = dp(itemPaddingHorizontalDp ?: if (textVariant) 10.0 else if (pillVariant) 14.0 else 8.0)
+
   fun setActiveFontFamily(value: String?) { activeFontFamily = value; requestLayout() }
 
   fun setProgress(value: Float, source: Int? = null, destination: Int? = null, fraction: Float = 0f) {
@@ -253,7 +276,7 @@ private class CollapsiblePagerHorizontalItemsView(
     val fontOwner = visualFontOwnerIndex(buttons.indexOfFirst { it.isSelected })
     buttons.forEachIndexed { index, button ->
       button.typeface = if (textVariant && index == fontOwner) selectedTypeface() else typeface
-      button.setPadding(dp(if (textVariant) 10.0 else 8.0), 0, dp(if (textVariant) 10.0 else 8.0), 0)
+      button.setPadding(itemPaddingPx(), 0, itemPaddingPx(), 0)
       button.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat())
     }
   }
@@ -332,11 +355,20 @@ private class CollapsiblePagerHorizontalItemsView(
         dp(20.0)
       }
       val buttonWidth = max(dp(44.0), textWidth + horizontalPadding)
-      val indicatorWidth = textWidth
+      val indicatorWidth = if (pillVariant) buttonWidth else textWidth
       val indicatorX = x + (buttonWidth - indicatorWidth) / 2
       itemFrames.add(intArrayOf(x, buttonWidth, indicatorX, indicatorWidth))
-      val itemHeight = if (showsProgressIndicator) height else min(dp(32.0), height)
-      val top = if (showsProgressIndicator) 0 else max(0, (height - itemHeight) / 2)
+      val pillInset = min(contentPaddingVerticalPx, height / 2)
+      val itemHeight = when {
+        pillVariant -> max(0, height - 2 * pillInset)
+        showsProgressIndicator -> height
+        else -> min(dp(32.0), height)
+      }
+      val top = when {
+        pillVariant -> pillInset
+        showsProgressIndicator -> 0
+        else -> max(0, (height - itemHeight) / 2)
+      }
       button.layoutParams = FrameLayout.LayoutParams(buttonWidth, itemHeight).apply {
         leftMargin = x
         topMargin = top
@@ -377,19 +409,44 @@ private class CollapsiblePagerHorizontalItemsView(
     val selectedIndex: Int
     val scrollTargetCenterX: Float
     if (showsProgressIndicator) {
-      val clamped = progress.coerceIn(0f, buttons.lastIndex.toFloat())
+      // A pill without animation jumps (with its label colors) to the selection.
+      val snapToSelection = pillAnimationDisabled()
+      val snappedIndex = if (snapToSelection) {
+        (controlledSelectedKey?.let { key -> items.indexOfFirst { it.key == key }.takeIf { it >= 0 } }
+          ?: progress.roundToInt()).coerceIn(0, buttons.lastIndex)
+      } else -1
+      val clamped = if (snapToSelection) snappedIndex.toFloat() else progress.coerceIn(0f, buttons.lastIndex.toFloat())
       val lower = floor(clamped).toInt()
       val upper = min(lower + 1, buttons.lastIndex)
       val fraction = clamped - lower
       val from = itemFrames[lower]
       val to = itemFrames[upper]
-      val interpolatedIndicatorX = from[2] + (to[2] - from[2]) * fraction
-      val interpolatedIndicatorWidth = from[3] + (to[3] - from[3]) * fraction
+      var interpolatedIndicatorX = from[2] + (to[2] - from[2]) * fraction
+      var interpolatedIndicatorWidth = from[3] + (to[3] - from[3]) * fraction
+      if (pillVariant) {
+        // Leading edge leads and trailing edge lags while moving between tabs.
+        val leading = 1f - (1f - fraction) * (1f - fraction)
+        val trailing = fraction * fraction
+        val forward = to[2] >= from[2]
+        val leftEdge = from[2] + (to[2] - from[2]) * (if (forward) trailing else leading)
+        val rightEdge = from[2] + from[3] + (to[2] + to[3] - from[2] - from[3]) * (if (forward) leading else trailing)
+        interpolatedIndicatorX = leftEdge
+        interpolatedIndicatorWidth = max(0f, rightEdge - leftEdge)
+      }
       val indicatorX = interpolatedIndicatorX.roundToInt()
       val indicatorWidth = interpolatedIndicatorWidth.roundToInt()
       val actualPaddingVertical = min(contentPaddingVerticalPx, measuredHeight / 2)
-      val indicatorHeight = if (segmented) max(0, measuredHeight - 2 * actualPaddingVertical - dp(4.0)) else indicatorHeightPx
-      val indicatorTop = if (segmented) actualPaddingVertical + dp(2.0) else max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
+      val indicatorHeight = when {
+        segmented -> max(0, measuredHeight - 2 * actualPaddingVertical - dp(4.0))
+        pillVariant -> max(0, measuredHeight - 2 * actualPaddingVertical)
+        else -> indicatorHeightPx
+      }
+      val indicatorTop = when {
+        segmented -> actualPaddingVertical + dp(2.0)
+        pillVariant -> actualPaddingVertical
+        else -> max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
+      }
+      if (pillVariant) indicatorBackground.cornerRadius = indicatorHeight / 2f
       indicator.layout(
         indicatorX,
         indicatorTop,
@@ -401,7 +458,7 @@ private class CollapsiblePagerHorizontalItemsView(
       selectedIndex = if (controlledSelectedKey != null) items.indexOfFirst { it.key == controlledSelectedKey } else clamped.roundToInt()
       val fontOwner = visualFontOwnerIndex(selectedIndex)
       buttons.forEachIndexed { index, button ->
-        val emphasis = if (mappedSource != null && mappedDestination != null) {
+        val emphasis = if (!snapToSelection && mappedSource != null && mappedDestination != null) {
           (if (index == mappedSource) 1f - mappedFraction else 0f) + (if (index == mappedDestination) mappedFraction else 0f)
         } else 1f - min(1f, kotlin.math.abs(clamped - index))
         button.setTextColor(ColorUtils.blendARGB(inactiveTextColor, activeTextColor, emphasis))
@@ -473,6 +530,9 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
   fun updateConfigJSON(value: String?) {
     config = runCatching { JSONObject(value ?: "{}") }.getOrDefault(JSONObject())
     row.setActiveFontFamily(config.optString("activeFontFamily").takeIf(String::isNotEmpty))
+    row.setItemPaddingHorizontal(config.optDouble("itemPaddingHorizontal", Double.NaN).takeIf { it.isFinite() && it >= 0 })
+    row.setPillAnimationEnabled(config.optBoolean("indicatorAnimationEnabled", true))
+    requestLayout()
     selectedKey = if (config.optBoolean("controlled")) config.optString("selectedKey") else items.getOrNull(lastNativeProgress.roundToInt())?.key ?: ""
     row.setControlledSelectedKey(if (config.optBoolean("controlled")) selectedKey else null, controlledPageIndices() != null)
     if (hasNativeProgress) setProgress(lastNativeProgress)
@@ -811,7 +871,17 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
   }
 
   fun usesControlledTextProgress(): Boolean {
-    return row.usesTextVariant() && config.optBoolean("controlled") && controlledPageIndices() != null
+    return row.usesProgressDrivenItems() && config.optBoolean("controlled") && controlledPageIndices() != null
+  }
+
+  // The tab row and toolbar share a centered band no wider than contentMaxWidth;
+  // the bar background still covers the full width.
+  private fun contentBand(width: Int): IntArray {
+    val maxWidth = config.optDouble("contentMaxWidth", Double.NaN)
+    if (!maxWidth.isFinite() || maxWidth <= 0 || dp(maxWidth) >= width) return intArrayOf(0, width)
+    val bandWidth = dp(maxWidth)
+    val start = (width - bandWidth) / 2
+    return intArrayOf(start, start + bandWidth)
   }
 
   fun setProgress(progress: Float) {
@@ -851,7 +921,8 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
     val width = MeasureSpec.getSize(widthMeasureSpec)
     val height = MeasureSpec.getSize(heightMeasureSpec)
     val reserved = dp(toolbarReservedWidth)
-    row.measure(MeasureSpec.makeMeasureSpec(max(0, width - reserved), MeasureSpec.EXACTLY), heightMeasureSpec)
+    val band = contentBand(width)
+    row.measure(MeasureSpec.makeMeasureSpec(max(0, band[1] - band[0] - reserved), MeasureSpec.EXACTLY), heightMeasureSpec)
     toolbar.measure(MeasureSpec.makeMeasureSpec(dp(toolbarSize), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(dp(toolbarSize), MeasureSpec.EXACTLY))
     setMeasuredDimension(width, height)
   }
@@ -861,9 +932,10 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
     val height = bottom - top
     val reserved = dp(toolbarReservedWidth)
     val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
-    row.layout(if (rtl) reserved else 0, 0, if (rtl) width else width - reserved, height)
+    val band = contentBand(width)
+    row.layout(if (rtl) band[0] + reserved else band[0], 0, if (rtl) band[1] else band[1] - reserved, height)
     val inset = dp(toolbarTrailingInset) - (dp(toolbarSize) - dp(toolbarContentWidth)) / 2
-    val x = if (rtl) inset else width - inset - dp(toolbarSize)
+    val x = if (rtl) band[0] + inset else band[1] - inset - dp(toolbarSize)
     toolbar.layout(x, (height - dp(toolbarSize)) / 2, x + dp(toolbarSize), (height + dp(toolbarSize)) / 2)
   }
 

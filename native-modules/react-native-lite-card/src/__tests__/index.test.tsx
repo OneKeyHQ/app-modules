@@ -5,19 +5,57 @@ jest.mock('react-native', () => ({
 
 jest.mock('../NativeReactNativeLiteCard', () => ({
   __esModule: true,
-  default: { setMnemonic: jest.fn(), changePin: jest.fn() },
+  default: {
+    setMnemonic: jest.fn(),
+    changePin: jest.fn(),
+    getLiteInfo: jest.fn(),
+    onNFCUIEvent: jest.fn(),
+  },
   CardErrors: {},
 }));
 
 import liteCard from '../index';
 import nativeLiteCard from '../NativeReactNativeLiteCard';
+import type { CardInfo } from '../NativeReactNativeLiteCard';
 
 const setMnemonic = jest.mocked(nativeLiteCard.setMnemonic);
 const changePin = jest.mocked(nativeLiteCard.changePin);
+const getLiteInfo = jest.mocked(nativeLiteCard.getLiteInfo);
+const onNFCUIEvent = jest.mocked(nativeLiteCard.onNFCUIEvent);
 
 beforeEach(() => {
   setMnemonic.mockReset();
   changePin.mockReset();
+  getLiteInfo.mockReset();
+  onNFCUIEvent.mockReset();
+});
+
+it.each([null, false, true])('preserves backup state %s', async (hasBackup) => {
+  const cardInfo: CardInfo = {
+    hasBackup,
+    isNewCard: true,
+    serialNum: 'fixture-card',
+    pinRetryCount: 10,
+  };
+  getLiteInfo.mockImplementation((callback) => {
+    callback(null, cardInfo, cardInfo);
+  });
+  await expect(liteCard.getLiteInfo()).resolves.toEqual({
+    error: null,
+    data: cardInfo,
+    cardInfo,
+  });
+});
+
+it.each([1, 2, 3])('forwards numeric connection event code %s', (code) => {
+  const subscription = { remove: jest.fn() };
+  onNFCUIEvent.mockImplementation((listener) => {
+    listener({ code, message: 'fixture-event' });
+    return subscription;
+  });
+  const listener = jest.fn();
+  expect(liteCard.addConnectListener(listener)).toBe(subscription);
+  expect(listener).toHaveBeenCalledWith({ code, message: 'fixture-event' });
 });
 
 it.each([undefined, 'test-card-A', ''])(

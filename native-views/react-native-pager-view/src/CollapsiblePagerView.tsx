@@ -32,7 +32,11 @@ export type CollapsiblePagerNativeTabBarItem = Readonly<{
 }>;
 
 export type CollapsiblePagerNativeTabBarStyle = Readonly<{
-  variant?: "underline" | "segmented" | "text";
+  /**
+   * `pill` draws a rounded background behind the selected item that follows
+   * pager progress, with active / inactive label colors.
+   */
+  variant?: "underline" | "segmented" | "text" | "pill";
   height?: number;
   trailingReservedWidth?: number;
   contentPaddingHorizontal?: number;
@@ -47,6 +51,22 @@ export type CollapsiblePagerNativeTabBarStyle = Readonly<{
   indicatorColor?: ReactNative.ColorValue;
   indicatorHeight?: number;
   indicatorBottom?: number;
+  /** Horizontal padding inside each item. Defaults: text 10, pill 14, others 8. */
+  itemPaddingHorizontal?: number;
+  /** Pill variant: background of an unselected item under the pointer. */
+  itemHoverBackgroundColor?: ReactNative.ColorValue;
+  /** Pill variant: background of an unselected item while pressed. */
+  itemPressedBackgroundColor?: ReactNative.ColorValue;
+  /**
+   * Caps the width of the tab row and toolbar and centers them; the bar
+   * background still spans the full width.
+   */
+  contentMaxWidth?: number;
+  /**
+   * Pill variant: when false, the pill and label colors jump to the selected
+   * item instead of following pager progress or animating. Defaults to true.
+   */
+  indicatorAnimationEnabled?: boolean;
 }>;
 
 export type CollapsiblePagerToolbarItem = Readonly<{
@@ -709,6 +729,15 @@ export class CollapsiblePagerView extends React.PureComponent<
           })(),
           toolbar: nativeToolbar(nativeTabBar.toolbar),
           activeFontFamily: nativeTabBar.style?.activeFontFamily,
+          itemPaddingHorizontal: nativeTabBar.style?.itemPaddingHorizontal,
+          itemHoverBackgroundColor: nativeTabBar.style?.itemHoverBackgroundColor === undefined
+            ? undefined
+            : processColor(nativeTabBar.style.itemHoverBackgroundColor),
+          itemPressedBackgroundColor: nativeTabBar.style?.itemPressedBackgroundColor === undefined
+            ? undefined
+            : processColor(nativeTabBar.style.itemPressedBackgroundColor),
+          contentMaxWidth: nativeTabBar.style?.contentMaxWidth,
+          indicatorAnimationEnabled: nativeTabBar.style?.indicatorAnimationEnabled,
         }) : undefined}
         onNativeToolbarPress={this.onNativeToolbarPress}
         nativeTabBarItems={

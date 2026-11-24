@@ -126,23 +126,55 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
     [RCTJPushModule clearActiveModules];
 }
 
-- (void)testLocalLogEnabledBuffersWhenLogOffAndClearsWhenDisabled {
+- (void)testLocalLogEnabledIsNoOpWithoutInMemoryBuffering {
     [JCOREConfiguration clearRecentLogs];
     [JCOREConfiguration shared].logOff = YES;
     [JCOREConfiguration setLocalLogEnabled:YES];
     [JCOREConfiguration logInfo:@"local_log_while_off_01"];
-    NSArray<NSString *> *logs = [JCOREConfiguration recentLogs];
-    XCTAssertEqual(logs.count, 1u);
-    XCTAssertTrue([logs.firstObject containsString:@"local_log_while_off_01"]);
+    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
 
     [JCOREConfiguration setLocalLogEnabled:NO];
     XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
-    [JCOREConfiguration logInfo:@"local_log_disabled_02"];
-    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
-
-    [JCOREConfiguration setLocalLogEnabled:YES];
     [JCOREConfiguration shared].logOff = NO;
-    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration logInfo:@"local_log_direct_02"];
+    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
+}
+
+- (void)testLoginV27AndPushControlCmd40WireFormatAlignment {
+    NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:@"pwd_unit_01" appKey:kDemoTestAppKey];
+    const uint8_t passwordPrefix[] = {0x69, 0x00, 0x00, 0x00, 0x00, 0x20};
+    // JCore 5.2.0 and JPush 6.0.0 are serialized as decimal SDK codes in this field.
+    const char sdkVersionField[] = "\x00\x13" "328192|393216||||||";
+    NSUInteger versionOffset = sizeof(passwordPrefix) + 32;
+    NSUInteger versionLength = sizeof(sdkVersionField) - 1;
+    NSData *appKeyBytes = [kDemoTestAppKey dataUsingEncoding:NSUTF8StringEncoding];
+    NSUInteger appKeyOffset = versionOffset + versionLength + 2;
+    XCTAssertGreaterThanOrEqual(loginBody.length, appKeyOffset + appKeyBytes.length);
+    if (loginBody.length < appKeyOffset + appKeyBytes.length) { return; }
+    XCTAssertEqualObjects([loginBody subdataWithRange:NSMakeRange(0, sizeof(passwordPrefix))],
+                          [NSData dataWithBytes:passwordPrefix length:sizeof(passwordPrefix)]);
+    XCTAssertEqualObjects([loginBody subdataWithRange:NSMakeRange(versionOffset, versionLength)],
+                          [NSData dataWithBytes:sdkVersionField length:versionLength]);
+    XCTAssertEqualObjects([loginBody subdataWithRange:NSMakeRange(appKeyOffset, appKeyBytes.length)], appKeyBytes);
+
+    XCTAssertEqual(JCOREWireCommandPushCtrl, 40);
+    NSData *stopPayload = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
+    NSData *resumePayload = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
+    XCTAssertEqual(stopPayload.length, 1u);
+    XCTAssertEqual(((const uint8_t *)stopPayload.bytes)[0], 0);
+    XCTAssertEqual(resumePayload.length, 1u);
+    XCTAssertEqual(((const uint8_t *)resumePayload.bytes)[0], 1);
+
+    NSData *loginFrame = [JCOREWireProtocol encodeClientFrameWithCommand:JCOREWireCommandLogin
+                                                                 version:27
+                                                               requestId:42
+                                                               sessionId:46453
+                                                                     uid:88574312908ULL
+                                                               algorithm:1
+                                                                bodyData:loginBody];
+    JCOREWireFrame *decodedLogin = [JCOREWireProtocol decodeClientFramesFromStreamBuffer:[loginFrame mutableCopy]].firstObject;
+    XCTAssertNotNil(decodedLogin);
+    XCTAssertEqual(decodedLogin.sessionId, 0u);
 }
 
 @end

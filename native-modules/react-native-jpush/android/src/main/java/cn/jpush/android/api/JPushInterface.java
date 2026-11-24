@@ -2,6 +2,7 @@ package cn.jpush.android.api;
 
 import android.app.Activity;
 import android.app.NotificationManager;
+import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -16,6 +17,7 @@ import cn.jpush.android.data.JPushCollectControl;
 import cn.jpush.android.data.JPushConfig;
 import cn.jpush.android.data.JPushLocalNotification;
 import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.local.ActivityLifeCallBack;
 import cn.jpush.android.local.JPushConstants;
 import java.util.HashSet;
 import java.util.Map;
@@ -80,6 +82,10 @@ public class JPushInterface {
         Context app = JCoreStorage.getAppContext(context);
         JPushConstants.init(app);
         ActionHelper.getInstance().init(app);
+        Context application = app != null ? app.getApplicationContext() : null;
+        if (application instanceof Application) {
+            ActivityLifeCallBack.register((Application) application);
+        }
         JCoreManager.init(app);
         JThirdPlatFormInterface.initializeFcm(app);
     }
@@ -97,15 +103,14 @@ public class JPushInterface {
     }
 
     public static void stopPush(Context context) {
-        JCoreStorage.setPushStopped(context, true);
-        JCoreTcpEngine.getInstance().stop(context);
+        JCoreTcpEngine.getInstance().stopPush(context);
     }
 
     public static void resumePush(Context context) {
-        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.resumePushLocally(context);
         JCoreManager.init(context);
         JThirdPlatFormInterface.initializeFcm(context);
-        ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 1);
+        JCoreTcpEngine.getInstance().sendPendingPushResume(context);
     }
 
     public static boolean isPushStopped(Context context) {
@@ -313,6 +318,7 @@ public class JPushInterface {
     }
 
     public static void onResume(Context context) {
+        JCoreTcpEngine.getInstance().onAppForeground(JCoreStorage.getAppContext(context));
     }
 
     public static void onPause(Context context) {

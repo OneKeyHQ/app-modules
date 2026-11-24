@@ -259,6 +259,22 @@ it('leaves parked content inert and restores focus after closing', async () => {
   expect(tab(entry())).toBe(false);
 });
 
+it('preserves focus that moved outside a dialog after it acquired focus', async () => {
+  const opener = document.getElementById('opener')!;
+  const next = document.createElement('input');
+  document.body.append(next);
+  try {
+    opener.focus();
+    await render(overlay());
+    expect(document.activeElement).toBe(entry());
+    next.focus();
+    await render(overlay({ visible: false }));
+    expect(document.activeElement).toBe(next);
+  } finally {
+    next.remove();
+  }
+});
+
 it('preserves Escape dismissal', async () => {
   const onRequestDismiss = jest.fn();
   await render(overlay({ onRequestDismiss }));

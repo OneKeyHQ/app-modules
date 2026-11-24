@@ -54,6 +54,19 @@ export interface INativeOverlayNativeProps extends ViewProps {
   sheetCornerRadius?: CodegenTypes.WithDefault<CodegenTypes.Double, 24>;
   showHandle?: CodegenTypes.WithDefault<boolean, false>;
   sheetBackgroundColor?: ColorValue;
+  /**
+   * `sheet` presentation: paints the platform sheet's bottom inset (the
+   * navigation-bar strip padded below the fitted content) with the drawn
+   * surface color. Android hosts the sheet inside the activity content view,
+   * so a JS view below the content root is not composited there; iOS uses the
+   * JS safe-area tail instead.
+   */
+  sheetBottomInsetColor?: ColorValue;
+  /**
+   * `sheet` presentation: horizontal inset of the drawn surface inside the
+   * platform sheet, in points, so the bottom inset paint stops with it.
+   */
+  sheetBottomInsetHorizontal?: CodegenTypes.WithDefault<CodegenTypes.Double, 0>;
   dismissOnPanDown?: CodegenTypes.WithDefault<boolean, true>;
   /** JSON of the resolved animation (`IResolvedOverlayAnimation`). */
   animationConfig?: CodegenTypes.WithDefault<string, ''>;

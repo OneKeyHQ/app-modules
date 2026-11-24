@@ -282,6 +282,8 @@ function assertTextStyle(
       'alignment',
       'verticalAlignment',
       'offsetY',
+      'letterSpacing',
+      'tabularNumbers',
       ...additionalKeys,
     ],
     path,
@@ -333,6 +335,17 @@ function assertTextStyle(
     fail(`${path}.verticalAlignment`, 'must be top, center, or bottom');
   }
   assertBoundedStyleNumber(style.offsetY, `${path}.offsetY`, -8, 8);
+  assertBoundedStyleNumber(
+    style.letterSpacing,
+    `${path}.letterSpacing`,
+    -4,
+    10
+  );
+  if (
+    style.tabularNumbers !== undefined &&
+    typeof style.tabularNumbers !== 'boolean'
+  )
+    fail(`${path}.tabularNumbers`, 'must be a boolean');
 }
 
 function assertBoxStyle(style: RowBoxStyle, path: string): void {
@@ -1446,6 +1459,32 @@ function passesTitleRunRules(check: () => void): boolean {
   }
 }
 
+// A passive label: its text and two caller colors, with no action or style slot.
+function assertWebLeadingBadge(value: unknown, path: string): void {
+  if (value === undefined) return;
+  const badge = protocolObject(value, path);
+  assertUnknownKeys(
+    badge,
+    ['text', 'textColor', 'backgroundColor'],
+    path,
+    'web leading badge key'
+  );
+  if (
+    typeof badge.text !== 'string' ||
+    !badge.text.trim() ||
+    badge.text.length > MAX_TEXT_LENGTH
+  )
+    fail(`${path}.text`, 'must be non-blank within the text limit');
+  for (const field of ['textColor', 'backgroundColor']) {
+    const color = badge[field];
+    if (
+      typeof color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)
+    )
+      fail(`${path}.${field}`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+}
+
 function assertIdentityExtras(
   row: Pick<
     IdentityRow,
@@ -1595,6 +1634,15 @@ function assertLeadingVisual(
     )
       fail(`${path}.fallbackTextColor`, 'must be a hex color');
     if (
+      'borderWidth' in visual &&
+      visual.borderWidth !== undefined &&
+      (typeof visual.borderWidth !== 'number' ||
+        !Number.isFinite(visual.borderWidth) ||
+        visual.borderWidth <= 0 ||
+        visual.borderWidth > 4)
+    )
+      fail(`${path}.borderWidth`, 'must be within (0, 4]');
+    if (
       visual.fallbackIcon?.size !== undefined &&
       (!Number.isFinite(visual.fallbackIcon.size) ||
         visual.fallbackIcon.size <= 0 ||
@@ -1723,6 +1771,11 @@ function assertVisual(row: RowModel, path: string): void {
   });
 }
 
+/** The type half of the `descriptionActionStart` contract; the range needs the row. */
+function isDescriptionActionStart(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function assertActivity(row: Partial<ActivityRow>, path: string): void {
   if (row.hideLeading !== undefined && typeof row.hideLeading !== 'boolean')
     fail(`${path}.hideLeading`, 'must be boolean');
@@ -1735,6 +1788,11 @@ function assertActivity(row: Partial<ActivityRow>, path: string): void {
     fail(`${path}.presentation`, 'must be stacked or table');
   if (row.descriptionActionKey !== undefined)
     assertKey(row.descriptionActionKey, `${path}.descriptionActionKey`);
+  if (
+    row.descriptionActionStart !== undefined &&
+    !isDescriptionActionStart(row.descriptionActionStart)
+  )
+    fail(`${path}.descriptionActionStart`, 'must be a non-negative integer');
   if ((row.amounts?.length ?? 0) > 32)
     fail(`${path}.amounts`, 'supports at most 32 amount lines');
   const amountKeys = new Set<string>();
@@ -2002,6 +2060,13 @@ function assertRow(
       break;
     case 'activity':
       assertActivity(row, path);
+      // Checked on the complete row only: a patch may carry the offset
+      // without the description it points into.
+      if ((row.descriptionActionStart ?? 0) > (row.description?.length ?? 0))
+        fail(
+          `${path}.descriptionActionStart`,
+          'must not exceed the description length'
+        );
       break;
     case 'message':
       if (
@@ -2025,6 +2090,10 @@ function assertRow(
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
         assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${path}.columns[${columnIndex}].webLeadingBadge`
+        );
         for (const field of [
           'textSegments',
           'secondaryTextSegments',
@@ -2526,6 +2595,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'tertiaryTone',
     'titleLines',
     'subtitleLines',
+    'collapseEmptyTrailing',
     'badges',
     'trailing',
     'draggable',
@@ -2554,6 +2624,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'presentation',
     'fee',
     'descriptionActionKey',
+    'descriptionActionStart',
     'footerActions',
   ],
   message: [
@@ -2704,6 +2775,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'tertiary',
     'tertiaryTone',
     'subtitleLines',
+    'collapseEmptyTrailing',
     'badges',
     'trailing',
   ],
@@ -2723,6 +2795,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'amounts',
     'fee',
     'descriptionActionKey',
+    'descriptionActionStart',
     'footerActions',
   ],
   message: [
@@ -2866,6 +2939,7 @@ const PROTOCOL_NUMBER_FIELDS = new Set([
   'opacity',
   'offsetY',
   'offsetX',
+  'letterSpacing',
   'cornerRadius',
   'borderWidth',
   'horizontalPadding',
@@ -2978,7 +3052,7 @@ function assertProtocolFields(
       PROTOCOL_NUMBER_FIELDS.has(field) &&
       typeof item === 'number' &&
       item < 0 &&
-      !['offsetX', 'offsetY'].includes(field)
+      !['offsetX', 'offsetY', 'letterSpacing'].includes(field)
     )
       fail(fieldPath, 'must be non-negative');
     if (
@@ -2989,7 +3063,10 @@ function assertProtocolFields(
       fail(fieldPath, 'must be regular, medium, semibold, or bold');
     if (field === 'buttonStyle' && item !== 'tertiary')
       fail(fieldPath, 'must be tertiary');
-    if (field === 'hideLeading' && typeof item !== 'boolean')
+    if (
+      (field === 'hideLeading' || field === 'collapseEmptyTrailing') &&
+      typeof item !== 'boolean'
+    )
       fail(fieldPath, 'must be boolean');
     if (
       field === 'key' ||
@@ -3140,7 +3217,13 @@ function assertRowProtocol(row: RowModel, path: string): void {
     row.columns.forEach((column, index) => {
       const columnPath = `${path}.columns[${index}]`;
       protocolObject(column, columnPath);
-      if (isDevelopment()) assertIdentityExtras(column, columnPath);
+      if (isDevelopment()) {
+        assertIdentityExtras(column, columnPath);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${columnPath}.webLeadingBadge`
+        );
+      }
     });
     if (isDevelopment())
       assertTrailingAccessories(row.trailing, `${path}.trailing`);
@@ -3194,6 +3277,17 @@ function assertRowProtocol(row: RowModel, path: string): void {
 
 function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
   protocolObject(snapshot, 'snapshot');
+  const reorderActivation = snapshot.capabilities?.reorderActivation;
+  if (
+    reorderActivation !== undefined &&
+    reorderActivation !== 'row' &&
+    reorderActivation !== 'handle'
+  ) {
+    fail(
+      'snapshot.capabilities.reorderActivation',
+      "must be 'row' or 'handle'"
+    );
+  }
   if (snapshot.disclosure !== undefined) {
     protocolObject(snapshot.disclosure, 'snapshot.disclosure');
     if (typeof snapshot.disclosure.expanded !== 'boolean')
@@ -3336,6 +3430,7 @@ const VISUAL_FIELDS = [
   'overlays',
   'borderStyle',
   'borderColor',
+  'borderWidth',
   'cornerIcon',
 ];
 const TEXT_STYLE_FIELDS = [
@@ -3349,6 +3444,8 @@ const TEXT_STYLE_FIELDS = [
   'alignment',
   'verticalAlignment',
   'offsetY',
+  'letterSpacing',
+  'tabularNumbers',
 ];
 const ACCESSORY_FIELDS: Readonly<Record<string, readonly string[]>> = {
   value: ['kind', 'text', 'secondary', 'textSegments'],
@@ -3599,6 +3696,7 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'textSegments',
     'titleIcon',
     'secondaryTitleIcon',
+    'webLeadingBadge',
     'secondaryLeadingText',
     'secondaryText',
     'secondaryTextSegments',
@@ -3681,6 +3779,26 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
     return passesTitleRunRules(() => assertTitleLeadingIcon(value, field))
       ? value
       : undefined;
+  // All or nothing: a badge without valid text and both colors is dropped, and
+  // only its three declared fields are kept.
+  if (field === 'webLeadingBadge') {
+    if (
+      !isRecord(value) ||
+      typeof value.text !== 'string' ||
+      !value.text.trim() ||
+      value.text.length > MAX_TEXT_LENGTH
+    )
+      return undefined;
+    const { textColor, backgroundColor } = value;
+    if (
+      typeof textColor !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(textColor) ||
+      typeof backgroundColor !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(backgroundColor)
+    )
+      return undefined;
+    return { text: value.text, textColor, backgroundColor };
+  }
   if (
     !Array.isArray(value) &&
     [
@@ -3722,6 +3840,9 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
       : items.filter((item) => item !== undefined);
   }
   if (!isRecord(value)) return value;
+  const isLeadingVisual = ['leading', 'visual', 'secondaryLeading'].includes(
+    field
+  );
   let object = value;
   if (field === 'titleImage') {
     const image = sanitizeImage(value.image);
@@ -3745,7 +3866,7 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   ) {
     if (typeof value.name !== 'string' || !value.name.trim()) return undefined;
     object = pickFields(value, ICON_FIELDS);
-  } else if (['leading', 'visual', 'secondaryLeading'].includes(field)) {
+  } else if (isLeadingVisual) {
     object = pickFields(value, VISUAL_FIELDS);
   } else if (field === 'media') {
     object = pickFields(value, ['source', 'probeOrder']);
@@ -3845,6 +3966,24 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   for (const [key, item] of Object.entries(object)) {
     if (item === undefined || item === null) continue;
     if (
+      isLeadingVisual &&
+      key === 'borderWidth' &&
+      (typeof item !== 'number' ||
+        !Number.isFinite(item) ||
+        item <= 0 ||
+        item > 4)
+    )
+      continue;
+    if (
+      key === 'letterSpacing' &&
+      (typeof item !== 'number' ||
+        !Number.isFinite(item) ||
+        item < -4 ||
+        item > 10)
+    )
+      continue;
+    if (key === 'tabularNumbers' && typeof item !== 'boolean') continue;
+    if (
       (/color$/i.test(key) || /background$/i.test(key)) &&
       (typeof item !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(item))
     )
@@ -3908,7 +4047,7 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
       typeof item !== 'object' &&
       typeof item === 'number' &&
       (!Number.isFinite(item) ||
-        (item < 0 && !['offsetX', 'offsetY'].includes(key)))
+        (item < 0 && !['offsetX', 'offsetY', 'letterSpacing'].includes(key)))
     )
       continue;
     if (
@@ -4048,6 +4187,11 @@ function sanitizeRowForProduction(row: RowModel): RowModel {
         !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
     ) {
       delete next[field];
+      continue;
+    }
+    if (field === 'descriptionActionStart') {
+      // Renderers clamp an offset past the text; anything else has no meaning.
+      if (!isDescriptionActionStart(value)) delete next[field];
       continue;
     }
     if (field === 'parent' && isRecord(value))
@@ -4496,6 +4640,10 @@ function assertPatchChanges(patch: PatchValues, index: number): void {
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
         assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        assertWebLeadingBadge(
+          column.webLeadingBadge,
+          `${path}.columns[${columnIndex}].webLeadingBadge`
+        );
         for (const field of [
           'textSegments',
           'secondaryTextSegments',
@@ -4985,6 +5133,16 @@ function mergeAndValidateSingleRow(
     )
       changes.subtitle = null;
   }
+  // The offset points into one specific description string, so a patch that
+  // replaces the description without restating it falls back to the default.
+  if (
+    previous.type === 'activity' &&
+    'description' in changes &&
+    changes.description !== previous.description &&
+    !('descriptionActionStart' in changes) &&
+    previous.descriptionActionStart !== undefined
+  )
+    changes.descriptionActionStart = null;
   const merged = { ...previous } as unknown as Record<string, unknown>;
   for (const [field, value] of Object.entries(changes)) {
     if (value === null) delete merged[field];

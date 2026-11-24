@@ -145,6 +145,14 @@ class NativeOverlayViewManager :
     view.sheetBackgroundColor = value
   }
 
+  override fun setSheetBottomInsetColor(view: NativeOverlayView, value: Int?) {
+    view.sheetBottomInsetColor = value
+  }
+
+  override fun setSheetBottomInsetHorizontal(view: NativeOverlayView, value: Double) {
+    view.sheetBottomInsetHorizontal = value
+  }
+
   override fun setDismissOnPanDown(view: NativeOverlayView, value: Boolean) {
     view.dismissOnPanDown = value
   }

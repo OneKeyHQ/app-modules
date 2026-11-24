@@ -54,10 +54,22 @@ static void expect(BOOL value, NSString *scenario) {
 - (instancetype)initWithCommand:(OKLiteCommand)command version:(OKNFCLiteVersion)version { return [super init]; }
 - (NFCISO7816APDU *)buildAPDU { abort(); }
 @end
-@implementation OKLiteV1
+@implementation OKLiteCommandTool
+- (void)sendCommandWithAPDU:(NFCISO7816APDU *)apdu modal:(OKLiteCommandModal *)modal
+         completionHandler:(void (^)(NSData *, uint8_t, uint8_t, NSError *, NSString *))completion { abort(); }
 @end
-@implementation OKLiteV2
-@end
+
+static void checkCardInfo(Class cardClass, OKNFCLiteStatus status, BOOL isNewCard) {
+    OKLiteV1 *card = [[cardClass alloc] initWithDelegate:nil];
+    card.SN = @"fixture-card";
+    card.pinRTL = 10;
+    card.status = status;
+    NSDictionary *info = [card cardInfo];
+    // React Native maps NSNumber instances of the @YES class to JS booleans.
+    expect([info[@"isNewCard"] isKindOfClass:[@YES class]], @"Card info exposes a boolean instead of numeric 0/1");
+    expect([info[@"isNewCard"] boolValue] == isNewCard, @"New and activated card states retain their values");
+    expect([info[@"serialNum"] isEqualToString:card.SN], @"Card info preserves the serial for identity checks");
+}
 
 @interface FakeCard : OKLiteV1
 @property (nonatomic, assign) NSUInteger reads;
@@ -170,6 +182,10 @@ static void checkInput(NSString *input, BOOL v2, BOOL overwrite, BOOL valid, BOO
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         messages = [NSMutableArray array];
+        for (Class cardClass in @[[OKLiteV1 class], [OKLiteV2 class]]) {
+            checkCardInfo(cardClass, OKNFCLiteStatusNewCard, YES);
+            checkCardInfo(cardClass, OKNFCLiteStatusActivated, NO);
+        }
         for (NSNumber *v2 in @[@NO, @YES]) {
             checkPinIdentity(v2.boolValue, @"verified-card", @"verified-card", NO, NO);
             checkPinIdentity(v2.boolValue, @"verified-card", @"other-card", NO, NO);

@@ -3168,6 +3168,9 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-bundle-crypto": "*"
+    "@onekeyfe/react-native-native-logger": "*"
+    "@onekeyfe/react-native-range-downloader": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3273,6 +3276,7 @@ __metadata:
     typescript: "npm:^5.9.2"
   peerDependencies:
     "@onekeyfe/react-native-bundle-update": "*"
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -3327,6 +3331,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3363,6 +3368,9 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-bundle-crypto": "*"
+    "@onekeyfe/react-native-native-logger": "*"
+    "@onekeyfe/react-native-range-downloader": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3399,6 +3407,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3435,6 +3444,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3471,6 +3481,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3522,6 +3533,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3558,6 +3570,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3629,6 +3642,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     expo: "*"
     react: "*"
     react-native: "*"
@@ -3666,6 +3680,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3772,6 +3787,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3806,6 +3822,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -4066,6 +4083,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -4102,6 +4120,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -4174,6 +4193,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -4225,6 +4245,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -4263,19 +4284,24 @@ __metadata:
     "@release-it/conventional-changelog": "npm:^10.0.1"
     "@types/jest": "npm:^29.5.14"
     "@types/react": "npm:^19.3.0"
+    "@types/react-dom": "npm:19.3.0"
+    "@types/react-test-renderer": "npm:^19.1.0"
     commitlint: "npm:^19.8.1"
     del-cli: "npm:^6.0.0"
     eslint: "npm:^9.35.0"
     eslint-config-prettier: "npm:^10.1.8"
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
+    jest-environment-jsdom: "npm:29.7.0"
     lefthook: "npm:^2.0.3"
     nitrogen: "npm:0.37.0"
     prettier: "npm:^2.8.8"
     react: "npm:19.3.0"
+    react-dom: "npm:19.3.0"
     react-native: "patch:react-native@npm%3A0.88.0#~/.yarn/patches/react-native-npm-0.88.0-60c6201dd2.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.37.0"
+    react-test-renderer: "npm:19.3.0"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -4385,6 +4411,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -4420,6 +4447,7 @@ __metadata:
     typescript: "npm:^5.9.2"
   peerDependencies:
     "@onekeyfe/react-native-bundle-update": "*"
+    "@onekeyfe/react-native-native-logger": "*"
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -11306,9 +11334,9 @@ __metadata:
   linkType: hard
 
 "lodash@npm:^4.15.0, lodash@npm:^4.17.21":
-  version: 4.17.21
-  resolution: "lodash@npm:4.17.21"
-  checksum: 10/c08619c038846ea6ac754abd6dd29d2568aa705feb69339e836dfa8d8b09abbb2f859371e86863eda41848221f9af43714491467b5b0299122431e202bb0c532
+  version: 4.17.23
+  resolution: "lodash@npm:4.17.23"
+  checksum: 10/82504c88250f58da7a5a4289f57a4f759c44946c005dd232821c7688b5fcfbf4a6268f6a6cdde4b792c91edd2f3b5398c1d2a0998274432cff76def48735e233
   languageName: node
   linkType: hard
 

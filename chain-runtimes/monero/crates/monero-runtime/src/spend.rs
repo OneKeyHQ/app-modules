@@ -370,45 +370,119 @@ impl<P: monero_wallet::interface::ProvidesDecoys>
     }
 }
 
-/// Picks a ring of decoys for one output at the current height; a stale height
-/// skews the ring distribution into a fingerprint.
+/// One output's ring, with the global index to save it under when it is newly picked. The ring
+/// saved when a send first used the output is reused while it still stands, as wallet2's ringdb
+/// does: fresh decoys on every attempt would let the node intersect them down to the real spend.
+/// A new ring is picked at the current height; a stale height skews the ring distribution into a
+/// fingerprint.
 async fn ring_for<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
     decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
     rng: &mut R,
+    identity_id: i64,
     output_id: i64,
     chain_tip: u64,
-) -> Result<OutputWithDecoys> {
+) -> Result<(OutputWithDecoys, Option<u64>)> {
+    let select_error = |e: monero_wallet::interface::TransactionsError| {
+        RuntimeError::with(
+            ErrorCode::NetworkError,
+            json!({ "operation": "selectDecoys", "outputId": output_id }),
+        )
+        .detail(format!("{e:?}"))
+    };
     let output = query::load_output(db, output_id)?;
-    OutputWithDecoys::new(rng, decoy_source, RING_LEN, chain_tip as usize, output)
+    let global_index = output.index_on_blockchain();
+    // An unreadable saved ring counts as none. An unanswered check keeps the ring, as wallet2
+    // does: rotating it on a node's silence would let that node intersect two rings.
+    if let Ok(Some(saved)) = query::load_ring(db, identity_id, global_index) {
+        if saved_ring_stands(decoy_source, &saved, &output)
+            .await
+            .map_err(select_error)?
+        {
+            return Ok((saved, None));
+        }
+    }
+    let ring = OutputWithDecoys::new(rng, decoy_source, RING_LEN, chain_tip as usize, output)
         .await
-        .map_err(|e| {
-            RuntimeError::with(
-                ErrorCode::NetworkError,
-                json!({ "operation": "selectDecoys", "outputId": output_id }),
-            )
-            .detail(format!("{e:?}"))
-        })
+        .map_err(select_error)?;
+    Ok((ring, Some(global_index)))
 }
 
-/// Rings for a set of outputs, reusing ones already fetched.
+/// Whether a saved ring can be reused: it was built for this output and the node still serves
+/// every member unlocked and unchanged (a deep reorg can drop or move one).
+async fn saved_ring_stands(
+    decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
+    saved: &OutputWithDecoys,
+    output: &WalletOutput,
+) -> std::result::Result<bool, monero_wallet::interface::TransactionsError> {
+    let decoys = saved.decoys();
+    if decoys.len() != usize::from(RING_LEN) {
+        return Ok(false);
+    }
+    // Saved data for another output would fail signing on every retry.
+    let real_member = [output.key(), output.commitment().commit()];
+    let same_output = saved.key() == output.key()
+        && saved.key_offset() == output.key_offset()
+        && decoys.signer_ring_members() == real_member;
+    if !same_output {
+        return Ok(false);
+    }
+    let positions = decoys.positions();
+    let real_position = positions.get(usize::from(decoys.signer_index()));
+    if real_position != Some(&output.index_on_blockchain()) {
+        return Ok(false);
+    }
+    let served = decoy_source
+        .unlocked_ringct_outputs(
+            &positions,
+            monero_wallet::interface::EvaluateUnlocked::Normal,
+        )
+        .await?;
+    Ok(served
+        .iter()
+        .zip(decoys.ring())
+        .all(|(now, saved)| now.as_ref() == Some(saved)))
+}
+
+/// Rings for a set of outputs, reusing ones already fetched. Rings picked here are saved even
+/// when a later output fails, since the node has already seen their requests.
 async fn rings_for<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
     decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
     rng: &mut R,
+    identity_id: i64,
     output_ids: &[i64],
     chain_tip: u64,
     cache: &mut HashMap<i64, OutputWithDecoys>,
 ) -> Result<Vec<OutputWithDecoys>> {
     let mut inputs = Vec::with_capacity(output_ids.len());
+    let mut picked = Vec::new();
+    let mut failure = None;
     for id in output_ids {
-        if !cache.contains_key(id) {
-            let ring = ring_for(db, decoy_source, rng, *id, chain_tip).await?;
-            cache.insert(*id, ring);
+        if let Some(ring) = cache.get(id) {
+            inputs.push(ring.clone());
+            continue;
         }
-        inputs.push(cache[id].clone());
+        match ring_for(db, decoy_source, rng, identity_id, *id, chain_tip).await {
+            Ok((ring, save_at)) => {
+                if let Some(global_index) = save_at {
+                    picked.push((global_index, ring.clone()));
+                }
+                inputs.push(ring.clone());
+                cache.insert(*id, ring);
+            }
+            Err(e) => {
+                failure = Some(e);
+                break;
+            }
+        }
     }
-    Ok(inputs)
+    // Unsaved rings still send; the next attempt only picks new ones.
+    let _ = query::save_rings(db, identity_id, &picked);
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(inputs),
+    }
 }
 
 /// Assembles a `SignableTransaction`. Change always goes to the account's primary address.
@@ -476,6 +550,7 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
             db,
             decoy_source,
             rng,
+            identity_id,
             &selection.output_ids,
             chain_tip,
             &mut cache,
@@ -554,7 +629,16 @@ pub async fn prepare_max<R: RngCore + CryptoRng + Send + Sync>(
     }
 
     let mut cache: HashMap<i64, OutputWithDecoys> = HashMap::new();
-    let inputs = rings_for(db, decoy_source, rng, &output_ids, chain_tip, &mut cache).await?;
+    let inputs = rings_for(
+        db,
+        decoy_source,
+        rng,
+        identity_id,
+        &output_ids,
+        chain_tip,
+        &mut cache,
+    )
+    .await?;
 
     // Probe for the fee: `necessary_fee()` on success, or from `NotEnoughFunds`.
     let fee_atomic = match assemble(
@@ -946,6 +1030,229 @@ mod tests {
             }
         }
         (db, id)
+    }
+
+    /// A synthetic chain of 10 outputs per block where every output is unlocked. The real output
+    /// answers with its own key and commitment. Members in `changed` answer with other points (as
+    /// after a reorg), members in `locked` as locked, and a request naming a member in `missing`
+    /// fails as a whole, as monerod does for an index it does not have yet.
+    struct FakeChain {
+        real: (u64, [Point; 2]),
+        changed: std::sync::Mutex<Vec<u64>>,
+        locked: std::sync::Mutex<Vec<u64>>,
+        missing: std::sync::Mutex<Vec<u64>>,
+        distributions: std::sync::atomic::AtomicUsize,
+    }
+
+    impl FakeChain {
+        const TIP: u64 = 1_000;
+
+        fn new(real: &WalletOutput) -> Self {
+            Self {
+                real: (
+                    real.index_on_blockchain(),
+                    [real.key(), real.commitment().commit()],
+                ),
+                changed: std::sync::Mutex::new(Vec::new()),
+                locked: std::sync::Mutex::new(Vec::new()),
+                missing: std::sync::Mutex::new(Vec::new()),
+                distributions: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        fn point(n: u64) -> Point {
+            Point::from(
+                curve25519_dalek::Scalar::from(n)
+                    * curve25519_dalek::constants::ED25519_BASEPOINT_POINT,
+            )
+        }
+    }
+
+    impl monero_wallet::interface::ProvidesBlockchainMeta for FakeChain {
+        async fn latest_block_number(
+            &self,
+        ) -> std::result::Result<usize, monero_wallet::interface::InterfaceError> {
+            Ok(Self::TIP as usize)
+        }
+    }
+
+    impl monero_wallet::interface::ProvidesUnvalidatedDecoys for FakeChain {
+        async fn ringct_output_distribution(
+            &self,
+            _range: impl Send + std::ops::RangeBounds<usize>,
+        ) -> std::result::Result<Vec<u64>, monero_wallet::interface::InterfaceError> {
+            self.distributions
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok((0..=Self::TIP).map(|block| (block + 1) * 10).collect())
+        }
+
+        async fn unlocked_ringct_outputs(
+            &self,
+            indexes: &[u64],
+            _evaluate_unlocked: monero_wallet::interface::EvaluateUnlocked,
+        ) -> std::result::Result<Vec<Option<[Point; 2]>>, monero_wallet::interface::TransactionsError>
+        {
+            let missing = self.missing.lock().unwrap().clone();
+            if indexes.iter().any(|index| missing.contains(index)) {
+                return Err(monero_wallet::interface::InterfaceError::InvalidInterface(
+                    "unknown output index".to_owned(),
+                )
+                .into());
+            }
+            let changed = self.changed.lock().unwrap().clone();
+            let locked = self.locked.lock().unwrap().clone();
+            Ok(indexes
+                .iter()
+                .map(|&index| {
+                    if index == self.real.0 {
+                        return Some(self.real.1);
+                    }
+                    if locked.contains(&index) {
+                        return None;
+                    }
+                    let seed = if changed.contains(&index) { 1 << 40 } else { 0 };
+                    Some([
+                        Self::point(seed + 2 * index + 2),
+                        Self::point(seed + 2 * index + 3),
+                    ])
+                })
+                .collect())
+        }
+    }
+
+    /// One owned output at global index 7 (the fixture's position on chain).
+    fn db_with_one_output() -> (Db, i64, i64, WalletOutput) {
+        let (db, id) = db_with_identity();
+        let (blob, _) = owned_output_blob(&[3; 32], 1, [1; 32]);
+        db.conn()
+            .execute(
+                "INSERT INTO outputs (identity_id, blob, txid, global_index, index_in_tx,
+                                      amount_atomic, height)
+                 VALUES (?1, ?2, ?3, 7, 0, 1000, 1)",
+                params![id, blob, vec![1u8; 32]],
+            )
+            .unwrap();
+        let output_id = db.conn().last_insert_rowid();
+        let output = WalletOutput::read(&mut blob.as_slice()).unwrap();
+        (db, id, output_id, output)
+    }
+
+    /// One prepare's ring for the output, through the same path a send takes.
+    fn pick_ring(
+        db: &Db,
+        chain: &FakeChain,
+        identity_id: i64,
+        output_id: i64,
+        seed: u64,
+    ) -> OutputWithDecoys {
+        let mut rng = test_support::SeededRng::new(seed);
+        let mut cache = HashMap::new();
+        futures_lite::future::block_on(rings_for(
+            db,
+            chain,
+            &mut rng,
+            identity_id,
+            &[output_id],
+            FakeChain::TIP,
+            &mut cache,
+        ))
+        .unwrap()
+        .remove(0)
+    }
+
+    fn a_decoy(ring: &OutputWithDecoys) -> u64 {
+        ring.decoys()
+            .positions()
+            .into_iter()
+            .find(|&position| position != 7)
+            .unwrap()
+    }
+
+    fn distributions(chain: &FakeChain) -> usize {
+        chain
+            .distributions
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    // Fresh decoys on each attempt would let the node intersect them down to the real spend.
+    #[test]
+    fn a_later_attempt_reuses_the_ring_picked_first() {
+        let (db, id, output_id, output) = db_with_one_output();
+        let chain = FakeChain::new(&output);
+        let first = pick_ring(&db, &chain, id, output_id, 1);
+        let second = pick_ring(&db, &chain, id, output_id, 2);
+        assert_eq!(first.decoys().positions(), second.decoys().positions());
+        assert_eq!(
+            distributions(&chain),
+            1,
+            "the second attempt picked no new decoys"
+        );
+    }
+
+    #[test]
+    fn a_saved_ring_with_a_changed_or_locked_member_is_replaced() {
+        for lock in [false, true] {
+            let (db, id, output_id, output) = db_with_one_output();
+            let chain = FakeChain::new(&output);
+            let first = pick_ring(&db, &chain, id, output_id, 1);
+            if lock {
+                chain.locked.lock().unwrap().push(a_decoy(&first));
+            } else {
+                chain.changed.lock().unwrap().push(a_decoy(&first));
+            }
+
+            let second = pick_ring(&db, &chain, id, output_id, 2);
+            assert_eq!(distributions(&chain), 2, "a new ring was picked");
+            let saved = query::load_ring(&db, id, 7).unwrap().unwrap();
+            assert_eq!(saved.decoys().positions(), second.decoys().positions());
+        }
+    }
+
+    // A node that does not answer must not get a second ring to intersect with the first.
+    #[test]
+    fn an_unanswered_check_fails_and_keeps_the_saved_ring() {
+        let (db, id, output_id, output) = db_with_one_output();
+        let chain = FakeChain::new(&output);
+        let first = pick_ring(&db, &chain, id, output_id, 1);
+        chain.missing.lock().unwrap().push(a_decoy(&first));
+
+        let mut rng = test_support::SeededRng::new(2);
+        let mut cache = HashMap::new();
+        let error = futures_lite::future::block_on(rings_for(
+            &db,
+            &chain,
+            &mut rng,
+            id,
+            &[output_id],
+            FakeChain::TIP,
+            &mut cache,
+        ))
+        .unwrap_err();
+        assert!(matches!(error.code, ErrorCode::NetworkError));
+        assert_eq!(distributions(&chain), 1, "no new ring was picked");
+        let saved = query::load_ring(&db, id, 7).unwrap().unwrap();
+        assert_eq!(saved.decoys().positions(), first.decoys().positions());
+
+        // Once the node answers again, the same ring is used.
+        chain.missing.lock().unwrap().clear();
+        let later = pick_ring(&db, &chain, id, output_id, 3);
+        assert_eq!(later.decoys().positions(), first.decoys().positions());
+    }
+
+    // Saved rings hold the output's keys, so they go with the account.
+    #[test]
+    fn removing_the_account_removes_its_rings() {
+        let (mut db, id, output_id, output) = db_with_one_output();
+        let chain = FakeChain::new(&output);
+        pick_ring(&db, &chain, id, output_id, 1);
+        assert!(query::load_ring(&db, id, 7).unwrap().is_some());
+
+        assert!(db.remove_identity("acct-1").unwrap());
+        let rings: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM rings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rings, 0);
     }
 
     type OutputRow = (i64, Option<Vec<u8>>, Option<i64>, Option<Vec<u8>>);

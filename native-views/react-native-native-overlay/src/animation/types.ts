@@ -57,7 +57,11 @@ export interface IOverlayTransition {
 
 export interface IOverlayAnimation {
   enter?: IOverlayTransition;
-  /** Defaults to the reverse of `enter`. */
+  /**
+   * Defaults to the presentation's default exit (see
+   * `DEFAULT_OVERLAY_ANIMATIONS`), or the reverse of `enter` when the
+   * presentation has no default exit.
+   */
   exit?: IOverlayTransition;
   /** Backdrop fade; runs on the same clock as the content by default. */
   backdrop?: { motion?: IOverlayMotionInput };

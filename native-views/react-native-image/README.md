@@ -1,109 +1,167 @@
+<div align="center">
+
 # @onekeyfe/react-native-image
 
-Nitro HybridView backed by SDWebImage on iOS and Glide on Android. It provides
-native loading placeholders, opt-in shared-renderer skeleton, fallback states,
-cache controls,
-and conservative OneKey TOS URL resizing without depending on Expo Image.
+**Native image loading for OneKey apps — SDWebImage on iOS, Glide on Android, and a Nitro image view with cache control.**
 
-The authoritative lifecycle, cache identity, cross-size memory-preview, safety,
-and platform contract is defined in [docs/SPEC.md](https://github.com/OneKeyHQ/app-modules/blob/main/native-views/react-native-image/docs/SPEC.md).
+[![npm](https://img.shields.io/npm/v/%40onekeyfe%2Freact-native-image?label=npm&color=4D6BFE)](https://www.npmjs.com/package/@onekeyfe/react-native-image)
+[![license](https://img.shields.io/npm/l/%40onekeyfe%2Freact-native-image?label=license&color=4D6BFE)](LICENSE)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Web](https://img.shields.io/badge/Web-4285F4?logo=googlechrome&logoColor=white)
+![Nitro Modules](https://img.shields.io/badge/Nitro_Modules-4D6BFE)
+
+</div>
+
+Renders remote and bundled images through a Nitro view backed by SDWebImage on
+iOS and Glide on Android. The native view owns loading and terminal presentation,
+cache control, animated images, request cancellation and safe reuse of recycled
+cells; the application owns sizing, source selection and business fallbacks. A
+separate `OneKeyIcon` entry renders host-provided named SVG icons on native and
+Web. The package has no Web renderer for `OneKeyImage` itself.
+
+## Features
+
+- **Native image pipeline** — SDWebImage on iOS and Glide on Android with
+  `memory-disk`, `memory`, `disk` or `none` cache policies.
+- **Native loading and fallback states** — static placeholders, opt-in skeleton
+  loading, and terminal error/fallback presentation drawn by the native view.
+- **Explicit cache control** — `preload` and `clearMemory`/`clearDisk`/`clearAll`
+  resolve only after the requested native cache work completes.
+- **Bounded TOS rendition** — `optimizeTos` may swap eligible OneKey asset URLs
+  for a rendition sized from `resizeWidth`/`resizeHeight` and `overscan`.
+- **Recycled-cell safety** — `recyclingKey` and `reload()`/`cancel()` keep stale
+  work out of reused native views.
+- **Named SVG icons** — a separate `OneKeyIcon` entry renders host-owned artwork
+  with no network request, on native and on Web.
+
+## Installation
+
+```sh
+yarn add @onekeyfe/react-native-image \
+  @onekeyfe/react-native-skeleton \
+  react-native-nitro-modules@0.37.0
+```
+
+Peer dependencies: `react`, `react-native`, `react-native-nitro-modules` 0.37.0
+and `@onekeyfe/react-native-skeleton` (the native skeleton renderer). Install the
+app's iOS pods and rebuild the native binary; a JavaScript-only install does not
+register the views:
+
+```sh
+cd ios && pod install
+```
+
+Android links through autolinking; deployment floors are iOS 15.1 and Android
+API 24. For a CocoaPods static-library integration, declare the SDWebImage coders
+as modular headers in the application `Podfile`: SDWebImage `5.21.7`,
+SDWebImageWebPCoder `0.14.6` and SDWebImageSVGCoder `1.7.0`.
+
+## Usage
 
 ```tsx
+import {
+  OneKeyImage,
+  OneKeyImageLoadingStrategy,
+  OneKeyImageVariant,
+} from '@onekeyfe/react-native-image';
+
 <OneKeyImage
-  source={{ uri: 'https://example.com/avatar.png' }}
+  source={{ uri: avatarUrl }}
   variant={OneKeyImageVariant.AVATAR}
-  style={{ width: 48, height: 48 }}
-/>
+  loadingStrategy={OneKeyImageLoadingStrategy.SKELETON}
+  style={{ width: 48, height: 48, borderRadius: 24 }}
+/>;
 ```
 
-React placeholders and fallbacks are optional overlays. The default path draws
-all states in the native image view and never nests SkeletonView. The public
-state semantics match the native image libraries:
+Give the view explicit dimensions: it does not derive its own size from the
+image, and a reused list cell must receive a new `recyclingKey`.
 
-- `placeholder`: shown while a non-null source is loading.
-- `fallback`: shown when `source` is null, cannot be resolved, or fails to load.
+### Named icons
 
-`onError` is only emitted for an actual request failure; a null source displays
-the same fallback UI without emitting an error event.
-
-The React event payloads follow the Expo Image envelope used by OneKey:
-
-```ts
-onLoad={({ source: { url, width, height }, cacheType }) => {}}
-onError={({ error }) => {}}
-```
-
-`cacheType` is `OneKeyImageCacheType.NONE`, `.MEMORY`, or `.DISK`.
-`placeholder` remains visible through decode and is removed by `onDisplay`,
-when the decoded image has actually reached the screen. Overlay containers also
-clip their contents so image, placeholder, and fallback share the same rounded
-corners.
-
-The default loading strategy is a lightweight static native placeholder. Native
-skeleton loading is opt-in and replaces the static loading appearance instead
-of appearing as a second stage:
+`OneKeyIcon` lives in the separate `icon` entry and renders artwork the host
+supplies at build time:
 
 ```tsx
-<OneKeyImage
-  source={{ uri }}
-  loadingStrategy={OneKeyImageLoadingStrategy.SKELETON}
-  fallback={<UnavailableImagePlaceholder />}
-/>
+import { OneKeyIcon } from '@onekeyfe/react-native-image/icon';
+
+<OneKeyIcon name="StarOutline" color="#202020" style={{ width: 24, height: 24 }} />;
 ```
 
-Passing a React `placeholder` disables the native loading strategy for that
-instance so only one loading surface is visible.
+Names match `^[A-Z][A-Za-z0-9]*$`; the default size is 24 × 24 and the default
+color is opaque black. `color` only resolves `currentColor` fills and strokes, it
+is not a whole-image tint. The SDK ships no artwork: native builds provide the
+icon bundle and Web builds must alias `#onekey-icon-assets` to the host's
+generated icon table, otherwise named icons render blank.
 
-Animated images intentionally default to `autoplay={false}` on Android to keep
-large lists conservative, and `autoplay={true}` on other native platforms. Pass
-`autoplay` explicitly whenever a screen needs the same behavior on both
-platforms.
+## API
 
-Animated-image canvas limits are intentionally platform-specific. Android caps
-the unavoidable decoded ARGB canvas at 4,194,304 pixels (16 MiB), while iOS
-allows metadata dimensions up to 16,000,000 pixels and separately caps its
-decoded animation frame buffer at 16 MiB. These limits reflect the native
-decoders' different allocation behavior.
+### `OneKeyImage`
 
-`recyclingKey` is available for recycled list cells. Changing it clears stale
-content before the next source is displayed.
+| Prop | Type | Default | Platforms | Description |
+| --- | --- | --- | :-: | --- |
+| `source` | URI source or numeric asset | — | iOS, Android | `null`, blank or unresolved input shows fallback without `onError`. |
+| `variant`, `contentFit` | `generic` \| `token` \| `network` \| `avatar`; `cover` \| `contain` \| `fill` \| `center` | `generic`, `cover` | iOS, Android | Native placeholder/fallback presentation and display/decode sizing. |
+| `cachePolicy`, `loadingStrategy` | `memory-disk` \| `memory` \| `disk` \| `none`; `static` \| `skeleton` \| `none` | `memory-disk`, `static` | iOS, Android | Cache policy (prop wins over source value) and native loading surface; a React `placeholder` disables the native surface. |
+| `placeholder`, `fallback`, `placeholderColor` | `ReactNode`, color | — | iOS, Android | Overlay content clipped to the same rounded bounds (no pointer events) and theme color for native states. |
+| `autoplay`, `recyclingKey`, `round`, `optimizeTos` | `boolean`, `string`, `boolean`, `boolean` | `false` Android / `true` iOS, —, `false`, `true` | iOS, Android | Animated images, request-generation identity, oval clip and bounded OneKey rendition URLs. |
+| `resizeWidth`, `resizeHeight`, `overscan` | `number` | —, —, `1.1` | iOS, Android | Logical-size hints used by preload, TOS selection and memory probing. |
+| `onLoadStart`, `onLoad`, `onLoadEnd`, `onDisplay`, `onError` | event callbacks | — | iOS, Android | `onLoad` receives `{ source: { url, width, height }, cacheType }`. |
+| `hybridRef` | callback ref | — | iOS, Android | Exposes `reload()` and `cancel()`. |
 
-Cache clearing methods resolve only after their requested native cache work has
-completed, including `OneKeyImageCache.clearMemory()`.
+### `OneKeyImageCache`
 
-Pass the rendered logical dimensions and device pixel ratio when preloading so
-TOS URL selection and decode cache identity match the later render. `preload`
-resolves to `true` only when all requested sources complete successfully:
+| Method | Result | Platforms | Description |
+| --- | --- | --- | :-: |
+| `preload(sources)` | `Promise<boolean>` | iOS, Android | Resolves `true` only when every valid source succeeds. |
+| `clearMemory()`, `clearDisk()`, `clearAll()` | `Promise<void>` | iOS, Android | Resolve after the requested native cache work, including cross-size hints. |
 
-```ts
-const loaded = await OneKeyImageCache.preload([
-  {
-    uri,
-    resizeWidth: 48,
-    resizeHeight: 64,
-    pixelRatio: 3,
-    overscan: 1.1,
-  },
-]);
-```
+Enums exported by the package: `OneKeyImageVariant`, `OneKeyImageContentFit`,
+`OneKeyImageCachePolicy`, `OneKeyImageLoadingStrategy` and
+`OneKeyImageCacheType` (`none`, `memory`, `disk`).
 
-For a CocoaPods static-library integration, declare SDWebImage as a modular
-header in the application Podfile:
+### `OneKeyIcon`
 
-```ruby
-pod 'SDWebImage', '5.21.7', :modular_headers => true
-pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
-pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
-```
+| Prop | Type | Platforms | Description |
+| --- | --- | :-: | --- |
+| `name`, `color`, `style` | `string`, `string`, view props | iOS, Android, Web | Required host icon name; native accepts `#hex`/`rgb()`/`rgba()`, Web follows CSS. Explicit dimensions beat the 24 × 24 default. |
 
-## Named icon resource ownership
+The package also exports `createNamedIcon(document, name)` from
+`@onekeyfe/react-native-image/icon/dom` for non-React Web surfaces.
 
-The host owns canonical SVG artwork and build output. Native builds supply a
-`OneKeyIcons.bundle` on iOS and `assets/icons` on Android, including the manifest.
-Web builds alias `#onekey-icon-assets` to a generated module exporting
-`iconResourceHref(name: string): string | undefined`; the default SDK provider
-is empty. `OneKeyIcon` props are unchanged. See [the resource contract](docs/SPEC.md#16-host-owned-icon-resources--implemented-sdk-fixture-runtime-verified).
+## Platform support
 
-The SDK example carries 63 independent test samples. `icons:check` and
-`icons:test` are repository maintenance commands that require the example
-fixtures; npm consumers do not receive those samples or the complete catalog.
+| Capability | iOS | Android | Web |
+| --- | :-: | :-: | :-: |
+| `OneKeyImage` rendering | ✅ | ✅ | — |
+| Native loading, skeleton and fallback states | ✅ | ✅ | — |
+| Cache preload and clearing | ✅ | ✅ | — |
+| Animated images | ✅ | ✅ | — |
+| `OneKeyIcon` named SVG | ✅ | ✅ | ✅ host-supplied assets |
+
+## Caveats
+
+> [!IMPORTANT]
+> `OneKeyImage` is a native view for iOS and Android only. The Web entry of this
+> package provides `OneKeyIcon` and `createNamedIcon`; it never renders
+> `OneKeyImage`.
+
+> [!NOTE]
+> Both platforms reject oversized or malformed input: 32 MiB encoded images,
+> 8 MiB decoded data URIs, 16 MiB animated files, 1,000 frames and 60 seconds.
+
+> [!WARNING]
+> A reused native view must receive a new `recyclingKey` (or an explicit
+> `reload()`/`cancel()`) when its logical content changes; otherwise stale work
+> from the previous source owns the view.
+
+## References
+
+- [Package spec](docs/SPEC.md)
+- [Example image page](../../example/react-native/pages/OneKeyImageTestPage.tsx)
+- [npm package](https://www.npmjs.com/package/@onekeyfe/react-native-image)
+- [Changelog](../../CHANGELOG.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -44,6 +44,55 @@ final class OneKeyMediaPreviewCacheTests: XCTestCase {
     waitFor { delivered == 4 }
     var cleared = false; fresh.clearDisk { cleared = true }; waitFor { cleared }
   }
+  func testExpiredDiskAccessIsRemovedAndRegeneratedBeforeReuse() throws {
+    let namespace = "expired-access-\(UUID().uuidString)", uri = "test://expired-access"
+    let seed = SDImageCache(namespace: namespace)
+    let key = OneKeyMediaPreviewCache.storageKey(uri: uri, headers: [:], edge: 128, fit: "contain")
+    seed.storeImageData(toDisk: still().pngData()!, forKey: key)
+    let path = try XCTUnwrap(seed.cachePath(forKey: key))
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-86400)], ofItemAtPath: path)
+    var url = URL(fileURLWithPath: path), dates = URLResourceValues()
+    dates.contentAccessDate = Date().addingTimeInterval(-31 * 86400)
+    try url.setResourceValues(dates)
+    let seededAccess = try XCTUnwrap(url.resourceValues(forKeys: [.contentAccessDateKey]).contentAccessDate)
+    XCTAssertLessThan(seededAccess, Date().addingTimeInterval(-30 * 86400))
+    let cache = OneKeyMediaPreviewCache(namespace: namespace)
+    var lease: UUID?, oldImages = 0, extracts = 0
+    _ = request(cache, uri: uri, policy: "disk", image: { _ in oldImages += 1 }, extract: { extracts += 1; lease = $0 })
+    waitFor { lease != nil || oldImages != 0 }
+    XCTAssertEqual(oldImages, 0)
+    XCTAssertEqual(extracts, 1)
+    guard let lease else { XCTFail("Expired entry bypassed extraction"); return }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    cache.complete(lease, image: still())
+    waitFor { FileManager.default.fileExists(atPath: path) }
+    let fresh = OneKeyMediaPreviewCache(namespace: namespace)
+    var loaded = false
+    _ = request(fresh, uri: uri, policy: "disk", image: { _ in loaded = true }, extract: { _ in XCTFail("Regenerated disk miss") })
+    waitFor { loaded }
+    var cleared = false; fresh.clearDisk { cleared = true }; waitFor { cleared }
+  }
+
+  func testRecentDiskAccessIgnoresOldModificationAndRefreshesAccessDate() throws {
+    let namespace = "recent-access-\(UUID().uuidString)", uri = "test://recent-access"
+    let seed = SDImageCache(namespace: namespace)
+    let key = OneKeyMediaPreviewCache.storageKey(uri: uri, headers: [:], edge: 128, fit: "contain")
+    seed.storeImageData(toDisk: still().pngData()!, forKey: key)
+    let path = try XCTUnwrap(seed.cachePath(forKey: key))
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-31 * 86400)], ofItemAtPath: path)
+    var url = URL(fileURLWithPath: path), dates = URLResourceValues()
+    dates.contentAccessDate = Date().addingTimeInterval(-86400)
+    try url.setResourceValues(dates)
+    let started = Date()
+    let cache = OneKeyMediaPreviewCache(namespace: namespace)
+    var loaded = false
+    _ = request(cache, uri: uri, policy: "disk", image: { _ in loaded = true }, extract: { _ in XCTFail("Recent access disk miss") })
+    waitFor { loaded }
+    let touched = try XCTUnwrap(URL(fileURLWithPath: path).resourceValues(forKeys: [.contentAccessDateKey]).contentAccessDate)
+    XCTAssertGreaterThanOrEqual(touched, started.addingTimeInterval(-1))
+    var cleared = false; cache.clearDisk { cleared = true }; waitFor { cleared }
+  }
+
   func testHeaderIdentityAndOwnerTransferRejectLateCompletion() {
     XCTAssertEqual(OneKeyMediaPreviewCache.storageKey(uri: "u", headers: ["A": "1", "B": "2"], edge: 128, fit: "contain"),
       OneKeyMediaPreviewCache.storageKey(uri: "u", headers: ["b": "2", "a": "1"], edge: 128, fit: "contain"))

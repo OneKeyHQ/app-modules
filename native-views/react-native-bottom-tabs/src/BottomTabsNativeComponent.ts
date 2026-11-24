@@ -8,6 +8,11 @@ import {
 // @ts-ignore
 import type { ImageSource } from 'react-native/Libraries/Image/ImageSource';
 
+export type OnTabDoublePressEventData = Readonly<{
+  key: string;
+  didScrollToTop: boolean;
+}>;
+
 export type OnPageSelectedEventData = Readonly<{
   key: string;
 }>;
@@ -47,7 +52,7 @@ export interface BottomTabsNativeProps extends ViewProps {
   items: BottomTabsItems;
   selectedPage: string;
   onPageSelected?: CodegenTypes.DirectEventHandler<OnPageSelectedEventData>;
-  onTabDoublePress?: CodegenTypes.DirectEventHandler<OnPageSelectedEventData>;
+  onTabDoublePress?: CodegenTypes.DirectEventHandler<OnTabDoublePressEventData>;
   onTabBarMeasured?: CodegenTypes.DirectEventHandler<OnTabBarMeasured>;
   onNativeLayout?: CodegenTypes.DirectEventHandler<OnNativeLayout>;
   icons?: ReadonlyArray<ImageSource>;

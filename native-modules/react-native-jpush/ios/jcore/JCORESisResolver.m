@@ -188,7 +188,6 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     }
     id json = [NSJSONSerialization JSONObjectWithData:plainData options:0 error:nil];
     if ([json isKindOfClass:[NSDictionary class]]) {
-        [[JCOREConfiguration shared] updateWithSisDictionary:json];
         return json;
     }
     return nil;
@@ -222,7 +221,6 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     }
     id json = [NSJSONSerialization JSONObjectWithData:plain options:0 error:nil];
     if ([json isKindOfClass:[NSDictionary class]]) {
-        [[JCOREConfiguration shared] updateWithSisDictionary:json];
         return json;
     }
     return nil;
@@ -245,6 +243,12 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         @"report_flag": @0,
         @"cert_ver": @(config.certVer > 0 ? config.certVer : 1),
     };
+}
+
+static BOOL JCOREUsesTlsForSisEndpoint(JCORESisEndpoint *endpoint, BOOL fromSslList, BOOL customSis) {
+    uint16_t port = endpoint.port;
+    BOOL jiguangTcpPort = (port >= 7000 && port <= 7009) || (port >= 8000 && port <= 8009);
+    return port == 443 || (fromSslList && (customSis || !jiguangTcpPort));
 }
 
 - (NSArray<JCORESisEndpoint *> *)defaultFallbackEndpoints {
@@ -274,6 +278,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     for (NSString *addr in config.ips) {
         JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil) {
+            ep.useSSL = (ep.port == 443);
             if ([failedSet containsObject:ep.addressString]) {
                 [deprioritizedFailed addObject:ep];
             } else {
@@ -281,9 +286,11 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
             }
         }
     }
+    BOOL customSslIps = config.cachedSslIpsRequireTls || (self.customSisHost.length > 0 && self.customSisPort > 0);
     for (NSString *addr in config.sslIps) {
-        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil) {
+            ep.useSSL = JCOREUsesTlsForSisEndpoint(ep, YES, customSslIps);
             if ([failedSet containsObject:ep.addressString]) {
                 [deprioritizedFailed addObject:ep];
             } else {
@@ -303,17 +310,20 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
 }
 
 - (NSArray<JCORESisEndpoint *> *)parseSisResponseDictionary:(NSDictionary *)dict {
+    return [self parseSisResponseDictionary:dict customSis:NO];
+}
+
+- (NSArray<JCORESisEndpoint *> *)parseSisResponseDictionary:(NSDictionary *)dict customSis:(BOOL)customSis {
     if (![dict isKindOfClass:[NSDictionary class]]) {
         return @[];
     }
-    [[JCOREConfiguration shared] updateWithSisDictionary:dict];
-
     NSMutableArray<JCORESisEndpoint *> *results = [NSMutableArray array];
     NSArray<NSString *> *ips = [dict[@"ips"] isKindOfClass:[NSArray class]] ? dict[@"ips"] : @[];
     for (NSString *addr in ips) {
         if ([addr isKindOfClass:[NSString class]]) {
             JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
             if (ep != nil) {
+                ep.useSSL = (ep.port == 443);
                 [results addObject:ep];
             }
         }
@@ -321,8 +331,9 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     NSArray<NSString *> *sslIps = [dict[@"ssl_ips"] isKindOfClass:[NSArray class]] ? dict[@"ssl_ips"] : @[];
     for (NSString *addr in sslIps) {
         if ([addr isKindOfClass:[NSString class]]) {
-            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
             if (ep != nil) {
+                ep.useSSL = JCOREUsesTlsForSisEndpoint(ep, YES, customSis);
                 [results addObject:ep];
             }
         }
@@ -334,8 +345,19 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
                          port:(uint16_t)port
                       timeout:(NSTimeInterval)timeout
                    completion:(void (^)(NSArray<JCORESisEndpoint *> *endpoints))completion {
+    [self resolveUdpSisWithHost:host port:port timeout:timeout customSis:NO
+                     completion:^(NSArray<JCORESisEndpoint *> *endpoints, NSDictionary *dict, NSString *server) {
+        completion(endpoints);
+    }];
+}
+
+- (void)resolveUdpSisWithHost:(NSString *)host
+                         port:(uint16_t)port
+                      timeout:(NSTimeInterval)timeout
+                    customSis:(BOOL)customSis
+                   completion:(void (^)(NSArray<JCORESisEndpoint *> *, NSDictionary *, NSString *))completion {
     if (host.length == 0) {
-        completion(@[]);
+        completion(@[], nil, nil);
         return;
     }
     uint16_t actualPort = port > 0 ? port : 19000;
@@ -347,7 +369,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
                                                                  magic:'U'
                                                                   seed:seed];
     if (packet.length == 0) {
-        completion(@[]);
+        completion(@[], nil, nil);
         return;
     }
 
@@ -360,18 +382,19 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     nw_connection_set_queue(conn, udpQueue);
 
     __block BOOL finished = NO;
-    void (^finishOnce)(NSArray<JCORESisEndpoint *> *) = ^(NSArray<JCORESisEndpoint *> *eps) {
+    void (^finishOnce)(NSArray<JCORESisEndpoint *> *, NSDictionary *) =
+        ^(NSArray<JCORESisEndpoint *> *eps, NSDictionary *dict) {
         if (finished) {
             return;
         }
         finished = YES;
         nw_connection_cancel(conn);
-        completion(eps ?: @[]);
+        completion(eps, dict, dict != nil ? [NSString stringWithFormat:@"%@:%u", host, actualPort] : nil);
     };
 
     NSTimeInterval effectiveTimeout = timeout > 0 ? timeout : 3.0;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(effectiveTimeout * NSEC_PER_SEC)), udpQueue, ^{
-        finishOnce(@[]);
+        finishOnce(@[], nil);
     });
 
     nw_connection_set_state_changed_handler(conn, ^(nw_connection_state_t state, nw_error_t error) {
@@ -382,25 +405,21 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
                                                          DISPATCH_DATA_DESTRUCTOR_DEFAULT);
             nw_connection_send(conn, ddata, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t sendErr) {
                 if (sendErr != nil) {
-                    finishOnce(@[]);
+                    finishOnce(@[], nil);
                 }
             });
             nw_connection_receive_message(conn, ^(dispatch_data_t content, nw_content_context_t context, bool is_complete, nw_error_t recvErr) {
                 if (recvErr == nil && content != nil) {
                     NSData *respData = (NSData *)content;
                     NSDictionary *dict = [JCORESisResolver parseUdpSisPacket:respData];
-                    NSArray<JCORESisEndpoint *> *parsed = [self parseSisResponseDictionary:dict];
-                    if (parsed.count > 0) {
-                        [[JCOREConfiguration shared] addLastSuccessSisIp:[NSString stringWithFormat:@"%@:%u", host, actualPort]];
-                        [[JCOREConfiguration shared] clearFailedIps];
-                    }
-                    finishOnce(parsed);
+                    NSArray<JCORESisEndpoint *> *parsed = [self parseSisResponseDictionary:dict customSis:customSis];
+                    finishOnce(parsed, parsed.count > 0 ? dict : nil);
                 } else {
-                    finishOnce(@[]);
+                    finishOnce(@[], nil);
                 }
             });
         } else if (state == nw_connection_state_failed || state == nw_connection_state_cancelled) {
-            finishOnce(@[]);
+            finishOnce(@[], nil);
         }
     });
 
@@ -417,7 +436,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         }
     }
     for (NSString *addr in config.sslIps) {
-        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
         if (ep != nil && ![failedSet containsObject:ep.addressString]) {
             return YES;
         }
@@ -425,10 +444,16 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     return NO;
 }
 
-- (void)resolveEndpointsWithCompletion:(void (^)(NSArray<JCORESisEndpoint *> *endpoints))completion {
+- (void)resolveEndpointsWithCompletion:(void (^)(NSArray<JCORESisEndpoint *> *))completion {
+    [self resolveEndpointsWithResponse:^(NSArray<JCORESisEndpoint *> *endpoints, NSDictionary *dict, NSString *server, BOOL customSis) {
+        completion(endpoints);
+    }];
+}
+
+- (void)resolveEndpointsWithResponse:(void (^)(NSArray<JCORESisEndpoint *> *, NSDictionary *, NSString *, BOOL))completion {
     JCOREConfiguration *config = [JCOREConfiguration shared];
     if (config.customConnectAddresses.count > 0) {
-        completion([self defaultFallbackEndpoints]);
+        completion([self defaultFallbackEndpoints], nil, nil, NO);
         return;
     }
     if (config.customConnectHost.length > 0 && config.customConnectPort > 0) {
@@ -436,7 +461,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         custom.host = config.customConnectHost;
         custom.port = config.customConnectPort;
         custom.useSSL = config.customConnectUseSSL;
-        completion(@[ custom ]);
+        completion(@[ custom ], nil, nil, NO);
         return;
     }
 
@@ -444,23 +469,24 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         [self resolveUdpSisWithHost:self.customSisHost
                                port:self.customSisPort
                             timeout:3.0
-                         completion:^(NSArray<JCORESisEndpoint *> *udpEndpoints) {
+                          customSis:YES
+                         completion:^(NSArray<JCORESisEndpoint *> *udpEndpoints, NSDictionary *dict, NSString *server) {
             if (udpEndpoints.count > 0) {
-                completion(udpEndpoints);
+                completion(udpEndpoints, dict, server, YES);
             } else {
-                completion([self defaultFallbackEndpoints]);
+                completion([self defaultFallbackEndpoints], nil, nil, NO);
             }
         }];
         return;
     }
 
     if ([self hasHealthyCachedSisEndpoint]) {
-        completion([self defaultFallbackEndpoints]);
+        completion([self defaultFallbackEndpoints], nil, nil, NO);
         return;
     }
 
     if (config.appKey.length == 0) {
-        completion([self defaultFallbackEndpoints]);
+        completion([self defaultFallbackEndpoints], nil, nil, NO);
         return;
     }
 
@@ -470,16 +496,17 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
             JCORESisEndpoint *udpEp = [JCORESisEndpoint endpointFromString:udpHostStr useSSL:NO];
             NSString *resolvedHost = udpEp != nil ? udpEp.host : udpHostStr;
             uint16_t resolvedPort = (udpEp != nil && udpEp.port > 0) ? udpEp.port : 19000;
-            [self resolveUdpSisWithHost:resolvedHost port:resolvedPort timeout:2.5 completion:^(NSArray<JCORESisEndpoint *> *udpEndpoints) {
+            [self resolveUdpSisWithHost:resolvedHost port:resolvedPort timeout:2.5 customSis:NO
+                             completion:^(NSArray<JCORESisEndpoint *> *udpEndpoints, NSDictionary *dict, NSString *server) {
                 if (udpEndpoints.count > 0) {
-                    completion(udpEndpoints);
+                    completion(udpEndpoints, dict, server, NO);
                 } else {
-                    completion([self defaultFallbackEndpoints]);
+                    completion([self defaultFallbackEndpoints], nil, nil, NO);
                 }
             }];
             return;
         }
-        completion([self defaultFallbackEndpoints]);
+        completion([self defaultFallbackEndpoints], nil, nil, NO);
     };
 
     NSString *firstHttpsUrl = config.httpsSisUrls.firstObject;
@@ -513,7 +540,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
             NSDictionary *json = [JCORESisResolver decryptHttpSisResponse:data aesKey:aesKey];
             NSArray<JCORESisEndpoint *> *parsed = [self parseSisResponseDictionary:json];
             if (parsed.count > 0) {
-                completion(parsed);
+                completion(parsed, json, nil, NO);
                 return;
             }
         }
