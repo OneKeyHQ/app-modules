@@ -18,6 +18,15 @@ const NON_FALLBACK_CODES = new Set([
   "resource-limit",
 ]);
 
+const EMPTY_STATS = Object.freeze({
+  framesCaptured: 0,
+  previewFramesEmitted: 0,
+  previewFramesSkipped: 0,
+  decodeAttempts: 0,
+  decodeHits: 0,
+  maxLent: 0,
+});
+
 let nativeBinding;
 
 function errorWithCode(code, message) {
@@ -47,7 +56,12 @@ function binding() {
 
 /** Native errors carry "<code>: <reason>" in the message. */
 function toCodedError(error) {
-  if (error && typeof error === "object" && typeof error.code === "string" && ERROR_CODES.has(error.code)) {
+  if (
+    error &&
+    typeof error === "object" &&
+    typeof error.code === "string" &&
+    ERROR_CODES.has(error.code)
+  ) {
     return error;
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -87,14 +101,37 @@ async function listCameras() {
   }
 }
 
+function normalizeReadyInfo(info) {
+  if (!info) return undefined;
+  return {
+    width: info.width,
+    height: info.height,
+    fps: info.fps,
+    subtype: info.subtype,
+    cameraCount: info.cameraCount,
+    cameraIndex: info.cameraIndex ?? null,
+    isDefaultCamera: Boolean(info.isDefaultCamera),
+    focusSupported: Boolean(info.focusSupported),
+    autoFocusSupported: Boolean(info.autoFocusSupported),
+    exposureSupported: Boolean(info.exposureSupported),
+  };
+}
+
 /**
  * Starts reporting raw QR text from a Windows camera or a video file. Events
  * from an older capture generation are dropped; nothing is delivered after
  * dispose().
  */
 function createCapture(options) {
-  const { source = { kind: "camera" }, onReady, onText, onError, onEnded, onFrame } =
-    options ?? {};
+  const {
+    source = { kind: "camera" },
+    onReady,
+    onText,
+    onError,
+    onEnded,
+    onFrame,
+    onDiagnostic,
+  } = options ?? {};
   if (source.kind !== "camera" && source.kind !== "file") {
     throw errorWithCode("decoder-unavailable", `Unknown source: ${source.kind}`);
   }
@@ -109,24 +146,40 @@ function createCapture(options) {
       `Unsupported preferredResolution: ${source.preferredResolution}`,
     );
   }
+
+  const withPreview = typeof onFrame === "function";
+  const preferredResolution =
+    source.kind === "camera" ? (source.preferredResolution ?? "720p") : undefined;
+  const lockFocusOnDetect =
+    source.kind === "camera" ? Boolean(source.lockFocusOnDetect) : undefined;
+  let hasCustomDeviceId =
+    source.kind === "camera" && typeof source.deviceId === "string" && source.deviceId.length > 0;
+
   let latestGeneration = 0;
   let disposed = false;
+  let startedAt = null;
+  let running = false;
   let native;
+
+  const emitDiagnostic = (payload) => {
+    if (typeof onDiagnostic !== "function") return;
+    try {
+      onDiagnostic(payload);
+    } catch {
+      // Diagnostic logging must never break scanning or leak preview frames.
+    }
+  };
+
   try {
     native = new (binding().NativeCapture)(
       {
         sourceKind: source.kind,
         filePath: source.kind === "file" ? source.path : undefined,
         loopFile: source.kind === "file" ? Boolean(source.loop) : undefined,
-        deviceId:
-          source.kind === "camera" &&
-          typeof source.deviceId === "string" &&
-          source.deviceId.length > 0
-            ? source.deviceId
-            : undefined,
+        deviceId: hasCustomDeviceId ? source.deviceId : undefined,
         preferredResolution: source.kind === "camera" ? source.preferredResolution : undefined,
-        lockFocusOnDetect: source.kind === "camera" ? Boolean(source.lockFocusOnDetect) : undefined,
-        withPreview: typeof onFrame === "function",
+        lockFocusOnDetect,
+        withPreview,
       },
       (event) => {
         if (event.kind === "frame") {
@@ -158,40 +211,126 @@ function createCapture(options) {
         if (disposed || event.generation < latestGeneration) return;
         latestGeneration = event.generation;
         switch (event.kind) {
-          case "ready":
-            onReady?.(event.generation, event.info);
+          case "ready": {
+            const info = normalizeReadyInfo(event.info);
+            emitDiagnostic({
+              event: "ready",
+              level: "info",
+              backend: "windows-native",
+              generation: event.generation,
+              readyMs: startedAt === null ? 0 : Math.max(0, Date.now() - startedAt),
+              cameraCount: info?.cameraCount ?? 0,
+              cameraIndex: info?.cameraIndex ?? null,
+              isDefaultCamera: info?.isDefaultCamera ?? false,
+              width: info?.width ?? 0,
+              height: info?.height ?? 0,
+              fps: Math.round(info?.fps ?? 0),
+              subtype: info?.subtype ?? "unknown",
+              focusSupported: info?.focusSupported ?? false,
+              autoFocusSupported: info?.autoFocusSupported ?? false,
+              exposureSupported: info?.exposureSupported ?? false,
+            });
+            onReady?.(event.generation, info);
             break;
+          }
           case "text":
             onText?.(event.text, event.generation);
             break;
-          case "error":
-            onError?.(
-              errorWithCode(
-                ERROR_CODES.has(event.code) ? event.code : "decoder-unavailable",
-                event.message,
-              ),
-              event.generation,
-            );
+          case "error": {
+            const code = ERROR_CODES.has(event.code) ? event.code : "decoder-unavailable";
+            const coded = errorWithCode(code, event.message);
+            emitDiagnostic({
+              event: "error",
+              level: "warn",
+              backend: "windows-native",
+              generation: event.generation,
+              code,
+              fallbackToWeb: shouldFallbackToWeb(coded),
+            });
+            onError?.(coded, event.generation);
             break;
+          }
           default:
             onEnded?.(event.generation);
         }
       },
     );
   } catch (error) {
-    throw toCodedError(error);
+    const coded = toCodedError(error);
+    emitDiagnostic({
+      event: "error",
+      level: "warn",
+      backend: "windows-native",
+      generation: 0,
+      code: coded.code,
+      fallbackToWeb: shouldFallbackToWeb(coded),
+    });
+    throw coded;
   }
+
+  const readStats = () => (disposed ? { ...EMPTY_STATS } : native.stats());
+
+  const emitStopDiagnostic = (reason, snapshot, lentAfterStop) => {
+    if (!running) return;
+    running = false;
+    const durationMs = startedAt === null ? 0 : Math.max(0, Date.now() - startedAt);
+    startedAt = null;
+    emitDiagnostic({
+      event: "stop",
+      level: "info",
+      backend: "windows-native",
+      reason,
+      generation: latestGeneration,
+      durationMs,
+      framesCaptured: snapshot.framesCaptured,
+      previewFramesEmitted: snapshot.previewFramesEmitted,
+      previewFramesSkipped: snapshot.previewFramesSkipped,
+      decodeAttempts: snapshot.decodeAttempts,
+      decodeHits: snapshot.decodeHits,
+      maxLent: snapshot.maxLent,
+      lentAfterStop,
+    });
+  };
+
   return {
     start() {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
       try {
+        startedAt = Date.now();
+        running = true;
+        emitDiagnostic({
+          event: "start",
+          level: "info",
+          backend: "windows-native",
+          sourceKind: source.kind,
+          ...(source.kind === "camera"
+            ? {
+                preferredResolution,
+                lockFocusOnDetect,
+                hasCustomDeviceId,
+              }
+            : {}),
+          withPreview,
+        });
         native.start();
       } catch (error) {
-        throw toCodedError(error);
+        running = false;
+        const coded = toCodedError(error);
+        emitDiagnostic({
+          event: "error",
+          level: "warn",
+          backend: "windows-native",
+          generation: latestGeneration,
+          code: coded.code,
+          fallbackToWeb: shouldFallbackToWeb(coded),
+        });
+        throw coded;
       }
     },
     stop() {
-      if (!disposed) native.stop();
+      if (disposed) return;
+      native.stop();
+      emitStopDiagnostic("stop", native.stats(), native.lentFrames());
     },
     setDevice(deviceId) {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
@@ -199,6 +338,14 @@ function createCapture(options) {
         throw errorWithCode("decoder-unavailable", "setDevice is only supported for camera sources");
       }
       const normalized = typeof deviceId === "string" && deviceId.length > 0 ? deviceId : undefined;
+      hasCustomDeviceId = normalized !== undefined;
+      emitDiagnostic({
+        event: "switch-device",
+        level: "info",
+        backend: "windows-native",
+        hasCustomDeviceId,
+      });
+      if (running) startedAt = Date.now();
       try {
         native.setDevice(normalized);
       } catch (error) {
@@ -209,10 +356,16 @@ function createCapture(options) {
     lentFrames() {
       return disposed ? 0 : native.lentFrames();
     },
+    /** Privacy-safe session counters. */
+    stats() {
+      return readStats();
+    },
     dispose() {
       if (disposed) return;
+      const snapshot = native.stats();
       disposed = true;
       native.dispose();
+      emitStopDiagnostic("dispose", snapshot, 0);
     },
   };
 }

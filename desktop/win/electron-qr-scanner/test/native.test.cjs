@@ -70,15 +70,18 @@ test("listCameras returns a well-formed device list", { skip: !nativeWin }, asyn
   }
 });
 
-test("assembles an animated UR from video frames and reports ready info", { skip: !nativeWin }, async () => {
+test("assembles an animated UR from video frames and emits privacy-safe diagnostics", { skip: !nativeWin }, async () => {
   const decoder = new URDecoder();
   const seen = new Set();
+  const diagnostics = [];
+  const videoPath = join(videoFixturesDir, "animated-ur.mp4");
   let readyGeneration;
   let readyInfo;
   const started = Date.now();
   const result = await new Promise((resolve, reject) => {
     const capture = api.createCapture({
-      source: { kind: "file", path: join(videoFixturesDir, "animated-ur.mp4"), loop: true },
+      source: { kind: "file", path: videoPath, loop: true },
+      onDiagnostic: (evt) => diagnostics.push(evt),
       onReady: (generation, info) => {
         readyGeneration = generation;
         readyInfo = info;
@@ -106,6 +109,9 @@ test("assembles an animated UR from video frames and reports ready info", { skip
   assert.ok(readyInfo && readyInfo.width > 0 && readyInfo.height > 0);
   assert.equal(typeof readyInfo.fps, "number");
   assert.equal(typeof readyInfo.subtype, "string");
+  assert.equal(readyInfo.cameraCount, 0);
+  assert.equal(readyInfo.cameraIndex, null);
+  assert.equal(readyInfo.isDefaultCamera, false);
   assert.equal(typeof readyInfo.focusSupported, "boolean");
   assert.equal(typeof readyInfo.autoFocusSupported, "boolean");
   assert.equal(typeof readyInfo.exposureSupported, "boolean");
@@ -115,6 +121,42 @@ test("assembles an animated UR from video frames and reports ready info", { skip
   const elapsed = (Date.now() - started) / 1000;
   assert.ok(elapsed < (animated.frames / animated.fps) * 2, `took ${elapsed}s`);
   assert.ok(seen.size >= animated.fragments, `only ${seen.size} distinct parts`);
+
+  // Diagnostics lifecycle and strict privacy invariants.
+  assert.deepEqual(
+    diagnostics.map((d) => d.event),
+    ["start", "ready", "stop"],
+  );
+  const stopEvent = diagnostics[2];
+  assert.ok(stopEvent.framesCaptured >= animated.fragments);
+  assert.ok(stopEvent.decodeAttempts >= animated.fragments);
+  assert.ok(stopEvent.decodeHits >= animated.fragments);
+  assert.equal(stopEvent.lentAfterStop, 0);
+  const serialized = JSON.stringify(diagnostics);
+  assert.ok(!serialized.includes(videoPath), "diagnostic leaked local file path");
+  assert.ok(!serialized.includes("animated-ur.mp4"), "diagnostic leaked file name");
+  assert.ok(!serialized.includes("ur:"), "diagnostic leaked QR/UR payload");
+});
+
+test("diagnostics scrub custom deviceId and never leak raw identifiers on error", { skip: !nativeWin }, async () => {
+  const diagnostics = [];
+  const secretDeviceId = "\\\\?\\usb#vid_dead&pid_beef#serial_secret_12345";
+  await new Promise((resolve) => {
+    const capture = api.createCapture({
+      source: { kind: "camera", deviceId: secretDeviceId },
+      onDiagnostic: (evt) => diagnostics.push(evt),
+      onError: () => {
+        capture.dispose();
+        resolve();
+      },
+    });
+    capture.start();
+  });
+  assert.ok(diagnostics.some((d) => d.event === "start" && d.hasCustomDeviceId === true));
+  assert.ok(diagnostics.some((d) => d.event === "error" && d.code === "no-camera" && d.fallbackToWeb === false));
+  const serialized = JSON.stringify(diagnostics);
+  assert.ok(!serialized.includes("dead"), "diagnostic leaked deviceId");
+  assert.ok(!serialized.includes("serial_secret_12345"), "diagnostic leaked hardware serial");
 });
 
 test("shouldFallbackToWeb classifies fallback-eligible vs non-fallback errors", () => {

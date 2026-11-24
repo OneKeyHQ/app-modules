@@ -2,10 +2,12 @@ import {
   CameraDevice,
   CaptureOptions,
   CaptureReadyInfo,
+  CaptureStats,
   DecodeImageOptions,
   PreferredResolution,
   QrCapture,
   QrPreviewFrame,
+  QrScannerDiagnosticEvent,
   QrScannerError,
   createCapture,
   decodeImage,
@@ -53,6 +55,15 @@ const opts: CaptureOptions = {
     void handle;
     frame.release();
   },
+  onDiagnostic: (event: QrScannerDiagnosticEvent) => {
+    void event.level;
+    void event.event;
+    if (event.event === "ready") {
+      void event.cameraCount;
+      void event.cameraIndex;
+      void event.isDefaultCamera;
+    }
+  },
 };
 
 const capture: QrCapture = createCapture(opts);
@@ -61,9 +72,11 @@ capture.setDevice("\\\\?\\usb#vid_0001");
 capture.setDevice(null);
 capture.setDevice();
 const lent: number = capture.lentFrames();
+const stats: CaptureStats = capture.stats();
 capture.stop();
 capture.dispose();
 
 void decoded;
 void cameras;
 void lent;
+void stats;
