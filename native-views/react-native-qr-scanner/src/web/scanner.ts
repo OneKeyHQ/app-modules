@@ -83,9 +83,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let active = false;
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
   let mediaAcquisitions = 0;
+  let staleMediaSettlements = 0;
   const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
   let stream: MediaStream | undefined;
-  let interruptedCamera: { stream: MediaStream; deviceId?: string } | undefined;
+  type RecoveryTarget = { stream: MediaStream; deviceId?: string; blockedAt?: number };
+  let interruptedCamera: RecoveryTarget | undefined;
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let analysing = false;
@@ -242,8 +244,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   async function acquireCamera(
     requestedId: string | undefined,
     allowDefault: boolean,
-    recovering = false
+    recovery?: RecoveryTarget
   ) {
+    const settlementsAtRecoveryStart = recovery && mediaAcquisitions > 0
+      ? staleMediaSettlements
+      : undefined;
     invalidateAcquisition();
     const attempt: NonNullable<typeof acquisition> = { deviceId: requestedId };
     acquisition = attempt;
@@ -280,6 +285,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           },
         });
       };
+      if (recovery && stream === recovery.stream) {
+        generation += 1;
+        cancelSchedule();
+        releaseCamera();
+      }
       const previous = stream;
       try {
         candidate = await open(requestedId);
@@ -290,7 +300,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         }
         const code = cameraErrorCode(error);
         if (previous && stream === previous && code === 'camera-busy') {
-          if (!recovering && !hasLiveCamera()) {
+          if (!recovery && !hasLiveCamera()) {
             interruptedCamera = { stream: previous, deviceId: streamDeviceId };
           }
           generation += 1;
@@ -363,21 +373,28 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       }
       acquisition = undefined;
       releaseCandidate();
-      fail(error instanceof QrScannerError ? error.code : cameraErrorCode(error),
-        error instanceof Error ? error.message : String(error));
+      const code = error instanceof QrScannerError ? error.code : cameraErrorCode(error);
+      if (recovery && code === 'camera-busy' && settlementsAtRecoveryStart !== undefined) {
+        interruptedCamera = { ...recovery, blockedAt: settlementsAtRecoveryStart };
+        return;
+      }
+      fail(code, error instanceof Error ? error.message : String(error));
     } finally {
       releaseCandidate();
-      // Wait until the current switch settles and stale candidates release
-      // the camera before consuming the recovery target.
-      if (reconcileAfterRelease && active && stream && !hasLiveCamera()) {
-        interruptedCamera = { stream, deviceId: streamDeviceId };
+      if (reconcileAfterRelease) {
+        staleMediaSettlements += 1;
+        if (active && stream && !hasLiveCamera() && interruptedCamera?.stream !== stream) {
+          interruptedCamera = { stream, deviceId: streamDeviceId };
+        }
       }
       if (requestedMedia) mediaAcquisitions -= 1;
-      if (active && !acquisition && mediaAcquisitions === 0 && interruptedCamera) {
-        const interrupted = interruptedCamera;
+      const interrupted = interruptedCamera;
+      // An unanswered permission prompt may never settle. Only park a
+      // restore after a busy result, and let each stale settlement wake it.
+      if (active && !acquisition && interrupted && interrupted.blockedAt !== staleMediaSettlements) {
         interruptedCamera = undefined;
         if ((!stream || stream === interrupted.stream) && !hasLiveCamera()) {
-          await acquireCamera(interrupted.deviceId, true, true);
+          await acquireCamera(interrupted.deviceId, true, interrupted);
         }
       }
     }

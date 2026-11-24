@@ -348,11 +348,13 @@ createWebQrScanner({
   an ended stream for this retry. While stopped, selection is saved for
   `start()`. A newer selection supersedes pending acquisition, including a
   return to the current camera. If a stale request ends the working track,
-  the scanner keeps recovery pending until the newest switch settles and
-  superseded camera acquisitions release any streams they obtained. If the
-  newest switch did not replace the ended track, the scanner attempts to
-  restore the last committed camera once after those releases. Stop and
-  disposal clear pending recovery. Each camera-change subscription
+  the scanner releases the stale stream. If the newest switch settles
+  without replacing the ended track, the scanner attempts to restore the
+  last committed camera. If restoration reports `camera-busy` while
+  superseded camera acquisitions could still be holding the hardware, the
+  scanner keeps the recovery target. Each stale acquisition that settles
+  and releases its stream can trigger a retry. Stop and disposal clear
+  pending recovery. Each camera-change subscription
   has independent cleanup. On startup, a missing remembered ID falls back
   to the default. Cancellation prevents later permission requests and
   disposes streams that arrive late.
