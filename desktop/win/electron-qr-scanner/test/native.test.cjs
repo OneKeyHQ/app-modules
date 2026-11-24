@@ -70,16 +70,18 @@ test("listCameras returns a well-formed device list", { skip: !nativeWin }, asyn
   }
 });
 
-test("assembles an animated UR from video frames", { skip: !nativeWin }, async () => {
+test("assembles an animated UR from video frames and reports ready info", { skip: !nativeWin }, async () => {
   const decoder = new URDecoder();
   const seen = new Set();
   let readyGeneration;
+  let readyInfo;
   const started = Date.now();
   const result = await new Promise((resolve, reject) => {
     const capture = api.createCapture({
       source: { kind: "file", path: join(videoFixturesDir, "animated-ur.mp4"), loop: true },
-      onReady: (generation) => {
+      onReady: (generation, info) => {
         readyGeneration = generation;
+        readyInfo = info;
       },
       onText: (text, generation) => {
         assert.equal(generation, readyGeneration);
@@ -101,12 +103,41 @@ test("assembles an animated UR from video frames", { skip: !nativeWin }, async (
       reject(new Error(`timed out after ${seen.size} distinct parts`));
     }, 30_000).unref();
   });
+  assert.ok(readyInfo && readyInfo.width > 0 && readyInfo.height > 0);
+  assert.equal(typeof readyInfo.fps, "number");
+  assert.equal(typeof readyInfo.subtype, "string");
+  assert.equal(typeof readyInfo.focusSupported, "boolean");
+  assert.equal(typeof readyInfo.autoFocusSupported, "boolean");
+  assert.equal(typeof readyInfo.exposureSupported, "boolean");
   assert.equal(result.type, animated.type);
   assert.equal(result.cbor.length, animated.bytes);
   assert.equal(fnv1a(result.cbor), animated.fnv1a);
   const elapsed = (Date.now() - started) / 1000;
   assert.ok(elapsed < (animated.frames / animated.fps) * 2, `took ${elapsed}s`);
   assert.ok(seen.size >= animated.fragments, `only ${seen.size} distinct parts`);
+});
+
+test("shouldFallbackToWeb classifies fallback-eligible vs non-fallback errors", () => {
+  const withCode = (code) => Object.assign(new Error(code), { code });
+  assert.equal(api.shouldFallbackToWeb(withCode("preview-unavailable")), true);
+  assert.equal(api.shouldFallbackToWeb(withCode("decoder-unavailable")), true);
+  assert.equal(api.shouldFallbackToWeb(new Error("unexpected GPU error")), true);
+  assert.equal(api.shouldFallbackToWeb(withCode("permission-denied")), false);
+  assert.equal(api.shouldFallbackToWeb(withCode("no-camera")), false);
+  assert.equal(api.shouldFallbackToWeb(withCode("camera-busy")), false);
+  assert.equal(api.shouldFallbackToWeb(withCode("invalid-image")), false);
+  assert.equal(api.shouldFallbackToWeb(withCode("resource-limit")), false);
+  assert.equal(api.shouldFallbackToWeb(null), false);
+});
+
+test("rejects unsupported preferredResolution", { skip: !nativeWin }, () => {
+  assert.throws(
+    () =>
+      api.createCapture({
+        source: { kind: "camera", preferredResolution: "4k" },
+      }),
+    { code: "decoder-unavailable" },
+  );
 });
 
 test("stop and start begin a new generation; dispose silences events", { skip: !nativeWin }, async () => {

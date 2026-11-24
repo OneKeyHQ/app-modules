@@ -16,6 +16,8 @@ const arg = (name, fallback) => {
 const outPath = arg("--out", join(require("node:os").tmpdir(), "qr-camera-live.json"));
 const seconds = Number(arg("--seconds", "120"));
 const initialDeviceId = arg("--device", undefined);
+const preferredResolution = arg("--res", "720p");
+const lockFocusOnDetect = process.argv.includes("--lock-focus");
 
 function fnv1a(bytes) {
   let hash = 0x811c9dc5;
@@ -45,7 +47,11 @@ app.whenReady().then(async () => {
   const report = {
     electron: process.versions.electron,
     cameras,
+    preferredResolution,
+    lockFocusOnDetect,
     readyMs: null,
+    readyInfo: null,
+    fallbackRecommended: false,
     errors: [],
     drawn: 0,
     maxLent: 0,
@@ -59,10 +65,14 @@ app.whenReady().then(async () => {
   let finished = false;
 
   const status = () => {
+    const infoLine = report.readyInfo
+      ? `${report.readyInfo.width}x${report.readyInfo.height}@${Math.round(report.readyInfo.fps)}fps ${report.readyInfo.subtype} · AF:${report.readyInfo.autoFocusSupported ? "yes" : report.readyInfo.focusSupported ? "manual" : "fixed"}`
+      : "";
     const lines = [
       report.readyMs === null
         ? "waiting for camera…"
         : `camera ready in ${report.readyMs} ms · frames drawn ${report.drawn}`,
+      infoLine,
       urParts.size
         ? `UR parts ${urParts.size} · ${Math.round(decoder.estimatedPercentComplete() * 100)}%`
         : "",
@@ -91,13 +101,22 @@ app.whenReady().then(async () => {
   };
 
   const capture = api.createCapture({
-    source: { kind: "camera", deviceId: activeDeviceId },
-    onReady: () => {
+    source: {
+      kind: "camera",
+      deviceId: activeDeviceId,
+      preferredResolution,
+      lockFocusOnDetect,
+    },
+    onReady: (_generation, info) => {
       report.readyMs ??= Date.now() - started;
+      report.readyInfo = info ?? null;
       status();
     },
     onError: (error) => {
       report.errors.push({ code: error.code, message: error.message });
+      if (api.shouldFallbackToWeb(error)) {
+        report.fallbackRecommended = true;
+      }
       status();
     },
     onText: (text) => {
@@ -129,17 +148,33 @@ app.whenReady().then(async () => {
         return;
       }
       inFlight = true;
-      const imported = sharedTexture.importSharedTexture({
-        textureInfo: {
-          pixelFormat: "bgra",
-          codedSize: { width: frame.width, height: frame.height },
-          handle: { ntHandle: frame.ntHandle },
-        },
-        allReferencesReleased: () => frame.release(),
-      });
+      let imported;
+      try {
+        imported = sharedTexture.importSharedTexture({
+          textureInfo: {
+            pixelFormat: "bgra",
+            codedSize: { width: frame.width, height: frame.height },
+            handle: { ntHandle: frame.ntHandle },
+          },
+          allReferencesReleased: () => frame.release(),
+        });
+      } catch (error) {
+        inFlight = false;
+        frame.release();
+        report.errors.push({ code: "preview-unavailable", message: error.message });
+        report.fallbackRecommended = true;
+        capture.stop();
+        status();
+        return;
+      }
       sharedTexture
         .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
-        .catch(() => {})
+        .catch((error) => {
+          report.errors.push({ code: "preview-unavailable", message: error.message });
+          report.fallbackRecommended = true;
+          capture.stop();
+          status();
+        })
         .finally(() => {
           imported.release();
           inFlight = false;
