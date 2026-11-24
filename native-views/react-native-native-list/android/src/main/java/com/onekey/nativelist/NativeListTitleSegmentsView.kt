@@ -85,7 +85,7 @@ internal class NativeListTitleSegmentsView(context: android.content.Context) :
         runs.map { it.maxWidthRatio },
         if (available == Int.MAX_VALUE) Float.MAX_VALUE else available.toFloat(),
       )
-    val overflowing = nativeListTitleSegmentOverflowIndex(natural, widths)
+    val overflowing = nativeListTitleSegmentOverflowIndex(natural, runs.map { it.shrink }, widths)
     val built = SpannableStringBuilder()
     runs.forEachIndexed { index, run ->
       val width = widths[index]

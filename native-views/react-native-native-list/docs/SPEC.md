@@ -290,8 +290,9 @@ titleSegments?: readonly {
   `style.title` and the configured fonts. `tone` picks the primary or secondary
   text color and defaults to the title color; `fontWeight` picks the weight and
   defaults to the title weight. `style.title` only supplies those defaults: its
-  color and weight never replace a run's own `tone` or `fontWeight`, and its
-  `lineHeight` is the line height of the runs on every platform.
+  color and weight never replace a run's own `tone` or `fontWeight`, its
+  `lineHeight` is the line height of the runs on every platform, and its
+  `offsetY` moves the runs as it moves a plain title.
 - The runs share one line. `titleLines` and `style.title.lines` do not apply
   to them, for drawing or for auto-height measurement; a row that draws `title`
   instead (it has `titleMatch`, or is a wallet sidebar row) keeps them for
@@ -311,7 +312,8 @@ titleSegments?: readonly {
      its end. Native renderers end the last visible run with an ellipsis, also
      when the cut falls exactly between two runs and that run fits in full; Web
      clips it. This divergence is accepted: callers avoid the case with
-     `maxWidthRatio`.
+     `maxWidthRatio`. A shrinking run that gave up its whole width (rule 3) is
+     not such a cut: the runs that stay whole are drawn whole.
 - Development validation rejects an empty, sparse or oversized list, blank or
   oversized text (the 4096-code-unit text bound), unknown keys, tones or
   weights, a ratio outside `(0, 1]`, more than one shrinking run, `titleMatch`

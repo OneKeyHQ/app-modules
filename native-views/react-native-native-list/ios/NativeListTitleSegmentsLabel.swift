@@ -61,7 +61,8 @@ final class NativeListTitleSegmentsLabel: UIView {
     let widths = nativeListTitleSegmentWidths(
       natural: naturalWidths, shrink: runs.map(\.shrink),
       maxWidthRatio: runs.map(\.maxWidthRatio), available: bounds.width)
-    let overflowing = nativeListTitleSegmentOverflowIndex(natural: naturalWidths, widths: widths)
+    let overflowing = nativeListTitleSegmentOverflowIndex(
+      natural: naturalWidths, shrink: runs.map(\.shrink), widths: widths)
     let isRightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
     var x: CGFloat = isRightToLeft ? bounds.width : 0
     for (index, (run, width)) in zip(runs, widths).enumerated() where width > 0 {

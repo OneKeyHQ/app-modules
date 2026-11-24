@@ -44,14 +44,19 @@ func nativeListShowsTitleRuns(presentation: String, runCount: Int, matchCount: I
   runCount > 0 && matchCount == 0 && nativeListAllowsTitleDecorations(presentation: presentation)
 }
 
-/// The run that has to end with an ellipsis because every run after it lost
-/// its whole width: it is drawn in full, so nothing else would show that the
-/// title goes on. Nil when the line is not cut, or is cut inside a run, which
-/// then truncates by itself.
-func nativeListTitleSegmentOverflowIndex(natural: [CGFloat], widths: [CGFloat]) -> Int? {
+/// The run that has to end with an ellipsis because the line was cut exactly
+/// after it: a run that does not shrink lost its whole width, and this one is
+/// drawn in full, so nothing else would show that the title goes on. Nil when
+/// the line is not cut, when it is cut inside a run, which then truncates by
+/// itself, and when only the shrinking run gave up its width, which it may.
+func nativeListTitleSegmentOverflowIndex(
+  natural: [CGFloat], shrink: [Bool], widths: [CGFloat]
+) -> Int? {
   guard let last = widths.lastIndex(where: { $0 > 0 }), last < natural.count else { return nil }
-  let hidesLaterText = natural.indices.contains { $0 > last && natural[$0] > 0 }
-  return hidesLaterText && widths[last] >= natural[last] ? last : nil
+  let cutsAFixedRun = natural.indices.contains {
+    $0 > last && natural[$0] > 0 && !($0 < shrink.count && shrink[$0])
+  }
+  return cutsAFixedRun && widths[last] >= natural[last] ? last : nil
 }
 
 /// Width the leading title glyph takes from the title text: its 16 points and

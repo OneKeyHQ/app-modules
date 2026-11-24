@@ -86,16 +86,39 @@ class NativeListTitleSegmentLayoutTest {
     val natural = listOf(100f, 100f)
     val widths = nativeListTitleSegmentWidths(natural, listOf(false, false), listOf(null, null), 100f)
     assertWidths(listOf(100f, 0f), widths)
-    assertEquals(0, nativeListTitleSegmentOverflowIndex(natural, widths))
+    assertEquals(0, nativeListTitleSegmentOverflowIndex(natural, listOf(false, false), widths))
+  }
+
+  // The shrinking run may give up its whole width: the runs that stay whole
+  // fit, so none of them is cut for an ellipsis.
+  @Test
+  fun noEllipsisIsAddedWhenOnlyTheShrinkingRunDisappears() {
+    val natural = listOf(100f, 60f)
+    val shrink = listOf(false, true)
+    val widths = nativeListTitleSegmentWidths(natural, shrink, listOf(null, null), 100f)
+    assertWidths(listOf(100f, 0f), widths)
+    assertNull(nativeListTitleSegmentOverflowIndex(natural, shrink, widths))
+    // A fixed run cut behind the shrinking one still counts.
+    assertEquals(
+      0,
+      nativeListTitleSegmentOverflowIndex(
+        listOf(100f, 50f, 100f),
+        listOf(false, true, false),
+        listOf(100f, 0f, 0f),
+      ),
+    )
   }
 
   @Test
   fun noEllipsisIsAddedWhenTheLineFitsOrIsCutInsideARun() {
-    assertNull(nativeListTitleSegmentOverflowIndex(listOf(80f, 20f, 90f), listOf(80f, 20f, 90f)))
+    val fixed = listOf(false, false, false)
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(80f, 20f, 90f), fixed, listOf(80f, 20f, 90f)))
     // Cut inside a run: that run truncates by itself.
-    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f), listOf(100f, 40f)))
-    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f, 100f), listOf(100f, 40f, 0f)))
-    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f), listOf(0f, 0f)))
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f), fixed, listOf(100f, 40f)))
+    assertNull(
+      nativeListTitleSegmentOverflowIndex(listOf(100f, 100f, 100f), fixed, listOf(100f, 40f, 0f))
+    )
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f), fixed, listOf(0f, 0f)))
   }
 
   @Test

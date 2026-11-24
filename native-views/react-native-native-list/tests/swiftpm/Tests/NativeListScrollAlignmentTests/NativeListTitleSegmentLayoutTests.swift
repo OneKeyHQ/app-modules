@@ -65,15 +65,36 @@ final class NativeListTitleSegmentLayoutTests: XCTestCase {
     let widths = nativeListTitleSegmentWidths(
       natural: natural, shrink: [false, false], maxWidthRatio: [nil, nil], available: 100)
     XCTAssertEqual(widths, [100, 0])
-    XCTAssertEqual(nativeListTitleSegmentOverflowIndex(natural: natural, widths: widths), 0)
+    XCTAssertEqual(
+      nativeListTitleSegmentOverflowIndex(natural: natural, shrink: [false, false], widths: widths), 0)
+  }
+
+  // The shrinking run may give up its whole width: the runs that stay whole
+  // fit, so none of them is cut for an ellipsis.
+  func testNoEllipsisIsAddedWhenOnlyTheShrinkingRunDisappears() {
+    let natural: [CGFloat] = [100, 60]
+    let shrink = [false, true]
+    let widths = nativeListTitleSegmentWidths(
+      natural: natural, shrink: shrink, maxWidthRatio: [nil, nil], available: 100)
+    XCTAssertEqual(widths, [100, 0])
+    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: natural, shrink: shrink, widths: widths))
+    // A fixed run cut behind the shrinking one still counts.
+    XCTAssertEqual(
+      nativeListTitleSegmentOverflowIndex(
+        natural: [100, 50, 100], shrink: [false, true, false], widths: [100, 0, 0]), 0)
   }
 
   func testNoEllipsisIsAddedWhenTheLineFitsOrIsCutInsideARun() {
-    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [80, 20, 90], widths: [80, 20, 90]))
+    let fixed = [false, false, false]
+    XCTAssertNil(
+      nativeListTitleSegmentOverflowIndex(natural: [80, 20, 90], shrink: fixed, widths: [80, 20, 90]))
     // Cut inside a run: that run truncates by itself.
-    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [100, 100], widths: [100, 40]))
-    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [100, 100, 100], widths: [100, 40, 0]))
-    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [100, 100], widths: [0, 0]))
+    XCTAssertNil(
+      nativeListTitleSegmentOverflowIndex(natural: [100, 100], shrink: fixed, widths: [100, 40]))
+    XCTAssertNil(
+      nativeListTitleSegmentOverflowIndex(natural: [100, 100, 100], shrink: fixed, widths: [100, 40, 0]))
+    XCTAssertNil(
+      nativeListTitleSegmentOverflowIndex(natural: [100, 100], shrink: fixed, widths: [0, 0]))
   }
 
   func testTheLeadingIconTakesItsWidthOnlyWhereItShows() {
