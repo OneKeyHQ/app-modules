@@ -173,4 +173,38 @@ final class NativeListIdentityTitleIconLayoutTests: XCTestCase {
     XCTAssertEqual(try height(["titleSegments": runs]), plain, accuracy: 0.5)
     XCTAssertGreaterThan(plain, try height(["titleLines": 1]))
   }
+
+  private func autoHeight(_ data: [String: Any], width: CGFloat) throws -> CGFloat {
+    var row: [String: Any] = [
+      "key": "auto", "type": "identity", "contentHeight": "auto",
+      "title": "A very long recipient name that needs more than one line to show in full",
+      "titleLines": 3, "subtitle": "0x1234...abcd",
+    ]
+    data.forEach { row[$0.key] = $0.value }
+    return try XCTUnwrap(NativeListIdentityCell.measure(
+      try NativeListItem(data: row), width: width, theme: nil, layout: "linear",
+      fonts: NativeListFontFamilies()))
+  }
+
+  // The leading glyph and its gap take 22 points from the title, so the row
+  // measures like a plain row that much narrower, at every wrapping boundary.
+  func testAutoHeightCountsTheLeadingIconInTheTitleWidth() throws {
+    let icon: [String: Any] = ["name": "BookOpenOutline"]
+    for width in stride(from: CGFloat(200), through: 320, by: 6) {
+      XCTAssertEqual(
+        try autoHeight(["titleLeadingIcon": icon], width: width),
+        try autoHeight([:], width: width - 22), accuracy: 0.5, "width \(width)")
+    }
+  }
+
+  // Runs are one line, so `style.title.lines` must not reserve more for them.
+  func testRunsAreMeasuredAsOneLineWhateverTheTitleStyleAsksFor() throws {
+    let runs: [[String: Any]] = [["text": "A very long", "shrink": true], ["text": " recipient"]]
+    let twoLines: [String: Any] = ["title": ["lines": 2]]
+
+    let oneLine = try autoHeight(["titleSegments": runs, "titleLines": 1], width: 240)
+    XCTAssertEqual(
+      try autoHeight(["titleSegments": runs, "style": twoLines], width: 240), oneLine, accuracy: 0.5)
+    XCTAssertGreaterThan(try autoHeight(["style": twoLines], width: 240), oneLine)
+  }
 }

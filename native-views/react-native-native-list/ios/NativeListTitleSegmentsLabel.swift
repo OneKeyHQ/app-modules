@@ -61,13 +61,16 @@ final class NativeListTitleSegmentsLabel: UIView {
     let widths = nativeListTitleSegmentWidths(
       natural: naturalWidths, shrink: runs.map(\.shrink),
       maxWidthRatio: runs.map(\.maxWidthRatio), available: bounds.width)
+    let overflowing = nativeListTitleSegmentOverflowIndex(natural: naturalWidths, widths: widths)
     let isRightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
     var x: CGFloat = isRightToLeft ? bounds.width : 0
-    for (run, width) in zip(runs, widths) where width > 0 {
+    for (index, (run, width)) in zip(runs, widths).enumerated() where width > 0 {
       let paragraph = NSMutableParagraphStyle()
       paragraph.lineBreakMode = .byTruncatingTail
       let text = NSAttributedString(
-        string: run.text,
+        // Text after this run is hidden: one character more than fits makes
+        // the tail truncation show it.
+        string: index == overflowing ? run.text + "\u{2026}" : run.text,
         attributes: [.font: run.font, .foregroundColor: run.color, .paragraphStyle: paragraph])
       let height = ceil(run.font.lineHeight)
       let originX = isRightToLeft ? x - width : x

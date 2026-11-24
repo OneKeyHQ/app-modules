@@ -57,4 +57,35 @@ final class NativeListTitleSegmentLayoutTests: XCTestCase {
     XCTAssertTrue(nativeListAllowsTitleDecorations(presentation: ""))
     XCTAssertFalse(nativeListAllowsTitleDecorations(presentation: "walletSidebar"))
   }
+
+  // Two runs that do not shrink and one line that holds only the first: the
+  // first is drawn in full, so it has to carry the ellipsis.
+  func testAWholeRunCutFromTheEndPutsTheEllipsisOnTheLastRunShown() {
+    let natural: [CGFloat] = [100, 100]
+    let widths = nativeListTitleSegmentWidths(
+      natural: natural, shrink: [false, false], maxWidthRatio: [nil, nil], available: 100)
+    XCTAssertEqual(widths, [100, 0])
+    XCTAssertEqual(nativeListTitleSegmentOverflowIndex(natural: natural, widths: widths), 0)
+  }
+
+  func testNoEllipsisIsAddedWhenTheLineFitsOrIsCutInsideARun() {
+    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [80, 20, 90], widths: [80, 20, 90]))
+    // Cut inside a run: that run truncates by itself.
+    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [100, 100], widths: [100, 40]))
+    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [100, 100, 100], widths: [100, 40, 0]))
+    XCTAssertNil(nativeListTitleSegmentOverflowIndex(natural: [100, 100], widths: [0, 0]))
+  }
+
+  func testTheLeadingIconTakesItsWidthOnlyWhereItShows() {
+    XCTAssertEqual(nativeListTitleLeadingIconWidth(presentation: "", hasIcon: true), 22)
+    XCTAssertEqual(nativeListTitleLeadingIconWidth(presentation: "accountSelector", hasIcon: true), 22)
+    XCTAssertEqual(nativeListTitleLeadingIconWidth(presentation: "", hasIcon: false), 0)
+    XCTAssertEqual(nativeListTitleLeadingIconWidth(presentation: "walletSidebar", hasIcon: true), 0)
+  }
+
+  func testARunFoldsLineBreaksIntoSpaces() {
+    XCTAssertEqual(nativeListTitleRunText("Main\nWallet"), "Main Wallet")
+    XCTAssertEqual(nativeListTitleRunText("a\r\nb\rc"), "a b c")
+    XCTAssertEqual(nativeListTitleRunText("Account #1"), "Account #1")
+  }
 }

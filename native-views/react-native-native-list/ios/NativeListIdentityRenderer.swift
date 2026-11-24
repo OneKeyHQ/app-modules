@@ -91,10 +91,14 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let textWidth = max(1,
         width - horizontalPadding - rightInset - imageWidth - leadingGap
           - trailingSize.width - contentGap)
+      // Runs are one line whatever `style.title.lines` asks for.
+      let showsRuns = showsTitleRuns(item)
+      var titleStyle = style.dictionary("title")
+      if showsRuns { titleStyle?.removeValue(forKey: "lines") }
       let title = NativeListResolvedText(
-        item.data.string("title"), style: style.dictionary("title"), size: 16,
+        item.data.string("title"), style: titleStyle, size: 16,
         weight: .medium, color: .black, lineHeight: 24,
-        lines: showsTitleRuns(item) ? 1 : item.data.int("titleLines", default: 1), fonts: fonts)
+        lines: showsRuns ? 1 : item.data.int("titleLines", default: 1), fonts: fonts)
       let subtitle = NativeListResolvedText(
         item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 14,
         color: .black, lineHeight: 20,
@@ -107,7 +111,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let titleImageSize = CGFloat(item.data.dictionary("titleImage")?.dictionary("image")?.double("width") ?? 0)
       let titleImageWidth = titleImageSize > 0
         ? titleImageSize + 4 + (item.data.dictionary("titleIcon") == nil ? 0 : 24) : 0
-      let textHeight = max(titleImageSize, title.measure(width: max(1, textWidth - titleImageWidth)))
+      // The leading glyph and its gap come out of the title's width as well.
+      let titleLeadingIconWidth = nativeListTitleLeadingIconWidth(
+        presentation: item.data.string("presentation"),
+        hasIcon: item.data.dictionary("titleLeadingIcon") != nil)
+      let textHeight = max(
+        titleImageSize,
+        title.measure(width: max(1, textWidth - titleImageWidth - titleLeadingIconWidth)))
         + subtitle.measure(width: textWidth)
         + tertiary.measure(width: textWidth)
         + (item.data.string("subtitle").isEmpty ? 0 : CGFloat(style.double("lineGap", default: 0)))
@@ -567,7 +577,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let weight = segment.string("fontWeight")
       let tone = segment.string("tone")
       return NativeListTitleSegmentsLabel.Run(
-        text: segment.string("text"),
+        text: nativeListTitleRunText(segment.string("text")),
         font: weight.isEmpty
           ? baseFont
           : nativeListFont(

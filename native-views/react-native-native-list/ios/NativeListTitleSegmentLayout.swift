@@ -43,3 +43,25 @@ func nativeListAllowsTitleDecorations(presentation: String) -> Bool {
 func nativeListShowsTitleRuns(presentation: String, runCount: Int, matchCount: Int) -> Bool {
   runCount > 0 && matchCount == 0 && nativeListAllowsTitleDecorations(presentation: presentation)
 }
+
+/// The run that has to end with an ellipsis because every run after it lost
+/// its whole width: it is drawn in full, so nothing else would show that the
+/// title goes on. Nil when the line is not cut, or is cut inside a run, which
+/// then truncates by itself.
+func nativeListTitleSegmentOverflowIndex(natural: [CGFloat], widths: [CGFloat]) -> Int? {
+  guard let last = widths.lastIndex(where: { $0 > 0 }), last < natural.count else { return nil }
+  let hidesLaterText = natural.indices.contains { $0 > last && natural[$0] > 0 }
+  return hidesLaterText && widths[last] >= natural[last] ? last : nil
+}
+
+/// Width the leading title glyph takes from the title text: its 16 points and
+/// the 6-point gap. Zero where the row keeps a plain title (docs/SPEC.md).
+func nativeListTitleLeadingIconWidth(presentation: String, hasIcon: Bool) -> CGFloat {
+  hasIcon && nativeListAllowsTitleDecorations(presentation: presentation) ? 22 : 0
+}
+
+/// A run is one line: a hard break folds into one space, as in a one-line
+/// title.
+func nativeListTitleRunText(_ text: String) -> String {
+  text.replacingOccurrences(of: "\r\n|[\r\n]", with: " ", options: .regularExpression)
+}
