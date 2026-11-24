@@ -33,6 +33,18 @@ final class BundleDiffZipExtractorTests: XCTestCase {
         }
     }
 
+    func testConflictingEntriesAreInvalidArchivesAndRemoveStaging() throws {
+        let payload = Data([1])
+        for names in [["chunk", "chunk"], ["chunk/part", "chunk"], ["chunk", "chunk/part"]] {
+            try withArchive(entries: names.map { ($0, payload) }) { archive, staging in
+                XCTAssertEqual(BundleDiffZipExtractor.extract(
+                    archivePath: archive.path, destination: staging.path, maxBytes: 3, maxEntries: 3
+                ), .invalidArchive)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+            }
+        }
+    }
+
     func testRejectsDeclaredPayloadAboveBudgetAndRemovesStaging() throws {
         let payload = Data("payload".utf8)
         try withArchive(entries: [("one", payload), ("two", payload)]) { archive, staging in

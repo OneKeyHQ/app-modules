@@ -1,6 +1,7 @@
 #import "BundleDiffZipExtractor.h"
 #import "mz_compat.h"
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -19,11 +20,14 @@ BundleDiffZipExtractionResult extractFile(unzFile archive, NSString *path,
 
     auto result = BundleDiffZipExtractionResultSuccess;
     int descriptor = open(path.fileSystemRepresentation, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    const bool conflictsWithStagedEntry = descriptor < 0 && errno == EEXIST;
     FILE *output = descriptor < 0 ? nullptr : fdopen(descriptor, "wb");
     uint64_t written = 0;
     if (!output) {
         if (descriptor >= 0) close(descriptor);
-        result = BundleDiffZipExtractionResultStorageError;
+        result = conflictsWithStagedEntry
+            ? BundleDiffZipExtractionResultInvalidArchive
+            : BundleDiffZipExtractionResultStorageError;
     } else {
         uint8_t buffer[64 * 1024];
         int count;
@@ -120,8 +124,13 @@ BundleDiffZipExtractionResult extractEntries(unzFile archive, NSString *destinat
                     }
                     stagedEntries += 1;
                     if (createDirectory) {
+                        NSError *error = nil;
                         if (![fileManager createDirectoryAtPath:path withIntermediateDirectories:NO
-                                                    attributes:nil error:nil]) {
+                                                    attributes:nil error:&error]) {
+                            if ([error.domain isEqualToString:NSCocoaErrorDomain] &&
+                                error.code == NSFileWriteFileExistsError) {
+                                return BundleDiffZipExtractionResultInvalidArchive;
+                            }
                             return BundleDiffZipExtractionResultStorageError;
                         }
                         [directories addObject:path];
