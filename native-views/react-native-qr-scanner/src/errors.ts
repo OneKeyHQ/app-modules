@@ -42,9 +42,11 @@ export function toQrScannerError(error: unknown): QrScannerError {
   const message = (error instanceof Error ? error.message : String(error))
     .split('\n')[0]!
     .trim();
-  const match = /(?:^|\s)([a-z-]+):\s*(.*)$/.exec(message);
-  if (match && isQrScannerErrorCode(match[1]!)) {
-    return new QrScannerError(match[1], match[2] || message);
+  const match = /(?:^|\s)([a-z-]+):/.exec(message);
+  const code = match?.[1];
+  if (match && code && isQrScannerErrorCode(code)) {
+    const reason = message.slice(match.index + match[0].length).trimStart();
+    return new QrScannerError(code, reason || message);
   }
   return new QrScannerError('decoder-unavailable', message);
 }
