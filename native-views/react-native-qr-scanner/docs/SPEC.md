@@ -236,7 +236,11 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 - `onError` receives camera errors as `QrScannerError` and terminal UR errors
   (`too-large`, `invalid-payload`, `resource-limit`) as `ScanError`.
 - `onReady` (iOS) fires when the capture session reports running, which can be
-  slightly before the first frame is on screen.
+  slightly before the first frame is on screen. The iOS preview follows
+  its own window scene's interface orientation on first layout, after a
+  camera input change, and when the window lays out after rotating.
+  Rotating the preview keeps the current capture generation, decoder,
+  and scan session.
 - Camera error codes: `no-camera` (checked before any permission prompt),
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
 - iOS requests camera access when it is undetermined. Apps must declare
@@ -486,6 +490,8 @@ Still required:
   none), including an animated UR played on a screen; completion time and
   parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
   pod.
+- iPad: verify the live preview when first opened in landscape and when
+  rotating between portrait and landscape with the scanner open.
 - iOS and Android devices: tap to focus, pinch zoom, and (iPhone 13 Pro and
   later) the automatic switch to the ultra-wide lens for close codes.
 - Android: live preview content and live detection on a device (the

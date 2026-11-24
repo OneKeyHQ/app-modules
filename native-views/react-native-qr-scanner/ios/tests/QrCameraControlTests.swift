@@ -1,9 +1,19 @@
 import AVFoundation
+import UIKit
 import XCTest
 
 @testable import QrScanner
 
 final class QrCameraControlTests: XCTestCase {
+  @MainActor
+  func testPreviewRotationMatchesInterfaceOrientation() {
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .portrait), 90)
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .portraitUpsideDown), 270)
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .landscapeLeft), 180)
+    XCTAssertEqual(QrPreviewView.rotationAngle(for: .landscapeRight), 0)
+    XCTAssertNil(QrPreviewView.rotationAngle(for: .unknown))
+  }
+
   func testVirtualDevicesArePreferredOverTheWideLens() {
     XCTAssertEqual(
       QrCameraControl.preferredBackDeviceTypes,

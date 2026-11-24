@@ -27,6 +27,48 @@ final class QrPreviewView: UIView {
     addSubview(focusIndicator)
   }
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateCaptureOrientation()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    updateCaptureOrientation()
+  }
+
+  func updateCaptureOrientation() {
+    guard let scene = window?.windowScene, let connection = previewLayer.connection else { return }
+    let orientation: UIInterfaceOrientation
+    if #available(iOS 16.0, *) {
+      orientation = scene.effectiveGeometry.interfaceOrientation
+    } else {
+      orientation = scene.interfaceOrientation
+    }
+    if #available(iOS 17.0, *) {
+      guard let angle = Self.rotationAngle(for: orientation),
+        connection.videoRotationAngle != angle,
+        connection.isVideoRotationAngleSupported(angle)
+      else { return }
+      connection.videoRotationAngle = angle
+    } else if connection.isVideoOrientationSupported,
+      let captureOrientation = AVCaptureVideoOrientation(rawValue: orientation.rawValue),
+      connection.videoOrientation != captureOrientation
+    {
+      connection.videoOrientation = captureOrientation
+    }
+  }
+
+  static func rotationAngle(for orientation: UIInterfaceOrientation) -> CGFloat? {
+    switch orientation {
+    case .portrait: return 90
+    case .portraitUpsideDown: return 270
+    case .landscapeLeft: return 180
+    case .landscapeRight: return 0
+    default: return nil
+    }
+  }
+
   /// Shows the tap-to-focus box at `point` and fades it out.
   func showFocusIndicator(at point: CGPoint) {
     focusIndicator.layer.removeAllAnimations()
@@ -176,6 +218,7 @@ class HybridQrScanner: HybridQrScannerSpec {
       emitError(error.code, error.message, currentGeneration)
       return
     }
+    updatePreviewOrientation()
     if observers.isEmpty { addObservers() }
     session.startRunning()
     running = session.isRunning
@@ -273,9 +316,16 @@ class HybridQrScanner: HybridQrScannerSpec {
       emitError(error.code, error.message, currentGeneration())
       return
     }
+    updatePreviewOrientation()
     _ = nextGeneration()
     setCapturing(true)
     captureProps.ready?(Double(generation))
+  }
+
+  private func updatePreviewOrientation() {
+    DispatchQueue.main.async { [weak previewView] in
+      previewView?.updateCaptureOrientation()
+    }
   }
 
   private func observeSubjectArea(of device: AVCaptureDevice) {
