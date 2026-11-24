@@ -81,6 +81,20 @@ Actions use full commit pins. Native and packaging jobs have no npm publishing
 credential. The token is exposed only to the isolated publication step. The
 workflow does not access or modify consumer repositories.
 
+## QR scanner preview
+
+The cross-platform `@onekeyfe/electron-qr-scanner` preview contains macOS
+and Windows loaders and native binaries for x64 and arm64. Its npm version
+tracks the validated Electron major. The root entry selects the host
+platform and the `/mac` and `/win` entries expose the platform types.
+
+A manual QR scanner preview run builds and tests each architecture on a
+GitHub-hosted runner. The preview workflow verifies the native artifacts,
+attests the runtime inventory and archive, and publishes the immutable
+alpha version to `next`. The npm package carries the inventory and its
+portable proof. Consumers verify the exact npm version, source commit,
+branch and workflow, the inventory digest and all packaged runtime files.
+
 ## Consumer integration contract
 
 Consumer integration is manual and reviewed in the consumer repository.
