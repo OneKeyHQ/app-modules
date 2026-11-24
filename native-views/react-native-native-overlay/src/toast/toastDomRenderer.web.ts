@@ -1,7 +1,9 @@
 /* cspell:ignore dasharray dashoffset */
 import { getOverlayLayerRoot, syncOverlayInert } from '../web/overlayLayers';
 
-import { buildToastContent } from './toastDomContent.web';
+import { buildToastContent, layoutMessageAction } from './toastDomContent.web';
+import { TOAST_GEOMETRY, TOAST_MOTION } from './toastMotion';
+import { stopStatusTile } from './toastStatusTile.web';
 import { ensureOverlayToastStyles } from './toastStyles.web';
 
 import type {
@@ -14,17 +16,15 @@ import type {
   IOverlayToasterConfig,
 } from './types';
 
-// The chrome constants of the renderer this replaces (sonner 1.4.41).
 const VISIBLE_TOASTS = 3;
 const VIEWPORT_OFFSET = 32;
 const TOAST_WIDTH = 356;
-const GAP = 14;
+const GAP = TOAST_GEOMETRY.stackGap;
 const SWIPE_THRESHOLD = 20;
 const SWIPE_VELOCITY = 0.11; // px per ms
 const TOUCH_START_THRESHOLD = 10;
 const POINTER_START_THRESHOLD = 2;
-// Equal to the exit transition.
-const TIME_BEFORE_UNMOUNT = 200;
+const TIME_BEFORE_UNMOUNT = TOAST_MOTION.cardExitMs;
 const DEFAULT_POSITION: IOverlayToastPosition = 'bottom-right';
 const DEFAULT_OBSTRUCTION_GAP = 8;
 const DEFAULT_OBSTRUCTION_ROOM = 88;
@@ -38,6 +38,9 @@ interface IToastNode {
   generation: number;
   position: IOverlayToastPosition;
   li: HTMLLIElement;
+  shell: HTMLElement;
+  surface: HTMLElement;
+  body: HTMLElement;
   content: HTMLElement;
   mounted: boolean;
   removed: boolean;
@@ -85,45 +88,35 @@ function createCloseButton(label: string): HTMLButtonElement {
   button.setAttribute('data-close-button', '');
   const svg = document.createElementNS(SVG_NS, 'svg');
   const attributes: Record<string, string> = {
-    'width': '12',
-    'height': '12',
+    'width': '10',
+    'height': '10',
     'viewBox': '0 0 24 24',
     'fill': 'none',
     'stroke': 'currentColor',
-    'stroke-width': '1.5',
+    'stroke-width': '3',
     'stroke-linecap': 'round',
-    'stroke-linejoin': 'round',
+    'aria-hidden': 'true',
   };
   Object.entries(attributes).forEach(([name, value]) =>
     svg.setAttribute(name, value)
   );
-  [
-    ['18', '6', '6', '18'],
-    ['6', '6', '18', '18'],
-  ].forEach(([x1, y1, x2, y2]) => {
-    const line = document.createElementNS(SVG_NS, 'line');
-    line.setAttribute('x1', x1 ?? '');
-    line.setAttribute('y1', y1 ?? '');
-    line.setAttribute('x2', x2 ?? '');
-    line.setAttribute('y2', y2 ?? '');
-    svg.append(line);
-  });
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', 'M7 7l10 10M17 7L7 17');
+  svg.append(path);
   button.append(svg);
   return button;
 }
 
 /**
  * Draws message toasts with plain DOM in the `toast` overlay layer. No React:
- * the cards, their stacking, timers, swipe and transitions live here, and the
- * stylesheet reproduces the previous renderer's chrome rule for rule.
+ * the cards, their ring/shadow chrome, stacking, timers, swipe and spring
+ * transitions live here.
  */
 export function createToastDomRenderer(
   report: (event: IOverlayToastEvent) => void
 ): IOverlayToastRenderer {
   ensureOverlayToastStyles();
 
-  // Events raised while a sync is applying wait for it to finish: the store
-  // answers an event by syncing again.
   let syncing = false;
   const pendingEvents: IOverlayToastEvent[] = [];
   const onEvent = (event: IOverlayToastEvent) => {
@@ -150,6 +143,12 @@ export function createToastDomRenderer(
 
   const positionOf = (spec: IOverlayToastSpec): IOverlayToastPosition =>
     spec.position ?? config.position ?? DEFAULT_POSITION;
+
+  const motionPreference = globalThis.matchMedia?.(
+    '(prefers-reduced-motion: reduce)'
+  );
+  const reduceMotion = () =>
+    config.respectReducedMotion !== false && motionPreference?.matches;
 
   function ensureSection(): HTMLElement {
     const root = getOverlayLayerRoot('toast');
@@ -222,8 +221,6 @@ export function createToastDomRenderer(
   }
 
   function offsetOf(group: IToastGroup, node: IToastNode): number {
-    // The height index moves before the card list does, so the layout of the
-    // cards behind a leaving one starts closing at once.
     const heightIndex = Math.max(
       group.heights.findIndex((height) => height.id === node.id),
       0
@@ -234,21 +231,42 @@ export function createToastDomRenderer(
     return heightIndex * GAP + heightsBefore;
   }
 
+  function focusAfterLayout(
+    target: HTMLElement,
+    expectedFocus: Element | null,
+    isStillEligible?: () => boolean
+  ) {
+    // A focusin listener can synchronously change the toast store.
+    queueMicrotask(() => {
+      if (
+        !destroyed &&
+        target.isConnected &&
+        !target.closest('[inert]') &&
+        document.activeElement === expectedFocus &&
+        isStillEligible?.() !== false
+      ) {
+        target.focus({ preventScroll: true });
+      }
+    });
+  }
+
   function measure(node: IToastNode) {
     const group = groups.get(node.position);
     if (!group || node.removed) {
       return;
     }
-    // The card's own height: a card further back in the stack is scaled
-    // and pinned to the front card's height, neither of which is its size.
     const { style } = node.li;
     const originalHeight = style.height;
-    const originalTransform = style.transform;
     style.height = 'auto';
-    style.transform = 'none';
-    const { height } = node.li.getBoundingClientRect();
+    const actionToFocus = layoutMessageAction(
+      node.content,
+      config.webContentMaxHeight
+    );
+    if (actionToFocus) {
+      focusAfterLayout(actionToFocus, document.body);
+    }
+    const { offsetHeight: height } = node.li;
     style.height = originalHeight;
-    style.transform = originalTransform;
     node.initialHeight = height;
     const existing = group.heights.find((entry) => entry.id === node.id);
     if (existing) {
@@ -277,7 +295,6 @@ export function createToastDomRenderer(
         return;
       }
       if (node.closeTimer === undefined) {
-        // A resumed toast starts over with its whole lifetime, as before.
         node.closeTimer = setTimeout(() => {
           node.closeTimer = undefined;
           deleteToast(node, 'timeout', true);
@@ -321,7 +338,12 @@ export function createToastDomRenderer(
     clearNodePresses(node);
     const group = groups.get(node.position);
     node.removed = true;
-    // Keep the offset the card had, for the exit transition.
+    const statusTile = node.content.querySelector<HTMLElement>(
+      ':scope > [data-okt-row] > [data-okt-icon-box] > [data-okt-status-tile]'
+    );
+    if (statusTile) {
+      stopStatusTile(statusTile);
+    }
     node.offsetBeforeRemove = group ? offsetOf(group, node) : 0;
     if (group) {
       group.heights = group.heights.filter((entry) => entry.id !== node.id);
@@ -392,7 +414,6 @@ export function createToastDomRenderer(
       if (Math.abs(amount) <= threshold || Math.abs(amount) < dx) {
         return;
       }
-      // Preserve the descendant's native click until an actual swipe starts.
       node.li.setPointerCapture?.(event.pointerId);
       node.swiping = true;
       node.li.setAttribute('data-swiping', 'true');
@@ -418,7 +439,6 @@ export function createToastDomRenderer(
       Math.abs(amount) >= SWIPE_THRESHOLD || velocity > SWIPE_VELOCITY;
     clearPress(pointerId, press);
 
-    // The swipe pseudo-element must be gone before checking where we landed.
     const hit = released ? groupContaining(pointerHit(event)) : undefined;
     if (pointerType === 'touch') {
       if (
@@ -474,7 +494,6 @@ export function createToastDomRenderer(
       update();
     });
     li.addEventListener('lostpointercapture', (event) => {
-      // A touch's implicit capture may move from a descendant to the card.
       if (
         event.target === li &&
         node.swipePointerId === event.pointerId &&
@@ -485,22 +504,29 @@ export function createToastDomRenderer(
     });
   }
 
-  function renderContent(node: IToastNode) {
-    const next = buildToastContent(node.spec, (event) => {
-      if (!node.removed) {
-        onEvent({
-          ...event,
-          id: node.id,
-          generation: node.generation,
-        } as IOverlayToastEvent);
+  function renderContent(node: IToastNode, statusMotion?: 'enter' | 'settle') {
+    const next = buildToastContent(
+      node.spec,
+      (event) => {
+        if (!node.removed) {
+          onEvent({
+            ...event,
+            id: node.id,
+            generation: node.generation,
+          } as IOverlayToastEvent);
+        }
+      },
+      node.content,
+      reduceMotion() ? undefined : statusMotion
+    );
+    if (node.content !== next) {
+      if (node.content.parentElement === node.body) {
+        node.content.replaceWith(next);
+      } else {
+        node.body.append(next);
       }
-    });
-    if (node.content.parentElement === node.li) {
-      node.content.replaceWith(next);
-    } else {
-      node.li.append(next);
+      node.content = next;
     }
-    node.content = next;
     if (node.spec.testID) {
       node.li.setAttribute('data-testid', node.spec.testID);
     } else {
@@ -518,10 +544,21 @@ export function createToastDomRenderer(
     li.setAttribute('data-styled', 'true');
     li.setAttribute('data-dismissible', 'true');
     li.setAttribute('data-invert', 'false');
+
+    const shell = document.createElement('div');
+    shell.setAttribute('data-okt-shell', '');
+    const surface = document.createElement('div');
+    surface.setAttribute('data-okt-surface', '');
+    const body = document.createElement('div');
+    body.setAttribute('data-okt-body', '');
+    surface.append(body);
+
     const closeButton = createCloseButton(
       config.closeButtonLabel ?? 'Close toast'
     );
-    li.append(closeButton);
+    shell.append(surface, closeButton);
+    li.append(shell);
+
     const node: IToastNode = {
       id: item.spec.id,
       spec: item.spec,
@@ -529,6 +566,9 @@ export function createToastDomRenderer(
       generation: item.generation,
       position: positionOf(item.spec),
       li,
+      shell,
+      surface,
+      body,
       content: document.createElement('div'),
       mounted: false,
       removed: false,
@@ -537,12 +577,26 @@ export function createToastDomRenderer(
       offsetBeforeRemove: 0,
       initialHeight: 0,
     };
+    const revealClose = (event: PointerEvent) => {
+      if (
+        event.buttons === 0 &&
+        (event.pointerType === 'mouse' || event.pointerType === 'pen')
+      ) {
+        li.setAttribute('data-okt-close-hover', '');
+      }
+    };
+    li.addEventListener('pointerenter', revealClose);
+    li.addEventListener('pointermove', revealClose);
+    li.addEventListener('pointerleave', () =>
+      li.removeAttribute('data-okt-close-hover')
+    );
     closeButton.addEventListener('click', () =>
       deleteToast(node, 'close', true)
     );
     li.addEventListener('keydown', (event) => {
       if (
         !node.removed &&
+        !node.body.inert &&
         node.spec.layout === 'notification' &&
         node.spec.pressable &&
         event.target === li &&
@@ -556,7 +610,7 @@ export function createToastDomRenderer(
         });
       }
     });
-    renderContent(node);
+    renderContent(node, 'enter');
     attachPointerHandlers(node);
     return node;
   }
@@ -567,9 +621,6 @@ export function createToastDomRenderer(
     group.ol.prepend(node.li);
     nodes.set(node.id, node);
     applyGroup(group);
-    // Measuring lays the card out in its resting-out state, so switching it
-    // to mounted right after starts the enter transition from there. No frame
-    // callback: those do not run while the page is hidden.
     measure(node);
     node.mounted = true;
     update();
@@ -599,6 +650,16 @@ export function createToastDomRenderer(
     ol.style.setProperty('--offset', `${VIEWPORT_OFFSET}px`);
     ol.style.setProperty('--width', `${TOAST_WIDTH}px`);
     ol.style.setProperty('--gap', `${GAP}px`);
+    if (config.cardColor) {
+      ol.style.setProperty('--okt-card-bg', config.cardColor);
+    } else {
+      ol.style.removeProperty('--okt-card-bg');
+    }
+    if (config.cardBorderColor) {
+      ol.style.setProperty('--okt-card-border', config.cardBorderColor);
+    } else {
+      ol.style.removeProperty('--okt-card-border');
+    }
     if (config.webContentMaxHeight !== undefined) {
       ol.style.setProperty(
         '--okt-max-height',
@@ -607,29 +668,43 @@ export function createToastDomRenderer(
     } else {
       ol.style.removeProperty('--okt-max-height');
     }
-    // Top toasts rest under whatever hangs from the top of the window. An
-    // inline `top`: the narrow-window rule pins the toaster otherwise.
     const top = yPosition === 'top' ? obstructionTop() : 0;
-    const reducedMotion =
-      config.respectReducedMotion !== false &&
-      globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    ol.style.transition = reducedMotion
+    ol.setAttribute(
+      'data-okt-respect-reduced-motion',
+      String(config.respectReducedMotion !== false)
+    );
+    ol.style.transition = reduceMotion()
       ? ''
       : `top ${OBSTRUCTION_SHIFT_MS}ms ease`;
     ol.style.top = top > 0 ? `${top}px` : '';
 
+    const expanded = isExpanded();
     group.toasts.forEach((node, index) => {
-      const { li } = node;
+      const { li, body } = node;
+      const visible = index < VISIBLE_TOASTS;
+      const front = index === 0;
+      const bodyHidden = !front && !expanded;
+      li.inert = !visible || node.removed;
+      const lastFocus = document.activeElement;
+      const needsFocusHandoff =
+        bodyHidden && !body.inert && !li.inert && body.contains(lastFocus);
+      body.inert = bodyHidden;
+      if (needsFocusHandoff) {
+        const currentFocus = document.activeElement;
+        if (currentFocus === lastFocus || currentFocus === document.body) {
+          focusAfterLayout(li, currentFocus, () => body.inert);
+        }
+      }
       li.setAttribute('data-mounted', String(node.mounted));
       li.setAttribute('data-removed', String(node.removed));
-      li.setAttribute('data-visible', String(index + 1 <= VISIBLE_TOASTS));
+      li.setAttribute('data-visible', String(visible));
       li.setAttribute('data-y-position', yPosition ?? 'bottom');
       li.setAttribute('data-x-position', xPosition ?? 'right');
       li.setAttribute('data-index', String(index));
-      li.setAttribute('data-front', String(index === 0));
+      li.setAttribute('data-front', String(front));
       li.setAttribute('data-swiping', String(node.swiping));
       li.setAttribute('data-swipe-out', String(node.swipeOut));
-      li.setAttribute('data-expanded', String(isExpanded()));
+      li.setAttribute('data-expanded', String(expanded));
       li.style.setProperty('--index', String(index));
       li.style.setProperty('--toasts-before', String(index));
       li.style.setProperty('--z-index', String(group.toasts.length - index));
@@ -732,12 +807,14 @@ export function createToastDomRenderer(
   }
 
   function onResize() {
-    if ((config.topObstruction ?? 0) > 0) {
-      update();
-    }
+    nodes.forEach(measure);
+    update();
   }
 
   function onGlobalPointerDown(event: PointerEvent) {
+    if (event.pointerType === 'touch') {
+      nodes.forEach(({ li }) => li.removeAttribute('data-okt-close-hover'));
+    }
     if (
       (touchExpandedGroup || keyboardExpanded) &&
       !groupContaining(event.target as Node | null)
@@ -756,6 +833,26 @@ export function createToastDomRenderer(
     update();
   }
 
+  function finalizeReducedMotion() {
+    if (!reduceMotion()) {
+      return;
+    }
+    nodes.forEach(({ content }) => {
+      content
+        .querySelectorAll<HTMLElement>('[data-okt-status-motion]')
+        .forEach(stopStatusTile);
+      content
+        .querySelector('[data-okt-content-swap]')
+        ?.removeAttribute('data-okt-content-swap');
+    });
+  }
+
+  function onMotionPreferenceChange() {
+    finalizeReducedMotion();
+    update();
+  }
+
+  motionPreference?.addEventListener?.('change', onMotionPreferenceChange);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('pointerdown', onGlobalPointerDown, true);
   document.addEventListener('pointermove', onGlobalPointerMove, true);
@@ -770,20 +867,26 @@ export function createToastDomRenderer(
         return;
       }
       syncing = true;
+      const shouldReduceBeforeSync = reduceMotion();
+      const heightCapChanged =
+        config.webContentMaxHeight !== nextConfig.webContentMaxHeight;
       config = nextConfig;
+      if (heightCapChanged) {
+        groups.forEach(applyGroup);
+      }
+      if (!shouldReduceBeforeSync && reduceMotion()) {
+        finalizeReducedMotion();
+      }
       const present = new Set(items.map((item) => item.spec.id));
-      // Cards the list no longer knows leave without ceremony.
       [...nodes.values()].forEach((node) => {
         if (!present.has(node.id)) {
           unmount(node, 'programmatic');
         }
       });
       const movedGroups = new Set<IToastGroup>();
-      // Oldest first, so each new card lands in front of the previous one.
       [...items].reverse().forEach((item) => {
         let node = nodes.get(item.spec.id);
         if (node?.removed && item.visible) {
-          // Shown again while the previous card was leaving.
           unmount(node, 'programmatic');
           node = undefined;
         }
@@ -800,14 +903,25 @@ export function createToastDomRenderer(
           }
           return;
         }
-        if (node.revision !== item.revision) {
+        const needsRedraw = node.revision !== item.revision;
+        if (needsRedraw) {
+          const nextIcon =
+            item.spec.layout === 'message'
+              ? item.spec.statusIcon ?? item.spec.icon
+              : undefined;
+          const settling =
+            item.visible &&
+            node.generation !== item.generation &&
+            nextIcon?.kind === 'status' &&
+            nextIcon.status !== 'loading';
           node.revision = item.revision;
           node.spec = item.spec;
-          renderContent(node);
+          renderContent(node, settling ? 'settle' : undefined);
+        }
+        if (needsRedraw || heightCapChanged) {
           measure(node);
         }
         if (node.generation !== item.generation) {
-          // Shown again: the toast starts its lifetime over.
           clearNodePresses(node);
           node.generation = item.generation;
           clearCloseTimer(node);
@@ -832,6 +946,10 @@ export function createToastDomRenderer(
     },
     destroy() {
       destroyed = true;
+      motionPreference?.removeEventListener?.(
+        'change',
+        onMotionPreferenceChange
+      );
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('pointerdown', onGlobalPointerDown, true);
       document.removeEventListener('pointermove', onGlobalPointerMove, true);

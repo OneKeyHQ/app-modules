@@ -141,6 +141,61 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
   return observer
 }
 
+@MainActor private func runToastCardTests() throws {
+  let spec = NativeOverlayToastSpec(json: [
+    "id": "capped-toast",
+    "statusIcon": ["kind": "status", "status": "success", "size": 36, "glyph": ["contours": [[[6, 12], [10, 16], [18, 8]]]]],
+    "title": ["paragraphs": [[["text": "Done", "link": "details"]]], "fontSize": 16, "lineHeight": 24],
+    "actions": [["id": "view", "testID": "view", "label": "View", "lineHeight": 20, "paddingVertical": 4]],
+  ])!
+  let card = NativeOverlayToastCardView(spec: spec, cardColor: .white)
+  card.layoutCard(contentWidth: 180, contentMaxHeight: nil)
+  let body = card.subviews[0].subviews[0]
+  let button = body.subviews.first { $0.accessibilityIdentifier == "view" } as? UIControl
+  let link = body.subviews.compactMap { $0 as? ToastTextLabel }.first
+  try require(button != nil && link != nil, "toast has an action and a link")
+  guard let button, let link else { return }
+  try require(button.frame.minY > link.frame.maxY, "uncapped card puts the action below the text")
+  card.layoutCard(contentWidth: 180, contentMaxHeight: 36)
+  try require(card.bounds.height == 56 && button.frame.maxY <= 36, "capped action stays in the visible content box")
+  try require(button.frame.minX >= link.frame.maxX && link.frame.width > 0, "capped action and text share the row")
+
+  card.canExpandStack = true
+  let elements = card.accessibilityElements ?? []
+  try require(!card.isAccessibilityElement, "collapsed front card remains an accessibility container")
+  try require(elements.contains { ($0 as? UIView) === button }, "collapsed front card exposes its action")
+  try require(elements.contains { ($0 as? UIView) === link }, "collapsed front card exposes its link")
+  let expansion = elements.compactMap { $0 as? UIAccessibilityElement }
+    .first { $0.accessibilityLabel == "Expand notifications" }
+  var expanded = false
+  card.onPress = { expanded = true }
+  try require(expansion?.accessibilityActivate() == true && expanded, "separate accessibility element expands the stack")
+  card.canExpandStack = false
+  try require(card.accessibilityElements == nil && expansion?.accessibilityActivate() == false, "expansion control is removed after expand")
+
+  var tallSpec = spec
+  tallSpec.actions = []
+  tallSpec.title = NativeOverlayToastText(json: [
+    "paragraphs": Array(repeating: [["text": "Long message"]], count: 8),
+    "lineHeight": 24,
+  ])
+  card.apply(spec: tallSpec, cardColor: .white)
+  card.layoutCard(contentWidth: 180, contentMaxHeight: nil)
+  card.canExpandStack = true
+  guard let expansion else { throw Failure(name: "expansion control is available") }
+  let iconFrame = expansion.accessibilityFrameInContainerSpace
+  let partialCap = iconFrame.midY - body.frame.minY
+  card.layoutCard(contentWidth: 180, contentMaxHeight: partialCap)
+  let partialFrame = expansion.accessibilityFrameInContainerSpace
+  try require(partialFrame.minY == iconFrame.minY && abs(partialFrame.height - iconFrame.height / 2) < 0.01,
+              "expansion focus uses only the unclipped part of the icon")
+
+  card.layoutCard(contentWidth: 180, contentMaxHeight: 36)
+  let fallbackFrame = expansion.accessibilityFrameInContainerSpace
+  try require(!fallbackFrame.isEmpty && card.bounds.contains(fallbackFrame) && fallbackFrame.minX == card.bounds.minX,
+              "expansion focus falls back to the visible leading inset when the icon is clipped")
+}
+
 @MainActor private func verifyClosingOverlayKeyHandoff(scene: UIWindowScene, app: UIWindow) throws -> Bool {
   let manager = NativeOverlayWindowManager()
   let closingOwner = Owner()
@@ -177,7 +232,8 @@ private func touchObserver(in window: UIWindow) throws -> NativeOverlayAppTouchO
 }
 
 @MainActor private func runTests(scene: UIWindowScene, app: UIWindow) async throws -> [String] {
-  var passed: [String] = []
+  try runToastCardTests()
+  var passed = ["toast-height-cap-and-accessible-stack-controls"]
   let manager = NativeOverlayWindowManager()
   let a = Owner(), b = Owner(), c = Owner(), toast = Owner()
   let wa = manager.window(for: a, level: .modal, stackOrder: Int.min, blocking: true, appWindow: app)!
