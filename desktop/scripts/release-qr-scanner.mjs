@@ -10,7 +10,7 @@ import policy from "./verify-desktop-modules.cjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageName = "@onekeyfe/electron-qr-scanner";
-const version = "44.0.2-alpha.1";
+const version = "44.0.2-alpha.2";
 const electron = "44.5.1";
 const repository = "OneKeyHQ/app-modules";
 const workflow = `${repository}/.github/workflows/desktop-qr-scanner-preview.yml`;
@@ -46,21 +46,8 @@ const manifest = {
   license: "MIT",
   repository: { type: "git", url: `git+https://github.com/${repository}.git` },
 };
-const rootSources = {
-  "index.cjs": `"use strict";
-if (process.platform === "darwin") {
-  module.exports = require("./mac/index.cjs");
-} else if (process.platform === "win32") {
-  module.exports = require("./win/index.cjs");
-} else {
-  throw Object.assign(new Error("Native QR scanner is unavailable on this platform"), {
-    code: "decoder-unavailable",
-  });
-}
-`,
-  "index.d.ts": `declare const scanner: typeof import("./mac/index") | typeof import("./win/index");\nexport = scanner;\n`,
-  "package.json": `${JSON.stringify(manifest, null, 2)}\n`,
-};
+const previewSource = join(root, "qr-scanner-preview");
+const previewFiles = ["index.cjs", "index.d.ts", "LICENSE-ZXING-CXX"];
 const nestedFiles = ["index.cjs", "index.d.ts", "README.md"];
 
 function checkSource() {
@@ -97,7 +84,8 @@ function verifyBinary(bytes, platform, arch) {
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const runtimePaths = [
-  ...Object.keys(rootSources),
+  ...previewFiles,
+  "package.json",
   "LICENSE",
   ...Object.entries(platforms).flatMap(([platform, info]) => [
     ...nestedFiles.map((name) => `${platform}/${name}`),
@@ -139,12 +127,15 @@ function verifyFiles(directory, proofs) {
 
 const staging = join(dist, "staging");
 const directory = join(staging, "package");
-if (process.argv[2] === "prepare") {
+if (process.argv[2] === "archive-path") {
+  console.log(archive);
+} else if (process.argv[2] === "prepare") {
   checkSource();
   mkdirSync(directory, { recursive: true });
-  for (const [name, source] of Object.entries(rootSources)) {
-    writeFileSync(join(directory, name), source);
+  for (const name of previewFiles) {
+    copyFileSync(join(previewSource, name), join(directory, name));
   }
+  writeFileSync(join(directory, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   copyFileSync(join(root, "win/electron-qr-scanner/LICENSE"), join(directory, "LICENSE"));
 
   for (const [platform, info] of Object.entries(platforms)) {
@@ -200,5 +191,5 @@ if (process.argv[2] === "prepare") {
   if (!response.ok) throw new Error(`Cannot verify the published registry metadata (HTTP ${response.status})`);
   verifyRegistryPackage(await response.json(), readFileSync(archive), packageName, version);
 } else {
-  throw new Error("Expected prepare, pack, verify, check-version or verify-npm");
+  throw new Error("Expected archive-path, prepare, pack, verify, check-version or verify-npm");
 }

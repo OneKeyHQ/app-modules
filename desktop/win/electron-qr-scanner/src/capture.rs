@@ -11,13 +11,14 @@ use windows::Win32::Media::DirectShow::{
     CameraControl_Focus, IAMCameraControl,
 };
 use windows::Win32::Media::MediaFoundation::{
-    IMF2DBuffer, IMFActivate, IMFAttributes, IMFMediaBuffer, IMFMediaSource, IMFMediaType,
-    IMFSample, IMFSourceReader, IMFSourceReaderCallback, IMFSourceReaderCallback_Impl,
-    MFCreateAttributes, MFCreateMediaType, MFCreateSourceReaderFromMediaSource,
-    MFCreateSourceReaderFromURL, MFEnumDeviceSources, MFMediaType_Video, MFShutdown, MFStartup,
-    MFVideoFormat_I420, MFVideoFormat_MJPG, MFVideoFormat_NV12, MFVideoFormat_RGB24,
-    MFVideoFormat_RGB32, MFVideoFormat_YUY2, MFSTARTUP_LITE, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
-    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
+    IMF2DBuffer, IMF2DBuffer2, IMFActivate, IMFAttributes, IMFMediaBuffer, IMFMediaSource,
+    IMFMediaType, IMFSample, IMFSourceReader, IMFSourceReaderCallback,
+    IMFSourceReaderCallback_Impl, MF2DBuffer_LockFlags_Read, MFCreateAttributes, MFCreateMediaType,
+    MFCreateSourceReaderFromMediaSource, MFCreateSourceReaderFromURL, MFEnumDeviceSources,
+    MFMediaType_Video, MFShutdown, MFStartup, MFVideoFormat_I420, MFVideoFormat_MJPG,
+    MFVideoFormat_NV12, MFVideoFormat_RGB24, MFVideoFormat_RGB32, MFVideoFormat_YUY2,
+    MFSTARTUP_LITE, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
     MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, MF_E_NOT_AVAILABLE,
     MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
     MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED, MF_SOURCE_READERF_ENDOFSTREAM,
@@ -351,18 +352,20 @@ fn query_frame_layout(
     let size_u64 = unsafe { mt.GetUINT64(&MF_MT_FRAME_SIZE) }
         .map_err(|e| format!("decoder-unavailable: missing MF_MT_FRAME_SIZE ({e:?})"))?;
     let (width, height) = unpack_u64_pair(size_u64);
-    if width == 0 || height == 0 {
+    let row_bytes = width.checked_mul(4).and_then(|n| i32::try_from(n).ok());
+    let Some(row_bytes) =
+        row_bytes.filter(|n| *n > 0 && i32::try_from(height).is_ok() && height > 0)
+    else {
         return Err("decoder-unavailable: invalid frame dimensions".to_owned());
+    };
+    if unsafe { mt.GetGUID(&MF_MT_SUBTYPE) }.ok() != Some(MFVideoFormat_RGB32) {
+        return Err("decoder-unavailable: expected RGB32 output".to_owned());
     }
     let default_stride = unsafe { mt.GetUINT32(&MF_MT_DEFAULT_STRIDE) }
         .map(|v| v as i32)
-        .unwrap_or((width as i32) * 4);
+        .unwrap_or(row_bytes);
     let fps = read_fps(&mt);
-    let subtype = native_subtype.unwrap_or_else(|| {
-        unsafe { mt.GetGUID(&MF_MT_SUBTYPE) }
-            .map(subtype_name)
-            .unwrap_or("unknown")
-    });
+    let subtype = native_subtype.unwrap_or("RGB32");
     Ok(FrameLayout {
         width,
         height,
@@ -651,86 +654,134 @@ fn map_mf_error_string(hr: HRESULT, context: &str) -> String {
     format!("{}: {context} failed ({hr:?})", map_mf_error(hr))
 }
 
-/// Extracts top-down 8-bit luminance (always) and top-down opaque BGRA (only
-/// when `need_bgra` is true) from an `MFVideoFormat_RGB32` sample.
+type ExtractedFrame = (Vec<u8>, Option<Vec<u8>>);
+
+/// Validates the first and last rows, which bound the entire signed-stride span.
+fn rgb32_row_stride(
+    first: usize,
+    pitch: i32,
+    length: usize,
+    row_bytes: usize,
+    height: usize,
+) -> Option<usize> {
+    let stride = pitch.unsigned_abs() as usize;
+    if row_bytes == 0 || stride < row_bytes {
+        return None;
+    }
+    let displacement = height.checked_sub(1)?.checked_mul(stride)?;
+    let highest = if pitch < 0 {
+        first.checked_sub(displacement)?;
+        first
+    } else {
+        first.checked_add(displacement)?
+    };
+    (highest.checked_add(row_bytes)? <= length).then_some(stride)
+}
+
+/// The buffer must remain locked and readable for the duration of the copy.
+unsafe fn copy_locked_rgb32(
+    data: *const u8,
+    length: usize,
+    first: usize,
+    pitch: i32,
+    layout: FrameLayout,
+    need_bgra: bool,
+) -> Option<ExtractedFrame> {
+    if data.is_null() {
+        return None;
+    }
+    let w = layout.width as usize;
+    let h = layout.height as usize;
+    let row_bytes = w.checked_mul(4)?;
+    let stride = rgb32_row_stride(first, pitch, length, row_bytes, h)?;
+
+    let mut luma = Vec::new();
+    let pixels = w.checked_mul(h)?;
+    luma.try_reserve_exact(pixels).ok()?;
+    luma.resize(pixels, 0);
+    let mut bgra = None;
+    if need_bgra {
+        let mut bytes = Vec::new();
+        let size = pixels.checked_mul(4)?;
+        bytes.try_reserve_exact(size).ok()?;
+        bytes.resize(size, 0);
+        bgra = Some(bytes);
+    }
+
+    for (y, luma_row) in luma.chunks_exact_mut(w).enumerate() {
+        let row_offset = if pitch < 0 {
+            first - y * stride
+        } else {
+            first + y * stride
+        };
+        // The span check guarantees every row is within this live buffer.
+        let src_row = unsafe { std::slice::from_raw_parts(data.add(row_offset), row_bytes) };
+        convert_bgrx_row(
+            src_row,
+            luma_row,
+            bgra.as_mut()
+                .map(|b| &mut b[y * row_bytes..(y + 1) * row_bytes]),
+        );
+    }
+    Some((luma, bgra))
+}
+
+/// Extracts top-down luminance and optional opaque BGRA from a bounds-bearing lock.
 fn extract_rgb32_frame(
     sample: &IMFSample,
     layout: FrameLayout,
     need_bgra: bool,
-) -> Option<(Vec<u8>, Option<Vec<u8>>)> {
+) -> Option<ExtractedFrame> {
     let buffer: IMFMediaBuffer = unsafe { sample.ConvertToContiguousBuffer() }.ok()?;
-    let w = layout.width as usize;
-    let h = layout.height as usize;
-    let row_bytes = w * 4;
-    let mut luma = vec![0u8; w * h];
-    let mut bgra = if need_bgra {
-        Some(vec![0u8; w * h * 4])
-    } else {
-        None
-    };
-
-    if let Ok(buf2d) = buffer.cast::<IMF2DBuffer>() {
-        let mut scanline0: *mut u8 = std::ptr::null_mut();
-        let mut pitch: i32 = 0;
-        if unsafe { buf2d.Lock2D(&mut scanline0, &mut pitch) }.is_ok() {
-            if !scanline0.is_null() && pitch.unsigned_abs() as usize >= row_bytes {
-                // Per Microsoft IMF2DBuffer::Lock2D docs, scanline0 always points to
-                // the top row (y = 0) even when pitch is negative.
-                for y in 0..h {
-                    let src_row = unsafe {
-                        std::slice::from_raw_parts(
-                            scanline0.offset((y as isize) * (pitch as isize)),
-                            row_bytes,
-                        )
-                    };
-                    convert_bgrx_row(
-                        src_row,
-                        &mut luma[y * w..(y + 1) * w],
-                        bgra.as_mut()
-                            .map(|b| &mut b[y * row_bytes..(y + 1) * row_bytes]),
-                    );
-                }
-            }
+    let mut data = std::ptr::null_mut();
+    let mut length = 0;
+    if let Ok(buf2d) = buffer.cast::<IMF2DBuffer2>() {
+        let mut scanline0 = std::ptr::null_mut();
+        let mut pitch = 0;
+        if unsafe {
+            buf2d.Lock2DSize(
+                MF2DBuffer_LockFlags_Read,
+                &mut scanline0,
+                &mut pitch,
+                &mut data,
+                &mut length,
+            )
+        }
+        .is_ok()
+        {
+            let frame = (!scanline0.is_null())
+                .then(|| scanline0.addr().checked_sub(data.addr()))
+                .flatten()
+                .and_then(|first| unsafe {
+                    copy_locked_rgb32(data, length as usize, first, pitch, layout, need_bgra)
+                });
             unsafe {
                 let _ = buf2d.Unlock2D();
             }
-            return Some((luma, bgra));
+            return frame;
         }
     }
 
-    let mut data_ptr: *mut u8 = std::ptr::null_mut();
-    let mut current_len = 0u32;
-    unsafe { buffer.Lock(&mut data_ptr, None, Some(&mut current_len)) }.ok()?;
-    let abs_stride = layout.default_stride.unsigned_abs() as usize;
-    let stride = if abs_stride >= row_bytes {
-        abs_stride
+    // IMFMediaBuffer::Lock presents 2D surfaces in their packed representation.
+    let pitch = if buffer.cast::<IMF2DBuffer>().is_ok() {
+        (layout.width as i32 * 4) * if layout.default_stride < 0 { -1 } else { 1 }
     } else {
-        row_bytes
+        layout.default_stride
     };
-    let required = stride.saturating_mul(h);
-    let ok = !data_ptr.is_null() && (current_len as usize) >= required;
-    if ok {
-        let bottom_up = layout.default_stride < 0;
-        for y in 0..h {
-            let src_y = if bottom_up { h - 1 - y } else { y };
-            let src_row =
-                unsafe { std::slice::from_raw_parts(data_ptr.add(src_y * stride), row_bytes) };
-            convert_bgrx_row(
-                src_row,
-                &mut luma[y * w..(y + 1) * w],
-                bgra.as_mut()
-                    .map(|b| &mut b[y * row_bytes..(y + 1) * row_bytes]),
-            );
-        }
-    }
+    let first = if pitch < 0 {
+        (layout.height as usize)
+            .checked_sub(1)?
+            .checked_mul(pitch.unsigned_abs() as usize)?
+    } else {
+        0
+    };
+    unsafe { buffer.Lock(&mut data, None, Some(&mut length)) }.ok()?;
+    let frame =
+        unsafe { copy_locked_rgb32(data, length as usize, first, pitch, layout, need_bgra) };
     unsafe {
         let _ = buffer.Unlock();
     }
-    if ok {
-        Some((luma, bgra))
-    } else {
-        None
-    }
+    frame
 }
 
 #[inline]
@@ -757,17 +808,29 @@ struct PendingFrame {
     generation: i64,
 }
 
+enum DecodeWork {
+    Frame(PendingFrame),
+    Ended(i64),
+}
+
+#[derive(Default)]
+struct DecodeMailboxState {
+    frame: Option<PendingFrame>,
+    ended: Option<i64>,
+    shutdown: bool,
+}
+
 /// Bounded 1-slot replaceable mailbox: at most 1 frame actively decoding +
 /// 1 latest waiting frame, dropping stale unanalyzed frames under load.
 struct DecodeMailbox {
-    state: Mutex<(Option<PendingFrame>, bool /* shutdown */)>,
+    state: Mutex<DecodeMailboxState>,
     cvar: Condvar,
 }
 
 impl DecodeMailbox {
     fn new() -> Self {
         Self {
-            state: Mutex::new((None, false)),
+            state: Mutex::new(DecodeMailboxState::default()),
             cvar: Condvar::new(),
         }
     }
@@ -776,34 +839,48 @@ impl DecodeMailbox {
         let Ok(mut guard) = self.state.lock() else {
             return;
         };
-        if guard.1 {
+        if guard.shutdown {
             return;
         }
-        guard.0 = Some(frame);
+        guard.frame = Some(frame);
         self.cvar.notify_one();
+    }
+
+    fn finish(&self, generation: i64) {
+        if let Ok(mut state) = self.state.lock() {
+            if !state.shutdown {
+                state.ended = Some(generation);
+                self.cvar.notify_one();
+            }
+        }
     }
 
     fn clear(&self) {
         if let Ok(mut guard) = self.state.lock() {
-            guard.0 = None;
+            guard.frame = None;
+            guard.ended = None;
         }
     }
 
     fn shutdown(&self) {
         if let Ok(mut guard) = self.state.lock() {
-            guard.0 = None;
-            guard.1 = true;
+            guard.frame = None;
+            guard.ended = None;
+            guard.shutdown = true;
             self.cvar.notify_all();
         }
     }
 
-    fn take(&self) -> Option<PendingFrame> {
+    fn take(&self) -> Option<DecodeWork> {
         let mut guard = self.state.lock().ok()?;
         loop {
-            if let Some(frame) = guard.0.take() {
-                return Some(frame);
+            if let Some(frame) = guard.frame.take() {
+                return Some(DecodeWork::Frame(frame));
             }
-            if guard.1 {
+            if let Some(generation) = guard.ended.take() {
+                return Some(DecodeWork::Ended(generation));
+            }
+            if guard.shutdown {
                 return None;
             }
             guard = self.cvar.wait(guard).ok()?;
@@ -817,7 +894,7 @@ unsafe impl Send for SendReader {}
 struct AsyncCameraShared {
     device_id: Option<String>,
     generation: i64,
-    active: AtomicBool,
+    active: Arc<AtomicBool>,
     ready_emitted: AtomicBool,
     layout: Mutex<FrameLayout>,
     camera_count: u32,
@@ -854,8 +931,15 @@ impl AsyncCameraShared {
         }
     }
 
-    fn signal_stop(&self) {
-        self.active.store(false, Ordering::Release);
+    fn fail(&self, code: &'static str, message: String) {
+        if !self.active.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        self.emit(CaptureEvent::Error {
+            code,
+            message,
+            generation: self.generation,
+        });
         let (lock, cvar) = &*self.stop_signal;
         if let Ok(mut stopped) = lock.lock() {
             *stopped = true;
@@ -904,40 +988,44 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
         }
 
         if hrstatus.is_err() {
-            let code = map_mf_error(hrstatus);
-            self.shared.emit(CaptureEvent::Error {
-                code,
-                message: format!("Camera stream failed ({hrstatus:?})"),
-                generation: self.shared.generation,
-            });
-            self.shared.signal_stop();
+            self.shared.fail(
+                map_mf_error(hrstatus),
+                format!("Camera stream failed ({hrstatus:?})"),
+            );
             return Ok(());
         }
 
         if (dwstreamflags & (MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED.0 as u32)) != 0 {
-            let reader_opt = self
+            let reader = self
                 .shared
                 .reader
                 .lock()
                 .ok()
                 .and_then(|g| g.as_ref().map(|r| r.0.clone()));
-            if let Some(reader) = reader_opt {
-                let prev_sub = self.shared.layout.lock().ok().map(|l| l.subtype);
-                if let Ok(new_layout) = query_frame_layout(&reader, prev_sub) {
-                    if let Ok(mut layout) = self.shared.layout.lock() {
-                        *layout = new_layout;
-                    }
-                }
+            let Some(layout) = reader.and_then(|reader| {
+                let subtype = self.shared.layout.lock().ok()?.subtype;
+                query_frame_layout(&reader, Some(subtype)).ok()
+            }) else {
+                self.shared.fail(
+                    "decoder-unavailable",
+                    "Could not refresh the camera frame layout".to_owned(),
+                );
+                return Ok(());
+            };
+            if let Ok(mut current) = self.shared.layout.lock() {
+                *current = layout;
+            } else {
+                self.shared.fail(
+                    "decoder-unavailable",
+                    "Could not store the camera frame layout".to_owned(),
+                );
+                return Ok(());
             }
         }
 
         if (dwstreamflags & (MF_SOURCE_READERF_ENDOFSTREAM.0 as u32)) != 0 {
-            self.shared.emit(CaptureEvent::Error {
-                code: "camera-busy",
-                message: "Camera stream ended unexpectedly".to_owned(),
-                generation: self.shared.generation,
-            });
-            self.shared.signal_stop();
+            self.shared
+                .fail("camera-busy", "Camera stream ended unexpectedly".to_owned());
             return Ok(());
         }
 
@@ -1000,12 +1088,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                             Err(msg) => {
                                 // Stop camera immediately so Web fallback can acquire it.
                                 let (code, reason) = split_coded_error(&msg);
-                                self.shared.emit(CaptureEvent::Error {
-                                    code,
-                                    message: reason,
-                                    generation: self.shared.generation,
-                                });
-                                self.shared.signal_stop();
+                                self.shared.fail(code, reason);
                                 return Ok(());
                             }
                         }
@@ -1045,12 +1128,10 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                         None,
                     )
                 } {
-                    self.shared.emit(CaptureEvent::Error {
-                        code: map_mf_error(err.code()),
-                        message: format!("ReadSample failed ({err:?})"),
-                        generation: self.shared.generation,
-                    });
-                    self.shared.signal_stop();
+                    self.shared.fail(
+                        map_mf_error(err.code()),
+                        format!("ReadSample failed ({err:?})"),
+                    );
                 }
             }
         }
@@ -1072,6 +1153,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
 
 struct SessionContext {
     generation: i64,
+    running: Arc<AtomicBool>,
     stop_signal: Arc<(Mutex<bool>, Condvar)>,
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
@@ -1090,6 +1172,7 @@ struct CameraSessionOptions {
 fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     let SessionContext {
         generation,
+        running,
         stop_signal,
         preview,
         mailbox,
@@ -1099,6 +1182,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         current_gen,
     } = ctx;
     let emit_err = |code: &'static str, message: String| {
+        running.store(false, Ordering::Release);
         if current_gen.load(Ordering::Acquire) != generation {
             return;
         }
@@ -1204,7 +1288,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     let shared = Arc::new(AsyncCameraShared {
         device_id,
         generation,
-        active: AtomicBool::new(true),
+        active: Arc::clone(&running),
         ready_emitted: AtomicBool::new(false),
         layout: Mutex::new(FrameLayout {
             width: 0,
@@ -1505,26 +1589,17 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         }
 
         if (flags & (MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED.0 as u32)) != 0 {
-            if let Ok(new_layout) = query_frame_layout(&reader, None) {
-                layout = new_layout;
-            }
-        }
-
-        if (flags & (MF_SOURCE_READERF_ENDOFSTREAM.0 as u32)) != 0 {
-            if loop_file && !is_stopped() {
-                let zero = PROPVARIANT::from(0i64);
-                if unsafe { reader.SetCurrentPosition(&GUID::zeroed(), &zero) }.is_err() {
-                    emit(CaptureEvent::Ended { generation });
+            match query_frame_layout(&reader, None) {
+                Ok(new_layout) => layout = new_layout,
+                Err(_) => {
+                    emit(CaptureEvent::Error {
+                        code: "invalid-image",
+                        message: "Could not refresh the video frame layout".to_owned(),
+                        generation,
+                    });
                     return;
                 }
-                started_at = Instant::now();
-                first_pts = None;
-                continue;
             }
-            if !is_stopped() {
-                emit(CaptureEvent::Ended { generation });
-            }
-            return;
         }
 
         if let Some(sample) = sample {
@@ -1617,6 +1692,23 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
                 });
             }
         }
+
+        if (flags & (MF_SOURCE_READERF_ENDOFSTREAM.0 as u32)) != 0 {
+            if loop_file && !is_stopped() {
+                let zero = PROPVARIANT::from(0i64);
+                if unsafe { reader.SetCurrentPosition(&GUID::zeroed(), &zero) }.is_err() {
+                    mailbox.finish(generation);
+                    return;
+                }
+                started_at = Instant::now();
+                first_pts = None;
+                continue;
+            }
+            if !is_stopped() {
+                mailbox.finish(generation);
+            }
+            return;
+        }
     }
 }
 
@@ -1638,6 +1730,7 @@ fn split_coded_error(msg: &str) -> (&'static str, String) {
 }
 
 struct ActiveSession {
+    running: Arc<AtomicBool>,
     stop_signal: Arc<(Mutex<bool>, Condvar)>,
     thread: JoinHandle<()>,
 }
@@ -1679,7 +1772,19 @@ impl CaptureController {
                 // COM MTA so optional IAMCameraControl focus lock calls are safe.
                 let _com = ComMtaGuard::init().ok();
                 let mut gate = FrameTextGate::default_gate();
-                while let Some(frame) = decode_mailbox.take() {
+                while let Some(work) = decode_mailbox.take() {
+                    let frame = match work {
+                        DecodeWork::Frame(frame) => frame,
+                        DecodeWork::Ended(generation) => {
+                            if decode_gen.load(Ordering::Acquire) == generation {
+                                let cb = decode_emitter.lock().ok().and_then(|g| g.clone());
+                                if let Some(cb) = cb {
+                                    cb(CaptureEvent::Ended { generation });
+                                }
+                            }
+                            continue;
+                        }
+                    };
                     if decode_gen.load(Ordering::Acquire) != frame.generation {
                         continue;
                     }
@@ -1745,8 +1850,10 @@ impl CaptureController {
             .clone();
 
         let stop_signal = Arc::new((Mutex::new(false), Condvar::new()));
+        let running = Arc::new(AtomicBool::new(true));
         let ctx = SessionContext {
             generation: next_gen,
+            running: Arc::clone(&running),
             stop_signal: Arc::clone(&stop_signal),
             preview: self.preview.clone(),
             mailbox: Arc::clone(&self.mailbox),
@@ -1756,27 +1863,34 @@ impl CaptureController {
             current_gen: Arc::clone(&self.generation),
         };
 
+        let session_running = Arc::clone(&running);
         let handle = thread::Builder::new()
             .name(format!("qr-capture-{next_gen}"))
-            .spawn(move || match source {
-                SourceConfig::Camera {
-                    device_id,
-                    preferred_resolution,
-                    lock_focus_on_detect,
-                } => run_camera_session(
-                    ctx,
-                    CameraSessionOptions {
+            .spawn(move || {
+                match source {
+                    SourceConfig::Camera {
                         device_id,
                         preferred_resolution,
                         lock_focus_on_detect,
-                    },
-                ),
-                SourceConfig::File { path, loop_file } => run_file_session(ctx, path, loop_file),
+                    } => run_camera_session(
+                        ctx,
+                        CameraSessionOptions {
+                            device_id,
+                            preferred_resolution,
+                            lock_focus_on_detect,
+                        },
+                    ),
+                    SourceConfig::File { path, loop_file } => {
+                        run_file_session(ctx, path, loop_file)
+                    }
+                }
+                session_running.store(false, Ordering::Release);
             })
             .map_err(|e| format!("decoder-unavailable: failed to spawn capture thread ({e})"))?;
 
         if let Ok(mut guard) = self.session.lock() {
             *guard = Some(ActiveSession {
+                running,
                 stop_signal,
                 thread: handle,
             });
@@ -1794,7 +1908,6 @@ impl CaptureController {
     fn stop_inner(&self) {
         // Invalidate current generation so stale frames/events are dropped immediately.
         self.generation.fetch_add(1, Ordering::AcqRel);
-        self.mailbox.clear();
         let active = self.session.lock().ok().and_then(|mut g| g.take());
         if let Some(session) = active {
             let (lock, cvar) = &*session.stop_signal;
@@ -1804,13 +1917,22 @@ impl CaptureController {
             }
             let _ = session.thread.join();
         }
+        self.mailbox.clear();
     }
 
     pub fn set_device(&self, device_id: Option<String>) -> Result<Option<i64>, String> {
         if self.disposed.load(Ordering::Acquire) {
             return Err("decoder-unavailable: The capture was disposed".to_owned());
         }
-        let was_running = self.session.lock().map(|g| g.is_some()).unwrap_or(false);
+        let was_running = self
+            .session
+            .lock()
+            .map(|session| {
+                session.as_ref().is_some_and(|session| {
+                    session.running.load(Ordering::Acquire) && !session.thread.is_finished()
+                })
+            })
+            .unwrap_or(false);
         {
             let mut src = self
                 .source
@@ -1879,6 +2001,32 @@ impl Drop for CaptureController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_full_signed_rgb32_span() {
+        assert_eq!(rgb32_row_stride(4, 12, 36, 8, 3), Some(12));
+        assert_eq!(rgb32_row_stride(28, -12, 36, 8, 3), Some(12));
+        assert_eq!(rgb32_row_stride(4, 12, 35, 8, 3), None);
+        assert_eq!(rgb32_row_stride(20, -12, 36, 8, 3), None);
+        assert_eq!(rgb32_row_stride(0, 4, 36, 8, 3), None);
+        assert_eq!(rgb32_row_stride(0, 12, 36, 8, 0), None);
+    }
+
+    #[test]
+    fn mailbox_orders_end_after_the_latest_frame() {
+        let mailbox = DecodeMailbox::new();
+        for value in [1, 2] {
+            mailbox.push(PendingFrame {
+                luma: vec![value],
+                width: 1,
+                height: 1,
+                generation: 3,
+            });
+        }
+        mailbox.finish(3);
+        assert!(matches!(mailbox.take(), Some(DecodeWork::Frame(frame)) if frame.luma == [2]));
+        assert!(matches!(mailbox.take(), Some(DecodeWork::Ended(3))));
+    }
 
     #[test]
     fn maps_media_foundation_availability_to_camera_busy() {

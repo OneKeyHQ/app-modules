@@ -19,12 +19,6 @@ const initialDeviceId = arg("--device", undefined);
 const preferredResolution = arg("--res", "720p");
 const lockFocusOnDetect = process.argv.includes("--lock-focus");
 
-function fnv1a(bytes) {
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
-  return hash.toString(16).padStart(8, "0");
-}
-
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
     width: 800,
@@ -46,7 +40,7 @@ app.whenReady().then(async () => {
   const started = Date.now();
   const report = {
     electron: process.versions.electron,
-    cameras,
+    cameraCount: cameras.length,
     preferredResolution,
     lockFocusOnDetect,
     readyMs: null,
@@ -56,7 +50,7 @@ app.whenReady().then(async () => {
     errors: [],
     drawn: 0,
     maxLent: 0,
-    texts: [],
+    plainTextDetections: 0,
     ur: null,
   };
   const decoder = new URDecoder();
@@ -78,12 +72,10 @@ app.whenReady().then(async () => {
         ? `UR parts ${urParts.size} · ${Math.round(decoder.estimatedPercentComplete() * 100)}%`
         : "",
       report.ur
-        ? `UR done: ${report.ur.type} ${report.ur.bytes} bytes fnv ${report.ur.fnv} in ${report.ur.ms} ms`
+        ? `UR done: ${report.ur.bytes} bytes in ${report.ur.ms} ms`
         : "",
-      ...report.texts
-        .slice(-2)
-        .map((t) => `text: ${t.text.slice(0, 70)}${t.text.length > 70 ? "…" : ""}`),
-      ...report.errors.slice(-1).map((e) => `error ${e.code}: ${e.message}`),
+      report.plainTextDetections ? `QR detections: ${report.plainTextDetections}` : "",
+      ...report.errors.slice(-1).map((e) => `error ${e.code}`),
     ].filter(Boolean);
     if (!win.isDestroyed()) win.webContents.send("camera-status", lines.join("\n"));
   };
@@ -118,7 +110,7 @@ app.whenReady().then(async () => {
       status();
     },
     onError: (error) => {
-      report.errors.push({ code: error.code, message: error.message });
+      report.errors.push({ code: error.code });
       if (api.shouldFallbackToWeb(error)) {
         report.fallbackRecommended = true;
       }
@@ -132,17 +124,15 @@ app.whenReady().then(async () => {
         if (decoder.isComplete() && decoder.isSuccess() && !report.ur) {
           const ur = decoder.resultUR();
           report.ur = {
-            type: ur.type,
             bytes: ur.cbor.length,
-            fnv: fnv1a(ur.cbor),
             ms: Date.now() - urStartedAt,
             distinctParts: urParts.size,
           };
           status();
           setTimeout(finish, 2000);
         }
-      } else if (!report.texts.some((t) => t.text === text)) {
-        report.texts.push({ text, atMs: Date.now() - started });
+      } else {
+        report.plainTextDetections += 1;
       }
       status();
     },
@@ -163,10 +153,10 @@ app.whenReady().then(async () => {
           },
           allReferencesReleased: () => frame.release(),
         });
-      } catch (error) {
+      } catch {
         inFlight = false;
         frame.release();
-        report.errors.push({ code: "preview-unavailable", message: error.message });
+        report.errors.push({ code: "preview-unavailable" });
         report.fallbackRecommended = true;
         capture.stop();
         status();
@@ -174,8 +164,8 @@ app.whenReady().then(async () => {
       }
       sharedTexture
         .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
-        .catch((error) => {
-          report.errors.push({ code: "preview-unavailable", message: error.message });
+        .catch(() => {
+          report.errors.push({ code: "preview-unavailable" });
           report.fallbackRecommended = true;
           capture.stop();
           status();
@@ -191,7 +181,7 @@ app.whenReady().then(async () => {
     try {
       capture.setDevice(deviceId);
     } catch (error) {
-      report.errors.push({ code: error.code ?? "decoder-unavailable", message: error.message });
+      report.errors.push({ code: error.code ?? "decoder-unavailable" });
       status();
     }
   });

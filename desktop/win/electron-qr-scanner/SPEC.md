@@ -39,12 +39,11 @@ bundled via CMake and MSVC:
   identical QR texts, passing distinct texts (such as animated BC-UR parts)
   immediately.
 - `src/d3d11_preview.rs`: D3D11 device + 3-slot `DXGI_FORMAT_B8G8R8A8_UNORM`
-  shared texture pool (`D3D11_RESOURCE_MISC_SHARED_NTHANDLE` + keyed mutex when
-  supported) backed by Windows NT handles (`IDXGIResource1::CreateSharedHandle`).
+  shared texture pool (`D3D11_RESOURCE_MISC_SHARED_NTHANDLE` and keyed mutex) backed by Windows NT handles (`IDXGIResource1::CreateSharedHandle`).
 - `src/capture.rs`: Media Foundation device enumeration (`MFEnumDeviceSources`),
   async camera `IMFSourceReader` (`IMFSourceReaderCallback`), PTS-paced MP4
-  file source, stride-safe RGB32 extraction, and bounded 1-analyzing + 1-latest
-  decode worker.
+  file source, bounds-checked signed-stride RGB32 extraction, and bounded
+  1-analyzing + 1-latest decode worker.
 
 ## 3. API
 
@@ -91,7 +90,8 @@ createCapture(options?: {
   name, `isDefault: true` for index 0). `{ kind: "camera" }` opens the default
   camera when `deviceId` is omitted; `capture.setDevice(id)` switches cameras
   cleanly (releasing the previous camera handle before opening the next with a
-  newer generation). Mode negotiation honors `preferredResolution` (`"720p"`
+  newer generation while running). After a terminal camera error,
+  `setDevice()` selects the device for the next explicit `start()`. Mode negotiation honors `preferredResolution` (`"720p"`
   default or `"1080p"`), favors ≥ 25 fps, and prefers uncompressed `NV12`/`YUY2`
   over `MJPG` at equal frame rate. On open, `IAMCameraControl` probes hardware
   focus/exposure capabilities (reported in `onReady(generation, info)`), resets
@@ -137,6 +137,9 @@ createCapture(options?: {
   for video files).
 - QR decoding runs on a dedicated worker thread fed by a 1-slot replaceable
   mailbox so camera capture and preview never stall on dense frames.
+  File EOF is emitted by the decode worker after it has processed the final
+  pending frame. Malformed frame bounds skip the sample. A failed media type
+  refresh ends the capture with an error.
 - `start()` and camera switches synchronously select the generation accepted
   by the JS wrapper. `stop()` clears it so queued events cannot reach capture
   callbacks. Camera teardown halts sample requests, flushes the reader, waits
@@ -167,6 +170,9 @@ Verified on Windows x64 (Rust 1.100.0, MSVC 2022, Node 24.13.0, Electron
 
 Pending:
 
+- Manual camera reports contain sanitized metadata, coded errors, counts,
+  timings and UR conformance results. Camera identifiers and QR text are
+  kept out of the report.
 - Real Windows webcam verification (builtin + USB cameras, switching between
   multiple physical devices, OneKey Pro direct-scan animated UR benchmark via
   `npm run test:camera`).

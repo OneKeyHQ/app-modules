@@ -152,7 +152,7 @@ export interface CaptureOptions {
   /** Each distinct QR text; the same text repeats at most once per second. */
   onText?: (text: string, generation: number) => void;
   onError?: (error: QrScannerError, generation: number) => void;
-  /** A file source reached its end (not looping). */
+  /** A non-looping file reached its end and the last queued decode finished. */
   onEnded?: (generation: number) => void;
   /**
    * Preview frames (BGRA D3D11 shared texture NT handle). Setting this enables
@@ -184,7 +184,8 @@ export interface QrCapture {
   /**
    * Selects a camera by `CameraDevice.id` (or resets to the default camera when
    * omitted / null). If the capture is running, stops the current camera and
-   * restarts on the requested camera with a newer generation.
+   * restarts on the requested camera with a newer generation. After a terminal
+   * camera error this only updates the selection for the next start().
    */
   setDevice(deviceId?: string | null): void;
   /** Preview frames currently held by the consumer (at most 3). */

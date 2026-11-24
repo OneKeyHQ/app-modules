@@ -64,6 +64,12 @@ app
     const payload = readFileSync(join(fixtures, "lightning-payload.txt"), "utf8");
     assert.equal(await api.decodeImage(join(fixtures, "lightning-btcpay-dark.png")), payload);
     await assert.rejects(api.decodeImage(join(fixtures, "corrupt.png")), { code: "invalid-image" });
+    assert.equal(await api.decodeImage(join(videoFixtures, "embedded-nul.png")), "before\0after");
+    if (process.argv.includes("--smoke")) {
+      console.log("electron-qr-scanner: image smoke passed");
+      app.exit(0);
+      return;
+    }
     const cameras = await api.listCameras();
     assert.ok(Array.isArray(cameras));
     const ur = await assembleFromVideo();

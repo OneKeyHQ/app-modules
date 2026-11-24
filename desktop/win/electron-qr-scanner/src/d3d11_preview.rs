@@ -30,7 +30,7 @@ pub struct LentPreviewFrame {
 
 struct SharedSlot {
     texture: ID3D11Texture2D,
-    keyed_mutex: Option<IDXGIKeyedMutex>,
+    keyed_mutex: IDXGIKeyedMutex,
     nt_handle: HANDLE,
     width: u32,
     height: u32,
@@ -162,21 +162,19 @@ impl PreviewPool {
         let context = guard.context.as_ref().unwrap().clone();
         let slot = &mut guard.slots[slot_index];
 
-        // Acquire keyed mutex if present, upload pixels, flush, and release before lending.
-        if let Some(km) = slot.keyed_mutex.as_ref() {
-            // windows-rs maps nonnegative HRESULTs to Ok, including wait statuses.
-            let hr = unsafe { (km.vtable().AcquireSync)(km.as_raw(), 0, 100) };
-            if hr == HRESULT(WAIT_TIMEOUT.0 as i32) {
-                return Ok(None);
-            }
-            if hr == HRESULT(WAIT_ABANDONED.0 as i32) {
-                // Remove the idle slot so the next lend creates a fresh surface.
-                guard.slots.swap_remove(slot_index);
-                return Ok(None);
-            }
-            if hr != S_OK {
-                return Err(format!("preview-unavailable: AcquireSync failed ({hr:?})"));
-            }
+        let km = &slot.keyed_mutex;
+        // windows-rs maps nonnegative HRESULTs to Ok, including wait statuses.
+        let hr = unsafe { (km.vtable().AcquireSync)(km.as_raw(), 0, 100) };
+        if hr == HRESULT(WAIT_TIMEOUT.0 as i32) {
+            return Ok(None);
+        }
+        if hr == HRESULT(WAIT_ABANDONED.0 as i32) {
+            // Remove the idle slot so the next lend creates a fresh surface.
+            guard.slots.swap_remove(slot_index);
+            return Ok(None);
+        }
+        if hr != S_OK {
+            return Err(format!("preview-unavailable: AcquireSync failed ({hr:?})"));
         }
 
         unsafe {
@@ -191,13 +189,11 @@ impl PreviewPool {
             context.Flush();
         }
 
-        if let Some(km) = slot.keyed_mutex.as_ref() {
-            if let Err(error) = unsafe { km.ReleaseSync(0) } {
-                guard.slots.swap_remove(slot_index);
-                return Err(format!(
-                    "preview-unavailable: ReleaseSync failed ({error:?})"
-                ));
-            }
+        if let Err(error) = unsafe { km.ReleaseSync(0) } {
+            guard.slots.swap_remove(slot_index);
+            return Err(format!(
+                "preview-unavailable: ReleaseSync failed ({error:?})"
+            ));
         }
 
         let handle_bytes = (slot.nt_handle.0 as usize).to_ne_bytes().to_vec();
@@ -301,11 +297,7 @@ fn create_shared_slot(
     width: u32,
     height: u32,
 ) -> Result<SharedSlot, String> {
-    // Prefer NT handle + keyed mutex for strict cross-device GPU synchronization
-    // with Chromium's D3DImageBacking; fall back to NT handle alone if a driver
-    // refuses keyed mutex creation.
-    let mut use_keyed_mutex = true;
-    let make_desc = |with_mutex: bool| D3D11_TEXTURE2D_DESC {
+    let desc = D3D11_TEXTURE2D_DESC {
         Width: width,
         Height: height,
         MipLevels: 1,
@@ -318,40 +310,24 @@ fn create_shared_slot(
         Usage: D3D11_USAGE_DEFAULT,
         BindFlags: (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32,
         CPUAccessFlags: 0,
-        MiscFlags: if with_mutex {
-            (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX.0) as u32
-        } else {
-            D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 as u32
-        },
+        MiscFlags: (D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0 | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX.0)
+            as u32,
     };
 
     let mut texture: Option<ID3D11Texture2D> = None;
-    let desc = make_desc(true);
-    let hr = unsafe { device.CreateTexture2D(&desc, None, Some(&mut texture)) };
-    if hr.is_err() {
-        use_keyed_mutex = false;
-        let desc_no_mutex = make_desc(false);
-        unsafe { device.CreateTexture2D(&desc_no_mutex, None, Some(&mut texture)) }
-            .map_err(|e| format!("preview-unavailable: CreateTexture2D failed ({e:?})"))?;
-    }
+    unsafe { device.CreateTexture2D(&desc, None, Some(&mut texture)) }
+        .map_err(|e| format!("preview-unavailable: CreateTexture2D failed ({e:?})"))?;
     let texture =
         texture.ok_or_else(|| "preview-unavailable: CreateTexture2D returned null".to_owned())?;
-
-    let keyed_mutex = if use_keyed_mutex {
-        texture.cast::<IDXGIKeyedMutex>().ok()
-    } else {
-        None
-    };
+    let keyed_mutex = texture.cast::<IDXGIKeyedMutex>().map_err(|e| {
+        format!("preview-unavailable: QueryInterface IDXGIKeyedMutex failed ({e:?})")
+    })?;
 
     let resource1: IDXGIResource1 = texture.cast().map_err(|e| {
         format!("preview-unavailable: QueryInterface IDXGIResource1 failed ({e:?})")
     })?;
 
-    let access = if keyed_mutex.is_some() {
-        DXGI_SHARED_RESOURCE_READ.0 | DXGI_SHARED_RESOURCE_WRITE.0
-    } else {
-        DXGI_SHARED_RESOURCE_READ.0
-    };
+    let access = DXGI_SHARED_RESOURCE_READ.0 | DXGI_SHARED_RESOURCE_WRITE.0;
     let nt_handle = unsafe { resource1.CreateSharedHandle(None, access, None) }
         .map_err(|e| format!("preview-unavailable: CreateSharedHandle failed ({e:?})"))?;
 

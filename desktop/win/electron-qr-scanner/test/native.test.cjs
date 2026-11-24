@@ -239,6 +239,57 @@ test("setDevice rejects on file sources and unknown camera deviceId reports no-c
   assert.equal(error.code, "no-camera");
 });
 
+test("a failed camera requires an explicit start after setDevice", { skip: !nativeWin, timeout: 10_000 }, async () => {
+  const generations = [];
+  let nextError;
+  const capture = api.createCapture({
+    source: { kind: "camera", deviceId: "missing-camera-before-switch" },
+    onError(error, generation) {
+      generations.push(generation);
+      nextError?.(error);
+      nextError = undefined;
+    },
+  });
+  const start = () => new Promise((resolve) => {
+    nextError = resolve;
+    capture.start();
+  });
+
+  try {
+    assert.equal((await start()).code, "no-camera");
+    capture.setDevice("missing-camera-after-switch");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(generations.length, 1);
+    assert.equal((await start()).code, "no-camera");
+    assert.ok(generations[1] > generations[0]);
+  } finally {
+    capture.dispose();
+  }
+});
+
+test("delivers a final-frame QR before non-looping video EOF", { skip: !nativeWin, timeout: 10_000 }, async () => {
+  const events = [];
+  let capture;
+  try {
+    await new Promise((resolve, reject) => {
+      capture = api.createCapture({
+        source: { kind: "file", path: join(__dirname, "last-frame-qr.mp4") },
+        onText: (text) => events.push(text),
+        onEnded: () => {
+          events.push("ended");
+          capture.dispose();
+          resolve();
+        },
+        onError: reject,
+      });
+      capture.start();
+    });
+    assert.deepEqual(events, ["before\0after", "ended"]);
+  } finally {
+    capture?.dispose();
+  }
+});
+
 test("a missing video file reports an error", { skip: !nativeWin }, async () => {
   const error = await new Promise((resolve) => {
     const capture = api.createCapture({

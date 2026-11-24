@@ -86,15 +86,21 @@ workflow does not access or modify consumer repositories.
 The cross-platform `@onekeyfe/electron-qr-scanner` preview contains macOS
 and Windows loaders and native binaries for x64 and arm64. Its npm version
 tracks the validated Electron major. The root entry selects the host
-platform and the `/mac` and `/win` entries expose the platform types.
+platform and reports readiness as `onReady(generation, deviceId?, info?)`.
+The third argument provides Windows capture metadata when available. The
+`/mac` and `/win` entries expose the platform types and readiness signatures.
 
 A manual preview run compiles each architecture on a GitHub-hosted runner.
-macOS runners exercise image and video decoding, and the arm64 runner also
-checks shared-texture preview pixels. Windows camera, preview and decode
-acceptance run on physical machines after the preview is available.
+Every native runner exercises the Electron main-process decoder before
+attestation. macOS also tests video decoding, and its arm64 runner checks
+shared-texture preview pixels. Windows video, camera and GPU preview
+acceptance runs on physical machines.
 
 The workflow verifies and attests the native binaries, the runtime inventory
 and the archive before publishing the immutable alpha version to `next`.
+The QR scanner release script supplies the version to the registry lookup,
+inventory, archive path and publication steps. The runtime inventory includes
+the bundled ZXing-C++ Apache-2.0 license.
 Consumers verify the packaged proof against the source commit, branch and
 workflow when adding the npm pin. Desktop packaging then checks the pinned
 inventory digest and all installed runtime files.
