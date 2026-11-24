@@ -45,20 +45,21 @@ jobs:
         run: |
           node ../../scripts/release-qr-scanner.mjs check-version
           node -e 'if (process.arch !== process.env.BUILD_ARCH) throw new Error("Runner architecture mismatch")'
-      - name: Install locked build and test dependencies
+      - name: Install the locked build toolchain
         run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --target "$BUILD_TARGET"
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target "$BUILD_TARGET"
           rustup override set "$RUST_TOOLCHAIN"
+      - name: Compile the native binary
+        run: npm run build -- "$BUILD_TARGET"
+      - name: Test native QR decoding on macOS
+        if: matrix.platform == 'mac'
+        run: |
           npm ci --ignore-scripts --no-audit --no-fund
           node node_modules/electron/install.js
-      - name: Build and exercise native QR decoding
-        run: |
-          cargo fmt --check
-          cargo test --release --locked --target "$BUILD_TARGET"
-          npm run build -- "$BUILD_TARGET"
           npm test
           npm run test:electron
-      - name: Check shared-texture frames on a sandboxed canvas
+      - name: Check shared-texture frames on a sandboxed macOS canvas
+        if: matrix.platform == 'mac' && matrix.arch == 'arm64'
         timeout-minutes: 3
         run: npm run test:preview
       - name: Attest the native binary

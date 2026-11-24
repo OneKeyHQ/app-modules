@@ -88,12 +88,16 @@ and Windows loaders and native binaries for x64 and arm64. Its npm version
 tracks the validated Electron major. The root entry selects the host
 platform and the `/mac` and `/win` entries expose the platform types.
 
-A manual QR scanner preview run builds and tests each architecture on a
-GitHub-hosted runner. The preview workflow verifies the native artifacts,
-attests the runtime inventory and archive, and publishes the immutable
-alpha version to `next`. The npm package carries the inventory and its
-portable proof. Consumers verify the exact npm version, source commit,
-branch and workflow, the inventory digest and all packaged runtime files.
+A manual preview run compiles each architecture on a GitHub-hosted runner.
+macOS runners exercise image and video decoding, and the arm64 runner also
+checks shared-texture preview pixels. Windows camera, preview and decode
+acceptance run on physical machines after the preview is available.
+
+The workflow verifies and attests the native binaries, the runtime inventory
+and the archive before publishing the immutable alpha version to `next`.
+Consumers verify the packaged proof against the source commit, branch and
+workflow when adding the npm pin. Desktop packaging then checks the pinned
+inventory digest and all installed runtime files.
 
 ## Consumer integration contract
 
