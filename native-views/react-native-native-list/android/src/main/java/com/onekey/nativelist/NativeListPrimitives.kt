@@ -109,6 +109,9 @@ internal class PackedTitleLineLayout(context: android.content.Context) : LinearL
   var packsChildrenAtStart = false
   // OneKey patch: optional cap for the Market subtitle's localized name.
   var leadingTextMaxWidth = Int.MAX_VALUE
+  // The text view that takes what the other children leave; the first child
+  // when unset, so a glyph may precede the title once this names it.
+  var titleChild: TextView? = null
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     if (!packsChildrenAtStart || childCount < 2) {
@@ -116,13 +119,13 @@ internal class PackedTitleLineLayout(context: android.content.Context) : LinearL
       return
     }
 
-    val title = getChildAt(0)
+    val title = titleChild?.takeIf { it.parent === this } ?: getChildAt(0)
     val widthMode = MeasureSpec.getMode(widthMeasureSpec)
     val widthSize = MeasureSpec.getSize(widthMeasureSpec)
     var accessoryWidth = 0
-    for (index in 1 until childCount) {
+    for (index in 0 until childCount) {
       val child = getChildAt(index)
-      if (child.visibility == GONE) continue
+      if (child === title || child.visibility == GONE) continue
       measureChildWithMargins(
         child,
         widthMeasureSpec,

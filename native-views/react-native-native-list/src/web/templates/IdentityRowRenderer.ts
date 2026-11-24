@@ -1,4 +1,4 @@
-import { applyTextWeight } from './RowText';
+import { applyTextWeight, fontWeight } from './RowText';
 import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type {
   IdentityRow,
@@ -29,6 +29,81 @@ function toneColor(
   if (tone === 'negative') return 'var(--nl-negative)';
   if (tone === 'secondary') return 'var(--nl-secondary)';
   return fallback === 'secondary' ? 'var(--nl-secondary)' : 'var(--nl-primary)';
+}
+// Hidden from sight, still read: the runs themselves are hidden from
+// assistive technology in favor of `title`.
+const VISUALLY_HIDDEN: Partial<CSSStyleDeclaration> = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+};
+function appendTitleRuns(
+  document: Document,
+  target: HTMLElement,
+  row: IdentityRow
+): void {
+  const runs = createElement(
+    document,
+    'span',
+    'ok-native-list-identity-title-runs'
+  );
+  runs.setAttribute('aria-hidden', 'true');
+  Object.assign(runs.style, {
+    display: 'flex',
+    flex: '1 1 auto',
+    minWidth: '0',
+    maxWidth: '100%',
+    overflow: 'hidden',
+  });
+  row.titleSegments?.forEach((segment) => {
+    const run = createElement(
+      document,
+      'span',
+      'ok-native-list-identity-title-run',
+      // A run is one line on every platform: `white-space: pre` would turn a
+      // hard break into a second line here.
+      segment.text.replace(/\r\n|[\r\n]/g, ' ')
+    );
+    // Only the shrinking run gives up width; a cap is a share of the line.
+    Object.assign(run.style, {
+      flex: segment.shrink ? '0 1 auto' : '0 0 auto',
+      minWidth: segment.shrink ? '0' : '',
+      maxWidth:
+        segment.maxWidthRatio === undefined
+          ? ''
+          : `${segment.maxWidthRatio * 100}%`,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'pre',
+    });
+    if (segment.tone)
+      run.style.color =
+        segment.tone === 'secondary'
+          ? 'var(--nl-secondary)'
+          : 'var(--nl-primary)';
+    if (segment.fontWeight === 'medium') {
+      run.style.fontWeight = '500';
+      run.style.fontFamily = 'var(--nl-font-medium)';
+    } else if (segment.fontWeight === 'regular') {
+      run.style.fontWeight = '400';
+      run.style.fontFamily = 'var(--nl-font-regular)';
+    }
+    setData(run, 'tone', segment.tone);
+    runs.appendChild(run);
+  });
+  const spoken = createElement(
+    document,
+    'span',
+    'ok-native-list-identity-title-spoken',
+    row.title
+  );
+  Object.assign(spoken.style, VISUALLY_HIDDEN);
+  target.replaceChildren(runs, spoken);
+  target.style.display = 'flex';
+  target.style.minWidth = '0';
 }
 function appendAccessories(
   parent: HTMLElement,
@@ -216,6 +291,18 @@ function createIdentityRow(
       });
       fragment.appendChild(document.createTextNode(row.title.slice(offset)));
       textTarget.prepend(fragment);
+    }
+    // The runs replace the plain title, except where `title` itself is
+    // highlighted or shown in the wallet sidebar.
+    const hasTitleRuns =
+      !!row.titleSegments?.length &&
+      presentation !== 'walletSidebar' &&
+      !row.titleMatch?.length;
+    if (hasTitleRuns) {
+      const textTarget =
+        titleElement.querySelector<HTMLElement>('[data-nl-slot="title"]') ??
+        titleElement;
+      appendTitleRuns(document, textTarget, row);
     }
     if (row.subtitleSegments?.length) {
       column.querySelector('.ok-native-list-secondary')?.remove();
@@ -413,6 +500,69 @@ function createIdentityRow(
         badges.style.minWidth = '0';
       }
     }
+    if (hasTitleRuns) {
+      // The runs fill what the title line leaves, so a ratio is a share of
+      // that width and title accessories sit at the line's end.
+      const runs = titleElement.querySelector<HTMLElement>(
+        '.ok-native-list-identity-title-runs'
+      );
+      for (
+        let node = runs?.parentElement;
+        node && node !== titleElement;
+        node = node.parentElement
+      ) {
+        node.style.display = 'flex';
+        node.style.flex = '1 1 auto';
+        node.style.minWidth = '0';
+      }
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+    }
+    if (row.titleLeadingIcon && presentation !== 'walletSidebar') {
+      const descriptor = row.titleLeadingIcon;
+      if (titleElement.hasAttribute('data-nl-slot')) {
+        // Keep the glyph out of the title slot that text styles apply to.
+        const titleText = tagSlot(
+          createElement(document, 'span', 'ok-native-list-identity-title-text'),
+          'title'
+        );
+        while (titleElement.firstChild)
+          titleText.appendChild(titleElement.firstChild);
+        if (hasTitleRuns) {
+          titleText.style.display = 'flex';
+          // Created after the loop above gave the runs' ancestors their share:
+          // without it a ratio would be a share of the text's own width.
+          titleText.style.flex = '1 1 auto';
+          titleText.style.minWidth = '0';
+        }
+        titleElement.removeAttribute('data-nl-slot');
+        titleElement.appendChild(titleText);
+      }
+      // A label makes the passive glyph an image with that name.
+      const icon = primitives.iconAction(
+        descriptor.name,
+        undefined,
+        undefined,
+        descriptor.tintColor,
+        descriptor.accessibilityLabel
+      );
+      icon.className = 'ok-native-list-identity-title-leading-icon';
+      if (!descriptor.accessibilityLabel)
+        icon.setAttribute('aria-hidden', 'true');
+      // The slot is 16px. Host artwork comes at 24px, and a name without
+      // artwork leaves the slot empty rather than a text glyph.
+      const artwork = icon.querySelector('svg');
+      if (artwork) {
+        artwork.setAttribute('width', '16');
+        artwork.setAttribute('height', '16');
+      } else icon.textContent = '';
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+      // 6px to the title, whatever gap the title line already has.
+      const lineGap = Number.parseFloat(titleElement.style.gap || '0') || 0;
+      icon.style.marginInlineEnd = `${Math.max(0, 6 - lineGap)}px`;
+      titleElement.prepend(icon);
+    }
     if (presentation === 'walletSidebar' && row.badges?.length) {
       const badges = createElement(
         document,
@@ -425,6 +575,7 @@ function createIdentityRow(
       column.appendChild(badges);
     }
     for (const key of ['title', 'subtitle'] as const) {
+      if (key === 'title' && hasTitleRuns) continue;
       const lines = row.style?.[key]?.lines ?? row[`${key}Lines`];
       if (lines !== undefined)
         column
@@ -581,9 +732,41 @@ function applyIdentityStyle(body: HTMLElement, row: IdentityRow) {
     body
       .querySelectorAll<HTMLElement>('[data-nl-slot="' + key + '"]')
       .forEach((element) => {
-        applyTextStyleToSlot(element, slotStyle);
+        if (
+          key === 'title' &&
+          element.querySelector('.ok-native-list-identity-title-runs')
+        )
+          applyTitleStyleToRuns(element, slotStyle);
+        else applyTextStyleToSlot(element, slotStyle);
       });
   });
+}
+// With runs, `style.title` only sets what a run inherits: a run that names its
+// tone or weight keeps it, and the runs stay on one line whatever `lines` says.
+function applyTitleStyleToRuns(
+  slot: HTMLElement,
+  style: NativeListTextStyle
+): void {
+  if (style.fontSize !== undefined)
+    slot.style.fontSize = String(style.fontSize) + 'px';
+  if (style.lineHeight !== undefined)
+    slot.style.lineHeight = String(style.lineHeight) + 'px';
+  if (style.fontWeight !== undefined)
+    applyTextWeight(slot, String(fontWeight(style.fontWeight, 400)));
+  if (style.color !== undefined) slot.style.color = style.color;
+  if (style.tabularNumbers !== undefined)
+    slot.style.fontVariantNumeric = style.tabularNumbers
+      ? 'tabular-nums'
+      : 'proportional-nums';
+  if (style.letterSpacing !== undefined)
+    slot.style.letterSpacing = String(style.letterSpacing) + 'px';
+  // Paint only, as for a plain title: the line keeps its place in the layout.
+  if (style.offsetY !== undefined) {
+    const runs = slot.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-runs'
+    );
+    if (runs) runs.style.transform = `translateY(${style.offsetY}px)`;
+  }
 }
 type Views = {
   visual?: {
