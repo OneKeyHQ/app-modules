@@ -387,7 +387,25 @@ public enum RangeFallbackClass: String {
 
 /// Dependency-free static logic for the range downloader. Bodies are a verbatim
 /// move from `RangeDownloader`; callsites there now call `RangeDownloadLogic.<fn>`.
+public struct RangeDownloadSizeLimitError: Error {
+  public init() {}
+}
+
 public enum RangeDownloadLogic {
+  static func validateSize(written: Int64 = 0, incoming: Int64, maximum: Int64) throws {
+    guard incoming >= 0, written >= 0, written <= maximum,
+          incoming <= maximum - written else { throw RangeDownloadSizeLimitError() }
+  }
+
+
+  static func isWithinSegmentBounds(received: Int64, expected: Int64, segmentBytes: Int64) -> Bool {
+    received >= 0 && received <= segmentBytes && expected <= segmentBytes
+  }
+
+  static func canUseRecordedHTTPResponse(completionError: Error?, locallyCancelledBody: Bool) -> Bool {
+    guard let error = completionError as NSError? else { return true }
+    return locallyCancelledBody && error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
+  }
 
   // §5.4 backoff knobs (moved here because only `backoffDelay` consumes them).
   static let retryBaseDelaySeconds: Double = 1.0

@@ -52,6 +52,7 @@ target 'example' do
   pod 'react-native-bottom-tabs', :path => '../../../node_modules/@onekeyfe/react-native-bottom-tabs', :testspecs => ['Tests']
   pod 'PerpDepthBar', :path => '../../../node_modules/@onekeyfe/react-native-perp-depth-bar', :testspecs => ['Tests']
   pod 'ReactNativeBundleCrypto', :path => '../../../node_modules/@onekeyfe/react-native-bundle-crypto', :testspecs => ['Tests']
+  pod 'ReactNativeBundleUpdate', :path => '../../../node_modules/@onekeyfe/react-native-bundle-update', :testspecs => ['Tests']
   pod 'ReactNativeCaptureProtection', :path => '../../../node_modules/@onekeyfe/react-native-capture-protection', :testspecs => ['Tests']
   pod 'ReactNativePhotoLibrary', :path => '../../../node_modules/@onekeyfe/react-native-photo-library', :testspecs => ['Tests']
   pod 'ReactNativeImageCropPicker', :path => '../../../node_modules/@onekeyfe/react-native-image-crop-picker', :testspecs => ['Tests']

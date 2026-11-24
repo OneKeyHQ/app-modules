@@ -16,6 +16,8 @@ import {
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const nativeListName = "@onekeyfe/react-native-native-list";
 const pagerName = "@onekeyfe/react-native-pager-view";
+const bundleUpdaterName = "@onekeyfe/react-native-bundle-update";
+const rangeDownloaderName = "@onekeyfe/react-native-range-downloader";
 
 export function selectUnpublished(workspaces, packuments, distTag) {
   const missing = [];
@@ -103,6 +105,13 @@ async function main() {
   const first = missing.filter(
     ({ name }) => name !== nativeListName && name !== pagerName
   );
+  if (
+    first.some(({ name }) => name === bundleUpdaterName) &&
+    !first.some(({ name }) => name === rangeDownloaderName)
+  ) {
+    // A bundle-updater-only recovery still needs the range package's declarations.
+    runYarn(["workspace", rangeDownloaderName, "prepare"]);
+  }
   if (first.length > 0) {
     runYarn([
       "workspaces",

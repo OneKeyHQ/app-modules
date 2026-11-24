@@ -1,10 +1,13 @@
 package com.margelo.nitro.reactnativebundlecrypto
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,6 +47,26 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 -----END PGP SIGNATURE-----"""
 
   @Test
+  fun directoryVerificationPreservesFilesystemErrorsUntilCryptoBoundary() {
+    val bundle = temporaryFolder.newFolder()
+    val child = File(bundle, "payload")
+    child.writeText("fixture")
+    val failure = BundleFileSystemException(IOException("read failed"))
+    for (failingPath in listOf(bundle.canonicalFile, child.canonicalFile)) {
+      val fileSystem = object : BundleFileSystem by JvmBundleFileSystem {
+        override fun lstat(file: File): BundleFileStat? {
+          if (file == failingPath) throw failure
+          return JvmBundleFileSystem.lstat(file)
+        }
+      }
+      assertSame(failure, assertThrows(BundleFileSystemException::class.java) {
+        verifyBundleDirectory(bundle.canonicalFile, emptyMap(), fileSystem, { _, _ -> true }, {})
+      })
+      assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, emptyList(), fileSystem))
+    }
+  }
+
+  @Test
   fun signedMetadataAcceptsReleaseKeyAndRejectsChangedBodyAndUnsignedInput() {
     val verified = BundleCryptoCore.verifyGpgCleartext(signedMetadata)
     assertTrue(verified.valid)
@@ -78,6 +101,81 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
   }
 
   @Test
+  fun expectedFileNameValidationForDiffManifest() {
+    val rejectedMismatch = BundleCryptoCore.verifyGpgCleartext(
+      signedMetadata,
+      expectedFileName = "diff-manifest.json",
+    )
+    assertFalse(rejectedMismatch.valid)
+    assertNull(rejectedMismatch.sha256)
+    assertEquals("INVALID_METADATA_FILENAME", rejectedMismatch.reason)
+
+    val testPublicKey = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQENBGr9TcEBCADqhPZEGynHy8F6Zs0n/ayUQZgTTocdnZupAbatptQDf4ajCYNk
+AmE44GUZhaoUaRepBDlrEr4aEjkcfL1Zx9iGoRu1jbiEBSJnZAdhN8wMQZsG7usG
+ydg/H9XparEPyHq6aqYu5Eq5OIJ99Vbe5sY0fEYVnBJHQSRpuH09B/RZYj+Up3aj
+Vs84InZGAlpRABsjW6cKDGxI4qqxd6lcuPzzqKZBp0NqeEzIE/I24GbGA4BJTd8S
+9gaJXB9Totuxy/uv+4+NLcAG4BDrQz0H0KXMrU9UmSUl4ZWp/iA13aHoZdoEsdv2
+aA8HQ3yb5qHElwEAvRapspzYL8MFZm2ak3NHABEBAAG0HlRlc3QgU2lnbmVyIDx0
+ZXN0QGV4YW1wbGUuY29tPokBUgQTAQgAPBYhBJtb/2ZyaVZpVQloADBHSIn7JD1z
+BQJq/U3BAxsvBAULCQgHAgIiAgYVCgkICwIEFgIDAQIeBwIXgAAKCRAwR0iJ+yQ9
+c2xACADEewfGtSOEtSkNCx1r23tfx2iBmAPy5sd0cuIszgg4qlbF01pU9OXJM9/d
+slQd+DGFbE2fKSnO0Zu1K84pRULcDCKETf0uXEYYH/K+t4k4PSFnyq3bA5DOHX7w
+xPq8jV/4CNcKwpQ40mhmv85q46mJO4ll/NQEN4ZFQliJswyZodfpjzVKz695usOp
+W0FD+Sgy2x6iauNrxBtm7ILNWWFCRW9J7+Y7Uc/RMNRpj9BuHk/xkh2QQt9twd95
+r2i2Fzn8IuFa2budqTzwea87p9VQdYnzmthHGt6Xzety4frFUBThwix85VIpoROj
+DCy0Hhtw6dfpxwWXGeFERjK0xCbs
+=ITXe
+-----END PGP PUBLIC KEY BLOCK-----"""
+
+    val signedDiffManifest = """-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "diff-manifest.json",
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "appType": "ios",
+  "appVersion": "6.8.0",
+  "bundleVersion": "20260101"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQEzBAEBCAAdFiEEm1v/ZnJpVmlVCWgAMEdIifskPXMFAmr9TcIACgkQMEdIifsk
+PXML3Af/VKdIMeq/vP6i5dfv8SpjQcDwuNlYuQD9pFGqXtG2AADSmufv/9ojc3LZ
+QvGzd8Q9EVl+l1AfKSLTV/3kgsVUsEQP+iJCQVXN4OCZvrfEQiXX9VxMM2Rkevmu
+XaIoQlURsGOBuLyTZS4ECm/iFUaEp8s0ajCKUNAHcKiXBzwgqYThGF+FM3ahbIb0
+5u5IvfVdRnxHBPf9Nd+lH6EFnzIvKHuDMyIR7J9PAfuMnt0AZ1dZ8bHpj6A5yDIu
+2/vYjpGvHnqMzobhznsEEty5yLxP57SatrF0FXgRe6hM41MNQlLDKY1QiHn9Sqsg
+XHxbRRW2slQi8HEQtq1BY3MPmO0G9Q==
+=vF1w
+-----END PGP SIGNATURE-----"""
+
+    val acceptedDiff = BundleCryptoCore.verifyGpgCleartextWithKey(
+      signedDiffManifest,
+      expectedAppVersion = "6.8.0",
+      expectedBundleVersion = "20260101",
+      expectedAppType = "ios",
+      expectedFileName = "diff-manifest.json",
+      publicKeyArmored = testPublicKey,
+    )
+    assertTrue(acceptedDiff.valid)
+    assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", acceptedDiff.sha256)
+    assertNull(acceptedDiff.reason)
+
+    val rejectedDefault = BundleCryptoCore.verifyGpgCleartextWithKey(
+      signedDiffManifest,
+      expectedAppVersion = "6.8.0",
+      expectedBundleVersion = "20260101",
+      expectedAppType = "ios",
+      publicKeyArmored = testPublicKey,
+    )
+    assertFalse(rejectedDefault.valid)
+    assertNull(rejectedDefault.sha256)
+    assertEquals("INVALID_METADATA_FILENAME", rejectedDefault.reason)
+  }
+
+  @Test
   fun validSignatureWithWrongAscBodyIsRejectedAfterVerification() {
     val result = BundleCryptoCore.verifyDetachedAsc(signedMetadata, "OneKey.apk")
     assertFalse(result.valid)
@@ -103,20 +201,49 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     val file = File(nested, "index.js").apply { writeText("abc") }
     File(bundle, "metadata.json").writeText("ignored")
 
-    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath)
+    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath, JvmBundleFileSystem)
     assertEquals(1, hashes.size)
     assertEquals("nested/bundle/index.js", hashes.single().relativePath)
     assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", hashes.single().sha256)
-    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
 
     file.writeText("changed")
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
     file.delete()
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
 
     file.writeText("abc")
     File(bundle, "evil-metadata.json").writeText("unlisted")
-    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
+  }
+
+  @Test
+  fun directoryHashesOnlyExemptUnlistedRootMetadataAndFinderFiles() {
+    val bundle = temporaryFolder.newFolder("metadata")
+    val nested = File(bundle, "assets").apply { mkdirs() }
+    val nestedMetadata = File(nested, "metadata.json").apply { writeText("asset manifest") }
+    File(bundle, "metadata.json").writeText("bundle manifest")
+    val finderFile = File(nested, ".DS_Store").apply { writeText("finder metadata") }
+
+    val hashes = BundleCryptoCore.hashDir(bundle.absolutePath, JvmBundleFileSystem)
+    assertEquals("assets/metadata.json", hashes.single().relativePath)
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, emptyList(), JvmBundleFileSystem))
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+      bundle.absolutePath,
+      hashes + BundleCryptoCore.DirHash("assets", "0".repeat(64)),
+      JvmBundleFileSystem,
+    ))
+    val finderHash = requireNotNull(BundleCryptoCore.sha256OfFile(finderFile.absolutePath).sha256)
+    val manifest = hashes + BundleCryptoCore.DirHash("assets/.DS_Store", finderHash)
+    assertTrue(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest, JvmBundleFileSystem))
+    finderFile.writeText("tampered")
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, manifest, JvmBundleFileSystem))
+    nestedMetadata.writeText("tampered")
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
+    nestedMetadata.delete()
+    nestedMetadata.mkdir()
+    assertFalse(BundleCryptoCore.verifyDirAgainstHashes(bundle.absolutePath, hashes, JvmBundleFileSystem))
   }
 
   @Test
@@ -129,28 +256,49 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash("../outside.txt", wrongHash))
+        listOf(BundleCryptoCore.DirHash("../outside.txt", wrongHash)),
+        JvmBundleFileSystem,
       )
     )
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash(outside.absolutePath, wrongHash))
+        listOf(BundleCryptoCore.DirHash(outside.absolutePath, wrongHash)),
+        JvmBundleFileSystem,
       )
     )
     Files.createSymbolicLink(File(bundle, "link.txt").toPath(), outside.toPath())
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash("link.txt", wrongHash))
+        listOf(BundleCryptoCore.DirHash("link.txt", wrongHash)),
+        JvmBundleFileSystem,
       )
     )
     assertFalse(
       BundleCryptoCore.verifyDirAgainstHashes(
         bundle.absolutePath,
-        listOf(BundleCryptoCore.DirHash("", wrongHash))
+        listOf(BundleCryptoCore.DirHash("", wrongHash)),
+        JvmBundleFileSystem,
       )
     )
+  }
+
+  @Test
+  fun atomicWriteReplacesTargetAndSafeRenamePromotesDirectory() {
+    val root = temporaryFolder.newFolder("file-operations")
+    val staging = File(root, "staging").apply { mkdir() }
+    val metadata = File(staging, "metadata.json").apply { writeText("original") }
+    BundleCryptoCore.atomicWriteFile(metadata.absolutePath, "replacement", JvmBundleFileSystem)
+    assertEquals("replacement", metadata.readText())
+    assertEquals(listOf("metadata.json"), staging.listFiles().orEmpty().map { it.name })
+
+    val destination = File(root, "destination").apply { mkdir() }
+    File(destination, "old").writeText("old content")
+    BundleCryptoCore.safeRename(staging.absolutePath, destination.absolutePath, JvmBundleFileSystem)
+    assertFalse(staging.exists())
+    assertFalse(File(destination, "old").exists())
+    assertEquals("replacement", File(destination, "metadata.json").readText())
   }
 
   @Test
@@ -158,9 +306,9 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     val bundle = temporaryFolder.newFolder("extracted")
     val outside = temporaryFolder.newFile("outside.txt").apply { writeText("outside") }
     File(bundle, "index.js").writeText("inside")
-    assertTrue(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath))
+    assertTrue(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath, JvmBundleFileSystem))
 
     Files.createSymbolicLink(File(bundle, "escape").toPath(), outside.toPath())
-    assertFalse(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath))
+    assertFalse(BundleCryptoCore.validateExtractedPathSafety(bundle.absolutePath, JvmBundleFileSystem))
   }
 }

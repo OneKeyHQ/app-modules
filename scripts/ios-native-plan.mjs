@@ -13,11 +13,17 @@ const plans = {
     ],
   },
   services: {
-    buildTargets: ["ReactNativeLiteCard", "NativeOverlay"],
+    buildTargets: [
+      "ReactNativeLiteCard",
+      "NativeOverlay",
+      "ReactNativeBundleUpdate",
+      "ReactNativeRangeDownloader",
+    ],
     testSchemes: [
       "OneKeyTextInput-Unit-Tests",
       "PerpDepthBar-Unit-Tests",
       "ReactNativeBundleCrypto-Unit-Tests",
+      "ReactNativeBundleUpdate-Unit-Tests",
       "ReactNativeImageCropPicker-Unit-Tests",
       "ReactNativeCaptureProtection-Unit-Tests",
       "ReactNativeDeviceUtils-Unit-Tests",

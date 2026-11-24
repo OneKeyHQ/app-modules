@@ -1,5 +1,7 @@
 package com.margelo.nitro.reactnativebundleupdate
 
+import com.margelo.nitro.reactnativebundlecrypto.JvmBundleFileSystem
+import com.margelo.nitro.reactnativebundlecrypto.verifyBundleDirectory
 import java.io.File
 import java.nio.file.Files
 
@@ -22,36 +24,9 @@ fun main() {
         val entryBundle = File(bundleDir, "main.jsbundle.hbc")
         entryBundle.writeText("main")
 
-        // Metadata keys are bundle-relative and use "/" separators.
-        expect(
-            bundleRelativePath(bundleDir, segment) ==
-                "segments-background/core.chains.all.CoreChainImported.seg.hbc",
-            true,
-            "nested file key",
-        )
-        expect(bundleRelativePath(bundleDir, entryBundle) == "main.jsbundle.hbc", true, "top-level file key")
-
-        // Callers may name the root with a trailing separator.
-        expect(
-            bundleRelativePath(File(bundleDir.path + File.separator), segment) ==
-                "segments-background/core.chains.all.CoreChainImported.seg.hbc",
-            true,
-            "trailing separator on root",
-        )
-
-        // A sibling whose name shares the root's name as a prefix is not inside it.
-        val siblingDir = File(tempRoot, "$folderName-old")
-        siblingDir.mkdirs()
-        val siblingFile = File(siblingDir, "main.jsbundle.hbc")
-        siblingFile.writeText("sibling")
-        expect(bundleRelativePath(bundleDir, siblingFile) == null, true, "prefix-sharing sibling rejected")
-
-        // Files outside the walk root, and the root itself, are rejected instead
-        // of being looked up by an absolute path.
-        val outside = File(tempRoot, "outside.hbc")
-        outside.writeText("outside")
-        expect(bundleRelativePath(bundleDir, outside) == null, true, "outside file rejected")
-        expect(bundleRelativePath(bundleDir, bundleDir) == null, true, "root directory rejected")
+        val siblingDir = File(tempRoot, "$folderName-old").apply { mkdirs() }
+        val siblingFile = File(siblingDir, "main.jsbundle.hbc").apply { writeText("sibling") }
+        File(tempRoot, "outside.hbc").writeText("outside")
 
         // Same-directory identity is form agnostic: a different path form for the
         // same tree compares equal, a different directory does not.
@@ -63,18 +38,77 @@ fun main() {
         expect(isSameDirectory(bundleDir, siblingDir) == false, true, "different dirs are not the same")
         expect(isSameDirectory(bundleDir, File(tempRoot, "missing")) == false, true, "missing dir is not the same")
 
+        val nestedMetadata = File(segmentDir, "metadata.json").apply { writeText("payload metadata") }
+        File(bundleDir, "metadata.json").writeText("root control metadata")
+        val finderFile = File(segmentDir, ".DS_Store").apply { writeText("finder") }
+        val baseEntries = mapOf(
+            "main.jsbundle.hbc" to "main",
+            "segments-background/core.chains.all.CoreChainImported.seg.hbc" to "segment",
+        )
+        val nestedKey = "segments-background/metadata.json"
+        val finderKey = "segments-background/.DS_Store"
+        fun verify(metadata: Map<String, String>, subtree: File = bundleDir, prefix: String = ""): Boolean =
+            verifyBundleDirectory(subtree, metadata, JvmBundleFileSystem, { file, expected -> file.readText() == expected }, {}, prefix)
+        expect(verify(baseEntries), false, "nested metadata cannot be omitted from the manifest")
+        val allEntries = baseEntries + (nestedKey to "payload metadata")
+        expect(verify(allEntries), true, "root metadata and unlisted Finder files may be skipped")
+        expect(verify(allEntries + (finderKey to "finder")), true, "listed Finder file is hashed")
+        expect(verify(allEntries + (finderKey to "wrong")), false, "listed Finder file cannot bypass verification")
+        expect(verify(allEntries + ("segments-background" to "wrong")), false, "a directory does not satisfy a manifest entry")
+        expect(verify(allEntries + ("/${finderFile.absolutePath}" to "finder")), false, "non-relative manifest entry remains unconsumed")
+        expect(verify(allEntries - "main.jsbundle.hbc", segmentDir, "segments-background/"), true, "subtree verifies bundle-relative manifest entries")
+        nestedMetadata.writeText("changed")
+        expect(verify(allEntries), false, "nested metadata content must match its hash")
+        nestedMetadata.delete()
+        nestedMetadata.mkdir()
+        expect(verify(allEntries), false, "manifest-listed metadata must be a regular file")
+
+        fun managed(root: File, file: File) = resolveManagedBundlePath(root, file, JvmBundleFileSystem)
+        val absentDiff = File(bundleDir, "diff/next.diff.zip")
+        expect(managed(bundleDir, absentDiff) == absentDiff.canonicalPath, true, "admit download before the diff directory exists")
+        expect(managed(bundleDir, segment) == segment.canonicalPath, true, "admit an existing managed entry")
+        val metadataBelowRegularFile = File(entryBundle, "metadata.json")
+        expect(
+            managed(bundleDir, metadataBelowRegularFile) == metadataBelowRegularFile.canonicalPath,
+            true,
+            "admission leaves target type validation to the package verifier",
+        )
+        expect(managed(bundleDir, bundleDir) == null, true, "managed output must be below its root")
+        expect(managed(bundleDir, siblingFile) == null, true, "reject prefix-sharing sibling at admission")
+        expect(managed(bundleDir, File(bundleDir, "../outside.hbc")) == null, true, "reject path traversal at admission")
+
         val link = File(tempRoot, "bundle-link")
         val linked = runCatching { Files.createSymbolicLink(link.toPath(), bundleDir.toPath()) }.isSuccess
         if (linked) {
             expect(isSameDirectory(link, bundleDir), true, "symlinked root resolves to the same dir")
+            expect(managed(link, File(link, "next.zip")) == null, true, "reject symlink at managed root")
+            val filesDir = File(tempRoot, "filesDir").apply { mkdir() }
+            val filesDirLink = File(tempRoot, "filesDir-link")
+            Files.createSymbolicLink(filesDirLink.toPath(), filesDir.toPath())
+            val managedAlias = File(filesDirLink, folderName)
             expect(
-                bundleRelativePath(
-                    link,
-                    File(link, "segments-background/core.chains.all.CoreChainImported.seg.hbc"),
-                ) == "segments-background/core.chains.all.CoreChainImported.seg.hbc",
+                managed(managedAlias, File(managedAlias, "next.zip")) == File(filesDir, "$folderName/next.zip").canonicalPath,
                 true,
-                "symlinked root keeps bundle-relative keys",
+                "allow symlink above the managed root",
             )
+            val fileLink = File(bundleDir, "next.zip")
+            Files.createSymbolicLink(fileLink.toPath(), File(bundleDir, "missing-target.zip").toPath())
+            expect(managed(bundleDir, fileLink) == null, true, "reject a dangling output symlink")
+            expect(verify(allEntries - nestedKey), false, "extracted-file verifier rejects dangling symlinks")
+            Files.delete(fileLink.toPath())
+            Files.createSymbolicLink(fileLink.toPath(), entryBundle.toPath())
+            expect(managed(bundleDir, fileLink) == null, true, "reject a symlink pointing inside the managed root")
+            val diffLink = File(bundleDir, "diff")
+            Files.createSymbolicLink(diffLink.toPath(), File(bundleDir, "missing-diff-directory").toPath())
+            expect(managed(bundleDir, absentDiff) == null, true, "reject a dangling intermediate symlink")
+            Files.delete(diffLink.toPath())
+            Files.createSymbolicLink(diffLink.toPath(), segmentDir.toPath())
+            expect(managed(bundleDir, absentDiff) == null, true, "reject an intermediate symlink pointing inside the root")
+            val bundleBehindAlias = File(filesDir, folderName).apply { mkdir() }
+            File(bundleBehindAlias, "main.jsbundle.hbc").writeText("main")
+            expect(verify(mapOf("main.jsbundle.hbc" to "main"), managedAlias), true, "parent alias preserves bundle-relative keys")
+            expect(verify(allEntries, link), false, "reject symlink at the walked directory")
+            Files.delete(filesDirLink.toPath())
         } else {
             println("BundleVerificationPath: symlink scenarios skipped (symlinks unavailable)")
         }

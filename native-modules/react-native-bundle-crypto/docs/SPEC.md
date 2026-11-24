@@ -8,10 +8,10 @@ This package verifies signed update metadata, computes file hashes, checks a bun
 
 ## Public API and data
 
-- `verifyGpgCleartext` verifies a PGP cleartext-signed JSON message and requires signed `fileName == "metadata.json"`. When a caller supplies `expectedAppType`, `expectedAppVersion`, or `expectedBundleVersion`, the corresponding signed field must be present, non-empty, and equal to it. It returns the signed `sha256` only after successful signature and field verification. `verifyDetachedAsc` verifies a PGP cleartext-signed SHA256SUMS body, matches `expectedFileName` when filename columns are present, and returns the matching 64-character hex token. Verification or binding failures return `valid: false` with a reason and no hash.
+- `verifyGpgCleartext` verifies a PGP cleartext-signed JSON message and requires the signed `fileName` field to equal `expectedFileName` (which defaults to `"metadata.json"`, and may be set by native callers to `"diff-manifest.json"` when verifying incremental OTA diff manifests; the JavaScript Nitro wrapper defaults `expectedFileName` to `"metadata.json"`). When a caller supplies `expectedAppType`, `expectedAppVersion`, or `expectedBundleVersion`, the corresponding signed field must be present, non-empty, and equal to it. It returns the signed `sha256` only after successful signature and field verification. `verifyDetachedAsc` verifies a PGP cleartext-signed SHA256SUMS body, matches `expectedFileName` when filename columns are present, and returns the matching 64-character hex token. Verification or binding failures return `valid: false` with a reason and no hash.
 - `sha256OfFile` streams a file and returns either a lowercase SHA-256 hex digest or a failure reason. The exact failure-reason taxonomy differs by platform.
 - `secureEqualHex` compares two UTF-8 strings byte by byte after checking equal length.
-- `hashDir` returns relative paths and SHA-256 hashes for files under a directory. `verifyDirAgainstHashes` checks that every non-exempt on-disk file has a matching expected hash and that every expected file exists. Files whose exact basename is `metadata.json` or `.DS_Store` are exempt from hashing.
+- `hashDir` returns relative paths and SHA-256 hashes for files under a directory. `verifyDirAgainstHashes` checks that every non-exempt on-disk file has a matching expected hash and that every expected path was verified as a regular file. Only the root `metadata.json` control file is excluded from the manifest. Unlisted `.DS_Store` files may be ignored for compatibility. A listed `.DS_Store` and a nested `metadata.json` are ordinary payload entries during verification.
 - `validateExtractedPathSafety` rejects symbolic links and paths resolving outside an extracted directory. `atomicWriteFile`, `safeRename`, and `listVersionDirs` perform local file operations; the caller owns when to invoke them.
 
 ## Directory hash safety and failure
@@ -20,7 +20,16 @@ Each `DirHashEntry.relativePath` passed to `verifyDirAgainstHashes` must name a 
 
 ## Lifecycle, platform behavior, and resource limits
 
+Android directory and subtree verification share the same regular-file and
+manifest-completeness checks. Subtree metadata uses the caller-supplied
+bundle-relative prefix.
+
 The verification and file operations are synchronous inside each native core; the Nitro wrappers return promises for the asynchronous API methods. No long-lived request state is retained by the core. File hashing streams input rather than loading entire files into memory. Android uses BouncyCastle for PGP verification and Java `MessageDigest`; iOS uses Gopenpgp and CommonCrypto. Both platforms use the same embedded public key and directory-path boundary. The caller must separately limit downloaded data and decide how to handle failed verification.
+
+Android path checks and filesystem moves support API 24 and later.
+`atomicWriteFile` syncs the temporary file before replacing the target by
+same-directory rename. `safeRename` promotes a file or directory on the same
+filesystem and removes an existing destination before promotion.
 
 ## Mac Catalyst framework packaging
 
