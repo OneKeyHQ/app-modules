@@ -34,7 +34,7 @@ export interface QrScannerComponentProps {
    */
   sessionKey?: string | number;
   style?: StyleProp<ViewStyle>;
-  onReady?: () => void;
+  onReady?: (cameraId: string) => void;
   /** UR assembly progress, 0..1 (below 1 until complete). */
   onProgress?: (progress: number) => void;
   /** Fired once per session. */
@@ -95,9 +95,9 @@ export function QrScanner({
       return true;
     };
     return {
-      onReady: callback((generation: number) => {
+      onReady: callback((generation: number, cameraId: string) => {
         if (!accept(generation)) return;
-        handlers.current.onReady?.();
+        handlers.current.onReady?.(cameraId);
       }),
       onFrameText: callback((text: string, generation: number) => {
         if (!accept(generation)) return;

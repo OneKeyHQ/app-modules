@@ -92,12 +92,12 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   // Props
   override var active: Boolean = false
   override var cameraId: String? = null
-  override var onReady: ((generation: Double) -> Unit)? = null
+  override var onReady: ((generation: Double, cameraId: String) -> Unit)? = null
   override var onFrameText: ((text: String, generation: Double) -> Unit)? = null
   override var onError: ((code: String, message: String, generation: Double) -> Unit)? = null
 
   private data class CaptureCallbacks(
-    val ready: ((Double) -> Unit)? = null,
+    val ready: ((Double, String) -> Unit)? = null,
     val frame: ((String, Double) -> Unit)? = null,
     val error: ((String, String, Double) -> Unit)? = null,
   )
@@ -360,7 +360,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   }
 
   private fun bind(provider: ProcessCameraProvider, generation: Int) {
-    val (selector, selectedId) = selectorFor(provider) ?: run {
+    val selector = selectorFor(provider)?.first ?: run {
       emitError("no-camera", "No camera is available", generation)
       return
     }
@@ -395,7 +395,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     previewUseCase = preview
     analysisUseCase = analysis
     camera = bound
-    boundCameraId = selectedId
+    val activeCameraId = HybridQrCameraList.cameraId(bound.cameraInfo)
+    boundCameraId = activeCameraId
     running = true
     var ready = false
     var lastErrorCode: Int? = null
@@ -405,7 +406,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       ) {
         ready = true
         gate.setCapturing(true)
-        callbacks.ready?.invoke(generation.toDouble())
+        callbacks.ready?.invoke(generation.toDouble(), activeCameraId)
       }
     }
     val cameraStateObserver = Observer<CameraState> { state ->

@@ -53,7 +53,7 @@ class HybridQrScanner: HybridQrScannerSpec {
   // Props
   var active: Bool = false
   var cameraId: String?
-  var onReady: ((Double) -> Void)?
+  var onReady: ((Double, String) -> Void)?
   var onFrameText: ((String, Double) -> Void)?
   var onError: ((String, String, Double) -> Void)?
 
@@ -63,7 +63,7 @@ class HybridQrScanner: HybridQrScannerSpec {
   private let session = AVCaptureSession()
   private struct CaptureProps {
     var active = false
-    var ready: ((Double) -> Void)?
+    var ready: ((Double, String) -> Void)?
     var text: ((String, Double) -> Void)?
     var error: ((String, String, Double) -> Void)?
   }
@@ -180,8 +180,8 @@ class HybridQrScanner: HybridQrScannerSpec {
     session.startRunning()
     running = session.isRunning
     setCapturing(running)
-    if running {
-      captureProps.ready?(Double(currentGeneration))
+    if running, let device {
+      captureProps.ready?(Double(currentGeneration), device.uniqueID)
     } else {
       emitError("camera-busy", "The camera could not start", currentGeneration)
     }
@@ -275,7 +275,7 @@ class HybridQrScanner: HybridQrScannerSpec {
     }
     _ = nextGeneration()
     setCapturing(true)
-    captureProps.ready?(Double(generation))
+    captureProps.ready?(Double(generation), target.uniqueID)
   }
 
   private func observeSubjectArea(of device: AVCaptureDevice) {

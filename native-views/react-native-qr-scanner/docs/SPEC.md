@@ -226,7 +226,7 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
 `QrScanner` (React component) props: `active`, `mode`, `allowPlainText`,
 `limits`, `sessionKey`, `style`, and callbacks `onReady`, `onProgress`,
 `onResult`, `onError`. `QrScannerView` is the raw native view with `active`
-and `onReady(generation)`, `onFrameText(text, generation)`,
+and `onReady(generation, cameraId)`, `onFrameText(text, generation)`,
 `onError(code, message, generation)`.
 
 - Native code reports raw text only. `QrScanner` feeds it into a
@@ -235,8 +235,13 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 - `onResult` fires once per session. `onProgress(1)` precedes a UR result.
 - `onError` receives camera errors as `QrScannerError` and terminal UR errors
   (`too-large`, `invalid-payload`, `resource-limit`) as `ScanError`.
-- `onReady` (iOS) fires when the capture session reports running, which can be
-  slightly before the first frame is on screen.
+- Native readiness reports the ID of the camera bound to that generation,
+  including when the requested ID was unavailable and a default opened. The ID
+  uses the same format as `listCameras()`. `QrScanner.onReady(cameraId)`
+  forwards that ID after its generation check. On iOS readiness fires when the
+  session reports running, which can precede the first frame on screen. The
+  native ID is not part of the Web readiness callback. Hardware verification
+  of the reported IDs for startup, switching and disconnect fallback is pending.
 - Camera error codes: `no-camera` (checked before any permission prompt),
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
 - iOS requests camera access when it is undetermined. Apps must declare

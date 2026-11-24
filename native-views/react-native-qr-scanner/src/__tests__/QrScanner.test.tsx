@@ -8,7 +8,7 @@ import type { QrScannerComponentProps } from '../QrScanner';
 type Wrapped<T> = { f: T };
 interface NativeProps {
   active: boolean;
-  onReady: Wrapped<(generation: number) => void>;
+  onReady: Wrapped<(generation: number, cameraId?: string) => void>;
   onFrameText: Wrapped<(text: string, generation: number) => void>;
   onError: Wrapped<(code: string, message: string, generation: number) => void>;
 }
@@ -69,6 +69,14 @@ beforeEach(() => {
 });
 
 describe('QrScanner', () => {
+  it('reports the bound camera for the current capture generation', () => {
+    const { handlers } = renderScanner({ cameraId: 'disconnected-usb' });
+    native().onReady.f(2, 'built-in-back');
+    native().onReady.f(1, 'disconnected-usb');
+
+    expect(handlers.onReady.mock.calls).toEqual([['built-in-back']]);
+  });
+
   it('assembles an animated UR from a looping frame stream', () => {
     const { cbor, parts } = animatedParts(40);
     const { handlers } = renderScanner();
