@@ -11,6 +11,8 @@ final class QrPreviewView: UIView {
   }
 
   private var sceneGeometryObservation: NSKeyValueObservation?
+  private var legacyOrientationTimer: Timer?
+  private var captureRunning = false
 
   private let focusIndicator: UIView = {
     let view = UIView(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
@@ -27,21 +29,6 @@ final class QrPreviewView: UIView {
     backgroundColor = .black
     previewLayer.videoGravity = .resizeAspectFill
     addSubview(focusIndicator)
-    if #unavailable(iOS 16.0) {
-      NotificationCenter.default.addObserver(
-        self, selector: #selector(legacyOrientationDidChange(_:)),
-        name: UIDevice.orientationDidChangeNotification, object: nil)
-      UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-    }
-  }
-
-  deinit {
-    if #unavailable(iOS 16.0) {
-      NotificationCenter.default.removeObserver(self)
-      DispatchQueue.main.async {
-        UIDevice.current.endGeneratingDeviceOrientationNotifications()
-      }
-    }
   }
 
   override func didMoveToWindow() {
@@ -52,6 +39,8 @@ final class QrPreviewView: UIView {
         [weak self] _, _ in
         self?.scheduleOrientationUpdate()
       }
+    } else {
+      updateLegacyOrientationTimer()
     }
     updateCaptureOrientation()
   }
@@ -61,8 +50,32 @@ final class QrPreviewView: UIView {
     if #unavailable(iOS 16.0) { updateCaptureOrientation() }
   }
 
-  @objc private nonisolated func legacyOrientationDidChange(_: Notification) {
-    scheduleOrientationUpdate()
+  func setCaptureRunning(_ running: Bool) {
+    captureRunning = running
+    updateLegacyOrientationTimer()
+  }
+
+  private func updateLegacyOrientationTimer() {
+    if #available(iOS 16.0, *) { return }
+    guard captureRunning, window?.windowScene != nil else {
+      legacyOrientationTimer?.invalidate()
+      legacyOrientationTimer = nil
+      return
+    }
+    guard legacyOrientationTimer == nil else { return }
+    // A rotation can commit after the device notification and leave our bounds unchanged.
+    let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] timer in
+      guard let self else {
+        timer.invalidate()
+        return
+      }
+      MainActor.assumeIsolated {
+        self.updateCaptureOrientation()
+      }
+    }
+    timer.tolerance = 0.02
+    RunLoop.main.add(timer, forMode: .common)
+    legacyOrientationTimer = timer
   }
 
   private nonisolated func scheduleOrientationUpdate() {
@@ -79,33 +92,45 @@ final class QrPreviewView: UIView {
     } else {
       orientation = scene.interfaceOrientation
     }
+    let captureOrientation = Self.videoOrientation(for: orientation)
     if #available(iOS 17.0, *) {
       let videoPort = connection.inputPorts.first { $0.mediaType == .video }
-      guard let input = videoPort?.input as? AVCaptureDeviceInput,
-        let angle = Self.rotationAngle(
-          for: orientation, isExternalCamera: input.device.deviceType == .external),
-        connection.videoRotationAngle != angle,
-        connection.isVideoRotationAngleSupported(angle)
-      else { return }
-      connection.videoRotationAngle = angle
-    } else if connection.isVideoOrientationSupported,
-      let captureOrientation = AVCaptureVideoOrientation(rawValue: orientation.rawValue),
+      guard let input = videoPort?.input as? AVCaptureDeviceInput else { return }
+      if input.device.deviceType == .external {
+        applyRotationAngle(0, to: connection)
+        return
+      }
+      #if compiler(>=6.4) && !targetEnvironment(macCatalyst)
+      if #available(iOS 27.0, *) {
+        guard let captureOrientation else { return }
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: input.device, previewLayer: nil)
+        let angle = coordinator.videoRotationAngleRelative(toDeviceOrientation: captureOrientation)
+        applyRotationAngle(angle, to: connection)
+        return
+      }
+      #endif
+    }
+    // The typed orientation lets AVFoundation handle the built-in camera on older systems/SDKs.
+    if let captureOrientation, connection.isVideoOrientationSupported,
       connection.videoOrientation != captureOrientation
     {
       connection.videoOrientation = captureOrientation
     }
   }
 
-  static func rotationAngle(
-    for orientation: UIInterfaceOrientation, isExternalCamera: Bool
-  ) -> CGFloat? {
-    // Reset to the camera's native orientation after switching from a built-in input.
-    if isExternalCamera { return 0 }
+  @available(iOS 17.0, *)
+  private func applyRotationAngle(_ angle: CGFloat, to connection: AVCaptureConnection) {
+    guard connection.videoRotationAngle != angle, connection.isVideoRotationAngleSupported(angle)
+    else { return }
+    connection.videoRotationAngle = angle
+  }
+
+  static func videoOrientation(for orientation: UIInterfaceOrientation) -> AVCaptureVideoOrientation? {
     switch orientation {
-    case .portrait: return 90
-    case .portraitUpsideDown: return 270
-    case .landscapeLeft: return 180
-    case .landscapeRight: return 0
+    case .portrait: return .portrait
+    case .portraitUpsideDown: return .portraitUpsideDown
+    case .landscapeLeft: return .landscapeLeft
+    case .landscapeRight: return .landscapeRight
     default: return nil
     }
   }
@@ -156,7 +181,15 @@ class HybridQrScanner: HybridQrScannerSpec {
   private var permissionPending = false
   private var output: AVCaptureMetadataOutput?
   private var metadataDelegate: MetadataDelegate?
-  private var running = false
+  private var running = false {
+    didSet {
+      if #available(iOS 16.0, *) { return }
+      guard running != oldValue else { return }
+      DispatchQueue.main.async { [weak previewView, running] in
+        previewView?.setCaptureRunning(running)
+      }
+    }
+  }
   /// The configured input device. Owned by `sessionQueue`.
   private var device: AVCaptureDevice?
   private var input: AVCaptureDeviceInput?
@@ -259,7 +292,6 @@ class HybridQrScanner: HybridQrScannerSpec {
       emitError(error.code, error.message, currentGeneration)
       return
     }
-    updatePreviewOrientation()
     if observers.isEmpty { addObservers() }
     session.startRunning()
     running = session.isRunning
@@ -302,14 +334,19 @@ class HybridQrScanner: HybridQrScannerSpec {
     if let input { session.removeInput(input) }
     var installed = false
     defer {
+      var restoredInput = false
       if !installed {
         if session.outputs.contains(newOutput) { session.removeOutput(newOutput) }
         if session.inputs.contains(newInput) { session.removeInput(newInput) }
         session.sessionPreset = oldPreset
-        if let input, session.canAddInput(input) { session.addInput(input) }
+        if let input, session.canAddInput(input) {
+          session.addInput(input)
+          restoredInput = true
+        }
         if let output, session.canAddOutput(output) { session.addOutput(output) }
       }
       session.commitConfiguration()
+      if installed || restoredInput { updatePreviewOrientation() }
     }
 
     let presets: [AVCaptureSession.Preset] = [.hd1920x1080, .hd1280x720, .high, .medium, .low, .inputPriority]
@@ -357,7 +394,6 @@ class HybridQrScanner: HybridQrScannerSpec {
       emitError(error.code, error.message, currentGeneration())
       return
     }
-    updatePreviewOrientation()
     _ = nextGeneration()
     setCapturing(true)
     captureProps.ready?(Double(generation))

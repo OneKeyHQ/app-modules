@@ -238,13 +238,20 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 - `onReady` (iOS) fires when the capture session reports running, which can be
   slightly before the first frame is on screen. The built-in camera preview
   follows its window scene's interface orientation on attachment, after a
-  camera input change, and whenever the scene's effective geometry changes.
+  camera input change or a rollback that restores the previous input, and
+  whenever the scene changes orientation. Unknown scene orientations leave
+  built-in previews as they are.
   This includes a 180° rotation and fixed-size previews whose bounds stay
-  the same. On iOS 15, preview orientation is refreshed on layout and on
-  device-orientation notifications. An external camera uses its native
-  orientation (0°). Each input switch applies the orientation for the newly
-  connected device. Rotating the preview keeps the current capture
-  generation, decoder, and scan session.
+  the same. iOS 16 and later observe effective scene geometry. On iOS 15,
+  the attached, running preview checks the current scene orientation every
+  100 ms, including after UIKit commits a rotation without laying out the
+  scanner. The check stops when capture stops or the view leaves its window.
+  On iOS 27 and later with the iOS 27 SDK, AVFoundation derives the rotation
+  angle from the connected built-in camera and the scene orientation. Older
+  SDKs or systems use AVFoundation's typed video orientation for built-in
+  cameras. An external camera uses its native orientation (0°).
+  Rotating the preview keeps the current capture generation, decoder,
+  and scan session.
 - Camera error codes: `no-camera` (checked before any permission prompt),
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
 - iOS requests camera access when it is undetermined. Apps must declare
@@ -441,6 +448,7 @@ camera sees one original frame followed by mixed frames.
 
 | iOS image pipeline at runtime | `ios/QrImageDecodingPipeline.swift`, `ios/HybridQrImageDecoder.swift`, `ios/QrZXingReader.mm` | `QrScanner-Unit-Tests` (`ios/tests/`, fixtures in `ios/tests/fixtures/`), 9 tests passing on the iOS 27.2 simulator (iPad Air 13-inch M4; 20 in the whole `QrScanner-Unit-Tests` target with the gate and camera-control suites). Vision + ZXing decode the real expired BTCPay invoice payload (461 chars) from clean, BTCPay-dark (no QR margin, page padding, center icon), inverted and EXIF-rotated fixtures; ZXing alone decodes clean and inverted codes, proving it is linked; no-QR image resolves `nil`; corrupt and missing files throw `invalid-image`; fake engines prove pass order, stop-at-first-hit, platform-before-fallback and the `maxPixels` downscale. Also in the CI `services` group (`scripts/ios-native-plan.mjs`). |
 | Camera selection and zoom | `ios/QrCameraControl.swift`, `android/.../QrCameraZoom.kt` | `ios/tests/QrCameraControlTests.swift` (5 XCTests: device preference order, 1x factor for triple, dual-wide, wide-first and physical devices, clamp to device range and the 8x cap) and `QrCameraZoomTest.kt` (3 Robolectric tests). Android emulator (Pixel 7, API 35), example app: tapping the live preview logs CameraX `startFocusAndMetering: updating 3A regions & triggering AF` and draws the focus box at the tap point. Pinch is not exercised at runtime (no multi-touch injection); the iOS gestures need a device (simulators have no camera). |
+| iOS preview orientation | `ios/QrScanner.swift` | `ios/tests/QrCameraControlTests.swift` covers the four interface orientations and rejects an unknown orientation. On iPadOS 18.6 and 27.2 simulators a fixed-size preview view read the updated scene orientation on entry to landscape left, a 180° flip to landscape right, and a return to portrait. Live camera pixels require device testing. |
 | Camera list and switching | `src/cameras.ts`, `ios/HybridQrCameraList.swift`, `android/.../HybridQrCameraList.kt`, `QrCameraCatalog.kt`, `src/web/cameras.ts`, `src/web/scanner.ts` | jest: one native listener shared and cleared after the last unsubscribe; web label positions, unlabeled entries, `devicechange`; web switching opens the new camera before stopping the old, retries after release on `NotReadableError`, records the choice while stopped. XCTest: list dedupe. Robolectric `QrCameraCatalogTest` (3). Android emulator (API 35, emulated back and front cameras), example app: `listCameras` returns `[{id:"0",position:"back"},{id:"1",position:"front"}]`; switching while active closes camera 0 and opens camera 1 (`Opened CameraId-1 in 11 ms`), and back again (12.6 ms), one active client each time, `onReady` per switch. iOS switching needs a device. |
 | Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
 | Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
@@ -494,10 +502,11 @@ Still required:
   none), including an animated UR played on a screen; completion time and
   parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
   pod.
-- iPad: verify the live preview on landscape entry, on a 180° flip and
-  while rotating a fixed-size scanner between portrait and landscape.
-  Verify switching in both directions between the built-in camera and an
-  upright stationary USB camera.
+- iPad: verify front and rear live previews in portrait and both landscape
+  orientations on an iPad with a landscape-mounted front camera. Check a
+  fixed-size scanner during a 180° flip on iOS 15 where available. Verify
+  switching in both directions between the built-in camera and an upright
+  stationary USB camera, including a failed switch that restores the input.
 - iOS and Android devices: tap to focus, pinch zoom, and (iPhone 13 Pro and
   later) the automatic switch to the ultra-wide lens for close codes.
 - Android: live preview content and live detection on a device (the
